@@ -1,4 +1,4 @@
-# 🤝🎓 𝗗𝗦𝗣: 𝗗EMONSTRATE–𝗦EARCH–𝗣REDICT
+# 🎓 𝗗𝗦𝗣: 𝗗EMONSTRATE–𝗦EARCH–𝗣REDICT
 
 A framework for composing retrieval models and language models into powerful pipelines that tackle knowledge-intensive tasks.
 
