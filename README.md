@@ -2,7 +2,7 @@
 
 A framework for composing retrieval models and language models into powerful pipelines that tackle knowledge-intensive tasks.
 
-## 💾  Installation
+## Installation
 
 ```pip install .```
 
