@@ -1,4 +1,4 @@
-# 🎓 𝗗𝗦𝗣: 𝗗emonstrate–𝗦earch–𝗣redict
+# 🎓 𝗗𝗦𝗣: Demonstrate–Search–Predict
 
 A framework for composing retrieval models and language models into powerful pipelines that tackle knowledge-intensive tasks.
 
