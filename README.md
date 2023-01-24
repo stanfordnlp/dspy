@@ -6,7 +6,7 @@ A framework for composing retrieval models and language models into powerful pip
 
 ## Installation
 
-```pip install .```
+```pip install dsp-ml```
 
 ## 🏃 Getting Started
 
