@@ -1,14 +1,14 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
-    name="dsp",
-    version="0.1.0",
+    name="dsp-ml",
+    version="0.1.1",
     description="Demonstrate-Search-Predict",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
     author_email="okhattab@stanford.edu",
     license="MIT License",
-    packages=["dsp"],
+    packages=find_packages(),
     python_requires='>=3.8',
     install_requires=[
         "backoff",
