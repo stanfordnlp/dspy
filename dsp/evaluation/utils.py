@@ -5,7 +5,7 @@ from IPython.display import display
 from dsp.utils import EM
 
 
-def evaluate(fn, dev, metric=EM, notebook=False):
+def evaluate(fn, dev, metric=EM, notebook=True):
     data = []
 
     for example in tqdm.tqdm(dev):
