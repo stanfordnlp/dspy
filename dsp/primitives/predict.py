@@ -1,13 +1,6 @@
-# import random
-from collections import Counter
 import dsp
-from dsp.utils import zipstar
-
-# from dsp.primitives.primitive import Transformation
-from dsp.utils import normalize_text
-
-from collections import namedtuple
-Completion = namedtuple('Completion', ['rationale', 'prediction'])
+from collections import Counter
+from dsp.utils import zipstar, normalize_text
 
 
 class Completions:

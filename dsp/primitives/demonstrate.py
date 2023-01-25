@@ -1,3 +1,6 @@
+import dsp
+import random
+
 from dsp.utils import dotdict, has_answer, DPR_normalize, normalize_text, EM
 
 
@@ -24,10 +27,8 @@ class Example(dotdict):
     def demos_at(self, fn):
         def at(d):
             try:
-                # print("HERE")
                 return fn(d).without('augmented')
             except:
-                # print("NOT HERE")
                 return {}
 
         demos = [d.copy(**at(d)) for d in self.demos]
@@ -38,18 +39,9 @@ class Example(dotdict):
 
 
 
-import copy
-import tqdm
-import random
-
-# from colbertfm.metrics.qa import EM, normalize_text
-# from colbert.utils.utils import print_message
-# from utility.utils.dpr import DPR_normalize, has_answer
-
-import dsp
 
 
-def augment(*transformations):
+def annotate(*transformations):
     def do_augment(train, k=None, return_all=False):
         rdemos = []
         ademos = []
@@ -79,9 +71,6 @@ def augment(*transformations):
         return ademos
     
     return do_augment
-
-def annotate(*transformations):
-    return augment(*transformations)
 
 def sample(train, k: int):
     branch_idx = hasattr(dsp.settings, 'branch_idx') and isinstance(dsp.settings.branch_idx, int) and dsp.settings.branch_idx

@@ -8,11 +8,7 @@ def retrieve(query: str, k):
     return passages
 
 def retrieveEnsemble(queries, k, by_prob=True):
-    queries_ = queries
     queries = [q for q in queries if q]
-    
-    if queries != queries_:
-        print('!?!?!?!??!?! \t\t\t ', queries_)
 
     passages = {}
     for q in queries:

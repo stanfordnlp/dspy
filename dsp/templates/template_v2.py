@@ -3,8 +3,7 @@ import re
 
 import dsp
 
-Field = namedtuple(
-    "Field", "name seperator input_variable output_variable description")
+Field = namedtuple("Field", "name seperator input_variable output_variable description")
 
 # TODO: de-duplicate with dsp/templates/template.py
 
