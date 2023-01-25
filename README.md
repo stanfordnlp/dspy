@@ -12,7 +12,7 @@ A framework for composing retrieval models and language models into powerful pip
 
 Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question answering programs of increasing complexity written in DSP.
 
-You can [open the notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb). You don't even need an API to get started with it.
+You can [open the notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb). You don't even need an API key to get started with it.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
 
