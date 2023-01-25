@@ -4,7 +4,8 @@ import pandas as pd
 from IPython.display import display
 from dsp.utils import EM
 
-def evaluate(fn, dev, metric=EM):
+
+def evaluate(fn, dev, metric=EM, notebook=False):
     data = []
 
     for example in tqdm.tqdm(dev):
@@ -23,4 +24,7 @@ def evaluate(fn, dev, metric=EM):
     df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    if notebook:
+        display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    else:
+        return df.to_string()
