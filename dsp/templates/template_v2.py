@@ -46,14 +46,14 @@ class TemplateV2:
             match = re.search("(.*)(\s){(.*)}\s(.*\${.*})", template)
             if match is not None:
                 name = match.group(1)
-                seperator = match.group(2)
+                separator = match.group(2)
                 variable = match.group(3)
                 description = match.group(4)
             else:
                 match = re.search("(.*)(\s){(.*)}", template)
                 if match is not None:
                     name = match.group(1)
-                    seperator = match.group(2)
+                    separator = match.group(2)
                     variable = match.group(3)
                     description = None
                 else:
@@ -70,7 +70,7 @@ class TemplateV2:
             self.fields.append(
                 Field(
                     name=name,
-                    seperator=seperator,
+                    separator=separator,
                     input_variable=input_variable,
                     output_variable=output_variable,
                     description=description,
@@ -102,7 +102,7 @@ class TemplateV2:
                 else:
                     def format_handler(x): return ' '.join(x.split())
                 
-                result.append(f"{field.name}{field.seperator}{format_handler(example[field.input_variable])}")
+                result.append(f"{field.name}{field.separator}{format_handler(example[field.input_variable])}")
 
         if self._has_augmented_guidelines() and ("augmented" in example and example.augmented):
             return "\n\n".join(result)
@@ -121,7 +121,7 @@ class TemplateV2:
         return result
 
     def _has_augmented_guidelines(self):
-        return len(self.fields) > 3 or any(field.seperator == "\n" for field in self.fields)
+        return len(self.fields) > 3 or any(field.separator == "\n" for field in self.fields)
 
     def extract(self, example, raw_pred):
         example = dsp.Example(example)
