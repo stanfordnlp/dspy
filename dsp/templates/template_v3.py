@@ -24,7 +24,7 @@ class Template(TemplateV2):
             prefix = value.prefix
             separator = ' ' if prefix.rstrip() == prefix else prefix[len(prefix.rstrip()):]
             field = Field(name=prefix.strip(), description=value.desc,
-                          input_variable=key, output_variable=key, seperator=separator)
+                          input_variable=key, output_variable=key, separator=separator)
             self.fields.append(field)
 
             if value.format:
