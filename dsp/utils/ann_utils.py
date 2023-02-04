@@ -1,11 +1,10 @@
-from typing import Optional, Tuple
+from typing import Tuple
 
 import faiss
-import numpy as np
 from faiss import Index
 
 
-def _determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:
+def determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:
     """
     Determine which device we should use
     Args:
@@ -118,7 +117,7 @@ def create_faiss_index(
 
     index.nprobe = n_probe
 
-    num_devices, is_gpu = _determine_devices(max_gpu_devices)
+    num_devices, is_gpu = determine_devices(max_gpu_devices)
     if is_gpu:
         cloner_options = faiss.GpuMultipleClonerOptions()
         cloner_options.shard = True  # split (not replicate) one index between GPUs
