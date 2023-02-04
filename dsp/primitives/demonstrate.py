@@ -1,7 +1,8 @@
 import dsp
 import random
-
-from dsp.utils import dotdict, has_answer, DPR_normalize, normalize_text, EM
+from typing import List, Callable
+import numpy as np
+from dsp.utils import dotdict, has_answer, DPR_normalize, normalize_text, EM, create_faiss_index
 
 
 class Example(dotdict):
@@ -108,3 +109,44 @@ def answer_match(prediction, answers):
 
 def passage_has_answers(passage, answers):
     return has_answer([DPR_normalize(normalize_text(ans)) for ans in answers], normalize_text(passage))
+
+
+def cast_naive_get_only_question_text(inp_example: Example) -> str:
+    return inp_example.question
+
+def vectorize_naive_get_field(inp_examples: List[Example]) -> np.ndarray:
+    embeddings = [cur_example.vectorized.reshape(1, -1) for cur_example in inp_examples]
+    embeddings = np.concatenate(embeddings, axis=0).astype(np.float32)
+    return embeddings
+
+def knn(
+    train: List[Example],
+    cast: Callable[[Example], str] = cast_naive_get_only_question_text,
+    vectorize: Callable[[List[Example]], np.ndarray] = vectorize_naive_get_field,
+    vectorize_train_bs: int = 128,
+    **knn_args
+) -> Callable[[Example, int], List[Example]]:
+    need_add_one = len(train) % vectorize_train_bs != 0
+    n_batches = len(train) // vectorize_train_bs + int(need_add_one)
+    emb_dim = vectorize(train[:1]).shape[1]
+    all_vectors = np.empty((len(train), emb_dim), dtype=np.float32)
+    # batched vectorization for train Examples
+    for batch_idx in range(n_batches):
+        batch_start_idx  = batch_idx * vectorize_train_bs
+        batch_end_idx = (batch_idx + 1) * vectorize_train_bs
+        cur_batch = train[batch_start_idx : batch_end_idx]
+        # cur_batch = [cast(cur_elem) for cur_elem in cur_batch]
+        cur_batch_vectors = vectorize(cur_batch)
+        all_vectors[batch_start_idx:batch_end_idx, :] = cur_batch_vectors
+    
+    index = create_faiss_index(emb_dim=emb_dim, n_objects=len(train), **knn_args)
+    index.train(all_vectors)
+    index.add(all_vectors)
+
+    def inner_knn_search(inp_example: Example, k: int) -> List[Example]:
+        inp_example_vector = vectorize([inp_example])
+        _, nearest_samples_idxs = index.search(inp_example_vector, k)
+        train_sampled = [train[cur_idx] for cur_idx in nearest_samples_idxs[0]]
+        return train_sampled
+
+    return inner_knn_search
