@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import faiss
 import numpy as np
@@ -26,6 +26,7 @@ def _determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:
         is_gpu = False
     return num_devices, is_gpu
 
+
 def _get_brute_index(emb_dim: int, dist_type: str) -> Index:
     if dist_type.lower() == 'ip':
         index = faiss.IndexFlatIP(emb_dim)
@@ -33,7 +34,7 @@ def _get_brute_index(emb_dim: int, dist_type: str) -> Index:
         index = faiss.IndexFlatL2(emb_dim)
     else:
         raise ValueError(f'Wrong distance type for FAISS Flat Index: {dist_type}')
-    
+
     return index
 
 
@@ -86,7 +87,7 @@ def create_faiss_index(
     Args:
         emb_dim: size of each embedding
         n_objects: size of a trainset for index. Used to determine optimal type
-            of index and its settings (will use bruteforce if n_objects is less than 20_000).
+            of index and its settings (will use bruteforce if `n_objects` is less than 20_000).
         n_probe: number of closest IVF-clusters to check for neighbours.
             Doesn't affect bruteforce-based search.
         max_gpu_devices: maximum amount of GPUs to use for ANN-index. 0 if run on CPU.
@@ -94,11 +95,11 @@ def create_faiss_index(
             the difference between a vector and the reconstruction that can be
             decoded from its representation in the index.
         in_list_dist_type: type of distance to calculate simmilarities within one IVF.
-            Can be IP (for inner product) or L2 distance. Case insensetive.
-            If the index type is bruteforce (n_objects < 20_000), this variable will define
-            the distane type for that bruteforce index.
+            Can be `IP` (for inner product) or `L2` distance. Case insensetive.
+            If the index type is bruteforce (`n_objects` < 20_000), this variable will define
+            the distane type for that bruteforce index. `centroid_dist_type` will be ignored.
         centroid_dist_type: type of distance to calculate simmilarities between a query 
-            and cluster centroids. Can be IP (for inner product) or L2 distance.
+            and cluster centroids. Can be `IP` (for inner product) or `L2` distance.
             Case insensetive.
     Returns: untrained FAISS-index
     """
@@ -114,13 +115,13 @@ def create_faiss_index(
             centroid_dist_type=centroid_dist_type,
             encode_residuals=encode_residuals
         )
-    
+
     index.nprobe = n_probe
 
     num_devices, is_gpu = _determine_devices(max_gpu_devices)
     if is_gpu:
         cloner_options = faiss.GpuMultipleClonerOptions()
         cloner_options.shard = True  # split (not replicate) one index between GPUs
-        index = faiss.index_cpu_to_gpus_list(index, cloner_options, range(num_devices))
+        index = faiss.index_cpu_to_gpus_list(index, cloner_options, list(range(num_devices)))
 
     return index
