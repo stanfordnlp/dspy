@@ -1,18 +1,29 @@
 import abc
-from typing import List
+from typing import List, Optional
 
 import numpy as np
+import openai
 
 from dsp.utils import determine_devices
 
 
 class BaseSentenceVectorizer(abc.ABC):
+    # embeddings will be computed based on the string in this attribute of Example object
+    field_to_vectorize = 'text_to_vectorize'
+
     def __init__(self) -> None:
         pass
 
     @abc.abstractmethod
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         pass
+
+    def _extract_text_from_examples(self, inp_examples: List["Example"]) -> List[str]:
+        text_to_vectorize = [
+            getattr(example, self.field_to_vectorize)
+            for example in inp_examples
+        ]
+        return text_to_vectorize
 
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
@@ -37,7 +48,8 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         self.normalize_embeddings = normalize_embeddings
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
-        text_to_vectorize = [example.text_to_vectorize for example in inp_examples]
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+
         if self.is_gpu and self.num_devices > 1:
             target_devices = list(range(self.num_devices))
             pool = self.model.start_multi_process_pool(target_devices=target_devices)
@@ -63,13 +75,48 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
 
 
 class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
-    def __init__(self, field_with_embeding: str = 'vectorized'):
-        self.field_with_embeding = field_with_embeding
+    def __init__(self, field_with_embedding: str = 'vectorized'):
+        self.field_with_embedding = field_with_embedding
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         embeddings = [
-            getattr(cur_example, self.field_with_embeding).reshape(1, -1)
+            getattr(cur_example, self.field_with_embedding).reshape(1, -1)
             for cur_example in inp_examples
         ]
         embeddings = np.concatenate(embeddings, axis=0).astype(np.float32)
+        return embeddings
+
+
+class OpenAIVectorizer(BaseSentenceVectorizer):
+    def __init__(
+        self, model: str = 'text-embedding-ada-002',
+        embed_batch_size: int = 1024,
+        api_key: Optional[str] = None
+    ):
+        self.model = model
+        self.embed_batch_size = embed_batch_size
+
+        if api_key:
+            openai.api_key = api_key
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+        # maybe it's better to preallocate numpy matrix, but we don't know emb_dim
+        embeddings_list = []
+
+        n_batches = (len(text_to_vectorize) - 1) // self.embed_batch_size + 1
+        for cur_batch_idx in range(n_batches):  # tqdm.tqdm?
+            start_idx = cur_batch_idx * self.embed_batch_size
+            end_idx = (cur_batch_idx + 1) * self.embed_batch_size
+            cur_batch = text_to_vectorize[start_idx: end_idx]
+            # cached API call:
+            response = openai.Embedding.create(
+                model=self.model,
+                input=cur_batch
+            )
+
+            cur_batch_embeddings = [cur_obj['embedding'] for cur_obj in response['data']]
+            embeddings_list.extend(cur_batch_embeddings)
+
+        embeddings = np.array(embeddings_list, dtype=np.float32)
         return embeddings
