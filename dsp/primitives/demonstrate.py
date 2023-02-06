@@ -75,8 +75,11 @@ def annotate(*transformations):
 
 
 def sample(train, k: int):
-    branch_idx = hasattr(dsp.settings, 'branch_idx') and isinstance(
-        dsp.settings.branch_idx, int) and dsp.settings.branch_idx
+    branch_idx = (
+        hasattr(dsp.settings, 'branch_idx')
+        and isinstance(dsp.settings.branch_idx, int)
+        and dsp.settings.branch_idx
+    )
     branch_idx = branch_idx or 0
     # print(f"branch_idx = {branch_idx}")
 
@@ -93,8 +96,13 @@ def sample(train, k: int):
 def all_but(train, x):
     # output = [y for y in train if y.question != x.question]
 
-    output = [y for y in train
-              if not set.intersection(set(x.get('history', []) + [x.question]), set(y.get('history', []) + [y.question]))]
+    output = [
+        y for y in train
+        if not set.intersection(
+            set(x.get('history', []) + [x.question]),
+            set(y.get('history', []) + [y.question])
+        )
+    ]
     # print(len(output))
 
     return output
@@ -113,14 +121,25 @@ def answer_match(prediction, answers):
 
 
 def passage_has_answers(passage, answers):
-    return has_answer([DPR_normalize(normalize_text(ans)) for ans in answers], normalize_text(passage))
+    return has_answer(
+        tokenized_answers=[DPR_normalize(normalize_text(ans)) for ans in answers],
+        text=normalize_text(passage)
+    )
 
 
 def cast_naive_get_only_question_text(inp_example: Example) -> Example:
+    '''
+    Extracts question as a field to vectorize with Vectorizer object. `question` field is used.
+    '''
     return inp_example.copy(text_to_vectorize=inp_example.question)
 
 
 def cast_naive_get_question_and_answer(inp_example: Example) -> Example:
+    '''
+    Extracts question and answer as fields to vectorize with Vectorizer object.
+    `question` and `answer` fields are used. They will be concatenated with the word "Answer"
+    between.
+    '''
     text_to_vectorize = inp_example.question.strip() + " Answer: " + inp_example.answer.strip()
     return inp_example.copy(text_to_vectorize=text_to_vectorize)
 
@@ -130,6 +149,19 @@ def knn(
     cast: Callable[[Example], Example] = cast_naive_get_only_question_text,
     **knn_args
 ) -> Callable[[Example, int], List[Example]]:
+    '''
+    A function that vectorizes train data using `dsm.settings.vectorizer`, then build an ANN/KNN
+    index to search similar questions among `train` samples.
+
+    Args:
+        train: a bunch of questions to put in index & search later
+        cast: function that contructs text before vectorization. By default,
+            it uses only question. Check `cast_naive_get_question_and_answer` for more details.
+        n_probe: number of closest IVF-clusters to check for neighbours.
+            Doesn't affect bruteforce-based search.
+        knn_args: check `create_faiss_index` function for details on ANN/KNN arguments.
+    Returns: function to search similar Examples from `train` in FAISS-index.
+    '''
     train_casted_to_vectorize = [cast(cur_elem) for cur_elem in train]
 
     vectorizer: "BaseSentenceVectorizer" = dsp.settings.vectorizer

@@ -8,6 +8,12 @@ from dsp.utils import determine_devices
 
 
 class BaseSentenceVectorizer(abc.ABC):
+    '''
+    Base Class for Vectorizers. The main purpose is to vectorize text (doc/query)
+    for ANN/KNN indexes. `__call__` method takes `List[Example]` as a single input, then extracts
+    `field_to_vectorize` from every Example and convert them into embeddings.
+    You can customize extraction logic in the `_extract_text_from_examples` method.
+    '''
     # embeddings will be computed based on the string in this attribute of Example object
     field_to_vectorize = 'text_to_vectorize'
 
@@ -27,6 +33,12 @@ class BaseSentenceVectorizer(abc.ABC):
 
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
+    '''
+    Vectorizer bsaed on `SentenceTransformers` models. You can pick any model from this link:
+    https://huggingface.co/sentence-transformers
+    More details about models:
+    https://www.sbert.net/docs/pretrained_models.html
+    '''
     def __init__(
         self,
         model_name_or_path: str = 'all-MiniLM-L6-v2',
@@ -75,6 +87,10 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
 
 
 class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
+    '''
+    If embeddings were precomputed, then we could just extract them from the proper field 
+    (set by `field_with_embedding`) from each `Example`.
+    '''
     def __init__(self, field_with_embedding: str = 'vectorized'):
         self.field_with_embedding = field_with_embedding
 
@@ -88,8 +104,14 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
 
 
 class OpenAIVectorizer(BaseSentenceVectorizer):
+    '''
+    This vectorizer uses OpenAI API to convert texts to embeddings. Changing `model` is not
+    recommended. More about the model: https://openai.com/blog/new-and-improved-embedding-model/
+    `api_key` should be passed as an argument or as env variable (`OPENAI_API_KEY`).
+    '''
     def __init__(
-        self, model: str = 'text-embedding-ada-002',
+        self,
+        model: str = 'text-embedding-ada-002',
         embed_batch_size: int = 1024,
         api_key: Optional[str] = None
     ):
@@ -109,7 +131,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             start_idx = cur_batch_idx * self.embed_batch_size
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             cur_batch = text_to_vectorize[start_idx: end_idx]
-            # cached API call:
+            # OpenAI API call:
             response = openai.Embedding.create(
                 model=self.model,
                 input=cur_batch
