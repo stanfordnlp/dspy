@@ -55,8 +55,7 @@ def evaluateAnswer(fn, dev, metric=EM):
 
 
 
-
-def evaluate(fn, dev, metric=EM, notebook=True):
+def evaluate(fn, dev, metric=EM):
     data = []
 
     for example in tqdm.tqdm(dev):
