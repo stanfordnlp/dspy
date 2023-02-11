@@ -109,7 +109,10 @@ class TemplateV2:
         else:
             return "\n".join(result)
 
-    def guidelines(self):
+    def guidelines(self, show_guidelines=True):
+        if (not show_guidelines) or (hasattr(dsp.settings, 'show_guidelines') and not dsp.settings.show_guidelines):
+            return ''
+
         result = "Follow the following format.\n\n"
 
         example = dsp.Example()
@@ -166,7 +169,7 @@ class TemplateV2:
 
         return example
 
-    def __call__(self, example):
+    def __call__(self, example, show_guidelines=True):
         example = dsp.Example(example)
 
         if self.fields[-1].input_variable in example:
@@ -197,12 +200,12 @@ class TemplateV2:
         rdemos = "\n\n".join(rdemos)
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
             rdemos_and_query = "\n\n".join([rdemos, query])
-            parts = [self.instructions, self.guidelines(), rdemos_and_query]
+            parts = [self.instructions, self.guidelines(show_guidelines), rdemos_and_query]
         elif len(rdemos) == 0:
-            parts = [self.instructions, self.guidelines(), *ademos, query]
+            parts = [self.instructions, self.guidelines(show_guidelines), *ademos, query]
         else:
             parts = [self.instructions, rdemos,
-                     self.guidelines(), *ademos, query]
+                     self.guidelines(show_guidelines), *ademos, query]
 
         prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
 

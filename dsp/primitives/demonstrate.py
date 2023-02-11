@@ -1,7 +1,7 @@
 import dsp
 import random
 
-from dsp.utils import dotdict, has_answer, DPR_normalize, normalize_text, EM
+from dsp.utils import dotdict, has_answer, DPR_normalize, normalize_text, EM, F1
 
 
 class Example(dotdict):
@@ -101,10 +101,14 @@ def passage_match(passages, answers):
     # answers = example.answers
     return any(passage_has_answers(psg, answers) for psg in passages)
 
-def answer_match(prediction, answers):
+def answer_match(prediction, answers, frac=1.0):
     # pred = example.prediction
     # answers = example.answers
-    return EM(prediction, answers)
+
+    if frac >= 1.0:
+        return EM(prediction, answers)
+    
+    return F1(prediction, answers) >= frac
 
 def passage_has_answers(passage, answers):
     return has_answer([DPR_normalize(normalize_text(ans)) for ans in answers], normalize_text(passage))

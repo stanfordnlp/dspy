@@ -41,7 +41,8 @@ class Completions:
 def generate(template, **kwargs):
     generator = dsp.settings.lm
 
-    def do_generate(example, stage, max_depth=2):
+    def do_generate(example, stage, max_depth=2, original_example=None):
+        original_example = original_example or example
         assert stage is not None
 
         # Look up the appropriate fields in each demonstration.
@@ -76,7 +77,7 @@ def generate(template, **kwargs):
             new_kwargs = {**kwargs, 'max_tokens': max_tokens, 'n': 1, 'temperature': 0.0}
 
             assert max_depth > 0
-            return generate(template, **new_kwargs)(completion, stage=stage, max_depth=max_depth-1)
+            return generate(template, **new_kwargs)(completion, stage=stage, max_depth=max_depth-1, original_example=original_example)
 
         completions = Completions(completions, template=template)
         example = example.copy(completions=completions)
@@ -84,6 +85,14 @@ def generate(template, **kwargs):
         if len(completions) == 1:
             completion = completions[0]
             example[stage] = example.copy(**completion)
+
+            if dsp.settings.compiling:
+                inputs_ = set(original_example.keys())
+                inputs = [f.input_variable for f in template.fields if f.input_variable in inputs_]
+                outputs = [f.output_variable for f in template.fields if f.input_variable not in inputs_]
+
+                example.compiling_stages = example.get('compiling_stages', [])
+                example.compiling_stages.append({'name': stage, 'template': template, 'inputs': inputs, 'outputs': outputs})
 
         return example, completions
     
