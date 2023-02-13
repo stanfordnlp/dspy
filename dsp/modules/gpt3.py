@@ -14,12 +14,12 @@ def backoff_hdlr(details):
 
 
 class GPT3:
-    def __init__(self, model='text-davinci-002', api_key=None):
+    def __init__(self, model='text-davinci-002', api_key=None, **kwargs):
         if api_key:
             openai.api_key = api_key
 
         self.kwargs = {'model': model, 'temperature': 0.0, 'max_tokens': 150, 'top_p': 1,
-                       'frequency_penalty': 0, 'presence_penalty': 0, 'n': 1}
+                       'frequency_penalty': 0, 'presence_penalty': 0, 'n': 1, **kwargs} # TODO: add kwargs above for </s>
 
         self.history = []
 
