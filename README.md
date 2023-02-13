@@ -2,7 +2,13 @@
 
 A framework for composing retrieval models and language models into powerful pipelines that tackle knowledge-intensive tasks.
 
-[Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP](https://arxiv.org/pdf/2212.14024.pdf)
+You can get an overview via our Twitter threads:
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
+* [**Releaseing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
+
+And read more in the paper:
+
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
 
 ## Installation
 
