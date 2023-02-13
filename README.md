@@ -1,6 +1,10 @@
 # 🎓𝗗𝗦𝗣: Demonstrate–Search–Predict
 
-A framework for composing retrieval models and language models into powerful pipelines that tackle knowledge-intensive tasks.
+**DSP** is a framework for composing **retrieval models** (RMs) and **language models** (LMs) into **powerful pipelines** that tackle knowledge-intensive tasks.
+
+You write a **DSP program** in a few lines of code. The program specifies an NLP system by describing a pipeline of interactions between RMs and LMs.
+
+In DSP, you don't hard-code few-shot prompts. Instead, the DSP runtime annotates the examples for your pipeline, starting from a few end-task examples (e.g., question and final answer) that are pipeline-agnostic.
 
 You can get an overview via our Twitter threads:
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
