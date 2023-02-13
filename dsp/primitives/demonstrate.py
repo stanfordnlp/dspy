@@ -4,7 +4,7 @@ from typing import Callable, List
 import numpy as np
 
 import dsp
-from dsp.utils import (EM, DPR_normalize, create_faiss_index, dotdict,
+from dsp.utils import (EM, F1, DPR_normalize, create_faiss_index, dotdict,
                        has_answer, normalize_text)
 
 
@@ -113,11 +113,14 @@ def passage_match(passages, answers):
     # answers = example.answers
     return any(passage_has_answers(psg, answers) for psg in passages)
 
-
-def answer_match(prediction, answers):
+def answer_match(prediction, answers, frac=1.0):
     # pred = example.prediction
     # answers = example.answers
-    return EM(prediction, answers)
+
+    if frac >= 1.0:
+        return EM(prediction, answers)
+    
+    return F1(prediction, answers) >= frac
 
 
 def passage_has_answers(passage, answers):

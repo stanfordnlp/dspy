@@ -9,18 +9,16 @@ from dsp.utils import dotdict
 
 
 class ColBERTv2:
-    def __init__(self, url='http://0.0.0.0', port=None):
+    def __init__(self, url='http://0.0.0.0', port=None, post_requests=False):
+        self.post_requests = post_requests
         self.url = f'{url}:{port}' if port else url
-        self.headers = {"Content-Type": "application/json; charset=utf-8"}
-    
-    def post(self, query: str, k: int):
-        payload = {"query": query, "k": k}
-        res = requests.post(self.url, json=payload, headers=self.headers)
-
-        return res.json()['topk'][:k]
 
     def __call__(self, query: str, k=10, simplify=False):
-        topk = colbertv2_get_request(self.url, query, k)
+        if self.post_requests:
+            topk = colbertv2_post_request(self.url, query, k)
+        else:
+            topk = colbertv2_get_request(self.url, query, k)
+
         topk = [dotdict(psg) for psg in topk]
 
         if simplify:
@@ -49,3 +47,21 @@ def colbertv2_get_request_v2_wrapped(*args, **kwargs):
 
 
 colbertv2_get_request = colbertv2_get_request_v2_wrapped
+
+
+@CacheMemory.cache
+def colbertv2_post_request_v2(url: str, query: str, k: int):
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    payload = {"query": query, "k": k}
+    res = requests.post(url, json=payload, headers=headers)
+
+    return res.json()['topk'][:k]
+
+
+@functools.lru_cache(maxsize=None)
+@NotebookCacheMemory.cache
+def colbertv2_post_request_v2_wrapped(*args, **kwargs):
+    return colbertv2_post_request_v2(*args, **kwargs)
+
+
+colbertv2_post_request = colbertv2_post_request_v2_wrapped

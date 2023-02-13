@@ -14,7 +14,7 @@ class Settings(object):
             cls._instance = super().__new__(cls)
             cls._instance.stack = []
 
-            config = dotdict()
+            config = dotdict(lm=None, rm=None, compiled_lm=None, force_reuse_cached_compilation=False, compiling=False)
             cls._instance.__append(config)
 
         return cls._instance
