@@ -1,6 +1,7 @@
 import dsp
 from collections import Counter
 from dsp.utils import zipstar, normalize_text
+from dsp.utils.utils import dotdict
 
 
 class Completions:
@@ -93,6 +94,9 @@ def generate(template, **kwargs):
 
                 example.compiling_stages = example.get('compiling_stages', [])
                 example.compiling_stages.append({'name': stage, 'template': template, 'inputs': inputs, 'outputs': outputs})
+        else:
+            # assert not dsp.settings.compiling, "TODO: At this point, cannot compile n>1 generations"
+            example[stage] = dotdict(completions=completions)
 
         return example, completions
     

@@ -10,7 +10,6 @@ from datasets.fingerprint import Hasher
 
 if os.environ.get('DSP_NOTEBOOK_CACHEDIR'):
     training_data_directory = os.path.join(os.environ.get('DSP_NOTEBOOK_CACHEDIR'), 'compiler')
-    print(training_data_directory)
 else:
     training_data_directory = 'cache/compiler'
 
@@ -66,7 +65,7 @@ def simulate(program, input_examples):
         prediction = program(input_example)
 
         if prediction is not None:
-            assert len(prediction.compiling_stages) == 2, "TMP"
+            # assert len(prediction.compiling_stages) == 2, "TMP"
             for stage in prediction.compiling_stages:
                 name, template, inputs, outputs = stage['name'], stage['template'], stage['inputs'], stage['outputs']
                 training_data.append(convert_to_training_point2(prediction.get(name), inputs, outputs, template))
@@ -165,7 +164,7 @@ def compile(program, examples, target='ada'):
     compiled_lm = finetune(training_data, target=target)
 
     def compiled_program(*args, **kwargs):
-        with dsp.settings.context(compiled_lm=compiled_lm):
+        with dsp.settings.context(compiled_lm=compiled_lm, compiling=False):
             return program(*args, **kwargs)
 
     compiled_program.lm = compiled_lm
