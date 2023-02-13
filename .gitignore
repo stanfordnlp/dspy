@@ -32,3 +32,4 @@ build/
 *.jsonl
 *.json
 !/data/*.json
+/dist/
