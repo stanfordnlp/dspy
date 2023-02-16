@@ -8,6 +8,8 @@ Instead, DSP provides a high-level abstraction for building these architecturesâ
 
 Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
 
+## Reading more
+
 You can get an overview via our Twitter threads:
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
