@@ -8,7 +8,7 @@ In DSP, you don't hard-code few-shot prompts. Instead, the DSP runtime annotates
 
 You can get an overview via our Twitter threads:
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
-* [**Releaseing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
+* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
 
 And read more in the paper:
 
