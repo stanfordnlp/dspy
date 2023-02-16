@@ -1,10 +1,12 @@
 # 🎓𝗗𝗦𝗣: Demonstrate–Search–Predict
 
-**DSP** is a framework for composing **retrieval models** (RMs) and **language models** (LMs) into **powerful pipelines** that tackle knowledge-intensive tasks.
+The **DSP** framework provides a *programming abstraction* for building grounded AI systems. You write a *DSP program* in a few lines of code, which expresses how to tackle NLP tasks via a pipeline of rich interactions between *retrieval models* (RMs) and *language models* (LMs).
 
-You write a **DSP program** in a few lines of code. The program specifies an NLP system by describing a pipeline of interactions between RMs and LMs.
+In DSP, you don't hard-code few-shot prompts. We view "prompt engineering" as hyperparameter tuning. It's only a final (and relatively minor) step after building up an effective architecture and getting its modules to work together.
 
-In DSP, you don't hard-code few-shot prompts. Instead, the DSP runtime annotates the examples for your pipeline, starting from a few end-task examples (e.g., question and final answer) that are pipeline-agnostic.
+Instead, DSP provides a high-level abstraction for building these architectures—with LMs and search. And it gets the modules working together on your behalf (e.g., it annotates few-shot demonstrations for LM calls within your arbitrary pipeline automatically).
+
+Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
 
 You can get an overview via our Twitter threads:
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
