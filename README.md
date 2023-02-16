@@ -1,10 +1,8 @@
 # 🎓𝗗𝗦𝗣: Demonstrate–Search–Predict
 
-The **DSP** framework provides a *programming abstraction* for building grounded AI systems. You write a *DSP program* in a few lines of code, which expresses how to tackle NLP tasks via a pipeline of rich interactions between *retrieval models* (RMs) and *language models* (LMs).
+The **DSP** framework provides a programming abstraction for building grounded AI systems. In a few lines of code, a DSP program expresses rich interactions between *retrieval models* (RMs) and *language models* (LMs) to tackle difficult knowledge-intensive NLP tasks (e.g., complex question answering or conversational search).
 
-In DSP, you don't hard-code few-shot prompts. We view "prompt engineering" as hyperparameter tuning. It's only a final (and relatively minor) step after building up an effective architecture and getting its modules to work together.
-
-Instead, DSP provides a high-level abstraction for building these architectures—with LMs and search. And it gets the modules working together on your behalf (e.g., it annotates few-shot demonstrations for LM calls within your arbitrary pipeline automatically).
+DSP programs don't involve hard-coding few-shot prompts for LMs. Instead, we view "prompt engineering" akin to hyperparameter tuning in traditional ML. That is, prompt engineering is only a final (and relatively minor) step after building up an effective architecture and getting its modules to work together. DSP provides a high-level abstraction for building these architectures — with LMs and search. And it gets the modules working together on your behalf (e.g., it annotates few-shot demonstrations for LM calls within your arbitrary pipeline automatically).
 
 Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
 
