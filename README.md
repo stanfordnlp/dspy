@@ -8,16 +8,6 @@ Instead, DSP provides a high-level abstraction for building these architectures�
 
 Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
 
-## Reading more
-
-You can get an overview via our Twitter threads:
-* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
-* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
-
-And read more in the paper:
-
-* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
-
 ## Installation
 
 ```pip install dsp-ml```
@@ -30,11 +20,24 @@ You can [open the intro notebook in Google Colab](https://colab.research.google.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
 
+
 ## ⚡️ DSP Compiler [NEW!]
 
 Our [compiler notebook](compiler.ipynb) introduces the new experimental compiler, which can optimize DSP programs automatically for (much) cheaper execution.
 
 You can [open the compiler notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/compiler.ipynb). You don't even need an API key to get started with it.
+
+
+## Reading more
+
+You can get an overview via our Twitter threads:
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
+* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
+
+And read more in the paper:
+
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
+* 
 
 ## ✍️ Reference
 
