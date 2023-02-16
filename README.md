@@ -30,7 +30,7 @@ You can [open the intro notebook in Google Colab](https://colab.research.google.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
 
-## [NEW!] DSP Compiler
+## ⚡️ DSP Compiler [NEW!]
 
 Our [compiler notebook](compiler.ipynb) introduces the new experimental compiler, which can optimize DSP programs automatically for (much) cheaper execution.
 
