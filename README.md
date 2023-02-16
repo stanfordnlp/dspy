@@ -37,7 +37,6 @@ You can get an overview via our Twitter threads:
 And read more in the paper:
 
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
-* 
 
 ## ✍️ Reference
 
