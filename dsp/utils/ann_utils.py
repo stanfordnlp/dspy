@@ -1,7 +1,13 @@
 from typing import Tuple
 
-import faiss
-from faiss import Index
+try:
+    import faiss
+    from faiss import Index
+except ImportError as e:
+    raise ImportError(
+        "You need to install FAISS library to perform ANN/KNN. Please check the official doc: "
+        "https://github.com/facebookresearch/faiss/blob/main/INSTALL.md"
+    )
 
 
 def determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:

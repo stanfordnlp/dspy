@@ -49,7 +49,16 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         # this isn't a good practice, but with top-level import the whole DSP
         # module import will be slow (>5 sec), because SentenceTransformer is doing
         # it's directory/file-related magic under the hood :(
-        from sentence_transformers import SentenceTransformer
+        
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as e:
+            raise ImportError(
+                "You need to install sentence_transformers library to use pretrained embedders. "
+                "Please check the official doc https://www.sbert.net/ "
+                "or simply run `pip install sentence-transformers"
+            )
+
         self.num_devices, self.is_gpu = determine_devices(max_gpu_devices)
         self.proxy_device = 'cuda' if self.is_gpu else 'cpu'
 

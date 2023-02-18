@@ -12,12 +12,10 @@ setup(
     python_requires='>=3.8',
     install_requires=[
         "backoff",
-        "faiss-cpu",
         "joblib",
         "jupyter",
         "openai",
         "pandas",
-        "sentence-transformers",
         "spacy",
         "regex",
         "ujson",
