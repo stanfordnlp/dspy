@@ -6,6 +6,14 @@ DSP programs don't involve hard-coding few-shot prompts for LMs. Instead, we vie
 
 Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
 
+<p align="center">
+  <img align="center" src="docs/images/DSP-tasks.png" width="370px" />
+</p>
+<p align="center">
+  <b>Figure 1:</b> A comparison between three systems based on GPT3.5 (text-davinci-002). On its own, the LM often makes false assertions. An increasingly popular retrieve-then-read pipeline fails when simple search can’t find an answer. In contrast, a taskaware DSP program successfully decomposes the problem and produces a correct response. Texts edited for presentation.
+</p>
+
+
 ## Installation
 
 ```pip install dsp-ml```
@@ -17,6 +25,14 @@ Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question
 You can [open the intro notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb). You don't even need an API key to get started with it.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
+
+
+<p align="center">
+  <img align="center" src="docs/images/DSP-example.png" width="750px" />
+</p>
+<p align="center">
+  <b>Figure 2:</b> . A toy example of a DSP program for multi-hop question answering. Given an input question and a 2-shot training set, the Demonstrate stage programmatically annotates intermediate transformations on the training examples using a form of weak supervision. Learning from a resulting demonstration, the Search stage decomposes the complex input question and retrieves supporting information over two retrieval hops. Finally, the Predict stage uses the demonstration and retrieved passages to answer the question.
+</p>
 
 
 ## ⚡️ DSP Compiler [NEW!]
