@@ -9,13 +9,11 @@ Once you're happy with things, DSP can *compile* your DSP program into a tiny LM
 &nbsp;
 
 <p align="center">
-  <img align="center" src="docs/images/DSP-tasks.png" width="370px" />
+  <img align="center" src="docs/images/DSP-tasks.png" width="430px" />
 </p>
 <p align="left">
-  <b>Figure 1:</b> A comparison between three systems based on GPT3.5 (text-davinci-002). The LM often makes false assertions, while the popular retrieve-then-read pipeline fails when simple search can’t find an answer. In contrast, a task-aware DSP program successfully decomposes the problem and produces a correct response. Texts edited for presentation.
+  <b>Figure 1:</b> A comparison between three GPT3.5-based systems. The LM often makes false assertions, while the popular retrieve-then-read pipeline fails when simple search can’t find an answer. In contrast, a task-aware DSP program systematically decomposes the problem and produces a correct response. Texts edited for presentation.
 </p>
-
-&nbsp; 
 
 
 ## Installation
@@ -36,10 +34,8 @@ Once you go through the notebook, you'll be ready to create your own DSP pipelin
   <img align="center" src="docs/images/DSP-example.png" width="750px" />
 </p>
 <p align="left">
-  <b>Figure 2:</b> A DSP program for multi-hop question answering. Given an input question and a 2-shot training set, the Demonstrate stage programmatically annotates intermediate transformations on the training examples. Learning from a resulting demonstration, the Search stage decomposes the complex input question and retrieves supporting information over two retrieval hops. Finally, the Predict stage uses the demonstration and retrieved passages to answer the question.
+  <b>Figure 2:</b> A DSP program for multi-hop question answering, given an input question and a 2-shot training set. The Demonstrate stage programmatically annotates intermediate transformations on the training examples. Learning from the resulting demonstration, the Search stage decomposes the complex input question and retrieves supporting information over two hops. The Predict stage uses the retrieved passages to answer the question.
 </p>
-
-&nbsp;
 
 
 ## ⚡️ DSP Compiler [NEW!]
