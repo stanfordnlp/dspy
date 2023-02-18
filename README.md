@@ -44,6 +44,9 @@ Our [compiler notebook](compiler.ipynb) introduces the new experimental compiler
 
 You can [open the compiler notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/compiler.ipynb). You don't even need an API key to get started with it.
 
+## Picking in-context examples using KNN/ANN methods [NEW!]
+
+Our [knn demo notebook](tests/knn_demonstrations_test.ipynb) provides examples of adding the KNN stage, as described in the paper. This improvement in the Demonstrate stage of DSP allows you not to sample Examples randomly but instead search for better and similar options. You can get an idea from [this paper](https://arxiv.org/abs/2101.06804).
 
 ## 📜 Reading More
 
