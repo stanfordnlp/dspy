@@ -5,7 +5,6 @@ The **DSP** framework provides a programming abstraction for building grounded A
 DSP programs don't involve hard-coding few-shot prompts for LMs. Instead, we view "prompt engineering" akin to hyperparameter tuning in traditional ML. That is, prompt engineering is only a final (and relatively minor) step after building up an effective architecture and getting its modules to work together. DSP provides a high-level abstraction for building these architectures — with LMs and search. And it gets the modules working together on your behalf (e.g., it annotates few-shot demonstrations for LM calls within your arbitrary pipeline automatically).
 
 Once you're happy with things, DSP can *compile* your DSP program into a tiny LM that's a lot cheaper to work with.
-
 &nbsp;
 
 <p align="center">
@@ -27,7 +26,6 @@ Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question
 You can [open the intro notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb). You don't even need an API key to get started with it.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
-
 &nbsp;
 
 <p align="center">
