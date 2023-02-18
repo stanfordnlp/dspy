@@ -1,4 +1,4 @@
-# 🎓𝗗𝗦𝗣: Demonstrate–Search–Predict
+# 🎓𝗗𝗦𝗣: The Demonstrate–Search–Predict Framework
 
 The **DSP** framework provides a programming abstraction for building grounded AI systems. In a few lines of code, a DSP program expresses rich interactions between *retrieval models* (RMs) and *language models* (LMs) to tackle difficult knowledge-intensive NLP tasks (e.g., complex question answering or conversational search).
 
