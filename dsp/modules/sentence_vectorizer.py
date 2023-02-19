@@ -4,8 +4,6 @@ from typing import List, Optional
 import numpy as np
 import openai
 
-from dsp.utils.ann_utils import determine_devices
-
 
 class BaseSentenceVectorizer(abc.ABC):
     '''
@@ -58,7 +56,8 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
                 "Please check the official doc https://www.sbert.net/ "
                 "or simply run `pip install sentence-transformers"
             )
-
+        from dsp.utils.ann_utils import determine_devices
+        
         self.num_devices, self.is_gpu = determine_devices(max_gpu_devices)
         self.proxy_device = 'cuda' if self.is_gpu else 'cpu'
 
