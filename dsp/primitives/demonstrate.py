@@ -4,8 +4,8 @@ from typing import Callable, List
 import numpy as np
 
 import dsp
-from dsp.utils import (EM, F1, DPR_normalize, create_faiss_index, dotdict,
-                       has_answer, normalize_text)
+from dsp.utils import EM, F1, DPR_normalize, dotdict, has_answer, normalize_text
+
 
 
 class Example(dotdict):
@@ -165,6 +165,7 @@ def knn(
         knn_args: check `create_faiss_index` function for details on ANN/KNN arguments.
     Returns: function to search similar Examples from `train` in FAISS-index.
     '''
+    from dsp.utils.ann_utils import create_faiss_index
     train_casted_to_vectorize = [cast(cur_elem) for cur_elem in train]
 
     vectorizer: "BaseSentenceVectorizer" = dsp.settings.vectorizer

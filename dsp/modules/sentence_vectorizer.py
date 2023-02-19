@@ -4,7 +4,7 @@ from typing import List, Optional
 import numpy as np
 import openai
 
-from dsp.utils import determine_devices
+from dsp.utils.ann_utils import determine_devices
 
 
 class BaseSentenceVectorizer(abc.ABC):
