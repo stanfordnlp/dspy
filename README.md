@@ -2,7 +2,7 @@
 
 The **DSP** framework provides a programming abstraction for _rapidly building sophisticated AI systems_. It's primarily (but not exclusively) designed for tasks that are knowledge intensive (e.g., answering user questions or researching complex topics).
 
-You write a **DSP program** in a few lines of code, describing at high level how the task you'd like to tackle should be _decomposed_ into smaller _transformations_. Transformations invoke a language model (LM) and/or a retrieval model (RM) to conduct steps like `generate a search query to find missing information` or `answer this question using the supplied context`. Our [research paper](https://arxiv.org/abs/2212.14024) show that building NLP systems in this way can easily outperform GPT-3.5 by up to 120%.
+You write a **DSP program** in a few lines of code, describing at high level how the problem you'd like to solve should be _decomposed_ into smaller _transformations_. Transformations invoke a language model (LM) and/or a retrieval model (RM) to conduct steps like `generate a search query to find missing information` or `answer this question using the supplied context`. Our [research paper](https://arxiv.org/abs/2212.14024) show that building NLP systems in this way can easily outperform GPT-3.5 by up to 120%.
 
 In **DSP**, developers focus on the _what_ (i.e., the algorithmic design of decomposing the problem) rather than _how_ the transformations are mapped to LM (or RM) calls. In particular, **DSP** discourages "prompt engineering", which we view much the same way as hyperparameter tuning in traditional ML: a final and minor step that's best done _after_ building up an effective architecture.
 
