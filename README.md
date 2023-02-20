@@ -6,7 +6,7 @@ You write a **DSP program** in a few lines of code, describing at high level how
 
 **DSP** programs focus on the _what_ (i.e., the algorithmic design of decomposing the problem) and delegate _how_ the transformations are mapped to LM (or RM) calls to the **DSP** runtime. In particular, **DSP** discourages "prompt engineering", which we view much the same way as hyperparameter tuning in traditional ML: a final and minor step that's best done _after_ building up an effective architecture (and which could be delegated to automatic optimizers).
 
-To this end, **DSP** offers a number of powerful primitives (and corresponding design patterns) for building architectures that compose transformations, which the **DSP** runtime maps to effective implementations. For instance, **DSP** *annotates* few-shot demonstrations for the LM calls within your arbitrary pipeline automatically, and uses them to improve the quality of your transformations. Once you're happy with things, **DSP** can *compile* your program into a much cheaper version in which LM calls are transparently replaced with calls to a tiny LM created by the **DSP** runtime.
+To this end, **DSP** offers a number of powerful _primitives_ for building architectures that compose transformations and offers corresponding implementations that map these transformations to effective LM and RM calls. For instance, **DSP** *annotates* few-shot demonstrations for the LM calls within your arbitrary pipeline automatically, and uses them to improve the quality of your transformations. Once you're happy with things, **DSP** can *compile* your program into a much cheaper version in which LM calls are transparently replaced with calls to a tiny LM created by the **DSP** runtime.
 
 
 <p align="center">
