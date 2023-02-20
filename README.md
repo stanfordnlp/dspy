@@ -4,7 +4,7 @@ The **DSP** framework provides a programming abstraction for rapidly building re
 
 Unlike vanilla in-context learning, you do not hard-code any few-shot prompts in **DSP**. We discourage "prompt engineering" and view it much the same way as hyperparameter tuning in traditional ML: it's a final (and relatively minor) step that's best done _after_ building up an effective architecture and connecting its components together.
 
-Instead, **DSP** offers a number of powerful primitives and systematic design patterns for building these architectures — using LMs and search. The **DSP** primitives get the transformations you build working together on your behalf. For instance, **DSP** *annotates* few-shot demonstrations for the LM calls within your arbitrary pipeline automatically. And once you're happy with things, **DSP** can *compile* your program into a much smaller LM that's much cheaper to deploy.
+Instead, **DSP** offers a number of powerful primitives and systematic design patterns for building these architectures — using LMs and search. The **DSP** primitives get the transformations you build working together on your behalf. For instance, **DSP** *annotates* few-shot demonstrations for the LM calls within your arbitrary pipeline automatically, and uses them to improve the quality of your transformations. Once you're happy with things, **DSP** can *compile* your program into a much smaller LM that's much cheaper to deploy.
 
 
 <p align="center">
