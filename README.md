@@ -28,7 +28,6 @@ Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question
 You can [open the intro notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb). You don't even need an API key to get started with it.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
-&nbsp;
 
 <p align="center">
   <img align="center" src="docs/images/DSP-example.png" width="850px" />
