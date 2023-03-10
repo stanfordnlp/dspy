@@ -1,6 +1,7 @@
 import dsp
 from collections import Counter
 from dsp.utils import zipstar, normalize_text
+from dsp.primitives.inspect import FuncInspector
 
 
 class Completions:
@@ -37,8 +38,16 @@ class Completions:
         assert False, name
 
 
-
 def generate(template, **kwargs):
+    if hasattr(dsp.settings, "inspect"):
+        inspector = dsp.settings.inspect
+        _generate = inspector.inspect_func(dsp.predict._generate)
+        return _generate(template, **kwargs)
+    else:
+        return dsp.predict._generate(template, **kwargs)
+
+
+def _generate(template, **kwargs):
     generator = dsp.settings.lm
 
     def do_generate(example, stage, max_depth=2):
