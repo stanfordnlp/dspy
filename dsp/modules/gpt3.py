@@ -72,7 +72,7 @@ class GPT3:
 
     def inspect_history(self, n: int = 1):
         """Prints the last n prompts and their completions.
-        TODO: print the valid choice with all fields filled instead of the first
+        TODO: print the valid choice that contains filled output field instead of the first
         """
         last_prompt = None
         printed = []
@@ -92,7 +92,6 @@ class GPT3:
             print("\n\n\n")
             print(prompt, end="")
             self.print_green(choices[0]["text"], end="")
-
             if len(choices) > 1:
                 self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
             print("\n\n\n")
