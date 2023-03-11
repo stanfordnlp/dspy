@@ -7,13 +7,12 @@ from collections import defaultdict
 
 
 def print_message(*s, condition=True, pad=False, sep=None):
-    s = ' '.join([str(x) for x in s])
+    s = " ".join([str(x) for x in s])
     msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s)
 
     if condition:
-        msg = msg if not pad else f'\n{msg}\n'
+        msg = msg if not pad else f"\n{msg}\n"
         print(msg, flush=True, sep=sep)
-
 
     return msg
 
@@ -27,7 +26,9 @@ def timestamp(daydir=False):
 def file_tqdm(file):
     print(f"#> Reading {file.name}")
 
-    with tqdm.tqdm(total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB") as pbar:
+    with tqdm.tqdm(
+        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB"
+    ) as pbar:
         for line in file:
             yield line
             pbar.update(len(line) / 1024.0 / 1024.0)
@@ -37,15 +38,15 @@ def file_tqdm(file):
 
 def create_directory(path):
     if os.path.exists(path):
-        print('\n')
-        print_message("#> Note: Output directory", path, 'already exists\n\n')
+        print("\n")
+        print_message("#> Note: Output directory", path, "already exists\n\n")
     else:
-        print('\n')
-        print_message("#> Creating directory", path, '\n\n')
+        print("\n")
+        print_message("#> Creating directory", path, "\n\n")
         os.makedirs(path)
 
 
-def deduplicate(seq):
+def deduplicate(seq: list[str]) -> list[str]:
     """
     Source: https://stackoverflow.com/a/480227/1493011
     """
@@ -57,7 +58,7 @@ def deduplicate(seq):
 def batch(group, bsize, provide_offset=False):
     offset = 0
     while offset < len(group):
-        L = group[offset: offset + bsize]
+        L = group[offset : offset + bsize]
         yield ((offset, L) if provide_offset else L)
         offset += len(L)
     return
@@ -68,6 +69,7 @@ class dotdict(dict):
     dot.notation access to dictionary attributes
     Credit: derek73 @ https://stackoverflow.com/questions/2352181
     """
+
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
@@ -119,9 +121,9 @@ def zip_first(L1, L2):
 
 
 def int_or_float(val):
-    if '.' in val:
+    if "." in val:
         return float(val)
-        
+
     return int(val)
 
 
@@ -137,7 +139,7 @@ def groupby_first_item(lst):
 
 def process_grouped_by_first_item(lst):
     """
-        Requires items in list to already be grouped by first item.
+    Requires items in list to already be grouped by first item.
     """
 
     groups = defaultdict(list)
@@ -150,7 +152,9 @@ def process_grouped_by_first_item(lst):
 
         if started and first != last_group:
             yield (last_group, groups[last_group])
-            assert first not in groups, f"{first} seen earlier --- violates precondition."
+            assert (
+                first not in groups
+            ), f"{first} seen earlier --- violates precondition."
 
         groups[first].append(rest)
 
@@ -185,8 +189,10 @@ def lengths2offsets(lengths):
 class NullContextManager(object):
     def __init__(self, dummy_resource=None):
         self.dummy_resource = dummy_resource
+
     def __enter__(self):
         return self.dummy_resource
+
     def __exit__(self, *args):
         pass
 
@@ -203,9 +209,9 @@ def load_batch_backgrounds(args, qids):
         if len(back) and type(back[0]) == int:
             x = [args.collection[pid] for pid in back]
         else:
-            x = [args.collectionX.get(pid, '') for pid in back]
+            x = [args.collectionX.get(pid, "") for pid in back]
 
-        x = ' [SEP] '.join(x)
+        x = " [SEP] ".join(x)
         qbackgrounds.append(x)
-    
+
     return qbackgrounds

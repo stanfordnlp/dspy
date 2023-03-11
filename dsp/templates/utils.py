@@ -1,5 +1,9 @@
-def passages2text(passages):
-    if type(passages) is str:
+from typing import Union, Optional
+
+
+def passages2text(passages: Union[str, list, tuple]) -> str:
+    """Formats the given one or more passages into a single structured string."""
+    if isinstance(passages, str):
         return passages
 
     assert type(passages) in [list, tuple]
@@ -7,4 +11,29 @@ def passages2text(passages):
     if len(passages) == 1:
         return f"«{passages[0]}»"
 
-    return '\n'.join([f"[{idx+1}] «{txt}»" for idx, txt in enumerate(passages)])
+    return "\n".join([f"[{idx+1}] «{txt}»" for idx, txt in enumerate(passages)])
+
+
+def format_answers(answers: Union[str, list]) -> Optional[str]:
+    """Parses the given answers and returns the appropriate answer string.
+
+    Args:
+        answers (Union[str, list]): The answers to parse.
+
+    Raises:
+        ValueError: when instance is of type list and has no answers
+        ValueError: when is not of type list or str
+
+    Returns:
+        _type_: Optiona[str]
+    """
+    if isinstance(answers, list):
+        # TODO: why can answer not have one value?
+        if len(answers) >= 1:
+            return str(answers[0]).strip()
+        if len(answers) == 0:
+            raise ValueError("No answers found")
+    elif isinstance(answers, str):
+        return answers
+    else:
+        raise ValueError(f"Unable to parse answers of type {type(answers)}")
