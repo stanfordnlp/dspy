@@ -28,7 +28,6 @@ def format_answers(answers: Union[str, list]) -> Optional[str]:
         _type_: Optiona[str]
     """
     if isinstance(answers, list):
-        # TODO: why can answer not have one value?
         if len(answers) >= 1:
             return str(answers[0]).strip()
         if len(answers) == 0:
