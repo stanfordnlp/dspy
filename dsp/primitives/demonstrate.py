@@ -13,6 +13,7 @@ class Example(dotdict):
     demos: list[Any]
 
     def __init__(self, *args, **kwargs):
+        assert len(args) <= 1
         super().__init__()
 
         if args:

@@ -3,6 +3,8 @@ import dsp
 
 def retrieve(query: str, k: int) -> list[str]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
+    if not dsp.settings.rm:
+        raise AssertionError("No RM is loaded.")
     passages = dsp.settings.rm(query, k=k)
     passages = [psg.long_text for psg in passages]
 
@@ -13,6 +15,9 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True) -> list[s
     """Retrieves passages from the RM for each query in queries and returns the top k passages
     based on the probability or score.
     """
+    if not dsp.settings.rm:
+        raise AssertionError("No RM is loaded.")
+
     queries = [q for q in queries if q]
 
     passages = {}

@@ -45,7 +45,6 @@ class Completions:
 
 def generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    # todo: re-think this? doesn't seem like a good way to pass the template to nested function
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
 
@@ -54,6 +53,8 @@ def generate(template: Template, **kwargs) -> Callable:
     def do_generate(
         example: Example, stage: str, max_depth: int = 2, original_example=None
     ):
+        if not dsp.settings.lm:
+            raise AssertionError("No LM is loaded.")
         original_example = original_example or example
         assert stage is not None
 
@@ -103,7 +104,6 @@ def generate(template: Template, **kwargs) -> Callable:
                 original_example=original_example,
             )
 
-        # print("completion found: {}".format(completions))
         completions = Completions(completions, template=template)
         example = example.copy(completions=completions)
 
@@ -145,6 +145,8 @@ def generate(template: Template, **kwargs) -> Callable:
 def generate_sc(
     example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs
 ):
+    if not dsp.settings.lm:
+        raise AssertionError("No LM is loaded.")
     kwargs = {"temperature": 0.7, "max_tokens": 150, "n": 20, **kwargs}
     completions = dsp.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
@@ -154,6 +156,8 @@ def generate_sc(
 
 
 def extract_final_answer(example, completions, extract=None):
+    if not dsp.settings.lm:
+        raise AssertionError("No LM is loaded.")
     if extract:
         completions = [extract(example, p) for p in completions]
     else:
@@ -182,6 +186,10 @@ def majority(
 
 def majority_vote_(completions: Completions, normalize: bool, prediction_field: str):
     """Core logic for majority vote."""
+
+    if not dsp.settings.lm:
+        raise AssertionError("No LM is loaded.")
+
     normalized_to_original = {}
     if normalize:
         original_completions = completions
