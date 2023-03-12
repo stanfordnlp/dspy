@@ -1,5 +1,6 @@
 import functools
-from typing import Optional, Any, cast
+import json
+from typing import Optional, Any
 import openai
 import openai.error
 from openai.openai_object import OpenAIObject
@@ -12,7 +13,7 @@ def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
-        "calling function {target} with args {args} and kwargs "
+        "calling function {target} with kwargs "
         "{kwargs}".format(**details)
     )
 
@@ -41,8 +42,14 @@ class GPT3:
 
     def _basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
-        kwargs = {**self.kwargs, "prompt": prompt, **kwargs}
-        response = cached_gpt3_request(**kwargs)
+
+        kwargs = {**self.kwargs, **kwargs}
+        if kwargs["model"] in ("gpt-3.5-turbo", "gpt-3.5-turbo-0301"):
+            kwargs["messages"] = json.dumps([{"role": "user", "content": prompt}])
+            response = cached_gpt3_turbo_request(**kwargs)
+        else:
+            kwargs["prompt"] = prompt
+            response = cached_gpt3_request(**kwargs)
 
         history = {
             "prompt": prompt,
@@ -91,10 +98,15 @@ class GPT3:
         for prompt, choices in reversed(printed):
             print("\n\n\n")
             print(prompt, end="")
-            self.print_green(choices[0]["text"], end="")
+            self.print_green(self._get_choice_text(choices[0]), end="")
             if len(choices) > 1:
                 self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
             print("\n\n\n")
+
+    def _get_choice_text(self, choice: dict[str, Any]) -> str:
+        if self.kwargs["model"] in ("gpt-3.5-turbo", "gpt-3.5-turbo-0301"):
+            return choice["message"]["content"]
+        return choice["text"]
 
     def __call__(
         self,
@@ -117,7 +129,10 @@ class GPT3:
         assert return_sorted is False, "for now"
 
         if kwargs.get("n", 1) > 1:
-            kwargs = {**kwargs, "logprobs": 5}
+            if self.kwargs["model"] in ("gpt-3.5-turbo", "gpt-3.5-turbo-0301"):
+                kwargs = {**kwargs}
+            else:
+                kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
         choices = response["choices"]
@@ -127,7 +142,7 @@ class GPT3:
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [c["text"] for c in choices]
+        completions = [self._get_choice_text(c) for c in choices]
 
         if return_sorted and kwargs.get("n", 1) > 1:
             scored_completions = []
@@ -143,7 +158,7 @@ class GPT3:
                     tokens, logprobs = tokens[:index], logprobs[:index]
 
                 avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, c["text"]))
+                scored_completions.append((avglog, self._get_choice_text(c)))
 
             scored_completions = sorted(scored_completions, reverse=True)
             completions = [c for _, c in scored_completions]
@@ -163,3 +178,18 @@ def cached_gpt3_request_v2_wrapped(**kwargs):
 
 
 cached_gpt3_request = cached_gpt3_request_v2_wrapped
+
+
+@CacheMemory.cache
+def cached_gpt3_turbo_request_v2(**kwargs):
+    kwargs["messages"] = json.loads(kwargs["messages"])
+    return openai.ChatCompletion.create(**kwargs)
+
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def cached_gpt3_turbo_request_v2_wrapped(**kwargs):
+    return cached_gpt3_turbo_request_v2(**kwargs)
+
+
+cached_gpt3_turbo_request = cached_gpt3_turbo_request_v2_wrapped

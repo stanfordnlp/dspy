@@ -147,7 +147,8 @@ def generate_sc(
 ):
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
-    kwargs = {"temperature": 0.7, "max_tokens": 150, "n": 20, **kwargs}
+    kwargs = {"temperature": 0.7, "n": 20, "max_tokens": 150, **kwargs}
+
     completions = dsp.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
     return majority_vote_(
