@@ -153,7 +153,7 @@ class GPT3:
 
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
-    return cast(OpenAIObject, openai.Completion.create(**kwargs))
+    return openai.Completion.create(**kwargs)
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
