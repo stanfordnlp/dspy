@@ -1,6 +1,6 @@
 import functools
 import json
-from typing import Optional, Any
+from typing import Optional, Any, cast
 import openai
 import openai.error
 from openai.openai_object import OpenAIObject
@@ -19,7 +19,10 @@ def backoff_hdlr(details):
 
 
 class GPT3:
-    """Wrapper around OpenAI's GPT-3 API."""
+    """Wrapper around OpenAI's GPT-3 API.
+
+    Currently supported models include `davinci`, `curie`, `babbage`, `ada`, `gpt-3.5-turbo`, and `gpt-3.5-turbo-0301`.
+    """
 
     def __init__(
         self, model: str = "text-davinci-002", api_key: Optional[str] = None, **kwargs
@@ -45,6 +48,7 @@ class GPT3:
 
         kwargs = {**self.kwargs, **kwargs}
         if kwargs["model"] in ("gpt-3.5-turbo", "gpt-3.5-turbo-0301"):
+            # caching mechanism requires hashable kwargs
             kwargs["messages"] = json.dumps([{"role": "user", "content": prompt}])
             response = cached_gpt3_turbo_request(**kwargs)
         else:
@@ -181,15 +185,15 @@ cached_gpt3_request = cached_gpt3_request_v2_wrapped
 
 
 @CacheMemory.cache
-def cached_gpt3_turbo_request_v2(**kwargs):
+def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
     kwargs["messages"] = json.loads(kwargs["messages"])
-    return openai.ChatCompletion.create(**kwargs)
+    return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
-def cached_gpt3_turbo_request_v2_wrapped(**kwargs):
-    return cached_gpt3_turbo_request_v2(**kwargs)
+def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
+    return _cached_gpt3_turbo_request_v2(**kwargs)
 
 
-cached_gpt3_turbo_request = cached_gpt3_turbo_request_v2_wrapped
+cached_gpt3_turbo_request = _cached_gpt3_turbo_request_v2_wrapped
