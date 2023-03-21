@@ -3,6 +3,7 @@ import openai.error
 import backoff
 import functools
 
+from dsp.modules.lm import LM
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 
 
@@ -13,13 +14,11 @@ def backoff_hdlr(details):
           "{kwargs}".format(**details))
 
 
-class GPT3:
+class GPT3(LM):
     def __init__(self, model='text-davinci-002', api_key=None):
+        super().__init__(model)
         if api_key:
             openai.api_key = api_key
-
-        self.kwargs = {'model': model, 'temperature': 0.0, 'max_tokens': 150, 'top_p': 1,
-                       'frequency_penalty': 0, 'presence_penalty': 0, 'n': 1}
 
         self.history = []
 
@@ -40,38 +39,7 @@ class GPT3:
                           max_time=1000,
                           on_backoff=backoff_hdlr)
     def request(self, prompt, **kwargs):
-        return self.basic_request(prompt, **kwargs)
-
-    def print_green(self, text, end='\n'):
-        print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
-    
-    def print_red(self, text, end='\n'):
-        print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
-
-    def inspect_history(self, n=1):
-        last_prompt = None
-        printed = []
-
-        for x in reversed(self.history[-100:]):
-            prompt = x['prompt']
-
-            if prompt != last_prompt:
-                printed.append((prompt, x['response']['choices']))
-            
-            last_prompt = prompt
-
-            if len(printed) >= n:
-                break
-                
-        for prompt, choices in reversed(printed):
-            print('\n\n\n')
-            print(prompt, end='')
-            self.print_green(choices[0]['text'], end='')
-
-            if len(choices) > 1:
-                self.print_red(f" \t (and {len(choices)-1} other completions)", end='')
-            print('\n\n\n')
-
+        return super().request(prompt, **kwargs)
 
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
         assert only_completed, "for now"
