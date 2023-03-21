@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="dsp-ml",
-    version="0.1.1",
+    version="0.1.4",
     description="Demonstrate-Search-Predict",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
@@ -18,6 +18,9 @@ setup(
         "pandas",
         "spacy",
         "regex",
+        "ujson",
+        "tqdm",
+        "datasets"
     ],
     classifiers=[
 		"Development Status :: 3 - Alpha",
