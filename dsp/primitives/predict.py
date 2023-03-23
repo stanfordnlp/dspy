@@ -2,6 +2,7 @@ from collections import Counter
 from typing import Callable, Any, Optional
 import dsp
 from dsp.utils import zipstar, normalize_text
+from dsp.primitives.inspect import FuncInspector
 from dsp.utils.utils import dotdict
 from dsp.templates.template_v3 import Template
 from dsp.primitives.demonstrate import Example
@@ -44,6 +45,16 @@ class Completions:
 
 
 def generate(template: Template, **kwargs) -> Callable:
+    """Returns a callable function that generates completions for a given example using the provided template."""
+    if hasattr(dsp.settings, "inspect"):
+        inspector = dsp.settings.inspect
+        _generate = inspector.inspect_func(dsp.predict._generate)
+        return _generate(template, **kwargs)
+    else:
+        return dsp.predict._generate(template, **kwargs)
+
+
+def _generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
