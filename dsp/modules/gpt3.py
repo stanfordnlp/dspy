@@ -6,6 +6,7 @@ import openai.error
 from openai.openai_object import OpenAIObject
 import backoff
 
+from dsp.modules.lm import LM
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 
 
@@ -18,7 +19,7 @@ def backoff_hdlr(details):
     )
 
 
-class GPT3:
+class GPT3(LM):
     """Wrapper around OpenAI's GPT-3 API.
 
     Currently supported models include `davinci`, `curie`, `babbage`, `ada`, `gpt-3.5-turbo`, and `gpt-3.5-turbo-0301`.
@@ -27,6 +28,7 @@ class GPT3:
     def __init__(
         self, model: str = "text-davinci-002", api_key: Optional[str] = None, **kwargs
     ):
+        super().__init__(model)
         if api_key:
             openai.api_key = api_key
 
@@ -129,6 +131,7 @@ class GPT3:
         Returns:
             list[dict[str, Any]]: list of completion choices
         """
+        
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
