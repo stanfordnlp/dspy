@@ -1,6 +1,6 @@
 /experiments/
 /checkpoints/
-/data/
+# /data/
 /logs/
 /mlruns/
 /profiler/
@@ -24,9 +24,12 @@ __pycache__/
 .vscode
 *.tsv
 *.pt
-*.json
 gpt*.txt
 *.env
 local/
 build/
 *.egg-info/
+*.jsonl
+*.json
+!/data/*.json
+/dist/

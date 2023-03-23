@@ -1,20 +1,30 @@
+from typing import Callable, Optional
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
 
 
 class Settings(object):
+    """DSP configuration settings."""
+
     _instance = None
+    branch_idx: int = 0
 
     def __new__(cls):
         """
         Singleton Pattern. See https://python-patterns.guide/gang-of-four/singleton/
         """
-        
+
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.stack = []
 
-            config = dotdict()
+            config = dotdict(
+                lm=None,
+                rm=None,
+                compiled_lm=None,
+                force_reuse_cached_compilation=False,
+                compiling=False,
+            )
             cls._instance.__append(config)
 
         return cls._instance
@@ -26,7 +36,7 @@ class Settings(object):
     def __getattr__(self, name):
         if hasattr(self.config, name):
             return getattr(self.config, name)
-        
+
         if name in self.config:
             return self.config[name]
 
@@ -37,10 +47,17 @@ class Settings(object):
 
     def __pop(self):
         self.stack.pop()
-    
-    def configure(self, inherit_config=True, **kwargs):
+
+    def configure(self, inherit_config: bool = True, **kwargs):
+        """Set configuration settings.
+
+        Args:
+            inherit_config (bool, optional): Set configurations for the given, and use existing configurations for the rest. Defaults to True.
+        """
         if inherit_config:
             config = {**self.config, **kwargs}
+        else:
+            config = {**kwargs}
 
         self.__append(config)
 
@@ -55,5 +72,6 @@ class Settings(object):
 
     def __repr__(self) -> str:
         return repr(self.config)
+
 
 settings = Settings()
