@@ -9,7 +9,7 @@ setup(
     author_email="okhattab@stanford.edu",
     license="MIT License",
     packages=find_packages(),
-    python_requires='>=3.8',
+    python_requires='>=3.9',
     install_requires=[
         "backoff",
         "joblib",
