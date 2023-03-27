@@ -29,6 +29,7 @@ class GPT3(LM):
         self, model: str = "text-davinci-002", api_key: Optional[str] = None, **kwargs
     ):
         super().__init__(model)
+        self.provider = "openai"
         if api_key:
             openai.api_key = api_key
 
@@ -45,7 +46,7 @@ class GPT3(LM):
 
         self.history: list[dict[str, Any]] = []
 
-    def _basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
+    def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
@@ -75,7 +76,7 @@ class GPT3(LM):
     )
     def request(self, prompt: str, **kwargs) -> OpenAIObject:
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
-        return self._basic_request(prompt, **kwargs)
+        return self.basic_request(prompt, **kwargs)
 
     def print_green(self, text: str, end: str = "\n"):
         print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
@@ -131,7 +132,7 @@ class GPT3(LM):
         Returns:
             list[dict[str, Any]]: list of completion choices
         """
-        
+
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 

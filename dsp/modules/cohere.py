@@ -35,7 +35,7 @@ class Cohere(LM):
         """
         super().__init__(model)
         self.co = cohere.Client(api_key)
-
+        self.provider = "cohere"
         self.kwargs = {
             "model": model,
             "temperature": 0.0,

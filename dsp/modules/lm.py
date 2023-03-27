@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 
 class LM(ABC):
     def __init__(self, model):
-
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
@@ -13,6 +12,7 @@ class LM(ABC):
             "presence_penalty": 0,
             "n": 1,
         }
+        self.provider = "default"
 
         self.history = []
 
@@ -30,6 +30,8 @@ class LM(ABC):
         print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
 
     def inspect_history(self, n=1):
+        provider = self.provider
+
         last_prompt = None
         printed = []
 
@@ -37,7 +39,14 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                printed.append((prompt, x["response"]["choices"]))
+                printed.append(
+                    (
+                        prompt,
+                        x["response"].generations
+                        if provider == "cohere"
+                        else x["response"]["choices"],
+                    )
+                )
 
             last_prompt = prompt
 
@@ -47,7 +56,9 @@ class LM(ABC):
         for prompt, choices in reversed(printed):
             print("\n\n\n")
             print(prompt, end="")
-            self.print_green(choices[0]["text"], end="")
+            self.print_green(
+                choices[0].text if provider == "cohere" else choices[0]["text"], end=""
+            )
 
             if len(choices) > 1:
                 self.print_red(f" \t (and {len(choices)-1} other completions)", end="")

@@ -26,10 +26,12 @@ def openai_to_hf(**kwargs):
 class HFModel(LM):
     def __init__(self, model, checkpoint=None, is_client=False):
         super().__init__(model)
-
+        self.provider = "hf"
         self.is_client = is_client
         if not self.is_client:
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(model if checkpoint is None else checkpoint).to("cuda")
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                model if checkpoint is None else checkpoint
+            ).to("cuda")
             self.tokenizer = AutoTokenizer.from_pretrained(model)
             self.tokenizer.add_tokens(AddedToken("\n", normalized=False))
 
