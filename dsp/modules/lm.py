@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 
 class LM(ABC):
+    """Abstract class for language models."""
+
     def __init__(self, model):
         self.kwargs = {
             "model": model,
@@ -23,14 +25,17 @@ class LM(ABC):
     def request(self, prompt, **kwargs):
         return self.basic_request(prompt, **kwargs)
 
-    def print_green(self, text, end="\n"):
+    def print_green(self, text: str, end: str = "\n"):
         print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
 
-    def print_red(self, text, end="\n"):
+    def print_red(self, text: str, end: str = "\n"):
         print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
 
-    def inspect_history(self, n=1):
-        provider = self.provider
+    def inspect_history(self, n: int = 1):
+        """Prints the last n prompts and their completions.
+        TODO: print the valid choice that contains filled output field instead of the first
+        """
+        provider: str = self.provider
 
         last_prompt = None
         printed = []
@@ -56,9 +61,14 @@ class LM(ABC):
         for prompt, choices in reversed(printed):
             print("\n\n\n")
             print(prompt, end="")
-            self.print_green(
-                choices[0].text if provider == "cohere" else choices[0]["text"], end=""
-            )
+            text = ""
+            if provider == "cohere":
+                text = choices[0].text
+            elif provider == "openai":
+                text = self._get_choice_text(choices[0])
+            else:
+                text = choices[0]["text"]
+            self.print_green(text, end="")
 
             if len(choices) > 1:
                 self.print_red(f" \t (and {len(choices)-1} other completions)", end="")

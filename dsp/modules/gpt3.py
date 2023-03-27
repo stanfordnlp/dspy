@@ -78,38 +78,6 @@ class GPT3(LM):
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
         return self.basic_request(prompt, **kwargs)
 
-    def print_green(self, text: str, end: str = "\n"):
-        print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
-
-    def print_red(self, text: str, end: str = "\n"):
-        print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
-
-    def inspect_history(self, n: int = 1):
-        """Prints the last n prompts and their completions.
-        TODO: print the valid choice that contains filled output field instead of the first
-        """
-        last_prompt = None
-        printed = []
-
-        for x in reversed(self.history[-100:]):
-            prompt = x["prompt"]
-
-            if prompt != last_prompt:
-                printed.append((prompt, x["response"]["choices"]))
-
-            last_prompt = prompt
-
-            if len(printed) >= n:
-                break
-
-        for prompt, choices in reversed(printed):
-            print("\n\n\n")
-            print(prompt, end="")
-            self.print_green(self._get_choice_text(choices[0]), end="")
-            if len(choices) > 1:
-                self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
-            print("\n\n\n")
-
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
         if self.kwargs["model"] in ("gpt-3.5-turbo", "gpt-3.5-turbo-0301"):
             return choice["message"]["content"]
