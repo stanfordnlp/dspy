@@ -30,10 +30,10 @@ class HFModel(LM):
         self.is_client = is_client
         if not self.is_client:
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                model if checkpoint is None else checkpoint
-            ).to("cuda")
+                model if checkpoint is None else checkpoint,
+                device_map="auto"
+            )
             self.tokenizer = AutoTokenizer.from_pretrained(model)
-            self.tokenizer.add_tokens(AddedToken("\n", normalized=False))
 
         self.history = []
 
