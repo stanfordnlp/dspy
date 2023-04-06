@@ -15,4 +15,8 @@ class HFModelClient(HFModel):
     def _generate(self, prompt, **kwargs):
         payload = {"prompt": prompt, **kwargs}
         response = requests.post(self.url, json=payload, headers=self.headers)
-        return response.json()
+        try:
+            return response.json()
+        except:
+            print("Failed to parse JSON response:", response.text)
+            raise Exception("Received invalid JSON response from server")
