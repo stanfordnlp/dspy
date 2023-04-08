@@ -66,7 +66,7 @@ class GPT3(LM):
             "n": 1,
             **kwargs,
         }  # TODO: add kwargs above for </s>
-        if self.provider == "openai":
+        if api_provider == "openai":
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 
