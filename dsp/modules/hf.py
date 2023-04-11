@@ -1,5 +1,5 @@
 from tokenizers import AddedToken
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
 
 from dsp.modules.lm import LM
 
@@ -29,10 +29,16 @@ class HFModel(LM):
         self.provider = "hf"
         self.is_client = is_client
         if not self.is_client:
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                model if checkpoint is None else checkpoint,
-                device_map="auto"
-            )
+            try:
+                self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                    model if checkpoint is None else checkpoint,
+                    device_map="auto"
+                )
+            except ValueError:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model if checkpoint is None else checkpoint,
+                    device_map="auto"
+                )
             self.tokenizer = AutoTokenizer.from_pretrained(model)
 
         self.history = []
