@@ -6,7 +6,6 @@ import numpy as np
 import dsp
 from dsp.utils import EM, F1, DPR_normalize, dotdict, has_answer, normalize_text
 
-
 class Example(dotdict):
     """A primitive datatype for representing an example"""
 
@@ -43,7 +42,7 @@ class Example(dotdict):
 
         demos = [example.copy(**at(example)) for example in self.demos]
         return self.copy(demos=demos)
-
+    
 
 def annotate(*transformations):
     """Returns an Augment function that applies the provided transformations to the Examples"""
@@ -63,6 +62,43 @@ def annotate(*transformations):
                     break
 
                 example = f(example)
+
+            if example is not None:
+                example.augmented = True
+                ademos.append(example)
+            else:
+                raw_example.augmented = False
+                rdemos.append(raw_example)
+
+        if return_all:
+            return ademos + rdemos
+
+        return ademos
+
+    return do_augment
+
+
+def annotate_with_program(*transformations):
+    """
+    Returns an Augment function that applies the provided transformations to the Examples, 
+    also allows the transformations to accept added user-specified program as argument.
+    """
+
+    def do_augment(train, program, k=None, return_all=False):
+        rdemos = []
+        ademos = []
+
+        for example in train:  # tqdm.tqdm
+            raw_example = dsp.Example(example)
+
+            if k and len(ademos) >= k:
+                example = None
+
+            for f in transformations:
+                if example is None:
+                    break
+                
+                example = f(example, program, train)
 
             if example is not None:
                 example.augmented = True

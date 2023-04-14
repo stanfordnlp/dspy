@@ -74,6 +74,8 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
+        # print(prompt)
+        # print("----------------------------------")
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 
