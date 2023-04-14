@@ -33,11 +33,13 @@ class HFModel(LM):
                     model if checkpoint is None else checkpoint,
                     device_map="auto"
                 )
+                self.drop_prompt_from_output = False
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
                     device_map="auto"
                 )
+                self.drop_prompt_from_output = True
             self.tokenizer = AutoTokenizer.from_pretrained(model)
 
         self.history = []
@@ -63,6 +65,9 @@ class HFModel(LM):
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
         inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
         outputs = self.model.generate(**inputs, **kwargs)
+        if self.drop_prompt_from_output:
+            input_length = inputs.input_ids.shape[1]
+            outputs = outputs[:, input_length:]
         completions = [
             {"text": c}
             for c in self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
