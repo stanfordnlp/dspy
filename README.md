@@ -47,6 +47,23 @@ You can **[open the compiler notebook in Google Colab](https://colab.research.go
 
 Our [knn demo notebook](tests/knn_demonstrations_test.ipynb) provides examples of adding the KNN stage, as described in the paper. This improvement in the Demonstrate stage of DSP allows you not to sample Examples randomly but instead search for better and similar options. You can get an idea from [this paper](https://arxiv.org/abs/2101.06804).
 
+## Function Inspection [NEW!]
+
+You can inspect your DSP programs in more detail and more intuitively using the function inspector. By running your program with the function inspector, the state of the Example object will be recorded every time a call is made to the LM via ``generate`` at different points in the program. You can then examine these states through a React frontend.
+
+States are displayed in the order of function calls,
+<p align="center">
+  <img align="center" src="docs/images/inspect-function-calls.png" width="450px" />
+</p>
+
+The content of the Example object is displayed everytime ``generate`` is called,
+<p align="center">
+  <img align="center" src="docs/images/inspect-example-content.png" width="600" />
+</p>
+
+
+Learn how to set up function inspection [here](https://github.com/stanfordnlp/dsp/blob/main/inspect-app/README.md).
+
 ## 📜 Reading More
 
 You can get an overview via our Twitter threads:
