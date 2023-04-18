@@ -59,12 +59,14 @@ def _generate(template: Template, **kwargs) -> Callable:
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
 
-    generator = dsp.settings.lm
+    generator = kwargs.get("lm") or dsp.settings.lm
+    if kwargs.get("lm"):
+        del kwargs["lm"]
 
     def do_generate(
         example: Example, stage: str, max_depth: int = 2, original_example=None
     ):
-        if not dsp.settings.lm:
+        if not generator:
             raise AssertionError("No LM is loaded.")
         original_example = original_example or example
         assert stage is not None
@@ -74,7 +76,10 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
+        # print("\n----------------------------\n")
+        # print(prompt)
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
+        print(completions)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 
         # Find the completions that are most complete.
@@ -98,7 +103,7 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion[field_names[last_field_idx]] = ""
 
             # Recurse with greedy decoding and a shorter length.
-            max_tokens = kwargs.get("max_tokens", dsp.settings.lm.kwargs["max_tokens"])
+            max_tokens = kwargs.get("max_tokens", generator.kwargs["max_tokens"])
             max_tokens = min(max(75, max_tokens // 2), max_tokens)
             new_kwargs = {
                 **kwargs,
