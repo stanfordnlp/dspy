@@ -103,7 +103,7 @@ def all_but(train: list[Example], x: Example) -> list[Example]:
     return output
 
 
-def passage_match(passages: list[str], answers: str) -> bool:
+def passage_match(passages: list[str], answers: list[str]) -> bool:
     """Returns True if any of the passages contains the answer."""
     return any(passage_has_answers(psg, answers) for psg in passages)
 
@@ -118,7 +118,7 @@ def answer_match(prediction, answers, frac=1.0):
     return F1(prediction, answers) >= frac
 
 
-def passage_has_answers(passage: str, answers: str) -> bool:
+def passage_has_answers(passage: str, answers: list[str]) -> bool:
     """Returns True if the passage contains the answer."""
     return has_answer(
         tokenized_answers=[DPR_normalize(normalize_text(ans)) for ans in answers],
