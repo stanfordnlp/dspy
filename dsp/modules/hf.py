@@ -35,6 +35,7 @@ class HFModel(LM):
         """
         try:
             from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
+            import torch
         except ImportError as exc:
             raise ModuleNotFoundError(
                 "You need to install Hugging Face transformers library to use HF models."
@@ -43,6 +44,7 @@ class HFModel(LM):
         self.provider = "hf"
         self.is_client = is_client
         self.device_map = hf_device_map
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not self.is_client:
             try:
                 self.model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -78,7 +80,7 @@ class HFModel(LM):
         assert not self.is_client
         # TODO: Add caching
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
-        inputs = self.tokenizer(prompt, return_tensors="pt")
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         outputs = self.model.generate(**inputs, **kwargs)
         if self.drop_prompt_from_output:
             input_length = inputs.input_ids.shape[1]
