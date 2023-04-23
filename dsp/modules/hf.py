@@ -1,7 +1,4 @@
 from typing import Optional, Literal
-
-from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
-
 from dsp.modules.lm import LM
 
 
@@ -32,10 +29,16 @@ class HFModel(LM):
         Args:
             model (str): HF model identifier to load and use
             checkpoint (str, optional): load specific checkpoints of the model. Defaults to None.
-            is_client (bool, optional): whether to use hf client or load from local. Defaults to False.
+            is_client (bool, optional): whether to access models via client. Defaults to False.
             hf_device_map (str, optional): HF config strategy to load the model. 
                 Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
         """
+        try:
+            from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
+        except ImportError as exc:
+            raise ModuleNotFoundError(
+                "You need to install Hugging Face transformers library to use HF models."
+            ) from exc
         super().__init__(model)
         self.provider = "hf"
         self.is_client = is_client
