@@ -1,5 +1,6 @@
 import math
 from typing import Any, Optional
+import backoff
 
 from dsp.modules.lm import LM
 
@@ -8,7 +9,14 @@ try:
 except ImportError:
     print("Not loading Cohere because it is not installed.")
 
-
+def backoff_hdlr(details):
+    """Handler from https://pypi.org/project/backoff/"""
+    print(
+        "Backing off {wait:0.1f} seconds after {tries} tries "
+        "calling function {target} with kwargs "
+        "{kwargs}".format(**details)
+    )
+    
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
@@ -71,6 +79,16 @@ class Cohere(LM):
 
         return response
 
+    @backoff.on_exception(
+        backoff.expo,
+        (cohere.CohereAPIError),
+        max_time=1000,
+        on_backoff=backoff_hdlr,
+    )
+    def request(self, prompt: str, **kwargs):
+        """Handles retrieval of completions from Cohere whilst handling API errors"""
+        return self.basic_request(prompt, **kwargs)
+    
     def __call__(
         self,
         prompt: str,
@@ -95,7 +113,7 @@ class Cohere(LM):
                 )
             else:
                 kwargs["num_generations"] = self.max_num_generations
-            response = self.basic_request(prompt, **kwargs)
+            response = self.request(prompt, **kwargs)
             choices.extend(response.generations)
         completions = [c.text for c in choices]
 
