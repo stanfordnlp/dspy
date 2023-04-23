@@ -48,7 +48,7 @@ class HFModel(LM):
                 self.model = AutoModelForSeq2SeqLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
                     device_map=hf_device_map
-                ).to("cpu")
+                )
                 self.drop_prompt_from_output = False
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
