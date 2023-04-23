@@ -1,3 +1,5 @@
+from typing import Optional, Literal
+
 from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
 
 from dsp.modules.lm import LM
@@ -23,25 +25,35 @@ def openai_to_hf(**kwargs):
 
 
 class HFModel(LM):
-    def __init__(self, model, checkpoint=None, is_client=False):
+    def __init__(self, model: str, checkpoint: Optional[str] = None, is_client: bool = False,
+                 hf_device_map: Literal["auto", "balanced", "balanced_low_0", "sequential"] = "auto"):
+        """wrapper for Hugging Face models
+
+        Args:
+            model (str): HF model identifier to load and use
+            checkpoint (str, optional): load specific checkpoints of the model. Defaults to None.
+            is_client (bool, optional): whether to use hf client or load from local. Defaults to False.
+            hf_device_map (str, optional): HF config strategy to load the model. 
+                Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
+        """
         super().__init__(model)
         self.provider = "hf"
         self.is_client = is_client
+        self.device_map = hf_device_map
         if not self.is_client:
             try:
                 self.model = AutoModelForSeq2SeqLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
-                    device_map="auto"
-                )
+                    device_map=hf_device_map
+                ).to("cpu")
                 self.drop_prompt_from_output = False
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
-                    device_map="auto"
+                    device_map=hf_device_map
                 )
                 self.drop_prompt_from_output = True
             self.tokenizer = AutoTokenizer.from_pretrained(model)
-
         self.history = []
 
     def basic_request(self, prompt, **kwargs):
@@ -63,7 +75,7 @@ class HFModel(LM):
         assert not self.is_client
         # TODO: Add caching
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
-        inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+        inputs = self.tokenizer(prompt, return_tensors="pt")
         outputs = self.model.generate(**inputs, **kwargs)
         if self.drop_prompt_from_output:
             input_length = inputs.input_ids.shape[1]
