@@ -56,6 +56,23 @@ You can get an overview via our Twitter threads:
 And read more in the academic paper:
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
 
+## Function Inspection [NEW!]
+
+You can inspect your DSP programs in more detail and more intuitively using the function inspector. By running your program with the function inspector, the state of the Example object will be recorded every time a call is made to the LM via ``generate`` at different points in the program. You can then examine these states through a React frontend.
+
+States are displayed in the order of function calls,
+<p align="center">
+  <img align="center" src="docs/images/inspect-function-calls.png" width="450px" />
+</p>
+
+The content of the Example object is displayed everytime ``generate`` is called,
+<p align="center">
+  <img align="center" src="docs/images/inspect-example-content.png" width="600" />
+</p>
+
+
+Learn how to set up function inspection [here](https://github.com/stanfordnlp/dsp/blob/main/inspect-app/README.md).
+
 ## ✍️ Reference
 
 If you use DSP in a research paper, please cite our work as follows:
