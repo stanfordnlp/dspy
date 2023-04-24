@@ -74,10 +74,13 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
-        # print(prompt)
-        # print("----------------------------------")
+        print(prompt)
+        print("----------------------------------")
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
+
+        # print(completions)
+        # print("****************************************")
 
         # Find the completions that are most complete.
         field_names: list[str] = [field.input_variable for field in template.fields]
