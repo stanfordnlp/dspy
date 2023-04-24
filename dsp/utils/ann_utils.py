@@ -51,7 +51,7 @@ def _get_ivf_index(
     encode_residuals: bool
 ) -> Index:
     # according to the FAISS doc, this should be OK
-    n_list = 4 * (n_objects ** 0.5)
+    n_list = int(4 * (n_objects ** 0.5))
 
     if in_list_dist_type.lower() == 'ip':
         quannizer = faiss.IndexFlatIP(emb_dim)
@@ -73,7 +73,7 @@ def _get_ivf_index(
         n_list,
         faiss.ScalarQuantizer.QT_fp16,  # TODO: should be optional?
         centroid_metric,
-        encode_residuals=encode_residuals
+        encode_residuals
     )
     return index
 

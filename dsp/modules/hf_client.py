@@ -1,9 +1,6 @@
-import functools
 import requests
 
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.modules.hf import HFModel
-from dsp.utils import dotdict
 
 
 class HFModelClient(HFModel):
