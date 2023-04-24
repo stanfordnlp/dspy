@@ -208,7 +208,11 @@ def majority_vote_(completions: Completions, normalize: bool, prediction_field: 
         completions_ = []
         for pred in completions:
             if prediction_field in pred:
-                completions_.append(normalize_text(pred[prediction_field]))
+                preds = pred[prediction_field]
+                if isinstance(preds, str):
+                    preds = [preds]
+                for pred_text in preds:
+                    completions_.append(normalize_text(pred_text))
             else:
                 completions_.append("")
         completions = completions_
