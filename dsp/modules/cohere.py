@@ -9,6 +9,7 @@ try:
 except ImportError:
     print("Not loading Cohere because it is not installed.")
 
+
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
     print(
@@ -16,7 +17,15 @@ def backoff_hdlr(details):
         "calling function {target} with kwargs "
         "{kwargs}".format(**details)
     )
-    
+
+
+def giveup_hdlr(details):
+    """wrapper function that decides when to give up on retry"""
+    if "rate limits" in details.message:
+        return False
+    return True
+
+
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
@@ -84,11 +93,12 @@ class Cohere(LM):
         (cohere.CohereAPIError),
         max_time=1000,
         on_backoff=backoff_hdlr,
+        giveup=giveup_hdlr,
     )
     def request(self, prompt: str, **kwargs):
         """Handles retrieval of completions from Cohere whilst handling API errors"""
         return self.basic_request(prompt, **kwargs)
-    
+
     def __call__(
         self,
         prompt: str,
