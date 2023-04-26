@@ -142,6 +142,11 @@ class TemplateV2:
         """
         example = dsp.Example(example)
 
+        # Unset the output variables to prevent leakage of gold answers
+        for field in self.fields:
+            if field.output_variable in example:
+                example[field.output_variable] = ""
+
         raw_pred = raw_pred.strip()
 
         idx = 0
