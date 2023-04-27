@@ -129,13 +129,15 @@ class TemplateV2:
         )
 
     def extract(
-        self, example: Union[Example, dict[str, Any]], raw_pred: str
+        self, example: Union[Example, dict[str, Any]], raw_pred: str, output_fields: list = []
     ) -> Example:
         """Extracts the answer from the LM raw prediction using the template structure
 
         Args:
             example (Union[Example, dict[str, Any]]): Contains the input variables that raw_pred was completed on.
             raw_pred (str): LM generated string
+            output_fields (List[str]): List of field names that we expect to extract. Those fields will be set to an empty string 
+                                       if they cannot be extracted to prevent leakage of gold answers.
 
         Returns:
             Example: The example with the output variables filled in
@@ -144,7 +146,7 @@ class TemplateV2:
 
         # Unset the output variables to prevent leakage of gold answers
         for field in self.fields:
-            if field.output_variable in example:
+            if field.output_variable in example and field.output_variable in output_fields:
                 example[field.output_variable] = ""
 
         raw_pred = raw_pred.strip()
