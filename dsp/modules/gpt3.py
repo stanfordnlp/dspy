@@ -76,8 +76,12 @@ class GPT3(LM):
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
-            kwargs["messages"] = json.dumps([{"role": "user", "content": prompt}])
+            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            kwargs = {
+                "stringify_request": json.dumps(kwargs)
+            }
             response = cached_gpt3_turbo_request(**kwargs)
+            
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
@@ -100,6 +104,9 @@ class GPT3(LM):
     )
     def request(self, prompt: str, **kwargs) -> OpenAIObject:
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
+        if "model_type" in kwargs:
+            del kwargs["model_type"]
+        
         return self.basic_request(prompt, **kwargs)
 
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
@@ -182,7 +189,8 @@ cached_gpt3_request = cached_gpt3_request_v2_wrapped
 
 @CacheMemory.cache
 def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
-    kwargs["messages"] = json.loads(kwargs["messages"])
+    if "stringify_request" in kwargs:
+        kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
 
