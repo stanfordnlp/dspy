@@ -48,7 +48,7 @@ class Example(dotdict):
 def annotate(*transformations):
     """Returns an Augment function that applies the provided transformations to the Examples"""
 
-    def do_augment(train, k=None, return_all=False):
+    def do_augment(train, k=None, return_all=False, **kwargs):
         rdemos = []
         ademos = []
 
@@ -62,7 +62,7 @@ def annotate(*transformations):
                 if example is None:
                     break
 
-                example = f(example)
+                example = f(example, **kwargs)
 
             if example is not None:
                 example.augmented = True
