@@ -1,0 +1,161 @@
+import os
+
+import numpy as np
+import openai
+import pandas as pd
+import tqdm
+from IPython.display import display
+
+import dsp
+from experiments.reranker.hotpot_qa_program import multihop_QA
+
+os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(".", "cache")
+
+import ujson
+
+from experiments.reranker.reranker import (
+    SentenceTransformersCrossEncoder,
+    retrieveRerank,
+    retrieveRerankEnsemble,
+    retrieveRerankEnsembleAvg,
+)
+
+
+def passage_match(passages: list[str], answers: list[str]) -> int:
+    """Returns True if any of the passages contains the answer."""
+    has_ans = [dsp.passage_has_answers(psg, answers) for psg in passages]
+    if True in has_ans:
+        return has_ans.index(True)
+    return -1
+
+
+def get_data_for_eval():
+    with open("data/hotpotqa_train_1k.jsonl", "r") as f:
+        data = [ujson.loads(line) for line in f.readlines()]
+        train = [(sample["question"], sample["answers"]) for sample in data]
+        dev = [(sample["question"], sample["answers"]) for sample in data]
+
+    train = [
+        dsp.Example(question=question, answer=answer) for question, answer in train
+    ]
+    dev = [dsp.Example(question=question, answer=answer) for question, answer in dev]
+    return train, dev
+
+
+def evaluateReranker(train, dev, reranker):
+    data = []
+
+    for example in tqdm.tqdm(dev):
+        question = example.question
+
+        config = {
+            "org_ranking_fnc": dsp.retrieve,
+            "org_ranking_params": {"k": 100},
+            "new_ranking_fnc": retrieveRerank,
+            "new_ranking_params": {"k": 100, "reranker": reranker},
+        }
+
+        prediction, prediction_with_reranker = multihop_QA(
+            question, train=train, num_queries=1, num_preds=0, config=config
+        )
+
+        d = dict(example)
+
+        prediction_rank_h0 = passage_match(
+            prediction["h0_copy"].context, example.answer
+        )
+        prediction_rank_h1 = passage_match(
+            prediction["h1_copy"].context, example.answer
+        )
+        d["h0_mrr"] = 0 if prediction_rank_h0 == -1 else 1 / (prediction_rank_h0 + 1)
+        d["h1_mrr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
+
+        prediction_reranker_rank_h0 = passage_match(
+            prediction_with_reranker["h0_copy"].context, example.answer
+        )
+        prediction_reranker_rank_h1 = passage_match(
+            prediction_with_reranker["h1_copy"].context, example.answer
+        )
+        d["reranker_h0_mrr"] = (
+            0
+            if prediction_reranker_rank_h0 == -1
+            else (1 / (prediction_reranker_rank_h0 + 1))
+        )
+        d["reranker_h1_mrr"] = (
+            0
+            if prediction_reranker_rank_h1 == -1
+            else (1 / (prediction_reranker_rank_h1 + 1))
+        )
+
+        # d['prediction'] = prediction.answer
+        d["sucess@7"] = dsp.passage_match(prediction.context, example.answer)
+        d["reranker_sucess@7"] = dsp.passage_match(
+            prediction_with_reranker.context, example.answer
+        )
+        data.append(d)
+
+    df = pd.DataFrame(data)
+
+    # percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
+    # print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
+
+    df["sucess@7"] = df["sucess@7"].apply(lambda x: "✔️" if x else "❌")
+    df["reranker_sucess@7"] = df["reranker_sucess@7"].apply(
+        lambda x: "✔️" if x else "❌"
+    )
+
+    print(
+        "Baseline MRR:\n\nHop 0: ",
+        np.average(df["h0_mrr"]),
+        "\nHop 1: ",
+        np.average(df["h1_mrr"]),
+        "\n---\n",
+    )
+    print(
+        "Reranker MRR:\n\nHop 0: ",
+        np.average(df["reranker_h0_mrr"]),
+        "\nHop 1: ",
+        np.average(df["reranker_h1_mrr"]),
+        "\n---\n",
+    )
+    pd.options.display.max_colwidth = None
+    display(
+        df.style.set_table_styles(
+            [
+                {"selector": "th", "props": [("text-align", "left")]},
+                {"selector": "td", "props": [("text-align", "left")]},
+            ]
+        )
+    )
+    return df
+
+
+def evaluate_default(max_train_size=10, max_dev_size=10, gpt_model="text-davinci-002"):
+    train, dev = get_data_for_eval()
+    train = train[:max_train_size]
+    dev = dev[max_train_size:max_train_size+max_dev_size]
+
+    print(f"Data Samples size:\n> Train: {len(train)}\n> dev: {len(dev)}")
+
+    reranker = load_models(gpt_model=gpt_model)
+
+    df = evaluateReranker(train, dev, reranker)
+    return df
+
+
+def load_models(gpt_model="text-davinci-002"):
+    openai.api_key = os.environ["OPENAI_API_KEY"]
+    openai.api_base = os.environ["OPENAI_API_BASE"]
+    colbert_server = (
+        "http://ec2-44-228-128-229.us-west-2.compute.amazonaws.com:8893/api/search"
+    )
+
+    if gpt_model == "gpt-3.5-turbo":
+        lm = dsp.GPT3(model=gpt_model, model_type="chat")
+    else:
+        lm = dsp.GPT3(model=gpt_model)
+    rm = dsp.ColBERTv2(url=colbert_server)
+
+    dsp.settings.configure(lm=lm, rm=rm)
+    reranker = SentenceTransformersCrossEncoder()
+    return reranker
