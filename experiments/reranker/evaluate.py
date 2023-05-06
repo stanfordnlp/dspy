@@ -67,8 +67,8 @@ def evaluateReranker(train, dev, reranker):
         prediction_rank_h1 = passage_match(
             prediction["h1_copy"].context, example.answer
         )
-        d["h0_mrr"] = 0 if prediction_rank_h0 == -1 else 1 / (prediction_rank_h0 + 1)
-        d["h1_mrr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
+        d["h0_rr"] = 0 if prediction_rank_h0 == -1 else 1 / (prediction_rank_h0 + 1)
+        d["h1_rr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
 
         prediction_reranker_rank_h0 = passage_match(
             prediction_with_reranker["h0_copy"].context, example.answer
@@ -76,12 +76,12 @@ def evaluateReranker(train, dev, reranker):
         prediction_reranker_rank_h1 = passage_match(
             prediction_with_reranker["h1_copy"].context, example.answer
         )
-        d["reranker_h0_mrr"] = (
+        d["reranker_h0_rr"] = (
             0
             if prediction_reranker_rank_h0 == -1
             else (1 / (prediction_reranker_rank_h0 + 1))
         )
-        d["reranker_h1_mrr"] = (
+        d["reranker_h1_rr"] = (
             0
             if prediction_reranker_rank_h1 == -1
             else (1 / (prediction_reranker_rank_h1 + 1))
@@ -106,16 +106,16 @@ def evaluateReranker(train, dev, reranker):
 
     print(
         "Baseline MRR:\n\nHop 0: ",
-        np.average(df["h0_mrr"]),
+        np.average(df["h0_rr"]),
         "\nHop 1: ",
-        np.average(df["h1_mrr"]),
+        np.average(df["h1_rr"]),
         "\n---\n",
     )
     print(
         "Reranker MRR:\n\nHop 0: ",
-        np.average(df["reranker_h0_mrr"]),
+        np.average(df["reranker_h0_rr"]),
         "\nHop 1: ",
-        np.average(df["reranker_h1_mrr"]),
+        np.average(df["reranker_h1_rr"]),
         "\n---\n",
     )
     pd.options.display.max_colwidth = None
@@ -130,20 +130,20 @@ def evaluateReranker(train, dev, reranker):
     return df
 
 
-def evaluate_default(max_train_size=10, max_dev_size=10, gpt_model="text-davinci-002"):
+def evaluate_default(max_train_size=10, max_dev_size=10, gpt_model="text-davinci-002", reranker=None):
     train, dev = get_data_for_eval()
     train = train[:max_train_size]
     dev = dev[max_train_size:max_train_size+max_dev_size]
 
     print(f"Data Samples size:\n> Train: {len(train)}\n> dev: {len(dev)}")
 
-    reranker = load_models(gpt_model=gpt_model)
+    reranker = load_models(gpt_model=gpt_model, reranker=reranker)
 
     df = evaluateReranker(train, dev, reranker)
     return df
 
 
-def load_models(gpt_model="text-davinci-002"):
+def load_models(gpt_model="text-davinci-002", reranker=None):
     openai.api_key = os.environ["OPENAI_API_KEY"]
     openai.api_base = os.environ["OPENAI_API_BASE"]
     colbert_server = (
@@ -157,5 +157,8 @@ def load_models(gpt_model="text-davinci-002"):
     rm = dsp.ColBERTv2(url=colbert_server)
 
     dsp.settings.configure(lm=lm, rm=rm)
-    reranker = SentenceTransformersCrossEncoder()
+    if reranker is None:
+        reranker = SentenceTransformersCrossEncoder()
+    else:
+        reranker = reranker()
     return reranker
