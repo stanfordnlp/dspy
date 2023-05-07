@@ -196,26 +196,26 @@ def evaluateRerankerBatched(train, dev, reranker):
             "new_ranking_params": {"k": 100, "reranker": reranker},
         }
 
-        prediction, prediction_with_reranker = multihop_QA(
+        prediction = multihop_QA(
             question, train=train, num_queries=1, num_preds=0, config=config
         )
 
         d = dict(example)
 
         prediction_rank_h0 = passage_match(
-            prediction["h0_copy"].context, example.answer
+            prediction["h0_copy_org"].context, example.answer
         )
         prediction_rank_h1 = passage_match(
-            prediction["h1_copy"].context, example.answer
+            prediction["h1_copy_org"].context, example.answer
         )
         d["h0_rr"] = 0 if prediction_rank_h0 == -1 else 1 / (prediction_rank_h0 + 1)
         d["h1_rr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
 
         prediction_reranker_rank_h0 = passage_match(
-            prediction_with_reranker["h0_copy"].context, example.answer
+            prediction_with_reranker["h0_copy_reranked"].context, example.answer
         )
         prediction_reranker_rank_h1 = passage_match(
-            prediction_with_reranker["h1_copy"].context, example.answer
+            prediction_with_reranker["h1_copy_reranked"].context, example.answer
         )
         d["reranker_h0_rr"] = (
             0

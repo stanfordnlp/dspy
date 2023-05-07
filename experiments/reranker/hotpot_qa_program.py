@@ -84,15 +84,84 @@ def QA_predict(example: dsp.Example, n=20):
 
 @dsp.transformation
 def multihop_search(
-    example: dsp.Example, max_hops=2, num_queries=10, k=7, ranking_fnc: Callable = dsp.retrieveEnsemble, ranking_params: Optional[dict[str, Any]] = None,
+    example: dsp.Example,
+    max_hops=2,
+    num_queries=10,
+    k=7,
+    ranking_fnc_col: list[Callable] = [dsp.retrieveEnsemble, dsp.retrieveEnsemble],
+    ranking_params_col: list[dict[str, Any]] = None,
 ) -> dsp.Example:
     example.background = []
     example.context = []
 
+    ranking_params = ranking_params_col[0]
+    ranking_params_new = ranking_params_col[1]
+
     ranking_params = ranking_params or {}
     if k not in ranking_params:
         ranking_params["k"] = k
-        
+
+    ranking_params_new = ranking_params_new or {}
+    if k not in ranking_params_new:
+        ranking_params_new["k"] = k
+
+    ranking_fnc = ranking_fnc_col[0]
+    ranking_fnc_new = ranking_fnc_col[1]
+    for hop in range(max_hops):
+        # Generate queries
+        template = rewrite_template if hop == 0 else hop_template
+
+        if num_queries == 1:
+            example, completions = dsp.generate(template)(example, stage=f"h{hop}")
+            # passages = dsp.retrieve(completions.query, k=k)
+            org_passages = ranking_fnc(completions.query, **ranking_params)
+            passages = ranking_fnc_new(completions.query, **ranking_params_new)
+
+        else:
+            raise NotImplementedError
+            # num_queries = int(num_queries)
+            # example, completions = dsp.generate(
+            #     template, n=num_queries, temperature=0.7
+            # )(example, stage=f"h{hop}")
+            # queries = [c.query for c in completions] + [example.question]
+            # # passages = dsp.retrieveEnsemble(queries, k=k)
+            # passages = ranking_fnc(queries, **ranking_params)
+
+        # Arrange the passages for the next hop
+        if hop == 0:
+            example.context = passages
+            org_context = org_passages
+        else:
+            example.context = [completions[0].rationale] + example.background + passages
+            org_context = [completions[0].rationale] + example.background + org_passages
+
+        example[f"h{hop}_copy_reranked"] = dsp.dotdict(
+            {"context": deduplicate(example.context)}
+        )
+        example[f"h{hop}_copy_org"] = dsp.dotdict({"context": deduplicate(org_context)})
+
+        example.context = deduplicate(example.context)[:k]
+        example.background = deduplicate(example.background + passages)[: hop + 1]
+
+    return example
+
+@dsp.transformation
+def multihop_search_old(
+    example: dsp.Example,
+    max_hops=2,
+    num_queries=10,
+    k=7,
+    ranking_fnc: Callable = dsp.retrieveEnsemble,
+    ranking_params: dict[str, Any] = None,
+) -> dsp.Example:
+    example.background = []
+    example.context = []
+
+
+    ranking_params = ranking_params or {}
+    if k not in ranking_params:
+        ranking_params["k"] = k
+
     for hop in range(max_hops):
         # Generate queries
         template = rewrite_template if hop == 0 else hop_template
@@ -103,13 +172,7 @@ def multihop_search(
             passages = ranking_fnc(completions.query, **ranking_params)
 
         else:
-            num_queries = int(num_queries)
-            example, completions = dsp.generate(
-                template, n=num_queries, temperature=0.7
-            )(example, stage=f"h{hop}")
-            queries = [c.query for c in completions] + [example.question]
-            # passages = dsp.retrieveEnsemble(queries, k=k)
-            passages = ranking_fnc(queries, **ranking_params)
+            raise NotImplementedError
 
         # Arrange the passages for the next hop
         if hop == 0:
@@ -117,10 +180,10 @@ def multihop_search(
         else:
             example.context = [completions[0].rationale] + example.background + passages
 
-        example[f"h{hop}_copy"] = dsp.dotdict({
-            "context": deduplicate(example.context)
-        })
-        
+        example[f"h{hop}_copy_reranked"] = dsp.dotdict(
+            {"context": deduplicate(example.context)}
+        )
+
         example.context = deduplicate(example.context)[:k]
         example.background = deduplicate(example.background + passages)[: hop + 1]
 
@@ -130,7 +193,7 @@ def multihop_search(
 @dsp.transformation
 def multihop_attempt(d: dsp.Example, demos: list[dsp.Example]):
     x = dsp.Example(question=d.question, demos=dsp.all_but(demos, d))
-    x = multihop_search(x, num_queries=1, k=4, ranking_fnc=dsp.retrieve)
+    x = multihop_search_old(x, num_queries=1, k=4, ranking_fnc=dsp.retrieve)
 
     if not dsp.passage_match(x.context, d.answer):
         return None
@@ -160,21 +223,35 @@ def multihop_QA(
     config={"org_ranking_fnc": dsp.retrieve, "org_ranking_params": {"k": 7}},
     # ranking_fnc: Callable = dsp.retrieveEnsemble,
     # ranking_params: Optional[dict[str, Any]] = None,
-):      
+):
     x = dsp.Example(question=question)
     x = multihop_demonstrate(x, train)
-    
-    ranking_fnc, ranking_params = config["org_ranking_fnc"], config["org_ranking_params"]
+
+    ranking_fnc, ranking_params = (
+        config["org_ranking_fnc"],
+        config["org_ranking_params"],
+    )
+    new_ranking_fnc, new_ranking_params = (
+        config["new_ranking_fnc"],
+        config["new_ranking_params"],
+    )
     y = x.copy()
-    y = multihop_search(y, num_queries=num_queries, ranking_fnc=ranking_fnc, ranking_params=ranking_params)
+    y = multihop_search(
+        y,
+        num_queries=num_queries,
+        ranking_fnc_col=[ranking_fnc, new_ranking_fnc],
+        ranking_params_col=[ranking_params, new_ranking_params],
+    )
     y = QA_predict(y, n=num_preds)
-    
-    if "new_ranking_fnc" not in config:
-        return y
-    ranking_fnc, ranking_params = config["new_ranking_fnc"], config["new_ranking_params"]
-    z = x.copy()
-    z = multihop_search(z, num_queries=num_queries, ranking_fnc=ranking_fnc, ranking_params=ranking_params)
-    z = QA_predict(z, n=num_preds)
-    
-    return y,z 
+
+    # if "new_ranking_fnc" not in config:
+    #     return y
+    # ranking_fnc, ranking_params = config["new_ranking_fnc"], config["new_ranking_params"]
+    # z = x.copy()
+    # z = multihop_search(z, num_queries=num_queries, ranking_fnc=ranking_fnc, ranking_params=ranking_params)
+    # z = QA_predict(z, n=num_preds)
+
+    return y
+
+
 # ------------------------- END of predict -------------------------
