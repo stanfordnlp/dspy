@@ -144,26 +144,33 @@ def evaluateRerankerBatchedResults(data):
 
     # percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
     # print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
-
-    df["sucess@7"] = df["sucess@7"].apply(lambda x: "✔️" if x else "❌")
-    df["reranker_sucess@7"] = df["reranker_sucess@7"].apply(
+    success_7 = df["success@7"].value_counts()[True]
+    reranker_success_7 = df["reranker_success@7"].value_counts()[True]
+    
+    df["success@7"] = df["success@7"].apply(lambda x: "✔️" if x else "❌")
+    df["reranker_success@7"] = df["reranker_success@7"].apply(
         lambda x: "✔️" if x else "❌"
     )
 
     print(
-        "Baseline MRR:\n\nHop 0: ",
+        "Baseline:\n\nHop 0 MRR: ",
         np.average(df["h0_rr"]),
-        "\nHop 1: ",
+        "\nHop 1 MRR: ",
         np.average(df["h1_rr"]),
+        "\nSuccess@7: ",
+        success_7,
         "\n---\n",
     )
     print(
-        "Reranker MRR:\n\nHop 0: ",
+        "Reranker:\n\nHop 0 MRR: ",
         np.average(df["reranker_h0_rr"]),
-        "\nHop 1: ",
+        "\nHop 1 MRR: ",
         np.average(df["reranker_h1_rr"]),
+        "\nSuccess@7: ",
+        reranker_success_7,
         "\n---\n",
     )
+    
     pd.options.display.max_colwidth = None
     display(
         df.style.set_table_styles(
@@ -221,8 +228,8 @@ def evaluateRerankerBatched(train, dev, reranker):
         )
 
         # d['prediction'] = prediction.answer
-        d["sucess@7"] = dsp.passage_match(prediction.context, example.answer)
-        d["reranker_sucess@7"] = dsp.passage_match(
+        d["success@7"] = dsp.passage_match(prediction.context, example.answer)
+        d["reranker_success@7"] = dsp.passage_match(
             prediction_with_reranker.context, example.answer
         )
         data.append(d)
