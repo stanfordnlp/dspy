@@ -1,5 +1,5 @@
 import os
-
+import pickle
 import numpy as np
 import openai
 import pandas as pd
@@ -258,7 +258,7 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
         print(f"Data Samples size:\n> Train: {len(train_samples)}\n> dev: {len(dev_samples)}")
 
         results.extend(evaluateRerankerBatched(train_samples, dev_samples, reranker))
-        
+        pickle.dump(results, open("reranker_results.pkl", "wb"))
         progress.update(batch_size_for_eval)
         
     
