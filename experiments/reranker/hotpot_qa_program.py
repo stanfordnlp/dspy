@@ -173,7 +173,7 @@ def multihop_QA(
         return y
     ranking_fnc, ranking_params = config["new_ranking_fnc"], config["new_ranking_params"]
     z = x.copy()
-    z = multihop_search(y, num_queries=num_queries, ranking_fnc=ranking_fnc, ranking_params=ranking_params)
+    z = multihop_search(z, num_queries=num_queries, ranking_fnc=ranking_fnc, ranking_params=ranking_params)
     z = QA_predict(z, n=num_preds)
     
     return y,z 
