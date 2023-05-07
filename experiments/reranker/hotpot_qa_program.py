@@ -114,8 +114,8 @@ def multihop_search(
         if num_queries == 1:
             example, completions = dsp.generate(template)(example, stage=f"h{hop}")
             # passages = dsp.retrieve(completions.query, k=k)
-            org_passages = ranking_fnc(completions.query, **ranking_params)
-            passages = ranking_fnc_new(completions.query, **ranking_params_new)
+            passages = ranking_fnc(completions.query, **ranking_params)
+            new_passages = ranking_fnc_new(completions.query, **ranking_params_new)
 
         else:
             raise NotImplementedError
@@ -130,15 +130,15 @@ def multihop_search(
         # Arrange the passages for the next hop
         if hop == 0:
             example.context = passages
-            org_context = org_passages
+            new_context = new_passages
         else:
             example.context = [completions[0].rationale] + example.background + passages
-            org_context = [completions[0].rationale] + example.background + org_passages
+            new_context = [completions[0].rationale] + example.background + new_passages
 
-        example[f"h{hop}_copy_reranked"] = dsp.dotdict(
+        example[f"h{hop}_copy_org"] = dsp.dotdict(
             {"context": deduplicate(example.context)}
         )
-        example[f"h{hop}_copy_org"] = dsp.dotdict({"context": deduplicate(org_context)})
+        example[f"h{hop}_copy_reranked"] = dsp.dotdict({"context": deduplicate(new_context)})
 
         example.context = deduplicate(example.context)[:k]
         example.background = deduplicate(example.background + passages)[: hop + 1]
