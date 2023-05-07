@@ -212,10 +212,10 @@ def evaluateRerankerBatched(train, dev, reranker):
         d["h1_rr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
 
         prediction_reranker_rank_h0 = passage_match(
-            prediction_with_reranker["h0_copy_reranked"].context, example.answer
+            prediction["h0_copy_reranked"].context, example.answer
         )
         prediction_reranker_rank_h1 = passage_match(
-            prediction_with_reranker["h1_copy_reranked"].context, example.answer
+            prediction["h1_copy_reranked"].context, example.answer
         )
         d["reranker_h0_rr"] = (
             0
@@ -229,9 +229,9 @@ def evaluateRerankerBatched(train, dev, reranker):
         )
 
         # d['prediction'] = prediction.answer
-        d["success@7"] = dsp.passage_match(prediction.context, example.answer)
+        d["success@7"] = dsp.passage_match(prediction["h1_copy_org"].context[:7], example.answer)
         d["reranker_success@7"] = dsp.passage_match(
-            prediction_with_reranker.context, example.answer
+            prediction["h1_copy_reranked"].context[:7], example.answer
         )
         data.append(d)
     return data

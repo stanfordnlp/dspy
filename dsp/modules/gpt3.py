@@ -175,6 +175,7 @@ class GPT3(LM):
 
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
+    print("request")
     return openai.Completion.create(**kwargs)
 
 
