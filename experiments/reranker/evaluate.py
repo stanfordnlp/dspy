@@ -139,7 +139,7 @@ def get_data_for_eval():
     # )
     # return df
 
-def evaluateRerankerBatchedResults(data):
+def evaluateRerankerBatchedResults(data, print_df=False):
     df = pd.DataFrame(data)
 
     # percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
@@ -172,14 +172,15 @@ def evaluateRerankerBatchedResults(data):
     )
     
     pd.options.display.max_colwidth = None
-    display(
-        df.style.set_table_styles(
-            [
-                {"selector": "th", "props": [("text-align", "left")]},
-                {"selector": "td", "props": [("text-align", "left")]},
-            ]
+    if print_df:
+        display(
+            df.style.set_table_styles(
+                [
+                    {"selector": "th", "props": [("text-align", "left")]},
+                    {"selector": "td", "props": [("text-align", "left")]},
+                ]
+            )
         )
-    )
     return df
 
 def evaluateRerankerBatched(train, dev, reranker):
@@ -267,9 +268,11 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
         results.extend(evaluateRerankerBatched(train_samples, dev_samples, reranker))
         pickle.dump(results, open("reranker_results.pkl", "wb"))
         progress.update(batch_size_for_eval)
+        print(f"Report at {int(batch_end/dev_samples_size)}:")
+        _ = evaluateRerankerBatchedResults(results)
         
     
-    df = evaluateRerankerBatchedResults(results)
+    df = evaluateRerankerBatchedResults(results, print_df=True)
     return df
 
 
