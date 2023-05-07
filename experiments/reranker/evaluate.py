@@ -242,8 +242,18 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
         batch_end = batch_start + batch_size_for_eval
         samples = data[batch_start:batch_end]
         np.random.shuffle(samples)
-        train_samples = samples[:batch_size_for_eval]
-        dev_samples = samples[batch_size_for_eval:]
+        
+        train_sample_percentage = 0.1
+        while True:
+            train_size = int(len(samples) * train_sample_percentage)
+            if train_size >= 7:
+                break
+            train_sample_percentage += 0.1
+            if train_sample_percentage >= 0.9:
+                raise Exception("Not enough samples for training")
+        
+        train_samples = samples[:train_size]
+        dev_samples = samples[train_size:]
         
         print(f"Data Samples size:\n> Train: {len(train_samples)}\n> dev: {len(dev_samples)}")
 
