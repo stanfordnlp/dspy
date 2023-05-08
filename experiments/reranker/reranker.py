@@ -94,34 +94,34 @@ def retrieveRerankEnsemble(queries: list[str], k: int, reranker) -> list[str]:
     return passages
 
 
-def retrieveRerankEnsembleAvg(
-    queries: list[str], k: int, reranker: SentenceTransformersCrossEncoder
-) -> list[str]:
-    queries = [q for q in queries if q]
+# def retrieveRerankEnsembleAvg(
+#     queries: list[str], k: int, reranker: SentenceTransformersCrossEncoder
+# ) -> list[str]:
+#     queries = [q for q in queries if q]
 
-    passages = {}
-    passages_org = {}
-    for q in queries:
-        retrieved_passages = dsp.settings.rm(q, k=100)
-        passages_cs_scores = reranker(q, [psg.long_text for psg in retrieved_passages])
-        passages_cs_scores_sorted = np.argsort(passages_cs_scores)
-        for idx in passages_cs_scores_sorted[::-1]:
-            psg = retrieved_passages[idx]
-            passages[psg.long_text] = passages.get(psg.long_text, []) + [
-                passages_cs_scores[idx]
-            ]
-            passages_org[psg.long_text] = passages_org.get(psg.long_text, 0) + psg.prob
+#     passages = {}
+#     passages_org = {}
+#     for q in queries:
+#         retrieved_passages = dsp.settings.rm(q, k=100)
+#         passages_cs_scores = reranker(q, [psg.long_text for psg in retrieved_passages])
+#         passages_cs_scores_sorted = np.argsort(passages_cs_scores)
+#         for idx in passages_cs_scores_sorted[::-1]:
+#             psg = retrieved_passages[idx]
+#             passages[psg.long_text] = passages.get(psg.long_text, []) + [
+#                 passages_cs_scores[idx]
+#             ]
+#             passages_org[psg.long_text] = passages_org.get(psg.long_text, 0) + psg.prob
 
-    passages = [(np.average(score), text) for text, score in passages.items()]
-    passages = sorted(passages, reverse=True)  # [:k]
-    passages = [text for _, text in passages]
+#     passages = [(np.average(score), text) for text, score in passages.items()]
+#     passages = sorted(passages, reverse=True)  # [:k]
+#     passages = [text for _, text in passages]
 
-    passages_org_scores = sorted(
-        [(score, text) for text, score in passages_org.items()], reverse=True
-    )
-    org_passages = [text for _, text in passages_org_scores]
+#     passages_org_scores = sorted(
+#         [(score, text) for text, score in passages_org.items()], reverse=True
+#     )
+#     org_passages = [text for _, text in passages_org_scores]
 
-    return org_passages, passages
+#     return org_passages, passages
 
 
 # def retrieveRerank(query: str, k: int, reranker) -> tuple[list[str], list[str]]:
@@ -156,5 +156,27 @@ def retrieveRerank(query: str, k: int, reranker) -> list[str]:
 
     passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1]
     passages = [org_passages[idx].long_text for idx in passages_cs_scores_sorted]
+
+    return passages
+def retrieveRerankEnsembleAvg(
+    queries: list[str], k: int, reranker
+) -> list[str]:
+    queries = [q for q in queries if q]
+
+    passages = {}
+    for q in queries:
+        retrieved_passages = dsp.settings.rm(q, k=100)
+        passages_cs_scores = reranker(q, [psg.long_text for psg in retrieved_passages])
+        passages_cs_scores_sorted = np.argsort(passages_cs_scores)
+        for idx in passages_cs_scores_sorted[::-1]:
+            psg = retrieved_passages[idx]
+            passages[psg.long_text] = passages.get(psg.long_text, []) + [
+                passages_cs_scores[idx]
+            ]
+
+    passages = [(np.average(score), text) for text, score in passages.items()]
+    passages = sorted(passages, reverse=True)[:100]
+    passages = [text for _, text in passages]
+
 
     return passages
