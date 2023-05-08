@@ -119,14 +119,15 @@ def multihop_search(
             org_passages, passages = ranking_fnc_new(completions.query, **ranking_params_new)
 
         else:
-            raise NotImplementedError
-            # num_queries = int(num_queries)
-            # example, completions = dsp.generate(
-            #     template, n=num_queries, temperature=0.7
-            # )(example, stage=f"h{hop}")
-            # queries = [c.query for c in completions] + [example.question]
-            # # passages = dsp.retrieveEnsemble(queries, k=k)
+            # raise NotImplementedError
+            num_queries = int(num_queries)
+            example, completions = dsp.generate(
+                template, n=num_queries, temperature=0.7
+            )(example, stage=f"h{hop}")
+            queries = [c.query for c in completions] + [example.question]
+            # passages = dsp.retrieveEnsemble(queries, k=k)
             # passages = ranking_fnc(queries, **ranking_params)
+            org_passages, passages = ranking_fnc_new(completions.query, **ranking_params_new)
 
         # Arrange the passages for the next hop
         if hop == 0:
