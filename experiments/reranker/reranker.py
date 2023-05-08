@@ -112,8 +112,7 @@ def retrieveRerank(query: str, k: int, reranker: SentenceTransformersCrossEncode
     passages = [org_passages[idx].long_text for idx in passages_cs_scores_sorted]
 
     passages_org_scores = {}
-    for idx in org_passages:
-        psg = org_passages[idx]
+    for psg in org_passages:
         passages_org_scores[psg.long_text] = (
             passages_org_scores.get(psg.long_text, 0) + psg.prob
         )
