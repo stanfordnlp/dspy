@@ -115,6 +115,9 @@ def retrieveRerankEnsembleAvg(
 def retrieveRerank(query: str, k: int, reranker: SentenceTransformersCrossEncoder) -> tuple[list[str], list[str]]:
     org_passages = dsp.settings.rm(query, k=100)
     passages_cs_scores = reranker(query, [psg.long_text for psg in org_passages])
+    
+    passages_cs_scores = [np.mean(passages_cs_scores[idx], psg.prob) for idx, psg in enumerate(org_passages)]
+    
     passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1]
     passages = [org_passages[idx].long_text for idx in passages_cs_scores_sorted]
 
