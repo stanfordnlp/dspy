@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from typing import Any, Optional
-
+from copy import deepcopy
 import dsp
 from dsp.utils import deduplicate
 
@@ -137,10 +137,11 @@ def multihop_search(
             org_context = [completions[0].rationale] + example.background + org_passages
 
         example[f"h{hop}_copy_reranked"] = dsp.dotdict(
-            {"context": deduplicate(example.context)}
+            {"context": deepcopy(deduplicate(example.context))}
         )
-        example[f"h{hop}_copy_org"] = dsp.dotdict({"context": deduplicate(org_context)})
+        example[f"h{hop}_copy_org"] = dsp.dotdict({"context": deepcopy(deduplicate(org_context))})
 
+        print(len(example[f"h{hop}_copy_reranked"].context), len(example[f"h{hop}_copy_org"].context))
         example.context = deduplicate(example.context)[:k]
         example.background = deduplicate(example.background + passages)[: hop + 1]
 
