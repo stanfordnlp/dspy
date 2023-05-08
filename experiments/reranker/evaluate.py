@@ -42,7 +42,7 @@ def passage_match(passages: list[str], answers: list[str]) -> int:
 #     return train, dev
 
 def get_data_for_eval():
-    with open("data/hotpotqa_train_1k.jsonl", "r") as f:
+    with open("data/hotpotqa_train_1k_filtered.jsonl", "r") as f:
         data = [ujson.loads(line) for line in f.readlines()]
         data = [(sample["question"], sample["answers"]) for sample in data]
 
