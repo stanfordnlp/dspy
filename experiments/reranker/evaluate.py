@@ -41,14 +41,13 @@ def passage_match(passages: list[str], answers: list[str]) -> int:
 #     dev = [dsp.Example(question=question, answer=answer) for question, answer in dev]
 #     return train, dev
 
+
 def get_data_for_eval():
     with open("data/hotpotqa_train_1k_filtered.jsonl", "r") as f:
         data = [ujson.loads(line) for line in f.readlines()]
         data = [(sample["question"], sample["answers"]) for sample in data]
 
-    train = [
-        dsp.Example(question=question, answer=answer) for question, answer in data
-    ]
+    train = [dsp.Example(question=question, answer=answer) for question, answer in data]
     return train
 
 
@@ -104,40 +103,41 @@ def get_data_for_eval():
 #         )
 #         data.append(d)
 
-    # df = pd.DataFrame(data)
+# df = pd.DataFrame(data)
 
-    # # percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
-    # # print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
+# # percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
+# # print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
 
-    # df["sucess@7"] = df["sucess@7"].apply(lambda x: "✔️" if x else "❌")
-    # df["reranker_sucess@7"] = df["reranker_sucess@7"].apply(
-    #     lambda x: "✔️" if x else "❌"
-    # )
+# df["sucess@7"] = df["sucess@7"].apply(lambda x: "✔️" if x else "❌")
+# df["reranker_sucess@7"] = df["reranker_sucess@7"].apply(
+#     lambda x: "✔️" if x else "❌"
+# )
 
-    # print(
-    #     "Baseline MRR:\n\nHop 0: ",
-    #     np.average(df["h0_rr"]),
-    #     "\nHop 1: ",
-    #     np.average(df["h1_rr"]),
-    #     "\n---\n",
-    # )
-    # print(
-    #     "Reranker MRR:\n\nHop 0: ",
-    #     np.average(df["reranker_h0_rr"]),
-    #     "\nHop 1: ",
-    #     np.average(df["reranker_h1_rr"]),
-    #     "\n---\n",
-    # )
-    # pd.options.display.max_colwidth = None
-    # display(
-    #     df.style.set_table_styles(
-    #         [
-    #             {"selector": "th", "props": [("text-align", "left")]},
-    #             {"selector": "td", "props": [("text-align", "left")]},
-    #         ]
-    #     )
-    # )
-    # return df
+# print(
+#     "Baseline MRR:\n\nHop 0: ",
+#     np.average(df["h0_rr"]),
+#     "\nHop 1: ",
+#     np.average(df["h1_rr"]),
+#     "\n---\n",
+# )
+# print(
+#     "Reranker MRR:\n\nHop 0: ",
+#     np.average(df["reranker_h0_rr"]),
+#     "\nHop 1: ",
+#     np.average(df["reranker_h1_rr"]),
+#     "\n---\n",
+# )
+# pd.options.display.max_colwidth = None
+# display(
+#     df.style.set_table_styles(
+#         [
+#             {"selector": "th", "props": [("text-align", "left")]},
+#             {"selector": "td", "props": [("text-align", "left")]},
+#         ]
+#     )
+# )
+# return df
+
 
 def evaluateRerankerBatchedResults(data, print_df=False):
     df = pd.DataFrame(data)
@@ -146,7 +146,7 @@ def evaluateRerankerBatchedResults(data, print_df=False):
     # print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
     success_7 = df["success@7"].value_counts()[True]
     reranker_success_7 = df["reranker_success@7"].value_counts()[True]
-    
+
     df["success@7"] = df["success@7"].apply(lambda x: "✔️" if x else "❌")
     df["reranker_success@7"] = df["reranker_success@7"].apply(
         lambda x: "✔️" if x else "❌"
@@ -170,7 +170,7 @@ def evaluateRerankerBatchedResults(data, print_df=False):
         reranker_success_7,
         "\n---\n",
     )
-    
+
     pd.options.display.max_colwidth = None
     if print_df:
         display(
@@ -182,6 +182,7 @@ def evaluateRerankerBatchedResults(data, print_df=False):
             )
         )
     return df
+
 
 def evaluateRerankerBatched(train, dev, reranker):
     data = []
@@ -196,26 +197,26 @@ def evaluateRerankerBatched(train, dev, reranker):
             "new_ranking_params": {"k": 100, "reranker": reranker},
         }
 
-        prediction = multihop_QA(
+        prediction, prediction_with_reranker = multihop_QA(
             question, train=train, num_queries=1, num_preds=0, config=config
         )
 
         d = dict(example)
 
         prediction_rank_h0 = passage_match(
-            prediction["h0_copy_org"].context, example.answer
+            prediction["h0_copy"].context, example.answer
         )
         prediction_rank_h1 = passage_match(
-            prediction["h1_copy_org"].context, example.answer
+            prediction["h1_copy"].context, example.answer
         )
         d["h0_rr"] = 0 if prediction_rank_h0 == -1 else 1 / (prediction_rank_h0 + 1)
         d["h1_rr"] = 0 if prediction_rank_h1 == -1 else 1 / (prediction_rank_h1 + 1)
 
         prediction_reranker_rank_h0 = passage_match(
-            prediction["h0_copy_reranked"].context, example.answer
+            prediction_with_reranker["h0_copy"].context, example.answer
         )
         prediction_reranker_rank_h1 = passage_match(
-            prediction["h1_copy_reranked"].context, example.answer
+            prediction_with_reranker["h1_copy"].context, example.answer
         )
         d["reranker_h0_rr"] = (
             0
@@ -229,19 +230,26 @@ def evaluateRerankerBatched(train, dev, reranker):
         )
 
         # d['prediction'] = prediction.answer
-        d["success@7"] = dsp.passage_match(prediction["h1_copy_org"].context[:7], example.answer)
+        d["success@7"] = dsp.passage_match(
+            prediction["h1_copy"].context[:7], example.answer
+        )
         d["reranker_success@7"] = dsp.passage_match(
-            prediction["h1_copy_reranked"].context[:7], example.answer
+            prediction_with_reranker["h1_copy"].context[:7], example.answer
         )
         data.append(d)
     return data
 
 
 # def evaluate_default(max_train_size=10, max_dev_size=10, gpt_model="text-davinci-002", reranker=None):
-def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text-davinci-002", reranker=None):
+def evaluate_default(
+    dev_samples_size=10,
+    batch_size_for_eval=5,
+    gpt_model="text-davinci-002",
+    reranker=None,
+):
     # train, dev = get_data_for_eval()
     reranker = load_models(gpt_model=gpt_model, reranker=reranker)
-    
+
     data = get_data_for_eval()
     results = []
     progress = tqdm.tqdm()
@@ -251,7 +259,7 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
         batch_end = batch_start + batch_size_for_eval
         samples = data[batch_start:batch_end]
         np.random.shuffle(samples)
-        
+
         train_sample_percentage = 0.1
         while True:
             train_size = int(len(samples) * train_sample_percentage)
@@ -260,19 +268,20 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
             train_sample_percentage += 0.1
             if train_sample_percentage >= 0.9:
                 raise Exception("Not enough samples for training")
-        
+
         train_samples = samples[:train_size]
         dev_samples = samples[train_size:]
-        
-        print(f"Data Samples size:\n> Train: {len(train_samples)}\n> dev: {len(dev_samples)}")
+
+        print(
+            f"Data Samples size:\n> Train: {len(train_samples)}\n> dev: {len(dev_samples)}"
+        )
 
         results.extend(evaluateRerankerBatched(train_samples, dev_samples, reranker))
         pickle.dump(results, open("reranker_results.pkl", "wb"))
         progress.update(batch_size_for_eval)
         print(f"Report at {int(batch_end/dev_samples_size)}:")
         _ = evaluateRerankerBatchedResults(results)
-        
-    
+
     df = evaluateRerankerBatchedResults(results, print_df=True)
     return df
 
