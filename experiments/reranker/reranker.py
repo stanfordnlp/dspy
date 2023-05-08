@@ -150,7 +150,7 @@ def retrieveRerank(query: str, k: int, reranker) -> list[str]:
     passages_cs_scores = reranker(query, [psg.long_text for psg in org_passages])
 
     passages_cs_scores = [
-        passages_cs_scores[idx]*0.75 + psg.prob*0.25
+        passages_cs_scores[idx]
         for idx, psg in enumerate(org_passages)
     ]
 
