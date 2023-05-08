@@ -245,6 +245,7 @@ def evaluate_default(dev_samples_size=10, batch_size_for_eval=5, gpt_model="text
     data = get_data_for_eval()
     results = []
     progress = tqdm.tqdm()
+    dev_samples_size = min(dev_samples_size, len(data))
     progress.total = dev_samples_size
     for batch_start in range(0, dev_samples_size, batch_size_for_eval):
         batch_end = batch_start + batch_size_for_eval
