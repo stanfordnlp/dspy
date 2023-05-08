@@ -105,12 +105,10 @@ def retrieveRerankEnsembleAvg(
 
     return passages
 
-def retrieveRerank(query: str, k: int, reranker: SentenceTransformersCrossEncoder) -> list[str]:
-    if not dsp.settings.rm:
-        raise AssertionError("No RM is loaded.")
-    passages = dsp.settings.rm(query, k=100)
-    passages_cs_scores = reranker(query, [psg.long_text for psg in passages])
+def retrieveRerank(query: str, k: int, reranker: SentenceTransformersCrossEncoder) -> tuple[list[str], list[str]]:
+    org_passages = dsp.settings.rm(query, k=100)
+    passages_cs_scores = reranker(query, [psg.long_text for psg in org_passages])
     passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1][:k]
-    passages = [passages[idx].long_text for idx in passages_cs_scores_sorted]
+    passages = [org_passages[idx].long_text for idx in passages_cs_scores_sorted]
 
-    return passages
+    return org_passages, passages

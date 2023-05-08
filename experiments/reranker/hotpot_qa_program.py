@@ -114,8 +114,9 @@ def multihop_search(
         if num_queries == 1:
             example, completions = dsp.generate(template)(example, stage=f"h{hop}")
             # passages = dsp.retrieve(completions.query, k=k)
-            org_passages = ranking_fnc(completions.query, **ranking_params)
-            passages = ranking_fnc_new(completions.query, **ranking_params_new)
+            # org_passages = ranking_fnc(completions.query, **ranking_params)
+            # passages = ranking_fnc_new(completions.query, **ranking_params_new)
+            org_passages, passages = ranking_fnc_new(completions.query, **ranking_params_new)
 
         else:
             raise NotImplementedError
