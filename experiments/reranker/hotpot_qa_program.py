@@ -127,7 +127,7 @@ def multihop_search(
             queries = [c.query for c in completions] + [example.question]
             # passages = dsp.retrieveEnsemble(queries, k=k)
             # passages = ranking_fnc(queries, **ranking_params)
-            org_passages, passages = ranking_fnc_new(completions.query, **ranking_params_new)
+            org_passages, passages = ranking_fnc_new(queries, **ranking_params_new)
 
         # Arrange the passages for the next hop
         if hop == 0:
