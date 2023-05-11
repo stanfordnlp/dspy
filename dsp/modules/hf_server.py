@@ -38,15 +38,21 @@ app.add_middleware(
 parser = argparse.ArgumentParser("Server for Hugging Face models")
 parser.add_argument("--port", type=int, required=True, help="Server port")
 parser.add_argument("--model", type=str, required=True, help="Hugging Face model")
+parser.add_argument("--gpus", type=str, default="0", help="Comma-seperated list of GPUs to replicate model on for load balancing")
 args = parser.parse_args()
 # TODO: Convert this to a log message
-print(f"#> Loading the language model {args.model}")
-lm = HFModel(args.model)
-
+gpus = [int(x) for x in args.gpus.split(",")]
+lm_replicas = []
+for gpu in gpus:
+    print(f"#> Loading the language model {args.model} on device {gpu}")
+    lm = HFModel(args.model, hf_device=f"cuda:{gpu}")
+    lm_replicas.append(lm)
 
 @lru_cache(maxsize=None)
 def generate(prompt, **kwargs):
-    global lm
+    global lm_replicas
+    idx = random.randint(0, len(lm_replicas)-1)
+    lm = lm_replicas[idx]
     generateStart = time.time()
     # TODO: Convert this to a log message
     print(f'#> Prompt: "{prompt}"')

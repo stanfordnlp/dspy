@@ -1,4 +1,5 @@
 from typing import Optional, Literal
+import torch
 from dsp.modules.lm import LM
 
 
@@ -23,14 +24,16 @@ def openai_to_hf(**kwargs):
 
 class HFModel(LM):
     def __init__(self, model: str, checkpoint: Optional[str] = None, is_client: bool = False,
-                 hf_device_map: Literal["auto", "balanced", "balanced_low_0", "sequential"] = "auto"):
+            hf_device: str = "cuda" if torch.cuda.is_available() else "cpu",
+            hf_device_map: Literal["auto", "balanced", "balanced_low_0", "sequential"] = "auto"):
         """wrapper for Hugging Face models
 
         Args:
             model (str): HF model identifier to load and use
             checkpoint (str, optional): load specific checkpoints of the model. Defaults to None.
             is_client (bool, optional): whether to access models via client. Defaults to False.
-            hf_device_map (str, optional): HF config strategy to load the model. 
+            hf_device (str, optional): The device to serve the model on.
+            hf_device_map (str, optional): HF config strategy to load the model.
                 Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
         """
         try:
@@ -44,20 +47,23 @@ class HFModel(LM):
         self.provider = "hf"
         self.is_client = is_client
         self.device_map = hf_device_map
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(hf_device)
         if not self.is_client:
             try:
                 self.model = AutoModelForSeq2SeqLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
-                    device_map=hf_device_map
+                    device_map=hf_device_map,
+                    trust_remote_code=True,
                 )
                 self.drop_prompt_from_output = False
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
-                    device_map=hf_device_map
+                    device_map=hf_device_map,
+                    trust_remote_code=True,
                 )
                 self.drop_prompt_from_output = True
+            self.model.to(hf_device)
             self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.history = []
 
