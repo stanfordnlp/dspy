@@ -20,7 +20,6 @@ def retrieve(query: str, k: int) -> list[str]:
 def retrieveRerankEnsemble(queries: list[str], k: int) -> list[str]:
     if not (dsp.settings.rm and dsp.settings.reranker):
         raise AssertionError("Both RM and Reranker are needed to retrieve & re-rank.")
-    print("reranking")
     queries = [q for q in queries if q]
     passages = {}
     for query in queries:
