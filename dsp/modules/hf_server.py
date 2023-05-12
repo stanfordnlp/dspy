@@ -2,9 +2,8 @@
 # python -m dsp.modules.hf_server --port 4242 --model "google/flan-t5-base"
 
 # To Query:
-# curl -d '{"prompt":"What is the answer to life, the universe, and everything?"}' \
-# -X POST "http://0.0.0.0:4242" \
-# -H 'Content-Type: application/json' 
+# curl -d '{"prompt":".."}' -X POST "http://0.0.0.0:4242" -H 'Content-Type: application/json'
+# Or use the HF client. TODO: Add support for kwargs to the server.
 
 
 from functools import lru_cache
