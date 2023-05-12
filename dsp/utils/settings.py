@@ -1,4 +1,3 @@
-from typing import Callable, Optional
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
 
@@ -21,6 +20,7 @@ class Settings(object):
             config = dotdict(
                 lm=None,
                 rm=None,
+                reranker=None,
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
                 compiling=False,
