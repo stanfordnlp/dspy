@@ -33,3 +33,4 @@ build/
 *.json
 !/data/*.json
 /dist/
+**/*.pkl

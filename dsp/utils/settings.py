@@ -1,4 +1,3 @@
-from typing import Callable, Optional
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
 
@@ -18,9 +17,13 @@ class Settings(object):
             cls._instance = super().__new__(cls)
             cls._instance.stack = []
 
+            #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
+            #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
+            #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
             config = dotdict(
                 lm=None,
                 rm=None,
+                reranker=None,
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
                 compiling=False,
