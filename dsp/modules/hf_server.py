@@ -25,6 +25,7 @@ from dsp.modules.hf import HFModel
 
 class Query(BaseModel):
     prompt: str
+    kwargs: dict = {}
 
 
 warnings.filterwarnings("ignore")
@@ -48,20 +49,19 @@ def generate(prompt, **kwargs):
     global lm
     generateStart = time.time()
     # TODO: Convert this to a log message
-    print(f'#> Prompt: "{prompt}"')
+    print(f'#> kwargs: "{kwargs}" (type={type(kwargs)})')
     response = lm._generate(prompt, **kwargs)
     # TODO: Convert this to a log message
     print(f'#> Response: "{response}"')
     latency = (time.time() - generateStart) * 1000.0
     response["latency"] = latency
+    print(f'#> Latency:', '{:.3f}'.format(latency / 1000.0), 'seconds')
     return response
 
 
 @app.post("/")
 async def generate_post(query: Query):
-    # TODO: Handle kwargs
-
-    return generate(query.prompt)
+    return generate(query.prompt, **query.kwargs)
 
 
 if __name__ == "__main__":
