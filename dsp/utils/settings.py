@@ -1,27 +1,29 @@
-from typing import Callable, Optional
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
-import threading
 
 
 class Settings(object):
     """DSP configuration settings."""
+
     _instance = None
+    branch_idx: int = 0
 
     def __new__(cls):
         """
         Singleton Pattern. See https://python-patterns.guide/gang-of-four/singleton/
         """
+
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.main_stack = []
-            cls._instance.stack_by_thread = {}
-            cls._instance.stack_by_thread[threading.get_ident()] = cls._instance.main_stack
+            cls._instance.stack = []
 
+            #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
+            #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
+            #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
             config = dotdict(
                 lm=None,
                 rm=None,
-                branch_idx=0,
+                reranker=None,
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
                 compiling=False,
@@ -32,7 +34,7 @@ class Settings(object):
 
     @property
     def config(self):
-        return self.stack_by_thread[threading.get_ident()][-1]
+        return self.stack[-1]
 
     def __getattr__(self, name):
         if hasattr(self.config, name):
@@ -44,10 +46,10 @@ class Settings(object):
         super().__getattr__(name)
 
     def __append(self, config):
-        self.stack_by_thread[threading.get_ident()].append(config)
+        self.stack.append(config)
 
     def __pop(self):
-        self.stack_by_thread[threading.get_ident()].pop()
+        self.stack.pop()
 
     def configure(self, inherit_config: bool = True, **kwargs):
         """Set configuration settings.
@@ -69,9 +71,10 @@ class Settings(object):
         try:
             yield
         finally:
-                self.__pop()
+            self.__pop()
 
     def __repr__(self) -> str:
         return repr(self.config)
+
 
 settings = Settings()
