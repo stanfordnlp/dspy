@@ -2,14 +2,15 @@ import json
 import time
 import redis
 import hashlib
+import threading
 from functools import wraps
 from datetime import datetime, timezone
 
 # TODO: Create env variables
-POLL_INTERVAL = 0.005 # 5ms
-MAX_POLL_TIME = 0.015 # 15ms
+POLL_INTERVAL = 0.005
+MAX_POLL_TIME = 0.200
 
-# def connect(host="localhost", port=6379, db=0):
+
 cache = redis.Redis(host='localhost', port=6379, db=0)
 
 def _hash(func, *args, **kwargs):
@@ -22,7 +23,7 @@ def _hash(func, *args, **kwargs):
 
 
 def _sort_redis_values(redis_values):
-    print(redis_values)
+    
     # boolean for status gives highest priority to COMPLETE, followed by timestamp ordering
     # TODO: Better way than sorting each time?
     sorted_values = sorted(redis_values, key=lambda x: (x["status"] != "COMPLETE", float(x["timestamp"])))
@@ -39,7 +40,7 @@ def _compute(key, func, *args, **kwargs):
     cache_version = kwargs["cache_version"]
     # add entry to cache with status = RUNNING
     ts_str = str(datetime.now(timezone.utc).timestamp())
-    cache.lpush(key, json.dumps({"timestamp": ts_str, "status": "RUNNING", "cache_version": cache_version}))
+    cache.lpush(key, json.dumps({"timestamp": ts_str, "status": "RUNNING", "cache_version": cache_version, "args": args, "kwargs": kwargs}))
 
     # delete cache_version from kwargs before calling the underlying function
     del kwargs["cache_version"]
@@ -47,7 +48,7 @@ def _compute(key, func, *args, **kwargs):
     try:
         res = func(*args, **kwargs)
     except Exception as e:
-        # don't cache, so remove RUNNING entry TODO
+        # don't cache, so remove RUNNING entry
         entries = cache.lrange(key, 0, -1)
         entries = [json.loads(element.decode()) for element in entries]
         for idx, entry in enumerate(entries):
@@ -83,6 +84,7 @@ def _compute(key, func, *args, **kwargs):
 def cache_wrapper(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
+        thread_name = threading.current_thread().name
         # see if cache_version in kwargs
 
         cache_version = kwargs.get("cache_version", False)
@@ -100,9 +102,11 @@ def cache_wrapper(func):
             sorted_vals = _sort_redis_values(cached_vals)
             # CASE #1 - COMPLETED entry exists in cache - return as is
             if sorted_vals[0]["status"] == "COMPLETE":
+                print(thread_name + ": CASE 1")
                 return sorted_vals[0]["result"]
             else:
                 # CASE #2 - Cached entries but COMPLETED entry does not exist in cache - poll
+                print(thread_name + ": CASE 2")
                 start_time = time.time()
 
                 while time.time() - start_time < MAX_POLL_TIME:
@@ -114,10 +118,12 @@ def cache_wrapper(func):
                     time.sleep(POLL_INTERVAL)
                 
                 # CASE #3A - Cached entries but COMPLETED entry does not yet exist in cache - polling timed out
+                print(thread_name + ":CASE 3A")
                 return _compute(key, func, *args, **kwargs)
         
         else:
             # CASE #3B - No cached entries - run function and cache
+            print(thread_name + ":CASE 3B")
             return _compute(key, func, *args, **kwargs)
         
     return wrapper
@@ -125,16 +131,39 @@ def cache_wrapper(func):
 #TODO: Add lru cache
 @cache_wrapper
 def add3numbers(a,b,c):
-    print("running function - not cached")
+    thread_name = threading.current_thread().name
+    time.sleep(0.050)
+
+    # print(thread_name + ": running function - not cached")
     return a+b+c
         
+
+def test_function():
+    
+    thread1 = threading.Thread(target=add3numbers, args=(1,2,3), kwargs={"cache_version": 7}, name="Thread 1")
+    thread2 = threading.Thread(target=add3numbers, args=(5,5,7), name="Thread 2")
+    thread3 = threading.Thread(target=add3numbers, args=(5,5,7), name="Thread 3")
+    thread4 = threading.Thread(target=add3numbers, args=(5,5,7), kwargs={"cache_version": 3}, name="Thread 4")
+
+    thread1.start()
+    thread2.start()
+    thread3.start()
+    thread4.start()
+
+    thread1.join()
+    thread2.join()
+    thread3.join()
+    thread4.join()
+
+
         
 if __name__ == "__main__":
-    print("--1--")
-    res = add3numbers(1,2,3)
-    print("--2--")
-    res2 = add3numbers(1,2,3)
-    print("--3--")
-    res3 = add3numbers(61,2,0)
-    print("--4--")
-    res4 = add3numbers(9,1,6,cache_version=3)
+    # print("--1--")
+    # res = add3numbers(1,2,3)
+    # print("--2--")
+    # res2 = add3numbers(1,2,3)
+    # print("--3--")
+    # res3 = add3numbers(61,2,0)
+    # print("--4--")
+    # res4 = add3numbers(9,1,6,cache_version=3)
+    test_function()
