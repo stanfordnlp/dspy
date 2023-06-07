@@ -30,7 +30,7 @@ class ChatAdapter:
         self.prompt = {"model":"", "messages":[]}
 
     # def __call__(self, parts: list, include_rdemos: bool, include_ademos: bool, include_ademos: bool, include_context: bool):
-    def __call__(self, parts: dict, multi_turn=False, assistant_turns=False):
+    def __call__(self, parts: dict, multi_turn=False, system_turn=False):
         self.prompt["model"] = dsp.settings.lm.kwargs["model"]
         
         instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]        
@@ -47,7 +47,7 @@ class ChatAdapter:
                 return self.prompt
             
             messages = [
-                {"role": "system", "content": instructions},
+                {"role": "system" if system_turn else "user", "content": instructions},
                 {"role": "user", "content": guidelines},
                 {"role": "user", "content": rdemos},
             ]
@@ -60,7 +60,7 @@ class ChatAdapter:
                 return self.prompt
 
             messages = [
-                {"role": "system", "content": instructions},
+                {"role": "system" if system_turn else "user", "content": instructions},
                 {"role": "user", "content": guidelines},
             ]
             for ademo in ademos:
@@ -75,7 +75,7 @@ class ChatAdapter:
                 return self.prompt
 
             messages = [
-                {"role": "system", "content": instructions},
+                {"role": "system" if system_turn else "user", "content": instructions},
                 {"role": "user", "content": rdemos},
                 {"role": "user", "content": guidelines},
             ]
