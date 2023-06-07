@@ -6,9 +6,11 @@ import backoff
 import openai
 import openai.error
 from openai.openai_object import OpenAIObject
-
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+
+import itertools
 
 
 def backoff_hdlr(details):
@@ -19,6 +21,92 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details)
     )
 
+
+class ChatAdapter:
+    """
+        OpenAI Turbo Docs. See https://platform.openai.com/docs/guides/chat/introduction
+    """
+    def __init__(self):
+        self.prompt = {"model":"", "messages":[]}
+
+    # def __call__(self, parts: list, include_rdemos: bool, include_ademos: bool, include_ademos: bool, include_context: bool):
+    def __call__(self, parts: dict, multi_turn=False, assistant_turns=False):
+        self.prompt["model"] = dsp.settings.lm.kwargs["model"]
+        
+        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]        
+        rdemos = "\n\n".join(rdemos)
+        messages = []
+        
+        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
+            # if not multi_turn:
+            #     self.prompt["messages"] = [
+            #         {"role": "user", "content": ("\n\n---\n\n".join([p.strip for k, p in parts.items()])).strip()}
+            #     ]
+            #     return self.prompt
+            
+            messages = [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": guidelines},
+                {"role": "user", "content": rdemos},
+            ]
+        elif len(rdemos) == 0:
+            messages = [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": guidelines},
+            ]
+            for ademo in ademos:
+                messages.append({"role": "user", "content": ademo})
+            
+        else:
+            messages = [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": rdemos},
+                {"role": "user", "content": guidelines},
+            ]
+            for ademo in ademos:
+                messages.append({"role": "user", "content": ademo})
+            
+        messages.append({"role": "user", "content": query})
+        self.prompt["messages"] = messages
+        return self.prompt
+
+
+class BasicAdapter:
+    """
+    Adapter Pattern. See https://www.geeksforgeeks.org/adapter-method-python-design-patterns/
+    """
+    def __init__(self):
+        self.prompt = ""
+
+    def __call__(self, parts: dict):
+        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
+        rdemos = "\n\n".join(rdemos)
+        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
+            rdemos_and_query = "\n\n".join([rdemos, query])
+            parts = [
+                instructions,
+                guidelines,
+                rdemos_and_query,
+            ]
+        elif len(rdemos) == 0:
+            parts = [
+                instructions,
+                guidelines,
+                *ademos,
+                query,
+            ]
+        else:
+            parts = [
+                instructions,
+                rdemos,
+                guidelines,
+                *ademos,
+                query,
+            ]
+
+        self.prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+        self.prompt = self.prompt.strip()
+        return self.prompt
 
 class GPT3(LM):
     """Wrapper around OpenAI's GPT API. Supports both the OpenAI and Azure APIs.
@@ -42,6 +130,7 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
         self.model_type = model_type
+        self.adapter = ChatAdapter() if model_type=="chat" else BasicAdapter()
 
         if api_provider == "azure":
             assert (
@@ -70,18 +159,17 @@ class GPT3(LM):
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 
-    def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
+    def basic_request(self, prompt, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
-        if self.model_type == "chat":
-            # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+        if self.model_type == "chat":            
+            kwargs["model"] = prompt["model"]
+            kwargs["messages"] = tuple(prompt["messages"])
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
             response = cached_gpt3_turbo_request(**kwargs)
-            
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)

@@ -4,11 +4,11 @@ from typing import Union, Any
 import dsp
 from dsp.primitives.demonstrate import Example
 from .utils import passages2text, format_answers
+import itertools
 
 Field = namedtuple("Field", "name separator input_variable output_variable description")
 
 # TODO: de-duplicate with dsp/templates/template.py
-
 
 class TemplateV2:
     def __init__(
@@ -178,7 +178,7 @@ class TemplateV2:
 
         return example
 
-    def __call__(self, example, show_guidelines=True) -> str:
+    def __call__(self, example, show_guidelines=True) -> list:
         example = dsp.Example(example)
 
         # The training data should not contain the output variable
@@ -195,42 +195,26 @@ class TemplateV2:
                     and demo[self.fields[-1].input_variable] is not None
                 )
             )
-        ]
+        ] if "demos" in example else []
 
         ademos = [
             self.query(demo, is_demo=True)
             for demo in example.demos
             if "augmented" in demo and demo.augmented
-        ]
+        ] if "demos" in example else []
 
         long_query = self._has_augmented_guidelines()
         if long_query:
             example["augmented"] = True
         query = self.query(example)
-        rdemos = "\n\n".join(rdemos)
-        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            rdemos_and_query = "\n\n".join([rdemos, query])
-            parts = [
-                self.instructions,
-                self.guidelines(show_guidelines),
-                rdemos_and_query,
-            ]
-        elif len(rdemos) == 0:
-            parts = [
-                self.instructions,
-                self.guidelines(show_guidelines),
-                *ademos,
-                query,
-            ]
-        else:
-            parts = [
-                self.instructions,
-                rdemos,
-                self.guidelines(show_guidelines),
-                *ademos,
-                query,
-            ]
-
-        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-
-        return prompt.strip()
+        
+        parts = {
+            "instructions": self.instructions,
+            "guidelines": self.guidelines(show_guidelines),
+            "rdemos": rdemos,
+            "ademos": ademos,
+            "query": query,
+            "long_query": long_query
+        }
+                
+        return parts

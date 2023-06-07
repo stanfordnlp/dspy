@@ -23,6 +23,7 @@ class Settings(object):
             config = dotdict(
                 lm=None,
                 rm=None,
+                adapter=None,
                 reranker=None,
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
