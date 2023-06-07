@@ -38,11 +38,13 @@ class ChatAdapter:
         messages = []
         
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            # if not multi_turn:
-            #     self.prompt["messages"] = [
-            #         {"role": "user", "content": ("\n\n---\n\n".join([p.strip for k, p in parts.items()])).strip()}
-            #     ]
-            #     return self.prompt
+            if not multi_turn:
+                rdemos_and_query = "\n\n".join([rdemos, query])
+                parts = [instructions, guidelines, rdemos_and_query]
+                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+                prompt = prompt.strip()
+                self.prompt["messages"] = [{"role": "user", "content": prompt}]
+                return self.prompt
             
             messages = [
                 {"role": "system", "content": instructions},
@@ -50,6 +52,13 @@ class ChatAdapter:
                 {"role": "user", "content": rdemos},
             ]
         elif len(rdemos) == 0:
+            if not multi_turn:
+                parts = [instructions, guidelines, *ademos, query]
+                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+                prompt = prompt.strip()
+                self.prompt["messages"] = [{"role": "user", "content": prompt}]
+                return self.prompt
+
             messages = [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": guidelines},
@@ -58,6 +67,13 @@ class ChatAdapter:
                 messages.append({"role": "user", "content": ademo})
             
         else:
+            if not multi_turn: 
+                parts = [instructions, rdemos, guidelines, *ademos, query]
+                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+                prompt = prompt.strip()
+                self.prompt["messages"] = [{"role": "user", "content": prompt}]
+                return self.prompt
+
             messages = [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": rdemos},
