@@ -30,59 +30,132 @@ class ChatAdapter:
         self.prompt = {"model":"", "messages":[]}
 
     # def __call__(self, parts: list, include_rdemos: bool, include_ademos: bool, include_ademos: bool, include_context: bool):
-    def __call__(self, parts: dict, multi_turn=False, system_turn=False):
+    def __call__(self, parts: dict, system_turn=False, multi_turn=False, strict_turn=False):
         self.prompt["model"] = dsp.settings.lm.kwargs["model"]
         
-        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]        
-        rdemos = "\n\n".join(rdemos)
+        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"].strip(), parts["guidelines"].strip(), parts["rdemos"], parts["ademos"], parts["query"].strip(), parts["long_query"]       
+        rdemos = "\n\n".join(rdemos).strip()
+        rdemos_and_query = "\n\n".join([rdemos, query]).strip()
         messages = []
         
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            if not multi_turn:
-                rdemos_and_query = "\n\n".join([rdemos, query])
-                parts = [instructions, guidelines, rdemos_and_query]
-                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-                prompt = prompt.strip()
-                self.prompt["messages"] = [{"role": "user", "content": prompt}]
-                return self.prompt
-            
-            messages = [
-                {"role": "system" if system_turn else "user", "content": instructions},
-                {"role": "user", "content": guidelines},
-                {"role": "user", "content": rdemos},
-            ]
-        elif len(rdemos) == 0:
-            if not multi_turn:
-                parts = [instructions, guidelines, *ademos, query]
-                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-                prompt = prompt.strip()
-                self.prompt["messages"] = [{"role": "user", "content": prompt}]
-                return self.prompt
+            if system_turn and multi_turn:
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": guidelines},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": rdemos},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": query},
+                ]
+                messages = [m for m in messages if m]
 
-            messages = [
-                {"role": "system" if system_turn else "user", "content": instructions},
-                {"role": "user", "content": guidelines},
-            ]
-            for ademo in ademos:
-                messages.append({"role": "user", "content": ademo})
+            elif system_turn and not multi_turn:
+                rdemos_and_query = "\n\n".join([rdemos, query])
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [guidelines, rdemos_and_query] if p])},
+                ]
+                
+            elif not system_turn and multi_turn:
+                messages = [
+                    {"role": "user", "content": instructions},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": guidelines},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": rdemos},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": query},
+                ]
+                messages = [m for m in messages if m]
+
+            elif not system_turn and not multi_turn:
+                rdemos_and_query = "\n\n".join([rdemos, query])
+                messages = [
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, guidelines, rdemos_and_query] if p])},
+                ]
+
+            
+
+        elif len(rdemos) == 0:
+            if system_turn and multi_turn:
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": guidelines},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                ]
+                for ademo in ademos:
+                    messages.append({"role": "user", "content": ademo})
+                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {}),
+                messages.append({"role": "user", "content": query})
+                messages = [m for m in messages if m]
+
+            elif system_turn and not multi_turn:
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [guidelines, *ademos, query] if p]) },
+                ]
+
+            elif not system_turn and multi_turn:
+                messages = [
+                    {"role": "user", "content": instructions},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": guidelines},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                ]
+                for ademo in ademos:
+                    messages.append({"role": "user", "content": ademo})
+                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                messages.append({"role": "user", "content": query})
+                messages = [m for m in messages if m]
+
+            elif not system_turn and not multi_turn:
+                messages = [
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, guidelines, *ademos, query] if p])},
+                ]
             
         else:
-            if not multi_turn: 
-                parts = [instructions, rdemos, guidelines, *ademos, query]
-                prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-                prompt = prompt.strip()
-                self.prompt["messages"] = [{"role": "user", "content": prompt}]
-                return self.prompt
+            if system_turn and multi_turn:
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": rdemos},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                ]
+                messages.append({"role": "user", "content": guidelines})
+                messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                
+                for ademo in ademos:
+                    messages.append({"role": "user", "content": ademo})
+                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                messages.append({"role": "user", "content": query})
+                messages = [m for m in messages if m]
 
-            messages = [
-                {"role": "system" if system_turn else "user", "content": instructions},
-                {"role": "user", "content": rdemos},
-                {"role": "user", "content": guidelines},
-            ]
-            for ademo in ademos:
-                messages.append({"role": "user", "content": ademo})
-            
-        messages.append({"role": "user", "content": query})
+            elif system_turn and not multi_turn:
+                messages = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [rdemos, guidelines, *ademos, query] if p]) },
+                ]
+
+            elif not system_turn and multi_turn:
+                messages = [
+                    {"role": "user", "content": instructions},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": rdemos},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "user", "content": guidelines},
+                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                ]
+                for ademo in ademos:
+                    messages.append({"role": "user", "content": ademo})
+                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                messages.append({"role": "user", "content": query})
+                messages = [m for m in messages if m]
+
+            elif not system_turn and not multi_turn:
+                messages = [
+                    {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, rdemos, guidelines, *ademos, query] if p])},
+                ]
+
         self.prompt["messages"] = messages
         return self.prompt
 
@@ -185,10 +258,10 @@ class GPT3(LM):
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
-            response = cached_gpt3_turbo_request(**kwargs)
+            response = cached_gpt3_turbo_request(**kwargs).strip()
         else:
             kwargs["prompt"] = prompt
-            response = cached_gpt3_request(**kwargs)
+            response = cached_gpt3_request(**kwargs).strip()
 
         history = {
             "prompt": prompt,
