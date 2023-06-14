@@ -26,12 +26,11 @@ class ChatAdapter:
     """
         OpenAI Turbo Docs. See https://platform.openai.com/docs/guides/chat/introduction
     """
-    def __init__(self):
-        self.prompt = {"model":"", "messages":[]}
 
     # def __call__(self, parts: list, include_rdemos: bool, include_ademos: bool, include_ademos: bool, include_context: bool):
     def __call__(self, parts: dict, system_turn=False, multi_turn=False, strict_turn=False):
-        self.prompt["model"] = dsp.settings.lm.kwargs["model"]
+        prompt = {}
+        prompt["model"] = dsp.settings.lm.kwargs["model"]
         
         instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"].strip(), parts["guidelines"].strip(), parts["rdemos"], parts["ademos"], parts["query"].strip(), parts["long_query"]       
         rdemos = "\n\n".join(rdemos).strip()
@@ -156,17 +155,14 @@ class ChatAdapter:
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, rdemos, guidelines, *ademos, query] if p])},
                 ]
 
-        self.prompt["messages"] = messages
-        return self.prompt
+        prompt["messages"] = messages
+        return prompt
 
 
 class BasicAdapter:
     """
     Adapter Pattern. See https://www.geeksforgeeks.org/adapter-method-python-design-patterns/
     """
-    def __init__(self):
-        self.prompt = ""
-
     def __call__(self, parts: dict):
         instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
         rdemos = "\n\n".join(rdemos)
@@ -193,9 +189,9 @@ class BasicAdapter:
                 query,
             ]
 
-        self.prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-        self.prompt = self.prompt.strip()
-        return self.prompt
+        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+        prompt = prompt.strip()
+        return prompt
 
 class GPT3(LM):
     """Wrapper around OpenAI's GPT API. Supports both the OpenAI and Azure APIs.
@@ -258,10 +254,10 @@ class GPT3(LM):
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
-            response = cached_gpt3_turbo_request(**kwargs).strip()
+            response = cached_gpt3_turbo_request(**kwargs)
         else:
             kwargs["prompt"] = prompt
-            response = cached_gpt3_request(**kwargs).strip()
+            response = cached_gpt3_request(**kwargs)
 
         history = {
             "prompt": prompt,
