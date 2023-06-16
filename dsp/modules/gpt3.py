@@ -27,8 +27,13 @@ class ChatAdapter:
         OpenAI Turbo Docs. See https://platform.openai.com/docs/guides/chat/introduction
     """
 
+    def __init__(self, system_turn=False, multi_turn=False, strict_turn=False):
+        self.system_turn = system_turn
+        self.multi_turn = multi_turn
+        self.strict_turn = strict_turn
+
     # def __call__(self, parts: list, include_rdemos: bool, include_ademos: bool, include_ademos: bool, include_context: bool):
-    def __call__(self, parts: dict, system_turn=False, multi_turn=False, strict_turn=False):
+    def __call__(self, parts: dict):
         prompt = {}
         prompt["model"] = dsp.settings.lm.kwargs["model"]
         
@@ -38,37 +43,37 @@ class ChatAdapter:
         messages = []
         
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            if system_turn and multi_turn:
+            if self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": guidelines},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": rdemos},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": query},
                 ]
                 messages = [m for m in messages if m]
 
-            elif system_turn and not multi_turn:
+            elif self.system_turn and not self.multi_turn:
                 rdemos_and_query = "\n\n".join([rdemos, query])
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [guidelines, rdemos_and_query] if p])},
                 ]
                 
-            elif not system_turn and multi_turn:
+            elif not self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "user", "content": instructions},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": guidelines},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": rdemos},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": query},
                 ]
                 messages = [m for m in messages if m]
 
-            elif not system_turn and not multi_turn:
+            elif not self.system_turn and not self.multi_turn:
                 rdemos_and_query = "\n\n".join([rdemos, query])
                 messages = [
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, guidelines, rdemos_and_query] if p])},
@@ -77,80 +82,80 @@ class ChatAdapter:
             
 
         elif len(rdemos) == 0:
-            if system_turn and multi_turn:
+            if self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": guidelines},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                 ]
                 for ademo in ademos:
                     messages.append({"role": "user", "content": ademo})
-                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {}),
+                    messages.append({"role": "assistant", "content": "Got it."} if self.strict_turn else {}),
                 messages.append({"role": "user", "content": query})
                 messages = [m for m in messages if m]
 
-            elif system_turn and not multi_turn:
+            elif self.system_turn and not self.multi_turn:
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [guidelines, *ademos, query] if p]) },
                 ]
 
-            elif not system_turn and multi_turn:
+            elif not self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "user", "content": instructions},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": guidelines},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                 ]
                 for ademo in ademos:
                     messages.append({"role": "user", "content": ademo})
-                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                    messages.append({"role": "assistant", "content": "Got it."} if self.strict_turn else {})
                 messages.append({"role": "user", "content": query})
                 messages = [m for m in messages if m]
 
-            elif not system_turn and not multi_turn:
+            elif not self.system_turn and not self.multi_turn:
                 messages = [
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, guidelines, *ademos, query] if p])},
                 ]
             
         else:
-            if system_turn and multi_turn:
+            if self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": rdemos},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                 ]
                 messages.append({"role": "user", "content": guidelines})
-                messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                messages.append({"role": "assistant", "content": "Got it."} if self.strict_turn else {})
                 
                 for ademo in ademos:
                     messages.append({"role": "user", "content": ademo})
-                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                    messages.append({"role": "assistant", "content": "Got it."} if self.strict_turn else {})
                 messages.append({"role": "user", "content": query})
                 messages = [m for m in messages if m]
 
-            elif system_turn and not multi_turn:
+            elif self.system_turn and not self.multi_turn:
                 messages = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [rdemos, guidelines, *ademos, query] if p]) },
                 ]
 
-            elif not system_turn and multi_turn:
+            elif not self.system_turn and self.multi_turn:
                 messages = [
                     {"role": "user", "content": instructions},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": rdemos},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                     {"role": "user", "content": guidelines},
-                    {"role": "assistant", "content": "Got it."} if strict_turn else {},
+                    {"role": "assistant", "content": "Got it."} if self.strict_turn else {},
                 ]
                 for ademo in ademos:
                     messages.append({"role": "user", "content": ademo})
-                    messages.append({"role": "assistant", "content": "Got it."} if strict_turn else {})
+                    messages.append({"role": "assistant", "content": "Got it."} if self.strict_turn else {})
                 messages.append({"role": "user", "content": query})
                 messages = [m for m in messages if m]
 
-            elif not system_turn and not multi_turn:
+            elif not self.system_turn and not self.multi_turn:
                 messages = [
                     {"role": "user", "content": "\n\n---\n\n".join([p.strip() for p in [instructions, rdemos, guidelines, *ademos, query] if p])},
                 ]
@@ -215,7 +220,6 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
         self.model_type = model_type
-        self.adapter = ChatAdapter() if model_type=="chat" else BasicAdapter()
 
         if api_provider == "azure":
             assert (
