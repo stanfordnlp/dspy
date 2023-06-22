@@ -1,3 +1,7 @@
+### Temporary Note:
+
+The ColBERTv2 Wikipedia index has been moved to the following URL. **http://ec2-35-87-71-196.us-west-2.compute.amazonaws.com:8893/api/search** —— We will update the DSP notebooks shortly.
+
 # 🎓𝗗𝗦𝗣: The Demonstrate–Search–Predict Framework
 
 The **DSP** framework provides a programming abstraction for _rapidly building sophisticated AI systems_. It's primarily (but not exclusively) designed for tasks that are knowledge intensive (e.g., answering user questions or researching complex topics).
