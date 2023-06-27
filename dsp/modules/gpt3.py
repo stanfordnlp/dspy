@@ -1,6 +1,7 @@
 import functools
 import json
 from typing import Any, Literal, Optional, cast
+import uuid
 
 import backoff
 import openai
@@ -9,6 +10,7 @@ from openai.openai_object import OpenAIObject
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.cache import cache_wrapper
 
 
 def backoff_hdlr(details):
@@ -80,8 +82,8 @@ class GPT3(LM):
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
-            response = cached_gpt3_turbo_request(**kwargs)
-            
+            #response = cached_gpt3_turbo_request(**kwargs)
+            response = cached_gpt3_turbo_request(**kwargs, cache_branch=4, worker_id=str(uuid.uuid4()))
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
@@ -200,4 +202,6 @@ def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
     return _cached_gpt3_turbo_request_v2(**kwargs)
 
 
-cached_gpt3_turbo_request = _cached_gpt3_turbo_request_v2_wrapped
+@cache_wrapper
+def cached_gpt3_turbo_request(**kwargs):
+    return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
