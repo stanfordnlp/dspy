@@ -69,6 +69,7 @@ def _compute(hash, func, worker_id, cache_branch, *args, **kwargs):
 
         cache.json().set(thread_key, '$', val)
         cache.zadd(key_complete, {worker_id: ts_complete}) 
+        return res
 
 
 def _get_latest_result(key_complete, cache_branch, hash):
