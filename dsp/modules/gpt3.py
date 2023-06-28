@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import functools
 import json
 from typing import Any, Literal, Optional, cast
@@ -82,8 +83,9 @@ class GPT3(LM):
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
-            #response = cached_gpt3_turbo_request(**kwargs)
-            response = cached_gpt3_turbo_request(**kwargs, cache_branch=4, worker_id=str(uuid.uuid4()))
+            # TODO: add an interface to use cache timerange
+            experiment_last_cycle_timestamp = (datetime.now() - timedelta(seconds=14)).timestamp()
+            response = cached_gpt3_turbo_request(**kwargs, worker_id=str(uuid.uuid4()), cache_end_timerange=experiment_last_cycle_timestamp)
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
