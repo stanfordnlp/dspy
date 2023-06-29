@@ -1,13 +1,13 @@
-from datetime import datetime, timedelta
 import functools
 import json
-from typing import Any, Literal, Optional, cast
+from typing import Any, Literal, Optional, Union, cast
 import uuid
 
 import backoff
 import openai
 import openai.error
 from openai.openai_object import OpenAIObject
+import dsp
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
@@ -76,19 +76,20 @@ class GPT3(LM):
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
+        cache_args: dict[str, Union[str, float]] = {
+            "worker_id": str(uuid.uuid4()),
+            "cache_end_timerange": dsp.settings.config["cache_end_timerange"],
+            "cache_start_timerange": dsp.settings.config["cache_start_timerange"],
+        }
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             kwargs["messages"] = [{"role": "user", "content": prompt}]
-            kwargs = {
-                "stringify_request": json.dumps(kwargs)
-            }
-            # TODO: add an interface to use cache timerange
-            experiment_last_cycle_timestamp = (datetime.now() - timedelta(seconds=14)).timestamp()
-            response = cached_gpt3_turbo_request(**kwargs, worker_id=str(uuid.uuid4()), cache_end_timerange=experiment_last_cycle_timestamp)
+            kwargs = {"stringify_request": json.dumps(kwargs)}
+            response = cached_gpt3_turbo_request(**kwargs, **cache_args)
         else:
             kwargs["prompt"] = prompt
-            response = cached_gpt3_request(**kwargs)
+            response = cached_gpt3_request(**kwargs, **cache_args)
 
         history = {
             "prompt": prompt,
@@ -110,7 +111,7 @@ class GPT3(LM):
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
-        
+
         return self.basic_request(prompt, **kwargs)
 
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
@@ -188,7 +189,9 @@ def cached_gpt3_request_v2_wrapped(**kwargs):
     return cached_gpt3_request_v2(**kwargs)
 
 
-cached_gpt3_request = cached_gpt3_request_v2_wrapped
+@cache_wrapper
+def cached_gpt3_request(**kwargs):
+    return cached_gpt3_request_v2_wrapped(**kwargs)
 
 
 @CacheMemory.cache

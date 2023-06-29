@@ -1,9 +1,12 @@
 import functools
 from typing import Optional, Union, Any
+import uuid
 import requests
 
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
+from dsp.utils.cache import cache_wrapper
 
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
@@ -24,10 +27,17 @@ class ColBERTv2:
     def __call__(
         self, query: str, k: int = 10, simplify: bool = False
     ) -> Union[list[str], list[dotdict]]:
+        
+        cache_args: dict[str, Union[str, float]] = {
+            "worker_id": str(uuid.uuid4()),
+            "cache_end_timerange": dsp.settings.config["cache_end_timerange"],
+            "cache_start_timerange": dsp.settings.config["cache_start_timerange"],
+        }
+        
         if self.post_requests:
-            topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
+            topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k, **cache_args)
         else:
-            topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k)
+            topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k, **cache_args)
 
         if simplify:
             return [psg["long_text"] for psg in topk]
@@ -54,8 +64,9 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
 def colbertv2_get_request_v2_wrapped(*args, **kwargs):
     return colbertv2_get_request_v2(*args, **kwargs)
 
-
-colbertv2_get_request = colbertv2_get_request_v2_wrapped
+@cache_wrapper
+def colbertv2_get_request(*args, **kwargs):
+    return colbertv2_get_request_v2_wrapped(*args, **kwargs)
 
 
 @CacheMemory.cache
@@ -73,4 +84,6 @@ def colbertv2_post_request_v2_wrapped(*args, **kwargs):
     return colbertv2_post_request_v2(*args, **kwargs)
 
 
-colbertv2_post_request = colbertv2_post_request_v2_wrapped
+@cache_wrapper
+def colbertv2_post_request(*args, **kwargs):
+    return colbertv2_post_request_v2_wrapped(*args, **kwargs)

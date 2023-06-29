@@ -4,9 +4,7 @@ import traceback
 from typing import Any, Callable, Literal, Optional, cast
 import uuid
 import redis
-import random
 import hashlib
-import threading
 from functools import wraps
 from datetime import datetime, timezone
 
@@ -14,9 +12,12 @@ from datetime import datetime, timezone
 POLL_INTERVAL = 0.005
 MAX_POLL_TIME = 0.200
 
-cache = redis.Redis(
-    host="localhost", port=6379, db=0, charset="utf-8"
-)  # redis' default encoding is also utf-8
+try:
+    cache = redis.Redis(host="localhost", port=6379, db=0, charset="utf-8")
+    cache.ping()
+except Exception:
+    cache = None
+    print("Could not connect to Redis. Falling back to basic caching.")
 
 
 def filter_keys(
@@ -42,8 +43,9 @@ def check_if_exists_in_cache(
     range_end_timestamp: float,
     return_status: bool = False,
 ) -> tuple[bool, Optional[str], Optional[str]]:
-    
-    # GET all existing caches for this cache key and filter by timestamp 
+    """Returns a tuple of (cache_exists, worker_id, operation_timestamp)"""
+
+    # GET all existing caches for this cache key and filter by timestamp
     states = ["COMPLETE", "STARTED", "FAILED"]
     state_results: dict[str, list[tuple[bytes, float]]] = {}
     for state in states:
@@ -69,38 +71,45 @@ def check_if_exists_in_cache(
         for sublist_state, sublist in state_results.items()
         for (worker_id, operation_timestamp) in sublist
     ]
-    # first, we sort by timestamp in descending order
+    # first, we sort by timestamp in asc order
+    # fetching earliest completed operations helps to keep consistency
     flatten_list_sorted_by_timestamp = sorted(
-        flatten_list, key=lambda x: x[2], reverse=True
+        flatten_list, key=lambda x: x[2], reverse=False
     )
-    latest_valid_item_to_return: Optional[tuple[str, str]] = None
+    earliest_valid_item_to_return: Optional[tuple[str, str]] = None
     for (
         sublist_state,
         worker_id,
         operation_timestamp,
     ) in flatten_list_sorted_by_timestamp:
-        # If within the timerange, we have a completed or started operation, we return it
-        # TODO: we should probably return the completed over started
+        # If within the timerange, we have a completed operation, we return it
         # priority should be 'completed' > 'started' > 'failed'
-        if sublist_state in ("COMPLETE", "STARTED"):
+        if sublist_state == "COMPLETE":
             return (True, sublist_state, worker_id.decode("utf-8"))
 
-        # if latest is not a complete one, we update the latest but keep looking for a complete or started one
-        if latest_valid_item_to_return is None:
-            latest_valid_item_to_return = (
+        # we likely would have only one started operation, but we return the latest even if we have more than one
+        if sublist_state == "STARTED":
+            earliest_valid_item_to_return = (
+                sublist_state,
+                worker_id.decode("utf-8"),
+            )
+
+        # if we have neither complete nor started, we update the latest but keep looking for a complete or started one
+        if earliest_valid_item_to_return is None and sublist_state == "FAILED":
+            earliest_valid_item_to_return = (
                 sublist_state,
                 worker_id.decode("utf-8"),
             )
 
     # just to keep linter happy
-    if latest_valid_item_to_return is None:
+    if earliest_valid_item_to_return is None:
         return (False, None, None)
-    
-    # we return the failed one if we have no complete or started ones
+
+    # we return the failed or started one if we have no complete ones
     return (
         True,
-        latest_valid_item_to_return[0],
-        latest_valid_item_to_return[1],
+        earliest_valid_item_to_return[0],
+        earliest_valid_item_to_return[1],
     )
 
 
@@ -188,9 +197,7 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         # see if cache_version in kwargs
         worker_id = kwargs.get(
             "worker_id",
-            str(
-                uuid.uuid4()
-            ),
+            str(uuid.uuid4()),
         )  # required to be there. TODO: see if we can do this without requiring the user to pass in a unique id per thread
         cache_branch = str(kwargs.get("cache_branch", 0))
         start_time: float = cast(float, kwargs.get("cache_start_timerange", 0))
@@ -198,8 +205,17 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
 
         # remove from kwargs so that don't get passed to the function & don't get hashed
         kwargs = filter_keys(
-            kwargs, ["worker_id", "cache_branch", "cache_start_timerange", "cache_end_timerange"]
+            kwargs,
+            [
+                "worker_id",
+                "cache_branch",
+                "cache_start_timerange",
+                "cache_end_timerange",
+            ],
         )
+
+        if not cache:
+            return func(*args, **kwargs)
 
         # get a consistent hash for the function call
         function_hash = _hash(func, *args, **kwargs)
@@ -216,12 +232,16 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         ) = check_if_exists_in_cache(
             function_hash, cache_branch, start_time, end_time, return_status=True
         )
-        
+
         if cache_exists and cache_exists_operation_status == "COMPLETE":
             print("Found Completed operation in cache: ", key_complete)
             cache_data = get_cache_data(key_complete, cache_exists_worker_id)["result"]
             return cache_data
-        if cache_exists and cache_exists_operation_status == "FAILED" and end_time <= request_time:
+        if (
+            cache_exists
+            and cache_exists_operation_status == "FAILED"
+            and end_time <= request_time
+        ):
             print("Found only Failed operation in cache: ", key_started)
             cache_data = get_cache_data(key_failed, cache_exists_worker_id)["result"]
             raise Exception(cache_data)
@@ -242,7 +262,10 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                     return_status=True,
                 )
                 if cache_exists and cache_exists_operation_status == "COMPLETE":
-                    print("Polling Completed. Found Completed operation in cache: ", key_complete)
+                    print(
+                        "Polling Completed. Found Completed operation in cache: ",
+                        key_complete,
+                    )
                     cache_data = get_cache_data(key_complete, cache_exists_worker_id)[
                         "result"
                     ]
@@ -260,55 +283,3 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             )
 
     return wrapper
-
-
-# TODO: update the below test code
-# TODO: Add lru cache
-@cache_wrapper
-def add3numbers(a, b, c):
-    thread_name = threading.current_thread().name
-    time.sleep(random.uniform(0, 0.1))
-
-    print(thread_name + ": running function - not cached")
-    return a + b + c
-
-
-def test_function():
-    thread1 = threading.Thread(
-        target=add3numbers,
-        args=(1, 2, 3),
-        kwargs={"cache_branch": 7, "worker_id": str(uuid.uuid4())},
-        name="Thread 1",
-    )
-    thread2 = threading.Thread(
-        target=add3numbers,
-        args=(5, 5, 7),
-        kwargs={"worker_id": str(uuid.uuid4())},
-        name="Thread 2",
-    )
-    thread3 = threading.Thread(
-        target=add3numbers,
-        args=(5, 5, 7),
-        kwargs={"worker_id": str(uuid.uuid4())},
-        name="Thread 3",
-    )
-    thread4 = threading.Thread(
-        target=add3numbers,
-        args=(5, 5, 7),
-        kwargs={"cache_branch": 3, "worker_id": str(uuid.uuid4())},
-        name="Thread 4",
-    )
-
-    thread1.start()
-    thread2.start()
-    thread3.start()
-    thread4.start()
-
-    thread1.join()
-    thread2.join()
-    thread3.join()
-    thread4.join()
-
-
-if __name__ == "__main__":
-    test_function()
