@@ -234,7 +234,6 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         )
 
         if cache_exists and cache_exists_operation_status == "COMPLETE":
-            print("Found Completed operation in cache: ", key_complete)
             cache_data = get_cache_data(key_complete, cache_exists_worker_id)["result"]
             return cache_data
         if (
@@ -242,12 +241,9 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             and cache_exists_operation_status == "FAILED"
             and end_time <= request_time
         ):
-            print("Found only Failed operation in cache: ", key_started)
             cache_data = get_cache_data(key_failed, cache_exists_worker_id)["result"]
             raise Exception(cache_data)
         if cache_exists and cache_exists_operation_status == "STARTED":
-            print("Found only pending operation in cache: ", key_started)
-            print("Polling for the operation to complete...")
             start_time = time.time()
             while time.time() - start_time < MAX_POLL_TIME:
                 (
@@ -262,10 +258,6 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                     return_status=True,
                 )
                 if cache_exists and cache_exists_operation_status == "COMPLETE":
-                    print(
-                        "Polling Completed. Found Completed operation in cache: ",
-                        key_complete,
-                    )
                     cache_data = get_cache_data(key_complete, cache_exists_worker_id)[
                         "result"
                     ]
@@ -273,7 +265,6 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                 time.sleep(POLL_INTERVAL)
 
         if end_time > request_time:
-            print("No cached entries found. Running function...")
             return _compute(
                 function_hash, func, worker_id, cache_branch, *args, **kwargs
             )
