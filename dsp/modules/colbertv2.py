@@ -68,6 +68,7 @@ def colbertv2_get_request_v2_wrapped(*args, **kwargs):
 def colbertv2_get_request(*args, **kwargs):
     return colbertv2_get_request_v2_wrapped(*args, **kwargs)
 
+colbertv2_get_request = colbertv2_get_request_v2_wrapped
 
 @CacheMemory.cache
 def colbertv2_post_request_v2(url: str, query: str, k: int):
