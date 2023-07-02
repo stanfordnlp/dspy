@@ -196,9 +196,9 @@ class SQLiteCache:
             if row is None:
                 return False, None
             if return_record_result:
+                logger.debug(f"returning record: {row[0]}")
                 return True, json.loads(row[3]) if retrieve_status == 2 else row[3]
-            else:
-                return True, None
+            return True, None
 
     def get_cache_record(
         self, operation_hash: str, branch_idx: int, start_time: float, end_time: float
@@ -329,7 +329,6 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         logger.debug(
             f"Could not find a succesful experiment result in the cache for timerange between {timerange_in_iso}. Computing!"
         )
-        # compute the function
         try:
             result = func(*args, **kwargs)
             # update the cache as completed
@@ -341,6 +340,15 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                 end_time,
                 row_idx=row_idx,
                 status=2,
+            )
+            # redundant reads to handle concurrency issues
+            _, result = cache_client.retrieve_earliest_record(
+                function_hash,
+                cache_branch,
+                start_time,
+                end_time,
+                retrieve_status=2,
+                return_record_result=True,
             )
             return result
         except Exception as exc:
