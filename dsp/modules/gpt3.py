@@ -1,4 +1,3 @@
-import functools
 import json
 from typing import Any, Literal, Optional, Union, cast
 import uuid
@@ -9,7 +8,6 @@ import openai.error
 from openai.openai_object import OpenAIObject
 import dsp
 
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 from dsp.utils.cache import cache_wrapper
 
@@ -78,7 +76,9 @@ class GPT3(LM):
 
         cache_args: dict[str, Union[str, float]] = {
             "worker_id": str(uuid.uuid4()),
-            "experiment_start_timestamp": dsp.settings.config["experiment_start_timestamp"],
+            "experiment_start_timestamp": dsp.settings.config[
+                "experiment_start_timestamp"
+            ],
             "experiment_end_timestamp": dsp.settings.config["experiment_end_timestamp"],
         }
         kwargs = {**self.kwargs, **kwargs}
@@ -178,35 +178,13 @@ class GPT3(LM):
         return completions
 
 
-@CacheMemory.cache
-def cached_gpt3_request_v2(**kwargs):
+@cache_wrapper
+def cached_gpt3_request(**kwargs):
     return openai.Completion.create(**kwargs)
 
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_gpt3_request_v2_wrapped(**kwargs):
-    return cached_gpt3_request_v2(**kwargs)
-
-
 @cache_wrapper
-def cached_gpt3_request(**kwargs):
-    return cached_gpt3_request_v2_wrapped(**kwargs)
-
-
-@CacheMemory.cache
-def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
+def cached_gpt3_turbo_request(**kwargs) -> OpenAIObject:
     if "stringify_request" in kwargs:
         kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
-
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
-    return _cached_gpt3_turbo_request_v2(**kwargs)
-
-
-@cache_wrapper
-def cached_gpt3_turbo_request(**kwargs):
-    return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)

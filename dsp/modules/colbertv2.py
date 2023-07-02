@@ -1,10 +1,8 @@
-import functools
 from typing import Optional, Union, Any
 import uuid
 import requests
 
 import dsp
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
 from dsp.utils.cache import cache_wrapper
 
@@ -27,17 +25,20 @@ class ColBERTv2:
     def __call__(
         self, query: str, k: int = 10, simplify: bool = False
     ) -> Union[list[str], list[dotdict]]:
-        
         cache_args: dict[str, Union[str, float]] = {
             "worker_id": str(uuid.uuid4()),
             "cache_end_timerange": dsp.settings.config["experiment_start_timestamp"],
             "cache_start_timerange": dsp.settings.config["experiment_end_timestamp"],
         }
-        
+
         if self.post_requests:
-            topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k, **cache_args)
+            topk: list[dict[str, Any]] = colbertv2_post_request(
+                self.url, query, k, **cache_args
+            )
         else:
-            topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k, **cache_args)
+            topk: list[dict[str, Any]] = colbertv2_get_request(
+                self.url, query, k, **cache_args
+            )
 
         if simplify:
             return [psg["long_text"] for psg in topk]
@@ -45,7 +46,6 @@ class ColBERTv2:
         return [dotdict(psg) for psg in topk]
 
 
-@CacheMemory.cache
 def colbertv2_get_request_v2(url: str, query: str, k: int):
     assert (
         k <= 100
@@ -59,18 +59,15 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
     return topk[:k]
 
 
-@functools.lru_cache(maxsize=None)
-@NotebookCacheMemory.cache
 def colbertv2_get_request_v2_wrapped(*args, **kwargs):
     return colbertv2_get_request_v2(*args, **kwargs)
+
 
 @cache_wrapper
 def colbertv2_get_request(*args, **kwargs):
     return colbertv2_get_request_v2_wrapped(*args, **kwargs)
 
-colbertv2_get_request = colbertv2_get_request_v2_wrapped
 
-@CacheMemory.cache
 def colbertv2_post_request_v2(url: str, query: str, k: int):
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
@@ -79,12 +76,6 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     return res.json()["topk"][:k]
 
 
-@functools.lru_cache(maxsize=None)
-@NotebookCacheMemory.cache
-def colbertv2_post_request_v2_wrapped(*args, **kwargs):
-    return colbertv2_post_request_v2(*args, **kwargs)
-
-
 @cache_wrapper
 def colbertv2_post_request(*args, **kwargs):
-    return colbertv2_post_request_v2_wrapped(*args, **kwargs)
+    return colbertv2_post_request_v2(*args, **kwargs)
