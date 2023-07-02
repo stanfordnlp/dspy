@@ -27,8 +27,8 @@ class Settings(object):
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
                 compiling=False,
-                cache_start_timerange=0,
-                cache_end_timerange=float("inf"),
+                experiment_start_timestamp=0,
+                experiment_end_timestamp=float("inf"),
             )
             cls._instance.__append(config)
 

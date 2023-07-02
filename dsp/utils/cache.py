@@ -12,6 +12,7 @@ from datetime import datetime
 import hashlib
 import threading
 from dsp.utils.logger import get_logger
+
 logger = get_logger(logging_level=int(os.getenv("DSP_LOGGING_LEVEL", "20")))
 
 MAX_POLL_TIME = 10
@@ -118,7 +119,7 @@ class SQLiteCache:
                 WHERE operation_hash = ? AND branch_idx = ? AND status = ? AND timestamp >= ?"""
                 sql_inputs = (status, result, operation_hash, branch_idx, 1, start_time)
                 if end_time != float("inf"):
-                    sql_query += "AND timestamp <= ?"
+                    sql_query += " AND timestamp <= ?"
             else:
                 sql_query = """
                 UPDATE cache
@@ -147,10 +148,10 @@ class SQLiteCache:
             """
             sql_inputs = (operation_hash, branch_idx, status, start_time)
             if end_time != float("inf"):
-                sql_query += "AND timestamp <= ?"
+                sql_query += " AND timestamp <= ?"
                 sql_inputs += (end_time,)
 
-            sql_query += "ORDER BY insert_timestamp DESC LIMIT 1"
+            sql_query += " ORDER BY timestamp ASC LIMIT 1"
 
             cursor.execute(
                 sql_query,
@@ -180,12 +181,12 @@ class SQLiteCache:
             """
             sql_inputs = (function_hash, cache_branch, range_start_timestamp)
             if range_end_timestamp != float("inf"):
-                sql_query += "AND timestamp <= ?"
+                sql_query += " AND timestamp <= ?"
                 sql_inputs += (range_end_timestamp,)
             if retrieve_status is not None:
-                sql_query += "AND status = ?"
+                sql_query += " AND status = ?"
                 sql_inputs += (retrieve_status,)
-            sql_query += "ORDER BY status DESC, insert_timestamp ASC LIMIT 1"
+            sql_query += " ORDER BY status DESC, insert_timestamp ASC LIMIT 1"
 
             cursor.execute(
                 sql_query,
@@ -211,7 +212,7 @@ class SQLiteCache:
             """
             sql_inputs = (operation_hash, branch_idx, start_time)
             if end_time != float("inf"):
-                sql_query += "AND timestamp <= ?"
+                sql_query += " AND timestamp <= ?"
                 sql_inputs += (end_time,)
 
             cursor.execute(sql_query, sql_inputs)
@@ -237,8 +238,11 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         """
         request_time = datetime.now().timestamp()
         cache_branch = cast(int, kwargs.get("cache_branch", 0))
-        start_time: float = cast(float, kwargs.get("cache_start_timerange", 0))
-        end_time: float = cast(float, kwargs.get("cache_end_timerange", float("inf")))
+        start_time: float = cast(float, kwargs.get("experiment_start_timestamp", 0))
+        end_time: float = cast(
+            float, kwargs.get("experiment_end_timestamp", float("inf"))
+        )
+        timerange_in_iso: str = f"{datetime.fromtimestamp(start_time).isoformat()} and {datetime.fromtimestamp(end_time).isoformat() if end_time != float('inf') else 'future'}"
 
         # remove from kwargs so that don't get passed to the function & don't get hashed
         kwargs = filter_keys(
@@ -246,8 +250,8 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             [
                 "worker_id",
                 "cache_branch",
-                "cache_start_timerange",
-                "cache_end_timerange",
+                "experiment_start_timestamp",
+                "experiment_end_timestamp",
             ],
         )
 
@@ -255,11 +259,13 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         function_hash = _hash(func, *args, **kwargs)
 
         # check if the cache exists
-        if SQLiteCache().check_if_record_exists_with_status(
+        if cache_client.check_if_record_exists_with_status(
             function_hash, cache_branch, start_time, end_time, 2
         ):
-            logger.debug("Cached result found. Retrieving from cache.")
-            _, result = SQLiteCache().retrieve_earliest_record(
+            logger.debug(
+                f"Cached experiment result found between {timerange_in_iso}. Retrieving result from cache."
+            )
+            _, result = cache_client.retrieve_earliest_record(
                 function_hash,
                 cache_branch,
                 start_time,
@@ -270,33 +276,34 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             return result
 
         # check if the cache is pending
-        if SQLiteCache().check_if_record_exists_with_status(
+        if cache_client.check_if_record_exists_with_status(
             function_hash, cache_branch, start_time, end_time, 1
         ):
             logger.debug("Operation is pending in the cache. Polling for result.")
             polling_start_time = default_timer()
             while default_timer() - polling_start_time < MAX_POLL_TIME:
-                if SQLiteCache().check_if_record_exists_with_status(
+                if cache_client.check_if_record_exists_with_status(
                     function_hash, cache_branch, start_time, end_time, 2
                 ):
                     logger.debug("Result found after polling. Retrieving from cache.")
-                    _, result = SQLiteCache().retrieve_earliest_record(
+                    _, result = cache_client.retrieve_earliest_record(
                         function_hash,
                         cache_branch,
                         start_time,
                         end_time,
                         retrieve_status=2,
-                        return_record_result=True
+                        return_record_result=True,
                     )
                     return result
                 time.sleep(POLL_INTERVAL)
+            raise Exception("Failed to retrieve result from cache after polling.")
 
         # check if the cache failed
-        if SQLiteCache().check_if_record_exists_with_status(
+        if cache_client.check_if_record_exists_with_status(
             function_hash, cache_branch, start_time, end_time, 0
         ):
             if end_time < request_time:
-                _, result = SQLiteCache().retrieve_earliest_record(
+                _, result = cache_client.retrieve_earliest_record(
                     function_hash,
                     cache_branch,
                     start_time,
@@ -304,23 +311,29 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                     retrieve_status=0,
                     return_record_result=True,
                 )
-                logger.debug("Failed operation found in the cache. Raising the same exception.")
+                logger.debug(
+                    f"Failed operation found in the cache for experiment timerange between {timerange_in_iso}. Raising the same exception."
+                )
                 raise Exception(result)
 
         if end_time < request_time:
-            raise Exception("Cache does not exist for the given timerange.")
+            raise Exception(
+                f"Cache does not exist for the given experiment timerange of between {timerange_in_iso}."
+            )
 
         # insert the operation as pending
-        row_idx = SQLiteCache().insert_operation_started(
+        row_idx = cache_client.insert_operation_started(
             function_hash, cache_branch, request_time
         )
 
-        logger.debug("Could not find a succesful result in cache. Computing!")
+        logger.debug(
+            f"Could not find a succesful experiment result in the cache for timerange between {timerange_in_iso}. Computing!"
+        )
         # compute the function
         try:
             result = func(*args, **kwargs)
             # update the cache as completed
-            SQLiteCache().update_operation_status(
+            cache_client.update_operation_status(
                 function_hash,
                 cache_branch,
                 result,
@@ -333,7 +346,7 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         except Exception as exc:
             result = "\n".join(traceback.format_exception(*sys.exc_info()))
             # update the cache as completed
-            SQLiteCache().update_operation_status(
+            cache_client.update_operation_status(
                 function_hash,
                 cache_branch,
                 result,
@@ -345,3 +358,6 @@ def cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             raise exc
 
     return wrapper
+
+
+cache_client = SQLiteCache()

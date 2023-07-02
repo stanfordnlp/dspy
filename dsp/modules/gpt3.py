@@ -78,8 +78,8 @@ class GPT3(LM):
 
         cache_args: dict[str, Union[str, float]] = {
             "worker_id": str(uuid.uuid4()),
-            "cache_end_timerange": dsp.settings.config["cache_end_timerange"],
-            "cache_start_timerange": dsp.settings.config["cache_start_timerange"],
+            "experiment_start_timestamp": dsp.settings.config["experiment_start_timestamp"],
+            "experiment_end_timestamp": dsp.settings.config["experiment_end_timestamp"],
         }
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
