@@ -20,8 +20,7 @@ setup(
         "regex",
         "ujson",
         "tqdm",
-        "datasets",
-        'azure-search-documents'        
+        "datasets",        
     ],
     classifiers=[
 		"Development Status :: 3 - Alpha",
