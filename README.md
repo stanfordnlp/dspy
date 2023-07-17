@@ -1,7 +1,3 @@
-### Temporary Note:
-
-The ColBERTv2 Wikipedia index has been moved to the following URL. **http://ec2-35-87-71-196.us-west-2.compute.amazonaws.com:8893/api/search** —— We will update the DSP notebooks shortly.
-
 # 🎓𝗗𝗦𝗣: The Demonstrate–Search–Predict Framework
 
 The **DSP** framework provides a programming abstraction for _rapidly building sophisticated AI systems_. It's primarily (but not exclusively) designed for tasks that are knowledge intensive (e.g., answering user questions or researching complex topics).
@@ -32,6 +28,13 @@ Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question
 You can **[open the intro notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb)**. You don't even need an API key to get started with it.
 
 Once you go through the notebook, you'll be ready to create your own DSP pipelines!
+
+### Temporary Note:
+
+The ColBERTv2 Wikipedia index has been moved to the following URL. **http://index.contextual.ai:8893/api/search?query=who%20is%20the%20first%20person%20on%20the%20moon**.
+
+To use in the notebooks, please set the colbert server URL to be `http://index.contextual.ai:8893/api/search`.
+
 
 <p align="center">
   <img align="center" src="docs/images/DSP-example.png" width="850px" />
