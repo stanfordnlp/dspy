@@ -2,11 +2,11 @@ import numpy as np
 import dsp
 
 
-def retrieve(query: str, k: int) -> list[str]:
+def retrieve(query: str, k: int, **kwargs) -> list[str]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
-    passages = dsp.settings.rm(query, k=k)
+    passages = dsp.settings.rm(query, k=k, **kwargs)
     passages = [psg.long_text for psg in passages]
     
     if dsp.settings.reranker:
