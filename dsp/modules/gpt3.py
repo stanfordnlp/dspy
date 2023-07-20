@@ -55,7 +55,7 @@ class GPT3(LM):
 
         if api_key:
             openai.api_key = api_key
-        
+
         if kwargs.get("api_base"):
             openai.api_base = kwargs["api_base"]
 
@@ -71,6 +71,9 @@ class GPT3(LM):
         if api_provider == "openai":
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
+
+    def _openai_client():
+        return openai
 
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
