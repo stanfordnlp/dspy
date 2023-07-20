@@ -50,12 +50,14 @@ class GPT3(LM):
             assert "api_version" in kwargs, "Must specify api_version for Azure API"
             assert "api_base" in kwargs, "Must specify api_base for Azure API"
             openai.api_type = "azure"
-            openai.api_base = kwargs["api_base"]
             if kwargs.get("api_version"):
                 openai.api_version = kwargs["api_version"]
 
         if api_key:
             openai.api_key = api_key
+        
+        if kwargs.get("api_base"):
+            openai.api_base = kwargs["api_base"]
 
         self.kwargs = {
             "temperature": 0.0,
