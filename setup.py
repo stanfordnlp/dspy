@@ -20,7 +20,7 @@ setup(
         "regex",
         "ujson",
         "tqdm",
-        "datasets"
+        "datasets",        
     ],
     classifiers=[
 		"Development Status :: 3 - Alpha",
