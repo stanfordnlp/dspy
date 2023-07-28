@@ -75,3 +75,15 @@ If you use DSP in a research paper, please cite our work as follows:
   year={2022}
 }
 ```
+
+---
+
+### Note:
+
+We'll rebrand to the **DSPy** framework soon.
+
+<p align="center">
+  <img align="center" src="docs/images/DSPy7.png" width="260px" />
+</p>
+<p align="left">
+
