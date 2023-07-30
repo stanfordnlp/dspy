@@ -27,7 +27,7 @@ Step 3: **Add the Public Repository as an Upstream Remote**
 git remote add upstream https://github.com/stanfordnlp/dsp.git
 ```
 
-### 3) Development Workflow [you do this every day]
+### 3) Development Workflow [relevant for what you do every day, especially Steps 2 and 3]
 
 This is what you do in the private repo day to day.
 
@@ -36,40 +36,43 @@ Step 1: **Pull Latest Changes from Private Repository**
 Ensure you're always working with the latest data from the private repo:
 
 ```bash
-git checkout main
-git pull origin main
+git checkout <branch-name>
+git pull origin <branch-name>
 ```
+
+Replace `<branch-name>` with the name of the branch you are working on.
 
 Step 2: **Development** (this is the actual work!)
 
 Conduct your development as usual.
 
-When adding sensitive or private content, make sure to place it within directories prefixed by `private_*`.
+When adding sensitive or private content, make sure to place it within directories prefixed by `private_*/`.
 
-We already have `private_docs` for example.
-
+We already have `private_docs/` as an example.
 
 Step 3: **Commit Changes in Private Repository**
 
 ```bash
 git add .
 git commit -m "Your descriptive commit message"
-git push origin main
+git push origin <branch-name>
 ```
+
+Replace `<branch-name>` with the name of the branch you are working on.
 
 ### 4) Pulling Updates from the Public Repository [you do this when needed]
 
-If the public repository receives contributions, you'll want to incorporate them into your private repository at some point:
+If the public repository receives contributions, you'll want to incorporate them into your private repository:
 
 ```bash
-git checkout main
-git pull upstream main  # pull and merge anything from public upstream
-git push origin main   # push now any recent things to the private origin
+git checkout <branch-name>
+git pull upstream <branch-name>  # pull and merge anything from public upstream
+git push origin <branch-name>   # push now any recent things to the private origin
 ```
 
-This is definitely important before syncing back to the public repo.
+This is important before syncing back to the public repo. It ensures that both repositories are in sync and that you're working with the most recent changes.
 
-You may sometimes do this with other branches.
+You may sometimes do this with branches other than `main`.
 
 
 ### 5) Syncing to Public Repository [you do this when needed]
