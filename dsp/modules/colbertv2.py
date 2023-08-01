@@ -4,7 +4,7 @@ import requests
 
 import dsp
 from dsp.utils import dotdict
-from dsp.utils.cache import cache_wrapper
+from dsp.utils.cache import sqlite_cache_wrapper
 
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
@@ -63,7 +63,7 @@ def colbertv2_get_request_v2_wrapped(*args, **kwargs):
     return colbertv2_get_request_v2(*args, **kwargs)
 
 
-@cache_wrapper
+@sqlite_cache_wrapper
 def colbertv2_get_request(*args, **kwargs):
     return colbertv2_get_request_v2_wrapped(*args, **kwargs)
 
@@ -76,6 +76,6 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     return res.json()["topk"][:k]
 
 
-@cache_wrapper
+@sqlite_cache_wrapper
 def colbertv2_post_request(*args, **kwargs):
     return colbertv2_post_request_v2(*args, **kwargs)
