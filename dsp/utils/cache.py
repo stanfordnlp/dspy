@@ -1,4 +1,3 @@
-import json
 import os
 import sqlite3
 import sys
@@ -13,11 +12,14 @@ import hashlib
 import threading
 from dsp.utils.logger import get_logger
 from collections import OrderedDict
+import pickle
+import functools
+
 
 logger = get_logger(logging_level=int(os.getenv("DSP_LOGGING_LEVEL", "20")))
 
 MAX_POLL_TIME = 10
-POLL_INTERVAL = 0.005
+POLL_INTERVAL = 0.003
 
 
 def filter_keys(
@@ -82,9 +84,9 @@ class SQLiteCache:
         : operation_hash: a hash of the function name, args, and kwargs
         : insert_timestamp: the time when the row was inserted
         : timestamp: the time when the operation was started
-        : status: the status of the operation (0 = FAILED, 1 = PENDING, 2 = COMPLETED)
+        : status: the status of the operation (FAILED, PENDING, COMPLETED)
         : payload: the payload of the operation
-        : result: the result of the operation in JSON format
+        : result: the result of the operation as a pickled object
         """
         with self.lock:
             with self.conn:
@@ -98,9 +100,9 @@ class SQLiteCache:
                             operation_hash TEXT,
                             insert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             timestamp FLOAT,
-                            status INTEGER,
+                            status TEXT,
                             payload TEXT,
-                            result TEXT
+                            result BLOB
                         )
                         """
                     )
@@ -145,7 +147,7 @@ class SQLiteCache:
     ):
         """update an existing operation record with new status and result fields."""
         
-        result = json.dumps(result) if isinstance(result, dict) else result # TODO: see if we can avoid json.dumps
+        result = pickle.dump(result)
         
         if row_idx is None:
             sql_query = """
@@ -179,7 +181,7 @@ class SQLiteCache:
         branch_idx: int,
         start_time: float,
         end_time: float,
-        status: int,
+        status: str,
     ) -> bool:
         """Check if a row with the specific status and timerange exists for the given (operation_hash, branch_idx, status)."""
         
@@ -204,15 +206,13 @@ class SQLiteCache:
             finally:
                 cursor.close()
 
-
-    # TODO: See if we can improve this and not have to call both check_if_record_exists_with_status and retrieve_earliest_record
     def retrieve_earliest_record(
         self,
         function_hash: str,
         cache_branch: int,
         range_start_timestamp: float,
         range_end_timestamp: float,
-        retrieve_status: Optional[int] = None,
+        retrieve_status: Optional[str] = None,
         return_record_result: bool = False,
     ):
         """Retrieve the earliest record and use the status priority:
@@ -246,11 +246,12 @@ class SQLiteCache:
                     return False, None
                 if return_record_result:
                     logger.debug(f"returning record: {row[0]}")
-                    return True, json.loads(row[3]) if retrieve_status == 2 else row[3] # TODO: see if we can avoid json.loads
+                    return True, pickle.load(row[3])
                 return True, None
             finally:
                 cursor.close()
 
+    # TODO: Not used?
     def get_cache_record(
         self, operation_hash: str, branch_idx: int, start_time: float, end_time: float
     ):
@@ -272,7 +273,7 @@ class SQLiteCache:
                 if row is None:
                     return None
                 else:
-                    return json.loads(row[0]) # TODO: see if we can avoid json.loads
+                    return pickle.load(row[0])
             finally:
                 cursor.close()
 
@@ -280,7 +281,7 @@ class SQLiteCache:
 def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
     """The cache wrapper for the function. This is the function that is called when the user calls the function."""
 
-    @wraps(func)
+    @functools.wraps(func)
     def wrapper(*args: Dict[str, Any], **kwargs: Dict[str, Any]) -> Any:
         """The wrapper function uses the arguments worker_id, cache_branch, cache_start_timerange, cache_end_timerange to compute the operation_hash.
         1. It then checks if the operation_hash exists in the cache within the timerange. If it does, it returns the result.
