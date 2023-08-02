@@ -69,6 +69,7 @@ class SQLiteCache:
             cache_file_path,
             check_same_thread=False,
             isolation_level=None,
+            journal_mode='wal',
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
         )
         self.create_table_if_not_exists()
