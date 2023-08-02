@@ -84,7 +84,7 @@ class SQLiteCache:
         : operation_hash: a hash of the function name, args, and kwargs
         : insert_timestamp: the time when the row was inserted
         : timestamp: the time when the operation was started
-        : status: the status of the operation (FAILED, PENDING, COMPLETED)
+        : status: the status of the operation (0 = FAILED, 1 = PENDING, 2 = COMPLETED)
         : payload: the payload of the operation
         : result: the result of the operation as a pickled object
         """
@@ -100,7 +100,7 @@ class SQLiteCache:
                             operation_hash TEXT,
                             insert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             timestamp FLOAT,
-                            status TEXT,
+                            status INTEGER,
                             payload TEXT,
                             result BLOB
                         )
@@ -181,15 +181,17 @@ class SQLiteCache:
         branch_idx: int,
         start_time: float,
         end_time: float,
-        status: str,
+        status: List[int],
     ) -> bool:
         """Check if a row with the specific status and timerange exists for the given (operation_hash, branch_idx, status)."""
-        
+        status_tuple = tuple(status)
+
         sql_query = """
         SELECT COUNT(*) FROM cache
-        WHERE operation_hash = ? AND branch_idx = ? AND status = ? AND timestamp >= ?
-        """
-        sql_inputs = (operation_hash, branch_idx, status, start_time)
+        WHERE operation_hash = ? AND branch_idx = ? AND status IN {} AND timestamp >= ?
+        """.format(str(status_tuple))
+
+        sql_inputs = (operation_hash, branch_idx, start_time)
         if end_time != float("inf"):
             sql_query += " AND timestamp <= ?"
             sql_inputs += (end_time,)
@@ -202,7 +204,10 @@ class SQLiteCache:
                     sql_query,
                     sql_inputs,
                 )
-                return cursor.fetchone()[0] > 0
+                row = cursor.fetchone()[0] > 0
+                record_exists = row[0] > 0
+                insertion_timestamp = row[1] if record_exists else None
+                return record_exists, insertion_timestamp
             finally:
                 cursor.close()
 
@@ -212,16 +217,15 @@ class SQLiteCache:
         cache_branch: int,
         range_start_timestamp: float,
         range_end_timestamp: float,
-        retrieve_status: Optional[str] = None,
+        retrieve_status: Optional[List[int]] = None,
         return_record_result: bool = False,
     ):
         """Retrieve the earliest record and use the status priority:
-        "FINISHED" > "PENDING" > "FAILED".
+        "COMPLETE" > "PENDING" > "FAILED".
         Filter by the range_start_timestamp and range_end_timestamp.
-        Returns a tuple of (cache_exists: bool, insertion_timestamp: float)
+        Returns a tuple of (cache_exists: bool, insertion_timestamp: float, status: str, result: Any)
         """
-        
-        
+    
         sql_query = """
         SELECT row_idx, insert_timestamp, status, result FROM cache
         WHERE operation_hash LIKE ? AND branch_idx = ? AND timestamp >= ?
@@ -230,10 +234,14 @@ class SQLiteCache:
         if range_end_timestamp != float("inf"):
             sql_query += " AND timestamp <= ?"
             sql_inputs += (range_end_timestamp,)
-        if retrieve_status is not None:
-            sql_query += " AND status = ?"
-            sql_inputs += (retrieve_status,)
+
+        if retrieve_status is not None and isinstance(retrieve_status, list):
+            # Concatenate the status values with 'OR' condition to check if status is one of the values in the list
+            sql_query += " AND status IN ({})".format(', '.join(['?']*len(retrieve_status)))
+            sql_inputs += tuple(retrieve_status)
+
         sql_query += " ORDER BY status DESC, insert_timestamp ASC LIMIT 1"
+
         with self.conn:
             cursor = self.conn.cursor()
             try:
@@ -243,40 +251,53 @@ class SQLiteCache:
                 )
                 row = cursor.fetchone()
                 if row is None:
-                    return False, None
+                    return False, None, None, None
                 if return_record_result:
                     logger.debug(f"returning record: {row[0]}")
-                    return True, pickle.load(row[3])
-                return True, None
+                    return True, row[1], row[2], pickle.load(row[3])
+                return True, row[1], row[2], None
             finally:
                 cursor.close()
 
-    # TODO: Not used?
-    def get_cache_record(
-        self, operation_hash: str, branch_idx: int, start_time: float, end_time: float
+    def poll_for_complete(
+            self,
+            function_hash: str,
+            cache_branch: int,
+            start_time: float,
+            end_time: float, 
     ):
-        """Retrieve the cache record for the given operation_hash."""
-        
-        sql_query = """
-        SELECT result FROM cache
-        WHERE operation_hash = ? AND branch_idx = ? AND timestamp >= ?
         """
-        sql_inputs = (operation_hash, branch_idx, start_time)
-        if end_time != float("inf"):
-            sql_query += " AND timestamp <= ?"
-            sql_inputs += (end_time,)
-        with self.conn:
-            cursor = self.conn.cursor()
-            try:
-                cursor.execute(sql_query, sql_inputs)
-                row = cursor.fetchone()
-                if row is None:
-                    return None
-                else:
-                    return pickle.load(row[0])
-            finally:
-                cursor.close()
+        Returns (bool, result) where the boolean indicates if a COMPLETE transaction was found. 
+        """
 
+        # check if the cache is pending
+        exists, insert_ts = self.check_if_record_exists_with_status(
+            function_hash, cache_branch, start_time, end_time, [1]
+        )
+        # if it is, also make sure the PENDING entry is within the MAX_POLL_TIME (so we don't wait for indefinitely PENDING entries)
+        if exists and insert_ts >= datetime.now().timestamp() - MAX_POLL_TIME:
+
+            logger.debug("Operation is pending in the cache. Polling for result.")
+            polling_start_time = default_timer()
+            while default_timer() - polling_start_time < MAX_POLL_TIME:
+                if self.check_if_record_exists_with_status(
+                    function_hash, cache_branch, start_time, end_time, [2]
+                ):
+                    logger.debug("Result found after polling. Retrieving from cache.")
+                    cache_exists, insertion_timestamp, status, result = self.retrieve_earliest_record(
+                        function_hash,
+                        cache_branch,
+                        start_time,
+                        end_time,
+                        retrieve_status=[2],
+                        return_record_result=True,
+                    )
+                    return True, result
+                time.sleep(POLL_INTERVAL)
+
+        # if doesn't exist or didn't find a COMPLETE entry after polling, return False
+        return False, None
+        
 
 def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
     """The cache wrapper for the function. This is the function that is called when the user calls the function."""
@@ -315,76 +336,58 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         # get a consistent hash for the function call
         function_hash = _hash(func, *args, **kwargs)
 
-        # check if the cache exists
-        if cache_client.check_if_record_exists_with_status(
-            function_hash, cache_branch, start_time, end_time, 2 # check for 2 or 0
-        ):
-            logger.debug(
-                f"Cached experiment result found between {timerange_in_iso}. Retrieving result from cache."
-            )
-            _, result = cache_client.retrieve_earliest_record(
-                function_hash,
-                cache_branch,
-                start_time,
-                end_time,
-                retrieve_status=2,
-                return_record_result=True,
-            )
-            return result
+        # if end_time is in the past, check if there's a cached result
+        if end_time < request_time:
 
-        # check if the cache is pending
-        if cache_client.check_if_record_exists_with_status(
-            function_hash, cache_branch, start_time, end_time, 1
-        ):
-            logger.debug("Operation is pending in the cache. Polling for result.")
-            polling_start_time = default_timer()
-            while default_timer() - polling_start_time < MAX_POLL_TIME:
-                if cache_client.check_if_record_exists_with_status(
-                    function_hash, cache_branch, start_time, end_time, 2
-                ):
-                    logger.debug("Result found after polling. Retrieving from cache.")
-                    _, result = cache_client.retrieve_earliest_record(
-                        function_hash,
-                        cache_branch,
-                        start_time,
-                        end_time,
-                        retrieve_status=2,
-                        return_record_result=True,
-                    )
-                    return result
-                time.sleep(POLL_INTERVAL)
-            raise Exception("Failed to retrieve result from cache after polling.")
-
-        # check if the cache failed
-        if cache_client.check_if_record_exists_with_status(
-            function_hash, cache_branch, start_time, end_time, 0
-        ):
-            if end_time < request_time: # TODO: Move into check_if_record_exists_with_status 
-                _, result = cache_client.retrieve_earliest_record(
+            # check if there is a cached result
+            exists, _ = cache_client.check_if_record_exists_with_status(
+                function_hash, cache_branch, start_time, end_time, [2, 0]
+            )
+            if exists:
+                logger.debug(
+                    f"Cached experiment result found between {timerange_in_iso}. Retrieving result from cache."
+                )
+                cache_exists, insertion_timestamp, status, result = cache_client.retrieve_earliest_record(
                     function_hash,
                     cache_branch,
                     start_time,
                     end_time,
-                    retrieve_status=0,
+                    retrieve_status=[2,0],
                     return_record_result=True,
                 )
-                logger.debug(
-                    f"Failed operation found in the cache for experiment timerange between {timerange_in_iso}. Raising the same exception."
-                )
-                raise Exception(result)
+                # if COMPLETE, return result
+                if status == 2:
+                    return result
+                # if an Exception, raise it
+                elif status == 0:
+                    logger.debug(
+                        f"Failed operation found in the cache for experiment timerange between {timerange_in_iso}. Raising the same exception."
+                    )
+                    raise Exception(result)
+                # TODO: Check if polling correctly for this scenario.
+                else:
+                    # poll to see if a PENDING entry completes
+                    is_complete, res = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
+                    if is_complete:
+                        return res
+                    # if not, don't recompute since end_time is in the past
+                    raise Exception("Oops. Cache does not exist for the given experiment timerange of between {timerange_in_iso}.")
 
-        if end_time < request_time:
-            raise Exception(
-                f"Cache does not exist for the given experiment timerange of between {timerange_in_iso}."
-            )
+
+        is_complete, res = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
+        if is_complete:
+            return res
 
         # insert the operation as pending
         row_idx = cache_client.insert_operation_started(
-            function_hash, cache_branch, request_time
+            function_hash, cache_branch, datetime.now().timestamp() # TODO: check if should use request_time or current timestamp.
         )
-
-        # TODO: Add in another polling check to see if another thread started earlier than this one
-        # Check for earliest pending, then wait for it. 
+    
+        # poll once more to see if another thread/process might have completed
+        is_complete2, res2 = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
+        if is_complete2:
+            # TODO: In this case we have an infinite PENDING entry - should we clean it up or should we still compute the result?
+            return res2
 
         logger.debug(
             f"Could not find a succesful experiment result in the cache for timerange between {timerange_in_iso}. Computing!"
@@ -414,7 +417,7 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             row_idx=row_idx,
             status=2,
         )
-        # redundant reads to handle concurrency issues
+        # redundant reads to handle concurrency issues. Latest COMPLETE entry returned, which may or may not be the one just computed.
         _, result = cache_client.retrieve_earliest_record(
             function_hash,
             cache_branch,
