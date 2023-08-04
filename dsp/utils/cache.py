@@ -101,7 +101,9 @@ class SQLiteCache:
                             insert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             timestamp FLOAT,
                             status INTEGER,
-                            payload TEXT,
+                            func_name TEXT,
+                            args BLOB,
+                            kwargs BLOB,
                             result BLOB
                         )
                         """
@@ -115,7 +117,7 @@ class SQLiteCache:
             
 
     def insert_operation_started(
-        self, operation_hash: str, branch_idx: int, timestamp: float
+        self, operation_hash: str, branch_idx: int, timestamp: float, func: Callable[..., Any], *args: Dict[str, Any], **kwargs: Dict[str, Any]
     ) -> str:
         """Insert a row into the table with the status "PENDING"."""
         
@@ -125,10 +127,10 @@ class SQLiteCache:
             try:
                 cursor.execute(
                     """
-                    INSERT INTO cache (row_idx, branch_idx, operation_hash, timestamp, status)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO cache (row_idx, branch_idx, operation_hash, timestamp, status, func_name, args, kwargs)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (row_idx, branch_idx, operation_hash, timestamp, 1),
+                    (row_idx, branch_idx, operation_hash, timestamp, 1, func.__name__, pickle.dumps(args), pickle.dumps(kwargs)),
                 )
                 self.conn.commit()
             finally:
@@ -370,12 +372,12 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
 
             # Didn't find a COMPLETE transaction after waiting. If the end_time is in the past, we don't compute, and raise an Exception
             if end_time < request_time:
-                raise Exception("Oops. Cache does not exist for the given experiment timerange of between {timerange_in_iso}.")
+                raise Exception(f"Oops. Cache does not exist for the given experiment timerange of between {timerange_in_iso}.")
              
             # end_time is in the future, and we did not find a cached result, so compute it and cache it.
             # insert the operation as pending
             row_idx = cache_client.insert_operation_started(
-                function_hash, cache_branch, datetime.now().timestamp() # TODO: check if should use request_time or current timestamp.
+                function_hash, cache_branch, datetime.now().timestamp(), func, *args, **kwargs # TODO: check if should use request_time or current timestamp.
             )
         
             # TODO 1: poll once more to see if another thread/process might have completed. (Do we really need to do this?) 
