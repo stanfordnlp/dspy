@@ -4,7 +4,7 @@ import sys
 import time
 from timeit import default_timer
 import traceback
-from typing import Any, Callable, Optional, cast, Dict, List
+from typing import Any, Callable, Optional, cast, Dict, List, Tuple
 from functools import wraps
 import uuid
 from datetime import datetime
@@ -12,14 +12,14 @@ import hashlib
 import threading
 from dsp.utils.logger import get_logger
 from collections import OrderedDict
-import pickle
+import pickle # TODO: switch to CPickle? It's faster
 import functools
 
 
 logger = get_logger(logging_level=int(os.getenv("DSP_LOGGING_LEVEL", "20")))
 
-MAX_POLL_TIME = 10
-POLL_INTERVAL = 0.003
+MAX_POLL_TIME = os.getenv("DSP_CACHE_POLL_TIME") or 10
+POLL_INTERVAL = os.getenv("DSP_CACHE_POLL_INTERVAL") or 0.003
 
 
 def filter_keys(
@@ -58,23 +58,22 @@ class SQLiteCache:
 
     def __init__(self):
         """Initialise a SQLite database using the environment key DSP_CACHE_SQLITE_PATH."""
+        
         self.lock = threading.Lock()
         self.conn = None
-        self.cursor = None
 
-    def __enter__(self):
+    def connect(self):
         cache_file_path = os.getenv("DSP_CACHE_SQLITE_PATH") or "sqlite_cache.db"
-        # Initialize the SQLite connection
         self.conn = sqlite3.connect(
             cache_file_path,
             check_same_thread=False,
             isolation_level=None,
-            journal_mode='wal',
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
         )
+        self.conn.execute('pragma journal_mode=wal')
         self.create_table_if_not_exists()
 
-    def __exit__(self):
+    def disconnect(self):
         self.conn.close()
 
 
@@ -148,7 +147,7 @@ class SQLiteCache:
     ):
         """update an existing operation record with new status and result fields."""
         
-        result = pickle.dump(result)
+        result = pickle.dumps(result)
         
         if row_idx is None:
             sql_query = """
@@ -175,7 +174,6 @@ class SQLiteCache:
             finally:
                 cursor.close()
 
-    # TODO: Pass status as list. If checking for status 2, also check for status 0, if end_time < curr_timestamp
     def check_if_record_exists_with_status(
         self,
         operation_hash: str,
@@ -183,32 +181,30 @@ class SQLiteCache:
         start_time: float,
         end_time: float,
         status: List[int],
-    ) -> bool:
+    ) -> Tuple[bool, float]:
         """Check if a row with the specific status and timerange exists for the given (operation_hash, branch_idx, status)."""
-        status_tuple = tuple(status)
 
         sql_query = """
-        SELECT COUNT(*) FROM cache
-        WHERE operation_hash = ? AND branch_idx = ? AND status IN {} AND timestamp >= ?
-        """.format(str(status_tuple))
+        SELECT COUNT(*), MAX(timestamp) FROM cache
+        WHERE operation_hash = ? AND branch_idx = ? AND status IN ({})
+        """.format(",".join(["?"] * len(status)))
 
-        sql_inputs = (operation_hash, branch_idx, start_time)
+        sql_inputs = [operation_hash, branch_idx, *status]  # Unpack status list with *
         if end_time != float("inf"):
-            sql_query += " AND timestamp <= ?"
-            sql_inputs += (end_time,)
+            sql_query += " AND timestamp >= ? AND timestamp <= ?"
+            sql_inputs.extend([start_time, end_time])
+        else:
+            sql_query += " AND timestamp >= ?"
+            sql_inputs.append(start_time)
 
-        sql_query += " ORDER BY timestamp ASC LIMIT 1"
         with self.conn:
             cursor = self.conn.cursor()
             try:
-                cursor.execute(
-                    sql_query,
-                    sql_inputs,
-                )
-                row = cursor.fetchone()[0] > 0
-                record_exists = row[0] > 0
-                insertion_timestamp = row[1] if record_exists else None
-                return record_exists, insertion_timestamp
+                cursor.execute(sql_query, sql_inputs)
+                row = cursor.fetchone()
+                found = row[0] > 0
+                timestamp = row[1] if found else None
+                return found, timestamp
             finally:
                 cursor.close()
 
@@ -255,7 +251,7 @@ class SQLiteCache:
                     return False, None, None, None
                 if return_record_result:
                     logger.debug(f"returning record: {row[0]}")
-                    return True, row[1], row[2], pickle.load(row[3])
+                    return True, row[1], row[2], pickle.loads(row[3])
                 return True, row[1], row[2], None
             finally:
                 cursor.close()
@@ -270,7 +266,6 @@ class SQLiteCache:
         """
         Returns (bool, result) where the boolean indicates if a COMPLETE transaction was found. 
         """
-
         # check if the cache is pending
         exists, insert_ts = self.check_if_record_exists_with_status(
             function_hash, cache_branch, start_time, end_time, [1]
@@ -314,31 +309,31 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         6. If the cache does not exists within the timerange and the end_timerange is the future, it recomputes and inserts the operation_hash with the status "PENDING" and returns the result.
         """
         cache_client = SQLiteCache()
+        cache_client.connect()
 
-        request_time = datetime.now().timestamp()
-        cache_branch = cast(int, kwargs.get("cache_branch", 0))
-        start_time: float = cast(float, kwargs.get("experiment_start_timestamp", 0))
-        end_time: float = cast(
-            float, kwargs.get("experiment_end_timestamp", float("inf"))
-        )
-        timerange_in_iso: str = f"{datetime.fromtimestamp(start_time).isoformat()} and {datetime.fromtimestamp(end_time).isoformat() if end_time != float('inf') else 'future'}"
+        try:
 
-        # remove from kwargs so that don't get passed to the function & don't get hashed
-        kwargs = filter_keys(
-            kwargs,
-            [
-                "worker_id",
-                "cache_branch",
-                "experiment_start_timestamp",
-                "experiment_end_timestamp",
-            ],
-        )
+            request_time = datetime.now().timestamp()
+            cache_branch = cast(int, kwargs.get("cache_branch", 0))
+            start_time: float = cast(float, kwargs.get("experiment_start_timestamp", 0))
+            end_time: float = cast(
+                float, kwargs.get("experiment_end_timestamp", float("inf"))
+            )
+            timerange_in_iso: str = f"{datetime.fromtimestamp(start_time).isoformat()} and {datetime.fromtimestamp(end_time).isoformat() if end_time != float('inf') else 'future'}"
 
-        # get a consistent hash for the function call
-        function_hash = _hash(func, *args, **kwargs)
+            # remove from kwargs so that don't get passed to the function & don't get hashed
+            kwargs = filter_keys(
+                kwargs,
+                [
+                    "worker_id",
+                    "cache_branch",
+                    "experiment_start_timestamp",
+                    "experiment_end_timestamp",
+                ],
+            )
 
-        # if end_time is in the past, check if there's a cached result
-        if end_time < request_time:
+            # get a consistent hash for the function call
+            function_hash = _hash(func, *args, **kwargs)
 
             # check if there is a cached result
             exists, _ = cache_client.check_if_record_exists_with_status(
@@ -359,44 +354,56 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                 # if COMPLETE, return result
                 if status == 2:
                     return result
-                # if an Exception, raise it
-                elif status == 0:
+                # if end_time is in the past, if there's an exception cached, just return it
+                if status == 0 and end_time < request_time:
                     logger.debug(
-                        f"Failed operation found in the cache for experiment timerange between {timerange_in_iso}. Raising the same exception."
+                            f"Failed operation found in the cache for experiment timerange between {timerange_in_iso}. Raising the same exception."
                     )
                     raise Exception(result)
-                # TODO: Check if polling correctly for this scenario.
-                else:
-                    # poll to see if a PENDING entry completes
-                    is_complete, res = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
-                    if is_complete:
-                        return res
-                    # if not, don't recompute since end_time is in the past
-                    raise Exception("Oops. Cache does not exist for the given experiment timerange of between {timerange_in_iso}.")
 
+            # Didn't find a COMPLETE cached result (or a FAILED cache result in the case that end_time < request_time)
+            # So see if there are any pending transactions that COMPLETE within MAX_POLL_TIME
 
-        is_complete, res = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
-        if is_complete:
-            return res
+            is_complete, res = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
+            if is_complete:
+                return res
 
-        # insert the operation as pending
-        row_idx = cache_client.insert_operation_started(
-            function_hash, cache_branch, datetime.now().timestamp() # TODO: check if should use request_time or current timestamp.
-        )
-    
-        # poll once more to see if another thread/process might have completed
-        is_complete2, res2 = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
-        if is_complete2:
-            # TODO: In this case we have an infinite PENDING entry - should we clean it up or should we still compute the result?
-            return res2
+            # Didn't find a COMPLETE transaction after waiting. If the end_time is in the past, we don't compute, and raise an Exception
+            if end_time < request_time:
+                raise Exception("Oops. Cache does not exist for the given experiment timerange of between {timerange_in_iso}.")
+             
+            # end_time is in the future, and we did not find a cached result, so compute it and cache it.
+            # insert the operation as pending
+            row_idx = cache_client.insert_operation_started(
+                function_hash, cache_branch, datetime.now().timestamp() # TODO: check if should use request_time or current timestamp.
+            )
+        
+            # TODO 1: poll once more to see if another thread/process might have completed. (Do we really need to do this?) 
+            # TODO 2: make sure this poll doesn't pick up on the one we just inserted because then it will ALWAYS wait for itself. So we would need the thread_ids or something similar.
+            # TODO 3: Should we even have this poll? 
+            # is_complete2, res2 = cache_client.poll_for_complete(function_hash, cache_branch, start_time, end_time)
+            # if is_complete2:
+            #     # TODO: In this case we have an infinite PENDING entry - should we clean it up or should we still compute the result? Or just let it stay?
+            #     return res2
 
-        logger.debug(
-            f"Could not find a succesful experiment result in the cache for timerange between {timerange_in_iso}. Computing!"
-        )
-        try:    
-            result = func(*args, **kwargs)
-        except Exception as exc: # TODO
-            result = "\n".join(traceback.format_exception(*sys.exc_info()))
+            logger.debug(
+                f"Could not find a succesful experiment result in the cache for timerange between {timerange_in_iso}. Computing!"
+            )
+            try:    
+                result = func(*args, **kwargs)
+            except Exception as exc: # TODO
+                result = "\n".join(traceback.format_exception(*sys.exc_info()))
+                # update the cache as completed
+                cache_client.update_operation_status(
+                    function_hash,
+                    cache_branch,
+                    result,
+                    start_time,
+                    end_time,
+                    row_idx=row_idx,
+                    status=0,
+                )
+                raise exc
             # update the cache as completed
             cache_client.update_operation_status(
                 function_hash,
@@ -405,30 +412,21 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                 start_time,
                 end_time,
                 row_idx=row_idx,
-                status=0,
+                status=2,
             )
-            raise exc
-        # update the cache as completed
-        cache_client.update_operation_status(
-            function_hash,
-            cache_branch,
-            result,
-            start_time,
-            end_time,
-            row_idx=row_idx,
-            status=2,
-        )
-        # redundant reads to handle concurrency issues. Latest COMPLETE entry returned, which may or may not be the one just computed.
-        _, result = cache_client.retrieve_earliest_record(
-            function_hash,
-            cache_branch,
-            start_time,
-            end_time,
-            retrieve_status=2,
-            return_record_result=True,
-        )
-        return result
+            # redundant reads to handle concurrency issues. Latest COMPLETE entry returned, which may or may not be the one just computed.
+            # TODO: What if the latest one has a status of 0 (FAILED). Do we return that?
+            cache_exists, insertion_timestamp, status, result = cache_client.retrieve_earliest_record(
+                function_hash,
+                cache_branch,
+                start_time,
+                end_time,
+                retrieve_status=2,
+                return_record_result=True,
+            )
+            return result
+        
+        finally:
+            cache_client.disconnect()
 
     return wrapper
-
-
