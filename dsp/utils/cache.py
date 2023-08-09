@@ -10,11 +10,10 @@ import uuid
 from datetime import datetime
 import hashlib
 import threading
-# from dsp.utils.logger import get_logger
-from logger import get_logger
+from dsp.utils.logger import get_logger
 
 from collections import OrderedDict
-import pickle # TODO: switch to CPickle? It's faster
+import pickle
 import functools
 
 
@@ -69,8 +68,8 @@ class SQLiteCache:
         self.lock = threading.Lock()
         self.conn = None
 
-    def connect(self):
-        cache_file_path = os.getenv("DSP_CACHE_SQLITE_PATH") or "sqlite_cache.db"
+    def connect(self, path):
+        cache_file_path = path
         self.conn = sqlite3.connect(
             cache_file_path,
             check_same_thread=False,
@@ -325,7 +324,49 @@ class SQLiteCache:
 
         # if doesn't exist or didn't find a COMPLETE entry after polling, return False
         return False, None
+
+
+
+def sqlite_cache_splitter(func: Callable[..., Any]) -> Callable[..., Any]:
+    
+    @functools.wraps(func)
+    def wrapper(*args: Dict[str, Any], **kwargs: Dict[str, Any]) -> Any:
+        org_kwargs = kwargs
+        kwargs = filter_keys(
+                kwargs,
+                [
+                    "cache_branch",
+                    "experiment_start_timestamp",
+                    "experiment_end_timestamp",
+                    "smart_concurrency",
+                    "ignore_exceptions"
+                ],
+            )
+
+        # get a consistent hash for the function call
+        function_hash = _hash(func, *args, **kwargs)
+
+        base_path = os.getenv("DSP_CACHE_SQLITE_PATH") or "sqlite_cache.db"
+        prefix = base_path.rstrip(".db")
         
+        # Convert the first character (hex digit) to an integer
+        first_hex_digit = int(function_hash[0], 16)
+        
+        # Extract the first 5 bits
+        extracted_bits = first_hex_digit >> 3
+        
+        # Calculate the bucket index
+        bucket_index = extracted_bits % 32
+        
+        sqlite_path = prefix + str(bucket_index) + ".db"
+
+        org_kwargs["sqlite_path"] = sqlite_path
+        org_kwargs["hash"] = function_hash
+
+        return func(*args, **org_kwargs)
+    
+    return wrapper
+
 
 def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
     """The cache wrapper for the function. This is the function that is called when the user calls the function."""
@@ -344,9 +385,6 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         5. If it does exists but the status is "COMPLETED", it returns the result.
         6. If the cache does not exists within the timerange and the end_timerange is the future, it recomputes and inserts the operation_hash with the status "PENDING" and returns the result.
         """
-        cache_client = SQLiteCache()
-        cache_client.connect()
-
         try:
 
             request_time = datetime.now().timestamp()
@@ -356,10 +394,15 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                 float, kwargs.get("experiment_end_timestamp", float("inf"))
             )
             timerange_in_iso: str = f"{datetime.fromtimestamp(start_time).isoformat()} and {datetime.fromtimestamp(end_time).isoformat() if end_time != float('inf') else 'future'}"
+            function_hash = kwargs.get("hash")
+            sqlite_path = kwargs.get("sqlite_path")
 
             # flags
             smart_concurrency = kwargs.get("smart_concurrency", True)
             ignore_exceptions = kwargs.get("ignore_exceptions", False)
+
+            cache_client = SQLiteCache()
+            cache_client.connect(sqlite_path)
 
             # remove from kwargs so that don't get passed to the function & don't get hashed
             kwargs = filter_keys(
@@ -369,12 +412,11 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
                     "experiment_start_timestamp",
                     "experiment_end_timestamp",
                     "smart_concurrency",
-                    "ignore_exceptions"
+                    "ignore_exceptions",
+                    "hash",
+                    "sqlite_path"
                 ],
             )
-
-            # get a consistent hash for the function call
-            function_hash = _hash(func, *args, **kwargs)
 
             if not(ignore_exceptions):
                 end_statuses = [COMPLETE, FAILED]
@@ -501,58 +543,3 @@ def sqlite_cache_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
             cache_client.disconnect()
 
     return wrapper
-
-###################################### Temp tests  - to delete ##################################################
-
-# threaded tests
-import threading 
-
-@sqlite_cache_wrapper
-def test_function_cached2(**kwargs):
-    kwargs_ = ','.join(f'{key}={value}' for key, value in kwargs.items())
-    time.sleep(5)
-    return hash(kwargs_)
-
-def run_function_in_thread(kwargs):
-    result = test_function_cached2(**kwargs)
-    return result 
-
-if __name__ == "__main__":
-
-    start_time = time.time()
-    # thread_results = []
-    threads = []
-
-    kwargs = [{"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}]
-
-    # Create a thread for each call to test_function_cached
-    for kwarg in kwargs:
-        thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
-        threads.append(thread)
-        thread.start()
-
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
-
-    end_time = time.time()
-
-    print(f'Cached function writes (threaded) took {end_time - start_time} seconds')
-
-    # test read performance + save outputs
-    outputs = []
-    start_time2 = time.time()
-    threads = []
-
-    # Create a thread for each call to test_function_cached
-    for kwarg in kwargs:
-        thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
-        threads.append(thread)
-        thread.start()
-
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
-
-    end_time2 = time.time()
-    print(f'Cached function reads (threaded) took {end_time2 - start_time2} seconds')

@@ -9,7 +9,7 @@ from openai.openai_object import OpenAIObject
 import dsp
 
 from dsp.modules.lm import LM
-from dsp.utils.cache import sqlite_cache_wrapper
+from dsp.utils.cache import sqlite_cache_wrapper, sqlite_cache_splitter
 
 
 def backoff_hdlr(details):
@@ -178,11 +178,13 @@ class GPT3(LM):
         return completions
 
 
+@sqlite_cache_splitter
 @sqlite_cache_wrapper
 def cached_gpt3_request(**kwargs):
     return openai.Completion.create(**kwargs)
 
 
+@sqlite_cache_splitter
 @sqlite_cache_wrapper
 def cached_gpt3_turbo_request(**kwargs) -> OpenAIObject:
     if "stringify_request" in kwargs:
