@@ -116,18 +116,18 @@ class SQLiteCache:
                         )
                         """
                     )
-                    # cursor.execute(
-                    #     """
-                    #     CREATE TRIGGER IF NOT EXISTS update_timestamp
-                    #     AFTER UPDATE on cache
-                    #     FOR EACH ROW
-                    #     BEGIN
-                    #         UPDATE cache 
-                    #         SET insert_timestamp = CURRENT_TIMESTAMP 
-                    #         WHERE row_idx = OLD.row_idx;
-                    #     END; 
-                    #     """
-                    # )
+                    cursor.execute(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS update_timestamp
+                        AFTER UPDATE on cache
+                        FOR EACH ROW
+                        BEGIN
+                            UPDATE cache 
+                            SET insert_timestamp = CURRENT_TIMESTAMP 
+                            WHERE row_idx = OLD.row_idx;
+                        END; 
+                        """
+                    )
                     self.conn.commit()
                 except Exception as e:
                     logger.warn(f"Could not create cache table with exception: {e}")
