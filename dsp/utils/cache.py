@@ -10,7 +10,9 @@ import uuid
 from datetime import datetime
 import hashlib
 import threading
-from dsp.utils.logger import get_logger
+# from dsp.utils.logger import get_logger
+from logger import get_logger
+
 from collections import OrderedDict
 import pickle # TODO: switch to CPickle? It's faster
 import functools
@@ -104,16 +106,28 @@ class SQLiteCache:
                             row_idx TEXT PRIMARY KEY,
                             branch_idx INTEGER,
                             operation_hash TEXT,
-                            insert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            insert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             timestamp FLOAT,
                             status INTEGER,
                             func_name TEXT,
                             args BLOB,
                             kwargs BLOB,
-                            result BLOB,
+                            result BLOB
                         )
                         """
                     )
+                    # cursor.execute(
+                    #     """
+                    #     CREATE TRIGGER IF NOT EXISTS update_timestamp
+                    #     AFTER UPDATE on cache
+                    #     FOR EACH ROW
+                    #     BEGIN
+                    #         UPDATE cache 
+                    #         SET insert_timestamp = CURRENT_TIMESTAMP 
+                    #         WHERE row_idx = OLD.row_idx;
+                    #     END; 
+                    #     """
+                    # )
                     self.conn.commit()
                 except Exception as e:
                     logger.warn(f"Could not create cache table with exception: {e}")
@@ -503,40 +517,42 @@ def run_function_in_thread(kwargs):
     result = test_function_cached2(**kwargs)
     return result 
 
-start_time = time.time()
-# thread_results = []
-threads = []
+if __name__ == "__main__":
 
-kwargs = [{"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}]
+    start_time = time.time()
+    # thread_results = []
+    threads = []
 
-# Create a thread for each call to test_function_cached
-for kwarg in kwargs:
-    thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
-    threads.append(thread)
-    thread.start()
+    kwargs = [{"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}, {"kwarg1": 10, "kwarg2": 2, "kwarg3": 5}]
 
-# Wait for all threads to complete
-for thread in threads:
-    thread.join()
+    # Create a thread for each call to test_function_cached
+    for kwarg in kwargs:
+        thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
+        threads.append(thread)
+        thread.start()
 
-end_time = time.time()
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
 
-print(f'Cached function writes (threaded) took {end_time - start_time} seconds')
+    end_time = time.time()
 
-# test read performance + save outputs
-outputs = []
-start_time2 = time.time()
-threads = []
+    print(f'Cached function writes (threaded) took {end_time - start_time} seconds')
 
-# Create a thread for each call to test_function_cached
-for kwarg in kwargs:
-    thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
-    threads.append(thread)
-    thread.start()
+    # test read performance + save outputs
+    outputs = []
+    start_time2 = time.time()
+    threads = []
 
-# Wait for all threads to complete
-for thread in threads:
-    thread.join()
+    # Create a thread for each call to test_function_cached
+    for kwarg in kwargs:
+        thread = threading.Thread(target=run_function_in_thread, args=(kwarg,))
+        threads.append(thread)
+        thread.start()
 
-end_time2 = time.time()
-print(f'Cached function reads (threaded) took {end_time2 - start_time2} seconds')
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+
+    end_time2 = time.time()
+    print(f'Cached function reads (threaded) took {end_time2 - start_time2} seconds')
