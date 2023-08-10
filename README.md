@@ -1,3 +1,14 @@
+### Note:
+
+The DSP framework will rebrand to the **DSPy** framework soon. This will be a gradual release of a completely redesigned **v2** of this framework, starting Friday Aug 11th. More material to come very soon. DSPv1 is still supported and will continue to be supported while we transition completely.
+
+<p align="center">
+  <img align="center" src="docs/images/DSPy7.png" width="260px" />
+</p>
+<p align="left">
+
+
+
 # 🎓𝗗𝗦𝗣: The Demonstrate–Search–Predict Framework
 
 The **DSP** framework provides a programming abstraction for _rapidly building sophisticated AI systems_. It's primarily (but not exclusively) designed for tasks that are knowledge intensive (e.g., answering user questions or researching complex topics).
@@ -75,14 +86,3 @@ If you use DSP in a research paper, please cite our work as follows:
   year={2022}
 }
 ```
-
----
-
-### Note:
-
-We'll rebrand to the **DSPy** framework soon.
-
-<p align="center">
-  <img align="center" src="docs/images/DSPy7.png" width="260px" />
-</p>
-<p align="left">
