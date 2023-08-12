@@ -1,8 +1,8 @@
 ### Note:
 
-The DSP framework will rebrand to the **DSPy** framework soon as we release a completely redesigned **v2** of our framework.
+The DSP framework will rebrand to **DSPy** soon as we release a completely redesigned **v2** of our framework.
 
-The **DSPy** (i.e., **v2**) release will be gradual, starting Aug 13th. DSPv1 will remain supported while we transition completely.
+The **DSPy** (i.e., **v2**) release will start on Aug 13th. DSPv1 will remain supported while we transition completely.
 
 <p align="center">
   <img align="center" src="docs/images/DSPy7.png" width="260px" />
