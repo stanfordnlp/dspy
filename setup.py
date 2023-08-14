@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="dsp-ml",
-    version="0.1.5",
+    version="0.1.8",
     description="Demonstrate-Search-Predict",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
