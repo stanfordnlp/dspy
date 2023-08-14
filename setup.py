@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="dsp-ml",
-    version="0.1.8",
+    name="dspy-ml",
+    version="0.1.9",
     description="Demonstrate-Search-Predict",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
