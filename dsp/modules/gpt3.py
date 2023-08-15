@@ -36,12 +36,14 @@ class GPT3(LM):
         model: str = "text-davinci-002",
         api_key: Optional[str] = None,
         api_provider: Literal["openai", "azure"] = "openai",
-        model_type: Literal["chat", "text"] = "text",
+        model_type: Literal["chat", "text"] = None,
         **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
-        self.model_type = model_type
+
+        default_model_type = "chat" if 'gpt-3.5' in model or 'gpt-4' in model else "text"
+        self.model_type = model_type if model_type else default_model_type
 
         if api_provider == "azure":
             assert (
@@ -68,7 +70,8 @@ class GPT3(LM):
             "n": 1,
             **kwargs,
         }  # TODO: add kwargs above for </s>
-        if api_provider == "openai":
+        
+        if api_provider != "azure":
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 

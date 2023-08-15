@@ -29,8 +29,9 @@ gpt*.txt
 local/
 build/
 *.egg-info/
-*.jsonl
-*.json
+# *.jsonl
+# *.json
 !/data/*.json
 /dist/
-**/*.pkl
+# **/*.pkl
+checklist.md

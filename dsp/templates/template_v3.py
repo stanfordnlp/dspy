@@ -5,15 +5,10 @@ from dsp.templates import TemplateV2, passages2text, format_answers, Field
 class Type:
     """A primitive datatype that defines and represents a prompt label."""
 
-    def __init__(self, prefix: str, desc: str, format=None, aliases=[]) -> None:
+    def __init__(self, prefix: str, desc: str, format=None) -> None:
         self.prefix = prefix
         self.desc = desc
         self.format = format
-        self.aliases = aliases
-
-        assert (
-            aliases == []
-        ), "TODO: If aliases is used, handling of input_variable in V2 needs to be richer."
 
     def __call__(self, **kwargs):
         kwargs = {**self.__dict__, **kwargs}
@@ -25,6 +20,7 @@ class Template(TemplateV2):
 
     def __init__(self, instructions: str, **kwargs):
         self.instructions = instructions
+        self.kwargs = kwargs
 
         self.fields: list[Field] = []
         self.format_handlers: dict[str, Callable] = {
@@ -35,7 +31,7 @@ class Template(TemplateV2):
         for key, value in kwargs.items():
             prefix: str = value.prefix
             separator: str = (
-                " " if prefix.rstrip() == prefix else prefix[len(prefix.rstrip()) :]
+                " " if prefix.rstrip() == prefix and len(prefix) > 0 else prefix[len(prefix.rstrip()) :]
             )
             field = Field(
                 name=prefix.strip(),
@@ -47,5 +43,4 @@ class Template(TemplateV2):
             self.fields.append(field)
 
             if value.format:
-                for name in [key, *value.aliases]:
-                    self.format_handlers[name] = value.format
+                self.format_handlers[key] = value.format

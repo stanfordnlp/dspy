@@ -43,7 +43,11 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True) -> list[s
         raise AssertionError("No RM is loaded.")
     if dsp.settings.reranker:
         return retrieveRerankEnsemble(queries, k)
+    
     queries = [q for q in queries if q]
+
+    if len(queries) == 1:
+        return retrieve(queries[0], k)
 
     passages = {}
     for q in queries:

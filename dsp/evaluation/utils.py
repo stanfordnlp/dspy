@@ -1,3 +1,6 @@
+from openai import InvalidRequestError
+from openai.error import APIError
+
 import dsp
 import tqdm
 import pandas as pd
@@ -80,3 +83,5 @@ def evaluate(fn, dev, metric=EM):
     display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
 
     return percentage
+
+

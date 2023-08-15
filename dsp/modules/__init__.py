@@ -5,3 +5,5 @@ from .colbertv2 import ColBERTv2
 from .sentence_vectorizer import *
 from .cohere import *
 from .sbert import *
+
+from .hf_client import HFClientTGI

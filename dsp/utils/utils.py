@@ -64,15 +64,43 @@ def batch(group, bsize, provide_offset=False):
     return
 
 
-class dotdict(dict):
-    """
-    dot.notation access to dictionary attributes
-    Credit: derek73 @ https://stackoverflow.com/questions/2352181
-    """
+# class dotdict(dict):
+#     """
+#     dot.notation access to dictionary attributes
+#     Credit: derek73 @ https://stackoverflow.com/questions/2352181
+#     """
 
-    __getattr__ = dict.__getitem__
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
+#     __getattr__ = dict.__getitem__
+#     __setattr__ = dict.__setitem__
+#     __delattr__ = dict.__delitem__
+
+
+import copy
+
+class dotdict(dict):
+    def __getattr__(self, key):
+        if key.startswith('__') and key.endswith('__'):
+            return super().__getattr__(key)
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+
+    def __setattr__(self, key, value):
+        if key.startswith('__') and key.endswith('__'):
+            super().__setattr__(key, value)
+        else:
+            self[key] = value
+
+    def __delattr__(self, key):
+        if key.startswith('__') and key.endswith('__'):
+            super().__delattr__(key)
+        else:
+            del self[key]
+
+    def __deepcopy__(self, memo):
+        # Use the default dict copying method to avoid infinite recursion.
+        return dotdict(copy.deepcopy(dict(self), memo))
 
 
 class dotdict_lax(dict):
