@@ -34,3 +34,4 @@ build/
 !/data/*.json
 /dist/
 **/*.pkl
+checklist.md

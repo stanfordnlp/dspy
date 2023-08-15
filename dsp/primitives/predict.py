@@ -1,5 +1,6 @@
 from collections import Counter
 from typing import Callable, Any, Optional
+
 import dsp
 from dsp.utils import zipstar, normalize_text
 from dsp.primitives.inspect import FuncInspector
@@ -177,6 +178,7 @@ def extract_final_answer(example, completions, extract=None):
             p.strip().split("\n")[-1].split(":", 1)[-1].strip() for p in completions
         ]
 
+    # TODO: make thread-safe?
     dsp.settings.lm.history.append(
         {**dsp.settings.lm.history[-1], "completions": completions}
     )

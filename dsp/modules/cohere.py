@@ -9,7 +9,7 @@ try:
     cohere_api_error = cohere.CohereAPIError
 except ImportError:
     cohere_api_error = Exception
-    print("Not loading Cohere because it is not installed.")
+    # print("Not loading Cohere because it is not installed.")
 
 
 def backoff_hdlr(details):
