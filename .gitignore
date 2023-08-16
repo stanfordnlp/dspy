@@ -27,6 +27,7 @@ __pycache__/
 gpt*.txt
 *.env
 local/
+local_*
 build/
 *.egg-info/
 # *.jsonl
