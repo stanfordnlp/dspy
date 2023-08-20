@@ -28,6 +28,7 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
 from mlc_chat import ChatModule
+from mlc_chat import ChatConfig
 
 class HFClientTGI(HFModel):
     def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
@@ -97,7 +98,7 @@ def send_hftgi_request_v00(arg, **kwargs):
 class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
         super().__init__(model=model, is_client=True)
-        self.cm = ChatModule(model=model, lib_path=model_path)
+        self.cm = ChatModule(model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM"))
 
     def _generate(self, prompt, **kwargs):
         output = self.cm.generate(
