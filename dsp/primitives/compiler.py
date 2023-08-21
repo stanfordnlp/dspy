@@ -4,6 +4,22 @@ import tqdm
 import ujson
 import random
 import subprocess
+import os
+from dsp.utils.settings import CompilerConfig
+
+import torch
+from datasets import load_dataset, Dataset
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    HfArgumentParser,
+    TrainingArguments,
+    pipeline,
+    logging,
+)
+from peft import LoraConfig, PeftModel
+from trl import SFTTrainer
 
 import dsp
 from datasets.fingerprint import Hasher
@@ -152,16 +168,21 @@ def finetune(training_data, target):
         for line in training_data:
             f.write(ujson.dumps(line) + '\n')
 
-    jobname, ft = openai_finetune(name, target)
-    print(ft)
+    if provider == 'openai':
+        jobname, ft = openai_finetune(name, target)
+    
+        print(ft)
 
-    ft = dsp.GPT3(model=ft, stop=" </s>")
+        ft = dsp.GPT3(model=ft, stop=" </s>")
+    elif provider == 'hf':
+        config = dsp.settings.compiler_config
+        hf_finetune(training_data, config)
     return ft
 
 # 4. Return updated program.
-def compile(program, examples, target='ada'):
+def compile(program, examples, target='ada', provider='openai'):
     training_data = simulate(program, examples)
-    compiled_lm = finetune(training_data, target=target)
+    compiled_lm = finetune(training_data, target=target, provider=provider)
 
     def compiled_program(*args, **kwargs):
         with dsp.settings.context(compiled_lm=compiled_lm, compiling=False):
@@ -170,3 +191,69 @@ def compile(program, examples, target='ada'):
     compiled_program.lm = compiled_lm
     return compiled_program
 
+
+def hf_finetune(train_dataset, config: CompilerConfig):
+    
+    train_dataset = Dataset.from_list(train_dataset)
+    train_dataset = train_dataset.map(lambda examples: {'text': [prompt + response for prompt, response in zip(examples['prompt'], examples['completion'])]}, batched=True)
+    
+    compute_dtype = getattr(torch, config["bnb_4bit_compute_dtype"])
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=config["use_4bit"],
+        bnb_4bit_quant_type=config["bnb_4bit_quant_type"],
+        bnb_4bit_compute_dtype=compute_dtype,
+        bnb_4bit_use_double_quant=config["use_nested_quant"],
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        config["model_name"],
+        quantization_config=bnb_config,
+        device_map=config["device_map"]
+    )
+    model.config.use_cache = False
+    model.config.pretraining_tp = 1
+    tokenizer = AutoTokenizer.from_pretrained(config["model_name"], trust_remote_code=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    peft_config = LoraConfig(
+        lora_alpha=config["lora_alpha"],
+        lora_dropout=config["lora_dropout"],
+        r=config["lora_r"],
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    # Set training parameters
+    training_arguments = TrainingArguments(
+        output_dir=config["output_dir"],
+        num_train_epochs=config["num_train_epochs"],
+        per_device_train_batch_size=config["per_device_train_batch_size"],
+        gradient_accumulation_steps=config["gradient_accumulation_steps"],
+        auto_find_batch_size=config["auto_find_batch_size"],
+        optim=config["optim"],
+        save_steps=config["save_steps"],
+        logging_steps=config["logging_steps"],
+        learning_rate=config["learning_rate"],
+        weight_decay=config["weight_decay"],
+        fp16=config["fp16"],
+        bf16=config["bf16"],
+        max_grad_norm=config["max_grad_norm"],
+        max_steps=config["max_steps"],
+        warmup_ratio=config["warmup_ratio"],
+        group_by_length=config["group_by_length"],
+        lr_scheduler_type=config["lr_scheduler_type"],
+        report_to="all",
+        evaluation_strategy="steps",
+        eval_steps=25
+    )
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=train_dataset,
+        peft_config=peft_config,
+        dataset_text_field="text",
+        max_seq_length=config["max_seq_length"],
+        tokenizer=tokenizer,
+        args=training_arguments,
+        packing=config["packing"],
+    )
+    trainer.train()
+    # trainer.model.save_pretrained(new_model)
+    return trainer.model
