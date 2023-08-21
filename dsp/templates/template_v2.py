@@ -94,16 +94,17 @@ class TemplateV2:
 
                     def format_handler(x):
                         return " ".join(x.split())
+                
+                formatted_value = format_handler(example[field.input_variable])
+                separator = '\n' if field.separator == ' ' and '\n' in formatted_value else field.separator
 
                 result.append(
-                    f"{field.name}{field.separator}{format_handler(example[field.input_variable])}"
+                    f"{field.name}{separator}{formatted_value}"
                 )
 
-        if self._has_augmented_guidelines() and (
-            "augmented" in example and example.augmented
-        ):
-            return "\n\n".join(result)
-        return "\n".join(result)
+        if self._has_augmented_guidelines() and ("augmented" in example and example.augmented):
+            return "\n\n".join([r for r in result if r])
+        return "\n".join([r for r in result if r])
 
     def guidelines(self, show_guidelines=True) -> str:
         """Returns the task guidelines as described in the lm prompt"""
@@ -125,7 +126,7 @@ class TemplateV2:
 
     def _has_augmented_guidelines(self):
         return len(self.fields) > 3 or any(
-            field.separator == "\n" for field in self.fields
+            ("\n" in field.separator) or ('\n' in field.description) for field in self.fields
         )
 
     def extract(
@@ -203,10 +204,36 @@ class TemplateV2:
             if "augmented" in demo and demo.augmented
         ]
 
+        # Move the rdemos to ademos if rdemo has all the fields filled in
+        rdemos_ = []
+        for rdemo in rdemos:
+            if all(
+                field.name in rdemo
+                for field in self.fields
+                if field.input_variable in example
+            ):
+                ademos.append(rdemo)
+            else:
+                rdemos_.append(rdemo)
+        
+        rdemos = rdemos_
+
+
         long_query = self._has_augmented_guidelines()
+
         if long_query:
             example["augmented"] = True
+
         query = self.query(example)
+
+        # if it has more lines than fields
+        if len(query.split('\n')) > len(self.fields):
+            long_query = True
+
+            if "augmented" not in example or not example.augmented:
+                example["augmented"] = True
+                query = self.query(example)
+
         rdemos = "\n\n".join(rdemos)
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
             rdemos_and_query = "\n\n".join([rdemos, query])

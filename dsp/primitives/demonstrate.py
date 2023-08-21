@@ -55,7 +55,7 @@ def annotate(*transformations):
         for example in train:  # tqdm.tqdm
             raw_example = dsp.Example(example)
 
-            if k and len(ademos) >= k:
+            if (k is not None) and len(ademos) >= k:
                 example = None
 
             for f in transformations:
@@ -82,7 +82,7 @@ def annotate(*transformations):
 def sample(train: list[Example], k: int):
     """Sample k examples from train."""
     rng = random.Random(dsp.settings.branch_idx)
-    shuffled_train = [example.copy() for example in train]
+    shuffled_train = [dsp.Example(example) for example in train]
     rng.shuffle(shuffled_train)
 
     return shuffled_train[:k]

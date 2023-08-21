@@ -1,80 +1,383 @@
-### Note:
-
-The DSP framework will rebrand to **DSPy** soon as we release a completely redesigned **v2** of our framework.
-
-The **DSPy** (i.e., **v2**) release will start later today Aug 17. DSPv1 will remain supported while we transition completely.
-
 <p align="center">
-  <img align="center" src="docs/images/DSPy7.png" width="260px" />
+  <img align="center" src="docs/images/DSPy8.png" width="460px" />
 </p>
 <p align="left">
 
 
+# DSPy: The Framework for Programming with Foundation Models
 
-# 🎓𝗗𝗦𝗣: The Demonstrate–Search–Predict Framework
-
-The **DSP** framework provides a programming abstraction for _rapidly building sophisticated AI systems_. It's primarily (but not exclusively) designed for tasks that are knowledge intensive (e.g., answering user questions or researching complex topics).
-
-You write a **DSP program** in a few lines of code, describing at high level how the problem you'd like to solve should be _decomposed_ into smaller _transformations_. Transformations generate text (by invoking a language model; LM) and/or search for information (by invoking a retrieval model; RM) in high-level steps like `generate a search query to find missing information` or `answer this question using the supplied context`. Our [research paper](https://arxiv.org/abs/2212.14024) shows that building NLP systems with **DSP** can easily outperform GPT-3.5 by up to 120%.
-
-**DSP** programs invoke LMs in a declarative way: you focus on the _what_ (i.e., the algorithmic design of decomposing the problem) and delegate _how_ the transformations are mapped to LM (or RM) calls to the **DSP** runtime. In particular, **DSP** discourages "prompt engineering", which we view much the same way as hyperparameter tuning in traditional ML: a final and minor step that's best done _after_ building up an effective architecture (and which could be delegated to automatic tuning).
-
-To this end, **DSP** offers a number of powerful _primitives_ for building architectures that compose transformations and offers corresponding implementations that map these transformations to effective LM and RM calls. For instance, **DSP** *annotates* few-shot demonstrations for the LM calls within your arbitrary pipeline automatically, and uses them to improve the quality of your transformations. Once you're happy with things, **DSP** can *compile* your program into a much cheaper version in which LM calls are transparently replaced with calls to a tiny LM created by the **DSP** runtime.
+[<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/v2/intro.ipynb)
 
 
-<p align="center">
-  <img align="center" src="docs/images/DSP-tasks.png" width="460px" />
-</p>
-<p align="left">
-  <b>Figure 1:</b> A comparison between three GPT3.5-based systems. The LM often makes false assertions, while the popular retrieve-then-read pipeline fails when simple search can’t find an answer. In contrast, a task-aware DSP program systematically decomposes the problem and produces a correct response. Texts edited for presentation.
-</p>
+**DSPy** is the framework for _programming_ with language models (LMs) and retrieval models (RMs) to tackle any task. **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs as well as improving them with **reasoning** and **tool/retrieval augmentation**, all expressed through a _minimalistic set of Pythonic operations that compose and learn_.
+
+To make this possible:
+
+- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted _string manipulation tricks_ into truly modular _generalized operations that learn to adapt to your task_.
+
+- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally _trace_ your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
+
+The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
+
+For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
 
 
-## Installation
-
-```pip install dsp-ml```
-
-## 🏃 Getting Started
-
-Our [intro notebook](intro.ipynb) provides examples of five "multi-hop" question answering programs of increasing complexity written in DSP.
-
-You can **[open the intro notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/intro.ipynb)**. You don't even need an API key to get started with it.
-
-Once you go through the notebook, you'll be ready to create your own DSP pipelines!
-
-### Temporary Note:
-
-The ColBERTv2 Wikipedia index has been moved to the following URL. **http://index.contextual.ai:8893/api/search?query=who%20is%20the%20first%20person%20on%20the%20moon**.
-
-To use in the notebooks, please set the colbert server URL to be `http://index.contextual.ai:8893/api/search`.
+If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
 
 
-<p align="center">
-  <img align="center" src="docs/images/DSP-example.png" width="850px" />
-</p>
-<p align="left">
-  <b>Figure 2:</b> A DSP program for multi-hop question answering, given an input question and a 2-shot training set. The Demonstrate stage programmatically annotates intermediate transformations on the training examples. Learning from the resulting demonstration, the Search stage decomposes the complex input question and retrieves supporting information over two hops. The Predict stage uses the retrieved passages to answer the question.
-</p>
+### a. Table of Contents
 
 
-## ⚡️ DSP Compiler
+1. **[Installation](#1-installation)**
+1. **[Framework Syntax](#2-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
+1. **[Compiling: Two Powerful Concepts](#3-two-powerful-concepts-signatures--teleprompters)**
+1. **[Tutorials & Documentation](#4-documentation--tutorials)**
+1. **[FAQ: Is DSPy right for me?](#5-faq-is-dspy-right-for-me)**
 
-Our [compiler notebook](compiler.ipynb) introduces the new experimental compiler, which can optimize DSP programs automatically for (much) cheaper execution.
 
-You can **[open the compiler notebook in Google Colab](https://colab.research.google.com/github/stanfordnlp/dsp/blob/main/compiler.ipynb)**. You don't even need an API key to get started with it.
 
-## 📜 Reading More
+### b. Analogy to Neural Networks
 
-You can get an overview via our Twitter threads:
-* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Jan 24, 2023)
-* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Feb 13, 2023)
+If you're looking for an analogy, think of this one. When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
-And read more in the academic paper:
-* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf)
+Ditto! **DSPy** gives you the right minimalistic, general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and takes care of optimizing their prompts _for your program_. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
 
-## ✍️ Reference
 
-If you use DSP in a research paper, please cite our work as follows:
+## 1) Installation
+
+All you need is:
+
+```
+pip install dspy-ai
+```
+
+Or open our intro notebook in Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/v2/intro.ipynb)
+
+
+> _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
+
+
+
+## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
+
+**DSPy** hides tedious prompt engineering, but it exposes the important decisions you need to take: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
+
+You express your system as free-form Pythonic modules. **DSPy** will tune the quality of your program _in whatever way_ you use foundation models: you can code with loops, `if` statements, or exceptions, and use **DSPy** modules within any Python control flow you think works for your task.
+
+Suppose you want to build a simple retrieval-augmented generation (RAG) system for question answering. You can define your own `RAG` program like this:
+
+```python
+class RAG(dspy.Module):
+    def __init__(self, num_passages=3):
+        super().__init__()
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate_answer = dspy.ChainOfThought("context, question -> answer")
+    
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        answer = self.generate_answer(context=context, question=question)
+        return answer
+```
+
+A program has two key methods, which you can edit to fit your needs.
+
+**Your `__init__` method** declares the modules you will use. Here, `RAG` will use the built-in `Retrieve` for retrieval and `ChainOfThought` for generating answers. **DSPy** offers general-purpose modules that take the shape of _your own_ sub-tasks — and not pre-built functions for specific applications.
+
+Modules that use the LM, like `ChainOfThought`, require a _signature_. That is a declarative spec that tells the module what it's expected to do. In this example, we use the short-hand signature notation `context, question -> answer` to tell `ChainOfThought` it will be given some `context` and a `question` and must produce an `answer`. We will discuss more advanced **[signatures](#3a-declaring-the-inputoutput-behavior-of-lms-with-dspysignature)** below.
+
+
+**Your `forward` method** expresses any computation you want to do with your modules. In this case, we use the modules `self.retrieve` and `self.generate_answer` to search for some `context` and then use the `context` and `quetion` to generate the `answer`!
+
+You can now either use this `RAG` program in **zero-shot mode**. Or **compile** it to obtain higher quality. Zero-shot usage is simple. Just define an instance of your program and then call it:
+
+```python
+rag = RAG()  # zero-shot, uncompiled version of RAG
+rag("what is the capital of France?").answer  # -> "Paris"
+```
+
+The next section will discuss how to compile our simple `RAG` program. When we compile it, the **DSPy compiler** will annotate _demonstrations_ of its steps: (1) retrieval, (2) using context, and (3) using _chain-of-thought_ to answer questions. From these demonstrations, the **DSPy compiler** will make sure it produces an effective few-shot prompt that works well with your LM, retrieval model, and data. If you're working with small models, it'll finetune your model (instead of prompting) to do this task.
+
+If you later decide you need another step in your pipeline, just add another module and compile again. Maybe add a module that takes the chat history into account during search?
+
+
+## 3) Two Powerful Concepts: Signatures & Teleprompters
+
+To make it possible to compile any program you write, **DSPy** introduces two simple concepts: Signatures and Teleprompters.
+
+
+#### 3.a) Declaring the input/output behavior of LMs with `dspy.Signature`
+
+When we assign tasks to LMs in **DSPy**, we specify the behavior we need as a **Signature**. A signature is a declarative specification of input/output behavior of a **DSPy module**.
+
+Instead of investing effort into _how_ to get your LM to do a sub-task, signatures enable you to inform **DSPy** _what_ the sub-task is. Later, the **DSPy compiler** will figure out how to build a complex prompt for your large LM (or finetune your small LM) specifically for your signature, on your data, and within your pipeline.
+
+A signature consists of three simple elements:
+
+- A minimal description of the sub-task the LM is supposed to solve.
+- A description of one or more input fields (e.g., input question) that will we will give to the LM.
+- A description of one or more output fields (e.g., the question's answer) that we will expect from the LM.
+
+
+We support two notations for expressing signatures. The **short-hand signature notation** is for quick development. You just provide your module (e.g., `dspy.ChainOfThought`) with a string with `input_field_name_1, ... -> output_field_name_1, ...` with the fields separated by commas.
+
+In the `RAG` class earlier, we saw:
+
+```python
+self.generate_answer = dspy.ChainOfThought("context, question -> answer")
+```
+
+In many cases, this barebones signature is sufficient. However, sometimes you need more control. In these cases, we can use the full notation to express a more fully-fledged signature below.
+
+```python
+class GenerateSearchQuery(dspy.Signature):
+    """Write a simple search query that will help answer a complex question."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    query = dspy.OutputField()
+
+### inside your program's __init__ function
+self.generate_answer = dspy.ChainOfThought(GenerateSearchQuery)
+```
+
+You can optionally provide a `prefix` and/or `desc` key for each input or output field to refine or constraint the behavior of modules using your signature.
+
+
+#### 3.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
+
+After defining the `RAG` program, we can **compile** it. Compiling a program will update the parameters stored in each module. For large LMs, this is primarily in the form of creating and validating good demonstrations for inclusion in your prompt(s).
+
+Compiling depends on three things: a (potentially tiny) training set, a metric for validation, and your choice of teleprompter from **DSPy**. **Teleprompters** are powerful optimizers (included in **DSPy**) that can learn to bootstrap and select effective prompts for the modules of any program. (The  "tele-" in the name means "at a distance", i.e., automatic prompting at a distance.)
+
+**DSPy** typically requires very minimal labeling. For example, our `RAG` pipeline may work well with just a handful of examples that contain a **question** and its (human-annotated) **answer**. Your pipeline may involve multiple complex steps: our basic `RAG` example includes a retrieved context, a chain of thought, and the answer. However, you only need labels for the initial question and the final answer. **DSPy** will bootstrap any intermediate labels needed to support your pipeline. If you change your pipeline in any way, the data bootstrapped will change accordingly!
+
+
+```python
+my_rag_trainset = [
+  dspy.Example(
+    question="Which award did Gary Zukav's first book receive?",
+    answer="National Book Award"
+  ),
+  ...
+]
+```
+
+Second, define your validation logic, which will express some constraints on the behavior of your program or individual modules. For `RAG`, we might express a simple check like this:
+
+```python
+def validate_context_and_answer(example, pred, trace=None):
+    # check the gold label and the predicted answer are the same
+    answer_match = example.answer.lower() == pred.answer.lower()
+
+    # check the predicted answer comes from one of the retrieved contexts
+    context_match = any((pred.answer.lower() in c) for c in pred.context)
+
+    return answer_match and context_match
+```
+
+
+Different teleprompters offer various tradeoffs in terms of how much they optimize cost versus quality, etc. For `RAG`, we might use the simple teleprompter called `BootstrapFewShot`. To do so, we instantiate the teleprompter itself with a validation function `my_rag_validation_logic` and then compile against some training set `my_rag_trainset`.
+
+```python
+from dspy.teleprompt import BootstrapFewShot
+
+teleprompter = BootstrapFewShot(metric=my_rag_validation_logic)
+compiled_rag = teleprompter.compile(RAG(), trainset=my_rag_trainset)
+```
+
+If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-shot demonstrations of chain-of-thought retrieval-augmented question answering on our data.
+
+
+## 4) Documentation & Tutorials
+
+While we work on new tutorials and documentation, please check out **[our intro notebook](intro.ipynb)**.
+
+Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/v2/intro.ipynb)
+
+
+
+###
+<details>
+  <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
+
+----
+
+**[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
+
+**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
+
+**[Intro-03] Adding Complexity: Multi-stage Programs**
+
+**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
+
+</details>
+
+----
+
+
+###
+<details>
+  <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
+
+----
+
+
+**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
+
+**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
+
+**[Advanced-03] Compiling & Teleprompters.**
+
+**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
+
+**[Advanced-05]: Agents and General Tool Use in DSPy.**
+
+**[Advanced-06]: Reproducibility, Saving Programs, and Advanced Caching.**
+
+
+</details>
+
+----
+
+
+###
+<details>
+  <summary><h3 style="display: inline">Module Reference [coming soon]</h3></summary>
+
+----
+
+
+#### Language Model Clients
+
+- `dspy.OpenAI`
+- `dspy.Cohere`
+- `dspy.TGI`
+- `dspy.VLLM` [porting soon]
+
+#### Retrieval Model Clients
+
+- `dspy.ColBERTv2`
+- `dspy.AzureCognitiveSearch` [porting soon]
+
+
+#### Signatures
+
+- `dspy.Signature`
+- `dspy.InputField`
+- `dspy.OutputField`
+
+#### Modules
+
+- `dspy.Predict`
+- `dspy.Retrieve`
+- `dspy.ChainOfThought`
+- `dspy.SelfConsistency` [coming soon; use functional `dspy.majority` now]
+- `dspy.Reflection` [coming soon]
+- `dspy.MultiChainReasoning` [coming soon]
+
+  
+#### Teleprompters
+
+- `dspy.teleprompt.LabeledFewShot`
+- `dspy.teleprompt.BootstrapFewShot`
+- `dspy.teleprompt.BootstrapFewShotWithRandomSearch`
+- `dspy.teleprompt.BootstrapFinetune` [porting soon]
+
+</details>
+
+----
+
+
+
+## 5) FAQ: Is DSPy right for me?
+
+The **DSPy** philosophy and abstraction differ significantly from other libraries and frameworks, so it's usually straightforward to decide when **DSPy** is (or isn't) the right framework for your usecase.
+
+If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new tasks), the answer is generally an invariable **yes**. If you're a practitioner doing other things, please read on.
+
+
+####
+<details>
+  <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers around prompts (OpenAI API, MiniChain, basic templating, etc.)</h4></summary>
+
+----
+
+In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.)
+
+However, when you need higher quality (or manageable cost), then you need to iteratively explore multi-stage decomposition, improved prompting, data bootstrapping, careful finetuning, retrieval augmentation, and/or using smaller (or cheaper, or local) models. The true expressive power of building with foundation models lies in the interactions between these pieces. But every time you change one piece, you likely break (or weaken) multiple other components.
+
+**DSPy** cleanly abstracts away (_and_ powerfully optimizes) the parts of these interactions that are external to your actual system design. It lets you focus on designing the module-level interactions: the _same program_ expressed in 10 or 20 lines of **DSPy** can easily be compiled into multi-stage instructions for `GPT-4`, detailed prompts for `Llama2-13b`, or finetunes for `T5-base`.
+
+Oh, and you wouldn't need to maintain long, brittle, model-specific strings at the core of your project anymore.
+
+</details>
+
+----
+
+####
+<details>
+  <summary><h4 style="display: inline">[5.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
+
+----
+
+> _Note: If you use LangChain as a thin wrapper around your own prompt strings, refer to answer [5.a] instead._
+
+
+LangChain and LlamaIndex are popular libraries that target high-level application development with LMs. They offer many _batteries-included_, pre-built application modules that plug in with your data or configuration. In practice, many usecases genuinely _don't need_ any special components indeed. If you'd be happy to use someone's generic, off-the-shelf prompt for question answering over PDFs or standard text-to-SQL as long as it's easy to set up on your data, then you will probably find a very rich ecosystem in these libraries.
+
+
+Unlike these libraries, **DSPy** doesn't internally contain hand-crafted prompts that target specific applications you can build. Instead, **DSPy** introduces a very small set of much more powerful and general-purpose modules _that can learn to prompt (or finetune) your LM within your pipeline on your data_.
+
+**DSPy** offers a whole different degree of modularity: when you change your data, make tweaks to your program's control flow, or change your target LM, the **DSPy compiler** can map your program into a new set of prompts (or finetunes) that are optimized specifically for this pipeline. Because of this, you may find that **DSPy** obtains the highest quality for your task, with the least effort, provided you're willing to implement (or extend) your own short program.
+
+> If you're familiar with neural networks, this is like the difference between PyTorch (i.e., representing **DSPy**) and HuggingFace Transformers (i.e., representing the higher-level libraries). If you simply want to use off-the-shelf `BERT-base-uncased` or `GPT2-large` or apply minimal finetuning to them, HF Transformers makes it very straightforward. If, however, you're looking to build your own architecture (or extend an existing one significantly), you have to quickly drop down into something much more modular like PyTorch. Luckily, HF Transformers _is_ implemented in backends like PyTorch. We are similarly excited about high-level wrapper around **DSPy** for common applications. If this is implemented using **DSPy**, your high-level application can also adapt significantly to your data in a way that static prompt chains won't. Please [open an issue](https://github.com/stanfordnlp/dspy/issues/new) if this is something you want to help with.
+
+
+</details>
+
+----
+
+
+####
+<details>
+  <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LLMQL, RELM, Outlines</h4></summary>
+
+----
+
+
+Guidance, LLMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
+
+This is very useful in many settings, but it's generally focused on low-level, structured control of a single LM call. It doesn't help ensure the JSON (or structured output) you get is going to be correct or useful for your task.
+
+In contrast, **DSPy** automatically optimizes the prompts in your programs to align them with various task needs, which may also include producing valid structured ouputs. That said, we are considering allowing **Signatures** in **DSPy** to express regex-like constraints that are implemented by these libraries.
+
+
+
+</details>
+
+
+----
+
+
+
+
+## Contributors & Acknowledgements
+
+**DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
+
+Key contributors and team members include **Aranv Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, and **Thomas Joshi**.
+
+**DSPy** includes important contributions from **Igor Kotenkov** and reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Percy Liang**, and many others.
+
+
+
+
+
+## 📜 Citation & Reading More
+
+To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
+
+If you use DSPy (or DSPv1) in a research paper, please cite our work as follows:
 
 ```
 @article{khattab2022demonstrate,
@@ -84,3 +387,8 @@ If you use DSP in a research paper, please cite our work as follows:
   year={2022}
 }
 ```
+
+You can also read more about the old v1 of our framework (Demonstrate–Search–Predict, or DSP):
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
+* Thread [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)

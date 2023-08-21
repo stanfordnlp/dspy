@@ -1,6 +1,7 @@
 """
     Source: DPR Implementation from Facebook Research
     https://github.com/facebookresearch/DPR/tree/master/dpr
+    Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
 """
 
 import string

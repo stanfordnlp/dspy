@@ -27,10 +27,12 @@ __pycache__/
 gpt*.txt
 *.env
 local/
+local_*
 build/
 *.egg-info/
-*.jsonl
-*.json
+# *.jsonl
+# *.json
 !/data/*.json
 /dist/
-**/*.pkl
+# **/*.pkl
+checklist.md
