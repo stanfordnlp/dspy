@@ -176,7 +176,9 @@ def finetune(training_data, target):
         ft = dsp.GPT3(model=ft, stop=" </s>")
     elif provider == 'hf':
         config = dsp.settings.compiler_config
-        hf_finetune(training_data, config)
+        # TODO: The new model should be loaded with the hf model loading wrapper
+        ft_path = hf_finetune(training_data, config)
+        ft = dsp.HFModel(ft_path)
     return ft
 
 # 4. Return updated program.
@@ -191,11 +193,30 @@ def compile(program, examples, target='ada', provider='openai'):
     compiled_program.lm = compiled_lm
     return compiled_program
 
+def update_lora_config(config: CompilerConfig, train_dataset: Dataset):
+    # choose the lora_alpha based on the size of the dataset
+    len_dataset = len(train_dataset)
+    if len_dataset < 10:
+        config["lora_alpha"] = 32
+        config["lora_r"] = 16
+    elif len_dataset < 100:
+        config["lora_alpha"] = 64
+        config["lora_r"] = 32
+    elif len_dataset < 1000:
+        config["lora_alpha"] = 256
+        config["lora_r"] = 128
+    else:
+        config["lora_alpha"] = 512
+        config["lora_r"] = 256
+    return config
 
 def hf_finetune(train_dataset, config: CompilerConfig):
     
     train_dataset = Dataset.from_list(train_dataset)
     train_dataset = train_dataset.map(lambda examples: {'text': [prompt + response for prompt, response in zip(examples['prompt'], examples['completion'])]}, batched=True)
+    
+    if config["auto_optimize_lora_params"]:
+        config = update_lora_config(config, train_dataset)
     
     compute_dtype = getattr(torch, config["bnb_4bit_compute_dtype"])
     bnb_config = BitsAndBytesConfig(
@@ -255,5 +276,6 @@ def hf_finetune(train_dataset, config: CompilerConfig):
         packing=config["packing"],
     )
     trainer.train()
-    # trainer.model.save_pretrained(new_model)
-    return trainer.model
+    model_save_path = os.path.join(config["output_dir"], config["new_model"])
+    trainer.model.save_pretrained(model_save_path)
+    return model_save_path

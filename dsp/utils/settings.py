@@ -34,6 +34,7 @@ class CompilerConfig(TypedDict):
     max_seq_length: Optional[int]
     packing: bool
     device_map: str
+    auto_optimize_lora_params: bool
 
 def get_default_compiler_config() -> CompilerConfig:
     return {
@@ -67,7 +68,8 @@ def get_default_compiler_config() -> CompilerConfig:
         "logging_steps": 25,
         "max_seq_length": None,
         "packing": False,
-        "device_map": "auto"
+        "device_map": "auto",
+        "auto_optimize_lora_params": True
     }
 
 class Settings(object):
