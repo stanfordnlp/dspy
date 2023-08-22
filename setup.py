@@ -2,13 +2,13 @@ from setuptools import setup, find_packages
 
 setup(
     name="dspy-ai",
-    version="2.0.0-beta.1",
+    version="2.0.0-beta.2",
     description="DSPy",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
     author_email="okhattab@stanford.edu",
     license="MIT License",
-    packages=find_packages(include=['dsp', 'dspy']),
+    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),
     python_requires='>=3.9',
     install_requires=[
         "backoff",
