@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="dspy-ai",
-    version="2.0.0-alpha",
+    version="2.0.0-beta.1",
     description="DSPy",
     url="https://github.com/stanfordnlp/dsp",
     author="Omar Khattab",
