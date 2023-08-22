@@ -3,6 +3,8 @@ import random
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
+from dspy.signatures.field import InputField, OutputField
+from dspy.signatures.signature import infer_prefix
 
 
 class Predict(Parameter):
@@ -11,6 +13,31 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         self.reset()
+
+        # if the signature is a string
+        if isinstance(signature, str):
+            inputs, outputs = signature.split("->")
+            inputs, outputs = inputs.split(","), outputs.split(",")
+            inputs, outputs = [field.strip() for field in inputs], [field.strip() for field in outputs]
+
+            assert all(len(field.split()) == 1 for field in (inputs + outputs))
+
+            inputs_ = ', '.join([f"`{field}`" for field in inputs])
+            outputs_ = ', '.join([f"`{field}`" for field in outputs])
+
+            instructions = f"""Given the fields {inputs_}, produce the fields {outputs_}."""
+
+            inputs = {k: InputField() for k in inputs}
+            outputs = {k: OutputField() for k in outputs}
+
+            for k, v in inputs.items():
+                v.finalize(k, infer_prefix(k))
+            
+            for k, v in outputs.items():
+                v.finalize(k, infer_prefix(k))
+
+            self.signature = dsp.Template(instructions, **inputs, **outputs)
+
     
     def reset(self):
         self.lm = None

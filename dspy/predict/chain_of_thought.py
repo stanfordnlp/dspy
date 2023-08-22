@@ -12,7 +12,7 @@ class ChainOfThought(Predict):
 
         self.activated = activated
 
-        # signature = signature.signature
+        signature = self.signature
         *keys, last_key = signature.kwargs.keys()
 
         DEFAULT_RATIONALE_TYPE = dsp.Type(prefix="Reasoning: Let's think step by step in order to",
