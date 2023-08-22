@@ -25,7 +25,7 @@ For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` a
 If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
 
 
-### a. Table of Contents
+### Table of Contents
 
 
 1. **[Installation](#1-installation)**
@@ -36,7 +36,7 @@ If you want to see **DSPy** in action, **[open our intro tutorial notebook](intr
 
 
 
-### b. Analogy to Neural Networks
+### Analogy to Neural Networks
 
 If you're looking for an analogy, think of this one. When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
@@ -200,8 +200,6 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 <details>
   <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
 
-----
-
 **[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
 
 **[Intro-02] Using DSPy For Your Own Task: Building Blocks**
@@ -212,14 +210,10 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 
 </details>
 
-----
-
 
 ###
 <details>
   <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
-
-----
 
 
 **[Advanced-01] Long-Form QA & Programmatic Evaluation.**
@@ -237,14 +231,10 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 
 </details>
 
-----
-
 
 ###
 <details>
   <summary><h3 style="display: inline">Module Reference [coming soon]</h3></summary>
-
-----
 
 
 #### Language Model Clients
@@ -272,8 +262,9 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.Retrieve`
 - `dspy.ChainOfThought`
 - `dspy.SelfConsistency` [coming soon; use functional `dspy.majority` now]
-- `dspy.Reflection` [coming soon]
 - `dspy.MultiChainReasoning` [coming soon]
+- `dspy.SelfCritique` [coming soon]
+- `dspy.SelfRevision` [coming soon]
 
   
 #### Teleprompters
@@ -284,8 +275,6 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.teleprompt.BootstrapFinetune` [porting soon]
 
 </details>
-
-----
 
 
 
@@ -300,8 +289,6 @@ If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new 
 <details>
   <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers around prompts (OpenAI API, MiniChain, basic templating, etc.)</h4></summary>
 
-----
-
 In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.)
 
 However, when you need higher quality (or manageable cost), then you need to iteratively explore multi-stage decomposition, improved prompting, data bootstrapping, careful finetuning, retrieval augmentation, and/or using smaller (or cheaper, or local) models. The true expressive power of building with foundation models lies in the interactions between these pieces. But every time you change one piece, you likely break (or weaken) multiple other components.
@@ -312,37 +299,28 @@ Oh, and you wouldn't need to maintain long, brittle, model-specific strings at t
 
 </details>
 
-----
-
 ####
 <details>
   <summary><h4 style="display: inline">[5.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
 
-----
 
 > _Note: If you use LangChain as a thin wrapper around your own prompt strings, refer to answer [5.a] instead._
 
 
 LangChain and LlamaIndex are popular libraries that target high-level application development with LMs. They offer many _batteries-included_, pre-built application modules that plug in with your data or configuration. In practice, many usecases genuinely _don't need_ any special components indeed. If you'd be happy to use someone's generic, off-the-shelf prompt for question answering over PDFs or standard text-to-SQL as long as it's easy to set up on your data, then you will probably find a very rich ecosystem in these libraries.
 
-
 Unlike these libraries, **DSPy** doesn't internally contain hand-crafted prompts that target specific applications you can build. Instead, **DSPy** introduces a very small set of much more powerful and general-purpose modules _that can learn to prompt (or finetune) your LM within your pipeline on your data_.
 
 **DSPy** offers a whole different degree of modularity: when you change your data, make tweaks to your program's control flow, or change your target LM, the **DSPy compiler** can map your program into a new set of prompts (or finetunes) that are optimized specifically for this pipeline. Because of this, you may find that **DSPy** obtains the highest quality for your task, with the least effort, provided you're willing to implement (or extend) your own short program.
 
-> If you're familiar with neural networks, this is like the difference between PyTorch (i.e., representing **DSPy**) and HuggingFace Transformers (i.e., representing the higher-level libraries). If you simply want to use off-the-shelf `BERT-base-uncased` or `GPT2-large` or apply minimal finetuning to them, HF Transformers makes it very straightforward. If, however, you're looking to build your own architecture (or extend an existing one significantly), you have to quickly drop down into something much more modular like PyTorch. Luckily, HF Transformers _is_ implemented in backends like PyTorch. We are similarly excited about high-level wrapper around **DSPy** for common applications. If this is implemented using **DSPy**, your high-level application can also adapt significantly to your data in a way that static prompt chains won't. Please [open an issue](https://github.com/stanfordnlp/dspy/issues/new) if this is something you want to help with.
-
-
+If you're familiar with neural networks:
+> This is like the difference between PyTorch (i.e., representing **DSPy**) and HuggingFace Transformers (i.e., representing the higher-level libraries). If you simply want to use off-the-shelf `BERT-base-uncased` or `GPT2-large` or apply minimal finetuning to them, HF Transformers makes it very straightforward. If, however, you're looking to build your own architecture (or extend an existing one significantly), you have to quickly drop down into something much more modular like PyTorch. Luckily, HF Transformers _is_ implemented in backends like PyTorch. We are similarly excited about high-level wrapper around **DSPy** for common applications. If this is implemented using **DSPy**, your high-level application can also adapt significantly to your data in a way that static prompt chains won't. Please [open an issue](https://github.com/stanfordnlp/dspy/issues/new) if this is something you want to help with.
 </details>
-
-----
 
 
 ####
 <details>
   <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LLMQL, RELM, Outlines</h4></summary>
-
-----
 
 
 Guidance, LLMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
@@ -350,13 +328,7 @@ Guidance, LLMQL, RELM, and Outlines are all exciting new libraries for controlli
 This is very useful in many settings, but it's generally focused on low-level, structured control of a single LM call. It doesn't help ensure the JSON (or structured output) you get is going to be correct or useful for your task.
 
 In contrast, **DSPy** automatically optimizes the prompts in your programs to align them with various task needs, which may also include producing valid structured ouputs. That said, we are considering allowing **Signatures** in **DSPy** to express regex-like constraints that are implemented by these libraries.
-
-
-
 </details>
-
-
-----
 
 
 
@@ -365,7 +337,7 @@ In contrast, **DSPy** automatically optimizes the prompts in your programs to al
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Aranv Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, and **Thomas Joshi**.
+Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, and **Thomas Joshi**.
 
 **DSPy** includes important contributions from **Igor Kotenkov** and reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Percy Liang**, and many others.
 
