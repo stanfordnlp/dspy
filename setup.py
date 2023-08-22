@@ -8,8 +8,8 @@ setup(
     author="Omar Khattab",
     author_email="okhattab@stanford.edu",
     license="MIT License",
-    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),
-    python_requires='>=3.9',
+    packages=find_packages(include=['dsp', 'dspy']),
+    python_requires='>=3.10',
     install_requires=[
         "backoff",
         "joblib",

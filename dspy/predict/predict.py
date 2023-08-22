@@ -87,7 +87,13 @@ class Predict(Parameter):
                     completions[-1][field.output_variable] = getattr(c, field.output_variable)
 
         pred = Prediction.from_completions(completions, signature=signature)
-            
+        #NOTE - ADDED THIS
+        if hasattr(pred, 'answer'):
+            pred.answer = pred.answer.split('\n')[0]
+        if hasattr(pred, 'query'):
+            pred.query = pred.query.split('\n')[0]
+        else:
+            pass
         if dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))

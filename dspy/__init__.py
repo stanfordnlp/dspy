@@ -1,4 +1,3 @@
-from dsp.modules.hf_client import ChatModuleClient
 from .signatures import *
 
 from .retrieve import *
@@ -11,7 +10,7 @@ from .primitives import *
 
 
 import dsp
-
+from dsp.modules.hf_client import ChatModuleClient
 settings = dsp.settings
 
 OpenAI = dsp.GPT3
