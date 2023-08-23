@@ -98,6 +98,7 @@ class Evaluate:
 
             try:
                 prediction = program(**example.inputs())
+                prediction.answer = prediction.answer.split('\n')[0]
                 score = metric(example, prediction)  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
                 return example_idx, example, prediction, score
             except Exception as e:

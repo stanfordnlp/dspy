@@ -104,7 +104,6 @@ class HFModel(LM):
         assert not self.is_client
         # TODO: Add caching
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
-        print(prompt)
         if isinstance(prompt, dict):
             try:
                 prompt = prompt['messages'][0]['content']
@@ -131,9 +130,10 @@ class HFModel(LM):
 
         if kwargs.get("n", 1) > 1:
             kwargs["do_sample"] = True
-
+        kwargs["temperature"] = 0.1
         response = self.request(prompt, **kwargs)
-        return [c["text"] for c in response["choices"]]
+        return [c["text"][len(prompt):].split("---", 1)[0].split("\n", 1)[0].strip() if prompt in c["text"] else c["text"].split("---", 1)[0].split("\n", 1)[0].strip() for c in response["choices"]]
+
 
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
