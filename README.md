@@ -9,7 +9,7 @@
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
-**DSPy** is the framework for _programming_ with language models (LMs) and retrieval models (RMs) to tackle any task. **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs as well as improving them with **reasoning** and **tool/retrieval augmentation**, all expressed through a _minimalistic set of Pythonic operations that compose and learn_.
+**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). It emphasizes programming over prompting. **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs as well as improving them with **reasoning** and **tool/retrieval augmentation**, all expressed through a _minimalistic set of Pythonic operations that compose and learn_.
 
 To make this possible:
 
@@ -339,7 +339,7 @@ In contrast, **DSPy** automatically optimizes the prompts in your programs to al
 
 Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, and **Thomas Joshi**.
 
-**DSPy** includes important contributions from **Igor Kotenkov** and reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Percy Liang**, and many others.
+**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
 
 
