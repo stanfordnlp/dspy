@@ -339,7 +339,7 @@ In contrast, **DSPy** automatically optimizes the prompts in your programs to al
 
 Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, and **Thomas Joshi**.
 
-**DSPy** includes important contributions from **Igor Kotenkov** and reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Percy Liang**, and many others.
+**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
 
 
