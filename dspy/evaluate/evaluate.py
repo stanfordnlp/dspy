@@ -13,18 +13,8 @@ from dsp.utils import EM, F1, HotPotF1
 from dsp.evaluation.utils import *
 
 """
-TODO: The interface would be cleaner if display_progress=False, display_table=False was
-at __init__ time, along with the metric.
-
-But the program and devset (and maybe optional **kwargs to override the __init__ args)
-are given at __call__ time.
-
-That way we can reuse the Evaluate object within a program/notebook.
-
 TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 we print the number of failures, the first N examples that failed, and the first N exceptions raised.
-
-TODO: When num_threads=1 don't create a thread pool. Just run the program in the main thread.
 """
 
 
@@ -204,3 +194,5 @@ def configure_dataframe_display(df, metric_name):
         'word-wrap': 'break-word',
         'max-width': '400px'
     })
+
+# FIXME: TODO: The merge_dicts stuff above is way too quick and dirty.

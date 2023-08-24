@@ -26,13 +26,13 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16):
+    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1):
         self.metric = metric
         self.teacher_settings = teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
-        self.max_rounds = 1
+        self.max_rounds = max_rounds
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
@@ -49,7 +49,7 @@ class BootstrapFewShot(Teleprompter):
     
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
-        self.teacher = teacher.reset_copy() if teacher is not None else student.reset_copy()
+        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
         assert self.student._compiled is False, "Student must be uncompiled."
 
@@ -81,15 +81,16 @@ class BootstrapFewShot(Teleprompter):
 
         for round_idx in range(self.max_rounds):
             for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-                if example_idx not in bootstrapped:
-                    success = self._bootstrap_one_example(example)
-
-                if success:
-                    bootstrapped[example_idx] = True
-            
                 if len(bootstrapped) >= max_bootsraps:
-                    print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
                     break
+
+                if example_idx not in bootstrapped:
+                    success = self._bootstrap_one_example(example, round_idx)
+
+                    if success:
+                        bootstrapped[example_idx] = True
+            
+        print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
         
         # Unbootstrapped training examples
 
@@ -102,24 +103,30 @@ class BootstrapFewShot(Teleprompter):
         # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
         # score = evaluate(self.metric, display_table=False, display_progress=True)
     
-    def _bootstrap_one_example(self, example):
+    def _bootstrap_one_example(self, example, round_idx=0):
         name2traces = self.name2traces
         teacher = self.teacher #.deepcopy()
         predictor_cache = {}
 
         with dsp.settings.context(trace=[], **self.teacher_settings):
-            for name, predictor in teacher.named_predictors():
-                predictor_cache[name] = predictor.demos
-                predictor.demos = [x for x in predictor.demos if x != example]
+            lm = dsp.settings.lm
+            lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
+            new_settings = dict(lm=lm) if round_idx > 0 else {}
 
-            prediction = teacher(**example.inputs())
-            trace = dsp.settings.trace
+            with dsp.settings.context(**new_settings):
+                for name, predictor in teacher.named_predictors():
+                    predictor_cache[name] = predictor.demos
+                    predictor.demos = [x for x in predictor.demos if x != example]
 
-            for name, predictor in teacher.named_predictors():
-                predictor.demos = predictor_cache[name]
+                prediction = teacher(**example.inputs())
+                trace = dsp.settings.trace
+
+                for name, predictor in teacher.named_predictors():
+                    predictor.demos = predictor_cache[name]
 
         try:
             success = (self.metric is None) or self.metric(example, prediction, trace)
+            # print(success, example, prediction)
         except Exception as e:
             success = False
             print(f'Failed to evaluate example {example.dspy_uuid} with {self.metric} due to {e}.')
@@ -153,7 +160,11 @@ class BootstrapFewShot(Teleprompter):
 
         for name, predictor in self.student.named_predictors():
             augmented_demos = self.name2traces[name][:self.max_bootstrapped_demos]
-            raw_demos = rng.sample(raw_demos, min(self.max_labeled_demos - len(augmented_demos), len(raw_demos)))
+            
+            sample_size = min(self.max_labeled_demos - len(augmented_demos), len(raw_demos))
+            sample_size = max(0, sample_size)
+
+            raw_demos = rng.sample(raw_demos, sample_size)
             predictor.demos = augmented_demos + raw_demos
 
         return self.student

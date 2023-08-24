@@ -18,6 +18,9 @@ class Field:
         
     def __repr__(self):
         return f"{self.__class__.__name__}(prefix={self.prefix}, desc={self.desc})"
+    
+    def __eq__(self, __value: object) -> bool:
+        return self.__dict__ == __value.__dict__
 
 class InputField(Field):
     def __init__(self, *, prefix=None, desc=None, format=None):

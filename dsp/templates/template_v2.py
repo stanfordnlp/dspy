@@ -182,6 +182,9 @@ class TemplateV2:
     def __call__(self, example, show_guidelines=True) -> str:
         example = dsp.Example(example)
 
+        if hasattr(dsp.settings, 'query_only') and dsp.settings.query_only:
+            return self.query(example)
+
         # The training data should not contain the output variable
         if self.fields[-1].input_variable in example:
             del example[self.fields[-1].input_variable]

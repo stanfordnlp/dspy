@@ -14,6 +14,9 @@ class Type:
         kwargs = {**self.__dict__, **kwargs}
         return Type(**kwargs)
 
+    def __eq__(self, __value: object) -> bool:
+        return isinstance(__value, Type) and self.__dict__ == __value.__dict__
+
 
 class Template(TemplateV2):
     """A template datatype that represents the structure of communicate with the LM."""
@@ -44,3 +47,19 @@ class Template(TemplateV2):
 
             if value.format:
                 self.format_handlers[key] = value.format
+        
+    
+    # equality
+    def __eq__(self, other):
+        if set(self.kwargs.keys()) != set(other.kwargs.keys()):
+            print('here2')
+            return False
+
+        for k in self.kwargs.keys():
+            v1, v2 = self.kwargs[k], other.kwargs[k]
+            if not v1 == v2:
+                print(k, v1, v2)
+
+            
+        # print("here?", self.instructions == other.instructions, self.kwargs == other.kwargs)
+        return self.instructions == other.instructions and self.kwargs == other.kwargs

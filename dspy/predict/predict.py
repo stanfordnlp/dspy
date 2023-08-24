@@ -76,7 +76,13 @@ class Predict(Parameter):
         # All of the other kwargs are presumed to fit a prefix of the signature.
 
         x = dsp.Example(demos=demos, **kwargs)
-        x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+
+        if self.lm is None:
+            x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+        else:
+            with dsp.settings.context(lm=self.lm, query_only=True):
+                print(f"using lm = {self.lm} !")
+                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
 
         completions = []
 

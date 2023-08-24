@@ -242,12 +242,12 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.OpenAI`
 - `dspy.Cohere`
 - `dspy.TGI`
-- `dspy.VLLM` [porting soon]
+- `dspy.VLLM`
 
 #### Retrieval Model Clients
 
 - `dspy.ColBERTv2`
-- `dspy.AzureCognitiveSearch` [porting soon]
+- `dspy.AzureCognitiveSearch`
 
 
 #### Signatures
@@ -261,7 +261,7 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.Predict`
 - `dspy.Retrieve`
 - `dspy.ChainOfThought`
-- `dspy.SelfConsistency` [coming soon; use functional `dspy.majority` now]
+- `dspy.SelfConsistency` [use functional `dspy.majority` now]
 - `dspy.MultiChainReasoning` [coming soon]
 - `dspy.SelfCritique` [coming soon]
 - `dspy.SelfRevision` [coming soon]
@@ -272,7 +272,7 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.teleprompt.LabeledFewShot`
 - `dspy.teleprompt.BootstrapFewShot`
 - `dspy.teleprompt.BootstrapFewShotWithRandomSearch`
-- `dspy.teleprompt.BootstrapFinetune` [porting soon]
+- `dspy.teleprompt.BootstrapFinetune`
 
 </details>
 

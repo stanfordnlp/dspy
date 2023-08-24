@@ -80,4 +80,7 @@ class LM(ABC):
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
-        return self.__class__(self.kwargs['model'], **{**self.kwargs, **kwargs})
+        kwargs = {**self.kwargs, **kwargs}
+        model = kwargs.pop('model')
+
+        return self.__class__(model, **kwargs)
