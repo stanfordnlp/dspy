@@ -9,7 +9,7 @@
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
-**DSPy** is the framework for _programming_ with language models (LMs) and retrieval models (RMs) to tackle any task. **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs as well as improving them with **reasoning** and **tool/retrieval augmentation**, all expressed through a _minimalistic set of Pythonic operations that compose and learn_.
+**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). It emphasizes programming over prompting. **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs as well as improving them with **reasoning** and **tool/retrieval augmentation**, all expressed through a _minimalistic set of Pythonic operations that compose and learn_.
 
 To make this possible:
 
