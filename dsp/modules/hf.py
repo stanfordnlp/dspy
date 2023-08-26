@@ -71,7 +71,7 @@ class HFModel(LM):
                     #     self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)
                     #     self.model = PeftModel.from_pretrained(self.model, checkpoint)
                     # else:
-                    self.model = AutoModelClass.from_pretrained(checkpoint).to("cuda")
+                    self.model = AutoModelClass.from_pretrained(checkpoint, ignore_mismatched_sizes=True).to("cuda")
                 else:
                     self.model = AutoModelClass.from_pretrained(model).to("cuda")
                 self.drop_prompt_from_output = False

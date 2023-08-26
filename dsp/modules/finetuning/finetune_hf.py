@@ -186,7 +186,63 @@ class PeftSavingCallback(TrainerCallback):
 def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
     # Define data collator
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
+    
+    ds_config = {
+        "fp16": {
+            "enabled": "auto",
+            "loss_scale": 0,
+            "loss_scale_window": 1000,
+            "initial_scale_power": 16,
+            "hysteresis": 2,
+            "min_loss_scale": 1
+        },
 
+        "optimizer": {
+            "type": "AdamW",
+            "params": {
+                "lr": "auto",
+                "betas": "auto",
+                "eps": 1e-8,
+                "weight_decay": "auto"
+            }
+        },
+
+        "scheduler": {
+            "type": "WarmupLR",
+            "params": {
+                "warmup_min_lr": 0,
+                "warmup_max_lr": "auto",
+                "warmup_num_steps": "auto"
+            }
+        },
+
+        "zero_optimization": {
+            "stage": 3,
+            "offload_optimizer": {
+                "device": "cpu",
+                "pin_memory": True
+            },
+            "offload_param": {
+                "device": "cpu",
+                "pin_memory": True
+            },
+            "overlap_comm": True,
+            "contiguous_gradients": True,
+            "sub_group_size": 1e9,
+            "reduce_bucket_size": 1e6,
+            "stage3_prefetch_bucket_size": 0.94e6,
+            "stage3_param_persistence_threshold": 1e4,
+            "stage3_max_live_parameters": 1e9,
+            "stage3_max_reuse_distance": 1e9,
+            "stage3_gather_16bit_weights_on_model_save": True
+        },
+
+        "steps_per_print": 2000,
+        "wall_clock_breakdown": False,
+        "train_batch_size": "auto",
+        "train_micro_batch_size_per_gpu": "auto",
+
+    }
     # Define training args
     training_args = Seq2SeqTrainingArguments(
         output_dir=config['output_dir'],
@@ -208,6 +264,7 @@ def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
         report_to="tensorboard",
         fp16=config['fp16'],
         bf16=config['bf16'],
+        deepspeed=ds_config,
     )
 
     # Create trainer instance
@@ -223,6 +280,13 @@ def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
     )
 
     trainer.train()
+
+    checkpoint_dir = os.path.join(config['output_dir'], 'checkpoint-{}'.format(trainer.state.global_step))
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    tokenizer.save_pretrained(checkpoint_dir)
+    model.save_pretrained(checkpoint_dir)
+    model.config.save_pretrained(checkpoint_dir)
 
     return trainer.state.best_model_checkpoint
 
@@ -306,6 +370,7 @@ def _train_causal(model, tokenizer, tokenized_dataset, metric, config):
 
     return trainer.state.best_model_checkpoint
 
+import deepspeed
 
 def finetune_hf(data_path, target, config):
     set_seed(42)
@@ -343,13 +408,14 @@ def finetune_hf(data_path, target, config):
             model = get_peft_model(model, peft_config)
             model.print_trainable_parameters()
         else:
-            if config['fid']:
-                t5 = AutoModelClass.from_pretrained(target)
-                model = FiDT5(t5.config)
-                model.load_t5(t5.state_dict())
-            else:
-                model = AutoModelClass.from_pretrained(target)
-                # model = _freeze_model_layers(model, unfreeze_last_n=2)
+            with deepspeed.zero.Init():
+                if config['fid']:
+                    t5 = AutoModelClass.from_pretrained(target)
+                    model = FiDT5(t5.config)
+                    model.load_t5(t5.state_dict())
+                else:
+                    model = AutoModelClass.from_pretrained(target, ignore_mismatched_sizes=True)
+                    # model = _freeze_model_layers(model, unfreeze_last_n=2)
 
         # load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(target)
