@@ -86,7 +86,7 @@ A program has two key methods, which you can edit to fit your needs.
 Modules that use the LM, like `ChainOfThought`, require a _signature_. That is a declarative spec that tells the module what it's expected to do. In this example, we use the short-hand signature notation `context, question -> answer` to tell `ChainOfThought` it will be given some `context` and a `question` and must produce an `answer`. We will discuss more advanced **[signatures](#3a-declaring-the-inputoutput-behavior-of-lms-with-dspysignature)** below.
 
 
-**Your `forward` method** expresses any computation you want to do with your modules. In this case, we use the modules `self.retrieve` and `self.generate_answer` to search for some `context` and then use the `context` and `quetion` to generate the `answer`!
+**Your `forward` method** expresses any computation you want to do with your modules. In this case, we use the modules `self.retrieve` and `self.generate_answer` to search for some `context` and then use the `context` and `question` to generate the `answer`!
 
 You can now either use this `RAG` program in **zero-shot mode**. Or **compile** it to obtain higher quality. Zero-shot usage is simple. Just define an instance of your program and then call it:
 
