@@ -229,18 +229,20 @@ def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
             "overlap_comm": True,
             "contiguous_gradients": True,
             "sub_group_size": 1e9,
-            "reduce_bucket_size": 1e6,
-            "stage3_prefetch_bucket_size": 0.94e6,
-            "stage3_param_persistence_threshold": 1e4,
+            "reduce_bucket_size": "auto",
+            "stage3_prefetch_bucket_size": "auto",
+            "stage3_param_persistence_threshold": "auto",
             "stage3_max_live_parameters": 1e9,
             "stage3_max_reuse_distance": 1e9,
             "stage3_gather_16bit_weights_on_model_save": True
         },
 
+        "gradient_accumulation_steps": "auto",
+        "gradient_clipping": "auto",
         "steps_per_print": 2000,
-        "wall_clock_breakdown": False,
         "train_batch_size": "auto",
         "train_micro_batch_size_per_gpu": "auto",
+        "wall_clock_breakdown": False
 
     }
     # Define training args
@@ -408,13 +410,15 @@ def finetune_hf(data_path, target, config):
             model = get_peft_model(model, peft_config)
             model.print_trainable_parameters()
         else:
+            from transformers import T5ForConditionalGeneration, T5Config
             with deepspeed.zero.Init():
                 if config['fid']:
                     t5 = AutoModelClass.from_pretrained(target)
                     model = FiDT5(t5.config)
                     model.load_t5(t5.state_dict())
                 else:
-                    model = AutoModelClass.from_pretrained(target, ignore_mismatched_sizes=True)
+                    model = T5ForConditionalGeneration(T5Config.from_pretrained(target))
+                    # model = AutoModelClass.from_pretrained(target)
                     # model = _freeze_model_layers(model, unfreeze_last_n=2)
 
         # load tokenizer
