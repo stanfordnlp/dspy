@@ -27,8 +27,8 @@ class ColBERTv2:
     ) -> Union[list[str], list[dotdict]]:
         cache_args: dict[str, Union[str, float]] = {
             "worker_id": str(uuid.uuid4()),
-            "cache_end_timerange": dsp.settings.config["experiment_start_timestamp"],
-            "cache_start_timerange": dsp.settings.config["experiment_end_timestamp"],
+            "cache_end_timerange": dsp.settings.config["experiment_end_timestamp"],
+            "cache_start_timerange": dsp.settings.config["experiment_start_timestamp"],
         }
 
         if self.post_requests:
