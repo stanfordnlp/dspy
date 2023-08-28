@@ -4,7 +4,7 @@
 <p align="left">
 
 
-# DSPy: The Framework for _Programming_ — not Prompting — with Foundation Models
+# DSPy: The Framework for _Programming_—not prompting—Foundation Models
 
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
