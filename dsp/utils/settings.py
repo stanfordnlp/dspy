@@ -31,7 +31,9 @@ class Settings(object):
                 force_reuse_cached_compilation=False,
                 compiling=False,
                 skip_logprobs=False,
-                trace=None
+                trace=None,
+                experiment_start_timestamp=0,
+                experiment_end_timestamp=float("inf"),
             )
             cls._instance.__append(config)
 
@@ -39,7 +41,10 @@ class Settings(object):
 
     @property
     def config(self):
-        return self.stack_by_thread[threading.get_ident()][-1]
+        tid = threading.get_ident()
+        if tid not in self.stack_by_thread:
+            self.stack_by_thread[tid] = self.stack_by_thread[self.main_tid].copy()
+        return self.stack_by_thread[tid][-1]
 
     def __getattr__(self, name):
         if hasattr(self.config, name):
