@@ -60,7 +60,7 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
 
-**DSPy** hides tedious prompt engineering, but it exposes the important decisions you need to take: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
+**DSPy** hides tedious prompt engineering, but it cleanly exposes the important decisions you need to make: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
 
 You express your system as free-form Pythonic modules. **DSPy** will tune the quality of your program _in whatever way_ you use foundation models: you can code with loops, `if` statements, or exceptions, and use **DSPy** modules within any Python control flow you think works for your task.
 
