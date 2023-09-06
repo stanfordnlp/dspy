@@ -6,6 +6,7 @@ import random
 
 import ujson
 from datasets.fingerprint import Hasher
+import dspy
 
 # from dspy.primitives import Example
 
@@ -46,11 +47,14 @@ fewshot = fewshot_teleprompter.compile(MyMultiHop(passages_per_hop=2), trainset=
 
 
 class BootstrapFinetune(Teleprompter):
-    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True):
+    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=True):
         self.metric = metric
         self.provider = provider
         self.teacher_settings = teacher_settings
         self.multitask = multitask
+        self.return_hf_model = return_hf_model
+
+        assert (not self.multitask) == self.return_hf_model
 
         metric = metric or (lambda *args: True)
         self.teleprompter = BootstrapFewShot(metric=metric,
@@ -151,13 +155,18 @@ class BootstrapFinetune(Teleprompter):
                 compiler_config_ = dict(compiler_config)
                 compiler_config_['save'] = compiler_config['save'] + '.' + name
                 best_ckpt_path = finetune_hf(training_data_path, target, compiler_config_)
-                finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
+                if not self.return_hf_model:
+                    finetune_models[name] = best_ckpt_path
+                else:
+                    finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
         
         #
         # Set the LMs to the finetuned ones, per module
         #
         compiled2 = compiled.reset_copy()
-
+        if not self.return_hf_model:
+            compiled2.checkpoint = finetune_models
+            return compiled2
         assert len(compiled.named_predictors()) == len(compiled2.named_predictors())
 
         for (name, predictor), (name2, predictor2) in zip(compiled.named_predictors(), compiled2.named_predictors()):
@@ -168,6 +177,4 @@ class BootstrapFinetune(Teleprompter):
             # This is correct for here but we may want to make it more explicitly restricted to finetuned models.
             predictor2.lm = finetune_models[name]
             assert predictor2.demos == []
-        
         return compiled2
-
