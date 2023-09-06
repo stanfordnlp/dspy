@@ -28,11 +28,12 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
-        super().__init__(model=model, is_client=True)
+    def __init__(self, model, checkpoint, port, url="http://future-hgx-1", **kwargs):
+        super().__init__(model=model, checkpoint=checkpoint, is_client=True)
+        self.model = model
         self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
-
+        self._verify_model_with_server()
         self.kwargs = {
             "temperature": 0.1,
             "max_tokens": 75,
@@ -64,7 +65,7 @@ class HFClientTGI(HFModel):
         # print(payload['parameters'])
         
         # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
-        response = send_hftgi_request_v00(self.url + "/generate", json=payload, headers=self.headers)
+        response = send_hftgi_request_v00(self.model, self.url + "/generate", json=payload, headers=self.headers)
 
         try:
             json_response = response.json()
@@ -88,7 +89,7 @@ class HFClientTGI(HFModel):
 
 
 @CacheMemory.cache
-def send_hftgi_request_v00(arg, **kwargs):
+def send_hftgi_request_v00(model, arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 class ChatModuleClient(HFModel):
