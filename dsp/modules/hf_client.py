@@ -32,7 +32,7 @@ class HFClientTGI(HFModel):
         super().__init__(model=model, is_client=True)
         self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
-
+        self._verify_model_with_server()
         self.kwargs = {
             "temperature": 0.1,
             "max_tokens": 75,
@@ -41,6 +41,17 @@ class HFClientTGI(HFModel):
             "stop": ["\n", "\n\n"],
             **kwargs,
         }
+
+    def _verify_model_with_server(self):
+        try:
+            response = requests.get(f"{self.url}/info")
+            response_json = response.json()
+            server_model = response_json.get('model_id', '')
+            if server_model != self.model:
+                raise ValueError(f"Model mismatch. Client model: {self.model}, Server model: {server_model}")
+        except Exception as e:
+            print(f"Failed to verify model with server: {e}")
+            raise
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
