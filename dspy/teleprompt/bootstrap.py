@@ -25,6 +25,9 @@ from dspy.evaluate.evaluate import Evaluate
 # won't hurt our "best effort" guarantees.)
 
 
+# TODO: Add baselines=[...]
+
+
 class BootstrapFewShot(Teleprompter):
     def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1):
         self.metric = metric

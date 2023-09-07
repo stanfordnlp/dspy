@@ -19,13 +19,15 @@ we print the number of failures, the first N examples that failed, and the first
 
 
 class Evaluate:
-    def __init__(self, *, devset, metric=None, num_threads=1, display_progress=False, display_table=False, display=True):
+    def __init__(self, *, devset, metric=None, num_threads=1, display_progress=False,
+                 display_table=False, display=True, max_errors=5):
         self.devset = devset
         self.metric = metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
         self.display = display
+        self.max_errors = max_errors
 
     def _execute_single_thread(self, wrapped_program, devset, display_progress):
         ncorrect = 0
@@ -66,7 +68,9 @@ class Evaluate:
         pbar.set_description(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
         pbar.update()
 
-    def __call__(self, program, metric=None, devset=None, num_threads=None, display_progress=None, display_table=None, display=None):
+    def __call__(self, program, metric=None, devset=None, num_threads=None,
+                 display_progress=None, display_table=None, display=None,
+                 return_all_scores=False):
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
@@ -147,6 +151,8 @@ class Evaluate:
                 """
                 ipython_display(HTML(message))
                 
+        if return_all_scores:
+            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
 
         return round(100 * ncorrect / ntotal, 2)
 
@@ -196,3 +202,4 @@ def configure_dataframe_display(df, metric_name):
     })
 
 # FIXME: TODO: The merge_dicts stuff above is way too quick and dirty.
+# TODO: the display_table can't handle False but can handle 0! Not sure how it works with True exactly, probably fails too.

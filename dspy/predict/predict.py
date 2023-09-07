@@ -81,7 +81,7 @@ class Predict(Parameter):
             x, C = dsp.generate(signature, **config)(x, stage=self.stage)
         else:
             with dsp.settings.context(lm=self.lm, query_only=True):
-                print(f"using lm = {self.lm} !")
+                # print(f"using lm = {self.lm} !")
                 x, C = dsp.generate(signature, **config)(x, stage=self.stage)
 
         completions = []
