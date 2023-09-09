@@ -320,10 +320,10 @@ If you're familiar with neural networks:
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LLMQL, RELM, Outlines</h4></summary>
+  <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines</h4></summary>
 
 
-Guidance, LLMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
+Guidance, LMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
 
 This is very useful in many settings, but it's generally focused on low-level, structured control of a single LM call. It doesn't help ensure the JSON (or structured output) you get is going to be correct or useful for your task.
 
