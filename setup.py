@@ -13,7 +13,6 @@ setup(
     install_requires=[
         "backoff",
         "joblib",
-        "jupyter",
         "openai",
         "pandas",
         "spacy",
