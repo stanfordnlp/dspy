@@ -8,7 +8,7 @@ setup(
     author="Omar Khattab",
     author_email="okhattab@stanford.edu",
     license="MIT License",
-    packages=find_packages(include=['dsp', 'dspy']),
+    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),
     python_requires='>=3.10',
     install_requires=[
         "backoff",
