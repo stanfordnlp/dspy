@@ -6,7 +6,6 @@ import json
 
 from dsp.modules.lm import LM
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 import functools
 
 def openai_to_hf(**kwargs):
@@ -137,6 +136,7 @@ class HFModel(LM):
 
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-# @NotebookCacheMemory.cache
+# @sqlite_cache_splitter
+# @sqlite_cache_wrapper
 # def cached_generate(self, prompt, **kwargs):
 #      return self._generate(prompt, **kwargs)

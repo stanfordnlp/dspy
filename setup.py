@@ -12,7 +12,6 @@ setup(
     python_requires='>=3.9',
     install_requires=[
         "backoff",
-        "joblib",
         "jupyter",
         "openai",
         "pandas",

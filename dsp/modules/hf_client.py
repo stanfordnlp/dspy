@@ -23,7 +23,7 @@ import dsp
 
 import requests
 from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.utils.cache import sqlite_cache_wrapper, sqlite_cache_splitter
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
@@ -87,7 +87,8 @@ class HFClientTGI(HFModel):
              raise Exception("Received invalid JSON response from server")
 
 
-@CacheMemory.cache
+@sqlite_cache_splitter
+@sqlite_cache_wrapper
 def send_hftgi_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
