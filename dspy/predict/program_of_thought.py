@@ -1,64 +1,48 @@
 import dsp
 import dspy
-from .predict import Predict
+from ..primitives.program import Module
 from ..primitives.interpreter import CodePrompt, PythonInterpreter
+import re
 
-
-class ProgramOfThought(Predict):
-    def __init__(self, signature, max_retries=3, activated=True, **config):
-        super().__init__(signature, **config)
+class ProgramOfThought(Module):
+    def __init__(self, signature, max_retries=3):
+        previous_code = dspy.InputField(prefix="Previous Code:", desc="previously-generated python code that errored")
+        error = dspy.InputField(prefix="Error:", desc="error message from previously-generated python code")
+        generated_code = dspy.OutputField(prefix="Code:", desc="python code that answers the question") 
+        final_generated_code = dspy.InputField(prefix="Code:", desc="python code that answers the question") 
+        code_output = dspy.InputField(prefix="Code Output:", desc="output of previously-generated python code")
+        code_generate = {"question": signature.kwargs["question"], "code_output": generated_code}
+        code_regenerate = {"question": signature.kwargs["question"],"previous_code": previous_code,"error": error,"generated_code": generated_code}
+        generate_answer = {"question": signature.kwargs["question"],"final_generated_code": final_generated_code,"code_output": code_output,"answer": signature.kwargs["answer"]}
+        self.code_generate = dspy.ChainOfThought(dsp.Template(signature.instructions, **code_generate))
+        self.code_regenerate = dspy.ChainOfThought(dsp.Template(signature.instructions, **code_regenerate))
+        self.generate_answer = dspy.ChainOfThought(dsp.Template(signature.instructions, **generate_answer))
         self.max_retries = max_retries
 
     def execute_code(self, code):
-        code_prompt = CodePrompt(code, code_type="python")
+        code_match = re.search(r'```python\n(.*?)\n```', code.get('code_output', ''), re.DOTALL)
+        if not code_match:
+            return None, None, "Error in code matching"
+        code_prompt = CodePrompt(code_match.group(1), code_type="python")
         interpreter = PythonInterpreter(action_space={"print": print})
-        output, error = None, None
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
+            return code_match.group(1), output, None
         except Exception as e:
-            error = str(e)
-        return output, error
+            return code_match.group(1), None, str(e)
 
     def forward(self, **kwargs):
-        question = kwargs['question']
-        signature = self.signature
-        answer_field = signature.kwargs.get('answer')
-        if 'answer' in signature.kwargs:
-            del signature.kwargs['answer']
-        signature.kwargs['code'] = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-        code_gen_result = dspy.ChainOfThought(signature).forward(question=question)
-        code = code_gen_result.get('code', '').replace("```", "").strip().split('Output')[0].strip()
-        output, error = self.execute_code(code)
+        code = self.code_generate(question=kwargs["question"])
+        code, output, error = self.execute_code(code)
         retries = 0
         while retries < self.max_retries and error:
             print('Error in code execution')
-            *keys, second_last_key, last_key = signature.kwargs.keys()
-            prev_code = code
-            if 'code' in signature.kwargs:
-                del signature.kwargs['code']
-            prev_code_field = dspy.InputField(prefix="Previous Code:", desc="previously-generated python code that errored")
-            error_field = dspy.InputField(prefix="Error:", desc="error message from previously-generated python code")
-            code_field = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-            extended_kwargs = {key: signature.kwargs[key] for key in keys}
-            extended_kwargs.update({second_last_key: signature.kwargs[second_last_key], 'previous code': prev_code_field, 'error': error_field, 'code': code_field})
-            signature = dsp.Template(signature.instructions, **extended_kwargs)
-            code_result = dspy.ChainOfThought(signature).forward(question=question, prev_code=prev_code, error=error)
-            code = code_result.get('code', '').replace("```", "").strip().replace("python", "").strip().split('Output')[0].strip().lstrip().split('Code:')[1].strip()
-            output, error = self.execute_code(code)
+            code = self.code_regenerate(question=kwargs["question"], previous_code=prev_code, error=error)
+            code, output, error = self.execute_code(code)
             retries += 1
             if retries == self.max_retries:
                 print('Max retries reached. Error persists.')
                 return None
-        if 'previous code' in signature.kwargs:
-            del signature.kwargs['previous code']
-        if 'error' in signature.kwargs:
-            del signature.kwargs['error']
-        code_field = dspy.InputField(prefix="Code:", desc="previously-generated python code that was executed without errors")
-        output_field = dspy.InputField(prefix="Output:", desc="output of previously-generated python code")
-        *keys, _ = signature.kwargs.keys()
-        extended_kwargs = {key: signature.kwargs[key] for key in keys}
-        extended_kwargs.update({'code': code_field, 'output': output_field, 'answer': answer_field})
-        signature = dsp.Template(signature.instructions, **extended_kwargs)
-        answer_gen_result = dspy.ChainOfThought(signature).forward(question=question, code=code, output=output)
+        answer_gen_result = self.generate_answer(question=kwargs["question"], final_generated_code=code, code_output=output)
         return answer_gen_result
         
