@@ -261,8 +261,10 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.Predict`
 - `dspy.Retrieve`
 - `dspy.ChainOfThought`
+- `dspy.ProgramOfThought` [see open PR]
 - `dspy.SelfConsistency` [use functional `dspy.majority` now]
 - `dspy.MultiChainReasoning` [coming soon]
+- `dspy.ReAct` [coming soon]
 - `dspy.SelfCritique` [coming soon]
 - `dspy.SelfRevision` [coming soon]
 
