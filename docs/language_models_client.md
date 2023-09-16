@@ -17,8 +17,6 @@ for i, completion in enumerate(completions):
     print(f"Completion {i+1}: {completion}")
 ```
 
-
-
 ### Constructor
 
 The constructor initializes the base class `LM` and verifies the provided arguments like the `api_provider`, `api_key`, and `api_base` to set up OpenAI request retrieval. The `kwargs` attribute is initialized with default values for relevant text generation parameters needed for communicating with the GPT API, such as `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, and `n`.
