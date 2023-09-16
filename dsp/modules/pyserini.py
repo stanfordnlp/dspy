@@ -14,7 +14,7 @@ class PyseriniRetriever:
                  query_encoder: str = 'castorini/dkrr-dpr-nq-retriever', 
                  index: str = 'wikipedia-dpr-dkrr-nq', 
                  dataset: Dataset = None,
-                 id_field: str = 'id',
+                 id_field: str = '_id',
                  text_fields: list[str] = ['text']) -> None:
         """
         Args:
@@ -42,14 +42,14 @@ class PyseriniRetriever:
             self.searcher = FaissSearcher(index_dir=index, query_encoder=self.encoder)
 
     def __call__(
-        self, query: str, k: int = 10, simplify: bool = False, threads: int = 16,
+        self, query: str, k: int = 10, threads: int = 16,
     ) -> Union[list[str], list[dotdict]]:
         hits = self.searcher.search(query, k=k, threads=threads)
         
         topk = []
         for rank, hit in enumerate(hits, start=1):
             if self.dataset is not None:
-                # Search through user's dataset for the document (could be slow), maybe room for improvement?
+                # Search through user's dataset for the document
                 row = self.dataset[self.id_field].index(hit.docid)
                 text = ' '.join(self.dataset[field][row] for field in self.text_fields)
                 pid = self.dataset[self.id_field][row]
@@ -66,8 +66,5 @@ class PyseriniRetriever:
                 'score': hit.score,
                 'rank': rank,
             })
-
-        if simplify:
-            return [psg["long_text"] for psg in topk]
         
         return [dotdict(psg) for psg in topk]
