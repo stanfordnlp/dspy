@@ -274,6 +274,7 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 - `dspy.teleprompt.LabeledFewShot`
 - `dspy.teleprompt.BootstrapFewShot`
 - `dspy.teleprompt.BootstrapFewShotWithRandomSearch`
+- `dspy.teleprompt.LabeledFinetune` [coming soon]
 - `dspy.teleprompt.BootstrapFinetune`
 
 </details>
