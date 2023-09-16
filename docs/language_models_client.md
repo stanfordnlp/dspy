@@ -4,6 +4,21 @@ This documentation provides an overview of the DSPy Language Model Clients.
 
 ## dspy.OpenAI
 
+### Quickstart
+
+```python
+import dspy
+
+lm = dspy.OpenAI(model='gpt-3.5-turbo')
+
+prompt = "Translate the following English text to Spanish: 'Hi, how are you?'"
+completions = lm(prompt, n=5, return_sorted=True)
+for i, completion in enumerate(completions):
+    print(f"Completion {i+1}: {completion}")
+```
+
+
+
 ### Constructor
 
 The constructor initializes the base class `LM` and verifies the provided arguments like the `api_provider`, `api_key`, and `api_base` to set up OpenAI request retrieval. The `kwargs` attribute is initialized with default values for relevant text generation parameters needed for communicating with the GPT API, such as `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, and `n`.
@@ -45,17 +60,6 @@ After generation, the completions are post-processed based on the `model_type` p
 
 **Returns:**
 - `List[Dict[str, Any]]`: List of completion choices.
-
-### Examples
-
-```python
-lm = dspy.OpenAI(model='gpt-3.5-turbo')
-
-prompt = "Translate the following English text to Spanish: 'Hi, how are you?'"
-completions = lm(prompt, n=5, return_sorted=True)
-for i, completion in enumerate(completions):
-    print(f"Completion {i+1}: {completion}")
-```
 
 ## dspy.Cohere
 
