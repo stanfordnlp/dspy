@@ -4,6 +4,57 @@ This documentation provides an overview of the DSPy Language Model Clients.
 
 ## dspy.OpenAI
 
+### Quickstart
+
+```python
+import dspy
+
+lm = dspy.OpenAI(model='gpt-3.5-turbo')
+
+prompt = "Translate the following English text to Spanish: 'Hi, how are you?'"
+completions = lm(prompt, n=5, return_sorted=True)
+for i, completion in enumerate(completions):
+    print(f"Completion {i+1}: {completion}")
+```
+
+let blocks = document.querySelectorAll("pre");
+
+blocks.forEach((block) => {
+    if (!navigator.clipboard) {
+        return;
+    }
+
+    let button = document.createElement("button");
+    button.className = "button-copy-code";
+    button.innerHTML = copyIcon;
+    block.appendChild(button);
+
+    button.addEventListener("click", async () => {
+        await copyCode(block);
+    });
+});
+
+async function copyCode(block) {
+    let copiedCode = block.cloneNode(true);
+    copiedCode.removeChild(copiedCode.querySelector("button.button-copy-code"));
+
+    const html = copiedCode.outerHTML.replace(/<[^>]*>?/gm, "");
+
+    block.querySelector("button.button-copy-code").innerHTML = copiedIcon;
+    setTimeout(function () {
+        block.querySelector("button.button-copy-code").innerHTML = copyIcon;
+    }, 2000);
+
+    const parsedHTML = htmlDecode(html);
+
+    await navigator.clipboard.writeText(parsedHTML);
+}
+
+function htmlDecode(input) {
+    const doc = new DOMParser().parseFromString(input, "text/html");
+    return doc.documentElement.textContent;
+}
+
 ### Constructor
 
 The constructor initializes the base class `LM` and verifies the provided arguments like the `api_provider`, `api_key`, and `api_base` to set up OpenAI request retrieval. The `kwargs` attribute is initialized with default values for relevant text generation parameters needed for communicating with the GPT API, such as `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, and `n`.
@@ -45,17 +96,6 @@ After generation, the completions are post-processed based on the `model_type` p
 
 **Returns:**
 - `List[Dict[str, Any]]`: List of completion choices.
-
-### Examples
-
-```python
-lm = dspy.OpenAI(model='gpt-3.5-turbo')
-
-prompt = "Translate the following English text to Spanish: 'Hi, how are you?'"
-completions = lm(prompt, n=5, return_sorted=True)
-for i, completion in enumerate(completions):
-    print(f"Completion {i+1}: {completion}")
-```
 
 ## dspy.Cohere
 
