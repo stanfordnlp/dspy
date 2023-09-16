@@ -15,6 +15,15 @@ for i, completion in enumerate(completions):
     print(f"Completion {i+1}: {completion}")
 ```
 
+## Supported LM Clients
+
+| LM Client | Link |
+| --- | --- |
+| OpenAI | [OpenAI Section](#openai) |
+| Cohere | [Cohere Section](#cohere) |
+| TGI | [TGI Section](#tgi) |
+| VLLM | [VLLM Section](#vllm) |
+
 ## OpenAI
 
 ### Usage
