@@ -104,7 +104,7 @@ class Cohere(LM):
 
 ### Methods
 
-Refer to `dspy.OpenAI` documentation.
+Refer to [`dspy.OpenAI`](#openai) documentation.
 
 ## TGI
 
@@ -135,7 +135,7 @@ class HFClientTGI(HFModel):
 
 ### Methods
 
-Refer to `dspy.OpenAI` documentation.
+Refer to [`dspy.OpenAI`](#openai) documentation.
 
 ## VLLM
 
@@ -151,8 +151,8 @@ Refer to the [vLLM Server](https://github.com/stanfordnlp/dspy/blob/local_models
 
 ### Constructor
 
-Refer to `dspy.TGI` documentation. Replace with `HFClientVLLM`.
+Refer to [`dspy.TGI`](#tgi) documentation. Replace with `HFClientVLLM`.
 
 ### Methods
 
-Refer to `dspy.OpenAI` documentation.
+Refer to [`dspy.OpenAI`](#openai) documentation.
