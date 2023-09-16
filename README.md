@@ -234,7 +234,7 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 
 ###
 <details>
-  <summary><h3 style="display: inline">Module Reference [coming soon]</h3></summary>
+  <summary><h3 style="display: inline">Module Reference</h3></summary>
 
 We have work-in-progress module documentation at [this PR](https://github.com/stanfordnlp/dspy/pull/93). Please let us know if anything there is unclear.
 
