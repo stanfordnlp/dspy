@@ -3,8 +3,6 @@ import json
 from datasets import Dataset
 
 from dsp.utils import dotdict
-from pyserini.search import FaissSearcher
-from pyserini.prebuilt_index_info import TF_INDEX_INFO, FAISS_INDEX_INFO, IMPACT_INDEX_INFO
 
 
 class PyseriniRetriever:
@@ -30,6 +28,10 @@ class PyseriniRetriever:
             text_fields (`list[str]`):
                 A list of the names of the text fields for the dataset used for retrieval.
         """
+        
+        # Keep pyserini as an optional dependency
+        from pyserini.search import FaissSearcher
+        from pyserini.prebuilt_index_info import TF_INDEX_INFO, FAISS_INDEX_INFO, IMPACT_INDEX_INFO
         
         self.encoder = FaissSearcher._init_encoder_from_str(query_encoder)
         self.dataset = dataset
