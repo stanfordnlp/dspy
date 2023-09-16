@@ -49,7 +49,7 @@ class PyseriniRetriever:
         topk = []
         for rank, hit in enumerate(hits, start=1):
             if self.dataset is not None:
-                # Search through user's dataset for the document
+                # Linearly search through user's dataset for the document, maybe some room for future improvement here
                 row = self.dataset[self.id_field].index(hit.docid)
                 text = ' '.join(self.dataset[field][row] for field in self.text_fields)
                 pid = self.dataset[self.id_field][row]
