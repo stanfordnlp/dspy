@@ -1,4 +1,4 @@
-# dspy.LM Documentation
+# LM Documentation
 
 This documentation provides an overview of the DSPy Language Model Clients.
 
@@ -15,7 +15,7 @@ for i, completion in enumerate(completions):
     print(f"Completion {i+1}: {completion}")
 ```
 
-## dspy.OpenAI
+## OpenAI
 
 ### Usage
 
@@ -41,7 +41,7 @@ class OpenAI(LM):
 
 
 
-**Arguments:** 
+**Parameters:** 
 - `api_key` (Optional[str], optional): API provider authentication token. Defaults to None.
 - `api_provider` (Literal["openai", "azure"], optional): API provider to use. Defaults to "openai".
 - `model_type` (Literal["chat", "text"]): Specified model type to use.
@@ -57,7 +57,7 @@ Internally, the method handles the specifics of preparing the request prompt and
 
 After generation, the completions are post-processed based on the `model_type` parameter. If the parameter is set to 'chat', the generated content look like `choice["message"]["content"]`. Otherwise, the generated text will be `choice["text"]`.
 
-**Arguments:**
+**Parameters:**
 - `prompt` (_str_): Prompt to send to OpenAI.
 - `only_completed` (_bool_, _optional_): Flag to return only completed responses and ignore completion due to length. Defaults to True.
 - `return_sorted` (_bool_, _optional_): Flag to sort the completion choices using the returned averaged log-probabilities. Defaults to False.
@@ -66,7 +66,7 @@ After generation, the completions are post-processed based on the `model_type` p
 **Returns:**
 - `List[Dict[str, Any]]`: List of completion choices.
 
-## dspy.Cohere
+## Cohere
 
 ### Usage
 
@@ -88,7 +88,7 @@ class Cohere(LM):
     ):
 ```
 
-**Arguments:**
+**Parameters:**
 - `model` (_str_): Cohere pretrained models. Defaults to `command-xlarge-nightly`.
 - `api_key` (_Optional[str]_, _optional_): API provider from Cohere. Defaults to None.
 - `stop_sequences` (_List[str]_, _optional_): List of stopping tokens to end generation.
@@ -97,7 +97,7 @@ class Cohere(LM):
 
 Refer to `dspy.OpenAI` documentation.
 
-## dspy.TGI
+## TGI
 
 ### Usage
 
@@ -118,7 +118,7 @@ class HFClientTGI(HFModel):
     def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
 ```
 
-**Arguments:**
+**Parameters:**
 - `model` (_HFModel_): Instance of Hugging Face model connected to the TGI server.
 - `port` (_int_): Port for TGI server.
 - `url` (_str_): Base URL where the TGI server is hosted. 
@@ -128,7 +128,7 @@ class HFClientTGI(HFModel):
 
 Refer to `dspy.OpenAI` documentation.
 
-## dspy.VLLM
+## VLLM
 
 ### Usage
 
