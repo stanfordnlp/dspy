@@ -1,6 +1,16 @@
 # Using local models within DSPy
 
-DSPy supports various methods including built-in wrappers, server integration, and external package integration for model loading. This documentation provides a concise introduction on how to load in models within DSPy extending these capabilities for your specific needs.
+DSPy supports various methods including `built-in wrappers`, `server integration`, and `external package integration` for model loading. This documentation provides a concise introduction on how to load in models within DSPy extending these capabilities for your specific needs.
+
+## Local Model Loaders
+
+| Loaders | Jump To |
+| --- | --- |
+| HFModel | [HFModel Section](#hfmodel) |
+| Cohere | [Cohere Section](#cohere) |
+| TGI | [TGI Section](#tgi) |
+| VLLM | [VLLM Section](#vllm) |
+
 
 # HFModel
 
