@@ -17,5 +17,4 @@ settings = dsp.settings
 OpenAI = dsp.GPT3
 ColBERTv2 = dsp.ColBERTv2
 HFClientTGI = dsp.HFClientTGI
-HFModel = dsp.HFModel
 ChatModuleClient = ChatModuleClient
