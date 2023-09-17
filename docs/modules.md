@@ -2,6 +2,14 @@
 
 This documentation provides an overview of the DSPy Modules.
 
+## DSPy Modules
+
+| Module | Jump To |
+| --- | --- |
+| Predict | [Predict Section](#dspypredict) |
+| Retrieve | [Retrieve Section](#dspyretrieve) |
+| ChainOfThought | [ChainOfThought Section](#dspychainofthought) |
+
 ## dspy.Predict
 
 ### Constructor
@@ -40,9 +48,9 @@ class Predict(Parameter):
             self.signature = dsp.Template(instructions, **inputs, **outputs)
 ```
 
-**Arguments:**
-- `signature` (Any): Signature of predictive model.
-- `**config` (dict): Additional configuration parameters for model.
+**Parameters:**
+- `signature` (_Any_): Signature of predictive model.
+- `**config` (_dict_): Additional configuration parameters for model.
 
 ### Method
 
@@ -50,7 +58,7 @@ class Predict(Parameter):
 
 This method serves as a wrapper for the `forward` method. It allows making predictions using the `Predict` class by providing keyword arguments.
 
-**Arguments:**
+**Paramters:**
 - `**kwargs`: Keyword arguments required for prediction.
 
 **Returns:**
@@ -90,8 +98,8 @@ class Retrieve(Parameter):
         self.k = k
 ```
 
-**Arguments:**
-- `k` (Any): Number of retrieval responses
+**Parameters:**
+- `k` (_Any_): Number of retrieval responses
 
 ### Method
 
@@ -99,7 +107,7 @@ class Retrieve(Parameter):
 
 This method serves as a wrapper for the `forward` method. It allows making retrievals on an input query using the `Retrieve` class.
 
-**Arguments:**
+**Parameters:**
 - `**args`: Arguments required for retrieval.
 - `**kwargs`: Keyword arguments required for retrieval.
 
@@ -148,11 +156,11 @@ class ChainOfThought(Predict):
         self.extended_signature = dsp.Template(signature.instructions, **extended_kwargs)
 ```
 
-**Arguments:**
-- `signature` (Any): Signature of predictive model.
-- `rationale_type` (dsp.Type, optional): Rationale type for reasoning steps. Defaults to `None`.
-- `activated` (bool, optional): Flag for activated chain of thought processing. Defaults to `True`.
-- `**config` (dict): Additional configuration parameters for model.
+**Parameters:**
+- `signature` (_Any_): Signature of predictive model.
+- `rationale_type` (_dsp.Type_, _optional_): Rationale type for reasoning steps. Defaults to `None`.
+- `activated` (_bool_, _optional_): Flag for activated chain of thought processing. Defaults to `True`.
+- `**config` (_dict_): Additional configuration parameters for model.
 
 ### Method
 
@@ -160,7 +168,7 @@ class ChainOfThought(Predict):
 
 This method extends the parent `Predict` class' forward pass while updating the signature when chain of thought reasoning is activated or if the language model is a GPT3 model.
 
-**Arguments:**
+**Parameters:**
 - `**kwargs`: Keyword arguments required for prediction.
 
 **Returns:**
