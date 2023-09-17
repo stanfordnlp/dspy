@@ -4,7 +4,7 @@ This documentation provides an overview of the DSPy Retrieval Model Clients.
 
 ## Supported LM Clients
 
-| LM Client | Link |
+| LM Client | Jump To |
 | --- | --- |
 | ColBERTv2 | [ColBERTv2 Section](#ColBERTv2) |
 | AzureCognitiveSearch | [AzureCognitiveSearch Section](#AzureCognitiveSearch) |

@@ -4,12 +4,12 @@ DSPy supports various methods including `built-in wrappers`, `server integration
 
 ## Local Model Loaders
 
-| Loaders | Link |
+| Loaders | Jump To |
 | --- | --- |
 | HFModel | [HFModel Section](#hfmodel) |
-| Text-Generation-Inference Server | [Text-Generation-Inference Server Section](#text-generation-inference-server) |
-| vLLM Server | [vLLM Server Section](#vllm-server) |
-| MLC LLM | [MLC LLM Section](#mlc-llm) |
+| Cohere | [Cohere Section](#cohere) |
+| TGI | [TGI Section](#tgi) |
+| VLLM | [VLLM Section](#vllm) |
 
 
 # HFModel

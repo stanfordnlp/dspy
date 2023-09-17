@@ -17,7 +17,7 @@ for i, completion in enumerate(completions):
 
 ## Supported LM Clients
 
-| LM Client | Link |
+| LM Client | Jump To |
 | --- | --- |
 | OpenAI | [OpenAI Section](#openai) |
 | Cohere | [Cohere Section](#cohere) |
