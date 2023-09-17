@@ -1,4 +1,4 @@
-# LM Documentation
+# LM Modules Documentation
 
 This documentation provides an overview of the DSPy Language Model Clients.
 
