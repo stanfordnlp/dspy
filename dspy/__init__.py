@@ -1,5 +1,4 @@
 from dsp.modules.hf_client import ChatModuleClient
-from dsp.modules.hf_client import HFClientVLLM
 from .signatures import *
 
 from .retrieve import *
@@ -18,6 +17,5 @@ settings = dsp.settings
 OpenAI = dsp.GPT3
 ColBERTv2 = dsp.ColBERTv2
 HFClientTGI = dsp.HFClientTGI
-HFClientVLLM = HFClientVLLM
 HFModel = dsp.HFModel
 ChatModuleClient = ChatModuleClient
