@@ -1,4 +1,4 @@
-import dsp
+import internals
 import random
 
 from .teleprompt import Teleprompter

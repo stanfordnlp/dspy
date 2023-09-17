@@ -1,6 +1,6 @@
 import tqdm
 import random
-import dsp
+import internals
 
 from dspy.evaluate.evaluate import Evaluate
 

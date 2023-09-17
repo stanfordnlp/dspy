@@ -19,11 +19,11 @@
 #             raise Exception("Received invalid JSON response from server")
 
 
-import dsp
+import internals
 
 import requests
-from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from internals.modules.hf import HFModel, openai_to_hf
+from internals.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 

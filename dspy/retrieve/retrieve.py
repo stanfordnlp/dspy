@@ -1,4 +1,4 @@
-import dsp
+import internals
 import random
 
 from dspy.predict.parameter import Parameter
@@ -27,7 +27,7 @@ class Retrieve(Parameter):
     def forward(self, query_or_queries):
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
 
-        passages = dsp.retrieveEnsemble(queries, k=self.k)
+        passages = internals.retrieveEnsemble(queries, k=self.k)
         return Prediction(passages=passages)
     
 

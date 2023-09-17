@@ -5,7 +5,7 @@ import ujson
 import random
 import subprocess
 
-import dsp
+import internals
 from datasets.fingerprint import Hasher
 
 if os.environ.get('DSP_NOTEBOOK_CACHEDIR'):
@@ -18,7 +18,7 @@ compilations_assumed_to_exist={'ft-zvEdzQVQ5xwlxvNPrxl6kpnw': 'ada:ft-stanfordpr
 
 
 def openai_check_finetune(jobname):
-    if dsp.settings.force_reuse_cached_compilation and jobname in compilations_assumed_to_exist:
+    if internals.settings.force_reuse_cached_compilation and jobname in compilations_assumed_to_exist:
         return compilations_assumed_to_exist[jobname]
 
     command = f"""openai api fine_tunes.get -i {jobname}"""
@@ -45,7 +45,7 @@ def openai_check_finetune(jobname):
 def convert_to_training_point2(y, inputs, outputs, template):
     assert len(inputs) + len(outputs) == len(template.fields)
 
-    y_ = dsp.Example(**{f: y[f] for f in inputs}, demos=[])
+    y_ = internals.Example(**{f: y[f] for f in inputs}, demos=[])
     prompt = template(y_, show_guidelines=False)
 
     completion = y[outputs[0]]
@@ -155,7 +155,7 @@ def finetune(training_data, target):
     jobname, ft = openai_finetune(name, target)
     print(ft)
 
-    ft = dsp.GPT3(model=ft, stop=" </s>")
+    ft = internals.GPT3(model=ft, stop=" </s>")
     return ft
 
 # 4. Return updated program.
@@ -164,7 +164,7 @@ def compile(program, examples, target='ada'):
     compiled_lm = finetune(training_data, target=target)
 
     def compiled_program(*args, **kwargs):
-        with dsp.settings.context(compiled_lm=compiled_lm, compiling=False):
+        with internals.settings.context(compiled_lm=compiled_lm, compiling=False):
             return program(*args, **kwargs)
 
     compiled_program.lm = compiled_lm

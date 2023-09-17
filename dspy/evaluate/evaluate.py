@@ -1,7 +1,7 @@
 from openai import InvalidRequestError
 from openai.error import APIError
 
-import dsp
+import internals
 import tqdm
 import threading
 import pandas as pd
@@ -9,8 +9,8 @@ import pandas as pd
 from IPython.display import display as ipython_display, HTML
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from dsp.utils import EM, F1, HotPotF1
-from dsp.evaluation.utils import *
+from internals.utils import EM, F1, HotPotF1
+from internals.evaluation.utils import *
 
 """
 TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
@@ -83,9 +83,9 @@ class Evaluate:
 
         def wrapped_program(example_idx, example):
             # NOTE: TODO: Won't work if threads create threads!
-            creating_new_thread = threading.get_ident() not in dsp.settings.stack_by_thread
+            creating_new_thread = threading.get_ident() not in internals.settings.stack_by_thread
             if creating_new_thread:
-                dsp.settings.stack_by_thread[threading.get_ident()] = list(dsp.settings.main_stack)
+                internals.settings.stack_by_thread[threading.get_ident()] = list(internals.settings.main_stack)
                 # print(threading.get_ident(), dsp.settings.stack_by_thread[threading.get_ident()])
 
             # print(type(example), example)
@@ -99,7 +99,7 @@ class Evaluate:
                 return example_idx, example, dict(), 0.0
             finally:
                 if creating_new_thread:
-                    del dsp.settings.stack_by_thread[threading.get_ident()]
+                    del internals.settings.stack_by_thread[threading.get_ident()]
 
         devset = list(enumerate(devset))
 

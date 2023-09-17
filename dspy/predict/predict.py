@@ -1,4 +1,4 @@
-import dsp
+import internals
 import random
 
 from dspy.predict.parameter import Parameter
@@ -36,7 +36,7 @@ class Predict(Parameter):
             for k, v in outputs.items():
                 v.finalize(k, infer_prefix(k))
 
-            self.signature = dsp.Template(instructions, **inputs, **outputs)
+            self.signature = internals.Template(instructions, **inputs, **outputs)
 
     
     def reset(self):
@@ -64,10 +64,10 @@ class Predict(Parameter):
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature", None)
-        temperature = dsp.settings.lm.kwargs['temperature'] if temperature is None else temperature
+        temperature = internals.settings.lm.kwargs['temperature'] if temperature is None else temperature
 
         num_generations = config.get("n", None)
-        num_generations = dsp.settings.lm.kwargs['n'] if num_generations is None else num_generations
+        num_generations = internals.settings.lm.kwargs['n'] if num_generations is None else num_generations
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
@@ -75,14 +75,14 @@ class Predict(Parameter):
 
         # All of the other kwargs are presumed to fit a prefix of the signature.
 
-        x = dsp.Example(demos=demos, **kwargs)
+        x = internals.Example(demos=demos, **kwargs)
 
         if self.lm is None:
-            x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+            x, C = internals.generate(signature, **config)(x, stage=self.stage)
         else:
-            with dsp.settings.context(lm=self.lm, query_only=True):
+            with internals.settings.context(lm=self.lm, query_only=True):
                 # print(f"using lm = {self.lm} !")
-                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+                x, C = internals.generate(signature, **config)(x, stage=self.stage)
 
         completions = []
 
@@ -94,8 +94,8 @@ class Predict(Parameter):
 
         pred = Prediction.from_completions(completions, signature=signature)
             
-        if dsp.settings.trace is not None:
-            trace = dsp.settings.trace
+        if internals.settings.trace is not None:
+            trace = internals.settings.trace
             trace.append((self, {**kwargs}, pred))
 
         return pred

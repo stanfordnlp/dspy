@@ -1,4 +1,4 @@
-import dsp
+import internals
 import tqdm
 import random
 
@@ -111,18 +111,18 @@ class BootstrapFewShot(Teleprompter):
         teacher = self.teacher #.deepcopy()
         predictor_cache = {}
 
-        with dsp.settings.context(trace=[], **self.teacher_settings):
-            lm = dsp.settings.lm
+        with internals.settings.context(trace=[], **self.teacher_settings):
+            lm = internals.settings.lm
             lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
             new_settings = dict(lm=lm) if round_idx > 0 else {}
 
-            with dsp.settings.context(**new_settings):
+            with internals.settings.context(**new_settings):
                 for name, predictor in teacher.named_predictors():
                     predictor_cache[name] = predictor.demos
                     predictor.demos = [x for x in predictor.demos if x != example]
 
                 prediction = teacher(**example.inputs())
-                trace = dsp.settings.trace
+                trace = internals.settings.trace
 
                 for name, predictor in teacher.named_predictors():
                     predictor.demos = predictor_cache[name]

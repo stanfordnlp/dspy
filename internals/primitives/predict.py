@@ -1,12 +1,12 @@
 from collections import Counter
 from typing import Callable, Any, Optional
 
-import dsp
-from dsp.utils import zipstar, normalize_text
-from dsp.primitives.inspect import FuncInspector
-from dsp.utils.utils import dotdict
-from dsp.templates.template_v3 import Template
-from dsp.primitives.demonstrate import Example
+import internals
+from internals.utils import zipstar, normalize_text
+from internals.primitives.inspect import FuncInspector
+from internals.utils.utils import dotdict
+from internals.templates.template_v3 import Template
+from internals.primitives.demonstrate import Example
 
 
 class Completions:
@@ -47,25 +47,25 @@ class Completions:
 
 def generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    if hasattr(dsp.settings, "inspect"):
-        inspector = dsp.settings.inspect
-        _generate = inspector.inspect_func(dsp.predict._generate)
+    if hasattr(internals.settings, "inspect"):
+        inspector = internals.settings.inspect
+        _generate = inspector.inspect_func(internals.predict._generate)
         return _generate(template, **kwargs)
     else:
-        return dsp.predict._generate(template, **kwargs)
+        return internals.predict._generate(template, **kwargs)
 
 
 def _generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    if not dsp.settings.lm:
+    if not internals.settings.lm:
         raise AssertionError("No LM is loaded.")
 
-    generator = dsp.settings.lm
+    generator = internals.settings.lm
 
     def do_generate(
         example: Example, stage: str, max_depth: int = 2, original_example=None
     ):
-        if not dsp.settings.lm:
+        if not internals.settings.lm:
             raise AssertionError("No LM is loaded.")
         original_example = original_example or example
         assert stage is not None
@@ -99,7 +99,7 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion[field_names[last_field_idx]] = ""
 
             # Recurse with greedy decoding and a shorter length.
-            max_tokens = kwargs.get("max_tokens", dsp.settings.lm.kwargs["max_tokens"])
+            max_tokens = kwargs.get("max_tokens", internals.settings.lm.kwargs["max_tokens"])
             max_tokens = min(max(75, max_tokens // 2), max_tokens)
             new_kwargs = {
                 **kwargs,
@@ -123,7 +123,7 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion = completions[0]
             example[stage] = example.copy(**completion)
 
-            if dsp.settings.compiling:
+            if internals.settings.compiling:
                 inputs_ = set(original_example.keys())
                 inputs = [
                     f.input_variable
@@ -157,11 +157,11 @@ def _generate(template: Template, **kwargs) -> Callable:
 def generate_sc(
     example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs
 ):
-    if not dsp.settings.lm:
+    if not internals.settings.lm:
         raise AssertionError("No LM is loaded.")
     kwargs = {"temperature": 0.7, "n": 20, "max_tokens": 150, **kwargs}
 
-    completions = dsp.settings.lm(prompt, **kwargs)
+    completions = internals.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
     return majority_vote_(
         completions, normalize=normalize, prediction_field=prediction_field
@@ -169,7 +169,7 @@ def generate_sc(
 
 
 def extract_final_answer(example, completions, extract=None):
-    if not dsp.settings.lm:
+    if not internals.settings.lm:
         raise AssertionError("No LM is loaded.")
     if extract:
         completions = [extract(example, p) for p in completions]
@@ -179,8 +179,8 @@ def extract_final_answer(example, completions, extract=None):
         ]
 
     # TODO: make thread-safe?
-    dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "completions": completions}
+    internals.settings.lm.history.append(
+        {**internals.settings.lm.history[-1], "completions": completions}
     )
 
     return completions
@@ -201,7 +201,7 @@ def majority(
 def majority_vote_(completions: Completions, normalize: bool, prediction_field: str):
     """Core logic for majority vote."""
 
-    if not dsp.settings.lm:
+    if not internals.settings.lm:
         raise AssertionError("No LM is loaded.")
 
     normalized_to_original = {}
@@ -230,8 +230,8 @@ def majority_vote_(completions: Completions, normalize: bool, prediction_field: 
     if normalize:
         pred = normalized_to_original[pred]
 
-    dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "topk": topk, "completions": [pred]}
+    internals.settings.lm.history.append(
+        {**internals.settings.lm.history[-1], "topk": topk, "completions": [pred]}
     )
 
     return [pred]

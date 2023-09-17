@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from dsp.utils.utils import dotdict
+from internals.utils.utils import dotdict
 import threading
 
 class Settings(object):

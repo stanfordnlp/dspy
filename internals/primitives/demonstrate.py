@@ -3,8 +3,8 @@ from typing import Callable, Any
 
 import numpy as np
 
-import dsp
-from dsp.utils import EM, F1, DPR_normalize, dotdict, has_answer, normalize_text
+import internals
+from internals.utils import EM, F1, DPR_normalize, dotdict, has_answer, normalize_text
 
 
 class Example(dotdict):
@@ -53,7 +53,7 @@ def annotate(*transformations):
         ademos = []
 
         for example in train:  # tqdm.tqdm
-            raw_example = dsp.Example(example)
+            raw_example = internals.Example(example)
 
             if (k is not None) and len(ademos) >= k:
                 example = None
@@ -81,8 +81,8 @@ def annotate(*transformations):
 
 def sample(train: list[Example], k: int):
     """Sample k examples from train."""
-    rng = random.Random(dsp.settings.branch_idx)
-    shuffled_train = [dsp.Example(example) for example in train]
+    rng = random.Random(internals.settings.branch_idx)
+    shuffled_train = [internals.Example(example) for example in train]
     rng.shuffle(shuffled_train)
 
     return shuffled_train[:k]
@@ -163,11 +163,11 @@ def knn(
         knn_args: check `create_faiss_index` function for details on ANN/KNN arguments.
     Returns: function to search similar Examples from `train` in FAISS-index.
     """
-    from dsp.utils.ann_utils import create_faiss_index
+    from internals.utils.ann_utils import create_faiss_index
 
     train_casted_to_vectorize = [cast(cur_elem) for cur_elem in train]
 
-    vectorizer: "BaseSentenceVectorizer" = dsp.settings.vectorizer
+    vectorizer: "BaseSentenceVectorizer" = internals.settings.vectorizer
     all_vectors = vectorizer(train_casted_to_vectorize).astype(np.float32)
 
     index = create_faiss_index(

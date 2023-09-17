@@ -1,5 +1,5 @@
 import re
-import dsp
+import internals
 
 class Field:
     """A more ergonomic datatype that infers prefix and desc if omitted."""

@@ -4,9 +4,9 @@ import json
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
-from dsp.modules.lm import LM
+from internals.modules.lm import LM
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from internals.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 import functools
 
 def openai_to_hf(**kwargs):

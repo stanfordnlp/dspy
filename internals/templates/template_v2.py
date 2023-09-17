@@ -1,8 +1,8 @@
 from collections import namedtuple
 import re
 from typing import Union, Any
-import dsp
-from dsp.primitives.demonstrate import Example
+import internals
+from internals.primitives.demonstrate import Example
 from .utils import passages2text, format_answers
 
 Field = namedtuple("Field", "name separator input_variable output_variable description")
@@ -109,14 +109,14 @@ class TemplateV2:
     def guidelines(self, show_guidelines=True) -> str:
         """Returns the task guidelines as described in the lm prompt"""
         if (not show_guidelines) or (
-            hasattr(dsp.settings, "show_guidelines")
-            and not dsp.settings.show_guidelines
+            hasattr(internals.settings, "show_guidelines")
+            and not internals.settings.show_guidelines
         ):
             return ""
 
         result = "Follow the following format.\n\n"
 
-        example = dsp.Example()
+        example = internals.Example()
         for field in self.fields:
             example[field.input_variable] = field.description
         example.augmented = self._has_augmented_guidelines()
@@ -141,7 +141,7 @@ class TemplateV2:
         Returns:
             Example: The example with the output variables filled in
         """
-        example = dsp.Example(example)
+        example = internals.Example(example)
 
         raw_pred = raw_pred.strip()
 
@@ -180,9 +180,9 @@ class TemplateV2:
         return example
 
     def __call__(self, example, show_guidelines=True) -> str:
-        example = dsp.Example(example)
+        example = internals.Example(example)
 
-        if hasattr(dsp.settings, 'query_only') and dsp.settings.query_only:
+        if hasattr(internals.settings, 'query_only') and internals.settings.query_only:
             return self.query(example)
 
         # The training data should not contain the output variable

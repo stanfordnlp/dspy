@@ -2,7 +2,7 @@ import math
 from typing import Any, Optional
 import backoff
 
-from dsp.modules.lm import LM
+from internals.modules.lm import LM
 
 try:
     import cohere

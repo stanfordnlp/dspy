@@ -1,6 +1,6 @@
 import os
 import time
-import dsp
+import internals
 import tqdm
 import random
 
@@ -82,7 +82,7 @@ class BootstrapFinetune(Teleprompter):
             for demo in predictor.demos:
                 demo = dict(demo)
                 completion = demo.pop(predictor.signature.fields[-1].output_variable)
-                prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
+                prompt = predictor.signature.query(internals.Example(demos=[], **demo)).strip()
 
                 finetune_data[name_].append(dict(prompt=prompt, completion=completion))
 
@@ -126,7 +126,7 @@ class BootstrapFinetune(Teleprompter):
             'lr': lr
         }
 
-        from dsp.modules.finetuning import finetune_hf
+        from internals.modules.finetuning import finetune_hf
 
         target = target
         finetune_models = {}
@@ -136,7 +136,7 @@ class BootstrapFinetune(Teleprompter):
             compiler_config_ = dict(compiler_config)
             compiler_config_['save'] = compiler_config['save'] + '.' + name
             best_ckpt_path = finetune_hf(training_data_path, target, compiler_config_)
-            finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
+            finetune_models[name] = internals.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
         
         #
         # Set the LMs to the finetuned ones, per module

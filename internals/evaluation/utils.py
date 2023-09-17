@@ -1,12 +1,12 @@
 from openai import InvalidRequestError
 from openai.error import APIError
 
-import dsp
+import internals
 import tqdm
 import pandas as pd
 
 from IPython.display import display
-from dsp.utils import EM, F1, HotPotF1
+from internals.utils import EM, F1, HotPotF1
 
 
 def evaluateRetrieval(fn, dev, metric=None):
@@ -19,7 +19,7 @@ def evaluateRetrieval(fn, dev, metric=None):
         d = dict(example)
 
         # d['prediction'] = prediction.answer
-        d['correct'] =  dsp.passage_match(prediction.context, example.answer)
+        d['correct'] =  internals.passage_match(prediction.context, example.answer)
         data.append(d)
 
     df = pd.DataFrame(data)

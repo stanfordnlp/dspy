@@ -3,7 +3,7 @@ import string
 import unicodedata
 
 from collections import Counter
-from dsp.utils.utils import print_message
+from internals.utils.utils import print_message
 
 
 def EM(prediction, answers_list):

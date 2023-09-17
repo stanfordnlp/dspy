@@ -2,7 +2,7 @@ from typing import Union
 import json
 from datasets import Dataset
 
-from dsp.utils import dotdict
+from internals.utils import dotdict
 
 
 class PyseriniRetriever:

@@ -7,8 +7,8 @@ import openai
 import openai.error
 from openai.openai_object import OpenAIObject
 
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-from dsp.modules.lm import LM
+from internals.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from internals.modules.lm import LM
 
 
 def backoff_hdlr(details):

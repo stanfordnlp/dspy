@@ -1,6 +1,6 @@
 from typing import Optional, Union, Any
 
-from dsp.utils import dotdict
+from internals.utils import dotdict
 try:
     from azure.core.credentials import AzureKeyCredential
     from azure.search.documents import SearchClient

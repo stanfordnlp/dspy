@@ -1,5 +1,5 @@
 import re
-import dsp
+import internals
 
 from .field import Field
 import threading
@@ -29,7 +29,7 @@ class SignatureMeta(type):
         setattr(new_class, 'signature', cls._SignatureNamespace(type_attributes))
 
         # Create and attach the template directly to the class
-        setattr(new_class, '_template', dsp.Template(instructions=instructions, **type_attributes))
+        setattr(new_class, '_template', internals.Template(instructions=instructions, **type_attributes))
 
         return new_class
 

@@ -1,4 +1,4 @@
-from dsp.modules.hf_client import ChatModuleClient
+from internals.modules.hf_client import ChatModuleClient
 from .signatures import *
 
 from .retrieve import *
@@ -10,12 +10,12 @@ from .primitives import *
 # FIXME:
 
 
-import dsp
+import internals
 
-settings = dsp.settings
+settings = internals.settings
 
-OpenAI = dsp.GPT3
-ColBERTv2 = dsp.ColBERTv2
-Pyserini = dsp.PyseriniRetriever
-HFClientTGI = dsp.HFClientTGI
+OpenAI = internals.GPT3
+ColBERTv2 = internals.ColBERTv2
+Pyserini = internals.PyseriniRetriever
+HFClientTGI = internals.HFClientTGI
 ChatModuleClient = ChatModuleClient
