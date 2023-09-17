@@ -292,7 +292,7 @@ If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new 
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers around prompts (OpenAI API, MiniChain, basic templating, etc.)</h4></summary>
+  <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)</h4></summary>
 
 In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.)
 
