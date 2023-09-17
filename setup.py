@@ -18,7 +18,7 @@ setup(
     author="Omar Khattab",
     author_email="okhattab@stanford.edu",
     license="MIT License",
-    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),
+    packages=find_packages(include=['internals.*', 'dspy.*', 'internals', 'dspy']),
     python_requires='>=3.9',
     install_requires=requirements,
     classifiers=[
