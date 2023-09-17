@@ -4,6 +4,15 @@ Teleprompters are powerful optimizers (included in DSPy) that can learn to boots
 
 This documentation provides an overview of the DSPy Teleprompters.
 
+## Teleprompters
+
+| Module | Jump To |
+| --- | --- |
+| LabeledFewShot | [LabeledFewShot Section](#telepromptlabeledfewshot) |
+| BootstrapFewShot | [BootstrapFewShot Section](#telepromptbootstrapfewshot) |
+| BootstrapFewShotWithRandomSearch | [BootstrapFewShotWithRandomSearch Section](#telepromptbootstrapfewshotwithrandomsearch) |
+| BootstrapFinetune | [BootstrapFinetune Section](#telepromptbootstrapfinetune) |
+
 ## teleprompt.LabeledFewShot
 
 ### Constructor
@@ -158,7 +167,7 @@ class BootstrapFewShotWithRandomSearch(BootstrapFewShot):
 
 ### Method
 
-Refer to teleprompt.BootstrapFewShot documentation.
+Refer to [teleprompt.BootstrapFewShot](#telepromptbootstrapfewshot) documentation.
 
 ## Example
 
