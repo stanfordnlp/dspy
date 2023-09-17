@@ -363,9 +363,10 @@ If you use DSPy (or DSPv1) in a research paper, please cite our work as follows:
 }
 ```
 
-* [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
 
-You can also read more about the old v1 of our framework (Demonstrate–Search–Predict, or DSP):
+You can also read more about the evolution of the framework from Demonstrate-Search-Predict (DSP v1) to DSPy:
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
+* [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
+
