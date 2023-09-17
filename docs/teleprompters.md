@@ -6,33 +6,6 @@ This documentation provides an overview of the DSPy Teleprompters.
 
 ## teleprompt.LabeledFewShot
 
-### Usage
-
-```python
-import dspy
-
-#Assume defined trainset
-class RAG(dspy.Module):
-    def __init__(self, num_passages=3):
-        super().__init__()
-
-        #declare retrieval and predictor modules
-        self.retrieve = dspy.Retrieve(k=num_passages)
-        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
-    
-    #flow for answering questions using predictor and retrieval modules
-    def forward(self, question):
-        context = self.retrieve(question).passages
-        prediction = self.generate_answer(context=context, question=question)
-        return dspy.Prediction(context=context, answer=prediction.answer)
-
-#Define teleprompter
-teleprompter = LabeledFewShot()
-
-# Compile!
-compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset)
-```
-
 ### Constructor
 
 The constructor initializes the `LabeledFewShot` class and sets up its attributes, particularly defining `k` number of samples to be used by the predictor.
@@ -59,22 +32,34 @@ This method compiles the `LabeledFewShot` instance by configuring the `student` 
 **Returns:**
 - The compiled `student` predictor with assigned training samples for each predictor or the original `student` if the `trainset` is empty.
 
-## teleprompt.BootstrapFewShot
-
-### Usage
+### Example
 
 ```python
-#Assume defined trainset
-#Assume defined RAG class
-...
+import dspy
 
-#Define teleprompter and include teacher
-teacher = dspy.OpenAI(model='gpt-3.5-turbo', api_key = openai.api_key, api_provider = "openai", model_type = "chat")
-teleprompter = BootstrapFewShot(teacher_settings=dict({'lm': teacher}))
+#Assume defined trainset
+class RAG(dspy.Module):
+    def __init__(self, num_passages=3):
+        super().__init__()
+
+        #declare retrieval and predictor modules
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
+    
+    #flow for answering questions using predictor and retrieval modules
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        prediction = self.generate_answer(context=context, question=question)
+        return dspy.Prediction(context=context, answer=prediction.answer)
+
+#Define teleprompter
+teleprompter = LabeledFewShot()
 
 # Compile!
 compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset)
 ```
+
+## teleprompt.BootstrapFewShot
 
 ### Constructor
 
@@ -119,9 +104,7 @@ The final stage is performing the bootstrapping iterations.
 **Returns:**
 - The compiled `student` predictor after bootstrapping with refined demonstrations.
 
-## teleprompt.BootstrapFewShotWithRandomSearch
-
-## Usage
+### Example
 
 ```python
 #Assume defined trainset
@@ -130,11 +113,13 @@ The final stage is performing the bootstrapping iterations.
 
 #Define teleprompter and include teacher
 teacher = dspy.OpenAI(model='gpt-3.5-turbo', api_key = openai.api_key, api_provider = "openai", model_type = "chat")
-teleprompter = BootstrapFewShotWithRandomSearch(teacher_settings=dict({'lm': teacher}))
+teleprompter = BootstrapFewShot(teacher_settings=dict({'lm': teacher}))
 
 # Compile!
 compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset)
 ```
+
+## teleprompt.BootstrapFewShotWithRandomSearch
 
 ### Constructor
 
@@ -175,21 +160,22 @@ class BootstrapFewShotWithRandomSearch(BootstrapFewShot):
 
 Refer to teleprompt.BootstrapFewShot documentation.
 
-## teleprompt.BootstrapFinetune
-
-### Usage
+## Example
 
 ```python
 #Assume defined trainset
 #Assume defined RAG class
 ...
 
-#Define teleprompter
-teleprompter = BootstrapFinetune(teacher_settings=dict({'lm': teacher}))
+#Define teleprompter and include teacher
+teacher = dspy.OpenAI(model='gpt-3.5-turbo', api_key = openai.api_key, api_provider = "openai", model_type = "chat")
+teleprompter = BootstrapFewShotWithRandomSearch(teacher_settings=dict({'lm': teacher}))
 
 # Compile!
-compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset, target='google/flan-t5-base')
+compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset)
 ```
+
+## teleprompt.BootstrapFinetune
 
 ### Constructor
 
@@ -227,3 +213,17 @@ This method first compiles for bootstrapping with the `BootstrapFewShot` telepro
 
 **Returns:**
 - `compiled2` (_Predict_): A compiled and fine-tuned `Predict` instance.
+
+### Example
+
+```python
+#Assume defined trainset
+#Assume defined RAG class
+...
+
+#Define teleprompter
+teleprompter = BootstrapFinetune(teacher_settings=dict({'lm': teacher}))
+
+# Compile!
+compiled_rag = teleprompter.compile(student=RAG(), trainset=trainset, target='google/flan-t5-base')
+```

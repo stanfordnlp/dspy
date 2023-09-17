@@ -39,7 +39,7 @@ class ColBERTv2:
     ):
 ```
 
-**Arguments:**
+**Parameters:**
 - `url` (_str_): URL for ColBERTv2 server.
 - `port` (_Union[str, int]_, _Optional_): Port endpoint for ColBERTv2 server. Defaults to `None`.
 - `post_requests` (_bool_, _Optional_): Flag for using HTTP POST requests. Defaults to `False`.
@@ -60,7 +60,7 @@ Enables making queries to the ColBERTv2 server for retrieval. Internally, the me
 
 ## AzureCognitiveSearch
 
-### Usage
+### Quickstart
 
 #TODO
 

@@ -51,9 +51,9 @@ class OpenAI(LM):
 
 
 **Parameters:** 
-- `api_key` (Optional[str], optional): API provider authentication token. Defaults to None.
-- `api_provider` (Literal["openai", "azure"], optional): API provider to use. Defaults to "openai".
-- `model_type` (Literal["chat", "text"]): Specified model type to use.
+- `api_key` (_Optional[str]_, _optional_): API provider authentication token. Defaults to None.
+- `api_provider` (_Literal["openai", "azure"]_, _optional_): API provider to use. Defaults to "openai".
+- `model_type` (_Literal["chat", "text"]_): Specified model type to use.
 - `**kwargs`: Additional language model arguments to pass to the API provider.
 
 ### Methods
