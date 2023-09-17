@@ -6,6 +6,7 @@ import random
 
 import ujson
 from datasets.fingerprint import Hasher
+import dspy
 
 # from dspy.primitives import Example
 
@@ -46,10 +47,14 @@ fewshot = fewshot_teleprompter.compile(MyMultiHop(passages_per_hop=2), trainset=
 
 
 class BootstrapFinetune(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, multitask=True):
+    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=True):
         self.metric = metric
+        self.provider = provider
         self.teacher_settings = teacher_settings
         self.multitask = multitask
+        self.return_hf_model = return_hf_model
+
+        assert (not self.multitask) == self.return_hf_model
 
         metric = metric or (lambda *args: True)
         self.teleprompter = BootstrapFewShot(metric=metric,
@@ -83,8 +88,17 @@ class BootstrapFinetune(Teleprompter):
                 demo = dict(demo)
                 completion = demo.pop(predictor.signature.fields[-1].output_variable)
                 prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
-
-                finetune_data[name_].append(dict(prompt=prompt, completion=completion))
+                if self.provider == "openai":
+                    example = {
+                        "messages": [
+                            {"role": "system", "content": f"Answer questions with short factoid answers."},
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": completion}
+                        ]
+                    }
+                elif self.provider == "hf":
+                    example = dict(prompt=prompt, completion=completion)
+                finetune_data[name_].append(example)
 
         for name_ in finetune_data:
             random.Random(0).shuffle(finetune_data[name_])
@@ -127,22 +141,32 @@ class BootstrapFinetune(Teleprompter):
         }
 
         from dsp.modules.finetuning import finetune_hf
+        from dsp.modules.finetuning.finetune_open_ai import finetune_open_ai
 
         target = target
         finetune_models = {}
 
         for name in finetune_data:
             training_data_path = finetune_paths[name]
-            compiler_config_ = dict(compiler_config)
-            compiler_config_['save'] = compiler_config['save'] + '.' + name
-            best_ckpt_path = finetune_hf(training_data_path, target, compiler_config_)
-            finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
+            if self.provider == "openai":
+                best_fine_tuned_model = finetune_open_ai(training_data_path, target)
+                finetune_models[name] = dsp.GPT3(model=best_fine_tuned_model)
+            elif self.provider == "hf":
+                compiler_config_ = dict(compiler_config)
+                compiler_config_['save'] = compiler_config['save'] + '.' + name
+                best_ckpt_path = finetune_hf(training_data_path, target, compiler_config_)
+                if not self.return_hf_model:
+                    finetune_models[name] = best_ckpt_path
+                else:
+                    finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
         
         #
         # Set the LMs to the finetuned ones, per module
         #
         compiled2 = compiled.reset_copy()
-
+        if not self.return_hf_model:
+            compiled2.checkpoint = finetune_models
+            return compiled2
         assert len(compiled.named_predictors()) == len(compiled2.named_predictors())
 
         for (name, predictor), (name2, predictor2) in zip(compiled.named_predictors(), compiled2.named_predictors()):
@@ -153,6 +177,4 @@ class BootstrapFinetune(Teleprompter):
             # This is correct for here but we may want to make it more explicitly restricted to finetuned models.
             predictor2.lm = finetune_models[name]
             assert predictor2.demos == []
-        
         return compiled2
-
