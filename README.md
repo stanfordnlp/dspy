@@ -241,15 +241,15 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 
 #### Language Model Clients
 
-- `dspy.OpenAI`
-- `dspy.Cohere`
-- `dspy.TGI`
-- `dspy.VLLM`
+- [`dspy.OpenAI`](docs/language_models_client.md#openai)
+- [`dspy.Cohere`](docs/language_models_client.md#cohere)
+- [`dspy.TGI`](docs/language_models_client.md#tgi)
+- [`dspy.VLLM`](docs/language_models_client.md#vllm)
 
 #### Retrieval Model Clients
 
-- `dspy.ColBERTv2`
-- `dspy.AzureCognitiveSearch`
+- [`dspy.ColBERTv2`](docs/retrieval_models_client.md#colbertv2)
+- [`dspy.AzureCognitiveSearch`](docs/retrieval_models_client.md#azurecognitivesearch)
 
 
 #### Signatures
@@ -260,10 +260,10 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 
 #### Modules
 
-- `dspy.Predict`
-- `dspy.Retrieve`
-- `dspy.ChainOfThought`
-- `dspy.ProgramOfThought` [see open PR]
+- [`dspy.Predict`](docs/modules.md#dspypredict)
+- [`dspy.Retrieve`](docs/modules.md#dspyretrieve)
+- [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
+- `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
 - `dspy.SelfConsistency` [use functional `dspy.majority` now]
 - `dspy.MultiChainReasoning` [coming soon]
 - `dspy.ReAct` [coming soon]
@@ -273,11 +273,11 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
   
 #### Teleprompters
 
-- `dspy.teleprompt.LabeledFewShot`
-- `dspy.teleprompt.BootstrapFewShot`
-- `dspy.teleprompt.BootstrapFewShotWithRandomSearch`
+- [`dspy.teleprompt.LabeledFewShot`](docs/teleprompters.md#telepromptlabeledfewshot)
+- [`dspy.teleprompt.BootstrapFewShot`](docs/teleprompters.md#telepromptbootstrapfewshot)
+- [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
 - `dspy.teleprompt.LabeledFinetune` [coming soon]
-- `dspy.teleprompt.BootstrapFinetune`
+- [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
 
 </details>
 
