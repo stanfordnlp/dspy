@@ -4,6 +4,7 @@ from .signatures import *
 from .retrieve import *
 from .predict import *
 from .primitives import *
+from .assertions import *
 # from .evaluation import *
 
 
@@ -19,3 +20,5 @@ ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 HFClientTGI = dsp.HFClientTGI
 ChatModuleClient = ChatModuleClient
+
+print("Running from local DSPy package.")
