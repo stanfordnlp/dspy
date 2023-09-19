@@ -12,11 +12,9 @@ class Assert:
         self.kwargs = kwargs
 
     # assert fun should always return bool
-    def __call__(self) -> list[bool]:
+    def __call__(self) -> bool:
         result = self.assert_fun(*self.args, **self.kwargs)
         if isinstance(result, bool):
-            return [result]
-        elif isinstance(result, list) and all(isinstance(x, bool) for x in result):
             return result
         else:
             raise ValueError("Assertion function should always return [bool]")
