@@ -4,8 +4,10 @@
 from typing import Any
 import dspy
 
+
 # compile time assertion
 class Assert:
+
     def __init__(self, assert_fun, *args, **kwargs):
         self.assert_fun = assert_fun
         self.args = args
@@ -18,18 +20,20 @@ class Assert:
             if result:
                 return True
             else:
-                raise AssertionError(f"Assertion {self.assert_fun} failed")
+                raise DSPyAssertionError(f"Assertion {self.assert_fun} failed")
         else:
             raise ValueError("Assertion function should always return [bool]")
-        
+
+
 # we could possibly to have runtime assertions as well
 # class RuntimeAssert(Assert): ...
 
 
 class Assertions(dspy.Module):
+
     def __init__(self) -> None:
         self.assertions = []
-    
+
     def add(self, assertion: Assert):
         self.assertions.append(assertion)
 
@@ -40,6 +44,14 @@ class Assertions(dspy.Module):
         else:
             return assertion()
 
+
+class DSPyAssertionError(AssertionError):
+
+    def __init__(self, msg: str, state: Any = None) -> None:
+        super().__init__(msg)
+        self.state = state
+
+
 def assert_transform(backtrack=2):
     def wrapper(func):
         def inner(*args, **kwargs):
@@ -49,6 +61,7 @@ def assert_transform(backtrack=2):
                 except AssertionError as e:
                     # Add metadata to state
                     pass
-        return inner 
+
+        return inner
+
     return wrapper
-    
