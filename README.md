@@ -263,10 +263,10 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.Predict`](docs/modules.md#dspypredict)
 - [`dspy.Retrieve`](docs/modules.md#dspyretrieve)
 - [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
+- `dspy.majority` (functional self-consistency)
 - `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
-- `dspy.SelfConsistency` [use functional `dspy.majority` now]
+- `dspy.ReAct` [see open PR]
 - `dspy.MultiChainReasoning` [coming soon]
-- `dspy.ReAct` [coming soon]
 - `dspy.SelfCritique` [coming soon]
 - `dspy.SelfRevision` [coming soon]
 
@@ -278,6 +278,8 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
 - `dspy.teleprompt.LabeledFinetune` [coming soon]
 - [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
+- `dspy.teleprompt.Ensemble` [coming soon]
+- `dspy.teleprompt.kNN` [coming soon]
 
 </details>
 
