@@ -15,7 +15,10 @@ class Assert:
     def __call__(self) -> bool:
         result = self.assert_fun(*self.args, **self.kwargs)
         if isinstance(result, bool):
-            return result
+            if result:
+                return True
+            else:
+                raise AssertionError(f"Assertion {self.assert_fun} failed")
         else:
             raise ValueError("Assertion function should always return [bool]")
         
@@ -36,4 +39,16 @@ class Assertions(dspy.Module):
             return True
         else:
             return assertion()
+
+def assert_transform(backtrack=2):
+    def wrapper(func):
+        def inner(*args, **kwargs):
+            for i in range(backtrack):
+                try:
+                    return func(*args, **kwargs)
+                except AssertionError as e:
+                    # Add metadata to state
+                    pass
+        return inner 
+    return wrapper
     
