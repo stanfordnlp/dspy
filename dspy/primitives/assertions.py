@@ -5,9 +5,15 @@ from typing import Any
 import dspy
 
 
-# compile time assertion
-class Assert:
+class DSPyAssertionError(AssertionError):
+    """DSPy custom error message."""
+    def __init__(self, msg: str, state: Any = None) -> None:
+        super().__init__(msg)
+        self.state = state
 
+
+class Assert:
+    """Compile time assertion."""
     def __init__(self, assert_fun, *args, **kwargs):
         self.assert_fun = assert_fun
         self.args = args
@@ -29,30 +35,8 @@ class Assert:
 # class RuntimeAssert(Assert): ...
 
 
-class Assertions(dspy.Module):
-
-    def __init__(self) -> None:
-        self.assertions = []
-
-    def add(self, assertion: Assert):
-        self.assertions.append(assertion)
-
-    def __call__(self, assertion: Assert):
-        self.add(assertion)
-        if self._compiled:
-            return True
-        else:
-            return assertion()
-
-
-class DSPyAssertionError(AssertionError):
-
-    def __init__(self, msg: str, state: Any = None) -> None:
-        super().__init__(msg)
-        self.state = state
-
-
 def assert_transform(backtrack=2):
+    """Decorator for transforming a function into a rewindable function."""
     def wrapper(func):
         def inner(*args, **kwargs):
             for i in range(backtrack):
