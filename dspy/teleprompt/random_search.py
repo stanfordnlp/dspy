@@ -28,13 +28,13 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
-
+        self.stop_at_score = stop_at_score
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
         self.num_candidate_sets = num_candidate_programs
@@ -99,6 +99,10 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             scores.append(score)
 
             print(f"Scores so far: {scores}")
+
+            if self.stop_at_score is not None and score >= self.stop_at_score:
+                print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
+                break
 
             if score >= max(scores):
                 print('New best score:', score, 'for seed', seed)
