@@ -42,6 +42,11 @@ class PyseriniRetriever:
             self.searcher = FaissSearcher.from_prebuilt_index(index, self.encoder)
         else:
             self.searcher = FaissSearcher(index_dir=index, query_encoder=self.encoder)
+            assert self.dataset is not None
+            self.dataset_id_to_index = {}
+            for i, docid in enumerate(self.dataset[self.id_field]):
+                self.dataset_id_to_index[docid] = i
+                
 
     def __call__(
         self, query: str, k: int = 10, threads: int = 16,
@@ -51,8 +56,7 @@ class PyseriniRetriever:
         topk = []
         for rank, hit in enumerate(hits, start=1):
             if self.dataset is not None:
-                # Linearly search through user's dataset for the document, maybe some room for future improvement here
-                row = self.dataset[self.id_field].index(hit.docid)
+                row = self.dataset_id_to_index[hit.docid]
                 text = ' '.join(self.dataset[field][row] for field in self.text_fields)
                 pid = self.dataset[self.id_field][row]
             else:
