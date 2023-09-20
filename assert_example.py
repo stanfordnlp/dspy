@@ -71,7 +71,8 @@ class SimplifiedBaleen(dspy.Module):
             query = self.generate_query[hop](context=context, question=question).query
 
             # assertion
-            dspy.Assert(lambda x: len(x) <= 1, query)
+            print(f"Query length @ {id(self.generate_query[hop])} w/ config {self.generate_query[hop].get_config()}: {len(query)}")
+            dspy.Assert(lambda x: len(x) <= 50, query)
 
             passages = self.retrieve(query).passages
             context = deduplicate(context + passages)
