@@ -1,7 +1,7 @@
 import copy
 
 from dspy.primitives.module import BaseModule
-from dspy.primitives.assertions import assert_transform, assert_update_transform, assert_latest_transform
+from dspy.primitives.assertions import *
 
 
 class ProgramMeta(type):
@@ -25,8 +25,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     def __call__(self, *args, **kwargs):
-        if getattr(self, "forward", False) and not getattr(self.forward, "_decorated", False):
-            wrapped_forward = assert_latest_transform()(self.forward)
+        if getattr(self, "forward", False) and not getattr(
+            self.forward, "_decorated", False
+        ):
+            wrapped_forward = assert_latest_feedback_transform()(self.forward)
             return wrapped_forward(*args, **kwargs)
         else:
             return self.forward(*args, **kwargs)
