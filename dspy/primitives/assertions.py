@@ -42,7 +42,7 @@ def assert_transform(backtrack=2):
             for i in range(backtrack):
                 try:
                     return func(*args, **kwargs)
-                except AssertionError as e:
+                except DSPyAssertionError as e:
                     # Add metadata to state
                     pass
 
