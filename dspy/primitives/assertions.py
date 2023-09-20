@@ -61,6 +61,8 @@ def assert_transform(backtrack=2):
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
+                else:
+                    break
 
         return inner
 
@@ -94,6 +96,8 @@ def assert_update_transform(backtrack=2):
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
+                else:
+                    break
 
         return inner
 
