@@ -20,13 +20,12 @@ class ReAct(Module):
         return signature_dict
 
     def forward(self, **kwargs):
-        output = type('', (), {})()
+        output, args = {}, {}
         for i in range(self.max_iters):
-            output = self.predictors[i](question=kwargs["question"], **vars(output))
-            if 'Finish:' in getattr(output, f"Action_{i+1}"):
-                answer = getattr(output, f"Action_{i+1}").split('Finish: ')[1]
-                output = dspy.Prediction() 
-                output.answer = answer
-                break
-            output[f"Observation_{i+1}"] = self.retrieve(getattr(output, f"Action_{i+1}").split(':')[1])
+            args.update(output)
+            output = self.predictors[i](question=kwargs["question"], **args)
+            action_val = output[f"Action_{i+1}"].split('[')[1].split(']')[0]
+            if 'Finish[' in output[f"Action_{i+1}"]:
+                return dspy.Prediction(answer=action_val)
+            output[f"Observation_{i+1}"] = self.retrieve(action_val.split('\n')[0]).passages[0]
         return output
