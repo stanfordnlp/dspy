@@ -1,7 +1,7 @@
 import copy
 
 from dspy.primitives.module import BaseModule
-from assertions import assert_transform
+from dspy.primitives.assertions import assert_transform
 
 
 class ProgramMeta(type):
@@ -23,13 +23,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def __init__(self):
         self._compiled = False
-        if getattr(self, "forward", False) and not getattr(
-            self.forward, "_decorated", False
-        ):
-            return setattr(self, "forward", assert_transform()(self.forward))
 
     def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+        if getattr(self, "forward", False) and not getattr(self.forward, "_decorated", False):
+            wrapped_forward = assert_transform()(self.forward)
+            return wrapped_forward(*args, **kwargs)
+        else:
+            return self.forward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict

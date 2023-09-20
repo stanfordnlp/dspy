@@ -4,7 +4,6 @@ from .signatures import *
 from .retrieve import *
 from .predict import *
 from .primitives import *
-from .assertions import *
 # from .evaluation import *
 
 
