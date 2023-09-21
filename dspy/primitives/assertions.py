@@ -21,6 +21,13 @@ class Assert:
     def __init__(self, assert_fun, *args, **kwargs):
         self.assert_fun = assert_fun
         self.args = args
+
+        if 'msg' in kwargs:
+            self.msg = kwargs['msg']
+            del kwargs['msg']
+        else:
+            self.msg = ""
+
         self.kwargs = kwargs
         self.__call__()
 
@@ -31,9 +38,7 @@ class Assert:
             if result:
                 return True
             else:
-                raise DSPyAssertionError(
-                    f"Assertion {self.assert_fun} failed", state=dsp.settings.trace
-                )
+                raise DSPyAssertionError(msg=self.msg, state=dsp.settings.trace)
         else:
             raise ValueError("Assertion function should always return [bool]")
 
@@ -200,7 +205,7 @@ def assert_latest_feedback_transform(backtrack=2):
                     return func(*args, **kwargs)
                 except DSPyAssertionError as e:
                     print(f"{e.msg}")
-                    error_msg = "Query length should be less than 100 characters."
+                    error_msg = e.msg
 
                     if dsp.settings.trace:
                         backtrack_to = dsp.settings.trace[-1][0]

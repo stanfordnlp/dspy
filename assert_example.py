@@ -72,7 +72,7 @@ class SimplifiedBaleen(dspy.Module):
 
             # assertion
             print(f"{hop}. Query length @ {id(self.generate_query[hop])} w/ config {self.generate_query[hop].get_config()}: {len(query)}")
-            dspy.Assert(lambda x: len(x) <= 100, query)
+            dspy.Assert(lambda x: len(x) <= 100, query, msg="Query length should be less than 100 characters.")
 
             passages = self.retrieve(query).passages
             context = deduplicate(context + passages)
