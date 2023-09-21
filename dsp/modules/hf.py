@@ -1,7 +1,7 @@
 from typing import Optional, Literal
 import os
 import json
-# from peft import PeftConfig, PeftModel
+from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
 from dsp.modules.lm import LM
@@ -66,12 +66,15 @@ class HFModel(LM):
                     with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
                         config = json.load(f)
                     self.rationale = config['rationale']
-                    # if config['peft']:
-                    #     peft_config = PeftConfig.from_pretrained(checkpoint)
-                    #     self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)
-                    #     self.model = PeftModel.from_pretrained(self.model, checkpoint)
-                    # else:
-                    self.model = AutoModelClass.from_pretrained(checkpoint).to("cuda")
+                    if config['peft']:
+                        peft_config = PeftConfig.from_pretrained(checkpoint)
+                        self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)
+                        self.model = PeftModel.from_pretrained(self.model, checkpoint)
+                    else:
+                        self.model = AutoModelClass.from_pretrained(checkpoint).to("cuda")
+                    # # from transformers import T5ForConditionalGeneration, T5Config
+                    # self.model = T5ForConditionalGeneration(T5Config.from_pretrained(checkpoint)).to("cuda")
+                    # self.model = AutoModelClass.from_pretrained(checkpoint, ignore_mismatched_sizes=True).to("cuda")
                 else:
                     self.model = AutoModelClass.from_pretrained(model).to("cuda")
                 self.drop_prompt_from_output = False

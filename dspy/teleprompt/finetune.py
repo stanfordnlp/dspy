@@ -115,7 +115,7 @@ class BootstrapFinetune(Teleprompter):
         import string
         compiler_config = {
             'save': ''.join(random.Random(time.time()).choices(string.ascii_uppercase + string.digits, k=13)), # https://stackoverflow.com/a/2257449/1493011
-            'peft': False,
+            'peft': True,
             'fp16': False,
             'bf16': bf16,
             'fid': False,

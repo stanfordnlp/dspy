@@ -24,7 +24,7 @@ from transformers import (
     Seq2SeqTrainingArguments,
     DataCollatorForSeq2Seq,
 )
-# from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, prepare_model_for_int8_training
 from transformers.trainer_callback import TrainerCallback
 
 # from dsp.modules.finetuning.fid import *
@@ -140,6 +140,13 @@ def _tokenize_dataset(dataset, tokenizer, encoder_decoder_model, decoder_only_mo
         return model_inputs
 
     if encoder_decoder_model:
+        X = [len(x) for x in dataset.map(lambda x: tokenizer(x['prompt']), batched=True)["input_ids"]]
+        Y = [len(x) for x in dataset.map(lambda x: tokenizer(x['completion']), batched=True)["input_ids"]]
+        X = np.percentile(X, 97)+16
+        Y = np.percentile(Y, 97)+16
+        print(f"For efficiency, removing the outlier examples that exceed {X} prompt tokens or {Y} completion tokens")
+        dataset = dataset.filter(lambda x: len(tokenizer(x["prompt"])["input_ids"]) <= X)
+        dataset = dataset.filter(lambda x: len(tokenizer(x["completion"])["input_ids"]) <= Y)
         max_source_length = get_dataset_stats(dataset, tokenizer, "prompt")
         max_target_length = get_dataset_stats(dataset, tokenizer, "completion")
         kwargs = {"max_source_length" : max_source_length, "max_target_length" : max_target_length}
@@ -185,7 +192,7 @@ class PeftSavingCallback(TrainerCallback):
 
 def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
     # Define data collator
-    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, label_pad_token_id=-100, pad_to_multiple_of=8)
 
     # Define training args
     training_args = Seq2SeqTrainingArguments(
@@ -337,9 +344,10 @@ def finetune_hf(data_path, target, config):
         # load model
         AutoModelClass = AutoModelForSeq2SeqLM if encoder_decoder_model else AutoModelForCausalLM
         if config['peft']:
-            model = AutoModelClass.from_pretrained(target, device_map='auto')
+            model = AutoModelClass.from_pretrained(target, load_in_8bit=True, device_map='auto')
             task_type = TaskType.SEQ_2_SEQ_LM if encoder_decoder_model else TaskType.CAUSAL_LM
             peft_config = LoraConfig(task_type=task_type, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1)
+            model = prepare_model_for_int8_training(model)
             model = get_peft_model(model, peft_config)
             model.print_trainable_parameters()
         else:
