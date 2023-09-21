@@ -28,7 +28,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if getattr(self, "forward", False) and not getattr(
             self.forward, "_decorated", False
         ):
-            wrapped_forward = assert_latest_feedback_transform()(self.forward)
+            wrapped_forward = assert_latest_transform()(self.forward)
             return wrapped_forward(*args, **kwargs)
         else:
             return self.forward(*args, **kwargs)
