@@ -22,9 +22,9 @@ class Assert:
         self.assert_fun = assert_fun
         self.args = args
 
-        if 'msg' in kwargs:
-            self.msg = kwargs['msg']
-            del kwargs['msg']
+        if "msg" in kwargs:
+            self.msg = kwargs["msg"]
+            del kwargs["msg"]
         else:
             self.msg = ""
 
@@ -150,21 +150,21 @@ def assert_latest_transform(backtrack=2):
 
 
 def assert_latest_feedback_transform(backtrack=2):
-    """"Decorator that simply re-runs the function but updates the signature of
+    """ "Decorator that simply re-runs the function but updates the signature of
     the latest predictor in the trace if assertion fails, up to `backtrack` times.
-    
+
     The updated signature passes a new input to the predictor, which is the feedback
     from the failed assertion. This feedback will be used by the predictor to self-repair.
     """
-    
+
     def wrapper(func):
         def inner(*args, **kwargs):
             backtrack_to = None
             error_msg = None
-            
+            extended_backtrack_to = None
+
             def _extend_predictor_signature(predictor, **kwargs):
-                """Update the signature of a predictor instance with a new field.
-                """
+                """Update the signature of a predictor instance with a new field."""
                 old_signature = predictor.extended_signature
                 *keys, last_key = old_signature.kwargs.keys()
 
@@ -175,12 +175,20 @@ def assert_latest_feedback_transform(backtrack=2):
                 new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
                 predictor.extended_signature = new_signature
 
+            def _remove_predictor_signature(predictor, *args):
+                """Remove the signature of a predictor."""
+                old_signature_kwargs = predictor.extended_signature.kwargs
+                for key in args:
+                    old_signature_kwargs.pop(key, None)
+                new_signature = dsp.Template(
+                    predictor.extended_signature.instructions, **old_signature_kwargs
+                )
+                predictor.extended_signature = new_signature
 
             def _wrap_forward_with_set_fields(predictor, default_args):
-                """Wrap the forward method of a predictor instance to enforce default arguments.
-                """
+                """Wrap the forward method of a predictor instance to enforce default arguments."""
                 original_forward = predictor.forward
-                
+
                 def new_forward(**kwargs):
                     for arg, value in default_args.items():
                         kwargs.setdefault(arg, value)
@@ -189,17 +197,22 @@ def assert_latest_feedback_transform(backtrack=2):
 
                 predictor.forward = new_forward
 
-
             for i in range(backtrack):
                 if i > 0 and backtrack_to is not None:
                     print(f"rewinding to {id(backtrack_to)}")
 
-                    # udpate the signature of the `backtrack_to` predictor with a feedback field                    
-                    feedback = dspy.InputField(prefix="Note:", desc="common mistakes to avoid")
+                    # udpate the signature of the `backtrack_to` predictor with a feedback field
+                    feedback = dspy.InputField(
+                        prefix="Note:", desc="common mistakes to avoid"
+                    )
+                    extended_backtrack_to = backtrack_to
+                    original_forward = extended_backtrack_to.forward
                     _extend_predictor_signature(backtrack_to, feedback=feedback)
-                    
+
                     # set the feedback field as a default kwarg to the predictor's forward function
-                    _wrap_forward_with_set_fields(backtrack_to, default_args={'feedback': error_msg})
+                    _wrap_forward_with_set_fields(
+                        backtrack_to, default_args={"feedback": error_msg}
+                    )
 
                 try:
                     return func(*args, **kwargs)
@@ -213,6 +226,10 @@ def assert_latest_feedback_transform(backtrack=2):
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
+                finally:
+                    if extended_backtrack_to:
+                        _remove_predictor_signature(extended_backtrack_to, "feedback")
+                        extended_backtrack_to.forward = original_forward
 
         return inner
 

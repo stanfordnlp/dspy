@@ -73,31 +73,31 @@ def validate_query_distinction_local(previous_queries, query):
     return True
 
 
-# class GenerateSearchQuery(dspy.Signature):
-#     query = dspy.InputField(desc="current query")
-#     previous_queries = dspy.InputField(desc="previous queries")
-#     duplication = dspy.OutputField(
-#         desc="Whether the current query is similar to previous queries, only return True or False"
-#     )
+class EvaluateSearchQueries(dspy.Signature):
+    query = dspy.InputField(desc="current query")
+    previous_queries = dspy.InputField(desc="previous queries")
+    duplication = dspy.OutputField(
+        desc="Whether the current query is similar to previous queries, only return True or False"
+    )
 
 
-# class QueryDistinction(dspy.Module):
+class QueryDistinction(dspy.Module):
 
-#     def __init__(self):
-#         super().__init__()
-#         self.generate_query = dspy.Predict(GenerateSearchQuery)
+    def __init__(self):
+        super().__init__()
+        self.evaluate_query = dspy.Predict(EvaluateSearchQueries)
 
-#     def forward(self, query, previous_queries):
-#         duplication = self.generate_query(
-#             query=query, previous_queries=previous_queries
-#         ).duplication
-#         return duplication
+    def forward(self, query, previous_queries):
+        duplication = self.evaluate_query(
+            query=query, previous_queries=previous_queries
+        ).duplication
+        return duplication
 
 
-# def validate_query_distinction_LM(previous_queries, query):
-#     query_distinction = QueryDistinction()
-#     duplication = query_distinction(query=query, previous_queries=previous_queries)
-#     return True if duplication == "False" else False
+def validate_query_distinction_LM(previous_queries, query):
+    query_distinction = QueryDistinction()
+    duplication = query_distinction(query=query, previous_queries=previous_queries)
+    return True if duplication == "False" else False
 
 
 # declaration of dspy program
@@ -120,13 +120,13 @@ class SimplifiedBaleen(dspy.Module):
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
 
-            # turbo.inspect_history(n=1)
-            print("query is ", query)
+            turbo.inspect_history(n=1)
+            # print("query is ", query)
             dspy.Assert(
                 validate_query_distinction_local,
                 previous_queries,
                 query,
-                msg=f"Queries should be different with previous queries {previous_queries}",
+                msg=f"Queries should be really different with previous queries {('; ').join(previous_queries)}",
             )
             previous_queries.append(query)
             passages = self.retrieve(query).passages
