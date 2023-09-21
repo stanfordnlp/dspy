@@ -164,7 +164,7 @@ def assert_latest_feedback_transform(backtrack=2):
             extended_backtrack_to = None
 
             def _extend_predictor_signature(predictor, **kwargs):
-                """Update the signature of a predictor instance with a new field."""
+                """Update the signature of a predictor instance with specified fields."""
                 old_signature = predictor.extended_signature
                 *keys, last_key = old_signature.kwargs.keys()
 
@@ -175,8 +175,9 @@ def assert_latest_feedback_transform(backtrack=2):
                 new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
                 predictor.extended_signature = new_signature
 
-            def _remove_predictor_signature(predictor, *args):
-                """Remove the signature of a predictor."""
+            def _revert_predictor_signature(predictor, *args):
+                """Revert the signature of a predictor by removing specified fields.
+                """
                 old_signature_kwargs = predictor.extended_signature.kwargs
                 for key in args:
                     old_signature_kwargs.pop(key, None)
@@ -228,7 +229,7 @@ def assert_latest_feedback_transform(backtrack=2):
                         )
                 finally:
                     if extended_backtrack_to:
-                        _remove_predictor_signature(extended_backtrack_to, "feedback")
+                        _revert_predictor_signature(extended_backtrack_to, "feedback")
                         extended_backtrack_to.forward = original_forward
 
         return inner
