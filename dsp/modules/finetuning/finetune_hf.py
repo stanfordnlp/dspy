@@ -231,6 +231,13 @@ def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
 
     trainer.train()
 
+    checkpoint_dir = os.path.join(config['output_dir'], 'checkpoint-{}'.format(trainer.state.global_step))
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    tokenizer.save_pretrained(checkpoint_dir)
+    model.save_pretrained(checkpoint_dir)
+    model.config.save_pretrained(checkpoint_dir)
+
     return trainer.state.best_model_checkpoint
 
 
@@ -310,6 +317,13 @@ def _train_causal(model, tokenizer, tokenized_dataset, metric, config):
     )
 
     trainer.train()
+
+    checkpoint_dir = os.path.join(config['output_dir'], 'checkpoint-{}'.format(trainer.state.global_step))
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    tokenizer.save_pretrained(checkpoint_dir)
+    model.save_pretrained(checkpoint_dir)
+    model.config.save_pretrained(checkpoint_dir)
 
     return trainer.state.best_model_checkpoint
 
