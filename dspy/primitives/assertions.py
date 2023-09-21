@@ -11,7 +11,7 @@ class DSPyAssertionError(AssertionError):
 
     def __init__(self, msg: str, state: Any = None) -> None:
         super().__init__(msg)
-        self.msg = f"Assertion Error: {msg}"
+        self.msg = msg
         self.state = state
 
 
@@ -50,13 +50,13 @@ class Assert:
 ############################# ASSERTION AND BACKTRACKING POLICIES #############################
 
 
-def assert_transform(backtrack=2):
+def assert_transform(max_backtracks=2):
     """Decorator that simply re-runs the function if assertion fails,
-    up to `backtrack` times."""
+    up to `max_backtracks` times."""
 
     def wrapper(func):
         def inner(*args, **kwargs):
-            for i in range(backtrack):
+            for i in range(max_backtracks+1):
                 try:
                     return func(*args, **kwargs)
                 except DSPyAssertionError as e:
@@ -73,13 +73,13 @@ def assert_transform(backtrack=2):
     return wrapper
 
 
-def assert_update_transform(backtrack=2):
+def assert_update_transform(max_backtracks=2):
     """Decorator that simply re-runs the function with updated temperature
-    if assertion fails, up to `backtrack` times."""
+    if assertion fails, up to `max_backtracks` times."""
 
     def wrapper(func):
         def inner(*args, **kwargs):
-            for i in range(backtrack):
+            for i in range(max_backtracks+1):
                 lm = dsp.settings.lm
 
                 if i > 0 and backtrack_to is not None:
@@ -106,9 +106,9 @@ def assert_update_transform(backtrack=2):
     return wrapper
 
 
-def assert_latest_transform(backtrack=2):
+def assert_latest_transform(max_backtracks=2):
     """Decorator that simply re-runs the function but updates the temperature
-    only for the latest predictor in the trace if assertion fails, up to `backtrack` times.
+    only for the latest predictor in the trace if assertion fails, up to `max_backtracks` times.
 
     # NOTE (@manish): the previous assert_update_transform applies temperature change to all predictors in the pipeline.
     # Here, we udpate/pass the new temperature to the *backtrack_to* predictor *only* --> cause a cache miss --> re-run
@@ -119,7 +119,7 @@ def assert_latest_transform(backtrack=2):
         def inner(*args, **kwargs):
             backtrack_to = None
 
-            for i in range(backtrack):
+            for i in range(max_backtracks+1):
                 if i > 0 and backtrack_to is not None:
                     print(f"rewinding to {id(backtrack_to)}")
 
@@ -149,9 +149,9 @@ def assert_latest_transform(backtrack=2):
     return wrapper
 
 
-def assert_latest_feedback_transform(backtrack=2):
+def assert_latest_feedback_transform(max_backtracks=2):
     """ "Decorator that simply re-runs the function but updates the signature of
-    the latest predictor in the trace if assertion fails, up to `backtrack` times.
+    the latest predictor in the trace if assertion fails, up to `max_backtracks` times.
 
     The updated signature passes a new input to the predictor, which is the feedback
     from the failed assertion. This feedback will be used by the predictor to self-repair.
@@ -161,7 +161,8 @@ def assert_latest_feedback_transform(backtrack=2):
         def inner(*args, **kwargs):
             backtrack_to = None
             error_msg = None
-            extended_backtrack_to = None
+            result = None
+            extended_predictors_to_original_forward = {}
 
             def _extend_predictor_signature(predictor, **kwargs):
                 """Update the signature of a predictor instance with specified fields."""
@@ -198,27 +199,31 @@ def assert_latest_feedback_transform(backtrack=2):
 
                 predictor.forward = new_forward
 
-            for i in range(backtrack):
+            for i in range(max_backtracks+1):
                 if i > 0 and backtrack_to is not None:
                     print(f"rewinding to {id(backtrack_to)}")
 
-                    # udpate the signature of the `backtrack_to` predictor with a feedback field
+                    # create a new feedback field
                     feedback = dspy.InputField(
-                        prefix="Note:", desc="common mistakes to avoid"
+                        prefix="Instruction:", desc="Some instructions you must satisfy"
                     )
-                    extended_backtrack_to = backtrack_to
-                    original_forward = extended_backtrack_to.forward
+                    
+                    # save the original forward function to revert back to
+                    extended_predictors_to_original_forward[backtrack_to] = backtrack_to.forward
+                    
+                    # extend signature with feedback field
                     _extend_predictor_signature(backtrack_to, feedback=feedback)
 
-                    # set the feedback field as a default kwarg to the predictor's forward function
+                    # set feedback field as a default kwarg to the predictor's forward function
                     _wrap_forward_with_set_fields(
                         backtrack_to, default_args={"feedback": error_msg}
                     )
 
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    break
                 except DSPyAssertionError as e:
-                    print(f"{e.msg}")
+                    print(f"AssertionError: {e.msg}")
                     error_msg = e.msg
 
                     if dsp.settings.trace:
@@ -227,10 +232,15 @@ def assert_latest_feedback_transform(backtrack=2):
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
-                finally:
-                    if extended_backtrack_to:
-                        _revert_predictor_signature(extended_backtrack_to, "feedback")
-                        extended_backtrack_to.forward = original_forward
+            
+            # revert any extended predictors to their originals
+            if extended_predictors_to_original_forward:
+                for predictor, original_forward in extended_predictors_to_original_forward.items():
+                    print(f"reverting predictor {id(predictor)}")
+                    _revert_predictor_signature(predictor, "feedback")
+                    predictor.forward = original_forward
+            
+            return result
 
         return inner
 
