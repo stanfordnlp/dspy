@@ -28,13 +28,13 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
-
+        self.stop_at_score = stop_at_score
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
         self.num_candidate_sets = num_candidate_programs
@@ -118,6 +118,10 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
                     print(f'Average of max per entry across top {k} scores: {avg_of_max_per_entry}')
 
+            if self.stop_at_score is not None and score >= self.stop_at_score:
+                print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
+                break
+
         return best_program
 
 
@@ -125,7 +129,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
 # sample between 4 and 10 examples from traces
 # TODO: FIXME: The max number of demos should be determined in part by the LM's tokenizer + max_length.
-# This does require excecuting the program, or at least the predictor.
+# This does require executing the program, or at least the predictor.
 # # # # # # (Actually we can just combine the token counts of the traces, when formatted via signature/adapter).
 # Alternatively, we can keep track of the (zero-shot) number of tokens when we bootstrap.
 # As another option, we can just try a wide range and handle failures as penalties on the score.
