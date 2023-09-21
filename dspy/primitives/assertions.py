@@ -11,7 +11,7 @@ class DSPyAssertionError(AssertionError):
 
     def __init__(self, msg: str, state: Any = None) -> None:
         super().__init__(msg)
-        self.msg = msg
+        self.msg = f"Assertion Error: {msg}"
         self.state = state
 
 
