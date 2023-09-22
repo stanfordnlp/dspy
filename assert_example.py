@@ -38,25 +38,44 @@ class GenerateSearchQuery(dspy.Signature):
     query = dspy.OutputField()
 
 
-# validation logic for verifying traces
+failure_counts = {
+    "answer_exact_match": 0,
+    "answer_passage_match": 0,
+    "max_hop_length_exceeded": 0,
+    "hop_query_similarity_exceeded": 0,
+    "failed_prog_assertions": 0,
+}
+
+
 def validate_context_and_answer_and_hops(example, pred, trace=None):
-    if not dspy.evaluate.answer_exact_match(example, pred):
-        return False
+    global failure_counts
 
-    if not dspy.evaluate.answer_passage_match(example, pred):
-        return False
+    try:
+        if not dspy.evaluate.answer_exact_match(example, pred):
+            failure_counts["answer_exact_match"] += 1
+            return False
 
-    hops = [example.question] + [
-        outputs.query for *_, outputs in trace if "query" in outputs
-    ]
+        if not dspy.evaluate.answer_passage_match(example, pred):
+            failure_counts["answer_passage_match"] += 1
+            return False
 
-    if max([len(h) for h in hops]) > 100:
-        return False
+        hops = [example.question] + [
+            outputs.query for *_, outputs in trace if "query" in outputs
+        ]
 
-    if any(
-        dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
-        for idx in range(2, len(hops))
-    ):  # 4
+        if max([len(h) for h in hops]) > 100:
+            failure_counts["max_hop_length_exceeded"] += 1
+            return False
+
+        if any(
+            dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
+            for idx in range(2, len(hops))
+        ):
+            failure_counts["hop_query_similarity_exceeded"] += 1
+            return False
+    except:
+        failure_counts["failed_prog_assertions"] += 1
+        print("failed prog assertions:", example.question)
         return False
 
     return True
@@ -82,7 +101,6 @@ class EvaluateSearchQueries(dspy.Signature):
 
 
 class QueryDistinction(dspy.Module):
-
     def __init__(self):
         super().__init__()
         self.evaluate_query = dspy.Predict(EvaluateSearchQueries)
@@ -102,7 +120,6 @@ def validate_query_distinction_LM(previous_queries, query):
 
 # declaration of dspy program
 class SimplifiedBaleen(dspy.Module):
-
     def __init__(self, passages_per_hop=2, max_hops=2):
         super().__init__()
 
@@ -114,19 +131,24 @@ class SimplifiedBaleen(dspy.Module):
         self.max_hops = max_hops
 
     def forward(self, question):
-        print("question is ", question)
+        print("\nquestion is ", question)
         context = []
-        previous_queries = []
+        previous_queries = [question]
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
 
-            turbo.inspect_history(n=1)
-            # print("query is ", query)
+            # turbo.inspect_history(n=1)
+            print("query is ", query)
+            
             dspy.Assert(
-                validate_query_distinction_local,
-                previous_queries,
-                query,
-                msg=f"Queries should be really different with previous queries {('; ').join(previous_queries)}",
+                lambda x: len(x) <= 100, query, 
+                msg="Query should be short and less than 100 characters",
+            )
+
+            dspy.Assert(
+                validate_query_distinction_local, previous_queries, query,
+                msg="Query should not be the following: "
+                + "; ".join(f"{idx+1}) {query}" for idx, query in enumerate(previous_queries)),
             )
             previous_queries.append(query)
             passages = self.retrieve(query).passages
@@ -144,6 +166,12 @@ student = SimplifiedBaleen()
 teacher = SimplifiedBaleen(passages_per_hop=2)
 compiled_baleen = teleprompter.compile(student, teacher=teacher, trainset=trainset)
 
-my_question = "How many storeys are in the castle that David Gregory inherited?"
-pred = compiled_baleen(my_question)
-turbo.inspect_history(n=3)
+
+print("=" * 50, "Validation Failures", "=" * 50)
+# Print the counts of each failure type
+for failure_type, count in failure_counts.items():
+    print(f"{failure_type}: {count}")
+
+# my_question = "How many storeys are in the castle that David Gregory inherited?"
+# pred = compiled_baleen(my_question)
+# turbo.inspect_history(n=3)
