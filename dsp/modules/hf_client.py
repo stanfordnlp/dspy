@@ -25,15 +25,17 @@ import requests
 from dsp.modules.hf import HFModel, openai_to_hf
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 
-# from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
-
+from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
 class HFClientTGI(HFModel):
     def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
         super().__init__(model=model, is_client=True)
         self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
-
+        if "llama" in self.model_type:
+            self.adapter = LlamaAdapter()
+        else:
+            self.adapter = DavinciAdapter()
         self.kwargs = {
             "temperature": 0.1,
             "max_tokens": 75,

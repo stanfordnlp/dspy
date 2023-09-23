@@ -179,7 +179,7 @@ class TemplateV2:
 
         return example
 
-    def __call__(self, example, show_guidelines=True) -> str:
+    def __call__(self, example, show_guidelines=True) -> list:
         example = dsp.Example(example)
 
         if hasattr(dsp.settings, 'query_only') and dsp.settings.query_only:
@@ -199,13 +199,13 @@ class TemplateV2:
                     and demo[self.fields[-1].input_variable] is not None
                 )
             )
-        ]
+        ] if "demos" in example else []
 
         ademos = [
             self.query(demo, is_demo=True)
             for demo in example.demos
             if "augmented" in demo and demo.augmented
-        ]
+        ] if "demos" in example else []
 
         # Move the rdemos to ademos if rdemo has all the fields filled in
         rdemos_ = []
@@ -236,31 +236,13 @@ class TemplateV2:
             if "augmented" not in example or not example.augmented:
                 example["augmented"] = True
                 query = self.query(example)
-
-        rdemos = "\n\n".join(rdemos)
-        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            rdemos_and_query = "\n\n".join([rdemos, query])
-            parts = [
-                self.instructions,
-                self.guidelines(show_guidelines),
-                rdemos_and_query,
-            ]
-        elif len(rdemos) == 0:
-            parts = [
-                self.instructions,
-                self.guidelines(show_guidelines),
-                *ademos,
-                query,
-            ]
-        else:
-            parts = [
-                self.instructions,
-                rdemos,
-                self.guidelines(show_guidelines),
-                *ademos,
-                query,
-            ]
-
-        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-
-        return prompt.strip()
+        parts = {
+            "instructions": self.instructions,
+            "guidelines": self.guidelines(show_guidelines),
+            "rdemos": rdemos,
+            "ademos": ademos,
+            "query": query,
+            "long_query": long_query
+        }
+                
+        return parts

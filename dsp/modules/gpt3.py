@@ -6,8 +6,9 @@ import backoff
 import openai
 import openai.error
 from openai.openai_object import OpenAIObject
-
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 from dsp.modules.lm import LM
 
 
@@ -42,9 +43,12 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
 
-        default_model_type = "chat" if 'gpt-3.5' in model or 'gpt-4' in model else "text"
+        default_model_type = "chat" if ('gpt-3.5' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
         self.model_type = model_type if model_type else default_model_type
-
+        if self.model_type == "chat":
+            self.adapter = TurboAdapter()
+        else:
+            self.adapter = DavinciAdapter()
         if api_provider == "azure":
             assert (
                 "engine" in kwargs or "deployment_id" in kwargs
@@ -78,13 +82,14 @@ class GPT3(LM):
     def _openai_client():
         return openai
 
-    def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
+    def basic_request(self, prompt, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            kwargs["model"] = prompt["model"]
+            kwargs["messages"] = tuple(prompt["messages"])
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }

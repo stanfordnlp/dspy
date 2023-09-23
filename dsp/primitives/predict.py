@@ -61,7 +61,7 @@ def _generate(template: Template, **kwargs) -> Callable:
         raise AssertionError("No LM is loaded.")
 
     generator = dsp.settings.lm
-
+    adapter = dsp.settings.adapter or generator.adapter
     def do_generate(
         example: Example, stage: str, max_depth: int = 2, original_example=None
     ):
@@ -74,7 +74,7 @@ def _generate(template: Template, **kwargs) -> Callable:
         example = example.demos_at(lambda d: d[stage])
 
         # Generate and extract the fields.
-        prompt = template(example)
+        prompt = adapter(template(example))
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 

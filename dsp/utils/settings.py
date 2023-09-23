@@ -25,6 +25,7 @@ class Settings(object):
             config = dotdict(
                 lm=None,
                 rm=None,
+                adapter=None,
                 branch_idx=0,
                 reranker=None,
                 compiled_lm=None,
