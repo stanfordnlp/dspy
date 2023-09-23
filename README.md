@@ -348,6 +348,7 @@ Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwar
 
 **DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
+The **DSPy** logo is designed by **Chuyi Zhang**.
 
 
 ## 📜 Citation & Reading More
