@@ -1,5 +1,6 @@
 import dsp
 import random
+import re
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -16,29 +17,42 @@ class Predict(Parameter):
 
         # if the signature is a string
         if isinstance(signature, str):
-            inputs, outputs = signature.split("->")
-            inputs, outputs = inputs.split(","), outputs.split(",")
-            inputs, outputs = [field.strip() for field in inputs], [field.strip() for field in outputs]
 
-            assert all(len(field.split()) == 1 for field in (inputs + outputs))
+            # Split signature into input and output parts
+            input_part, output_part = [s.strip() for s in sig.split("->")]
 
-            inputs_ = ', '.join([f"`{field}`" for field in inputs])
-            outputs_ = ', '.join([f"`{field}`" for field in outputs])
+            # Regular expression to match variables with or without types
+            pattern = r'(?P<var>\w+)(?:\s*:\s*(?P<type>\w+))?'
+
+            # Function to process matches and assign default types
+            def process(part):
+                matches = re.findall(pattern, part)
+                parsed = {}
+                for var, typ in matches:
+                    parsed[var] = typ if typ else 'str'
+                return parsed
+
+            # Process input and output parts separately
+            inputs = process(input_part)
+            outputs = process(output_part)
+
+            inputs_ = ', '.join([f"`{field}`" for field in inputs.keys()])
+            outputs_ = ', '.join([f"`{field}`" for field in outputs.keys()])
 
             instructions = f"""Given the fields {inputs_}, produce the fields {outputs_}."""
 
-            inputs = {k: InputField() for k in inputs}
-            outputs = {k: OutputField() for k in outputs}
+            inputs = {name: InputField(dtype=dtype) for name, dtype in inputs}
+            outputs = {name: OutputField(dtype=dtype) for name, dtype in outputs}
 
             for k, v in inputs.items():
                 v.finalize(k, infer_prefix(k))
-            
+
             for k, v in outputs.items():
                 v.finalize(k, infer_prefix(k))
 
             self.signature = dsp.Template(instructions, **inputs, **outputs)
 
-    
+
     def reset(self):
         self.lm = None
         self.traces = []
@@ -52,10 +66,10 @@ class Predict(Parameter):
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
-    
+
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
-    
+
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
         signature = kwargs.pop("signature", self.signature)
@@ -93,7 +107,7 @@ class Predict(Parameter):
                     completions[-1][field.output_variable] = getattr(c, field.output_variable)
 
         pred = Prediction.from_completions(completions, signature=signature)
-            
+
         if dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
