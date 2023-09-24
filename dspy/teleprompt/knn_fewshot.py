@@ -1,4 +1,5 @@
-from typing import List, Callable
+from typing import List
+import types
 import dsp
 
 class KNNFewShot(Teleprompter):
@@ -14,5 +15,5 @@ class KNNFewShot(Teleprompter):
             compiled_program = few_shot_bootstrap.compile(student, teacher=teacher, trainset=knn_trainset, valset=valset)
             return compiled_program
         
-        student_copy.forward = forward_pass
+        student_copy.forward = types.MethodType(forward_pass, student_copy)
         return student_copy
