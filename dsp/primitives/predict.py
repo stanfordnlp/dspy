@@ -74,7 +74,8 @@ def _generate(template: Template, **kwargs) -> Callable:
         example = example.demos_at(lambda d: d[stage])
 
         # Generate and extract the fields.
-        prompt = adapter(template(example))
+        # prompt = adapter(template(example)) #for other adapters
+        prompt = adapter(template, example) #for ParsingAdapter
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 

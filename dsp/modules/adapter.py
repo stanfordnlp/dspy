@@ -32,9 +32,6 @@ class LlamaAdapter:
         prompt = prompt.strip()
         return prompt
     
-    
-    
-
 class DavinciAdapter:
     def __call__(self, parts: dict):
         instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
@@ -65,6 +62,74 @@ class DavinciAdapter:
         prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
         prompt = prompt.strip()
         return prompt
+
+from collections import namedtuple
+Field = namedtuple("Field", "name separator input_variable output_variable description")
+import copy
+
+class ParsingAdapter:
+    def __init__(self):
+        self.existing_fields = []
+        self.stopping_input_field = ""
+
+    def __call__(self, template_instance, example):
+        self.existing_fields = ["### " + field.name for field in template_instance.fields]
+        first_kwarg_name, first_kwarg_obj = list(template_instance.kwargs.items())[0]
+        for field in template_instance.fields:
+            if first_kwarg_name.lower() in field.name.lower() and "InputField" in str(type(first_kwarg_obj)):
+                self.stopping_input_field = f"### {first_kwarg_name.capitalize()}"
+                break
+        copied_template_instance = copy.deepcopy(template_instance)
+        modified_fields = []
+        for field in copied_template_instance.fields:
+            modified_name = "### " + field.name
+            new_field = Field(name=modified_name,
+                            separator=field.separator,
+                            input_variable=field.input_variable,
+                            output_variable=field.output_variable,
+                            description=field.description)
+            modified_fields.append(new_field)
+        copied_template_instance.fields = modified_fields
+        parts = copied_template_instance(example)
+        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
+        rdemos = "\n\n".join(rdemos)
+        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
+            rdemos_and_query = "\n\n".join([rdemos, query])
+            parts = [
+                instructions,
+                guidelines,
+                rdemos_and_query,
+            ]
+        elif len(rdemos) == 0:
+            parts = [
+                instructions,
+                guidelines,
+                *ademos,
+                query,
+            ]
+        else:
+            parts = [
+                instructions,
+                rdemos,
+                guidelines,
+                *ademos,
+                query,
+            ]
+
+        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
+        prompt = prompt.strip()
+        return prompt
+
+    def parsing(self, response):
+        lines = response.split("\n")
+        parsed_response = []
+        for line in lines:
+            if line.startswith("### ") and line not in self.existing_fields:
+                print(f"model invented new field: {lines[i]}")
+            if self.stopping_input_field in line:
+                break
+            parsed_response.append(line)
+        return "\n".join(parsed_response)
     
 
 class TurboAdapter:
