@@ -1,13 +1,14 @@
-from typing import Callable
+from typing import Callable, Union
 from dsp.templates import TemplateV2, passages2text, format_answers, Field
 
 
 class Type:
     """A primitive datatype that defines and represents a prompt label."""
 
-    def __init__(self, prefix: str, desc: str, format=None) -> None:
+    def __init__(self, prefix: str, desc: str, dtype: Union[str, type] = None, format=None) -> None:
         self.prefix = prefix
         self.desc = desc
+        self.dtype = dtype
         self.format = format
 
     def __call__(self, **kwargs):
@@ -36,12 +37,16 @@ class Template(TemplateV2):
             separator: str = (
                 " " if prefix.rstrip() == prefix and len(prefix) > 0 else prefix[len(prefix.rstrip()) :]
             )
+            if not hasattr(value, "dtype"):
+                import pdb
+                pdb.set_trace()
             field = Field(
                 name=prefix.strip(),
                 description=value.desc,
                 input_variable=key,
                 output_variable=key,
                 separator=separator,
+                dtype=value.dtype
             )
             self.fields.append(field)
 

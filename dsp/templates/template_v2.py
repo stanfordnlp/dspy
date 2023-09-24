@@ -5,7 +5,7 @@ import dsp
 from dsp.primitives.demonstrate import Example
 from .utils import passages2text, format_answers
 
-Field = namedtuple("Field", "name separator input_variable output_variable description")
+Field = namedtuple("Field", "name separator input_variable output_variable description dtype")
 
 # TODO: de-duplicate with dsp/templates/template.py
 
@@ -119,6 +119,25 @@ class TemplateV2:
         example = dsp.Example()
         for field in self.fields:
             example[field.input_variable] = field.description
+            if field.dtype is not None:
+                built_in_types = (int, float, str, bool, bytes, list, tuple, dict, set)
+                if field.dtype in built_in_types:
+                    dtype = field.dtype.__name__
+                elif isinstance(field.dtype, str):
+                    dtype = field.dtype
+                else:
+                    raise ValueError(f"Unrecognized dtype {field.dtype}")
+                dtype_desc = None
+                if dtype == "list":
+                    dtype_desc = " | A Python list format"
+                elif dtype == "dict":
+                    dtype_desc = " | A Python dict format"
+                elif dtype == "int":
+                    dtype_desc = " | An integer"
+                elif dtype == "float":
+                    dtype_desc == " | A float"
+                if dtype_desc is not None:
+                    example[field.input_variable] += dtype_desc
         example.augmented = self._has_augmented_guidelines()
 
         result += self.query(example)

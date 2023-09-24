@@ -16,7 +16,7 @@ class ChainOfThought(Predict):
         *keys, last_key = signature.kwargs.keys()
 
         DEFAULT_RATIONALE_TYPE = dsp.Type(prefix="Reasoning: Let's think step by step in order to",
-                                          desc="${produce the " + last_key + "}. We ...")
+                                          desc="${produce the " + last_key + "}. We ...", dtype=str)
 
         rationale_type = rationale_type or DEFAULT_RATIONALE_TYPE
         

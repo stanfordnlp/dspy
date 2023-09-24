@@ -7,7 +7,7 @@ class Field:
         self.prefix = prefix  # This can be None initially and set later
         self.desc = desc
         self.format = format
-        self.dtype = dtype # TODO: Do something with this dtype?
+        self.dtype = dtype
 
     def finalize(self, key, inferred_prefix):
         """Set the prefix if it's not provided explicitly."""
@@ -17,8 +17,11 @@ class Field:
         if self.desc is None:
             self.desc = f'${{{key}}}'
 
+        if self.dtype is None:
+            self.dtype = str
+
     def __repr__(self):
-        return f"{self.__class__.__name__}(prefix={self.prefix}, desc={self.desc})"
+        return f"{self.__class__.__name__}(prefix={self.prefix}, desc={self.desc}, dtype={self.dtype})"
 
     def __eq__(self, __value: object) -> bool:
         return self.__dict__ == __value.__dict__
