@@ -7,7 +7,7 @@ class KNN:
         self.k = k
         self.trainset = trainset
         self.vectorizer = dsp.SentenceTransformersVectorizer()
-        trainset_casted_to_vectorize = [" | ".join([f"{key}: {value}" for key, value in example._asdict().items() if key in example._input_keys]) for example in self.trainset]
+        trainset_casted_to_vectorize = [" | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys]) for example in self.trainset]
         self.trainset_vectors = self.vectorizer(trainset_casted_to_vectorize).astype(np.float32)
 
     def __call__(self, **kwargs) -> List[dsp.Example]:
