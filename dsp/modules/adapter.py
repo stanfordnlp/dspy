@@ -78,6 +78,7 @@ class ParsingAdapter:
         for field in template_instance.fields:
             if first_kwarg_name.lower() in field.name.lower() and "InputField" in str(type(first_kwarg_obj)):
                 self.stopping_input_field = f"### {first_kwarg_name.capitalize()}"
+                dsp.settings.config["stop_condition"] = self.stopping_input_field
                 break
         copied_template_instance = copy.deepcopy(template_instance)
         modified_fields = []

@@ -104,7 +104,6 @@ class HFModel(LM):
         assert not self.is_client
         # TODO: Add caching
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
-        print(prompt)
         if isinstance(prompt, dict):
             try:
                 prompt = prompt['messages'][0]['content']
