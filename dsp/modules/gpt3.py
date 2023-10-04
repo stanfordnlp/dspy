@@ -8,7 +8,7 @@ import openai.error
 from openai.openai_object import OpenAIObject
 import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
+from dsp.modules.adapter import TurboAdapter, ParsingAdapter, LlamaAdapter
 from dsp.modules.lm import LM
 
 
@@ -48,7 +48,7 @@ class GPT3(LM):
         if self.model_type == "chat":
             self.adapter = TurboAdapter()
         else:
-            self.adapter = DavinciAdapter()
+            self.adapter = ParsingAdapter()
         if api_provider == "azure":
             assert (
                 "engine" in kwargs or "deployment_id" in kwargs

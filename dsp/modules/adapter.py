@@ -1,67 +1,6 @@
 from typing import Any
 import dsp
 
-class LlamaAdapter:
-    def __call__(self, parts: dict):
-        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
-        rdemos = "\n\n".join(rdemos)
-        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            # rdemos_and_query = "\n\n".join([rdemos, query])
-            parts = [
-                "[INST] <<SYS>>\n"+instructions,
-                guidelines+"\n<</SYS>>",
-                rdemos+"[/INST]\n"+query
-            ]
-        elif len(rdemos) == 0:
-            parts = [
-                "[INST] <<SYS>>\n"+instructions,
-                guidelines+"\n<</SYS>>",
-                *ademos,
-                "[/INST]\n"+query,
-            ]
-        else:
-            parts = [
-                "[INST] <<SYS>>\n"+instructions,
-                rdemos,
-                guidelines+"\n<</SYS>>",
-                *ademos,
-                "[/INST]\n"+query,
-            ]
-
-        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-        prompt = prompt.strip()
-        return prompt
-    
-class DavinciAdapter:
-    def __call__(self, parts: dict):
-        instructions, guidelines, rdemos, ademos, query, long_query = parts["instructions"], parts["guidelines"], parts["rdemos"], parts["ademos"], parts["query"], parts["long_query"]
-        rdemos = "\n\n".join(rdemos)
-        if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
-            rdemos_and_query = "\n\n".join([rdemos, query])
-            parts = [
-                instructions,
-                guidelines,
-                rdemos_and_query,
-            ]
-        elif len(rdemos) == 0:
-            parts = [
-                instructions,
-                guidelines,
-                *ademos,
-                query,
-            ]
-        else:
-            parts = [
-                instructions,
-                rdemos,
-                guidelines,
-                *ademos,
-                query,
-            ]
-
-        prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-        prompt = prompt.strip()
-        return prompt
 
 from collections import namedtuple
 Field = namedtuple("Field", "name separator input_variable output_variable description")
@@ -132,6 +71,71 @@ class ParsingAdapter:
             parsed_response.append(line)
         return "\n".join(parsed_response)
     
+
+# class LlamaAdapter(ParsingAdapter):
+#     def __call__(self, template_instance, example):
+#         prompt = super().__call__(template_instance, example)
+
+#         system_message = ("You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, "
+#                           "while being safe. Your answers should not include any harmful, unethical, racist, sexist, "
+#                           "toxic, dangerous, or illegal content. Please ensure that your responses are socially "
+#                           "unbiased and positive in nature. If a question does not make any sense, or is not factually "
+#                           "coherent, explain why instead of answering something not correct. If you don't know the answer "
+#                           "to a question, please don't share false information.")
+
+#         # Splitting by the section divider
+#         messages = prompt.split("\n\n---\n\n")
+#         formatted_messages = []
+
+#         for idx, message in enumerate(messages):
+#             # For the first user message, embed the system message
+#             if idx == 0:
+#                 formatted_messages.append(f"[INST] <<SYS>> {system_message} <</SYS>> {message} [/INST]")
+#             elif "Question:" in message:  # This assumes user messages have the "Question:" pattern
+#                 formatted_messages.append(f"[INST]{message}[/INST]")
+#             else:  # Assuming other messages are assistant messages
+#                 formatted_messages.append(f"{message} <eos>")
+
+#         return "\n".join(formatted_messages)
+
+class LlamaAdapter(ParsingAdapter):
+    def __call__(self, template_instance, example):
+        prompt = super().__call__(template_instance, example)
+        
+        # Tokens
+        BOS, EOS = "<s>", "</s>"
+        B_INST, E_INST = "[INST]", "[/INST]"
+        B_SYS, E_SYS = "<<SYS>>", "<</SYS>>"
+        
+        system_message = (f"{B_SYS} You are a helpful, respectful, and honest assistant. Always answer as helpfully as possible, "
+                          "while being safe. Your answers should not include any harmful, unethical, racist, sexist, "
+                          "toxic, dangerous, or illegal content. Please ensure that your responses are socially "
+                          "unbiased and positive in nature. If a question does not make any sense, or is not factually "
+                          "coherent, explain why instead of answering something not correct. If you don't know the answer "
+                          "to a question, please don't share false information. {E_SYS}")
+        
+        # Splitting by the section divider
+        messages = prompt.split("\n\n---\n\n")
+        
+        formatted_messages = []
+
+        # Check if the system message is not already included, then add it.
+        if system_message not in messages[0]:
+            formatted_messages.append(f"{BOS}{B_INST} {system_message} {E_INST}")
+
+        # Loop through the messages to format them
+        for idx, message in enumerate(messages):
+            if idx % 2 == 0:  # Question / Prompt
+                formatted_messages.append(f"{BOS}{B_INST} {message} {E_INST}")
+            else:  # Answer
+                formatted_messages[-1] += f" {message.split()[-1]} {EOS}"
+
+        return "".join(formatted_messages)
+
+
+
+
+
 
 class TurboAdapter:
     """

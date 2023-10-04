@@ -33,7 +33,10 @@ class HFClientTGI(HFModel):
         super().__init__(model=model, is_client=True)
         self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
-        self.adapter = ParsingAdapter()
+        if 'llama' in model:
+            self.adapter = LlamaAdapter()
+        else:
+            self.adapter = ParsingAdapter()
         self.kwargs = {
             "temperature": 0.1,
             "max_tokens": 75,
