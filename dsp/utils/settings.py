@@ -31,7 +31,8 @@ class Settings(object):
                 force_reuse_cached_compilation=False,
                 compiling=False,
                 skip_logprobs=False,
-                trace=None
+                trace=None,
+                release=0,
             )
             cls._instance.__append(config)
 
