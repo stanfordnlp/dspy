@@ -8,7 +8,7 @@ class LabeledFewShot(Teleprompter):
     def __init__(self, k=16):
         self.k = k
 
-    def compile(self, student, *, trainset):
+    def compile(self, student, *, trainset, sample=True):
         self.student = student.reset_copy()
         self.trainset = trainset
 
@@ -18,7 +18,10 @@ class LabeledFewShot(Teleprompter):
         rng = random.Random(0)
 
         for predictor in self.student.predictors():
-            predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
+            if sample:
+                predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
+            else:
+                predictor.demos = self.trainset[:min(self.k, len(self.trainset))]
 
         return self.student
     

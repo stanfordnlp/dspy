@@ -49,6 +49,9 @@ class HotPotQA(Dataset):
         for raw_example in hf_official_dev:
             assert raw_example['level'] == 'hard'
             example = {k: raw_example[k] for k in ['id', 'question', 'answer', 'type', 'supporting_facts']}
+            if 'supporting_facts' in example:
+                example['gold_titles'] = set(example['supporting_facts']['title'])
+                del example['supporting_facts']
             test.append(example)
 
         self._test = test

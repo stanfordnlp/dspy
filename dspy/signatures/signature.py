@@ -48,8 +48,10 @@ class SignatureMeta(type):
         
         return f'{cls.__name__}\n' + '\n'.join(s)
 
+
 class Signature(metaclass=SignatureMeta):
-    pass
+    def __eq__(self, __value: object) -> bool:
+        return self._template == __value._template
 
 
 

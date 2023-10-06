@@ -48,7 +48,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
-    def compile(self, student, *, teacher=None, trainset, valset=None):
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
@@ -57,6 +57,10 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         score_data = []
 
         for seed in range(-3, self.num_candidate_sets):
+            if (restrict is not None) and (seed not in restrict):
+                print(seed, restrict)
+                continue
+
             trainset2 = list(self.trainset)
 
             if seed == -3:
@@ -96,31 +100,37 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             all_subscores.append(subscores)
 
             print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors()])
-            scores.append(score)
 
-            print(f"Scores so far: {scores}")
-
-            if score >= max(scores):
+            if len(scores) == 0 or score > max(scores):
                 print('New best score:', score, 'for seed', seed)
                 best_program = program2
 
+            scores.append(score)
+            print(f"Scores so far: {scores}")
+
             print('Best score:', max(scores))
 
-            score_data.append((score, subscores))
+            score_data.append((score, subscores, seed, program2))
 
             if len(score_data) > 2:  # We check if there are at least 3 scores to consider
                 for k in [1, 2, 3, 5, 8, 9999]:
                     top_3_scores = sorted(score_data, key=lambda x: x[0], reverse=True)[:k]
 
                     # Transpose the subscores to get max per entry and then calculate their average
-                    transposed_subscores = zip(*[subscores for _, subscores in top_3_scores if subscores])
+                    transposed_subscores = zip(*[subscores for _, subscores, *_ in top_3_scores if subscores])
                     avg_of_max_per_entry = sum(max(entry) for entry in transposed_subscores) / len(top_3_scores[0][1])
 
                     print(f'Average of max per entry across top {k} scores: {avg_of_max_per_entry}')
-
+            
             if self.stop_at_score is not None and score >= self.stop_at_score:
                 print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
                 break
+
+        # To best program, attach all program candidates in decreasing average score
+        best_program.candidate_programs = score_data
+        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x[0], reverse=True)
+
+        print(len(best_program.candidate_programs), "candidate programs found.")
 
         return best_program
 

@@ -154,6 +154,8 @@ class TemplateV2:
                 break
             idx += 1
 
+        import dspy
+
         idx = min(idx, len(self.fields) - 1)
         while raw_pred != "" and idx < len(self.fields):
             if idx < len(self.fields) - 1:
@@ -161,20 +163,32 @@ class TemplateV2:
                 offset = raw_pred.find(next_field_name)
 
                 if offset >= 0:
-                    example[self.fields[idx].output_variable] = raw_pred[
-                        :offset
-                    ].strip()
-                    raw_pred = raw_pred[offset + len(next_field_name) :].strip()
+                    if dspy.settings.release >= 20231003:
+                        example[self.fields[idx].output_variable] = raw_pred[:offset].strip().rstrip('---').strip()
+                        raw_pred = raw_pred[offset + len(next_field_name) :].strip().rstrip('---').strip()
+                    else:
+                        example[self.fields[idx].output_variable] = raw_pred[:offset].strip()
+                        raw_pred = raw_pred[offset + len(next_field_name) :].strip()
+
                     idx += 1
                 else:
-                    example[self.fields[idx].output_variable] = raw_pred.strip()
+                    if dspy.settings.release >= 20231003:
+                        example[self.fields[idx].output_variable] = raw_pred.strip().rstrip('---').strip()
+                    else:
+                        example[self.fields[idx].output_variable] = raw_pred.strip()
+
                     raw_pred = ""
                     idx += 1
                     break
 
             else:
                 assert idx == len(self.fields) - 1, (idx, len(self.fields))
-                example[self.fields[idx].output_variable] = raw_pred.strip()
+
+                if dspy.settings.release >= 20231003:
+                    example[self.fields[idx].output_variable] = raw_pred.strip().rstrip('---').strip()
+                else:
+                    example[self.fields[idx].output_variable] = raw_pred.strip()
+
                 break
 
         return example
@@ -209,16 +223,23 @@ class TemplateV2:
 
         # Move the rdemos to ademos if rdemo has all the fields filled in
         rdemos_ = []
+        new_ademos = []
         for rdemo in rdemos:
             if all(
-                field.name in rdemo
+                (field.name in rdemo)
                 for field in self.fields
                 if field.input_variable in example
             ):
-                ademos.append(rdemo)
+                import dspy
+
+                if dspy.settings.release >= 20230928:
+                    new_ademos.append(rdemo)
+                else:
+                    ademos.append(rdemo)
             else:
                 rdemos_.append(rdemo)
         
+        ademos = new_ademos + ademos
         rdemos = rdemos_
 
 
