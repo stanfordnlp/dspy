@@ -1,5 +1,3 @@
-import os
-
 import dspy
 from dsp.utils import deduplicate
 from dspy.datasets import HotPotQA
