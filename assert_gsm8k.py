@@ -1,5 +1,6 @@
+import re
 import dspy
-from dsp.utils import deduplicate
+from dspy import Example
 from dspy.teleprompt import LabeledFewShot, BootstrapFewShotWithRandomSearch
 
 import datasets
@@ -9,38 +10,58 @@ turbo = dspy.OpenAI(model="gpt-3.5-turbo")
 dspy.settings.configure(lm=turbo)
 
 
-# load up the gsm8k dataset from the huggingface hub
-dataset = datasets.load_dataset("gsm8k")
+# load up the gsm8k dataset from hub into a dspy-compatible format
+dataset = datasets.load_dataset("gsm8k", 'main')
+training_data = dataset["train"].shuffle(seed=42).select(range(200))
+dev_data = dataset["train"].shuffle(seed=42).select(range(200, 500))
 
-# split into train and test
-trainset = dataset["train"]
-testset = dataset["test"]
+trainset = [Example(x).with_inputs("question") for x in training_data]
+devset = [Example(x).with_inputs("question") for x in dev_data]
+testset = [Example(x).with_inputs("question") for x in dataset["test"]]
 
-print(trainset)
+# validation function
+def gsm8k_accuracy(example, pred):
+    ANS_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
+    INVALID_ANS = "[invalid]"
+    
+    def extract_answer(completion):
+        match = ANS_RE.search(completion)
+        if match:
+            match_str = match.group(1).strip()
+            match_str = match_str.replace(",", "")
+            return match_str
+        else:
+            return INVALID_ANS
 
-# # each example should have a question and answer
-# trainset = []
-# testset = []
+    gt_answer = extract_answer(example.answer)
+    assert gt_answer != INVALID_ANS
+    
+    pred_answer = extract_answer(pred.answer)
+    print("GT:", gt_answer, "PRED:", pred.answer, "PRED-ANS:", pred_answer)
+    
+    return pred_answer == gt_answer
 
-# def gsm8k_accuracy(example, pred, trace=None):
-#     if not dspy.evaluate.answer_exact_match(example, pred):
-#         return False
-#     return True
-
-# class ThoughtReflection(dspy.Module):
-#     def __init__(self, num_attempts):
-#         self.predict = dspy.ChainOfThought("question -> answer", n=num_attempts)
-#         self.compare = dspy.MultiChainComparison("question -> answer", M=num_attempts)
+class ThoughtReflection(dspy.Module):
+    def __init__(self, num_attempts):
+        self.predict = dspy.ChainOfThought("question -> answer", n=num_attempts)
+        self.compare = dspy.MultiChainComparison("question -> answer", M=num_attempts)
         
-#     def forward(self, question):
-#         completions = self.predict(question=question).completions
-#         answer = self.compare(question=question, completions=completions)
-#         return answer
+    def forward(self, question):
+        completions = self.predict(question=question).completions
+        answer = self.compare(question=question, completions=completions)
+        return answer
 
 
-# telemprompter = LabeledFewShot(k=8)
-# # teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_accuracy)    
+# teleprompter = LabeledFewShot(k=8)
+teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_accuracy)    
 
+prog = ThoughtReflection(num_attempts=5)
+compiled_prog = teleprompter.compile(prog, trainset=trainset, valset=devset)
 
-# prog = ThoughtReflection(num_attempts=5)
-# compiled_prog = telemprompter.compile(prog, trainset=trainset)
+my_question = testset[0].question
+pred = compiled_prog(my_question)
+
+print("Question:", my_question)
+turbo.inspect_history(n=1)
+
+# TODO: Debug the parsing of the output!
