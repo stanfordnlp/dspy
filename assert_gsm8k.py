@@ -12,8 +12,8 @@ dspy.settings.configure(lm=turbo)
 
 # load up the gsm8k dataset from hub into a dspy-compatible format
 dataset = datasets.load_dataset("gsm8k", 'main')
-training_data = dataset["train"].shuffle(seed=42).select(range(2))
-dev_data = dataset["train"].shuffle(seed=42).select(range(2, 5))
+training_data = dataset["train"].shuffle(seed=42).select(range(10))
+dev_data = dataset["train"].shuffle(seed=42).select(range(10, 30))
 
 trainset = [Example(x).with_inputs("question") for x in training_data]
 devset = [Example(x).with_inputs("question") for x in dev_data]
@@ -63,7 +63,7 @@ class ThoughtReflection(dspy.Module):
 teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_accuracy)    
 
 prog = ThoughtReflection(num_attempts=5)
-compiled_prog = teleprompter.compile(prog, trainset=trainset) #, valset=devset)
+compiled_prog = teleprompter.compile(prog, trainset=trainset, valset=devset)
 
 my_question = testset[0].question
 pred = compiled_prog(my_question)
