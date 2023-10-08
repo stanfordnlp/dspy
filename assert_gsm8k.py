@@ -13,7 +13,7 @@ dspy.settings.configure(lm=turbo)
 # load up the gsm8k dataset from hub into a dspy-compatible format
 dataset = datasets.load_dataset("gsm8k", 'main')
 training_data = dataset["train"].shuffle(seed=42).select(range(10))
-dev_data = dataset["train"].shuffle(seed=42).select(range(10, 30))
+dev_data = dataset["train"].shuffle(seed=42).select(range(10, 15))
 
 trainset = [Example(x).with_inputs("question") for x in training_data]
 devset = [Example(x).with_inputs("question") for x in dev_data]
