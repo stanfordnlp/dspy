@@ -52,6 +52,9 @@ class Predict(Parameter):
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
+
+        import dspy
+        self.demos = [dspy.Example(**x) for x in self.demos]
     
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
