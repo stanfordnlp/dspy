@@ -45,6 +45,27 @@ class GenerateAnswer(dspy.Signature):
     """Answer questions with a single numeric value."""
     question = dspy.InputField()
     answer = dspy.OutputField(desc="#### ${answer}")
+    
+
+########## PROGRAMS ##########
+
+class Vanilla(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict = dspy.Predict(GenerateAnswer)
+    
+    def forward(self, question):
+        return self.predict(question=question)
+
+
+class CoT(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict = dspy.ChainOfThought(GenerateAnswer)
+    
+    def forward(self, question):
+        return self.predict(question=question)
+
 
 class ThoughtReflection(dspy.Module):
     def __init__(self, num_attempts):
@@ -58,12 +79,16 @@ class ThoughtReflection(dspy.Module):
         answer = self.compare(question=question, completions=completions)
         return answer
 
+########## COMPILATION (w/ random hyperparameter search) ##########
 
-# teleprompter = LabeledFewShot(k=8) # gives error?
-teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_accuracy)    
+prog = Vanilla()
+# prog = CoT()
+# prog = ThoughtReflection(num_attempts=5)
 
-prog = ThoughtReflection(num_attempts=5)
+teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_accuracy)
 compiled_prog = teleprompter.compile(prog, trainset=trainset, valset=devset)
+
+########## EVALUATION ##########
 
 my_question = testset[0].question
 pred = compiled_prog(my_question)
