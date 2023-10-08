@@ -44,7 +44,6 @@ class SignatureMeta(type):
         # Redirect attribute access to the template object when accessed on the class directly
         return getattr(cls._template, attr)
 
-
 class Signature(metaclass=SignatureMeta):
     def __init__(self, signature: str = "", instructions: str = ""):
         self.signature = signature
@@ -82,10 +81,28 @@ class Signature(metaclass=SignatureMeta):
             field_instance = field_type
         else:
             raise ValueError(f"non-existent {field_type}.")
-        if position == "prepend":
+        if isinstance(field_instance, InputField) and position == "append":
+            input_fields = self.input_fields()
+            if input_fields:
+                last_input_key = list(input_fields.keys())[-1]
+                index = list(self.fields.keys()).index(last_input_key) + 1
+                self.fields = {**dict(list(self.fields.items())[:index]), field_name: field_instance, **dict(list(self.fields.items())[index:])}
+            else:
+                self.fields[field_name] = field_instance
+        elif isinstance(field_instance, OutputField) and position == "prepend":
+            output_fields = self.output_fields()
+            if output_fields:
+                first_output_key = list(output_fields.keys())[0]
+                index = list(self.fields.keys()).index(first_output_key)
+                self.fields = {**dict(list(self.fields.items())[:index]), field_name: field_instance, **dict(list(self.fields.items())[index:])}
+            else:
+                self.fields[field_name] = field_instance
+        elif position == "prepend":
             self.fields = {field_name: field_instance, **self.fields}
-        else:
+        elif position == "append":
             self.fields[field_name] = field_instance
+        else:
+            raise ValueError(f"invalid field addition. Please verify that your field name: {field_name}, field_type: {field_type}, and expected position: {position} are correct.")
 
     def input_fields(self):
         return {k: v for k, v in self.fields.items() if isinstance(v, InputField)}
