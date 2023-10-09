@@ -5,6 +5,8 @@ from dspy.teleprompt import LabeledFewShot, BootstrapFewShotWithRandomSearch
 
 import datasets
 
+from tool import calculator, prefix_calculator
+
 # pipeline configs
 turbo = dspy.OpenAI(model="gpt-3.5-turbo-16k")
 dspy.settings.configure(lm=turbo)
