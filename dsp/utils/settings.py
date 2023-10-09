@@ -41,7 +41,7 @@ class Settings(object):
     def config(self):
         thread_id = threading.get_ident()
         if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[0].copy()]
+            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
         return self.stack_by_thread[thread_id][-1]
 
     def __getattr__(self, name):
@@ -56,7 +56,7 @@ class Settings(object):
     def __append(self, config):
         thread_id = threading.get_ident()
         if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[0].copy()]
+            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
         self.stack_by_thread[thread_id].append(config)
 
     def __pop(self):
