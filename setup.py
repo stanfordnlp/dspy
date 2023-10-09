@@ -21,6 +21,9 @@ setup(
     packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),
     python_requires='>=3.9',
     install_requires=requirements,
+    extras_require={
+        "pinecone": ["pinecone-client~=2.2.4"]
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",

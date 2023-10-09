@@ -56,7 +56,11 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 > _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
 
+For the optional Pinecone retrieval integration, include the `pinecone` extra:
 
+```
+pip install dspy-ai[pinecone]
+```
 
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
 
