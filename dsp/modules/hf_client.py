@@ -7,7 +7,7 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-2", **kwargs):
+    def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
         super().__init__(model=model, is_client=True)
 
         self.url = url
