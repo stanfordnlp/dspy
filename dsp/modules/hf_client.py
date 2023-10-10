@@ -7,7 +7,7 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
+    def __init__(self, model, port, url="http://future-hgx-2", **kwargs):
         super().__init__(model=model, is_client=True)
 
         self.url = url
@@ -83,6 +83,40 @@ def send_hftgi_request_v01(arg, url, ports, **kwargs):
 def send_hftgi_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
+class HFServerTGI:
+    def __init__(self, user_dir):
+        self.model_weights_dir = os.path.abspath(os.path.join(os.getcwd(), "text-generation-inference", user_dir))
+        if not os.path.exists(self.model_weights_dir):
+            os.makedirs(self.model_weights_dir)
+
+    def close_server(self, port):
+        process = subprocess.Popen(['docker', 'ps'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, _ = process.communicate()
+        print(stdout)
+        if stdout:
+            container_ids = stdout.decode().strip().split('\n')
+            container_ids = container_ids[1:]
+            for container_id in container_ids:
+                match = re.search(r'^([a-zA-Z0-9]+)', container_id)
+                if match:
+                    container_id = match.group(1)
+                    port_mapping = subprocess.check_output(['docker', 'port', container_id]).decode().strip()
+                    if f'0.0.0.0:{port}' in port_mapping:
+                        subprocess.run(['docker', 'stop', container_id])
+
+    def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):        
+        self.close_server(port)
+        if model_path:
+            model_file_name = os.path.basename(model_path)
+            link_path = os.path.join(self.model_weights_dir, model_file_name)
+            shutil.copytree(model_path, link_path)
+            model_name = os.path.sep + os.path.basename(self.model_weights_dir) + os.path.sep + os.path.basename(model_path)
+        docker_command = f'docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:0.9.3 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}'
+        print(f"Connect Command: {docker_command}")
+        docker_process = subprocess.Popen(docker_command, shell=True)
+        time.sleep(10)
+        docker_process.terminate()
+        docker_process.wait()
 
 class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
