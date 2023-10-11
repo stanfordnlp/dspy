@@ -3,10 +3,10 @@ import tqdm
 import random
 
 from dspy.primitives import Example
-from dspy.teleprompt.bootstrap import BootstrapFewShotBase
+from dspy.teleprompt.bootstrap import BootstrapFewShot
 
 
-class AsyncBootstrapFewShot(BootstrapFewShotBase):
+class AsyncBootstrapFewShot(BootstrapFewShot):
     async def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
         self.valset = valset
