@@ -19,3 +19,4 @@ ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 HFClientTGI = dsp.HFClientTGI
 ChatModuleClient = ChatModuleClient
+HFModel = dsp.HFModel

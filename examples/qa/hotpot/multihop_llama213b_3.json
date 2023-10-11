@@ -1,0 +1,348 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "context": [],
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "rationale": "determine if Stu Block and Johnny Bonnel's bands play the same type of music. We know that Stu Block is the lead vocalist of Iced Earth and Johnny Bonnel is the lead vocalist of Bonelord. Both bands are from the metal genre, but they have different styles. Iced Earth is a power metal band, while Bonelord is a doom metal band. Therefore, we can conclude that Stu Block and Johnny Bonnel's bands do not play the same type of music.",
+        "search_query": "\"Iced Earth\" OR \"Bonelord\""
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "context": [],
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "rationale": "find the search query. We know that Milan Sachs conducted the premiere of the play Jen\u016ffa, and that the composer was inspired by folk music. Therefore, we can start by searching for \"Jen\u016ffa\" and \"folk music\" to find relevant information.",
+        "search_query": "Jen\u016ffa folk music"
+      },
+      {
+        "question": "Who composed \"Sunflower Slow Drag\" with the King of Ragtime?",
+        "answer": "Scott Hayden",
+        "dspy_uuid": "4ab462bd-4d9b-4b7f-9371-14ba20ccd0db",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of \"Hamlet.\" ?",
+        "answer": "Kerry Condon",
+        "dspy_uuid": "1e87ebea-f541-4629-b995-498965fa1127",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "which  American actor was Candace Kita  guest starred with ",
+        "answer": "Bill Murray",
+        "dspy_uuid": "f1a7ba94-ab97-4efe-a38e-e4b1596ce2af",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "6dae3c13-007a-459e-a1bc-16fc64a3d0f9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "context": [
+          "Iced Earth | Iced Earth is an American heavy metal band from Tampa, Florida. It was formed in 1985 under the name Purgatory by guitarist and main songwriter Jon Schaffer and original drummer Greg Seymour. Iced Earth released their debut album in 1990 and have since released eleven studio albums, four EPs, three compilations, three box sets, three live albums and one cover album.",
+          "Iced Earth (album) | Iced Earth is the eponymous debut studio album by American heavy metal band Iced Earth. It was released in November 1990 internationally and February 1991 in North America. The album has three different covers (a European\/Japanese cover, an American cover and a remastered cover). This album was Mike McGill's only album with Iced Earth, as well as the last for singer Gene Adam.",
+          "Iced Earth discography | The discography of Iced Earth, an American heavy metal band, consists of twelve studio releases, two live albums, three compilations, five singles, three videos, and ten music videos. Originally formed as Purgatory by guitarist Jon Schaffer on January 20, 1985, the band spent five years playing live locally and went through several line-up changes. After changing their name to Iced Earth, the band recorded the demo \"Enter the Realm\" (1989), which landed them a deal with the German label, Century Media Records. One year later, the band recorded their self-titled album \"Iced Earth\", followed by 1991's \"Night of the Stormrider\", which peaked at number 60 on the Japanese Oricon charts. Three years later, Iced Earth released \"Burnt Offerings\", featuring new vocalist Matthew Barlow, followed by \"The Dark Saga\" (1996)."
+        ],
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "rationale": "determine if Stu Block and Johnny Bonnel's bands play the same type of music. We know that Stu Block is the vocalist of In Flames, and Johnny Bonnel is the vocalist of The Gathering. We also know that both bands are from Europe and have been active in the metal scene for a long time. However, we need to consider the specific genre of music that each band plays.",
+        "search_query": "metal"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "context": [
+          "Jen\u016ffa | Jen\u016ffa (Jej\u00ed pastorky\u0148a, \"Her Stepdaughter\" in Czech) is an opera in three acts by Leo\u0161 Jan\u00e1\u010dek to a Czech libretto by the composer, based on the play \"Jej\u00ed pastorky\u0148a\" by Gabriela Preissov\u00e1. It was first performed at the Brno Theater, Brno, 21 January 1904. It was written between 1896 and 1902, and counts among the first operas written in prose.",
+          "Jenkka | Jenkka ['je\u014bk\u02d0\u0251] is a fast Finnish partner dance originated in Finnish folk dance, the Finnish version of Schottische. It is danced to the music in 2\/4 or 4\/4 time signature of about 140 beats per minute.",
+          "Jeni Jol | Jeni Jol is a Rom folk dance from the region of Skopje, Macedonia."
+        ],
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "rationale": "produce the search query. We know that the opera Jen\u016ffa was written by Leo\u0161 Jan\u00e1\u010dek, and it was inspired by Czech folk music. Therefore, we can start by searching for \"Leo\u0161 Jan\u00e1\u010dek\" and \"Czech folk music\" to find relevant information.",
+        "search_query": "Leo\u0161 Jan\u00e1\u010dek Czech folk music"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of \"Hamlet.\" ?",
+        "answer": "Kerry Condon",
+        "dspy_uuid": "1e87ebea-f541-4629-b995-498965fa1127",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      },
+      {
+        "question": "which  American actor was Candace Kita  guest starred with ",
+        "answer": "Bill Murray",
+        "dspy_uuid": "f1a7ba94-ab97-4efe-a38e-e4b1596ce2af",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who composed \"Sunflower Slow Drag\" with the King of Ragtime?",
+        "answer": "Scott Hayden",
+        "dspy_uuid": "4ab462bd-4d9b-4b7f-9371-14ba20ccd0db",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "6dae3c13-007a-459e-a1bc-16fc64a3d0f9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "context": [
+          "Iced Earth | Iced Earth is an American heavy metal band from Tampa, Florida. It was formed in 1985 under the name Purgatory by guitarist and main songwriter Jon Schaffer and original drummer Greg Seymour. Iced Earth released their debut album in 1990 and have since released eleven studio albums, four EPs, three compilations, three box sets, three live albums and one cover album.",
+          "Iced Earth (album) | Iced Earth is the eponymous debut studio album by American heavy metal band Iced Earth. It was released in November 1990 internationally and February 1991 in North America. The album has three different covers (a European\/Japanese cover, an American cover and a remastered cover). This album was Mike McGill's only album with Iced Earth, as well as the last for singer Gene Adam.",
+          "Iced Earth discography | The discography of Iced Earth, an American heavy metal band, consists of twelve studio releases, two live albums, three compilations, five singles, three videos, and ten music videos. Originally formed as Purgatory by guitarist Jon Schaffer on January 20, 1985, the band spent five years playing live locally and went through several line-up changes. After changing their name to Iced Earth, the band recorded the demo \"Enter the Realm\" (1989), which landed them a deal with the German label, Century Media Records. One year later, the band recorded their self-titled album \"Iced Earth\", followed by 1991's \"Night of the Stormrider\", which peaked at number 60 on the Japanese Oricon charts. Three years later, Iced Earth released \"Burnt Offerings\", featuring new vocalist Matthew Barlow, followed by \"The Dark Saga\" (1996).",
+          "Metal | A metal (from Greek \u03bc\u03ad\u03c4\u03b1\u03bb\u03bb\u03bf\u03bd \"m\u00e9tallon\", \"mine, quarry, metal\") is a material (an element, compound, or alloy) that is typically hard, opaque, shiny, and has good electrical and thermal conductivity. Metals are generally malleable\u2014that is, they can be hammered or pressed permanently out of shape without breaking or cracking\u2014as well as fusible (able to be fused or melted) and ductile (able to be drawn out into a thin wire). About 91 of the 118 elements in the periodic table are metals; the others are nonmetals or metalloids. Some elements appear in both metallic and non-metallic forms.",
+          "Metal (disambiguation) | A metal is a material that is typically hard, opaque, shiny, and has good electrical and thermal conductivity.",
+          "Metal (Wu Xing) | Metal (), the fourth phase of the Chinese philosophy of Wu Xing, is the decline of the matter, or the matter's decline stage. Metal is yin in character, its motion is inwards and its energy is contracting. It is associated with the autumn, the west, old age, the planet Venus, the color white, dry weather, and the White Tiger (Bai Hu) in Four Symbols. The archetypal metals are silver and gold."
+        ],
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "rationale": "determine if Stu Block and Johnny Bonnel's bands play the same type of music. We know that Stu Block is the lead vocalist of Iced Earth, an American heavy metal band from Tampa, Florida, and Johnny Bonnel is the lead vocalist of the band Evergrey, a Swedish heavy metal band. Both bands are considered heavy metal bands, but there are some differences in their styles. Iced Earth's music is more power metal-oriented, while Evergrey's music is more progressive metal-oriented. Therefore, we can conclude that Stu Block and Johnny Bonnel's bands do not play the same type of music.",
+        "answer": "No."
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "context": [
+          "Jen\u016ffa | Jen\u016ffa (Jej\u00ed pastorky\u0148a, \"Her Stepdaughter\" in Czech) is an opera in three acts by Leo\u0161 Jan\u00e1\u010dek to a Czech libretto by the composer, based on the play \"Jej\u00ed pastorky\u0148a\" by Gabriela Preissov\u00e1. It was first performed at the Brno Theater, Brno, 21 January 1904. It was written between 1896 and 1902, and counts among the first operas written in prose.",
+          "Jenkka | Jenkka ['je\u014bk\u02d0\u0251] is a fast Finnish partner dance originated in Finnish folk dance, the Finnish version of Schottische. It is danced to the music in 2\/4 or 4\/4 time signature of about 140 beats per minute.",
+          "Jeni Jol | Jeni Jol is a Rom folk dance from the region of Skopje, Macedonia.",
+          "Leo\u0161 Jan\u00e1\u010dek | Leo\u0161 Jan\u00e1\u010dek (] , baptised Leo Eugen Jan\u00e1\u010dek; 3 July 1854 \u2013 12 August 1928) was a Czech composer, musical theorist, folklorist, publicist and teacher. He was inspired by Moravian and other Slavic folk music to create an original, modern musical style.",
+          "Lachian Dances | The Lachian Dances was the first mature work by the Czech composer Leo\u0161 Jan\u00e1\u010dek. Originally titled Wallachian Dances after the Moravian Wallachia region, Jan\u00e1\u010dek later changed the title when the region's name also changed, since it reflects folk songs from that specific area.",
+          "The Cunning Little Vixen | The Cunning Little Vixen (Czech: \"P\u0159\u00edhody li\u0161ky Bystrou\u0161ky\" , lit. \"Adventures of the vixen known as Sharp-Ears\", and, until the 1970s, generally referred to in English as Adventures of Vixen Sharp-Ears) is a Czech language opera by Leo\u0161 Jan\u00e1\u010dek, composed 1921 to 1923, in which a clever fox and accompanying wildlife (as well as a few humans) have small adventures while traversing their lifecycles. Its libretto was adapted by the composer from a serialized novella (daily comic) by Rudolf T\u011bsnohl\u00eddek and Stanislav Lolek, which was first published in the newspaper \"Lidov\u00e9 noviny\". The opera incorporates Moravian folk music and rhythms. Described as a comic opera, it has nonetheless been noted to contain a serious theme. Interpretations of the work remain varied, ranging from children's entertainment to a tragedy."
+        ],
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "rationale": "answer the question. We know that the composer of Jen\u016ffa was Leo\u0161 Jan\u00e1\u010dek, and that the play was inspired by Moravian and other Slavic folk music. Milan Sachs conducted the premiere of the play, so we can infer that he was involved in the performance of the opera. Therefore, the answer is Moravian and other Slavic folk music.",
+        "answer": "Moravian and other Slavic folk music."
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "which  American actor was Candace Kita  guest starred with ",
+        "answer": "Bill Murray",
+        "dspy_uuid": "f1a7ba94-ab97-4efe-a38e-e4b1596ce2af",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who composed \"Sunflower Slow Drag\" with the King of Ragtime?",
+        "answer": "Scott Hayden",
+        "dspy_uuid": "4ab462bd-4d9b-4b7f-9371-14ba20ccd0db",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "6dae3c13-007a-459e-a1bc-16fc64a3d0f9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of \"Hamlet.\" ?",
+        "answer": "Kerry Condon",
+        "dspy_uuid": "1e87ebea-f541-4629-b995-498965fa1127",
+        "dspy_split": "train"
+      }
+    ]
+  }
+}

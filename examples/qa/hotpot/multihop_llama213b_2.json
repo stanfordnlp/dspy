@@ -1,0 +1,346 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "context": [],
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "rationale": "find the answer. We know that Gustavo Kuerten won the tournament in 2000, so we can start by searching for his name.",
+        "search_query": "Gustavo Kuerten"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "find the answer to this question. We know that the first book in The Twilight Saga was published in 2005, so we can start by searching for books published in that year. We can also use keywords like \"vampire-themed\" and \"fantasy romance\" to narrow down our search results.",
+        "search_query": "\"vampire-themed fantasy romance novels 2005\""
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Some performance of Take a Bow took place near the bank of which river?",
+        "answer": "River Thames",
+        "dspy_uuid": "937a5676-7522-4e67-8e1e-d0b5651fad73",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
+        "answer": "The Waltz King",
+        "dspy_uuid": "03b3104e-c9f4-4c17-83c7-1354563946df",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Remember Me Ballin' is a CD single by Indo G that features an American rapper born in what year?",
+        "answer": "1979",
+        "dspy_uuid": "7b759a0a-8c96-4735-8f6e-1e8b1eae4861",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "At My Window was released by which American singer-songwriter?",
+        "answer": "John Townes Van Zandt",
+        "dspy_uuid": "da05e5f3-7e82-4abe-a855-e26a85c958d6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "answer": "Moravian and other Slavic folk music",
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What evening cable television station programming block has a show with Ashley Holliday as a cast member?",
+        "answer": "Nick at Nite",
+        "dspy_uuid": "fc3163d5-be7d-4f18-bd21-138373f638b4",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "context": [
+          "Gustavo Kuerten | Gustavo Kuerten (] ; born 10 September 1976), nicknamed Guga, is a retired former World No. 1 tennis player from Brazil. He won the French Open singles title three times (1997, 2000, and 2001), and was the Tennis Masters Cup champion in 2000. Kuerten suffered many problems with injuries which led him to miss a number of tournaments between 2002 and 2005. After a few failed attempted comebacks, he retired from top-level tennis in May 2008. During his career he won 20 singles and 8 doubles titles.",
+          "Gustavo Kuerten career statistics | This is a list of the main career statistics of Brazilian tennis player, Gustavo Kuerten. Kuerten won a total of 28 ATP titles \u2014 20 in singles and 8 in doubles. He won 3 Grand Slam titles, 5 ATP Masters Series tournaments and a Tennis Masters Cup.",
+          "2004 Heineken Open \u2013 Singles | Gustavo Kuerten was the defending champion of the singles event at the Heineken Open tennis tournament, held in Auckland, New Zealand, but lost in the semifinals to Dominik Hrbat\u00fd."
+        ],
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "rationale": "produce the search query. We know that Gustavo Kuerten won the Tennis Masters Cup in 2000, so we can start by searching for [Gustavo Kuerten Tennis Masters Cup 2000]. This should give us the information we need.",
+        "search_query": "Gustavo Kuerten Tennis Masters Cup 2000"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [
+          "Twilight (novel series) | Twilight is a series of four vampire-themed fantasy romance novels by American author Stephenie Meyer. Released annually from 2005 through 2008, the four books chart the later teen years of Isabella \"Bella\" Swan, a girl who moves to Forks, Washington, and falls in love with a 104-year-old vampire named Edward Cullen. The series is told primarily from Bella's point of view, with the epilogue of \"Eclipse\" and Part II of \"Breaking Dawn\" being told from the viewpoint of character Jacob Black, a werewolf. The unpublished \"Midnight Sun\" is a retelling of the first book, \"Twilight\", from Edward Cullen's point of view. The novella \"The Short Second Life of Bree Tanner\", which tells the story of a newborn vampire who appeared in \"Eclipse\", was published on June 5, 2010, as a hardcover book and on June 7 as a free online ebook. \"\" , a definitive encyclopedic reference with nearly 100 full color illustrations, was released in bookstores on April 12, 2011.",
+          "Harper Connelly Mysteries | The Harper Connelly Mysteries is a series of fantasy mystery novels written by Charlaine Harris, and first published in 2005. Harris is known best for penning The Southern Vampire Mysteries (also referred to as the True Blood Series), a series rich in supernatural characters such as vampires, telepaths, werewolves, shapeshifters and fairies; she has also written more traditional (non-paranormal) mysteries. The Harper Connelly Mysteries is also centered on a character with supernatural abilities, however these abilities are more subtle than in the Southern Vampire series.",
+          "The Dark Heroine | The Dark Heroine is a series of vampire-themed fantasy romance novels written by English author Abigail Gibbs, published by HarperCollins in 2012. The first novel in the series, \"Dinner with a Vampire,\" revolves around London-born Violet Lee, who is kidnapped and held hostage by a Royal Family of vampires known as the Varns. The series is told from both Violet Lee and Kaspar Varn's perspective, the latter being heir to the Vamperic Throne in the novel."
+        ],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "determine the year the first of the vampire-themed fantasy romance novels was first published. We know that The Twilight Saga: The Official Illustrated Guide was published in 2011, and it serves as a spin-off encyclopedic reference book for the Twilight series. Therefore, we can deduce that the first of the vampire-themed fantasy romance novels must have been published before 2011.",
+        "search_query": "When was the first of the vampire-themed fantasy romance novels published?"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Some performance of Take a Bow took place near the bank of which river?",
+        "answer": "River Thames",
+        "dspy_uuid": "937a5676-7522-4e67-8e1e-d0b5651fad73",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "At My Window was released by which American singer-songwriter?",
+        "answer": "John Townes Van Zandt",
+        "dspy_uuid": "da05e5f3-7e82-4abe-a855-e26a85c958d6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
+        "answer": "The Waltz King",
+        "dspy_uuid": "03b3104e-c9f4-4c17-83c7-1354563946df",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Remember Me Ballin' is a CD single by Indo G that features an American rapper born in what year?",
+        "answer": "1979",
+        "dspy_uuid": "7b759a0a-8c96-4735-8f6e-1e8b1eae4861",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What evening cable television station programming block has a show with Ashley Holliday as a cast member?",
+        "answer": "Nick at Nite",
+        "dspy_uuid": "fc3163d5-be7d-4f18-bd21-138373f638b4",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "answer": "Moravian and other Slavic folk music",
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "context": [
+          "Gustavo Kuerten | Gustavo Kuerten (] ; born 10 September 1976), nicknamed Guga, is a retired former World No. 1 tennis player from Brazil. He won the French Open singles title three times (1997, 2000, and 2001), and was the Tennis Masters Cup champion in 2000. Kuerten suffered many problems with injuries which led him to miss a number of tournaments between 2002 and 2005. After a few failed attempted comebacks, he retired from top-level tennis in May 2008. During his career he won 20 singles and 8 doubles titles.",
+          "Gustavo Kuerten career statistics | This is a list of the main career statistics of Brazilian tennis player, Gustavo Kuerten. Kuerten won a total of 28 ATP titles \u2014 20 in singles and 8 in doubles. He won 3 Grand Slam titles, 5 ATP Masters Series tournaments and a Tennis Masters Cup.",
+          "2004 Heineken Open \u2013 Singles | Gustavo Kuerten was the defending champion of the singles event at the Heineken Open tennis tournament, held in Auckland, New Zealand, but lost in the semifinals to Dominik Hrbat\u00fd.",
+          "2000 Tennis Masters Cup \u2013 Singles | Pete Sampras was the defending champion, but lost in the semifinals to Gustavo Kuerten.",
+          "2000 Monte Carlo Masters \u2013 Singles | Gustavo Kuerten was the defending champion, but lost in the first round this year."
+        ],
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "rationale": "answer this question. We know that Gustavo Kuerten was the Tennis Masters Cup champion in 2000, as stated in [2]. We also know that Stan Wawrinka did not win the Tennis Masters Cup in 2000, as he was not born yet (he was born in 1985). Therefore, the answer is Gustavo Kuerten.",
+        "answer": "Gustavo Kuerten"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [
+          "Twilight (novel series) | Twilight is a series of four vampire-themed fantasy romance novels by American author Stephenie Meyer. Released annually from 2005 through 2008, the four books chart the later teen years of Isabella \"Bella\" Swan, a girl who moves to Forks, Washington, and falls in love with a 104-year-old vampire named Edward Cullen. The series is told primarily from Bella's point of view, with the epilogue of \"Eclipse\" and Part II of \"Breaking Dawn\" being told from the viewpoint of character Jacob Black, a werewolf. The unpublished \"Midnight Sun\" is a retelling of the first book, \"Twilight\", from Edward Cullen's point of view. The novella \"The Short Second Life of Bree Tanner\", which tells the story of a newborn vampire who appeared in \"Eclipse\", was published on June 5, 2010, as a hardcover book and on June 7 as a free online ebook. \"\" , a definitive encyclopedic reference with nearly 100 full color illustrations, was released in bookstores on April 12, 2011.",
+          "Harper Connelly Mysteries | The Harper Connelly Mysteries is a series of fantasy mystery novels written by Charlaine Harris, and first published in 2005. Harris is known best for penning The Southern Vampire Mysteries (also referred to as the True Blood Series), a series rich in supernatural characters such as vampires, telepaths, werewolves, shapeshifters and fairies; she has also written more traditional (non-paranormal) mysteries. The Harper Connelly Mysteries is also centered on a character with supernatural abilities, however these abilities are more subtle than in the Southern Vampire series.",
+          "The Dark Heroine | The Dark Heroine is a series of vampire-themed fantasy romance novels written by English author Abigail Gibbs, published by HarperCollins in 2012. The first novel in the series, \"Dinner with a Vampire,\" revolves around London-born Violet Lee, who is kidnapped and held hostage by a Royal Family of vampires known as the Varns. The series is told from both Violet Lee and Kaspar Varn's perspective, the latter being heir to the Vamperic Throne in the novel.",
+          "Night Huntress | Night Huntress is a series of \"New York Times\" bestselling urban fantasy romance novels by author Jeaniene Frost. The first novel was published in 2007 by Avon and takes place in a world where supernatural creatures exist but are not known to the general public at large. The series initially focused around the character of half-vampire Catherine \"Cat\" Crawfield and her full-vampire lover Bones, but eventually shifted focus to other characters such as Vlad Tepesh, a character that Frost had initially not planned to include.",
+          "John William Polidori | John William Polidori (7 September 1795 \u2013 24 August 1821) was an English writer and physician. He is known for his associations with the Romantic movement and credited by some as the creator of the vampire genre of fantasy fiction. His most successful work was the short story \"The Vampyre\" (1819), the first published modern vampire story. Although originally and erroneously accredited to Lord Byron, both Byron and Polidori affirmed that the story is Polidori's."
+        ],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "determine the correct answer. We know that The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book for the Twilight series, which was first published in 2005. However, the other options are also vampire-themed fantasy romance novels, and were first published in 2005, 2007, 2010, and 2012 respectively. Therefore, we need to examine each option carefully to determine which one is the correct answer.",
+        "answer": "2005"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "At My Window was released by which American singer-songwriter?",
+        "answer": "John Townes Van Zandt",
+        "dspy_uuid": "da05e5f3-7e82-4abe-a855-e26a85c958d6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
+        "answer": "The Waltz King",
+        "dspy_uuid": "03b3104e-c9f4-4c17-83c7-1354563946df",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Remember Me Ballin' is a CD single by Indo G that features an American rapper born in what year?",
+        "answer": "1979",
+        "dspy_uuid": "7b759a0a-8c96-4735-8f6e-1e8b1eae4861",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "7466462a-c7b5-4fee-a867-9324d39125e9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "821a4e4d-a146-44a7-bdaa-48b7efb4e7cc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What evening cable television station programming block has a show with Ashley Holliday as a cast member?",
+        "answer": "Nick at Nite",
+        "dspy_uuid": "fc3163d5-be7d-4f18-bd21-138373f638b4",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Some performance of Take a Bow took place near the bank of which river?",
+        "answer": "River Thames",
+        "dspy_uuid": "937a5676-7522-4e67-8e1e-d0b5651fad73",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "answer": "Moravian and other Slavic folk music",
+        "dspy_uuid": "0610d91f-d32e-4bcd-b0a7-d03fbe9538e3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      }
+    ]
+  }
+}
