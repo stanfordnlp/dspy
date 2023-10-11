@@ -29,7 +29,7 @@ from dspy.evaluate.evaluate import Evaluate
 # TODO: Add baselines=[...]
 
 
-class BootstrapFewShotBase(Teleprompter):
+class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
         metric=None,
@@ -46,7 +46,17 @@ class BootstrapFewShotBase(Teleprompter):
         self.max_rounds = max_rounds
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
-        raise NotImplementedError
+        self.trainset = trainset
+        self.valset = valset
+
+        self._prepare_student_and_teacher(student, teacher)
+        self._prepare_predictor_mappings()
+        self._bootstrap()
+
+        self.student = self._train()
+        self.student._compiled = True
+
+        return self.student
 
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
@@ -89,50 +99,6 @@ class BootstrapFewShotBase(Teleprompter):
 
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
-
-    def _bootstrap(self, *, max_bootsraps=None):
-        raise NotImplementedError
-
-    def _bootstrap_one_example(self, example, round_idx=0):
-        raise NotImplementedError
-
-    def _train(self):
-        rng = random.Random(0)
-        raw_demos = self.validation
-
-        for name, predictor in self.student.named_predictors():
-            augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
-
-            sample_size = min(
-                self.max_labeled_demos - len(augmented_demos), len(raw_demos)
-            )
-            sample_size = max(0, sample_size)
-
-            raw_demos = rng.sample(raw_demos, sample_size)
-
-            import dspy
-
-            if dspy.settings.release >= 20230928:
-                predictor.demos = raw_demos + augmented_demos
-            else:
-                predictor.demos = augmented_demos + raw_demos
-
-        return self.student
-
-
-class BootstrapFewShot(BootstrapFewShotBase):
-    def compile(self, student, *, teacher=None, trainset, valset=None):
-        self.trainset = trainset
-        self.valset = valset
-
-        self._prepare_student_and_teacher(student, teacher)
-        self._prepare_predictor_mappings()
-        self._bootstrap()
-
-        self.student = self._train()
-        self.student._compiled = True
-
-        return self.student
 
     def _bootstrap(self, *, max_bootsraps=None):
         max_bootsraps = max_bootsraps or self.max_bootstrapped_demos
@@ -237,3 +203,26 @@ class BootstrapFewShot(BootstrapFewShotBase):
                 name2traces[predictor_name].append(demo)
 
         return success
+
+    def _train(self):
+        rng = random.Random(0)
+        raw_demos = self.validation
+
+        for name, predictor in self.student.named_predictors():
+            augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
+
+            sample_size = min(
+                self.max_labeled_demos - len(augmented_demos), len(raw_demos)
+            )
+            sample_size = max(0, sample_size)
+
+            raw_demos = rng.sample(raw_demos, sample_size)
+
+            import dspy
+
+            if dspy.settings.release >= 20230928:
+                predictor.demos = raw_demos + augmented_demos
+            else:
+                predictor.demos = augmented_demos + raw_demos
+
+        return self.student
