@@ -56,7 +56,7 @@ def assert_transform(max_backtracks=2):
 
     def wrapper(func):
         def inner(*args, **kwargs):
-            for i in range(max_backtracks+1):
+            for i in range(max_backtracks + 1):
                 try:
                     return func(*args, **kwargs)
                 except DSPyAssertionError as e:
@@ -79,7 +79,7 @@ def assert_update_transform(max_backtracks=2):
 
     def wrapper(func):
         def inner(*args, **kwargs):
-            for i in range(max_backtracks+1):
+            for i in range(max_backtracks + 1):
                 lm = dsp.settings.lm
 
                 if i > 0 and backtrack_to is not None:
@@ -119,7 +119,7 @@ def assert_latest_transform(max_backtracks=2):
         def inner(*args, **kwargs):
             backtrack_to = None
 
-            for i in range(max_backtracks+1):
+            for i in range(max_backtracks + 1):
                 if i > 0 and backtrack_to is not None:
                     print(f"rewinding to {id(backtrack_to)}")
 
@@ -167,18 +167,28 @@ def assert_latest_feedback_transform(max_backtracks=2):
             def _extend_predictor_signature(predictor, **kwargs):
                 """Update the signature of a predictor instance with specified fields."""
                 old_signature = predictor.extended_signature
-                *keys, last_key = old_signature.kwargs.keys()
+                new_signature_kwargs = {
+                    k: v
+                    for (k, v) in old_signature.kwargs.items()
+                    if isinstance(v, dspy.InputField)
+                }
+                new_signature_kwargs.update(kwargs)
+                new_signature_kwargs.update(
+                    {
+                        k: v
+                        for (k, v) in old_signature.kwargs.items()
+                        if isinstance(v, (dsp.Type, dspy.OutputField))
+                    }
+                )
 
-                extended_kwargs = {key: kwargs[key] for key in kwargs}
-                extended_kwargs.update({key: old_signature.kwargs[key] for key in keys})
-                extended_kwargs.update({last_key: old_signature.kwargs[last_key]})
+                new_signature = dsp.Template(
+                    old_signature.instructions, **new_signature_kwargs
+                )
 
-                new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
                 predictor.extended_signature = new_signature
 
             def _revert_predictor_signature(predictor, *args):
-                """Revert the signature of a predictor by removing specified fields.
-                """
+                """Revert the signature of a predictor by removing specified fields."""
                 old_signature_kwargs = predictor.extended_signature.kwargs
                 for key in args:
                     old_signature_kwargs.pop(key, None)
@@ -199,7 +209,7 @@ def assert_latest_feedback_transform(max_backtracks=2):
 
                 predictor.forward = new_forward
 
-            for i in range(max_backtracks+1):
+            for i in range(max_backtracks + 1):
                 if i > 0 and backtrack_to is not None:
                     print(f"rewinding to {id(backtrack_to)}")
 
@@ -207,10 +217,12 @@ def assert_latest_feedback_transform(max_backtracks=2):
                     feedback = dspy.InputField(
                         prefix="Instruction:", desc="Some instructions you must satisfy"
                     )
-                    
+
                     # save the original forward function to revert back to
-                    extended_predictors_to_original_forward[backtrack_to] = backtrack_to.forward
-                    
+                    extended_predictors_to_original_forward[
+                        backtrack_to
+                    ] = backtrack_to.forward
+
                     # extend signature with feedback field
                     _extend_predictor_signature(backtrack_to, feedback=feedback)
 
@@ -232,14 +244,17 @@ def assert_latest_feedback_transform(max_backtracks=2):
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
-            
+
             # revert any extended predictors to their originals
             if extended_predictors_to_original_forward:
-                for predictor, original_forward in extended_predictors_to_original_forward.items():
+                for (
+                    predictor,
+                    original_forward,
+                ) in extended_predictors_to_original_forward.items():
                     print(f"reverting predictor {id(predictor)}")
                     _revert_predictor_signature(predictor, "feedback")
                     predictor.forward = original_forward
-            
+
             return result
 
         return inner
