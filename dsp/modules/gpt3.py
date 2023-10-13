@@ -83,6 +83,17 @@ class GPT3(LM):
     def _openai_client():
         return openai
 
+    def _add_to_history(
+        self, prompt: str, response: OpenAIObject, kwargs: dict, raw_kwargs: dict
+    ):
+        history = {
+            "prompt": prompt,
+            "response": response,
+            "kwargs": kwargs,
+            "raw_kwargs": raw_kwargs,
+        }
+        self.history.append(history)
+
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
@@ -97,13 +108,7 @@ class GPT3(LM):
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
 
-        history = {
-            "prompt": prompt,
-            "response": response,
-            "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+        self._add_to_history(prompt, response, kwargs, raw_kwargs)
 
         return response
 

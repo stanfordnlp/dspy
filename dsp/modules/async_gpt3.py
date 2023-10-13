@@ -35,13 +35,7 @@ class AsyncGPT3(GPT3):
             kwargs["prompt"] = prompt
             response = await _a_gpt3_completion_request(**kwargs)
 
-        history = {
-            "prompt": prompt,
-            "response": response,
-            "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+        self._add_to_history(prompt, response, kwargs, raw_kwargs)
 
         return response
 
