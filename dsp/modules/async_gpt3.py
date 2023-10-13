@@ -90,7 +90,7 @@ class AsyncGPT3(GPT3):
 
 
 async def _a_gpt3_completion_request(**kwargs):
-    return openai.Completion.create(**kwargs)
+    return await openai.Completion.acreate(**kwargs)
 
 
 async def _a_gpt3_chat_request(**kwargs) -> OpenAIObject:

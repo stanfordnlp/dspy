@@ -8,11 +8,9 @@ from dspy.teleprompt.bootstrap import BootstrapFewShot
 
 class AsyncBootstrapFewShot(BootstrapFewShot):
     async def compile(self, student, *, teacher=None, trainset, valset=None):
-        self.trainset = trainset
-        self.valset = valset
-
-        self._prepare_student_and_teacher(student, teacher)
-        self._prepare_predictor_mappings()
+        self.prepare_for_bootstrap(
+            student, teacher=teacher, trainset=trainset, valset=valset
+        )
         await self._bootstrap()
 
         self.student = self._train()
@@ -61,24 +59,16 @@ class AsyncBootstrapFewShot(BootstrapFewShot):
 
         try:
             with dsp.settings.context(trace=[], **self.teacher_settings):
-                lm = dsp.settings.lm
-                lm = (
-                    lm.copy(temperature=0.7 + 0.001 * round_idx)
-                    if round_idx > 0
-                    else lm
-                )
-                new_settings = dict(lm=lm) if round_idx > 0 else {}
+                new_settings = self._make_new_settings(round_idx)
 
                 with dsp.settings.context(**new_settings):
-                    for name, predictor in teacher.named_predictors():
-                        predictor_cache[name] = predictor.demos
-                        predictor.demos = [x for x in predictor.demos if x != example]
+                    self._cache_and_update_predictor_demos(
+                        teacher, example, predictor_cache
+                    )
 
                     prediction = await teacher(**example.inputs())
                     trace = dsp.settings.trace
-
-                    for name, predictor in teacher.named_predictors():
-                        predictor.demos = predictor_cache[name]
+                    self._restore_predictor_demos_from_cache(teacher, predictor_cache)
 
                 success = (self.metric is None) or self.metric(
                     example, prediction, trace
@@ -92,34 +82,6 @@ class AsyncBootstrapFewShot(BootstrapFewShot):
             )
 
         if success:
-            for step in trace:
-                predictor, inputs, outputs = step
-
-                if "dspy_uuid" in example:
-                    demo = Example(
-                        augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs
-                    )
-                else:
-                    # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
-                    demo = Example(augmented=True, **inputs, **outputs)
-
-                try:
-                    predictor_name = self.predictor2name[id(predictor)]
-                except KeyError as e:
-                    continue  # FIXME: !
-
-                    # TODO: Look closer into this. It's a bit tricky to reproduce.
-                    print(
-                        f"Failed to find predictor {predictor} in {self.predictor2name}."
-                    )
-                    print(
-                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells."
-                    )
-                    print("Try restarting the notebook, or open an issue.")
-                    raise KeyError(
-                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}."
-                    ) from e
-
-                name2traces[predictor_name].append(demo)
+            self._make_successful_demos(trace, example, name2traces)
 
         return success
