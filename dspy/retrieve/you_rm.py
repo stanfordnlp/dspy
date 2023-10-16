@@ -31,7 +31,7 @@ class YouRM(dspy.Retrieve):
         )
         docs = []
         for query in queries:
-            headers = {"X-API-Key": os.environ["YDC_API_KEY"]}
+            headers = {"X-API-Key": self.ydc_api_key}
             results = requests.get(
                 f"https://api.ydc-index.io/search?query={query}",
                 headers=headers,
