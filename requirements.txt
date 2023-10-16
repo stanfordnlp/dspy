@@ -8,3 +8,4 @@ regex
 ujson
 tqdm
 datasets
+requests
