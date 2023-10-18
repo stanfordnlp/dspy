@@ -27,7 +27,7 @@ class ProgramOfThought(Module):
         
         self.code_generate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('generate')))
         self.code_regenerate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('regenerate')))
-        self.generate_answer = dspy.Predict(dsp.Template(instr, **self._generate_signature('answer')))
+        self.generate_answer = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('answer')))
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
