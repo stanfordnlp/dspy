@@ -1,13 +1,12 @@
 import dsp
 import dspy
 from ..primitives.program import Module
-from ..primitives.interpreter import CodePrompt, PythonInterpreter
+from ..primitives.python_interpreter import CodePrompt, PythonInterpreter
 import re
 
 class ProgramOfThought(Module):
     def __init__(self, signature, max_iters=3):
         super().__init__()
-
         self.signature = signature = dspy.Predict(signature).signature
         self.max_iters = max_iters
 
@@ -23,37 +22,45 @@ class ProgramOfThought(Module):
         instr.append(f"You will be given {inputs_} and you will respond with {outputs_}.")
         instr.append(f"Generating executable Python code that programmatically computes the correct {outputs_}.")
         instr.append(f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {outputs_}.")
-
-        self.code_generate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('generate')))
-
+        
+        instr = '\n'.join(instr)
+        
         self.code_generate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('generate')))
         self.code_regenerate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('regenerate')))
-        self.generate_answer = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('answer')))
+        self.generate_answer = dspy.Predict(dsp.Template(instr, **self._generate_signature('answer')))
 
     def _generate_signature(self, mode):
-        signature_dict = {}
-        if mode == 'generate':
-            signature_dict['question'] = self.signature.kwargs["question"]
-            signature_dict['code_output'] = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-        elif mode == 'regenerate':
-            signature_dict.update(self.input_fields)
-            signature_dict['generated_code'] = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-        else:
-            signature_dict.update(self.input_fields)
-            signature_dict['answer'] = self.signature.kwargs["answer"]
+        signature_dict = dict(self.input_fields)
+        fields_for_mode = {
+            'generate': {
+                'code_output': dspy.OutputField(prefix="Code:", desc="python code that answers the question")
+            },
+            'regenerate': {
+                'previous_code': dspy.InputField(prefix="Previous Code:", desc="previously-generated python code that errored"),
+                'error': dspy.InputField(prefix="Error:", desc="error message from previously-generated python code"),
+                'generated_code': dspy.OutputField(prefix="Code:", desc="python code that answers the question")
+            },
+            'answer': {
+                'final_generated_code': dspy.InputField(prefix="Code:", desc="python code that answers the question"),
+                'code_output': dspy.InputField(prefix="Code Output:", desc="output of previously-generated python code"),
+                'answer': self.signature.kwargs["answer"]
+            }
+        }
+        signature_dict.update(fields_for_mode[mode])
         return signature_dict
 
     def execute_code(self, code):
         code_match = re.search(r'```python\n(.*?)\n```', code.get('code_output', ''), re.DOTALL)
-        if not code_match:
+        code_block = code_match.group(1) if code_match else code.get('code_output', '')
+        if not code_block:
             return None, None, "Error in code matching"
-        code_prompt = CodePrompt(code_match.group(1), code_type="python")
+        code_prompt = CodePrompt(code_block, code_type="python")
         interpreter = PythonInterpreter(action_space={"print": print})
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
-            return code_match.group(1), output, None
+            return code_block, output, None
         except Exception as e:
-            return code_match.group(1), None, str(e)
+            return code_block, None, str(e)
 
     def forward(self, **kwargs):
         code_data = self.code_generate(question=kwargs["question"])
