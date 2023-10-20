@@ -1,5 +1,8 @@
-**NOTE (Friday Oct 20):** If you are here from **SkyCamp 2023**, please [click here for the Google Colab notebook for the tutorial]().
+#### SkyCamp 2023 Announcment:
 
+**NOTE (Friday Oct 20):** If you are here from **SkyCamp 2023**, please [click here for the Google Colab notebook for the tutorial](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/skycamp2023.ipynb).
+
+----
 
 <p align="center">
   <img align="center" src="docs/images/DSPy8.png" width="460px" />
