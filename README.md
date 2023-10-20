@@ -1,3 +1,6 @@
+**NOTE (Friday Oct 20):** If you are here from **SkyCamp 2023**, please [click here for the Google Colab notebook for the tutorial]().
+
+
 <p align="center">
   <img align="center" src="docs/images/DSPy8.png" width="460px" />
 </p>

@@ -1,3 +1,4 @@
+import functools
 import os
 import random
 import requests
@@ -52,7 +53,7 @@ class HFClientTGI(HFModel):
 
         # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
 
-        response = send_hftgi_request_v01(f"{self.url}:{random.Random().choice(self.ports)}" + "/generate", url=self.url, ports=tuple(self.ports), json=payload, headers=self.headers)
+        response = send_hftgi_request_v01_wrapped(f"{self.url}:{random.Random().choice(self.ports)}" + "/generate", url=self.url, ports=tuple(self.ports), json=payload, headers=self.headers)
 
         try:
             json_response = response.json()
@@ -80,12 +81,18 @@ class HFClientTGI(HFModel):
 def send_hftgi_request_v01(arg, url, ports, **kwargs):
     return requests.post(arg, **kwargs)
 
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
+    return send_hftgi_request_v01(arg, url, ports, **kwargs)
+
+
 @CacheMemory.cache
 def send_hftgi_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 
-class HFClientAnyscale(HFModel):
+class Anyscale(HFModel):
     def __init__(self, model, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
@@ -93,7 +100,7 @@ class HFClientAnyscale(HFModel):
         self.token = os.getenv("OPENAI_API_KEY")
         self.model = model
         self.kwargs = {
-            "temperature": 0.7,
+            "temperature": 0.0,
             "n": 1,
             **kwargs
         }
@@ -101,14 +108,19 @@ class HFClientAnyscale(HFModel):
     def _generate(self, prompt, **kwargs):
         url = f"{self.api_base}/chat/completions"
         kwargs = {**self.kwargs, **kwargs}
+
         temperature = kwargs.get("temperature")
-        messages = [{"role": "user", "content": prompt}]
+        messages = [{"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."}, {"role": "user", "content": prompt}]
+
         body = {
             "model": self.model,
             "messages": messages,
-            "temperature": temperature
+            "temperature": temperature,
+            "max_tokens": 150
         }
+
         headers = {"Authorization": f"Bearer {self.token}"}
+
         try:
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
@@ -118,6 +130,7 @@ class HFClientAnyscale(HFModel):
         except Exception as e:
             print(f"Failed to parse JSON response: {e}")
             raise Exception("Received invalid JSON response from server")
+
 
 class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
