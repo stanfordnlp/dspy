@@ -9,11 +9,12 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
+    def __init__(self, model, port, url="http://future-hgx-1", http_request_kwargs=None, **kwargs):
         super().__init__(model=model, is_client=True)
 
         self.url = url
         self.ports = port if isinstance(port, list) else [port]
+        self.http_request_kwargs = http_request_kwargs or {}
 
         self.headers = {"Content-Type": "application/json"}
 
@@ -53,7 +54,14 @@ class HFClientTGI(HFModel):
 
         # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
 
-        response = send_hftgi_request_v01_wrapped(f"{self.url}:{random.Random().choice(self.ports)}" + "/generate", url=self.url, ports=tuple(self.ports), json=payload, headers=self.headers)
+        response = send_hftgi_request_v01_wrapped(
+            f"{self.url}:{random.Random().choice(self.ports)}" + "/generate",
+            url=self.url,
+            ports=tuple(self.ports),
+            json=payload,
+            headers=self.headers,
+            **self.http_request_kwargs,
+        )
 
         try:
             json_response = response.json()
