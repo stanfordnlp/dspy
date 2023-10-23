@@ -6,8 +6,7 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
-[Paper - DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines
-](https://arxiv.org/abs/2310.03714)
+Paper —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**
 
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
