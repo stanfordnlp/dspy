@@ -36,7 +36,7 @@ build/
 /dist/
 # **/*.pkl
 checklist.md
-examples/
 finetuning_ckpts/
-cache/
+# cache/
 * copy*
+.idea

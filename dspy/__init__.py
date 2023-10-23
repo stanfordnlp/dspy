@@ -18,4 +18,6 @@ OpenAI = dsp.GPT3
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 HFClientTGI = dsp.HFClientTGI
+Anyscale = dsp.Anyscale
 ChatModuleClient = ChatModuleClient
+HFModel = dsp.HFModel

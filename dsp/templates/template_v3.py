@@ -28,6 +28,7 @@ class Template(TemplateV2):
         self.fields: list[Field] = []
         self.format_handlers: dict[str, Callable] = {
             "context": passages2text,
+            "passages": passages2text,
             "answers": format_answers,
         }
 
@@ -63,3 +64,10 @@ class Template(TemplateV2):
             
         # print("here?", self.instructions == other.instructions, self.kwargs == other.kwargs)
         return self.instructions == other.instructions and self.kwargs == other.kwargs
+
+    def __str__(self) -> str:
+        # field names
+        field_names = [field.name for field in self.fields]
+
+        return f"Template({self.instructions}, {field_names})"
+    

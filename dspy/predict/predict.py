@@ -52,6 +52,9 @@ class Predict(Parameter):
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
+
+        import dspy
+        self.demos = [dspy.Example(**x) for x in self.demos]
     
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
@@ -62,12 +65,15 @@ class Predict(Parameter):
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
+        # Get the right LM to use.
+        lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature", None)
-        temperature = dsp.settings.lm.kwargs['temperature'] if temperature is None else temperature
+        temperature = lm.kwargs['temperature'] if temperature is None else temperature
 
         num_generations = config.get("n", None)
-        num_generations = dsp.settings.lm.kwargs['n'] if num_generations is None else num_generations
+        num_generations = lm.kwargs['n'] if num_generations is None else num_generations
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7

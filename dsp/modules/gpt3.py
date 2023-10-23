@@ -33,7 +33,7 @@ class GPT3(LM):
 
     def __init__(
         self,
-        model: str = "text-davinci-002",
+        model: str = "gpt-3.5-turbo-instruct",
         api_key: Optional[str] = None,
         api_provider: Literal["openai", "azure"] = "openai",
         model_type: Literal["chat", "text"] = None,
@@ -42,7 +42,7 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
 
-        default_model_type = "chat" if 'gpt-3.5' in model or 'gpt-4' in model else "text"
+        default_model_type = "chat" if ('gpt-3.5' in model or 'turbo' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
         self.model_type = model_type if model_type else default_model_type
 
         if api_provider == "azure":
@@ -143,11 +143,11 @@ class GPT3(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-        if kwargs.get("n", 1) > 1:
-            if self.model_type == "chat":
-                kwargs = {**kwargs}
-            else:
-                kwargs = {**kwargs, "logprobs": 5}
+        # if kwargs.get("n", 1) > 1:
+        #     if self.model_type == "chat":
+        #         kwargs = {**kwargs}
+        #     else:
+        #         kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
         choices = response["choices"]

@@ -6,10 +6,12 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
+Paper —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**
+
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
-**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning** and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
+**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
 
 To make this possible:
 
@@ -56,7 +58,11 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 > _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
 
+For the optional Pinecone retrieval integration, include the `pinecone` extra:
 
+```
+pip install dspy-ai[pinecone]
+```
 
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
 
@@ -265,8 +271,8 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
 - `dspy.majority` (functional self-consistency)
 - `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
-- `dspy.ReAct` [see open PR]
-- `dspy.MultiChainReasoning` [coming soon]
+- [`dspy.ReAct`](docs/modules.md#dspyreact)
+- [`dspy.MultiChainComparison`](docs/modules.md#dspymultichaincomparison)
 - `dspy.SelfCritique` [coming soon]
 - `dspy.SelfRevision` [coming soon]
 
@@ -278,7 +284,7 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
 - `dspy.teleprompt.LabeledFinetune` [coming soon]
 - [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
-- `dspy.teleprompt.Ensemble` [coming soon]
+- [`dspy.teleprompt.Ensemble`](docs/teleprompters.md#telepromptensemble)
 - `dspy.teleprompt.kNN` [coming soon]
 
 </details>
@@ -355,9 +361,15 @@ The **DSPy** logo is designed by **Chuyi Zhang**.
 
 To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
 
-If you use DSPy (or DSPv1) in a research paper, please cite our work as follows:
+If you use DSPy or DSP in a research paper, please cite our work as follows:
 
 ```
+@article{khattab2023dspy,
+  title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},
+  author={Khattab, Omar and Singhvi, Arnav and Maheshwari, Paridhi and Zhang, Zhiyuan and Santhanam, Keshav and Vardhamanan, Sri and Haq, Saiful and Sharma, Ashutosh and Joshi, Thomas T. and Moazam, Hanna and Miller, Heather and Zaharia, Matei and Potts, Christopher},
+  journal={arXiv preprint arXiv:2310.03714},
+  year={2023}
+}
 @article{khattab2022demonstrate,
   title={Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive {NLP}},
   author={Khattab, Omar and Santhanam, Keshav and Li, Xiang Lisa and Hall, David and Liang, Percy and Potts, Christopher and Zaharia, Matei},
@@ -367,9 +379,11 @@ If you use DSPy (or DSPv1) in a research paper, please cite our work as follows:
 ```
 
 
-You can also read more about the evolution of the framework from Demonstrate-Search-Predict (DSP v1) to DSPy:
+You can also read more about the evolution of the framework from Demonstrate-Search-Predict to DSPy:
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
 * [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
+* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023)
+
 

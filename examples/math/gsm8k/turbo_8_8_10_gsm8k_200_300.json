@@ -1,0 +1,53 @@
+{
+  "prog": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "question": "Mark is baking bread. He has to let it rise for 120 minutes twice. He also needs to spend 10 minutes kneading it and 30 minutes baking it. How many minutes does it take Mark to finish making the bread?",
+        "rationale": "find the total time it takes Mark to finish making the bread. We know that he has to let the bread rise for 120 minutes twice, which is 240 minutes. He also needs to spend 10 minutes kneading it and 30 minutes baking it. Therefore, the total time it takes Mark to finish making the bread is 240 + 10 + 30 = 280 minutes.",
+        "answer": "280"
+      },
+      {
+        "augmented": true,
+        "question": "Ben has $2000 for his business operations costs. He orders goods from his supplier and writes them a cheque for $600. His debtor pays him $800 from the purchases they had made on credit. Mr. Ben then decides to do equipment maintenance and spends $1200 on the whole operation. How much money is Mr. Ben remaining with?",
+        "rationale": "find the remaining amount of money. We first start with the total amount of money Mr. Ben has, which is $2000. Then, we subtract the amount he spent on goods from his supplier, which is $600. Next, we add the amount he received from his debtor, which is $800. Finally, we subtract the amount he spent on equipment maintenance, which is $1200. We can represent this as $2000 - $600 + $800 - $1200 = $1000.",
+        "answer": "1000"
+      },
+      {
+        "augmented": true,
+        "question": "Debbie works at a post office packing boxes to mail. Each large box takes 4 feet of packing tape to seal, each medium box takes 2 feet of packing tape to seal, and each small box takes 1 foot of packing tape to seal. Each box also takes 1 foot of packing tape to stick the address label on. Debbie packed two large boxes, eight medium boxes, and five small boxes this afternoon. How much tape did she use?",
+        "rationale": "find the total amount of tape Debbie used. We know that she used 4 feet of tape for each large box, 2 feet of tape for each medium box, and 1 foot of tape for each small box. Therefore, we can calculate the total amount of tape used for each type of box by multiplying the number of boxes by the amount of tape needed for each box. For the large boxes, she used 4 feet of tape for each of the 2 boxes, so she used 8 feet of tape. For the medium boxes, she used 2 feet of tape for each of the 8 boxes, so she used 16 feet of tape. For the small boxes, she used 1 foot of tape for each of the 5 boxes, so she used 5 feet of tape. In total, she used 8 + 16 + 5 = 29 feet of tape. Additionally, she used 1 foot of tape for each box to stick the address label, so she used 15 feet of tape for the 15 boxes. Therefore, the total amount of tape she used is 29 + 15 = 44 feet.",
+        "answer": "44 feet"
+      },
+      {
+        "augmented": true,
+        "question": "Heloise has dogs and cats in the ratio of 10:17, with the total number of pets being 189. If she gives 10 dogs to her friend Janet, how many dogs does she remain with altogether?",
+        "rationale": "find the number of dogs Heloise remains with. We know that the total number of pets is 189, and the ratio of dogs to cats is 10:17. This means that for every 10 dogs, there are 17 cats. If we divide 189 by 27 (10+17), we get 7. This means that for every 7 sets of 10 dogs and 17 cats, there are 189 pets. Since we are only interested in the number of dogs, we can multiply 7 by 10 to get 70 dogs. If Heloise gives 10 dogs to Janet, she will remain with 70-10 = 60 dogs.",
+        "answer": "60"
+      },
+      {
+        "question": "Jorge is 24 years younger than Simon. In 2005, Jorge is 16 years old. In 2010, how old would Simon be?",
+        "gold_reasoning": "In 2005, Simon was 16+24 = <<16+24=40>>40 years old. There are 2010-2005 = <<2010-2005=5>>5 years between 2005 and 2010. In 2010 Simon would be 40+5 = 45 years old.",
+        "answer": "45"
+      },
+      {
+        "question": "Sally is selling boxes of crackers for her scout troop's fund-raiser. If she sells 50% more on Sunday than she sold on Saturday, then she'll have sold a total of 150 boxes on the two days. How many boxes did she sell on Saturday?",
+        "gold_reasoning": "Let S be the number of boxes sold on Saturday. S+1.5S=150 2.5S=150 S=<<60=60>>60 Sally sold 60 boxes on Saturday.",
+        "answer": "60"
+      },
+      {
+        "question": "Audrey is 7 years older than Heracles. In 3 years, Audrey will be twice as old as Heracles is now. How old is Heracles now?",
+        "gold_reasoning": "Since Audrey is older than Heracles by 7 years, in 3 years he will be 10 years older than Heracles' current age In 3 years he will be double Heracles' current age 10 * 2 = <<10*2=20>>20 Heracles is <<10=10>>10",
+        "answer": "10"
+      },
+      {
+        "question": "Billy is breeding mice for an experiment. He starts with 8 mice, who each have 6 pups. When the pups grow up, all the mice have another 6 pups. Then each adult mouse eats 2 of their pups due to the stress of overcrowding. How many mice are left?",
+        "gold_reasoning": "First find the number of pups in the first generation: 8 mice * 6 pups\/mouse = <<8*6=48>>48 pups Then add the number of adult mice to find the total number of mice: 48 pups + 8 mice = <<48+8=56>>56 mice Then find the number of pups per mouse that survive from the second generation: 6 pups\/mouse - 2 pups\/mouse = <<6-2=4>>4 pups\/mouse Then multiply that number by the number of adult mice to find the number of pups in the second generation: 56 mice * 4 pups\/mouse = <<56*4=224>>224 mice Then add the number of adult mice to the number of second-generation pups to find the total number of mice: 224 mice + 56 mice = <<224+56=280>>280 mice",
+        "answer": "280"
+      }
+    ]
+  }
+}

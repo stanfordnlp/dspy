@@ -1,0 +1,345 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "context": [],
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "rationale": "determine the most recent publication. We know that Who Put the Bomp was published in 1961 and Self was published in 1970. Therefore, the most recent publication is Self.",
+        "search_query": "Self"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "find the correct search query. We know that the author was born in the 19th century, but we don't know the exact year. We can start by searching for the author's name and the title of the documentary series.",
+        "search_query": "\"The Victorians - Their Story In Pictures\" author:${author_name}"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "f1bad71d-550f-4716-b29d-311fdb0fcfbd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "\"The Day I Met Marie\" is a song written by an English songwriter best known as the lead guitarist for what band?",
+        "answer": "the Shadows",
+        "dspy_uuid": "8710b3a8-da56-453d-bd91-431f264cb704",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "a3d5fe2b-f4ad-44f6-8a25-a2e25e40db9b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "context": [
+          "Self (disambiguation) | The self is an individual person as the object of his or her own reflective consciousness.",
+          "Self | Self is a reference by an individual to the same individual person. This reference is necessarily subjective, thus self is a reference by a subject to the same subject. The sense of having a self \u2013 or self-hood \u2013 should, however, not be confused with subjectivity itself. Ostensibly, there is a directedness outward from the subject that refers inward, back to its \"self\" (or itself). Examples of psychiatric conditions where such 'sameness' is broken include depersonalization, which sometimes occur in schizophrenia: the self appears different to the subject.",
+          "Self (programming language) | Self is an object-oriented programming language based on the concept of \"prototypes\". Self was a dialect of Smalltalk, being dynamically typed and using just-in-time compilation (JIT) as well as the prototype-based approach to objects: it was first used as an experimental test system for language design in the 1980s and 1990s. In 2006, Self was still being developed as part of the Klein project, which was a Self virtual machine written fully in Self. The latest version is 2017.1 released in May 2017."
+        ],
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "rationale": "produce the search query. We know that the most recently published publication is the one that should be searched. We can see that the publication \"Who Put the Bomp\" is not listed as a recent publication, so we can eliminate it from our search. Therefore, the search query should be \"Self\".",
+        "search_query": "Self"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [
+          "The Victorians | The Victorians - Their Story In Pictures is a 2009 British documentary series which focuses on Victorian art and culture. The four-part series is written and presented by Jeremy Paxman and debuted on BBC One at 9:00pm on Sunday 15 February 2009.",
+          "The Caxtons | The Caxtons: A Family Picture is an 1849 Victorian novel by Edward Bulwer-Lytton that was popular in its time.",
+          "Victorian (comics) | The Victorian is a 25-issue comic book series published by Penny-Farthing Press and starting in 1999. The brainchild of creator Trainor Houghton, the series included a number of notable script writers and illustrators, including Len Wein, Glen Orbik and Howard Chaykin."
+        ],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "produce the search query. We know that the documentary series is about Victorian art and culture, and it was written and presented by Jeremy Paxman. Therefore, we need to find the year in which Jeremy Paxman was born.",
+        "search_query": "Jeremy Paxman birth year"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "f1bad71d-550f-4716-b29d-311fdb0fcfbd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "a3d5fe2b-f4ad-44f6-8a25-a2e25e40db9b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "\"The Day I Met Marie\" is a song written by an English songwriter best known as the lead guitarist for what band?",
+        "answer": "the Shadows",
+        "dspy_uuid": "8710b3a8-da56-453d-bd91-431f264cb704",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "c126c397-254f-455f-bd22-1df7228cf1bc",
+        "context": [
+          "Self (disambiguation) | The self is an individual person as the object of his or her own reflective consciousness.",
+          "Self | Self is a reference by an individual to the same individual person. This reference is necessarily subjective, thus self is a reference by a subject to the same subject. The sense of having a self \u2013 or self-hood \u2013 should, however, not be confused with subjectivity itself. Ostensibly, there is a directedness outward from the subject that refers inward, back to its \"self\" (or itself). Examples of psychiatric conditions where such 'sameness' is broken include depersonalization, which sometimes occur in schizophrenia: the self appears different to the subject.",
+          "Self (programming language) | Self is an object-oriented programming language based on the concept of \"prototypes\". Self was a dialect of Smalltalk, being dynamically typed and using just-in-time compilation (JIT) as well as the prototype-based approach to objects: it was first used as an experimental test system for language design in the 1980s and 1990s. In 2006, Self was still being developed as part of the Klein project, which was a Self virtual machine written fully in Self. The latest version is 2017.1 released in May 2017."
+        ],
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "rationale": "determine which of these publications was most recently published. We know that Self is a programming language based on the concept of \"prototypes\" and was first used as an experimental test system in the 1980s and 1990s. Therefore, it is likely that Self was published before Who Put the Bomp, which is a book about the history of rock and roll. Additionally, the latest version of Self was released in 2017, while Who Put the Bomp was published in 2001. Therefore, the answer is Self.",
+        "answer": "Self"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [
+          "The Victorians | The Victorians - Their Story In Pictures is a 2009 British documentary series which focuses on Victorian art and culture. The four-part series is written and presented by Jeremy Paxman and debuted on BBC One at 9:00pm on Sunday 15 February 2009.",
+          "The Caxtons | The Caxtons: A Family Picture is an 1849 Victorian novel by Edward Bulwer-Lytton that was popular in its time.",
+          "Victorian (comics) | The Victorian is a 25-issue comic book series published by Penny-Farthing Press and starting in 1999. The brainchild of creator Trainor Houghton, the series included a number of notable script writers and illustrators, including Len Wein, Glen Orbik and Howard Chaykin.",
+          "Jeremy Paxman | Jeremy Dickson Paxman (born 11 May 1950) is an English broadcaster, journalist, and author. He is the question master of \"University Challenge\", having succeeded Bamber Gascoigne when the programme was revived in 1994.",
+          "Jeremy I | Jeremy I was king of the Miskito nation, who came to power following the death of his father, Oldman, in 1686 or 1687. according to an English visitor, W. M., in 1699, he was about 60 years old at that time, making his birth year about 1639.",
+          "Jeremy Cheeseman | Jeremy Cheeseman (born June 6, 1990 in Manorville, New York) is a former American professional soccer player. Playing two seasons for the Dayton Dutch Lions in the USL Professional Division before retiring due to injury"
+        ],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "answer this question. We know that the author of The Victorians - Their Story In Pictures is Jeremy Paxman, and we can find his year of birth in one of the given contexts. After searching, we found that Jeremy Paxman was born in 1950. Therefore, the answer to the question is 1950.",
+        "answer": "1950"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "4e2f2530-99ac-4a75-9010-ef54a90480b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "f1bad71d-550f-4716-b29d-311fdb0fcfbd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Scottish nobleman was the subject of a 1934 British short documentary and was the first man to fly over Mount Everest?",
+        "answer": "Douglas Douglas-Hamilton, 14th Duke of Hamilton",
+        "dspy_uuid": "66c1198b-2f31-4f1c-a1f8-d10dcfaa0a66",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "47b1cbeb-dba8-4cab-a50c-97b81fd86eb3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "a3d5fe2b-f4ad-44f6-8a25-a2e25e40db9b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "92183f94-9c08-4915-a666-dbcc22aeb633",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "\"The Day I Met Marie\" is a song written by an English songwriter best known as the lead guitarist for what band?",
+        "answer": "the Shadows",
+        "dspy_uuid": "8710b3a8-da56-453d-bd91-431f264cb704",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "9465e8d9-277b-43c6-81f5-b3349923045c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      }
+    ]
+  }
+}
