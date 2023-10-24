@@ -7,7 +7,6 @@ import re
 class ProgramOfThought(Module):
     def __init__(self, signature, max_iters=3):
         super().__init__()
-
         self.signature = signature = dspy.Predict(signature).signature
         self.max_iters = max_iters
 
