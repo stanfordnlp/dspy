@@ -42,7 +42,12 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
 
-        default_model_type = "chat" if ('gpt-3.5' in model or 'turbo' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
+        default_model_type = (
+            "chat"
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
+            and ("instruct" not in model)
+            else "text"
+        )
         self.model_type = model_type if model_type else default_model_type
 
         if api_provider == "azure":
@@ -70,13 +75,24 @@ class GPT3(LM):
             "n": 1,
             **kwargs,
         }  # TODO: add kwargs above for </s>
-        
+
         if api_provider != "azure":
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 
     def _openai_client():
         return openai
+
+    def _add_to_history(
+        self, prompt: str, response: OpenAIObject, kwargs: dict, raw_kwargs: dict
+    ):
+        history = {
+            "prompt": prompt,
+            "response": response,
+            "kwargs": kwargs,
+            "raw_kwargs": raw_kwargs,
+        }
+        self.history.append(history)
 
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
@@ -85,22 +101,14 @@ class GPT3(LM):
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             kwargs["messages"] = [{"role": "user", "content": prompt}]
-            kwargs = {
-                "stringify_request": json.dumps(kwargs)
-            }
+            kwargs = {"stringify_request": json.dumps(kwargs)}
             response = cached_gpt3_turbo_request(**kwargs)
-            
+
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
 
-        history = {
-            "prompt": prompt,
-            "response": response,
-            "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+        self._add_to_history(prompt, response, kwargs, raw_kwargs)
 
         return response
 
@@ -114,13 +122,50 @@ class GPT3(LM):
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
-        
+
         return self.basic_request(prompt, **kwargs)
 
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
         if self.model_type == "chat":
             return choice["message"]["content"]
         return choice["text"]
+
+    def _get_completions_from_response(
+        self,
+        response: OpenAIObject,
+        only_completed: bool = True,
+        return_sorted: bool = False,
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        choices = response["choices"]
+
+        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
+
+        if only_completed and len(completed_choices):
+            choices = completed_choices
+
+        completions = [self._get_choice_text(c) for c in choices]
+
+        if return_sorted and kwargs.get("n", 1) > 1:
+            scored_completions = []
+
+            for c in choices:
+                tokens, logprobs = (
+                    c["logprobs"]["tokens"],
+                    c["logprobs"]["token_logprobs"],
+                )
+
+                if "<|endoftext|>" in tokens:
+                    index = tokens.index("<|endoftext|>") + 1
+                    tokens, logprobs = tokens[:index], logprobs[:index]
+
+                avglog = sum(logprobs) / len(logprobs)
+                scored_completions.append((avglog, self._get_choice_text(c)))
+
+            scored_completions = sorted(scored_completions, reverse=True)
+            completions = [c for _, c in scored_completions]
+
+        return completions
 
     def __call__(
         self,
@@ -150,34 +195,12 @@ class GPT3(LM):
         #         kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
-        choices = response["choices"]
-
-        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
-
-        if only_completed and len(completed_choices):
-            choices = completed_choices
-
-        completions = [self._get_choice_text(c) for c in choices]
-
-        if return_sorted and kwargs.get("n", 1) > 1:
-            scored_completions = []
-
-            for c in choices:
-                tokens, logprobs = (
-                    c["logprobs"]["tokens"],
-                    c["logprobs"]["token_logprobs"],
-                )
-
-                if "<|endoftext|>" in tokens:
-                    index = tokens.index("<|endoftext|>") + 1
-                    tokens, logprobs = tokens[:index], logprobs[:index]
-
-                avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, self._get_choice_text(c)))
-
-            scored_completions = sorted(scored_completions, reverse=True)
-            completions = [c for _, c in scored_completions]
-
+        completions = self._get_completions_from_response(
+            response=response,
+            only_completed=only_completed,
+            return_sorted=return_sorted,
+            **kwargs,
+        )
         return completions
 
 
