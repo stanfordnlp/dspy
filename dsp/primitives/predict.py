@@ -179,8 +179,8 @@ def extract_final_answer(example, completions, extract=None):
         ]
 
     # TODO: make thread-safe?
-    dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "completions": completions}
+    dsp.settings.lm.push_record(
+        **{**dsp.settings.lm.history[-1], "completions": completions}
     )
 
     return completions
@@ -230,8 +230,8 @@ def majority_vote_(completions: Completions, normalize: bool, prediction_field: 
     if normalize:
         pred = normalized_to_original[pred]
 
-    dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "topk": topk, "completions": [pred]}
+    dsp.settings.lm.push_record(
+        **{**dsp.settings.lm.history[-1], "topk": topk, "completions": [pred]}
     )
 
     return [pred]

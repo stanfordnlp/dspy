@@ -35,7 +35,7 @@ def set_cache_controller(obj: callable):
     Example 1
     ---------
     # Configure the most basic cache system possible
-    set_cache_controller(lambda func: functools.lru_cache(maxsize=1000)(func))
+    set_cache_controller(functools.lru_cache(maxsize=1000))
 
     Example 2
     ---------
@@ -64,8 +64,8 @@ def set_cache_controller(obj: callable):
     # then set the cache system
     set_cache_controller(RedisCache(host=...))
     """
-    global cache
-    cache = obj
+    global _cache
+    _cache = obj
 
 
 __cachedir = (
@@ -80,11 +80,15 @@ if __cachedir is not None:
     # kept for backward compatibility only
     from joblib import Memory
 
-    cache = Memory(location=__cachedir, verbose=0)
-    cache.reduce_size(__cachesize)
-    cache = cache.cache
+    _cache = Memory(location=__cachedir, verbose=0)
+    _cache.reduce_size(__cachesize)
+    _cache = _cache.cache
 elif __cachesize is not None:
     # kept for backward compatibility only
-    cache = functools.lru_cache(maxsize=__cachesize)
+    _cache = functools.lru_cache(maxsize=__cachesize)
 else:
-    cache = noop_decorator()
+    _cache = noop_decorator()
+
+
+def cache(func):
+    return _cache(func)

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import List, TypedDict, Optional, final
+from typing import List, Optional, final
 
 from dsp.utils import settings
 
@@ -34,10 +34,10 @@ class LM(ABC):
         return self.basic_request(prompt, **kwargs)
 
     def _color_green(self, text: str, end: str = "\n"):
-        print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
+        return "\x1b[32m" + str(text) + "\x1b[0m" + end
 
     def _color_red(self, text: str, end: str = "\n"):
-        print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
+        return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
     def format_history(self, n: int = 1, skip: int = 0, colored: bool = False) -> str:
         """
@@ -50,18 +50,17 @@ class LM(ABC):
         last_prompt = None
         printed = []
 
-        for x in self.history[-n - skip - 1:]:
+        start = max(len(self.history) - n - skip, 0)
+        for i in range(start, len(self.history)):
+            x = self.history[i]  # cannot slice deque, only index
             prompt = x["prompt"]
 
             if prompt != last_prompt:
                 text = x['choices'][0].strip()
                 suffix = f' (and {len(x["choices"] - 1)} other completions)' if len(x['choices']) > 1 else ''
                 printed.append(
-                    prompt +
-                    self._color_green(text) if colored else text +
-                    self._color_red(suffix) if colored else suffix
+                    f"{prompt}{self._color_green(text) if colored else text}{self._color_red(suffix) if colored else suffix}"
                 )
-
             last_prompt = prompt
 
         if skip > 0:
