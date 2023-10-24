@@ -9,3 +9,4 @@ ujson
 tqdm
 datasets
 requests
+optuna
