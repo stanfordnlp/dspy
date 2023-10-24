@@ -47,10 +47,11 @@ class PythonInterpreter():
 
     .. highlight:: none
 
-    This class is adapted from the hugging face implementation
-    `python_interpreter.py <https://github.com/huggingface/transformers/blob/8f
-    093fb799246f7dd9104ff44728da0c53a9f67a/src/transformers/tools/python_interp
-    reter.py>`_. The original license applies::
+    This class is adapted from the Camel adaptation https://github.com/camel-ai/
+    camel/blob/9a9d71874944e9736c55cdaed3df469a8becec05/camel/utils/python_interpreter.py 
+    which adapts from the hugging face implementation `python_interpreter.py 
+    <https://github.com/huggingface/transformers/blob/8f093fb799246f7dd9104ff44728da0c53a9f67a
+    /src/transformers/tools/python_interpreter.py>`_. The original license applies::
 
         Copyright 2023 The HuggingFace Inc. team. All rights reserved.
 
@@ -66,13 +67,20 @@ class PythonInterpreter():
         implied. See the License for the specific language governing
         permissions and limitations under the License.
 
-    We have modified the original code to suit our requirements. We have
+    Camel's modifications:
+    "We have modified the original code to suit our requirements. We have
     encapsulated the original functions within a class and saved the
     interpreter state after execution. We have added support for "import"
     statements, "for" statements, and several binary and unary operators. We
     have added import white list to keep `import` statement safe. Additionally,
     we have modified the variable matching logic and introduced the
-    :obj:`fuzz_state` for fuzzy matching.
+    :obj:`fuzz_state` for fuzzy matching."
+
+    DSPy's modifications:
+    "We expanded upon the Camel libraries modifications by adding additional 
+    support for "Mapping" statements, "conditional" operators, and including
+    the "CodePrompt" and "TextPrompt" classes for code execution.
+    
 
     Modifications copyright (C) 2023 CAMEL-AI.org
 
