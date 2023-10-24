@@ -1,4 +1,3 @@
-import functools
 import json
 from typing import Any, Literal, Optional, cast
 
@@ -7,7 +6,7 @@ import openai
 import openai.error
 from openai.openai_object import OpenAIObject
 
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.cache_utils import cache
 from dsp.modules.lm import LM
 
 
@@ -73,10 +72,6 @@ class GPT3(LM):
         
         if api_provider != "azure":
             self.kwargs["model"] = model
-        self.history: list[dict[str, Any]] = []
-
-    def _openai_client():
-        return openai
 
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
@@ -88,19 +83,19 @@ class GPT3(LM):
             kwargs = {
                 "stringify_request": json.dumps(kwargs)
             }
-            response = cached_gpt3_turbo_request(**kwargs)
+            response = cached_gpt3_turbo_request_v2(**kwargs)
             
         else:
             kwargs["prompt"] = prompt
-            response = cached_gpt3_request(**kwargs)
+            response = cached_gpt3_request_v2(**kwargs)
 
         history = {
             "prompt": prompt,
-            "response": response,
+            "choices": [self._get_choice_text(c) for c in response['choices']],
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
         }
-        self.history.append(history)
+        self.push_record(**history)
 
         return response
 
@@ -181,31 +176,14 @@ class GPT3(LM):
         return completions
 
 
-@CacheMemory.cache
+@cache
 def cached_gpt3_request_v2(**kwargs):
     return openai.Completion.create(**kwargs)
 
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_gpt3_request_v2_wrapped(**kwargs):
-    return cached_gpt3_request_v2(**kwargs)
-
-
-cached_gpt3_request = cached_gpt3_request_v2_wrapped
-
-
-@CacheMemory.cache
-def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
+@cache
+def cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
     if "stringify_request" in kwargs:
         kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
-    return _cached_gpt3_turbo_request_v2(**kwargs)
-
-
-cached_gpt3_turbo_request = _cached_gpt3_turbo_request_v2_wrapped

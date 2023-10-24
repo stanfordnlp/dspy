@@ -3,7 +3,7 @@ import os
 import random
 import requests
 from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.cache_utils import cache
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
@@ -54,8 +54,7 @@ class HFClientTGI(HFModel):
 
         # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
 
-        response = send_hftgi_request_v01_wrapped(
-            f"{self.url}:{random.Random().choice(self.ports)}" + "/generate",
+        response = send_hftgi_request_v01(
             url=self.url,
             ports=tuple(self.ports),
             json=payload,
@@ -85,17 +84,13 @@ class HFClientTGI(HFModel):
             raise Exception("Received invalid JSON response from server")
 
 
-@CacheMemory.cache(ignore=['arg'])
-def send_hftgi_request_v01(arg, url, ports, **kwargs):
+@cache
+def send_hftgi_request_v01(url, ports, **kwargs):
+    arg = f"{url}:{random.Random().choice(ports)}/generate"
     return requests.post(arg, **kwargs)
 
-# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache(ignore=['arg'])
-def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
-    return send_hftgi_request_v01(arg, url, ports, **kwargs)
 
-
-@CacheMemory.cache
+@cache
 def send_hftgi_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 

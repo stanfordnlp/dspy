@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from collections import deque
+from typing import List, TypedDict, Optional, final
+
+from dsp.utils import settings
 
 
 class LM(ABC):
@@ -16,72 +20,68 @@ class LM(ABC):
         }
         self.provider = "default"
 
-        self.history = []
+        self.history = deque(maxlen=settings.max_history)
 
     @abstractmethod
     def basic_request(self, prompt, **kwargs):
-        pass
+        raise NotImplementedError
+
+    @final
+    def push_record(self, prompt: str, choices: List[str], completions: Optional[List[str]] = None, **kwargs):
+        self.history.append(dict(prompt=prompt, choices=choices, completions=completions, **kwargs))
 
     def request(self, prompt, **kwargs):
         return self.basic_request(prompt, **kwargs)
 
-    def print_green(self, text: str, end: str = "\n"):
+    def _color_green(self, text: str, end: str = "\n"):
         print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
 
-    def print_red(self, text: str, end: str = "\n"):
+    def _color_red(self, text: str, end: str = "\n"):
         print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
 
-    def inspect_history(self, n: int = 1, skip: int = 0):
-        """Prints the last n prompts and their completions.
-        TODO: print the valid choice that contains filled output field instead of the first
+    def format_history(self, n: int = 1, skip: int = 0, colored: bool = False) -> str:
         """
-        provider: str = self.provider
-
+        Formats the last n prompts and their completions.
+        :param n: max records to print
+        :param skip: skip the last few records in chronological order
+        :param colored: whether to differentiate some output using colors
+        """
+        # TODO: print the valid choice that contains filled output field instead of the first
         last_prompt = None
         printed = []
-        n = n + skip
 
-        for x in reversed(self.history[-100:]):
+        for x in self.history[-n - skip - 1:]:
             prompt = x["prompt"]
 
             if prompt != last_prompt:
+                text = x['choices'][0].strip()
+                suffix = f' (and {len(x["choices"] - 1)} other completions)' if len(x['choices']) > 1 else ''
                 printed.append(
-                    (
-                        prompt,
-                        x["response"].generations
-                        if provider == "cohere"
-                        else x["response"]["choices"],
-                    )
+                    prompt +
+                    self._color_green(text) if colored else text +
+                    self._color_red(suffix) if colored else suffix
                 )
 
             last_prompt = prompt
 
-            if len(printed) >= n:
-                break
+        if skip > 0:
+            printed = printed[:-skip]
 
-        for idx, (prompt, choices) in enumerate(reversed(printed)):
-            # skip the first `skip` prompts
-            if (n - idx - 1) < skip:
-                continue
+        return '\n\n\n'.join(printed)
 
-            print("\n\n\n")
-            print(prompt, end="")
-            text = ""
-            if provider == "cohere":
-                text = choices[0].text
-            elif provider == "openai":
-                text = ' ' + self._get_choice_text(choices[0]).strip()
-            else:
-                text = choices[0]["text"]
-            self.print_green(text, end="")
-
-            if len(choices) > 1:
-                self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
-            print("\n\n\n")
+    def inspect_history(self, n: int = 1, skip: int = 0, colored: bool = True, file=None) -> None:
+        """
+        Prints the last n prompts and their completions.
+        :param n: max records to print
+        :param skip: skip the last few records in chronological order
+        :param colored: whether to differentiate some output using colors
+        :param file: a file descriptor to print to. Defaults to sys.stdout, see 'print' documentation.
+        """
+        print(self.format_history(n, skip, colored), file=file)
 
     @abstractmethod
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
-        pass
+        raise NotImplementedError
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""

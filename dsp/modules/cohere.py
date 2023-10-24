@@ -68,7 +68,6 @@ class Cohere(LM):
         self.stop_sequences = stop_sequences
         self.max_num_generations = 5
 
-        self.history: list[dict[str, Any]] = []
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -82,11 +81,11 @@ class Cohere(LM):
 
         history = {
             "prompt": prompt,
-            "response": response,
+            "choices": [g.text for g in response.generations],
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
         }
-        self.history.append(history)
+        self.push_record(**history)
 
         return response
 
