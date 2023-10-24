@@ -133,7 +133,8 @@ class PythonInterpreter():
         try:
             expression = ast.parse(code)
         except SyntaxError as e:
-            raise InterpreterError(f"Syntax error in code: {e}")
+            error_line = code.splitlines()[e.lineno - 1]
+            raise InterpreterError(f"Syntax error in code at line {e.lineno}: {error_line}\nError: {e}")
 
         result = None
         for idx, node in enumerate(expression.body):

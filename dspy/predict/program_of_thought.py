@@ -1,7 +1,7 @@
 import dsp
 import dspy
 from ..primitives.program import Module
-from ..primitives.interpreter import CodePrompt, PythonInterpreter
+from ..primitives.python_interpreter import CodePrompt, PythonInterpreter
 import re
 
 class ProgramOfThought(Module):
@@ -23,46 +23,90 @@ class ProgramOfThought(Module):
         instr.append(f"You will be given {inputs_} and you will respond with {outputs_}.")
         instr.append(f"Generating executable Python code that programmatically computes the correct {outputs_}.")
         instr.append(f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {outputs_}.")
-
-        self.code_generate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('generate')))
-
-        self.code_generate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('generate')))
-        self.code_regenerate = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('regenerate')))
-        self.generate_answer = dspy.ChainOfThought(dsp.Template(instr, **self._generate_signature('answer')))
+        instr = '\n'.join(instr)
+        
+        self.code_generate = dspy.ChainOfThought(dsp.Template(self._generate_instruction('generate'), **self._generate_signature('generate')))
+        self.code_regenerate = dspy.ChainOfThought(dsp.Template(self._generate_instruction('regenerate'), **self._generate_signature('regenerate')))
+        self.generate_answer = dspy.ChainOfThought(dsp.Template(self._generate_instruction('answer'), **self._generate_signature('answer')))
 
     def _generate_signature(self, mode):
-        signature_dict = {}
-        if mode == 'generate':
-            signature_dict['question'] = self.signature.kwargs["question"]
-            signature_dict['code_output'] = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-        elif mode == 'regenerate':
-            signature_dict.update(self.input_fields)
-            signature_dict['generated_code'] = dspy.OutputField(prefix="Code:", desc="python code that answers the question")
-        else:
-            signature_dict.update(self.input_fields)
-            signature_dict['answer'] = self.signature.kwargs["answer"]
+        signature_dict = dict(self.input_fields)
+        fields_for_mode = {
+            'generate': {
+                'generated_code': dspy.OutputField(prefix="Code:", desc="python code that answers the question", format=str)
+            },
+            'regenerate': {
+                'previous_code': dspy.InputField(prefix="Previous Code:", desc="previously-generated python code that errored", format=str),
+                'error': dspy.InputField(prefix="Error:", desc="error message from previously-generated python code"),
+                'generated_code': dspy.OutputField(prefix="Code:", desc="python code that answers the question", format=str)
+            },
+            'answer': {
+                'final_generated_code': dspy.InputField(prefix="Code:", desc="python code that answers the question", format=str),
+                'code_output': dspy.InputField(prefix="Code Output:", desc="output of previously-generated python code"),
+                'answer': self.signature.kwargs["answer"]
+            }
+        }
+        signature_dict.update(fields_for_mode[mode])
         return signature_dict
 
+    def _generate_instruction(self, mode):
+        mode_inputs = ', '.join([f"`{field_name}`" for field_name in self._generate_signature(mode).keys() if isinstance(self._generate_signature(mode)[field_name], dspy.InputField)])
+        mode_outputs = ', '.join([f"`{field_name}`" for field_name in self._generate_signature(mode).keys() if isinstance(self._generate_signature(mode)[field_name], dspy.OutputField)])
+        if mode == 'generate':
+            instr = [
+                f"You will be given {mode_inputs} and you will respond with {mode_outputs}.",
+                f"Generating executable Python code that programmatically computes the correct {mode_outputs}.",
+                f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {mode_outputs}."
+            ]
+        elif mode == 'regenerate':
+            instr = [
+                f"You are given {mode_inputs} due to an error in previous code.",
+                f"Your task is to correct the error and provide the new {mode_outputs}."
+            ]
+        else:  # mode == 'answer'
+            instr = [
+                f"Given the final code {mode_inputs}, provide the final {mode_outputs}."
+            ]
+
+        return '\n'.join(instr)
+
+    def parse_code(self, code_data):
+        code = code_data.get('generated_code', '').split('---', 1)[0].split('\n\n\n', 1)[0]
+        code_match = re.search(r'```python[ \n](.*?)[ \n]```?', code, re.DOTALL)
+        code_block = (code_match.group(1) if code_match else code).replace('\\n', '\n')
+        if not code_block:
+            return code, "Error: Empty code after parsing."
+        if "\n" not in code_block and code_block.count('=') > 1:
+            return code, "Error: Code format is not correct."
+        lines = code_block.split('\n')
+        last_line_match = re.match(r'^(\w+)\s*=', lines[-1].strip())
+        if last_line_match and len(lines) > 1:
+            code_block += '\n' + last_line_match.group(1)
+        else:
+            code_block = re.sub(r'([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)', r'\1\n', code_block)
+            code_block = re.sub(r'([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$', r'\1\n\2', code_block)
+        return code_block, None
+
     def execute_code(self, code):
-        code_match = re.search(r'```python\n(.*?)\n```', code.get('code_output', ''), re.DOTALL)
-        if not code_match:
-            return None, None, "Error in code matching"
-        code_prompt = CodePrompt(code_match.group(1), code_type="python")
+        if not code:
+            return code, None, 'Error: Empty code before execution.'
+        code_prompt = CodePrompt(code, code_type="python")
         interpreter = PythonInterpreter(action_space={"print": print})
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
-            return code_match.group(1), output, None
+            return code, output, None
         except Exception as e:
-            return code_match.group(1), None, str(e)
-
+            return code, None, str(e)
+            
     def forward(self, **kwargs):
         code_data = self.code_generate(question=kwargs["question"])
-        code, output, error = self.execute_code(code_data)
+        parsed_code, error = self.parse_code(code_data)
+        code, output, error = self.execute_code(parsed_code)
         hop = 0
         while hop < self.max_iters and error:
             print('Error in code execution')
             code_data = self.code_regenerate(question=kwargs["question"], previous_code=code, error=error)
-            code, output, error = self.execute_code(code_data)
+            parsed_code, error = self.parse_code(code_data)
             hop += 1
             if hop == self.max_iters:
                 print('Max hops reached. Error persists.')
