@@ -1,4 +1,5 @@
 from dsp.modules.hf_client import ChatModuleClient
+from dsp.modules.hf_client import HFServerTGI
 from .signatures import *
 
 from .retrieve import *
@@ -18,4 +19,5 @@ OpenAI = dsp.GPT3
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 HFClientTGI = dsp.HFClientTGI
+HFServerTGI = HFServerTGI
 ChatModuleClient = ChatModuleClient

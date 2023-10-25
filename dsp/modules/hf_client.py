@@ -2,6 +2,11 @@ import random
 import requests
 from dsp.modules.hf import HFModel, openai_to_hf
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+import os
+import subprocess
+import re
+import shutil
+import time
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
@@ -111,11 +116,24 @@ class HFServerTGI:
             link_path = os.path.join(self.model_weights_dir, model_file_name)
             shutil.copytree(model_path, link_path)
             model_name = os.path.sep + os.path.basename(self.model_weights_dir) + os.path.sep + os.path.basename(model_path)
-        docker_command = f'docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:0.9.3 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}'
+        docker_command = f'docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:1.1.0 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}'
         print(f"Connect Command: {docker_command}")
-        docker_process = subprocess.Popen(docker_command, shell=True)
-        time.sleep(10)
-        docker_process.terminate()
+        docker_process = subprocess.Popen(docker_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        connected = False
+        output = []
+        while True:
+            line = docker_process.stdout.readline()
+            if not line:
+                break
+            output.append(line.strip())
+            if 'Connected' in line:
+                connected = True
+                break
+        if not connected:
+            print("Could not connect to server. Error log:")
+            for line in output:
+                print(line)
+            docker_process.terminate()
         docker_process.wait()
 
 class ChatModuleClient(HFModel):
