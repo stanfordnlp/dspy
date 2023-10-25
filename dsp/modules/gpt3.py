@@ -42,7 +42,7 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
 
-        default_model_type = "chat" if ('gpt-3.5' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
+        default_model_type = "chat" if ('gpt-3.5' in model or 'turbo' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
         self.model_type = model_type if model_type else default_model_type
 
         if api_provider == "azure":

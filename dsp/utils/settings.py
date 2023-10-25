@@ -40,7 +40,10 @@ class Settings(object):
 
     @property
     def config(self):
-        return self.stack_by_thread[threading.get_ident()][-1]
+        thread_id = threading.get_ident()
+        if thread_id not in self.stack_by_thread:
+            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
+        return self.stack_by_thread[thread_id][-1]
 
     def __getattr__(self, name):
         if hasattr(self.config, name):
@@ -52,10 +55,15 @@ class Settings(object):
         super().__getattr__(name)
 
     def __append(self, config):
-        self.stack_by_thread[threading.get_ident()].append(config)
+        thread_id = threading.get_ident()
+        if thread_id not in self.stack_by_thread:
+            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
+        self.stack_by_thread[thread_id].append(config)
 
     def __pop(self):
-        self.stack_by_thread[threading.get_ident()].pop()
+        thread_id = threading.get_ident()
+        if thread_id in self.stack_by_thread:
+            self.stack_by_thread[thread_id].pop()
 
     def configure(self, inherit_config: bool = True, **kwargs):
         """Set configuration settings.

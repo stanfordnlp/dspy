@@ -10,11 +10,18 @@ from dsp.utils import dotdict
 cache_turn_on = True
 
 
-def noop_decorator(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-    return wrapper
+def noop_decorator(arg=None, *noop_args, **noop_kwargs):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    if callable(arg):
+        return decorator(arg)
+    else:
+        return decorator
 
 
 cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), 'cachedir_joblib')

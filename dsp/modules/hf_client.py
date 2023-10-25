@@ -1,3 +1,5 @@
+import functools
+import os
 import random
 import requests
 from dsp.modules.hf import HFModel, openai_to_hf
@@ -12,11 +14,12 @@ import time
 
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-1", **kwargs):
+    def __init__(self, model, port, url="http://future-hgx-1", http_request_kwargs=None, **kwargs):
         super().__init__(model=model, is_client=True)
 
         self.url = url
         self.ports = port if isinstance(port, list) else [port]
+        self.http_request_kwargs = http_request_kwargs or {}
 
         self.headers = {"Content-Type": "application/json"}
 
@@ -56,7 +59,14 @@ class HFClientTGI(HFModel):
 
         # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
 
-        response = send_hftgi_request_v01(f"{self.url}:{random.Random().choice(self.ports)}" + "/generate", url=self.url, ports=tuple(self.ports), json=payload, headers=self.headers)
+        response = send_hftgi_request_v01_wrapped(
+            f"{self.url}:{random.Random().choice(self.ports)}" + "/generate",
+            url=self.url,
+            ports=tuple(self.ports),
+            json=payload,
+            headers=self.headers,
+            **self.http_request_kwargs,
+        )
 
         try:
             json_response = response.json()
@@ -83,6 +93,12 @@ class HFClientTGI(HFModel):
 @CacheMemory.cache(ignore=['arg'])
 def send_hftgi_request_v01(arg, url, ports, **kwargs):
     return requests.post(arg, **kwargs)
+
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache(ignore=['arg'])
+def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
+    return send_hftgi_request_v01(arg, url, ports, **kwargs)
+
 
 @CacheMemory.cache
 def send_hftgi_request_v00(arg, **kwargs):
@@ -135,6 +151,46 @@ class HFServerTGI:
                 print(line)
             docker_process.terminate()
         docker_process.wait()
+
+class Anyscale(HFModel):
+    def __init__(self, model, **kwargs):
+        super().__init__(model=model, is_client=True)
+        self.session = requests.Session()
+        self.api_base = os.getenv("OPENAI_API_BASE")
+        self.token = os.getenv("OPENAI_API_KEY")
+        self.model = model
+        self.kwargs = {
+            "temperature": 0.0,
+            "n": 1,
+            **kwargs
+        }
+
+    def _generate(self, prompt, **kwargs):
+        url = f"{self.api_base}/chat/completions"
+        kwargs = {**self.kwargs, **kwargs}
+
+        temperature = kwargs.get("temperature")
+        messages = [{"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."}, {"role": "user", "content": prompt}]
+
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 150
+        }
+
+        headers = {"Authorization": f"Bearer {self.token}"}
+
+        try:
+            with self.session.post(url, headers=headers, json=body) as resp:
+                resp_json = resp.json()
+                completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
+                response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
+                return response
+        except Exception as e:
+            print(f"Failed to parse JSON response: {e}")
+            raise Exception("Received invalid JSON response from server")
+
 
 class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
