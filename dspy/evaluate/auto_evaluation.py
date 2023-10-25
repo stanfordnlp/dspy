@@ -1,7 +1,7 @@
 import dspy 
 
 class AnswerCorrectnessSignature(dspy.Signature):
-    """Determines if predicted answer matches the gold answer."""
+    """Verify that the predicted answer matches the gold answer."""
 
     question = dspy.InputField()
     gold_answer = dspy.InputField(desc="correct answer for question")
@@ -18,12 +18,12 @@ class AnswerCorrectness(dspy.Module):
 
 
 class AnswerFaithfulnessSignature(dspy.Signature):
-    """Checks if answer for question is based on rationale."""
+    """Verify that the predicted answer is based on the provided context."""
     
     context = dspy.InputField(desc="relevant facts for producing answer")
     question = dspy.InputField()
     answer = dspy.InputField(desc="often between 1 and 5 words")
-    faithful = dspy.OutputField(desc='True or False')
+    is_faithful = dspy.OutputField(desc='True or False')
 
 class AnswerFaithfulness(dspy.Module):
     def __init__(self):
