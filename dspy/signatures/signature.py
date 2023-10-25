@@ -33,6 +33,10 @@ class SignatureMeta(type):
 
         return new_class
 
+    @property
+    def kwargs(cls):
+        return cls.signature.fields
+    
     def __call__(cls, *args, **kwargs):
         if len(args) == 1 and isinstance(args[0], str):
             instance = super(SignatureMeta, cls).__call__(*args, **kwargs)
@@ -42,7 +46,9 @@ class SignatureMeta(type):
 
     def __getattr__(cls, attr):
         # Redirect attribute access to the template object when accessed on the class directly
-        return getattr(cls._template, attr)
+        if attr not in cls.__dict__:
+            return getattr(cls._template, attr)
+        return super().__getattr__(attr)
 
 class Signature(metaclass=SignatureMeta):
     def __init__(self, signature: str = "", instructions: str = ""):
@@ -51,6 +57,11 @@ class Signature(metaclass=SignatureMeta):
         self.fields = {}
         self.parse_structure()
     
+    def __getattr__(self, attr):
+        if attr not in self.__dict__:
+            return getattr(self.__class__, attr)
+        return super().__getattr__(attr)
+
     @property
     def kwargs(self):
         return {k: v for k, v in self.fields.items()}
