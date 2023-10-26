@@ -117,10 +117,10 @@ class GPT3(LM):
         
         return self.basic_request(prompt, **kwargs)
 
-    def _get_choice_text(self, choice: dict[str, Any]) -> str:
+    def get_choice_text(self, choice: dict[str, Any]) -> str:
         if self.model_type == "chat":
-            return choice["message"]["content"]
-        return choice["text"]
+            return ' ' + choice["message"]["content"].strip()
+        return ' ' + choice["text"].strip()
 
     def __call__(
         self,
@@ -157,7 +157,7 @@ class GPT3(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [self._get_choice_text(c) for c in choices]
+        completions = [self.get_choice_text(c) for c in choices]
 
         if return_sorted and kwargs.get("n", 1) > 1:
             scored_completions = []
@@ -173,7 +173,7 @@ class GPT3(LM):
                     tokens, logprobs = tokens[:index], logprobs[:index]
 
                 avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, self._get_choice_text(c)))
+                scored_completions.append((avglog, self.get_choice_text(c)))
 
             scored_completions = sorted(scored_completions, reverse=True)
             completions = [c for _, c in scored_completions]
