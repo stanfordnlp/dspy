@@ -117,10 +117,10 @@ class GPT3(LM):
         
         return self.basic_request(prompt, **kwargs)
 
-    def get_choice_text(self, choice: dict[str, Any]) -> str:
+    def _get_choice_text(self, choice: dict[str, Any]) -> str:
         if self.model_type == "chat":
-            return ' ' + choice["message"]["content"].strip()
-        return ' ' + choice["text"].strip()
+            return choice["message"]["content"]
+        return choice["text"]
 
     def __call__(
         self,
@@ -157,7 +157,7 @@ class GPT3(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [self.get_choice_text(c) for c in choices]
+        completions = [self._get_choice_text(c) for c in choices]
 
         if return_sorted and kwargs.get("n", 1) > 1:
             scored_completions = []

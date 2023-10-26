@@ -100,9 +100,6 @@ class HFModel(LM):
 
         return response
     
-    def get_choice_text(self, choice: dict[str, Any]) -> str:
-        return choice["text"]
-
     def _generate(self, prompt, **kwargs):
         assert not self.is_client
         # TODO: Add caching

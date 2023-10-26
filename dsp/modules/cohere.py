@@ -101,9 +101,6 @@ class Cohere(LM):
         """Handles retrieval of completions from Cohere whilst handling API errors"""
         return self.basic_request(prompt, **kwargs)
 
-    def get_choice_text(self, choice) -> str:
-        return choice.text
-
     def __call__(
         self,
         prompt: str,

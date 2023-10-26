@@ -24,10 +24,6 @@ class LM(ABC):
 
     def request(self, prompt, **kwargs):
         return self.basic_request(prompt, **kwargs)
-    
-    @abstractmethod
-    def get_choice_text(self, choice) -> str:
-        pass
 
     def print_green(self, text: str, end: str = "\n"):
         print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
@@ -70,7 +66,13 @@ class LM(ABC):
 
             print("\n\n\n")
             print(prompt, end="")
-            text = self.get_choice_text(choices[0])
+            text = ""
+            if provider == "cohere":
+                text = choices[0].text
+            elif provider == "openai" or provider == "llama":
+                text = ' ' + self._get_choice_text(choices[0]).strip()
+            else:
+                text = choices[0]["text"]
             self.print_green(text, end="")
 
             if len(choices) > 1:

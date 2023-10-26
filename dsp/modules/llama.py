@@ -22,7 +22,7 @@ class LlamaCpp(LM):
     ):
         super().__init__(model)
 
-        default_model_type = "chat" if "instruct" not in model else "text"
+        default_model_type = "text"
         self.model_type = model_type if model_type else default_model_type
 
         print(os.listdir())
@@ -68,10 +68,10 @@ class LlamaCpp(LM):
 
         return self.basic_request(prompt, **kwargs)
 
-    def get_choice_text(self, choice: dict[str, Any]) -> str:
+    def _get_choice_text(self, choice) -> str:
         if self.model_type == "chat":
-            return choice["message"]["content"].strip()
-        return choice["text"].strip()
+            return choice["message"]["content"]
+        return choice["text"]
 
     def __call__(
         self,
@@ -91,6 +91,6 @@ class LlamaCpp(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [self.get_choice_text(c) for c in choices]
+        completions = [self._get_choice_text(c) for c in choices]
 
         return completions
