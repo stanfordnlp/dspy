@@ -63,9 +63,9 @@ class HFModel(LM):
                 self.rationale = True
                 AutoModelClass = AutoModelForSeq2SeqLM if self.encoder_decoder_model else AutoModelForCausalLM
                 if checkpoint:
-                    with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
-                        config = json.load(f)
-                    self.rationale = config['rationale']
+                    # with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
+                    #     config = json.load(f)
+                    self.rationale = False #config['rationale']
                     # if config['peft']:
                     #     peft_config = PeftConfig.from_pretrained(checkpoint)
                     #     self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)

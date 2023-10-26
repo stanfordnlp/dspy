@@ -5,7 +5,7 @@ from dspy.datasets.dataset import Dataset
 
 
 class HotPotQA(Dataset):
-    def __init__(self, *args, only_hard_examples=True, keep_details='dev_titles', larger_dev=True, **kwargs) -> None:
+    def __init__(self, *args, only_hard_examples=True, keep_details='dev_titles', unofficial_dev=True, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         assert only_hard_examples, "Care must be taken when adding support for easy examples." \
                                    "Dev must be all hard to match official dev, but training can be flexible."
@@ -34,12 +34,12 @@ class HotPotQA(Dataset):
         rng = random.Random(0)
         rng.shuffle(official_train)
 
-        if larger_dev is False: # default
-            self._train = official_train[:len(official_train)*90//100]
-            self._dev = official_train[len(official_train)*90//100:]
-        else: # new
-            self._train = official_train[:len(official_train)*75//100]
+        self._train = official_train[:len(official_train)*75//100]
+
+        if unofficial_dev:
             self._dev = official_train[len(official_train)*75//100:]
+        else:
+            self._dev = None
 
         for example in self._train:
             if keep_details == 'dev_titles':

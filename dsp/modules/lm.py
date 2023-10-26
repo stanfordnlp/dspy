@@ -35,7 +35,7 @@ class LM(ABC):
     def print_red(self, text: str, end: str = "\n"):
         print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
 
-    def inspect_history(self, n: int = 1):
+    def inspect_history(self, n: int = 1, skip: int = 0):
         """Prints the last n prompts and their completions.
         TODO: print the valid choice that contains filled output field instead of the first
         """
@@ -43,6 +43,7 @@ class LM(ABC):
 
         last_prompt = None
         printed = []
+        n = n + skip
 
         for x in reversed(self.history[-100:]):
             prompt = x["prompt"]
@@ -61,9 +62,12 @@ class LM(ABC):
 
             if len(printed) >= n:
                 break
-        
-        
-        for prompt, choices in reversed(printed):
+
+        for idx, (prompt, choices) in enumerate(reversed(printed)):
+            # skip the first `skip` prompts
+            if (n - idx - 1) < skip:
+                continue
+
             print("\n\n\n")
             print(prompt, end="")
             text = self.get_choice_text(choices[0])

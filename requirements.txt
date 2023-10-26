@@ -8,3 +8,5 @@ regex
 ujson
 tqdm
 datasets
+requests
+optuna

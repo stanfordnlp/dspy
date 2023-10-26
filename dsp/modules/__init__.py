@@ -9,3 +9,4 @@ from .pyserini import *
 
 from .hf_client import HFClientTGI
 from .llama import LlamaCpp
+from .hf_client import Anyscale
