@@ -139,7 +139,7 @@ class BootstrapFinetune(Teleprompter):
             training_data_path = finetune_paths[name]
             compiler_config_ = dict(compiler_config)
             compiler_config_['save'] = compiler_config['save'] + '.' + name
-            best_ckpt_path, tokenized_data = finetune_hf(training_data_path, target, compiler_config_)
+            best_ckpt_path = finetune_hf(training_data_path, target, compiler_config_)
 
             print(f"#> Best checkpoint path: {best_ckpt_path} for {name}")
             finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path

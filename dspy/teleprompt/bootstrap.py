@@ -1,6 +1,7 @@
 import dsp
 import tqdm
 import random
+import threading
 
 from dspy.primitives import Example
 
@@ -30,13 +31,16 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1):
+    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
         self.metric = metric
         self.teacher_settings = teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
         self.max_rounds = max_rounds
+        self.max_errors= max_errors
+        self.error_count = 0
+        self.error_lock = threading.Lock()
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
@@ -135,7 +139,11 @@ class BootstrapFewShot(Teleprompter):
                 # print(success, example, prediction)
         except Exception as e:
             success = False
-            # FIXME: remove the reliance on uuid here so the error is printed
+            with self.error_lock:
+                self.error_count += 1
+                current_error_count = self.error_count
+            if current_error_count >= self.max_errors:
+                raise e
             print(f'Failed to run or to evaluate example {example} with {self.metric} due to {e}.')
         
         if success:
