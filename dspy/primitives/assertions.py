@@ -40,7 +40,7 @@ class Assert:
             raise ValueError("Assertion function should always return [bool]")
 
 
-def assert_latest_feedback_transform(max_backtracks=2):
+def assert_backtrack_policy(max_backtracks=2):
     """Decorator that defines the backtracking policy for assertions.
     
     current policy: re-run the latest predictor up to `max_backtracks` times,

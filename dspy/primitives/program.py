@@ -15,9 +15,7 @@ class ProgramMeta(type):
     #     return obj
 
 
-
 class Module(BaseModule, metaclass=ProgramMeta):
-
     def _base_init(self):
         self._compiled = False
 
@@ -28,7 +26,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if getattr(self, "forward", False) and not getattr(
             self.forward, "_decorated", False
         ):
-            wrapped_forward = assert_latest_feedback_transform()(self.forward)
+            wrapped_forward = assert_backtrack_policy()(self.forward)
             return wrapped_forward(*args, **kwargs)
         else:
             return self.forward(*args, **kwargs)
