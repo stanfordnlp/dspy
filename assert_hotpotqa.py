@@ -101,26 +101,25 @@ class SimplifiedBaleen(dspy.Module):
 
     def forward(self, question):
         context = []
-        previous_queries = [question]
+        prev_queries = [question]
+
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
 
             dspy.Assert(
-                lambda x: len(x) <= 100,
-                query,
+                len(query) <= 100,
                 msg="Query should be short and less than 100 characters",
             )
 
             dspy.Assert(
-                validate_query_distinction_local,
-                previous_queries,
-                query,
+                validate_query_distinction_local(prev_queries, query),
                 msg="Query should not be the following: "
                 + "; ".join(
-                    f"{idx+1}) {query}" for idx, query in enumerate(previous_queries)
+                    f"{idx+1}) {query}" for idx, query in enumerate(prev_queries)
                 ),
             )
-            previous_queries.append(query)
+
+            prev_queries.append(query)
             passages = self.retrieve(query).passages
             context = deduplicate(context + passages)
 

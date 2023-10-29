@@ -16,9 +16,8 @@ class DSPyAssertionError(AssertionError):
 class Assert:
     """DSPy Assertion"""
 
-    def __init__(self, assert_fun: Callable, *args, **kwargs):
-        self.assert_fun = assert_fun
-        self.args = args
+    def __init__(self, assert_fun_res: bool, **kwargs):
+        self.assert_fun_res = assert_fun_res
 
         if "msg" in kwargs:
             self.msg = kwargs["msg"]
@@ -30,9 +29,8 @@ class Assert:
         self.__call__()
 
     def __call__(self) -> bool:
-        result = self.assert_fun(*self.args, **self.kwargs)
-        if isinstance(result, bool):
-            if result:
+        if isinstance(self.assert_fun_res, bool):
+            if self.assert_fun_res:
                 return True
             else:
                 raise DSPyAssertionError(msg=self.msg, state=dsp.settings.trace)
