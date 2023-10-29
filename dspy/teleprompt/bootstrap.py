@@ -8,7 +8,6 @@ from dspy.primitives import Example
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
 
-from dspy.evaluate.evaluate import Evaluate
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -31,14 +30,22 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
+    def __init__(
+        self,
+        metric=None,
+        teacher_settings={},
+        max_bootstrapped_demos=4,
+        max_labeled_demos=16,
+        max_rounds=1,
+        max_errors=5,
+    ):
         self.metric = metric
         self.teacher_settings = teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
         self.max_rounds = max_rounds
-        self.max_errors= max_errors
+        self.max_errors = max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
 
@@ -54,29 +61,43 @@ class BootstrapFewShot(Teleprompter):
         self.student._compiled = True
 
         return self.student
-    
+
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
+        self.teacher = (
+            teacher.deepcopy() if teacher is not None else student.reset_copy()
+        )
 
         assert self.student._compiled is False, "Student must be uncompiled."
 
         if self.max_labeled_demos and self.teacher._compiled is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
-            self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
+            self.teacher = teleprompter.compile(
+                self.teacher.reset_copy(), trainset=self.trainset
+            )
 
     def _prepare_predictor_mappings(self):
         name2predictor, predictor2name = {}, {}
         student, teacher = self.student, self.teacher
 
-        assert len(student.predictors()) == len(teacher.predictors()), "Student and teacher must have the same number of predictors."
+        assert len(student.predictors()) == len(
+            teacher.predictors()
+        ), "Student and teacher must have the same number of predictors."
 
-        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
-            assert name1 == name2, "Student and teacher must have the same program structure."
-            assert predictor1.signature == predictor2.signature, f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
-            assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
+        for (name1, predictor1), (name2, predictor2) in zip(
+            student.named_predictors(), teacher.named_predictors()
+        ):
+            assert (
+                name1 == name2
+            ), "Student and teacher must have the same program structure."
+            assert (
+                predictor1.signature == predictor2.signature
+            ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+            assert id(predictor1) != id(
+                predictor2
+            ), "Student and teacher must be different objects."
 
-            name2predictor[name1] = None # dict(student=predictor1, teacher=predictor2)
+            name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
             predictor2name[id(predictor1)] = name1
             predictor2name[id(predictor2)] = name2
 
@@ -99,12 +120,16 @@ class BootstrapFewShot(Teleprompter):
 
                     if success:
                         bootstrapped[example_idx] = True
-            
-        print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
-        
+
+        print(
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}."
+        )
+
         # Unbootstrapped training examples
 
-        self.validation = [x for idx, x in enumerate(self.trainset) if idx not in bootstrapped]
+        self.validation = [
+            x for idx, x in enumerate(self.trainset) if idx not in bootstrapped
+        ]
         random.Random(0).shuffle(self.validation)
 
         self.validation = self.valset or self.validation
@@ -112,16 +137,20 @@ class BootstrapFewShot(Teleprompter):
         # NOTE: Can't yet use evaluate because we need to trace *per example*
         # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
         # score = evaluate(self.metric, display_table=False, display_progress=True)
-    
+
     def _bootstrap_one_example(self, example, round_idx=0):
         name2traces = self.name2traces
-        teacher = self.teacher #.deepcopy()
+        teacher = self.teacher  # .deepcopy()
         predictor_cache = {}
 
         try:
             with dsp.settings.context(trace=[], **self.teacher_settings):
                 lm = dsp.settings.lm
-                lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
+                lm = (
+                    lm.copy(temperature=0.7 + 0.001 * round_idx)
+                    if round_idx > 0
+                    else lm
+                )
                 new_settings = dict(lm=lm) if round_idx > 0 else {}
 
                 with dsp.settings.context(**new_settings):
@@ -135,7 +164,9 @@ class BootstrapFewShot(Teleprompter):
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
 
-                success = (self.metric is None) or self.metric(example, prediction, trace)
+                success = (self.metric is None) or self.metric(
+                    example, prediction, trace
+                )
                 # print(success, example, prediction)
         except Exception as e:
             success = False
@@ -144,14 +175,18 @@ class BootstrapFewShot(Teleprompter):
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
                 raise e
-            print(f'Failed to run or to evaluate example {example} with {self.metric} due to {e}.')
-        
+            print(
+                f"Failed to run or to evaluate example {example} with {self.metric} due to {e}."
+            )
+
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
 
-                if 'dspy_uuid' in example:
-                    demo = Example(augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs)
+                if "dspy_uuid" in example:
+                    demo = Example(
+                        augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs
+                    )
                 else:
                     # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
                     demo = Example(augmented=True, **inputs, **outputs)
@@ -159,16 +194,22 @@ class BootstrapFewShot(Teleprompter):
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
                 except KeyError as e:
-                    continue # FIXME: !
+                    continue  # FIXME: !
 
                     # TODO: Look closer into this. It's a bit tricky to reproduce.
-                    print(f'Failed to find predictor {predictor} in {self.predictor2name}.')
-                    print('Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.')
-                    print('Try restarting the notebook, or open an issue.')
-                    raise KeyError(f'Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.') from e
+                    print(
+                        f"Failed to find predictor {predictor} in {self.predictor2name}."
+                    )
+                    print(
+                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells."
+                    )
+                    print("Try restarting the notebook, or open an issue.")
+                    raise KeyError(
+                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}."
+                    ) from e
 
                 name2traces[predictor_name].append(demo)
-        
+
         return success
 
     def _train(self):
@@ -176,14 +217,17 @@ class BootstrapFewShot(Teleprompter):
         raw_demos = self.validation
 
         for name, predictor in self.student.named_predictors():
-            augmented_demos = self.name2traces[name][:self.max_bootstrapped_demos]
-            
-            sample_size = min(self.max_labeled_demos - len(augmented_demos), len(raw_demos))
+            augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
+
+            sample_size = min(
+                self.max_labeled_demos - len(augmented_demos), len(raw_demos)
+            )
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)
-            
+
             import dspy
+
             if dspy.settings.release >= 20230928:
                 predictor.demos = raw_demos + augmented_demos
             else:

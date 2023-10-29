@@ -1,12 +1,9 @@
-from openai import InvalidRequestError
-from openai.error import APIError
-
 import dsp
 import tqdm
 import pandas as pd
 
 from IPython.display import display
-from dsp.utils import EM, F1, HotPotF1
+from dsp.utils import EM
 
 
 def evaluateRetrieval(fn, dev, metric=None):
@@ -19,17 +16,24 @@ def evaluateRetrieval(fn, dev, metric=None):
         d = dict(example)
 
         # d['prediction'] = prediction.answer
-        d['correct'] =  dsp.passage_match(prediction.context, example.answer)
+        d["correct"] = dsp.passage_match(prediction.context, example.answer)
         data.append(d)
 
     df = pd.DataFrame(data)
 
-    percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
+    percentage = round(100.0 * df["correct"].sum() / len(dev), 1)
     print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
-    df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
+    df["correct"] = df["correct"].apply(lambda x: "✔️" if x else "❌")
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    display(
+        df.style.set_table_styles(
+            [
+                {"selector": "th", "props": [("text-align", "left")]},
+                {"selector": "td", "props": [("text-align", "left")]},
+            ]
+        )
+    )
 
 
 def evaluateAnswer(fn, dev, metric=EM):
@@ -43,19 +47,25 @@ def evaluateAnswer(fn, dev, metric=EM):
 
         pred = prediction.answer
 
-        d['prediction'] = pred
-        d['correct'] = metric(pred, example.answer)
+        d["prediction"] = pred
+        d["correct"] = metric(pred, example.answer)
         data.append(d)
 
     df = pd.DataFrame(data)
 
-    percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
+    percentage = round(100.0 * df["correct"].sum() / len(dev), 1)
     print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
-    df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
+    df["correct"] = df["correct"].apply(lambda x: "✔️" if x else "❌")
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
-
+    display(
+        df.style.set_table_styles(
+            [
+                {"selector": "th", "props": [("text-align", "left")]},
+                {"selector": "td", "props": [("text-align", "left")]},
+            ]
+        )
+    )
 
 
 def evaluate(fn, dev, metric=EM):
@@ -67,21 +77,26 @@ def evaluate(fn, dev, metric=EM):
 
         d = dict(example)
 
-        pred = prediction#.answer
+        pred = prediction  # .answer
 
-        d['prediction'] = pred
-        d['correct'] = metric(pred, example.answer)
+        d["prediction"] = pred
+        d["correct"] = metric(pred, example.answer)
         data.append(d)
 
     df = pd.DataFrame(data)
 
-    percentage = round(100.0 * df['correct'].sum() / len(dev), 1)
+    percentage = round(100.0 * df["correct"].sum() / len(dev), 1)
     print(f"Answered {df['correct'].sum()} / {len(dev)} ({percentage}%) correctly.")
-    df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
+    df["correct"] = df["correct"].apply(lambda x: "✔️" if x else "❌")
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    display(
+        df.style.set_table_styles(
+            [
+                {"selector": "th", "props": [("text-align", "left")]},
+                {"selector": "td", "props": [("text-align", "left")]},
+            ]
+        )
+    )
 
     return percentage
-
-

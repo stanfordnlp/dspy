@@ -93,37 +93,78 @@ class BoxType(type):
     # List of operations to override
     ops = [
         # Arithmetic operations
-        'add', 'sub', 'mul', 'truediv', 'floordiv', 'mod', 'pow', 
-        'lshift', 'rshift', 'and', 'or', 'xor',
+        "add",
+        "sub",
+        "mul",
+        "truediv",
+        "floordiv",
+        "mod",
+        "pow",
+        "lshift",
+        "rshift",
+        "and",
+        "or",
+        "xor",
         # 'r'-prefixed versions of arithmetic operations
-        'radd', 'rsub', 'rmul', 'rtruediv', 'rfloordiv', 'rmod', 
-        'rpow', 'rlshift', 'rrshift', 'rand', 'ror', 'rxor',
+        "radd",
+        "rsub",
+        "rmul",
+        "rtruediv",
+        "rfloordiv",
+        "rmod",
+        "rpow",
+        "rlshift",
+        "rrshift",
+        "rand",
+        "ror",
+        "rxor",
         # Sequence operations
-        'getitem', 'setitem', 'delitem', 'contains',
+        "getitem",
+        "setitem",
+        "delitem",
+        "contains",
         # Unary and other operations
-        'neg', 'pos', 'abs', 'invert', 'round', 'len', 
-        'getitem', 'setitem', 'delitem', 'contains', 'iter',
+        "neg",
+        "pos",
+        "abs",
+        "invert",
+        "round",
+        "len",
+        "getitem",
+        "setitem",
+        "delitem",
+        "contains",
+        "iter",
         # Mappings operations (for dicts)
-        'get', 'keys', 'values', 'items',
+        "get",
+        "keys",
+        "values",
+        "items",
         # Comparison
-        'eq', 'ne', 'lt', 'le', 'gt', 'ge',
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
     ]
 
     def __init__(cls, name, bases, attrs):
         def create_method(op):
             def method(self, other=None):
-                if op in ['len', 'keys', 'values', 'items']:
+                if op in ["len", "keys", "values", "items"]:
                     return getattr(self._value, op)()
                 elif isinstance(other, Box):
-                    return Box(getattr(self._value, f'__{op}__')(other._value))
+                    return Box(getattr(self._value, f"__{op}__")(other._value))
                 elif other is not None:
-                    return Box(getattr(self._value, f'__{op}__')(other))
+                    return Box(getattr(self._value, f"__{op}__")(other))
                 else:
                     return NotImplemented
+
             return method
 
         for op in BoxType.ops:
-            setattr(cls, f'__{op}__', create_method(op))
+            setattr(cls, f"__{op}__", create_method(op))
 
         super().__init__(name, bases, attrs)
 
@@ -138,10 +179,10 @@ class Box(metaclass=BoxType):
 
     def __str__(self):
         return str(self._value)
-    
+
     def __bool__(self):
         return bool(self._value)
-    
+
     # if method is missing just call it on the _value
     def __getattr__(self, name):
         return Box(getattr(self._value, name))

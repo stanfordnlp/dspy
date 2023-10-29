@@ -3,19 +3,24 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 
+
 class Settings:
     def __init__(self):
         # A lock for ensuring thread-safety when accessing _parent_configs
         self._lock = threading.Lock()
-        
+
         # Dictionary to hold parent thread configurations
         self._parent_configs = {}
-        
+
         # Using thread-local storage to ensure that each thread has its own configuration stack
         self._local = threading.local()
 
     def _get_current_config(self):
-        return self._local.config_stack[-1] if hasattr(self._local, 'config_stack') and self._local.config_stack else {}
+        return (
+            self._local.config_stack[-1]
+            if hasattr(self._local, "config_stack") and self._local.config_stack
+            else {}
+        )
 
     def initialize_for_thread(self, parent_tid):
         """Initialize thread-local data for a new thread using its parent's config."""
@@ -28,17 +33,21 @@ class Settings:
 
     @contextmanager
     def context(self, **kwargs):
-        current_config = copy.deepcopy(self._get_current_config())  # Deep copy the current configuration
+        current_config = copy.deepcopy(
+            self._get_current_config()
+        )  # Deep copy the current configuration
         current_config.update(kwargs)
-        
-        if not hasattr(self._local, 'config_stack'):
+
+        if not hasattr(self._local, "config_stack"):
             self._local.config_stack = []
-        
+
         self._local.config_stack.append(current_config)
 
         # Register the modified config as the potential parent config
         with self._lock:
-            self._parent_configs[threading.get_ident()] = copy.deepcopy(current_config)  # Deep copy to ensure immutability
+            self._parent_configs[threading.get_ident()] = copy.deepcopy(
+                current_config
+            )  # Deep copy to ensure immutability
 
         try:
             yield
@@ -48,6 +57,7 @@ class Settings:
             # Cleanup after exiting the context
             with self._lock:
                 self._parent_configs.pop(threading.get_ident(), None)
+
 
 # Singleton instance
 dsp_settings = Settings()
@@ -61,7 +71,9 @@ def thread_wrapper(program, parent_tid, *args, **kwargs):
 
 # Example test
 def sample_program(arg):
-    print(f"Thread {threading.get_ident()} with arg={arg} has config: {dsp_settings._get_current_config()}")
+    print(
+        f"Thread {threading.get_ident()} with arg={arg} has config: {dsp_settings._get_current_config()}"
+    )
 
 
 def main():
@@ -69,12 +81,17 @@ def main():
 
     with dsp_settings.context(a=10, b=20):  # Setting main thread's context
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {executor.submit(thread_wrapper, sample_program, parent_tid, arg) for arg in range(3)}
+            futures = {
+                executor.submit(thread_wrapper, sample_program, parent_tid, arg)
+                for arg in range(3)
+            }
 
             for future in as_completed(futures):
-                res = future.result()
+                future.result()
 
-        print(f"Main thread {parent_tid} config after threads: {dsp_settings._get_current_config()}")
+        print(
+            f"Main thread {parent_tid} config after threads: {dsp_settings._get_current_config()}"
+        )
 
 
 if __name__ == "__main__":

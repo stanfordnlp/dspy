@@ -3,7 +3,7 @@ from typing import Tuple
 try:
     import faiss
     from faiss import Index
-except ImportError as e:
+except ImportError:
     raise ImportError(
         "You need to install FAISS library to perform ANN/KNN. Please check the official doc: "
         "https://github.com/facebookresearch/faiss/blob/main/INSTALL.md"
@@ -33,12 +33,12 @@ def determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:
 
 
 def _get_brute_index(emb_dim: int, dist_type: str) -> Index:
-    if dist_type.lower() == 'ip':
+    if dist_type.lower() == "ip":
         index = faiss.IndexFlatIP(emb_dim)
-    elif dist_type.lower() == 'l2':
+    elif dist_type.lower() == "l2":
         index = faiss.IndexFlatL2(emb_dim)
     else:
-        raise ValueError(f'Wrong distance type for FAISS Flat Index: {dist_type}')
+        raise ValueError(f"Wrong distance type for FAISS Flat Index: {dist_type}")
 
     return index
 
@@ -48,24 +48,26 @@ def _get_ivf_index(
     n_objects: int,
     in_list_dist_type: str,
     centroid_dist_type: str,
-    encode_residuals: bool
+    encode_residuals: bool,
 ) -> Index:
     # according to the FAISS doc, this should be OK
-    n_list = int(4 * (n_objects ** 0.5))
+    n_list = int(4 * (n_objects**0.5))
 
-    if in_list_dist_type.lower() == 'ip':
+    if in_list_dist_type.lower() == "ip":
         quannizer = faiss.IndexFlatIP(emb_dim)
-    elif in_list_dist_type.lower() == 'l2':
+    elif in_list_dist_type.lower() == "l2":
         quannizer = faiss.IndexFlatL2(emb_dim)
     else:
-        raise ValueError(f'Wrong distance type for FAISS quantizer: {in_list_dist_type}')
+        raise ValueError(
+            f"Wrong distance type for FAISS quantizer: {in_list_dist_type}"
+        )
 
-    if centroid_dist_type.lower() == 'ip':
+    if centroid_dist_type.lower() == "ip":
         centroid_metric = faiss.METRIC_INNER_PRODUCT
-    elif centroid_dist_type.lower() == 'l2':
+    elif centroid_dist_type.lower() == "l2":
         centroid_metric = faiss.METRIC_L2
     else:
-        raise ValueError(f'Wrong distance type for FAISS index: {centroid_dist_type}')
+        raise ValueError(f"Wrong distance type for FAISS index: {centroid_dist_type}")
 
     index = faiss.IndexIVFScalarQuantizer(
         quannizer,
@@ -73,7 +75,7 @@ def _get_ivf_index(
         n_list,
         faiss.ScalarQuantizer.QT_fp16,  # TODO: should be optional?
         centroid_metric,
-        encode_residuals
+        encode_residuals,
     )
     return index
 
@@ -84,8 +86,8 @@ def create_faiss_index(
     n_probe: int = 10,
     max_gpu_devices: int = 0,
     encode_residuals: bool = True,
-    in_list_dist_type: str = 'L2',
-    centroid_dist_type: str = 'L2'
+    in_list_dist_type: str = "L2",
+    centroid_dist_type: str = "L2",
 ) -> Index:
     """
     Create IVF index (with IP or L2 dist), without adding data and training
@@ -96,14 +98,14 @@ def create_faiss_index(
         n_probe: number of closest IVF-clusters to check for neighbours.
             Doesn't affect bruteforce-based search.
         max_gpu_devices: maximum amount of GPUs to use for ANN-index. 0 if run on CPU.
-        encode_residuals: whether or not compute residuals. The residual vector is 
+        encode_residuals: whether or not compute residuals. The residual vector is
             the difference between a vector and the reconstruction that can be
             decoded from its representation in the index.
         in_list_dist_type: type of distance to calculate simmilarities within one IVF.
             Can be `IP` (for inner product) or `L2` distance. Case insensetive.
             If the index type is bruteforce (`n_objects` < 20_000), this variable will define
             the distane type for that bruteforce index. `centroid_dist_type` will be ignored.
-        centroid_dist_type: type of distance to calculate simmilarities between a query 
+        centroid_dist_type: type of distance to calculate simmilarities between a query
             and cluster centroids. Can be `IP` (for inner product) or `L2` distance.
             Case insensetive.
     Returns: untrained FAISS-index
@@ -118,7 +120,7 @@ def create_faiss_index(
             n_objects=n_objects,
             in_list_dist_type=in_list_dist_type,
             centroid_dist_type=centroid_dist_type,
-            encode_residuals=encode_residuals
+            encode_residuals=encode_residuals,
         )
 
     index.nprobe = n_probe
@@ -127,6 +129,8 @@ def create_faiss_index(
     if is_gpu:
         cloner_options = faiss.GpuMultipleClonerOptions()
         cloner_options.shard = True  # split (not replicate) one index between GPUs
-        index = faiss.index_cpu_to_gpus_list(index, cloner_options, list(range(num_devices)))
+        index = faiss.index_cpu_to_gpus_list(
+            index, cloner_options, list(range(num_devices))
+        )
 
     return index

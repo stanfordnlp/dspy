@@ -44,7 +44,7 @@ class TemplateV2:
                     variable = match.group(3)
                     description = None
                 else:
-                    raise ValueError(f"Could not parse template")
+                    raise ValueError("Could not parse template")
 
             var_match = re.match("(.*) -> (.*)", variable)
             if var_match is not None:
@@ -94,15 +94,19 @@ class TemplateV2:
 
                     def format_handler(x):
                         return " ".join(x.split())
-                
-                formatted_value = format_handler(example[field.input_variable])
-                separator = '\n' if field.separator == ' ' and '\n' in formatted_value else field.separator
 
-                result.append(
-                    f"{field.name}{separator}{formatted_value}"
+                formatted_value = format_handler(example[field.input_variable])
+                separator = (
+                    "\n"
+                    if field.separator == " " and "\n" in formatted_value
+                    else field.separator
                 )
 
-        if self._has_augmented_guidelines() and ("augmented" in example and example.augmented):
+                result.append(f"{field.name}{separator}{formatted_value}")
+
+        if self._has_augmented_guidelines() and (
+            "augmented" in example and example.augmented
+        ):
             return "\n\n".join([r for r in result if r])
         return "\n".join([r for r in result if r])
 
@@ -126,7 +130,8 @@ class TemplateV2:
 
     def _has_augmented_guidelines(self):
         return len(self.fields) > 3 or any(
-            ("\n" in field.separator) or ('\n' in field.description) for field in self.fields
+            ("\n" in field.separator) or ("\n" in field.description)
+            for field in self.fields
         )
 
     def extract(
@@ -164,16 +169,27 @@ class TemplateV2:
 
                 if offset >= 0:
                     if dspy.settings.release >= 20231003:
-                        example[self.fields[idx].output_variable] = raw_pred[:offset].strip().rstrip('---').strip()
-                        raw_pred = raw_pred[offset + len(next_field_name) :].strip().rstrip('---').strip()
+                        example[self.fields[idx].output_variable] = (
+                            raw_pred[:offset].strip().rstrip("---").strip()
+                        )
+                        raw_pred = (
+                            raw_pred[offset + len(next_field_name) :]
+                            .strip()
+                            .rstrip("---")
+                            .strip()
+                        )
                     else:
-                        example[self.fields[idx].output_variable] = raw_pred[:offset].strip()
+                        example[self.fields[idx].output_variable] = raw_pred[
+                            :offset
+                        ].strip()
                         raw_pred = raw_pred[offset + len(next_field_name) :].strip()
 
                     idx += 1
                 else:
                     if dspy.settings.release >= 20231003:
-                        example[self.fields[idx].output_variable] = raw_pred.strip().rstrip('---').strip()
+                        example[self.fields[idx].output_variable] = (
+                            raw_pred.strip().rstrip("---").strip()
+                        )
                     else:
                         example[self.fields[idx].output_variable] = raw_pred.strip()
 
@@ -185,7 +201,9 @@ class TemplateV2:
                 assert idx == len(self.fields) - 1, (idx, len(self.fields))
 
                 if dspy.settings.release >= 20231003:
-                    example[self.fields[idx].output_variable] = raw_pred.strip().rstrip('---').strip()
+                    example[self.fields[idx].output_variable] = (
+                        raw_pred.strip().rstrip("---").strip()
+                    )
                 else:
                     example[self.fields[idx].output_variable] = raw_pred.strip()
 
@@ -196,7 +214,7 @@ class TemplateV2:
     def __call__(self, example, show_guidelines=True) -> str:
         example = dsp.Example(example)
 
-        if hasattr(dsp.settings, 'query_only') and dsp.settings.query_only:
+        if hasattr(dsp.settings, "query_only") and dsp.settings.query_only:
             return self.query(example)
 
         # The training data should not contain the output variable
@@ -238,10 +256,9 @@ class TemplateV2:
                     ademos.append(rdemo)
             else:
                 rdemos_.append(rdemo)
-        
+
         ademos = new_ademos + ademos
         rdemos = rdemos_
-
 
         long_query = self._has_augmented_guidelines()
 
@@ -251,7 +268,7 @@ class TemplateV2:
         query = self.query(example)
 
         # if it has more lines than fields
-        if len(query.split('\n')) > len(self.fields):
+        if len(query.split("\n")) > len(self.fields):
             long_query = True
 
             if "augmented" not in example or not example.augmented:

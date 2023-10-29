@@ -6,6 +6,7 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
+
     cohere_api_error = cohere.CohereAPIError
 except ImportError:
     cohere_api_error = Exception
@@ -106,7 +107,7 @@ class Cohere(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs
+        **kwargs,
     ):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"

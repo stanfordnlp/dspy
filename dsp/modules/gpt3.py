@@ -42,7 +42,12 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
 
-        default_model_type = "chat" if ('gpt-3.5' in model or 'turbo' in model or 'gpt-4' in model) and ('instruct' not in model) else "text"
+        default_model_type = (
+            "chat"
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
+            and ("instruct" not in model)
+            else "text"
+        )
         self.model_type = model_type if model_type else default_model_type
 
         if api_provider == "azure":
@@ -70,7 +75,7 @@ class GPT3(LM):
             "n": 1,
             **kwargs,
         }  # TODO: add kwargs above for </s>
-        
+
         if api_provider != "azure":
             self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
@@ -85,11 +90,9 @@ class GPT3(LM):
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             kwargs["messages"] = [{"role": "user", "content": prompt}]
-            kwargs = {
-                "stringify_request": json.dumps(kwargs)
-            }
+            kwargs = {"stringify_request": json.dumps(kwargs)}
             response = cached_gpt3_turbo_request(**kwargs)
-            
+
         else:
             kwargs["prompt"] = prompt
             response = cached_gpt3_request(**kwargs)
@@ -114,7 +117,7 @@ class GPT3(LM):
         """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
-        
+
         return self.basic_request(prompt, **kwargs)
 
     def _get_choice_text(self, choice: dict[str, Any]) -> str:

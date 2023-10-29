@@ -7,18 +7,28 @@ import subprocess
 
 import dsp
 from datasets.fingerprint import Hasher
+import logging
 
-if os.environ.get('DSP_NOTEBOOK_CACHEDIR'):
-    training_data_directory = os.path.join(os.environ.get('DSP_NOTEBOOK_CACHEDIR'), 'compiler')
+if os.environ.get("DSP_NOTEBOOK_CACHEDIR"):
+    training_data_directory = os.path.join(
+        os.environ.get("DSP_NOTEBOOK_CACHEDIR"), "compiler"
+    )
 else:
-    training_data_directory = 'cache/compiler'
+    training_data_directory = "cache/compiler"
 
 
-compilations_assumed_to_exist={'ft-zvEdzQVQ5xwlxvNPrxl6kpnw': 'ada:ft-stanfordpraglab-2023-02-09-19-50-49'}
+logger = logging.getLogger(__name__)
+
+compilations_assumed_to_exist = {
+    "ft-zvEdzQVQ5xwlxvNPrxl6kpnw": "ada:ft-stanfordpraglab-2023-02-09-19-50-49"
+}
 
 
 def openai_check_finetune(jobname):
-    if dsp.settings.force_reuse_cached_compilation and jobname in compilations_assumed_to_exist:
+    if (
+        dsp.settings.force_reuse_cached_compilation
+        and jobname in compilations_assumed_to_exist
+    ):
         return compilations_assumed_to_exist[jobname]
 
     command = f"""openai api fine_tunes.get -i {jobname}"""
@@ -29,14 +39,17 @@ def openai_check_finetune(jobname):
 
     try:
         output = ujson.loads(output)
-        if output['status'] == 'succeeded':
-            return output['fine_tuned_model']
+        if output["status"] == "succeeded":
+            return output["fine_tuned_model"]
 
-        if output['status'] in ['pending', 'running']:
-            print(f'Compiling, run ```openai api fine_tunes.follow -i {jobname}``` for details...')
+        if output["status"] in ["pending", "running"]:
+            print(
+                f"Compiling, run ```openai api fine_tunes.follow -i {jobname}``` for details..."
+            )
             time.sleep(60)
             return openai_check_finetune(jobname)
-    except:
+    except Exception as e:
+        logger.exception(e)
         pass
 
     return False
@@ -49,13 +62,13 @@ def convert_to_training_point2(y, inputs, outputs, template):
     prompt = template(y_, show_guidelines=False)
 
     completion = y[outputs[0]]
-    output_fields = template.fields[len(inputs):]
+    output_fields = template.fields[len(inputs) :]
 
     for field in output_fields[1:]:
         completion += f"\n\n{field.name} " + y[field.output_variable]
-    
+
     completion = " " + completion + " </s>"
-    return {'prompt': prompt, 'completion': completion}
+    return {"prompt": prompt, "completion": completion}
 
 
 def simulate(program, input_examples):
@@ -67,9 +80,18 @@ def simulate(program, input_examples):
         if prediction is not None:
             # assert len(prediction.compiling_stages) == 2, "TMP"
             for stage in prediction.compiling_stages:
-                name, template, inputs, outputs = stage['name'], stage['template'], stage['inputs'], stage['outputs']
-                training_data.append(convert_to_training_point2(prediction.get(name), inputs, outputs, template))
-    
+                name, template, inputs, outputs = (
+                    stage["name"],
+                    stage["template"],
+                    stage["inputs"],
+                    stage["outputs"],
+                )
+                training_data.append(
+                    convert_to_training_point2(
+                        prediction.get(name), inputs, outputs, template
+                    )
+                )
+
     r = random.Random(0)
     r.shuffle(training_data)
 
@@ -84,19 +106,21 @@ def openai_finetune_(name, target):
     print(command)
 
     # command = """python script.py"""
-    process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     while line := process.stdout.readline().decode().strip():
-        if 'created fine-tune:' in line.lower():
+        if "created fine-tune:" in line.lower():
             jobname = line.split()[-1]
             break
-        
+
     #     if 'costs $' in line.lower():
     #         cost = line.split()[-1]
     #         break
 
     # assert cost[0] == '$'
-    
+
     # if float(cost[1:]) > 300:
     #     print(f'Got cost {cost} -- you may wanna cancel the job: openai api fine_tunes.cancel -i {jobname}')
 
@@ -115,7 +139,7 @@ def openai_finetune_(name, target):
 def openai_finetune(name, target):
     print(name)
     training_data_path = name_to_path(name)
-    training_data_path += '.model'
+    training_data_path += ".model"
 
     # if path + stuff exists, load the tuple from it
     try:
@@ -124,14 +148,15 @@ def openai_finetune(name, target):
 
         if openai_check_finetune(jobname):
             return jobname, ft
-    except:
+    except Exception as e:
+        logger.exception(e)
         pass
-    
+
     jobname, ft = openai_finetune_(name, target)
 
-    with open(training_data_path, 'w') as f:
-        f.write(ujson.dumps((jobname, ft)) + '\n')
-    
+    with open(training_data_path, "w") as f:
+        f.write(ujson.dumps((jobname, ft)) + "\n")
+
     return jobname, ft
 
 
@@ -139,7 +164,7 @@ def name_to_path(name):
     if not os.path.exists(training_data_directory):
         os.makedirs(training_data_directory)
 
-    training_data_path = os.path.join(training_data_directory, f'{name}.jsonl')
+    training_data_path = os.path.join(training_data_directory, f"{name}.jsonl")
     return training_data_path
 
 
@@ -148,9 +173,9 @@ def finetune(training_data, target):
     name = Hasher.hash(training_data)
     training_data_path = name_to_path(name)
 
-    with open(training_data_path, 'w') as f:
+    with open(training_data_path, "w") as f:
         for line in training_data:
-            f.write(ujson.dumps(line) + '\n')
+            f.write(ujson.dumps(line) + "\n")
 
     jobname, ft = openai_finetune(name, target)
     print(ft)
@@ -158,8 +183,9 @@ def finetune(training_data, target):
     ft = dsp.GPT3(model=ft, stop=" </s>")
     return ft
 
+
 # 4. Return updated program.
-def compile(program, examples, target='ada'):
+def compile(program, examples, target="ada"):
     training_data = simulate(program, examples)
     compiled_lm = finetune(training_data, target=target)
 
@@ -169,4 +195,3 @@ def compile(program, examples, target='ada'):
 
     compiled_program.lm = compiled_lm
     return compiled_program
-

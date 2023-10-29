@@ -4,6 +4,7 @@ import datetime
 import itertools
 
 from collections import defaultdict
+import copy
 
 
 def print_message(*s, condition=True, pad=False, sep=None):
@@ -75,25 +76,25 @@ def batch(group, bsize, provide_offset=False):
 #     __delattr__ = dict.__delitem__
 
 
-import copy
-
 class dotdict(dict):
     def __getattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             return super().__getattr__(key)
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{key}'"
+            )
 
     def __setattr__(self, key, value):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__setattr__(key, value)
         else:
             self[key] = value
 
     def __delattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__delattr__(key)
         else:
             del self[key]
@@ -234,7 +235,7 @@ def load_batch_backgrounds(args, qids):
     for qid in qids:
         back = args.qid2backgrounds[qid]
 
-        if len(back) and type(back[0]) == int:
+        if len(back) and isinstance(back[0], int):
             x = [args.collection[pid] for pid in back]
         else:
             x = [args.collectionX.get(pid, "") for pid in back]

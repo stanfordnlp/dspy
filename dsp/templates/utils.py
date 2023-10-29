@@ -30,7 +30,7 @@ def passages2textV2(passages: Union[str, list, tuple]) -> str:
             return f"Title: {title.strip()} | Snippet: «{snippet.strip()}»"
         except Exception:
             pass
-        
+
         return f"«{psg}»"
 
     if len(passages) == 0:

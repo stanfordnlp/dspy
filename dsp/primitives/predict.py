@@ -3,7 +3,6 @@ from typing import Callable, Any, Optional
 
 import dsp
 from dsp.utils import zipstar, normalize_text
-from dsp.primitives.inspect import FuncInspector
 from dsp.utils.utils import dotdict
 from dsp.templates.template_v3 import Template
 from dsp.primitives.demonstrate import Example

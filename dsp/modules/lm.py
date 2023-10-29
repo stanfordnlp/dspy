@@ -70,7 +70,7 @@ class LM(ABC):
             if provider == "cohere":
                 text = choices[0].text
             elif provider == "openai":
-                text = ' ' + self._get_choice_text(choices[0]).strip()
+                text = " " + self._get_choice_text(choices[0]).strip()
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
@@ -86,6 +86,6 @@ class LM(ABC):
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
-        model = kwargs.pop('model')
+        model = kwargs.pop("model")
 
         return self.__class__(model, **kwargs)

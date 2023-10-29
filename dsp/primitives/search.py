@@ -8,7 +8,7 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
         raise AssertionError("No RM is loaded.")
     passages = dsp.settings.rm(query, k=k, **kwargs)
     passages = [psg.long_text for psg in passages]
-    
+
     if dsp.settings.reranker:
         passages_cs_scores = dsp.settings.reranker(query, passages)
         passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1]
@@ -23,8 +23,10 @@ def retrieveRerankEnsemble(queries: list[str], k: int) -> list[str]:
     queries = [q for q in queries if q]
     passages = {}
     for query in queries:
-        retrieved_passages = dsp.settings.rm(query, k=k*3)
-        passages_cs_scores = dsp.settings.reranker(query, [psg.long_text for psg in retrieved_passages])
+        retrieved_passages = dsp.settings.rm(query, k=k * 3)
+        passages_cs_scores = dsp.settings.reranker(
+            query, [psg.long_text for psg in retrieved_passages]
+        )
         for idx in np.argsort(passages_cs_scores)[::-1]:
             psg = retrieved_passages[idx]
             passages[psg.long_text] = passages.get(psg.long_text, []) + [
@@ -43,7 +45,7 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True) -> list[s
         raise AssertionError("No RM is loaded.")
     if dsp.settings.reranker:
         return retrieveRerankEnsemble(queries, k)
-    
+
     queries = [q for q in queries if q]
 
     if len(queries) == 1:

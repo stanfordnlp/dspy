@@ -15,18 +15,14 @@ import ast
 import difflib
 import importlib
 import typing
-import inspect
 from typing import (
     Any,
-    Callable,
     Dict,
     Mapping,
     List,
     Optional,
     Set,
     Tuple,
-    TypeVar,
-    Union,
 )
 import builtins
 
@@ -39,7 +35,7 @@ class InterpreterError(ValueError):
     pass
 
 
-class PythonInterpreter():
+class PythonInterpreter:
     r"""A customized python interpreter to control the execution of
     LLM-generated codes. The interpreter makes sure the code can only execute
     functions given in action space and import white list. It also supports
@@ -48,8 +44,8 @@ class PythonInterpreter():
     .. highlight:: none
 
     This class is adapted from the Camel adaptation https://github.com/camel-ai/
-    camel/blob/9a9d71874944e9736c55cdaed3df469a8becec05/camel/utils/python_interpreter.py 
-    which adapts from the hugging face implementation `python_interpreter.py 
+    camel/blob/9a9d71874944e9736c55cdaed3df469a8becec05/camel/utils/python_interpreter.py
+    which adapts from the hugging face implementation `python_interpreter.py
     <https://github.com/huggingface/transformers/blob/8f093fb799246f7dd9104ff44728da0c53a9f67a
     /src/transformers/tools/python_interpreter.py>`_. The original license applies::
 
@@ -77,10 +73,10 @@ class PythonInterpreter():
     :obj:`fuzz_state` for fuzzy matching."
 
     DSPy's modifications:
-    "We expanded upon the Camel libraries modifications by adding additional 
+    "We expanded upon the Camel libraries modifications by adding additional
     support for "Mapping" statements, "conditional" operators, and including
     the "CodePrompt" and "TextPrompt" classes for code execution.
-    
+
 
     Modifications copyright (C) 2023 CAMEL-AI.org
 
@@ -100,17 +96,24 @@ class PythonInterpreter():
             (:obj:`.`). (default: :obj:`None`)
     """
 
-    def __init__(self, action_space: Dict[str, Any],
-                 import_white_list: Optional[List[str]] = None) -> None:
+    def __init__(
+        self,
+        action_space: Dict[str, Any],
+        import_white_list: Optional[List[str]] = None,
+    ) -> None:
         self.action_space = action_space
         self.state = self.action_space.copy()
         self.fuzz_state: Dict[str, Any] = {}
         self.import_white_list = import_white_list or []
 
-    def execute(self, code: str, state: Optional[Dict[str, Any]] = None,
-                fuzz_state: Optional[Dict[str, Any]] = None,
-                keep_state: bool = True) -> Any:
-        r""" Execute the input python codes in a security environment.
+    def execute(
+        self,
+        code: str,
+        state: Optional[Dict[str, Any]] = None,
+        fuzz_state: Optional[Dict[str, Any]] = None,
+        keep_state: bool = True,
+    ) -> Any:
+        r"""Execute the input python codes in a security environment.
 
         Args:
             code (str): Generated python code to be executed.
@@ -142,7 +145,9 @@ class PythonInterpreter():
             expression = ast.parse(code)
         except SyntaxError as e:
             error_line = code.splitlines()[e.lineno - 1]
-            raise InterpreterError(f"Syntax error in code at line {e.lineno}: {error_line}\nError: {e}")
+            raise InterpreterError(
+                f"Syntax error in code at line {e.lineno}: {error_line}\nError: {e}"
+            )
 
         result = None
         for idx, node in enumerate(expression.body):
@@ -151,8 +156,7 @@ class PythonInterpreter():
             except InterpreterError as e:
                 if not keep_state:
                     self.clear_state()
-                msg = (f"Evaluation of the code stopped at node {idx}. "
-                       f"See:\n{e}")
+                msg = f"Evaluation of the code stopped at node {idx}. " f"See:\n{e}"
                 # More information can be provided by `ast.unparse()`,
                 # which is new in python 3.9.
                 raise InterpreterError(msg)
@@ -163,12 +167,12 @@ class PythonInterpreter():
             self.clear_state()
 
         return result
-    
+
     def clear_state(self) -> None:
         r"""Initialize :obj:`state` and :obj:`fuzz_state`"""
         self.state = self.action_space.copy()
         self.fuzz_state = {}
-    
+
     # ast.Index is deprecated after python 3.9, which cannot pass type check,
     # but is still necessary for older versions.
     @typing.no_type_check
@@ -229,8 +233,7 @@ class PythonInterpreter():
             # cannot pass type check
             return self._execute_ast(expression.value)
         elif isinstance(expression, ast.JoinedStr):
-            return "".join(
-                [str(self._execute_ast(v)) for v in expression.values])
+            return "".join([str(self._execute_ast(v)) for v in expression.values])
         elif isinstance(expression, ast.List):
             # List -> evaluate all elements
             return [self._execute_ast(elt) for elt in expression.elts]
@@ -250,8 +253,7 @@ class PythonInterpreter():
         else:
             # For now we refuse anything else. Let's add things as we need
             # them.
-            raise InterpreterError(
-                f"{expression.__class__.__name__} is not supported.")
+            raise InterpreterError(f"{expression.__class__.__name__} is not supported.")
 
     def _execute_assign(self, assign: ast.Assign) -> Any:
         targets = assign.targets
@@ -266,30 +268,35 @@ class PythonInterpreter():
             self.state[target.id] = value
         elif isinstance(target, ast.Tuple):
             if not isinstance(value, tuple):
-                raise InterpreterError(f"Expected type tuple, but got"
-                                       f"{value.__class__.__name__} instead.")
+                raise InterpreterError(
+                    f"Expected type tuple, but got"
+                    f"{value.__class__.__name__} instead."
+                )
             if len(target.elts) != len(value):
                 raise InterpreterError(
-                    f"Expected {len(target.elts)} values but got"
-                    f" {len(value)}.")
+                    f"Expected {len(target.elts)} values but got" f" {len(value)}."
+                )
             for t, v in zip(target.elts, value):
                 self.state[self._execute_ast(t)] = v
         else:
-            raise InterpreterError(f"Unsupported variable type. Expected "
-                                   f"ast.Name or ast.Tuple, got "
-                                   f"{target.__class__.__name__} instead.")
+            raise InterpreterError(
+                f"Unsupported variable type. Expected "
+                f"ast.Name or ast.Tuple, got "
+                f"{target.__class__.__name__} instead."
+            )
 
     def _execute_call(self, call: ast.Call) -> Any:
         callable_func = self._execute_ast(call.func)
 
         args = [self._execute_ast(arg) for arg in call.args]
         kwargs = {
-            keyword.arg: self._execute_ast(keyword.value)
-            for keyword in call.keywords
+            keyword.arg: self._execute_ast(keyword.value) for keyword in call.keywords
         }
         if isinstance(callable_func, ast.FunctionDef):
             old_state = self.state.copy()
-            for param_name, arg_value in zip([param.arg for param in callable_func.args.args], args):
+            for param_name, arg_value in zip(
+                [param.arg for param in callable_func.args.args], args
+            ):
                 self.state[param_name] = arg_value
             result = None
             for stmt in callable_func.body:
@@ -303,8 +310,13 @@ class PythonInterpreter():
     def _execute_augassign(self, augassign: ast.AugAssign):
         current_value = self.state[augassign.target.id]
         increment_value = self._execute_ast(augassign.value)
-        if not (isinstance(current_value, (int, float)) and isinstance(increment_value, (int, float))):
-            raise InterpreterError(f"Invalid types for augmented assignment: {type(current_value)}, {type(increment_value)}")
+        if not (
+            isinstance(current_value, (int, float))
+            and isinstance(increment_value, (int, float))
+        ):
+            raise InterpreterError(
+                f"Invalid types for augmented assignment: {type(current_value)}, {type(increment_value)}"
+            )
         if isinstance(augassign.op, ast.Add):
             new_value = current_value + increment_value
         elif isinstance(augassign.op, ast.Sub):
@@ -313,9 +325,11 @@ class PythonInterpreter():
             new_value = current_value * increment_value
         elif isinstance(augassign.op, ast.Div):
             new_value = current_value / increment_value
-        #TODO - any other augassign operators that are missing
+        # TODO - any other augassign operators that are missing
         else:
-            raise InterpreterError(f"Augmented assignment operator {augassign.op} is not supported")
+            raise InterpreterError(
+                f"Augmented assignment operator {augassign.op} is not supported"
+            )
         self._assign(augassign.target, new_value)
         return new_value
 
@@ -324,15 +338,14 @@ class PythonInterpreter():
         value = self._execute_ast(subscript.value)
         if not isinstance(subscript.ctx, ast.Load):
             raise InterpreterError(
-                f"{subscript.ctx.__class__.__name__} is not supported for "
-                "subscript.")
+                f"{subscript.ctx.__class__.__name__} is not supported for " "subscript."
+            )
         if isinstance(value, (list, tuple)):
             return value[int(index)]
         if index in value:
             return value[index]
         if isinstance(index, str) and isinstance(value, Mapping):
-            close_matches = difflib.get_close_matches(index,
-                                                      list(value.keys()))
+            close_matches = difflib.get_close_matches(index, list(value.keys()))
             if len(close_matches) > 0:
                 return value[close_matches[0]]
 
@@ -340,7 +353,7 @@ class PythonInterpreter():
 
     def _execute_name(self, name: ast.Name):
         if name.id in dir(builtins):
-          return getattr(builtins, name.id)
+            return getattr(builtins, name.id)
         if isinstance(name.ctx, ast.Store):
             return name.id
         elif isinstance(name.ctx, ast.Load):
@@ -356,14 +369,17 @@ class PythonInterpreter():
             elif isinstance(condition.op, ast.Or):
                 results = [self._execute_ast(value) for value in condition.values]
                 return any(results)
-            else: #TODO - add any other BoolOps missing
-                raise InterpreterError(f"Boolean operator {condition.op} is not supported")
+            else:  # TODO - add any other BoolOps missing
+                raise InterpreterError(
+                    f"Boolean operator {condition.op} is not supported"
+                )
         elif isinstance(condition, ast.Compare):
             if len(condition.ops) > 1:
-                raise InterpreterError("Cannot evaluate conditions with multiple operators")
+                raise InterpreterError(
+                    "Cannot evaluate conditions with multiple operators"
+                )
         if len(condition.ops) > 1:
-            raise InterpreterError(
-                "Cannot evaluate conditions with multiple operators")
+            raise InterpreterError("Cannot evaluate conditions with multiple operators")
         left = self._execute_ast(condition.left)
         comparator = condition.ops[0]
         right = self._execute_ast(condition.comparators[0])
@@ -423,7 +439,7 @@ class PythonInterpreter():
 
     def _execute_import_from(self, import_from: ast.ImportFrom):
         if import_from.module is None:
-            raise InterpreterError("\"from . import\" is not supported.")
+            raise InterpreterError('"from . import" is not supported.')
         for import_name in import_from.names:
             full_name = import_from.module + f".{import_name.name}"
             self._validate_import(full_name)
@@ -441,9 +457,11 @@ class PythonInterpreter():
                 return
 
         if not found_name:
-            raise InterpreterError(f"It is not permitted to import modules "
-                                   f"than module white list (try to import "
-                                   f"{full_name}).")
+            raise InterpreterError(
+                f"It is not permitted to import modules "
+                f"than module white list (try to import "
+                f"{full_name})."
+            )
 
     def _execute_binop(self, binop: ast.BinOp):
         left = self._execute_ast(binop.left)
@@ -494,6 +512,7 @@ class PythonInterpreter():
         else:
             raise InterpreterError(f"The variable `{key}` is not defined.")
 
+
 class TextPrompt(str):
     r"""A class that represents a text prompt. The :obj:`TextPrompt` class
     extends the built-in :obj:`str` class to provide a property for retrieving
@@ -506,12 +525,12 @@ class TextPrompt(str):
 
     @property
     def key_words(self) -> Set[str]:
-        r"""Returns a set of strings representing the keywords in the prompt.
-        """
+        r"""Returns a set of strings representing the keywords in the prompt."""
         from camel.utils import get_prompt_template_key_words
+
         return get_prompt_template_key_words(self)
 
-    def format(self, *args: Any, **kwargs: Any) -> 'TextPrompt':
+    def format(self, *args: Any, **kwargs: Any) -> "TextPrompt":
         r"""Overrides the built-in :obj:`str.format` method to allow for
         default values in the format string. This is used to allow formatting
         the partial string.
@@ -524,9 +543,10 @@ class TextPrompt(str):
             TextPrompt: A new :obj:`TextPrompt` object with the format string
                 replaced with the formatted string.
         """
-        default_kwargs = {key: '{' + f'{key}' + '}' for key in self.key_words}
+        default_kwargs = {key: "{" + f"{key}" + "}" for key in self.key_words}
         default_kwargs.update(kwargs)
         return TextPrompt(super().format(*args, **default_kwargs))
+
 
 class CodePrompt(TextPrompt):
     r"""A class that represents a code prompt. It extends the :obj:`TextPrompt`
@@ -536,7 +556,7 @@ class CodePrompt(TextPrompt):
         code_type (str, optional): The type of code. Defaults to None.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> 'CodePrompt':
+    def __new__(cls, *args: Any, **kwargs: Any) -> "CodePrompt":
         r"""Creates a new instance of the :obj:`CodePrompt` class.
 
         Args:
@@ -546,7 +566,7 @@ class CodePrompt(TextPrompt):
         Returns:
             CodePrompt: The created :obj:`CodePrompt` instance.
         """
-        code_type = kwargs.pop('code_type', None)
+        code_type = kwargs.pop("code_type", None)
         instance = super().__new__(cls, *args, **kwargs)
         instance._code_type = code_type
         return instance
@@ -569,8 +589,9 @@ class CodePrompt(TextPrompt):
         self._code_type = code_type
 
     def execute(
-        self, interpreter: Optional[PythonInterpreter] = None,
-        user_variable: Optional[Dict[str, Any]] = None
+        self,
+        interpreter: Optional[PythonInterpreter] = None,
+        user_variable: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, PythonInterpreter]:
         r"""Executes the code string by a given python interpreter.
 
@@ -587,10 +608,11 @@ class CodePrompt(TextPrompt):
                 represents the value of the last statement (excluding "import")
                 in the code. This value could potentially be the desired result
                 of the LLM-generated code.
-    """
+        """
         # NOTE: Only supports Python code for now.
         if not interpreter:
             interpreter = PythonInterpreter(action_space=globals())
-        execution_res = interpreter.execute(self, fuzz_state=user_variable,
-                                            keep_state=True)
+        execution_res = interpreter.execute(
+            self, fuzz_state=user_variable, keep_state=True
+        )
         return execution_res, interpreter

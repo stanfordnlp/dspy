@@ -4,6 +4,7 @@ from typing import Callable, Any
 import numpy as np
 
 import dsp
+from dsp.modules.sentence_vectorizer import BaseSentenceVectorizer
 from dsp.utils import EM, F1, DPR_normalize, dotdict, has_answer, normalize_text
 
 
@@ -148,7 +149,7 @@ def cast_naive_get_question_and_answer(inp_example: Example) -> Example:
 def knn(
     train: list[Example],
     cast: Callable[[Example], Example] = cast_naive_get_only_question_text,
-    **knn_args
+    **knn_args,
 ) -> Callable[[Example, int], list[Example]]:
     """
     A function that vectorizes train data using `dsm.settings.vectorizer`, then build an ANN/KNN
