@@ -79,41 +79,12 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
     return True
 
 
-########################## NEW STUFF ##########################
-
-
 def validate_query_distinction_local(previous_queries, query):
     if previous_queries == []:
         return True
     if dspy.evaluate.answer_exact_match_str(query, previous_queries, frac=0.8):
         return False
     return True
-
-
-class EvaluateSearchQueries(dspy.Signature):
-    query = dspy.InputField(desc="current query")
-    previous_queries = dspy.InputField(desc="previous queries")
-    duplication = dspy.OutputField(
-        desc="Whether the current query is similar to previous queries, only return True or False"
-    )
-
-
-class QueryDistinction(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.evaluate_query = dspy.Predict(EvaluateSearchQueries)
-
-    def forward(self, query, previous_queries):
-        duplication = self.evaluate_query(
-            query=query, previous_queries=previous_queries
-        ).duplication
-        return duplication
-
-
-def validate_query_distinction_LM(previous_queries, query):
-    query_distinction = QueryDistinction()
-    duplication = query_distinction(query=query, previous_queries=previous_queries)
-    return True if duplication == "False" else False
 
 
 # declaration of dspy program
@@ -129,24 +100,25 @@ class SimplifiedBaleen(dspy.Module):
         self.max_hops = max_hops
 
     def forward(self, question):
-        print("\nquestion is ", question)
         context = []
         previous_queries = [question]
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
 
-            # turbo.inspect_history(n=1)
-            print("query is ", query)
-            
             dspy.Assert(
-                lambda x: len(x) <= 100, query, 
+                lambda x: len(x) <= 100,
+                query,
                 msg="Query should be short and less than 100 characters",
             )
 
             dspy.Assert(
-                validate_query_distinction_local, previous_queries, query,
+                validate_query_distinction_local,
+                previous_queries,
+                query,
                 msg="Query should not be the following: "
-                + "; ".join(f"{idx+1}) {query}" for idx, query in enumerate(previous_queries)),
+                + "; ".join(
+                    f"{idx+1}) {query}" for idx, query in enumerate(previous_queries)
+                ),
             )
             previous_queries.append(query)
             passages = self.retrieve(query).passages
@@ -157,19 +129,11 @@ class SimplifiedBaleen(dspy.Module):
         return dspy.Prediction(context=context, answer=pred.answer)
 
 
-# compile dspy program using a teleprompter (optimizer)
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer_and_hops)
-
-student = SimplifiedBaleen()
-teacher = SimplifiedBaleen(passages_per_hop=2)
-compiled_baleen = teleprompter.compile(student, teacher=teacher, trainset=trainset)
-
+compiled_baleen = teleprompter.compile(
+    SimplifiedBaleen(), teacher=SimplifiedBaleen(passages_per_hop=2), trainset=trainset
+)
 
 print("=" * 50, "Validation Failures", "=" * 50)
-# Print the counts of each failure type
 for failure_type, count in failure_counts.items():
     print(f"{failure_type}: {count}")
-
-# my_question = "How many storeys are in the castle that David Gregory inherited?"
-# pred = compiled_baleen(my_question)
-# turbo.inspect_history(n=3)
