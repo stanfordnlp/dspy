@@ -1,0 +1,197 @@
+
+Before adding any assertions:
+================================================== Validation Failures ==================================================
+answer_exact_match: 8               
+answer_passage_match: 0
+max_hop_length_exceeded: 5          
+hop_query_similarity_exceeded: 1 
+---------------------------------
+Total: 14
+---------------------------------
+
+
+
+With query length and similarity assertion:
+================================================== Validation Failures ==================================================
+answer_exact_match: 4                   # need new assertions to fix these?
+answer_passage_match: 0
+max_hop_length_exceeded: 5              # most are question is too long :/
+hop_query_similarity_exceeded: 0
+---------------------------------
+failed_prog_assertions: 5               # 4/8 exact_answer_match and 1/1 hop_query_similarity_exceeded caught earlier
+---------------------------------
+Total: 14
+---------------------------------
+
+
+--- logs ---
+
+question is  At My Window was released by which American singer-songwriter?
+query is  "At My Window" American singer-songwriter
+query is  "At My Window" album 1987 American singer-songwriter
+AssertionError: Query should not be the following: 1) At My Window was released by which American singer-songwriter?; 2) "At My Window" American singer-songwriter
+rewinding to 139971175300544
+
+question is  At My Window was released by which American singer-songwriter?
+query is  "At My Window" American singer-songwriter
+query is  "At My Window" album American singer-songwriter
+AssertionError: Query should not be the following: 1) At My Window was released by which American singer-songwriter?; 2) "At My Window" American singer-songwriter
+rewinding to 139971175300544
+
+question is  At My Window was released by which American singer-songwriter?
+query is  "At My Window" American singer-songwriter
+query is  "At My Window" album American singer-songwriter
+AssertionError: Query should not be the following: 1) At My Window was released by which American singer-songwriter?; 2) "At My Window" American singer-songwriter
+reverting predictor 139971175300544
+failed prog assertions: At My Window was released by which American singer-songwriter?
+
+question is  which  American actor was Candace Kita  guest starred with 
+query is  "Candace Kita guest starred with American actor"
+AssertionError: Query should not be the following: 1) which  American actor was Candace Kita  guest starred with 
+rewinding to 139971175300496
+
+question is  which  American actor was Candace Kita  guest starred with 
+query is  "Candace Kita guest starred with American actor"
+AssertionError: Query should not be the following: 1) which  American actor was Candace Kita  guest starred with 
+rewinding to 139971175300496
+
+question is  which  American actor was Candace Kita  guest starred with 
+query is  "Candace Kita guest starred with American actor"
+AssertionError: Query should not be the following: 1) which  American actor was Candace Kita  guest starred with 
+reverting predictor 139971175300496
+failed prog assertions: which  American actor was Candace Kita  guest starred with 
+
+question is  Which of these publications was most recently published, Who Put the Bomp or Self?
+query is  "publication date of Who Put the Bomp" OR "publication date of Self"
+query is  "Publication date of 'Who Put the Bomp'" AND "Publication date of 'Self'"
+AssertionError: Query should not be the following: 1) Which of these publications was most recently published, Who Put the Bomp or Self?; 2) "publication date of Who Put the Bomp" OR "publication date of Self"
+rewinding to 139971175300544
+
+question is  Which of these publications was most recently published, Who Put the Bomp or Self?
+query is  "publication date of Who Put the Bomp" OR "publication date of Self"
+query is  "publication date of Who Put the Bomp" AND "publication date of Self"
+AssertionError: Query should not be the following: 1) Which of these publications was most recently published, Who Put the Bomp or Self?; 2) "publication date of Who Put the Bomp" OR "publication date of Self"
+rewinding to 139971175300544
+
+question is  Which of these publications was most recently published, Who Put the Bomp or Self?
+query is  "publication date of Who Put the Bomp" OR "publication date of Self"
+query is  "publication date of Who Put the Bomp" AND "publication date of Self"
+AssertionError: Query should not be the following: 1) Which of these publications was most recently published, Who Put the Bomp or Self?; 2) "publication date of Who Put the Bomp" OR "publication date of Self"
+reverting predictor 139971175300544
+failed prog assertions: Which of these publications was most recently published, Who Put the Bomp or Self?
+
+question is  The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?
+query is  "The Victorians - Their Story In Pictures" documentary series author birth year
+query is  Jeremy Paxman birth year
+
+question is  Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?
+query is  "Scott Shaw" site:tkdtimes.com OR site:southwestart.com
+query is  "Scott Shaw articles published Tae Kwon Do Times" OR "Scott Shaw articles published Southwest Art"
+
+question is  In what year was the club founded that played Manchester City in the 1972 FA Charity Shield
+query is  "History of FA Charity Shield 1972"
+query is  "Aston Villa founding year"
+
+question is  Which is taller, the Empire State Building or the Bank of America Tower?
+query is  "height of Empire State Building" OR "height of Bank of America Tower"
+query is  "Convert 312 meters to feet"
+
+question is  Which American actress who made their film debut in the 1995 teen drama "Kids" was the co-founder of Voto Latino?
+query is  "Kids 1995 cast" + "Voto Latino co-founder"
+query is  American actress film debut 1995 "Kids" co-founder Voto Latino
+
+question is  Tombstone stared an actor born May 17, 1955 known as who?
+query is  "Tombstone movie cast"
+query is  "Actor who starred in Tombstone"
+
+question is  What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?
+query is  "German offensive code name Eastern Front Second World War Moscow"
+query is  German offensive code name Eastern Front Second World War a few hundred kilometers from Moscow 102nd Infantry Division.
+AssertionError: Query should be short and less than 100 characters
+rewinding to 139971175300544
+
+question is  What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?
+query is  "German offensive code name Eastern Front Second World War Moscow"
+query is  German offensive Eastern Front code name 102nd Infantry Division
+reverting predictor 139971175300544
+
+question is  Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of "Hamlet." ?
+query is  "The Shore" cast + youngest actress to play Ophelia in Royal Shakespeare Company "Hamlet" production.
+AssertionError: Query should be short and less than 100 characters
+rewinding to 139971175300496
+
+question is  Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of "Hamlet." ?
+query is  "actress The Shore youngest Ophelia RSC Hamlet"
+query is  "actress who played Ophelia in Royal Shakespeare Company production of Hamlet" "actress in the short film The Shore"
+AssertionError: Query should be short and less than 100 characters
+rewinding to 139971175300544
+
+question is  Who acted in the shot film The Shore and is also the youngest actress ever to play Ophelia in a Royal Shakespeare Company production of "Hamlet." ?
+query is  "actress The Shore youngest Ophelia RSC Hamlet"
+query is  "actress The Shore Ophelia Royal Shakespeare Company"
+reverting predictor 139971175300496
+reverting predictor 139971175300544
+
+question is  Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?
+query is  "1977 American animated film produced by Walt Disney Productions Sherman Brothers songs distribution company"
+AssertionError: Query should be short and less than 100 characters
+rewinding to 139971175300496
+
+question is  Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?
+query is  "1977 animated film Walt Disney Sherman Brothers distribution company"
+query is  "1977 American animated film produced by Walt Disney Productions distribution company"
+reverting predictor 139971175300496
+
+question is  Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? 
+query is  "Samantha Cristoforetti first in her field" AND "Mark Shuttleworth first in his field"
+query is  "Samantha Cristoforetti and Mark Shuttleworth achievements"
+
+question is  Having the combination of excellent foot speed and bat speed helped Eric Davis, create what kind of outfield for the Los Angeles Dodgers? 
+query is  "Eric Davis outfield performance Los Angeles Dodgers"
+query is  "Eric Davis impact on Los Angeles Dodgers outfield"
+
+question is  Which Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 will be in the ICC World Twenty20?
+query is  "Pakistani cricket umpire ICC World Twenty20"
+query is  "Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 in ICC World Twenty20"
+AssertionError: Query should be short and less than 100 characters
+rewinding to 139971175300544
+
+question is  Which Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 will be in the ICC World Twenty20?
+query is  "Pakistani cricket umpire ICC World Twenty20"
+query is  "Pakistani cricket umpire ICC World Twenty20"
+AssertionError: Query should not be the following: 1) Which Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 will be in the ICC World Twenty20?; 2) "Pakistani cricket umpire ICC World Twenty20"
+rewinding to 139971175300544
+
+question is  Which Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 will be in the ICC World Twenty20?
+query is  "Pakistani cricket umpire ICC World Twenty20"
+query is  "Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 ICC World Twenty20"
+AssertionError: Query should be short and less than 100 characters
+reverting predictor 139971175300544
+failed prog assertions: Which Pakistani cricket umpire who won 3 consecutive ICC umpire of the year awards in 2009, 2010, and 2011 will be in the ICC World Twenty20?
+
+question is  The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?
+query is  "Organization that allows community to influence operation and benefits arising"
+query is  "founding year" OR "established year" + [name of the organization]
+
+question is  "Everything Has Changed" is a song from an album released under which record label ?
+query is  "Everything Has Changed" record label
+query is  "Everything Has Changed" record label
+AssertionError: Query should not be the following: 1) "Everything Has Changed" is a song from an album released under which record label ?; 2) "Everything Has Changed" record label
+rewinding to 139971175300544
+
+question is  "Everything Has Changed" is a song from an album released under which record label ?
+query is  "Everything Has Changed" record label
+query is  "Everything Has Changed" album record label
+AssertionError: Query should not be the following: 1) "Everything Has Changed" is a song from an album released under which record label ?; 2) "Everything Has Changed" record label
+rewinding to 139971175300544
+
+question is  "Everything Has Changed" is a song from an album released under which record label ?
+query is  "Everything Has Changed" record label
+query is  "Everything Has Changed" album record label
+AssertionError: Query should not be the following: 1) "Everything Has Changed" is a song from an album released under which record label ?; 2) "Everything Has Changed" record label
+reverting predictor 139971175300544
+failed prog assertions: "Everything Has Changed" is a song from an album released under which record label ?
+
+question is  Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?
+query is  "Birth date Aleksandr Danilovich Aleksandrov" "Birth date Anatoly Fomenko"
+query is  "Anatoly Fomenko birthdate"
