@@ -80,6 +80,7 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
 
 
 def validate_query_distinction_local(previous_queries, query):
+    """check if query is distinct from previous queries"""
     if previous_queries == []:
         return True
     if dspy.evaluate.answer_exact_match_str(query, previous_queries, frac=0.8):
@@ -114,9 +115,7 @@ class SimplifiedBaleen(dspy.Module):
             dspy.Assert(
                 validate_query_distinction_local(prev_queries, query),
                 "Query should not be the following: "
-                + "; ".join(
-                    f"{idx+1}) {query}" for idx, query in enumerate(prev_queries)
-                ),
+                + "; ".join(f"{i+1}) {q}" for i, q in enumerate(prev_queries)),
             )
 
             prev_queries.append(query)
