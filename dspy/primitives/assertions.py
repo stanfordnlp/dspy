@@ -52,6 +52,10 @@ def assert_backtrack_policy(max_backtracks=2):
             error_msg = None
             result = None
             extended_predictors_to_original_forward = {}
+            # predictor_feedback: Predictor -> List[feedback_msg]
+            # this will contain all assertion failure msgs for each predictor
+            # including msgs for the same assertion failure
+            predictor_feedbacks = {}
 
             def _extend_predictor_signature(predictor, **kwargs):
                 """Update the signature of a predictor instance with specified fields."""
@@ -75,6 +79,10 @@ def assert_backtrack_policy(max_backtracks=2):
                 )
 
                 predictor.extended_signature = new_signature
+
+            def _build_error_msg(feedback_msgs):
+                """Build an error message from a list of feedback messages."""
+                return '\n'.join([ msg for msg in feedback_msgs])
 
             def _revert_predictor_signature(predictor, *args):
                 """Revert the signature of a predictor by removing specified fields."""
@@ -114,8 +122,9 @@ def assert_backtrack_policy(max_backtracks=2):
                     _extend_predictor_signature(backtrack_to, feedback=feedback)
 
                     # set feedback field as a default kwarg to the predictor's forward function
+                    feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
                     _wrap_forward_with_set_fields(
-                        backtrack_to, default_args={"feedback": error_msg}
+                        backtrack_to, default_args={"feedback": feedback_msg}
                     )
 
                 try:
@@ -127,6 +136,8 @@ def assert_backtrack_policy(max_backtracks=2):
 
                     if dsp.settings.trace:
                         backtrack_to = dsp.settings.trace[-1][0]
+                        if error_msg not in predictor_feedbacks.setdefault(backtrack_to, []):
+                            predictor_feedbacks[backtrack_to].append(error_msg)
                     else:
                         print(
                             "UNREACHABLE: No trace available, this should not happen. Is this run time?"
