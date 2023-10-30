@@ -16,16 +16,10 @@ class DSPyAssertionError(AssertionError):
 class Assert:
     """DSPy Assertion"""
 
-    def __init__(self, assert_fun_res: bool, **kwargs):
+    def __init__(self, assert_fun_res: bool, msg: str = ""):
         self.assert_fun_res = assert_fun_res
 
-        if "msg" in kwargs:
-            self.msg = kwargs["msg"]
-            del kwargs["msg"]
-        else:
-            self.msg = ""
-
-        self.kwargs = kwargs
+        self.msg = msg
         self.__call__()
 
     def __call__(self) -> bool:

@@ -108,12 +108,12 @@ class SimplifiedBaleen(dspy.Module):
 
             dspy.Assert(
                 len(query) <= 100,
-                msg="Query should be short and less than 100 characters",
+                "Query should be short and less than 100 characters",
             )
 
             dspy.Assert(
                 validate_query_distinction_local(prev_queries, query),
-                msg="Query should not be the following: "
+                "Query should not be the following: "
                 + "; ".join(
                     f"{idx+1}) {query}" for idx, query in enumerate(prev_queries)
                 ),
