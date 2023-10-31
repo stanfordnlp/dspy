@@ -54,24 +54,16 @@ def assert_backtrack_policy(max_backtracks=2):
             def _extend_predictor_signature(predictor, **kwargs):
                 """Update the signature of a predictor instance with specified fields."""
                 old_signature = predictor.extended_signature
-                new_signature_kwargs = {
-                    k: v
-                    for (k, v) in old_signature.kwargs.items()
-                    if isinstance(v, dspy.InputField)
-                }
-                new_signature_kwargs.update(kwargs)
-                new_signature_kwargs.update(
-                    {
-                        k: v
-                        for (k, v) in old_signature.kwargs.items()
-                        if isinstance(v, (dsp.Type, dspy.OutputField))
-                    }
-                )
+                old_keys = list(old_signature.kwargs.keys())
 
-                new_signature = dsp.Template(
-                    old_signature.instructions, **new_signature_kwargs
-                )
+                #include other input fields after question
+                position = old_keys.index('question') + 1
+                for key in reversed(kwargs):
+                    old_keys.insert(position, key)
 
+                extended_kwargs = {key: kwargs.get(key, old_signature.kwargs.get(key)) for key in old_keys}
+
+                new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
                 predictor.extended_signature = new_signature
 
             def _build_error_msg(feedback_msgs):
@@ -99,12 +91,13 @@ def assert_backtrack_policy(max_backtracks=2):
                     return original_forward(**kwargs)
 
                 predictor.forward = new_forward
-
+            
+            bypass_assert = False
             for i in range(max_backtracks + 1):
                 if i > 0 and backtrack_to is not None:
                     # create a new feedback field
                     feedback = dspy.InputField(
-                        prefix="Instruction:", desc="Some instructions you must satisfy"
+                        prefix="Instruction:", desc="Some instructions you must satisfy", format=str
                     )
 
                     # save the original forward function to revert back to
@@ -121,8 +114,12 @@ def assert_backtrack_policy(max_backtracks=2):
                         backtrack_to, default_args={"feedback": feedback_msg}
                     )
 
+                if i == max_backtracks:  # Check if it's the last backtrack attempt
+                    bypass_assert = True
+                    result = func(*args, **kwargs, bypass_assert=bypass_assert)
+                    break
                 try:
-                    result = func(*args, **kwargs)
+                    result = func(*args, **kwargs, bypass_assert=bypass_assert)
                     break
                 except DSPyAssertionError as e:
                     print(f"AssertionError: {e.msg}")
