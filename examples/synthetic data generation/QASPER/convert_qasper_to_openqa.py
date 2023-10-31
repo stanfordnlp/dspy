@@ -5,7 +5,7 @@ from datasets import load_dataset
 
 
 class Example(TypedDict):
-    paper_idx: int
+    paper_id: str
     example_idx: int
     title: str
     abstract: str
@@ -41,6 +41,7 @@ class QASPER:
     def transform_for_openqa_rewrite(self) -> None:
         examples: list[Example] = []
         for example_idx, example in enumerate(self.dataset["train"]):
+            page_id = example["id"]
             questions = example["qas"]["question"]
             answers = [
                 self.filter_unanswerable(answers_list["answer"])
@@ -73,7 +74,7 @@ class QASPER:
 
                 examples.append(
                     Example(
-                        paper_idx=example_idx,
+                        paper_id=page_id,
                         example_idx=len(examples),
                         title=example["title"],
                         abstract=example["abstract"],
