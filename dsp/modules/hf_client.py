@@ -165,14 +165,16 @@ class Anyscale(HFModel):
             **kwargs
         }
 
-    def _generate(self, prompt, use_chat_api=True, **kwargs):
-        url = f"{self.api_base}/chat/completions"
+    def _generate(self, prompt, use_chat_api=False, **kwargs):
+        url = f"{self.api_base}/completions"
+        
         kwargs = {**self.kwargs, **kwargs}
 
         temperature = kwargs.get("temperature")
         max_tokens = kwargs.get("max_tokens", 150) 
 
         if use_chat_api:
+            url = f"{self.api_base}/chat/completions"
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."},
                 {"role": "user", "content": prompt}
