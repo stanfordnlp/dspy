@@ -1,17 +1,24 @@
 import dsp
 import random
+import dspy
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
-
+from datetime import datetime
+from langfuse.model import InitialGeneration, CreateTrace
+import uuid
+import wonderwords
+r = wonderwords.RandomWord()
 
 class Predict(Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
+        self.trace_id = uuid.uuid4().hex
+        dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self.reset()
 
         # if the signature is a string
@@ -60,6 +67,8 @@ class Predict(Parameter):
         return self.forward(**kwargs)
     
     def forward(self, **kwargs):
+        generationStartTime = datetime.now()
+        
         # Extract the three privileged keyword arguments.
         signature = kwargs.pop("signature", self.signature)
         demos = kwargs.pop("demos", self.demos)
@@ -101,9 +110,22 @@ class Predict(Parameter):
         pred = Prediction.from_completions(completions, signature=signature)
             
         if dsp.settings.trace is not None:
+            generation = dspy.settings.langfuse_trace.generation(InitialGeneration(
+                name=lm.kwargs["model"],
+                startTime=generationStartTime,
+                endTime=datetime.now(),
+                model=lm.kwargs["model"],
+                modelParameters=lm.kwargs,
+                prompt=lm.history[-1]['prompt'],
+                completion=pred,
+                metadata=kwargs
+            ))
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
 
+            # We need to integrate this somewhere to prepare for termination
+            # but this is a blocking call, so we have to be careful.
+            # langfuse.flush()
         return pred
 
     def __repr__(self):

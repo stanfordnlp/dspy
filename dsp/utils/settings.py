@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
 import threading
+from langfuse import Langfuse
 
 class Settings(object):
     """DSP configuration settings."""
@@ -33,6 +34,8 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
+                langfuse=Langfuse(debug=True),
+                langufuse_trace=None,
             )
             cls._instance.__append(config)
 

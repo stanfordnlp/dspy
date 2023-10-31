@@ -1,8 +1,11 @@
+from datetime import datetime
 import dsp
 import random
+import dspy
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
+from langfuse.model import CreateSpan
 
 
 class Retrieve(Parameter):
@@ -29,6 +32,8 @@ class Retrieve(Parameter):
         return self.forward(*args, **kwargs)
     
     def forward(self, query_or_queries):
+        retrievalStartTime = datetime.now()
+        
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split('\n')[0].strip() for query in queries]
 
@@ -37,6 +42,16 @@ class Retrieve(Parameter):
         # TODO: Consider removing any quote-like markers that surround the query too.
 
         passages = dsp.retrieveEnsemble(queries, k=self.k)
+        
+        _ = dspy.settings.langfuse_trace.span(CreateSpan(
+            name="vector-search",
+            startTime=retrievalStartTime,
+            endTime=datetime.now(),
+            input={"query": queries},
+            output={"passages": passages},
+            metadata={"stage": self.stage, "k": self.k}
+        ))
+        
         return Prediction(passages=passages)
     
 

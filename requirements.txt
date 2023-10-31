@@ -3,10 +3,10 @@ joblib
 jupyter
 openai
 pandas
-spacy
 regex
 ujson
 tqdm
 datasets
 requests
 optuna
+pydantic==1.10.7
