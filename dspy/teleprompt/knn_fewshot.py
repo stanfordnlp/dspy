@@ -2,6 +2,8 @@ from typing import List
 import types
 import dsp
 
+from .teleprompt import Teleprompter
+
 class KNNFewShot(Teleprompter):
     def __init__(self, KNN, k: int, trainset: List[dsp.Example]):
         self.KNN = KNN(k, trainset)
