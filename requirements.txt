@@ -1,7 +1,7 @@
 backoff
 joblib
 jupyter
-openai
+openai==0.28.1
 pandas
 spacy
 regex
