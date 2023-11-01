@@ -106,7 +106,7 @@ class GPT3(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.error.RateLimitError, openai.error.ServiceUnavailableError),
+        (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError),
         max_time=1000,
         on_backoff=backoff_hdlr,
     )
