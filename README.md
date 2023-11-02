@@ -64,6 +64,12 @@ For the optional Pinecone retrieval integration, include the `pinecone` extra:
 pip install dspy-ai[pinecone]
 ```
 
+For the optional Qdrant retrieval integration, include the `qdrant` extra:
+
+```
+pip install dspy-ai[qdrant]
+```
+
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
 
 **DSPy** hides tedious prompt engineering, but it cleanly exposes the important decisions you need to make: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
