@@ -22,7 +22,8 @@ setup(
     python_requires='>=3.9',
     install_requires=requirements,
     extras_require={
-        "pinecone": ["pinecone-client~=2.2.4"]
+        "pinecone": ["pinecone-client~=2.2.4"],
+        "qdrant": ["qdrant-client~=1.6.2", "fastembed~=0.1.0"],
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
