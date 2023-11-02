@@ -11,8 +11,6 @@ from dsp.utils import dotdict
 try:
     import chromadb
     from chromadb.config import Settings
-
-    # from chromadb.utils import embedding_functions
 except ImportError:
     chromadb = None
 
@@ -27,7 +25,7 @@ class ChromadbRM(dspy.Retrieve):
     A retrieval module that uses chromadb to return the top passages for a given query.
 
     Assumes that the chromadb index has been created and populated with the following metadata:
-        - text: The text of the passage
+        - documents: The text of the passage
 
     Args:
         collection_name (str): chromadb collection name
@@ -41,16 +39,18 @@ class ChromadbRM(dspy.Retrieve):
         dspy.Prediction: An object containing the retrieved passages.
 
     Examples:
-        Below is a code snippet that shows how to use this as the default retriver:
+        Below is a code snippet that shows how to use this as the default retriever:
         ```python
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
-        retriever_model = ChromadbRM('collection_name', 'db_path', openai.api_key, 'azure')
+        retriever_model = ChromadbRM('collection_name', 'db_path')
         dspy.settings.configure(lm=llm, rm=retriever_model)
+        # to test the retriever with "my query"
+        retriever_model("my query")
         ```
 
         Below is a code snippet that shows how to use this in the forward() function of a module
         ```python
-        self.retrieve = ChromadbRM(k=num_passages)
+        self.retrieve = ChromadbRM('collection_name', 'db_path', k=num_passages)
         ```
     """
 
@@ -66,15 +66,11 @@ class ChromadbRM(dspy.Retrieve):
         openai_api_version: Optional[str] = None,
         k: int = 7,
     ):
-        # self._openai_embed_model = embedding_functions.OpenAIEmbeddingFunction(
-        #         model_name=openai_embed_model
-        # )
-
         self._openai_embed_model = openai_embed_model
 
         self._init_chromadb(collection_name, persist_directory)
 
-        # If not provided, defaults to env vars OPENAI_API_KEY and OPENAI_ORGANIZATION
+        # If not provided, defaults to env vars
         if openai_api_key:
             openai.api_key = openai_api_key
         if openai_api_type:
@@ -171,8 +167,6 @@ class ChromadbRM(dspy.Retrieve):
             query_embeddings=embeddings, n_results=k
         )
 
-        # 'metadatas': [[{'page': 30, 'source': "..."}, {...}]]
         passages = [dotdict({"long_text": x}) for x in results["documents"][0]]
-        print(passages)
 
         return passages
