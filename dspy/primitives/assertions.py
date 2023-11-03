@@ -122,7 +122,7 @@ def assert_backtrack_policy(max_backtracks=2):
                         backtrack_to, default_args={"feedback": feedback_msg}
                     )
 
-                # if last attempt and run ignoring assertion errors
+                # if last attempt, run ignoring assertion errors
                 if i == max_backtracks and dspy.settings.bypass_assert is False:
                     dspy.settings.configure(bypass_assert=True)
                     result = func(*args, **kwargs)
