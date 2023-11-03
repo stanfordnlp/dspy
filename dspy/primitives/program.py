@@ -1,4 +1,5 @@
 import copy
+import inspect
 
 from dspy.primitives.module import BaseModule
 from dspy.primitives.assertions import *
@@ -26,6 +27,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if getattr(self, "forward", False) and not getattr(
             self.forward, "_decorated", False
         ):
+            args_to_vals = inspect.getcallargs(self.forward, *args, **kwargs)
+
+            # if user has specified a bypass_assert flag, set it
+            if "bypass_assert" in args_to_vals:
+                dspy.settings.configure(bypass_assert=args_to_vals["bypass_assert"])
+
             wrapped_forward = assert_backtrack_policy()(self.forward)
             return wrapped_forward(*args, **kwargs)
         else:
