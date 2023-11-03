@@ -4,8 +4,7 @@ import dspy
 
 
 class DSPyAssertionError(AssertionError):
-    """Custom exception raised when a DSPy `Assert` fails.
-    """
+    """Custom exception raised when a DSPy `Assert` fails."""
 
     def __init__(self, msg: str, state: Any = None) -> None:
         super().__init__(msg)
@@ -26,6 +25,9 @@ class Assert:
         if isinstance(self.assert_fun_res, bool):
             if self.assert_fun_res:
                 return True
+            elif dspy.settings.bypass_assert:
+                # TODO: log the assertion failure
+                return True
             else:
                 raise DSPyAssertionError(msg=self.msg, state=dsp.settings.trace)
         else:
@@ -34,9 +36,9 @@ class Assert:
 
 def assert_backtrack_policy(max_backtracks=2):
     """Decorator that defines the backtracking policy for assertions.
-    
+
     current policy: re-run the latest predictor up to `max_backtracks` times,
-    with updated signature if assertion fails. updated signature adds a new 
+    with updated signature if assertion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
 
@@ -56,19 +58,24 @@ def assert_backtrack_policy(max_backtracks=2):
                 old_signature = predictor.extended_signature
                 old_keys = list(old_signature.kwargs.keys())
 
-                #include other input fields after question
-                position = old_keys.index('question') + 1
+                # include other input fields after question
+                position = old_keys.index("question") + 1
                 for key in reversed(kwargs):
                     old_keys.insert(position, key)
 
-                extended_kwargs = {key: kwargs.get(key, old_signature.kwargs.get(key)) for key in old_keys}
+                extended_kwargs = {
+                    key: kwargs.get(key, old_signature.kwargs.get(key))
+                    for key in old_keys
+                }
 
-                new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
+                new_signature = dsp.Template(
+                    old_signature.instructions, **extended_kwargs
+                )
                 predictor.extended_signature = new_signature
 
             def _build_error_msg(feedback_msgs):
                 """Build an error message from a list of feedback messages."""
-                return '\n'.join([ msg for msg in feedback_msgs])
+                return "\n".join([msg for msg in feedback_msgs])
 
             def _revert_predictor_signature(predictor, *args):
                 """Revert the signature of a predictor by removing specified fields."""
@@ -91,13 +98,14 @@ def assert_backtrack_policy(max_backtracks=2):
                     return original_forward(**kwargs)
 
                 predictor.forward = new_forward
-            
-            bypass_assert = False
+
             for i in range(max_backtracks + 1):
                 if i > 0 and backtrack_to is not None:
                     # create a new feedback field
                     feedback = dspy.InputField(
-                        prefix="Instruction:", desc="Some instructions you must satisfy", format=str
+                        prefix="Instruction:",
+                        desc="Some instructions you must satisfy",
+                        format=str,
                     )
 
                     # save the original forward function to revert back to
@@ -114,25 +122,31 @@ def assert_backtrack_policy(max_backtracks=2):
                         backtrack_to, default_args={"feedback": feedback_msg}
                     )
 
-                if i == max_backtracks:  # Check if it's the last backtrack attempt
-                    bypass_assert = True
-                    result = func(*args, **kwargs, bypass_assert=bypass_assert)
+                # if last attempt and run ignoring assertion errors
+                if i == max_backtracks and dspy.settings.bypass_assert is False:
+                    dspy.settings.configure(bypass_assert=True)
+                    result = func(*args, **kwargs)
+                    dspy.settings.configure(bypass_assert=False)
                     break
-                try:
-                    result = func(*args, **kwargs, bypass_assert=bypass_assert)
-                    break
-                except DSPyAssertionError as e:
-                    print(f"AssertionError: {e.msg}")
-                    error_msg = e.msg
 
-                    if dsp.settings.trace:
-                        backtrack_to = dsp.settings.trace[-1][0]
-                        if error_msg not in predictor_feedbacks.setdefault(backtrack_to, []):
-                            predictor_feedbacks[backtrack_to].append(error_msg)
-                    else:
-                        print(
-                            "UNREACHABLE: No trace available, this should not happen. Is this run time?"
-                        )
+                else:
+                    try:
+                        result = func(*args, **kwargs)
+                        break  # if no error, break out of backtrack loop
+                    except DSPyAssertionError as e:
+                        print(f"AssertionError: {e.msg}")
+                        error_msg = e.msg
+
+                        if dsp.settings.trace:
+                            backtrack_to = dsp.settings.trace[-1][0]
+                            if error_msg not in predictor_feedbacks.setdefault(
+                                backtrack_to, []
+                            ):
+                                predictor_feedbacks[backtrack_to].append(error_msg)
+                        else:
+                            print(
+                                "UNREACHABLE: No trace available, this should not happen. Is this run time?"
+                            )
 
             # revert any extended predictors to their originals
             if extended_predictors_to_original_forward:
