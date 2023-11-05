@@ -79,22 +79,25 @@ class BootstrapFinetune(Teleprompter):
             # Dummy compilation to get bootstraps.
             compiled = self.teleprompter.compile(student, teacher=teacher, trainset=trainset)
             multitask = self.multitask
+            for name, predictor in compiled.named_predictors():
+                name_ = 'all' if multitask else name
+                finetune_data[name_] = [] if name_ not in finetune_data else finetune_data[name_]
 
-            for demo in predictor.demos:
-                demo = dict(demo)
-                completion = demo.pop(predictor.signature.fields[-1].output_variable)
-                prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
-                if self.provider == "openai":
-                    example = {
-                        "messages": [
-                            {"role": "system", "content": f"Answer questions with short factoid answers."},
-                            {"role": "user", "content": prompt},
-                            {"role": "assistant", "content": completion}
-                        ]
-                    }
-                elif self.provider == "hf":
-                    example = dict(prompt=prompt, completion=completion)
-                finetune_data[name_].append(example)
+                for demo in predictor.demos:
+                    demo = dict(demo)
+                    completion = demo.pop(predictor.signature.fields[-1].output_variable)
+                    prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
+                    if self.provider == "openai":
+                        example = {
+                            "messages": [
+                                {"role": "system", "content": f"Answer questions with short factoid answers."},
+                                {"role": "user", "content": prompt},
+                                {"role": "assistant", "content": completion}
+                            ]
+                        }
+                    elif self.provider == "hf":
+                        example = dict(prompt=prompt, completion=completion)
+                    finetune_data[name_].append(example)
 
         for name_ in finetune_data:
             random.Random(0).shuffle(finetune_data[name_])
