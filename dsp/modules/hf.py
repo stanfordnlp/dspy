@@ -1,8 +1,8 @@
-from typing import Optional, Literal
 import os
 import json
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from typing import Optional, Literal
 
 from dsp.modules.lm import LM
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
@@ -63,9 +63,9 @@ class HFModel(LM):
                 self.rationale = True
                 AutoModelClass = AutoModelForSeq2SeqLM if self.encoder_decoder_model else AutoModelForCausalLM
                 if checkpoint:
-                    with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
-                        config = json.load(f)
-                    self.rationale = config['rationale']
+                    # with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
+                    #     config = json.load(f)
+                    self.rationale = False #config['rationale']
                     # if config['peft']:
                     #     peft_config = PeftConfig.from_pretrained(checkpoint)
                     #     self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)
@@ -104,13 +104,15 @@ class HFModel(LM):
         assert not self.is_client
         # TODO: Add caching
         kwargs = {**openai_to_hf(**self.kwargs), **openai_to_hf(**kwargs)}
-        print(prompt)
+        # print(prompt)
         if isinstance(prompt, dict):
             try:
                 prompt = prompt['messages'][0]['content']
             except (KeyError, IndexError, TypeError):
                 print("Failed to extract 'content' from the prompt.")
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+        # print(kwargs)
         outputs = self.model.generate(**inputs, **kwargs)
         if self.drop_prompt_from_output:
             input_length = inputs.input_ids.shape[1]
@@ -129,7 +131,7 @@ class HFModel(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-        if kwargs.get("n", 1) > 1:
+        if kwargs.get("n", 1) > 1 or kwargs.get("temperature", 0.0) > 0.1:
             kwargs["do_sample"] = True
 
         response = self.request(prompt, **kwargs)

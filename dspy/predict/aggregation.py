@@ -9,9 +9,10 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     """
         Returns the most common completion for the target field (or the last field) in the signature.
         When normalize returns None, that completion is ignored.
+        In case of a tie, earlier completion are prioritized.
     """
 
-    assert isinstance(prediction_or_completions, Prediction) or isinstance(prediction_or_completions, Completions)
+    assert any(isinstance(prediction_or_completions, t) for t in [Prediction, Completions, list])
     input_type = type(prediction_or_completions)
 
     # Get the completions
@@ -20,8 +21,17 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     else:
         completions = prediction_or_completions
     
+    try:
+        signature = completions.signature
+    except:
+        signature = None
+    
+    try:
+        field = field if field else signature.fields[-1].output_variable
+    except:
+        field = field if field else list(completions[0].keys())[-1]
+
     # Normalize
-    field = field if field else completions.signature.fields[-1].output_variable
     normalize = normalize if normalize else lambda x: x
     normalized_values = [normalize(completion[field]) for completion in completions]
     normalized_values_ = [x for x in normalized_values if x is not None]
@@ -38,8 +48,8 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
         if normalize(completion[field]) == majority_value:
             break
     
-    if input_type == Prediction:
-        return Prediction.from_completions([completion], signature=completions.signature)
+    # if input_type == Prediction:
+    return Prediction.from_completions([completion], signature=signature)
 
-    return Completions([completion], signature=completions.signature)
+    return Completions([completion], signature=signature)
 

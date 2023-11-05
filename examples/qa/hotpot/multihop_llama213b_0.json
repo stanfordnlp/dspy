@@ -1,0 +1,347 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "find the answer to this question. We know that the first book in The Twilight Saga was published in 2005, so we can start by searching for books published in that year. We can also use keywords like \"vampire-themed\" and \"fantasy romance\" to narrow down our search results.",
+        "search_query": "\"vampire-themed fantasy romance novels 2005\""
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "find the correct search query. We know that the author was born in the 19th century, but we don't know the exact year. We can start by searching for the author's name and the title of the documentary series.",
+        "search_query": "\"The Victorians - Their Story In Pictures\" author:${author_name}"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was coach of the No. 9-ranked team that was upset in the NCAA Tournament by the 2014-15 UAB Blazers men's basketball team?  ",
+        "answer": "Fred Hoiberg",
+        "dspy_uuid": "089c6c36-6317-4dd1-8de5-5cd72185f0ab",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which is taller, the Empire State Building or the Bank of America Tower?",
+        "answer": "The Empire State Building",
+        "dspy_uuid": "30d0143b-8f61-4591-9506-06d5144bc084",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "823305fd-37a1-4052-b1d7-5b7eb502d184",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "answer": "Gustavo Kuerten",
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "543e5564-9a2f-4cf2-b729-8b946fe9f57a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [
+          "Twilight (novel series) | Twilight is a series of four vampire-themed fantasy romance novels by American author Stephenie Meyer. Released annually from 2005 through 2008, the four books chart the later teen years of Isabella \"Bella\" Swan, a girl who moves to Forks, Washington, and falls in love with a 104-year-old vampire named Edward Cullen. The series is told primarily from Bella's point of view, with the epilogue of \"Eclipse\" and Part II of \"Breaking Dawn\" being told from the viewpoint of character Jacob Black, a werewolf. The unpublished \"Midnight Sun\" is a retelling of the first book, \"Twilight\", from Edward Cullen's point of view. The novella \"The Short Second Life of Bree Tanner\", which tells the story of a newborn vampire who appeared in \"Eclipse\", was published on June 5, 2010, as a hardcover book and on June 7 as a free online ebook. \"\" , a definitive encyclopedic reference with nearly 100 full color illustrations, was released in bookstores on April 12, 2011.",
+          "Harper Connelly Mysteries | The Harper Connelly Mysteries is a series of fantasy mystery novels written by Charlaine Harris, and first published in 2005. Harris is known best for penning The Southern Vampire Mysteries (also referred to as the True Blood Series), a series rich in supernatural characters such as vampires, telepaths, werewolves, shapeshifters and fairies; she has also written more traditional (non-paranormal) mysteries. The Harper Connelly Mysteries is also centered on a character with supernatural abilities, however these abilities are more subtle than in the Southern Vampire series.",
+          "The Dark Heroine | The Dark Heroine is a series of vampire-themed fantasy romance novels written by English author Abigail Gibbs, published by HarperCollins in 2012. The first novel in the series, \"Dinner with a Vampire,\" revolves around London-born Violet Lee, who is kidnapped and held hostage by a Royal Family of vampires known as the Varns. The series is told from both Violet Lee and Kaspar Varn's perspective, the latter being heir to the Vamperic Throne in the novel."
+        ],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "determine the year the first of the vampire-themed fantasy romance novels was first published. We know that The Twilight Saga: The Official Illustrated Guide was published in 2011, and it serves as a spin-off encyclopedic reference book for the Twilight series. Therefore, we can deduce that the first of the vampire-themed fantasy romance novels must have been published before 2011.",
+        "search_query": "When was the first of the vampire-themed fantasy romance novels published?"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [
+          "The Victorians | The Victorians - Their Story In Pictures is a 2009 British documentary series which focuses on Victorian art and culture. The four-part series is written and presented by Jeremy Paxman and debuted on BBC One at 9:00pm on Sunday 15 February 2009.",
+          "The Caxtons | The Caxtons: A Family Picture is an 1849 Victorian novel by Edward Bulwer-Lytton that was popular in its time.",
+          "Victorian (comics) | The Victorian is a 25-issue comic book series published by Penny-Farthing Press and starting in 1999. The brainchild of creator Trainor Houghton, the series included a number of notable script writers and illustrators, including Len Wein, Glen Orbik and Howard Chaykin."
+        ],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "produce the search query. We know that the documentary series is about Victorian art and culture, and it was written and presented by Jeremy Paxman. Therefore, we need to find the year in which Jeremy Paxman was born.",
+        "search_query": "Jeremy Paxman birth year"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "823305fd-37a1-4052-b1d7-5b7eb502d184",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "543e5564-9a2f-4cf2-b729-8b946fe9f57a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which is taller, the Empire State Building or the Bank of America Tower?",
+        "answer": "The Empire State Building",
+        "dspy_uuid": "30d0143b-8f61-4591-9506-06d5144bc084",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "answer": "Gustavo Kuerten",
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was coach of the No. 9-ranked team that was upset in the NCAA Tournament by the 2014-15 UAB Blazers men's basketball team?  ",
+        "answer": "Fred Hoiberg",
+        "dspy_uuid": "089c6c36-6317-4dd1-8de5-5cd72185f0ab",
+        "dspy_split": "train"
+      }
+    ]
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "dspy_uuid": "ef6efe73-7815-4e31-a72d-d4a1537c5380",
+        "context": [
+          "Twilight (novel series) | Twilight is a series of four vampire-themed fantasy romance novels by American author Stephenie Meyer. Released annually from 2005 through 2008, the four books chart the later teen years of Isabella \"Bella\" Swan, a girl who moves to Forks, Washington, and falls in love with a 104-year-old vampire named Edward Cullen. The series is told primarily from Bella's point of view, with the epilogue of \"Eclipse\" and Part II of \"Breaking Dawn\" being told from the viewpoint of character Jacob Black, a werewolf. The unpublished \"Midnight Sun\" is a retelling of the first book, \"Twilight\", from Edward Cullen's point of view. The novella \"The Short Second Life of Bree Tanner\", which tells the story of a newborn vampire who appeared in \"Eclipse\", was published on June 5, 2010, as a hardcover book and on June 7 as a free online ebook. \"\" , a definitive encyclopedic reference with nearly 100 full color illustrations, was released in bookstores on April 12, 2011.",
+          "Harper Connelly Mysteries | The Harper Connelly Mysteries is a series of fantasy mystery novels written by Charlaine Harris, and first published in 2005. Harris is known best for penning The Southern Vampire Mysteries (also referred to as the True Blood Series), a series rich in supernatural characters such as vampires, telepaths, werewolves, shapeshifters and fairies; she has also written more traditional (non-paranormal) mysteries. The Harper Connelly Mysteries is also centered on a character with supernatural abilities, however these abilities are more subtle than in the Southern Vampire series.",
+          "The Dark Heroine | The Dark Heroine is a series of vampire-themed fantasy romance novels written by English author Abigail Gibbs, published by HarperCollins in 2012. The first novel in the series, \"Dinner with a Vampire,\" revolves around London-born Violet Lee, who is kidnapped and held hostage by a Royal Family of vampires known as the Varns. The series is told from both Violet Lee and Kaspar Varn's perspective, the latter being heir to the Vamperic Throne in the novel.",
+          "Night Huntress | Night Huntress is a series of \"New York Times\" bestselling urban fantasy romance novels by author Jeaniene Frost. The first novel was published in 2007 by Avon and takes place in a world where supernatural creatures exist but are not known to the general public at large. The series initially focused around the character of half-vampire Catherine \"Cat\" Crawfield and her full-vampire lover Bones, but eventually shifted focus to other characters such as Vlad Tepesh, a character that Frost had initially not planned to include.",
+          "John William Polidori | John William Polidori (7 September 1795 \u2013 24 August 1821) was an English writer and physician. He is known for his associations with the Romantic movement and credited by some as the creator of the vampire genre of fantasy fiction. His most successful work was the short story \"The Vampyre\" (1819), the first published modern vampire story. Although originally and erroneously accredited to Lord Byron, both Byron and Polidori affirmed that the story is Polidori's."
+        ],
+        "question": "In which year was the first of the vampire-themed fantasy romance novels for which The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book first published?",
+        "rationale": "determine the answer. We know that The Twilight Saga: The Official Illustrated Guide serves as a spin-off encyclopedic reference book for the Twilight series of novels, which was written by Stephenie Meyer. The first novel in the series, Twilight, was published in 2005. Therefore, the first year in which a vampire-themed fantasy romance novel was published was 2005.",
+        "answer": "2005"
+      },
+      {
+        "augmented": true,
+        "dspy_uuid": "7c56ed8c-85b9-4b4f-be70-7eb3a20539ec",
+        "context": [
+          "The Victorians | The Victorians - Their Story In Pictures is a 2009 British documentary series which focuses on Victorian art and culture. The four-part series is written and presented by Jeremy Paxman and debuted on BBC One at 9:00pm on Sunday 15 February 2009.",
+          "The Caxtons | The Caxtons: A Family Picture is an 1849 Victorian novel by Edward Bulwer-Lytton that was popular in its time.",
+          "Victorian (comics) | The Victorian is a 25-issue comic book series published by Penny-Farthing Press and starting in 1999. The brainchild of creator Trainor Houghton, the series included a number of notable script writers and illustrators, including Len Wein, Glen Orbik and Howard Chaykin.",
+          "Jeremy Paxman | Jeremy Dickson Paxman (born 11 May 1950) is an English broadcaster, journalist, and author. He is the question master of \"University Challenge\", having succeeded Bamber Gascoigne when the programme was revived in 1994.",
+          "Jeremy I | Jeremy I was king of the Miskito nation, who came to power following the death of his father, Oldman, in 1686 or 1687. according to an English visitor, W. M., in 1699, he was about 60 years old at that time, making his birth year about 1639.",
+          "Jeremy Cheeseman | Jeremy Cheeseman (born June 6, 1990 in Manorville, New York) is a former American professional soccer player. Playing two seasons for the Dayton Dutch Lions in the USL Professional Division before retiring due to injury"
+        ],
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "rationale": "answer this question. We know that the author of The Victorians - Their Story In Pictures is Jeremy Paxman, and we can find his year of birth in one of the given contexts. After searching, we found that Jeremy Paxman was born in 1950. Therefore, the answer to the question is 1950.",
+        "answer": "1950"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "543e5564-9a2f-4cf2-b729-8b946fe9f57a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What metals were produced by the the steelworks company hit in the Barrow Blitz alongside VSEL? ",
+        "answer": "iron and steel",
+        "dspy_uuid": "a8ff9dee-f23d-4a2f-b10b-5be98114b8bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "4b5f93e8-3f2a-464e-864c-76e9ca7e45a1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What Brazilian professional racing driver who races for Rebellion Racing has a mother named Viviane Senna da Silva Lalli?",
+        "answer": "Bruno Senna Lalli",
+        "dspy_uuid": "e4e1c569-f4d6-4b5a-9b31-d4ce129395ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "823305fd-37a1-4052-b1d7-5b7eb502d184",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the code name for the German offensive that started this Second World War engagement on the Eastern Front (a few hundred kilometers from Moscow) between Soviet and German forces, which included 102nd Infantry Division?",
+        "answer": "Operation Citadel",
+        "dspy_uuid": "d7fb5c24-6ca2-4bf8-b9f1-0a6e0060ebea",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which is taller, the Empire State Building or the Bank of America Tower?",
+        "answer": "The Empire State Building",
+        "dspy_uuid": "30d0143b-8f61-4591-9506-06d5144bc084",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was the Tennis Masters Cup champion in 2000, Gustavo Kuerten or Stan Wawrinka?",
+        "answer": "Gustavo Kuerten",
+        "dspy_uuid": "a8e15619-7c04-467a-8580-4dcf10f48bed",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "e2421205-d692-42e8-aa14-7a477e516ae8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What type of film was it that featured the actress who is regarded as the greatest actress of all time?",
+        "answer": "anti-McCarthyism",
+        "dspy_uuid": "96c92062-7e1c-4712-b3c8-30f35f8b6c65",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Both Brian Warren and Jake Shields are considered what?",
+        "answer": "mixed martial arts fighter",
+        "dspy_uuid": "d2af37d1-975f-4423-bbda-1be5bf9baa35",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where was the singer who released the single \"I Never Made Love (Till I Made It with You)\" originally from ?",
+        "answer": "Lubbock, Texas",
+        "dspy_uuid": "1729ebde-5804-4157-b43b-6422cce75d4f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was coach of the No. 9-ranked team that was upset in the NCAA Tournament by the 2014-15 UAB Blazers men's basketball team?  ",
+        "answer": "Fred Hoiberg",
+        "dspy_uuid": "089c6c36-6317-4dd1-8de5-5cd72185f0ab",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "86fca9c5-3c75-4aae-bc16-cb6c62335f22",
+        "dspy_split": "train"
+      }
+    ]
+  }
+}
