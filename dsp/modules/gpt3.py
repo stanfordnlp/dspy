@@ -1,3 +1,19 @@
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        RotatingFileHandler(
+            'openai_usage.log',  # Filename
+            maxBytes=10000000,  # Max size of a log file before being rotated (10MB)
+            backupCount=10  # Number of log files to keep
+        )
+    ]
+)
+
 import functools
 import json
 from typing import Any, Literal, Optional, cast
@@ -78,6 +94,13 @@ class GPT3(LM):
     def _openai_client():
         return openai
 
+    def log_usage(self, response):
+            """Log the total tokens from the OpenAI API response."""
+            usage_data = response.get('usage')
+            if usage_data:
+                total_tokens = usage_data.get('total_tokens')  
+                logging.info(f'{total_tokens}')
+
     def basic_request(self, prompt: str, **kwargs) -> OpenAIObject:
         raw_kwargs = kwargs
 
@@ -150,6 +173,7 @@ class GPT3(LM):
         #         kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
+        self.log_usage(response)
         choices = response["choices"]
 
         completed_choices = [c for c in choices if c["finish_reason"] != "length"]
