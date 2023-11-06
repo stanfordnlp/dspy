@@ -6,11 +6,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
     handlers=[
-        RotatingFileHandler(
-            'openai_usage.log',  # Filename
-            maxBytes=10000000,  # Max size of a log file before being rotated (10MB)
-            backupCount=10  # Number of log files to keep
-        )
+        logging.FileHandler('openai_usage.log')
     ]
 )
 
