@@ -47,7 +47,7 @@ fewshot = fewshot_teleprompter.compile(MyMultiHop(passages_per_hop=2), trainset=
 
 
 class BootstrapFinetune(Teleprompter):
-    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=True):
+    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=False):
         self.metric = metric
         self.provider = provider
         self.teacher_settings = teacher_settings
@@ -179,5 +179,5 @@ class BootstrapFinetune(Teleprompter):
 
             predictor2.lm = finetune_models[name]
             assert predictor2.demos == []
-        
+
         return compiled2
