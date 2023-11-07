@@ -14,15 +14,12 @@ import time
 
 
 class HFClientTGI(HFModel):
-    def __init__(self, model, port, url="http://future-hgx-1", http_request_kwargs=None, **kwargs):
-        super().__init__(model=model, is_client=True)
-
-        self.url = url
-        self.ports = port if isinstance(port, list) else [port]
-        self.http_request_kwargs = http_request_kwargs or {}
-
+    def __init__(self, model, checkpoint, port, url="http://future-hgx-1", **kwargs):
+        super().__init__(model=model, checkpoint=checkpoint, is_client=True)
+        self.model = model
+        self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
-
+        self._verify_model_with_server()
         self.kwargs = {
             "temperature": 0.01,
             "max_tokens": 75,
@@ -54,11 +51,6 @@ class HFClientTGI(HFModel):
         payload["parameters"]["temperature"] = max(
             0.1, payload["parameters"]["temperature"]
         )
-
-        # print(payload['parameters'])
-
-        # response = requests.post(self.url + "/generate", json=payload, headers=self.headers)
-
         response = send_hftgi_request_v01_wrapped(
             f"{self.url}:{random.Random().choice(self.ports)}" + "/generate",
             url=self.url,
@@ -101,7 +93,7 @@ def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
 
 
 @CacheMemory.cache
-def send_hftgi_request_v00(arg, **kwargs):
+def send_hftgi_request_v00(model, arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 class HFServerTGI:
