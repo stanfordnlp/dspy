@@ -76,6 +76,12 @@ For the optional [chromadb](https://github.com/chroma-core/chroma) retrieval int
 pip install dspy-ai[chromadb]
 ```
 
+For the optional [marqo](https://github.com/marqo-ai/marqo) retrieval integration, include the `marqo` extra:
+
+```
+pip install dspy-ai[marqo]
+```
+
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
 
 **DSPy** hides tedious prompt engineering, but it cleanly exposes the important decisions you need to make: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
