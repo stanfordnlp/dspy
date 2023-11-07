@@ -12,6 +12,7 @@ import dspy
 
 from .teleprompt import Teleprompter
 from .bootstrap import BootstrapFewShot
+
 # from .vanilla import LabeledFewShot
 
 # from dspy.evaluate.evaluate import Evaluate
@@ -25,7 +26,6 @@ else:
 
 if not os.path.exists(training_data_directory):
     os.makedirs(training_data_directory)
-
 
 """
 TODO: Reduce and document the dependencies.
@@ -47,7 +47,7 @@ fewshot = fewshot_teleprompter.compile(MyMultiHop(passages_per_hop=2), trainset=
 
 
 class BootstrapFinetune(Teleprompter):
-    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=False):
+    def __init__(self, metric=None, provider=None, teacher_settings={}, multitask=True, return_hf_model=True):
         self.metric = metric
         self.provider = provider
         self.teacher_settings = teacher_settings
@@ -57,57 +57,56 @@ class BootstrapFinetune(Teleprompter):
         assert (not self.multitask) == self.return_hf_model
 
         metric = metric or (lambda *args: True)
-        self.teleprompter = BootstrapFewShot(metric=metric,
-                                             max_bootstrapped_demos=999999,
-                                             max_labeled_demos=0,  # FIXME: TODO: Make this zero? or param, 16 by default?
-                                             teacher_settings=teacher_settings)
-        
+        self.teleprompter = BootstrapFewShot(
+            metric=metric,
+            max_bootstrapped_demos=999999,
+            max_labeled_demos=0,
+            # FIXME: TODO: Make this zero? or param, with default as 16 or 0?
+            teacher_settings=teacher_settings
+        )
 
     def compile(self, student, *, teacher=None, trainset, valset=None,
-                target='t5-large', bsize=12, accumsteps=1, lr=5e-5, epochs=1, bf16=False):
+                target='t5-large', bsize=12, accumsteps=1, lr=5e-5, epochs=1, bf16=False, int8=False, peft=False):
 
         # It's usually better to supply a few-shot teacher, rather than uncompiled module (the student).
         if teacher is None:
             print("WARNING: Using a vanilla teacher. "
                   "Are you sure you want to use BootstrapFinetune without a compiled teacher?")
 
-        # Dummy compilation to get bootstraps.
-        compiled = self.teleprompter.compile(student, teacher=teacher, trainset=trainset)
-        multitask = self.multitask
-
-        #
-        # Prepare finetune <prompt, completion> pairs.
-        #
+        teachers = teacher if isinstance(teacher, list) else [teacher]
         finetune_data = {}
 
-        for name, predictor in compiled.named_predictors():
-            name_ = 'all' if multitask else name
-            finetune_data[name_] = [] if name_ not in finetune_data else finetune_data[name_]
+        for teacher in teachers:
+            # Dummy compilation to get bootstraps.
+            compiled = self.teleprompter.compile(student, teacher=teacher, trainset=trainset)
+            multitask = self.multitask
+            for name, predictor in compiled.named_predictors():
+                name_ = 'all' if multitask else name
+                finetune_data[name_] = [] if name_ not in finetune_data else finetune_data[name_]
 
-            for demo in predictor.demos:
-                demo = dict(demo)
-                completion = demo.pop(predictor.signature.fields[-1].output_variable)
-                prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
-                if self.provider == "openai":
-                    example = {
-                        "messages": [
-                            {"role": "system", "content": f"Answer questions with short factoid answers."},
-                            {"role": "user", "content": prompt},
-                            {"role": "assistant", "content": completion}
-                        ]
-                    }
-                elif self.provider == "hf":
-                    example = dict(prompt=prompt, completion=completion)
-                finetune_data[name_].append(example)
+                for demo in predictor.demos:
+                    demo = dict(demo)
+                    completion = demo.pop(predictor.signature.fields[-1].output_variable)
+                    prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
+                    if self.provider == "openai":
+                        example = {
+                            "messages": [
+                                {"role": "system", "content": f"Answer questions with short factoid answers."},
+                                {"role": "user", "content": prompt},
+                                {"role": "assistant", "content": completion}
+                            ]
+                        }
+                    elif self.provider == "hf":
+                        example = dict(prompt=prompt, completion=completion)
+                    finetune_data[name_].append(example)
 
         for name_ in finetune_data:
             random.Random(0).shuffle(finetune_data[name_])
             print(name_, len(finetune_data[name_]))
 
-
         #
         # Dump as files.
-        # 
+        #
         finetune_paths = {}
 
         for name in finetune_data:
@@ -119,24 +118,25 @@ class BootstrapFinetune(Teleprompter):
             with open(output_path, 'w') as f:
                 for line in data:
                     f.write(ujson.dumps(line) + '\n')
-            
+
             finetune_paths[name] = output_path
-        
 
         #
         # Train!
         #
         import string
         compiler_config = {
-            'save': ''.join(random.Random(time.time()).choices(string.ascii_uppercase + string.digits, k=13)), # https://stackoverflow.com/a/2257449/1493011
-            'peft': False,
+            'save': ''.join(random.Random(time.time()).choices(string.ascii_uppercase + string.digits, k=13)),
+            # https://stackoverflow.com/a/2257449/1493011
+            'peft': peft,
             'fp16': False,
             'bf16': bf16,
+            'int8': int8,
             'fid': False,
             'rationale': False,
             'batch_size': bsize,
             'epochs': epochs,
-            'gradient_accumulation_steps': accumsteps, # 2,
+            'gradient_accumulation_steps': accumsteps,  # 2,
             'lr': lr
         }
 
@@ -158,8 +158,8 @@ class BootstrapFinetune(Teleprompter):
                 if not self.return_hf_model:
                     finetune_models[name] = best_ckpt_path
                 else:
-                    finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path) # best_ckpt_path
-        
+                    finetune_models[name] = dsp.HFModel(model=target, checkpoint=best_ckpt_path)  # best_ckpt_path
+
         #
         # Set the LMs to the finetuned ones, per module
         #
@@ -175,6 +175,9 @@ class BootstrapFinetune(Teleprompter):
 
             # TODO: FIXME: When we assign .lm, the Predict.forward will also set only_query=True.
             # This is correct for here but we may want to make it more explicitly restricted to finetuned models.
+            print(f"Assigning the LM of predictor {name}.")
+
             predictor2.lm = finetune_models[name]
             assert predictor2.demos == []
+
         return compiled2
