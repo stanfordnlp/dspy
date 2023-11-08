@@ -4,6 +4,7 @@ import random
 import threading
 
 from dspy.primitives import Example
+from dspy.primitives.assertions import assert_transform_module
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
@@ -60,6 +61,9 @@ class BootstrapFewShot(Teleprompter):
         self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
         assert self.student._compiled is False, "Student must be uncompiled."
+
+        self.student = assert_transform_module(self.student)
+        self.teacher= assert_transform_module(self.teacher)
 
         if self.max_labeled_demos and self.teacher._compiled is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)

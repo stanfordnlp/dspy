@@ -1,3 +1,4 @@
+import inspect
 from typing import Any, Callable
 import dsp
 import dspy
@@ -167,3 +168,31 @@ def assert_backtrack_policy(max_backtracks=2):
         return inner
 
     return wrapper
+
+
+def handle_assert(self, *args, **kwargs):
+
+    args_to_vals = inspect.getcallargs(self._forward, *args, **kwargs)
+
+    # if user has specified a bypass_assert flag, set it
+    if "bypass_assert" in args_to_vals:
+        dspy.settings.configure(bypass_assert=args_to_vals["bypass_assert"])
+
+    wrapped_forward = assert_backtrack_policy()(self._forward)
+    return wrapped_forward(*args, **kwargs)
+
+
+def assert_transform_module(module):
+    """
+        Transform a module to handle assertions.
+        TODO: arguments to specify the actual assertion handler
+    """
+    if not getattr(module, "forward", False):
+        raise ValueError("Module must have a forward method to have assertions handled.")
+    if getattr(module, "_forward", False):
+        pass # TODO warning: might be overwriting a previous _forward method
+    
+    module._forward = module.forward
+    module.forward = handle_assert.__get__(module)
+
+    return module
