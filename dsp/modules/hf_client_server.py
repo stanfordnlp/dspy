@@ -59,13 +59,16 @@ class HFServerTGI:
 
 
 if __name__ == "__main__":
+    hugging_face_hub_token = os.getenv('HUGGING_FACE_HUB_TOKEN')
+    if not hugging_face_hub_token:
+        raise ValueError("HUGGING_FACE_HUB_TOKEN environment variable not set.")
     server = HFServerTGI(user_dir="model_weights")
     
     server.run_server(
         model_name="meta-llama/Llama-2-7b-hf",
         port=9000,
         gpus='"device=2"',
-        env_variable="HUGGING_FACE_HUB_TOKEN=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",
+        env_variable="HUGGING_FACE_HUB_TOKEN={hugging_face_hub_token}",
         num_shard="1",
         max_input_length="4000",
         max_total_tokens="4096",
