@@ -3,6 +3,28 @@ from typing import Any, Callable
 import dsp
 import dspy
 
+import logging
+
+
+def setup_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    fileHandler = logging.FileHandler("assertion.log")
+    fileHandler.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    fileHandler.setFormatter(formatter)
+
+    logger.addHandler(fileHandler)
+
+    return logger
+
+
+logger = setup_logger()
+
 
 class DSPyAssertionError(AssertionError):
     """Custom exception raised when a DSPy `Assert` fails."""
@@ -27,9 +49,10 @@ class Assert:
             if self.assert_fun_res:
                 return True
             elif dspy.settings.bypass_assert:
-                # TODO: log the assertion failure
+                logger.error(f"AssertionError: {self.msg}")
                 return True
             else:
+                logger.error(f"AssertionError: {self.msg}")
                 raise DSPyAssertionError(msg=self.msg, state=dsp.settings.trace)
         else:
             raise ValueError("Assertion function should always return [bool]")
@@ -140,7 +163,6 @@ def assert_backtrack_policy(max_backtracks=2):
                         result = func(*args, **kwargs)
                         break
                     except DSPyAssertionError as e:
-                        print(f"AssertionError: {e.msg}")
                         error_msg = e.msg
 
                         if dsp.settings.trace:
@@ -150,8 +172,8 @@ def assert_backtrack_policy(max_backtracks=2):
                             ):
                                 predictor_feedbacks[backtrack_to].append(error_msg)
                         else:
-                            print(
-                                "UNREACHABLE: No trace available, this should not happen. Is this run time?"
+                            logger.error(
+                                f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
                             )
 
             # revert any extended predictors to their originals
@@ -171,7 +193,6 @@ def assert_backtrack_policy(max_backtracks=2):
 
 
 def handle_assert(self, *args, **kwargs):
-
     args_to_vals = inspect.getcallargs(self._forward, *args, **kwargs)
 
     # if user has specified a bypass_assert flag, set it
@@ -184,14 +205,19 @@ def handle_assert(self, *args, **kwargs):
 
 def assert_transform_module(module):
     """
-        Transform a module to handle assertions.
-        TODO: arguments to specify the actual assertion handler
+    Transform a module to handle assertions.
+    TODO: arguments to specify the actual assertion handler
     """
     if not getattr(module, "forward", False):
-        raise ValueError("Module must have a forward method to have assertions handled.")
+        raise ValueError(
+            "Module must have a forward method to have assertions handled."
+        )
     if getattr(module, "_forward", False):
-        pass # TODO warning: might be overwriting a previous _forward method
-    
+        logger.info(
+            f"Module {module.__class__.__name__} already has a _forward method. Skipping..."
+        )
+        pass  # TODO warning: might be overwriting a previous _forward method
+
     module._forward = module.forward
     module.forward = handle_assert.__get__(module)
 

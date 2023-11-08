@@ -17,6 +17,7 @@ class ProgramMeta(type):
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
+
     def _base_init(self):
         self._compiled = False
 
@@ -30,7 +31,11 @@ class Module(BaseModule, metaclass=ProgramMeta):
         from dspy.predict.predict import Predict
 
         named_parameters = self.named_parameters()
-        return [(name, param) for name, param in named_parameters if isinstance(param, Predict)]
+        return [
+            (name, param)
+            for name, param in named_parameters
+            if isinstance(param, Predict)
+        ]
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]
@@ -41,7 +46,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         for name, param in self.named_predictors():
             s.append(f"{name} = {param}")
 
-        return '\n'.join(s)
+        return "\n".join(s)
 
     # def __deepcopy__(self, memo):
     #     # memo is a dict of id's to copies already made during the current call
