@@ -14,6 +14,7 @@ import functools
 import json
 from typing import Any, Literal, Optional, cast
 
+import dsp
 import backoff
 import openai
 import openai.error
@@ -169,7 +170,8 @@ class GPT3(LM):
         #         kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
-        self.log_usage(response)
+        if dsp.settings.log_openai_usage:
+            self.log_usage(response)
         choices = response["choices"]
 
         completed_choices = [c for c in choices if c["finish_reason"] != "length"]
