@@ -33,6 +33,7 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
+                log_openai_usage=False,
             )
             cls._instance.__append(config)
 
