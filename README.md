@@ -58,34 +58,11 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 > _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
 
-To install the latest cutting-edge version from GitHub for development:
+
+For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install -e git+https://github.com/stanfordnlp/dspy-ai.git#egg=dspy-ai
-```
-
-For the optional Pinecone retrieval integration, include the `pinecone` extra:
-
-```
-pip install dspy-ai[pinecone]
-```
-
-For the optional Qdrant retrieval integration, include the `qdrant` extra:
-
-```
-pip install dspy-ai[qdrant]
-```
-
-For the optional [chromadb](https://github.com/chroma-core/chroma) retrieval integration, include the `chromadb` extra:
-
-```
-pip install dspy-ai[chromadb]
-```
-
-For the optional [marqo](https://github.com/marqo-ai/marqo) retrieval integration, include the `marqo` extra:
-
-```
-pip install dspy-ai[marqo]
+pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
 ```
 
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
