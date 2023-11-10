@@ -114,11 +114,25 @@ def bypass_suggest_handler(func):
     return wrapper
 
 
-def assert_backtrack_handler(func, max_backtracks=2):
-    """Handler for backtracking assertions.
+def bypass_assert_handler(func):
+    """Handler to bypass suggest only.
+
+    If a suggestion fails, it will be logged but not raised.
+    And If an assertion fails, it will be raised.
+    """
+
+    def wrapper(*args, **kwargs):
+        with dspy.settings.context(bypass_assert=True):
+            return func(*args, **kwargs)
+    
+    return wrapper
+
+
+def suggest_backtrack_handler(func, max_backtracks=2):
+    """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
-    with updated signature if assertion fails. updated signature adds a new
+    with updated signature if a suggestion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
 
@@ -251,7 +265,7 @@ def handle_assert_forward(assertion_handler):
     return forward
 
 
-default_assertion_handler = assert_backtrack_handler
+default_assertion_handler = suggest_backtrack_handler
 
 
 def assert_transform_module(module, assertion_handler=default_assertion_handler):
