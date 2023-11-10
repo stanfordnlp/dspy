@@ -115,15 +115,27 @@ def bypass_suggest_handler(func):
 
 
 def bypass_assert_handler(func):
-    """Handler to bypass suggest only.
+    """Handler to bypass assertion only.
 
-    If a suggestion fails, it will be logged but not raised.
+    If a assertion fails, it will be logged but not raised.
     And If an assertion fails, it will be raised.
     """
 
     def wrapper(*args, **kwargs):
         with dspy.settings.context(bypass_assert=True):
             return func(*args, **kwargs)
+    
+    return wrapper
+
+
+def assert_no_except_handler(func):
+    """Handler to ignore assertion failure and return None."""
+
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except DSPyAssertionError as e:
+            return None
     
     return wrapper
 
