@@ -192,21 +192,26 @@ def assert_backtrack_policy(max_backtracks=2):
     return wrapper
 
 
-def handle_assert(self, *args, **kwargs):
-    args_to_vals = inspect.getcallargs(self._forward, *args, **kwargs)
+def handle_assert_forward(assertion_handler):
+    def forward(self, *args, **kwargs):
+        args_to_vals = inspect.getcallargs(self._forward, *args, **kwargs)
 
-    # if user has specified a bypass_assert flag, set it
-    if "bypass_assert" in args_to_vals:
-        dspy.settings.configure(bypass_assert=args_to_vals["bypass_assert"])
+        # if user has specified a bypass_assert flag, set it
+        if "bypass_assert" in args_to_vals:
+            dspy.settings.configure(bypass_assert=args_to_vals["bypass_assert"])
 
-    wrapped_forward = assert_backtrack_policy()(self._forward)
-    return wrapped_forward(*args, **kwargs)
+        wrapped_forward = assertion_handler()(self._forward)
+        return wrapped_forward(*args, **kwargs)
+
+    return forward
 
 
-def assert_transform_module(module):
+default_assertion_handler = assert_backtrack_policy
+
+
+def assert_transform_module(module, assertion_handler=default_assertion_handler):
     """
     Transform a module to handle assertions.
-    TODO: arguments to specify the actual assertion handler
     """
     if not getattr(module, "forward", False):
         raise ValueError(
@@ -219,6 +224,6 @@ def assert_transform_module(module):
         pass  # TODO warning: might be overwriting a previous _forward method
 
     module._forward = module.forward
-    module.forward = handle_assert.__get__(module)
+    module.forward = handle_assert_forward(assertion_handler).__get__(module)
 
     return module
