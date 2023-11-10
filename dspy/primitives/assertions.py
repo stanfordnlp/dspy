@@ -82,7 +82,9 @@ class Suggest(Constraint):
                 return True
             else:
                 logger.error(f"SuggestionFailed: {self.msg}")
-                raise DSPyAssertionError(msg=self.msg, state=dsp.settings.trace)
+                raise DSPySuggestionError(msg=self.msg, state=dsp.settings.trace)
+        else:
+            raise ValueError("Suggestion function should always return [bool]")
 
 
 def noop_handler(func):
