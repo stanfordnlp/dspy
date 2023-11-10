@@ -107,12 +107,12 @@ class SimplifiedBaleen(dspy.Module):
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
 
-            dspy.Assert(
+            dspy.Suggest(
                 len(query) <= 100,
                 "Query should be short and less than 100 characters",
             )
 
-            dspy.Assert(
+            dspy.Suggest(
                 validate_query_distinction_local(prev_queries, query),
                 "Query should not be the following: "
                 + "; ".join(f"{i+1}) {q}" for i, q in enumerate(prev_queries)),

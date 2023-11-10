@@ -77,7 +77,7 @@ class Suggest(Constraint):
         if isinstance(self.result, bool):
             if self.result:
                 return True
-            elif dspy.settings.bypass_assert:
+            elif dspy.settings.bypass_suggest:
                 logger.error(f"SuggestionFailed: {self.msg}")
                 return True
             else:
@@ -88,12 +88,29 @@ class Suggest(Constraint):
 
 
 def noop_handler(func):
-    """ "Handler to bypass assertions."""
+    """Handler to bypass assertions and suggestions.
+
+    Now both assertions and suggestions will become noops.
+    """
 
     def wrapper(*args, **kwargs):
-        with dspy.settings.context(bypass_assert=True):
+        with dspy.settings.context(bypass_assert=True, bypass_suggest=True):
             return func(*args, **kwargs)
 
+    return wrapper
+
+
+def bypass_suggest_handler(func):
+    """Handler to bypass suggest only.
+
+    If a suggestion fails, it will be logged but not raised.
+    And If an assertion fails, it will be raised.
+    """
+
+    def wrapper(*args, **kwargs):
+        with dspy.settings.context(bypass_suggest=True, bypass_assert=False):
+            return func(*args, **kwargs)
+    
     return wrapper
 
 
@@ -160,6 +177,7 @@ def assert_backtrack_handler(func, max_backtracks=2):
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
+                # TODO clean up this function
                 # create a new feedback field
                 feedback = dspy.InputField(
                     prefix="Instruction:",
@@ -181,23 +199,17 @@ def assert_backtrack_handler(func, max_backtracks=2):
                     backtrack_to, default_args={"feedback": feedback_msg}
                 )
 
-            # if user set bypass_assert: ignore assertion errors
-            if dsp.settings.bypass_assert:
-                result = func(*args, **kwargs)
-                break
-
-            # if last backtrack: ignore assertion errors
-            elif i == max_backtracks and dspy.settings.bypass_assert is False:
-                dspy.settings.configure(bypass_assert=True)
-                result = func(*args, **kwargs)
-                dspy.settings.configure(bypass_assert=False)
+            # if last backtrack: ignore suggestion errors
+            if i == max_backtracks:
+                result = bypass_suggest_handler(func)(*args, **kwargs)
                 break
 
             else:
                 try:
                     result = func(*args, **kwargs)
                     break
-                except DSPyAssertionError as e:
+                # TODO Change this to suggest instead of assert
+                except DSPySuggestionError as e:
                     error_msg = e.msg
 
                     if dsp.settings.trace:

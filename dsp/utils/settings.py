@@ -37,6 +37,7 @@ class Settings(object):
                 trace=None,
                 release=0,
                 bypass_assert=False,
+                bypass_suggest=False,
             )
             cls._instance.__append(config)
 
