@@ -6,7 +6,7 @@ from typing import Optional, Literal
 
 from dsp.modules.lm import LM
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.cache_utils import cache
 import functools
 
 def openai_to_hf(**kwargs):
@@ -83,7 +83,6 @@ class HFModel(LM):
                 self.drop_prompt_from_output = True
                 self.tokenizer = AutoTokenizer.from_pretrained(model)
                 self.drop_prompt_from_output = True
-        self.history = []
 
     def basic_request(self, prompt, **kwargs):
         raw_kwargs = kwargs
@@ -92,11 +91,11 @@ class HFModel(LM):
 
         history = {
             "prompt": prompt,
-            "response": response,
+            "choices": [c['text'] for c in response['choices']],
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
         }
-        self.history.append(history)
+        self.push_record(**history)
 
         return response
 
@@ -138,7 +137,6 @@ class HFModel(LM):
         return [c["text"] for c in response["choices"]]
 
 
-# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-# @NotebookCacheMemory.cache
+# @cache
 # def cached_generate(self, prompt, **kwargs):
 #      return self._generate(prompt, **kwargs)

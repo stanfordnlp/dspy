@@ -2,7 +2,7 @@ import functools
 from typing import Optional, Union, Any
 import requests
 
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
+from dsp.modules.cache_utils import cache
 from dsp.utils import dotdict
 
 
@@ -25,9 +25,9 @@ class ColBERTv2:
         self, query: str, k: int = 10, simplify: bool = False
     ) -> Union[list[str], list[dotdict]]:
         if self.post_requests:
-            topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
+            topk: list[dict[str, Any]] = colbertv2_post_request_v2(self.url, query, k)
         else:
-            topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k)
+            topk: list[dict[str, Any]] = colbertv2_get_request_v2(self.url, query, k)
 
         if simplify:
             return [psg["long_text"] for psg in topk]
@@ -35,7 +35,7 @@ class ColBERTv2:
         return [dotdict(psg) for psg in topk]
 
 
-@CacheMemory.cache
+@cache
 def colbertv2_get_request_v2(url: str, query: str, k: int):
     assert (
         k <= 100
@@ -49,16 +49,7 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
     return topk[:k]
 
 
-@functools.lru_cache(maxsize=None)
-@NotebookCacheMemory.cache
-def colbertv2_get_request_v2_wrapped(*args, **kwargs):
-    return colbertv2_get_request_v2(*args, **kwargs)
-
-
-colbertv2_get_request = colbertv2_get_request_v2_wrapped
-
-
-@CacheMemory.cache
+@cache
 def colbertv2_post_request_v2(url: str, query: str, k: int):
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
@@ -66,11 +57,3 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
 
     return res.json()["topk"][:k]
 
-
-@functools.lru_cache(maxsize=None)
-@NotebookCacheMemory.cache
-def colbertv2_post_request_v2_wrapped(*args, **kwargs):
-    return colbertv2_post_request_v2(*args, **kwargs)
-
-
-colbertv2_post_request = colbertv2_post_request_v2_wrapped

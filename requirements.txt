@@ -10,3 +10,4 @@ tqdm
 datasets
 requests
 optuna
+pytest

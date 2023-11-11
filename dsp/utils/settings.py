@@ -33,6 +33,7 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
+                max_history=100,
             )
             cls._instance.__append(config)
 
