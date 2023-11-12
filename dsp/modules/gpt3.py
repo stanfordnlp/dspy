@@ -173,7 +173,7 @@ class GPT3(LM):
                     tokens, logprobs = tokens[:index], logprobs[:index]
 
                 avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, self.get_choice_text(c)))
+                scored_completions.append((avglog, self._get_choice_text(c)))
 
             scored_completions = sorted(scored_completions, reverse=True)
             completions = [c for _, c in scored_completions]
