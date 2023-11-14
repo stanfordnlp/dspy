@@ -1,12 +1,9 @@
-from openai import InvalidRequestError
-from openai.error import APIError
-
 import dsp
 import tqdm
 import pandas as pd
 
 from IPython.display import display
-from dsp.utils import EM, F1, HotPotF1
+from dsp.utils import EM
 
 
 def evaluateRetrieval(fn, dev, metric=None):

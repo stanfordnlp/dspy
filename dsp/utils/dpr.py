@@ -4,8 +4,6 @@
     Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
 """
 
-import string
-import spacy
 import regex
 import unicodedata
 

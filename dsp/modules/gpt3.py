@@ -4,12 +4,23 @@ from typing import Any, Literal, Optional, cast
 
 import backoff
 import openai
-import openai.error
 from openai.openai_object import OpenAIObject
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
+
+def get_openai_errors():
+    try:
+        # support for backwards compatibility
+        import openai.error
+        import openai.error.RateLimitError as RateLimitError
+        import openai.error.ServiceUnavailableError as ServiceUnavailableError
+        import openai.error.APIError as APIError
+        
+        return (RateLimitError, ServiceUnavailableError, APIError)
+    except ModuleNotFoundError:
+        return (openai.RateLimitError, openai.ServiceUnavailableError, openai.APIError)
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -106,7 +117,7 @@ class GPT3(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError),
+        get_openai_errors,
         max_time=1000,
         on_backoff=backoff_hdlr,
     )

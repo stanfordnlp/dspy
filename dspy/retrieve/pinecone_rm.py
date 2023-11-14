@@ -5,6 +5,7 @@ Author: Dhar Rawal (@drawal1)
 
 from typing import Optional, List, Union
 import openai
+from dsp.modules.gpt3 import get_openai_errors
 import dspy
 import backoff
 
@@ -107,7 +108,7 @@ class PineconeRM(dspy.Retrieve):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.error.RateLimitError, openai.error.ServiceUnavailableError),
+        get_openai_errors,
         max_time=15,
     )
     def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
