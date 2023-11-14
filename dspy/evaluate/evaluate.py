@@ -1,6 +1,3 @@
-from openai import InvalidRequestError
-from openai.error import APIError
-
 import dsp
 import tqdm
 import threading
@@ -9,7 +6,7 @@ import pandas as pd
 from IPython.display import display as ipython_display, HTML
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from dsp.utils import EM, F1, HotPotF1
+from dsp.utils import EM
 from dsp.evaluation.utils import *
 
 """
