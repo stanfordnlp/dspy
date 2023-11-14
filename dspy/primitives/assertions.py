@@ -46,9 +46,10 @@ class DSPySuggestionError(AssertionError):
 
 class Constraint:
 
-    def __init__(self, result: bool, msg: str = ""):
+    def __init__(self, result: bool, msg: str = "", target_module=None):
         self.result = result
         self.msg = msg
+        self.target_module = target_module
 
         self.__call__()
 
@@ -140,7 +141,7 @@ def assert_no_except_handler(func):
     return wrapper
 
 
-def suggest_backtrack_handler(func, max_backtracks=2):
+def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
     """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
@@ -149,6 +150,7 @@ def suggest_backtrack_handler(func, max_backtracks=2):
     """
 
     def wrapper(*args, **kwargs):
+        target_module = handler_args.get('target_module', None)
         backtrack_to = None
         error_msg = None
         result = None
@@ -239,11 +241,19 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                     error_msg = e.msg
 
                     if dsp.settings.trace:
-                        backtrack_to = dsp.settings.trace[-1][0]
-                        if error_msg not in predictor_feedbacks.setdefault(
-                            backtrack_to, []
-                        ):
+                        if target_module:
+                            for i in range(len(dsp.settings.trace) - 1, -1, -1):
+                                trace_element = dsp.settings.trace[i]
+                                mod = trace_element[0]
+                                if mod.signature == target_module:
+                                    backtrack_to = mod
+                                    break
+                        else:
+                            backtrack_to = dsp.settings.trace[-1][0]
+                        if error_msg not in predictor_feedbacks.setdefault(backtrack_to, []):
                             predictor_feedbacks[backtrack_to].append(error_msg)
+                        if backtrack_to is None:
+                            logger.error("Specified module not found in trace")
                     else:
                         logger.error(
                             f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
@@ -263,7 +273,7 @@ def suggest_backtrack_handler(func, max_backtracks=2):
     return wrapper
 
 
-def handle_assert_forward(assertion_handler):
+def handle_assert_forward(assertion_handler, **handler_args):
     def forward(self, *args, **kwargs):
         args_to_vals = inspect.getcallargs(self._forward, *args, **kwargs)
 
@@ -271,7 +281,7 @@ def handle_assert_forward(assertion_handler):
         if "bypass_assert" in args_to_vals:
             dspy.settings.configure(bypass_assert=args_to_vals["bypass_assert"])
 
-        wrapped_forward = assertion_handler(self._forward)
+        wrapped_forward = assertion_handler(self._forward, **handler_args)
         return wrapped_forward(*args, **kwargs)
 
     return forward
@@ -280,7 +290,7 @@ def handle_assert_forward(assertion_handler):
 default_assertion_handler = suggest_backtrack_handler
 
 
-def assert_transform_module(module, assertion_handler=default_assertion_handler):
+def assert_transform_module(module, assertion_handler=default_assertion_handler, **handler_args):
     """
     Transform a module to handle assertions.
     """
@@ -295,6 +305,6 @@ def assert_transform_module(module, assertion_handler=default_assertion_handler)
         pass  # TODO warning: might be overwriting a previous _forward method
 
     module._forward = module.forward
-    module.forward = handle_assert_forward(assertion_handler).__get__(module)
+    module.forward = handle_assert_forward(assertion_handler, **handler_args).__get__(module)
 
     return module
