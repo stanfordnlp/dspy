@@ -40,3 +40,4 @@ finetuning_ckpts/
 # cache/
 * copy*
 .idea
+assertion.log
