@@ -114,7 +114,7 @@ class SimplifiedBaleen(dspy.Module):
 
             dspy.Suggest(
                 validate_query_distinction_local(prev_queries, query),
-                "Query should not be the following: "
+                "Query should be distinct from: "
                 + "; ".join(f"{i+1}) {q}" for i, q in enumerate(prev_queries)),
             )
 
