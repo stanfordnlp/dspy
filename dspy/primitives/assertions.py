@@ -5,7 +5,7 @@ import dspy
 
 import logging
 import uuid
-
+from ..predict.retry import Retry
 
 #################### Assertion Helpers ####################
 
@@ -37,12 +37,14 @@ def _build_error_msg(feedback_msgs):
 
 def _build_trace_passages(failure_traces):
     """Build a list of trace passages from a list of failure traces."""
-    trace_template = """Failed Instruction: {} | Output: {}"""
-    trace_passages = []
-    for id, (ip, op, msg) in failure_traces.items():
-        trace_passages.append(trace_template.format(msg, op))
 
-    return trace_passages
+    # print("Traces:")
+    # for id, (ip, op, msg) in failure_traces.items():
+    #     print(id, op, msg)
+    # print()
+
+    # TODO complete this
+    return failure_traces
 
 
 def _extend_predictor_signature(predictor, **kwargs):
@@ -114,19 +116,11 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
-    # a registry of all constraints created
-    _registry = {}
-
     def __init__(self, result: bool, msg: str = "", target_module=None):
-        key = (result, msg, target_module)
-        if key in Constraint._registry:
-            self = Constraint._registry[key]
-        else:
-            self.id = str(uuid.uuid4())
-            self.result = result
-            self.msg = msg
-            self.target_module = target_module
-            Constraint._registry[key] = self
+        self.id = str(uuid.uuid4())
+        self.result = result
+        self.msg = msg
+        self.target_module = target_module
 
         self.__call__()
 
@@ -238,51 +232,25 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
         backtrack_to = None
         error_msg = None
         result = None
-
-        predictors_to_original_forward = {}
+        extended_predictors_to_original_forward = {}
         # predictor_feedback: Predictor -> List[feedback_msg]
         predictor_feedbacks = {}
 
-        # failure_traces: Predictor -> Dict[assertion, (ip, op, msg)]
+        # failure_traces: Predictor -> Dict[assertion, (input, op, msg)]
         failure_traces = {}
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
-                # create a new traces field
-                traces_field = dspy.InputField(
-                    prefix="Counter Examples:",
-                    desc="Traces of some incorrect outputs that violate instructions",
-                    format=dsp.passages2text,
-                )
+                retry_module = Retry(backtrack_to)
 
-                # create a new feedback field
-                feedback_field = dspy.InputField(
-                    prefix="Instruction:",
-                    desc="Some instructions you must satisfy",
-                    format=str,
-                )
-
-                # save the original forward function to revert back to
-                predictors_to_original_forward[backtrack_to] = backtrack_to.forward
-
-                # extend signature with new fields
-                _extend_predictor_signature(
-                    backtrack_to,
-                    _assert_feedback=feedback_field,
-                    _assert_traces=traces_field,
-                )
-
-                # set the new fields
+                # set feedback field for predictor's forward function
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
+
+                # set traces field for predictor's forward function
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
 
-                _wrap_forward_with_set_fields(
-                    backtrack_to,
-                    default_args={
-                        "_assert_feedback": feedback_msg,
-                        "_assert_traces": trace_passages,
-                    },
-                )
+                kwargs['feedback'] = feedback_msg
+                kwargs['traces'] = trace_passages
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
@@ -291,10 +259,12 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
 
             else:
                 try:
-                    result = func(*args, **kwargs)
+                    result = retry_module(*args, **kwargs)
                     break
                 except DSPySuggestionError as e:
-                    suggest_id, error_msg, error_state = e.id, e.msg, e.state[-1]
+                    suggest_id, error_msg = e.id, e.msg
+                    error_ip = e.state[-1][1]
+                    error_op = e.state[-1][2].__dict__["_store"]
 
                     if dsp.settings.trace:
                         if target_module:
@@ -317,11 +287,6 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                             predictor_feedbacks[backtrack_to].append(error_msg)
 
                         # save latest failure trace for predictor per suggestion
-                        error_ip = error_state[1]
-                        error_op = error_state[2].__dict__["_store"]
-                        error_op.pop("_assert_feedback", None)
-                        error_op.pop("_assert_traces", None)
-
                         failure_traces.setdefault(backtrack_to, {})[suggest_id] = (
                             error_ip,
                             error_op,
@@ -334,17 +299,17 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                         )
 
         # revert any extended predictors to their originals
-        if predictors_to_original_forward:
-            for predictor, original_forward in predictors_to_original_forward.items():
+        if extended_predictors_to_original_forward:
+            for (
+                predictor,
+                original_forward,
+            ) in extended_predictors_to_original_forward.items():
                 _revert_predictor_signature(predictor, "feedback")
                 predictor.forward = original_forward
 
         return result
 
     return wrapper
-
-
-#################### Assertion Module Transformer ####################
 
 
 def handle_assert_forward(assertion_handler, **handler_args):
