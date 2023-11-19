@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import os
 from dsp.utils.utils import dotdict
 import threading
 from langfuse import Langfuse
@@ -34,7 +35,7 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
-                langfuse=Langfuse(debug=False),
+                langfuse=Langfuse(debug=False) if os.environ.get("LANGFUSE_PUBLIC_KEY") else None,
                 langufuse_trace=None,
             )
             cls._instance.__append(config)
