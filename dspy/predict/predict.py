@@ -17,6 +17,7 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         if dspy.settings.langfuse:
+            dspy.settings.langfuse_module_call = False
             dspy.settings.langfuse_trace = create_trace()
         self.reset()
 
@@ -63,6 +64,9 @@ class Predict(Parameter):
         self.demos = [dspy.Example(**x) for x in self.demos]
     
     def __call__(self, **kwargs):
+        # trace events from same context should not be added to different context
+        if not dspy.settings.langfuse_module_call:
+            dspy.settings.langfuse_trace = create_trace()
         return self.forward(**kwargs)
     
     def forward(self, **kwargs):

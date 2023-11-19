@@ -46,7 +46,7 @@ class Retrieve(Parameter):
         
         if dsp.settings.langfuse:
             if not dsp.settings.langfuse_trace:
-                dspy.settings.langfuse_trace = create_trace
+                dspy.settings.langfuse_trace = create_trace()
             _ = dspy.settings.langfuse_trace.span(CreateSpan(
                 name="vector-search",
                 startTime=retrievalStartTime,

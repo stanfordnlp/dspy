@@ -1,3 +1,4 @@
+import dspy
 from dspy.primitives.module import BaseModule
 from dsp.utils.langfuse import create_trace
 
@@ -17,11 +18,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     def __init__(self):
-        if dspy.settings.langfuse:
-            dspy.settings.langfuse_trace = create_trace()
         self._compiled = False
 
     def __call__(self, *args, **kwargs):
+        if dspy.settings.langfuse:
+            dspy.settings.langfuse_trace = create_trace()
+            # all logs under this context will be added to the same trace
+            dspy.settings.langfuse_module_call = True
         return self.forward(*args, **kwargs)
     
     def named_predictors(self):

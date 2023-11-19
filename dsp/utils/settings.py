@@ -37,6 +37,7 @@ class Settings(object):
                 release=0,
                 langfuse=Langfuse(debug=False) if os.environ.get("LANGFUSE_PUBLIC_KEY") else None,
                 langfuse_trace=None,
+                langfuse_module_call=False,
             )
             cls._instance.__append(config)
 
