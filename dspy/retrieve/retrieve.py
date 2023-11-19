@@ -2,7 +2,6 @@ from datetime import datetime
 import dsp
 import random
 import dspy
-from dsp.utils.langfuse import create_trace
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -44,10 +43,10 @@ class Retrieve(Parameter):
 
         passages = dsp.retrieveEnsemble(queries, k=self.k)
         
-        if dsp.settings.langfuse:
-            if not dsp.settings.langfuse_trace:
-                dspy.settings.langfuse_trace = create_trace()
-            _ = dspy.settings.langfuse_trace.span(CreateSpan(
+        if dspy.settings.langfuse.langfuse_client:
+            if not dspy.settings.langfuse.langfuse_trace:
+                dspy.settings.langfuse.create_new_trace(reset_in_context=False)
+            _ = dspy.settings.langfuse.langfuse_trace.span(CreateSpan(
                 name="vector-search",
                 startTime=retrievalStartTime,
                 endTime=datetime.now(),

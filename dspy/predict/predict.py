@@ -6,7 +6,6 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
-from dsp.utils.langfuse import create_trace
 from datetime import datetime
 from langfuse.model import InitialGeneration
 
@@ -16,9 +15,9 @@ class Predict(Parameter):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
-        if dspy.settings.langfuse:
-            dspy.settings.langfuse_module_call = False
-            dspy.settings.langfuse_trace = create_trace()
+        if dspy.settings.langfuse.langfuse_client:
+            print("predict.__init__: creating new trace")
+            dspy.settings.langfuse.create_new_trace(reset_in_context=True)
         self.reset()
 
         # if the signature is a string
@@ -65,8 +64,9 @@ class Predict(Parameter):
     
     def __call__(self, **kwargs):
         # trace events from same context should not be added to different context
-        if not dspy.settings.langfuse_module_call:
-            dspy.settings.langfuse_trace = create_trace()
+        if dspy.settings.langfuse.langfuse_client and not dspy.settings.langfuse.langfuse_in_context_call:
+            print("predict.__call__: creating new trace")
+            dspy.settings.langfuse.create_new_trace(reset_in_context=False)
         return self.forward(**kwargs)
     
     def forward(self, **kwargs):
@@ -113,7 +113,7 @@ class Predict(Parameter):
         pred = Prediction.from_completions(completions, signature=signature)
             
         if dsp.settings.langfuse:
-            _ = dspy.settings.langfuse_trace.generation(InitialGeneration(
+            _ = dspy.settings.langfuse.langfuse_trace.generation(InitialGeneration(
                 name=lm.kwargs["model"],
                 startTime=generationStartTime,
                 endTime=datetime.now(),
