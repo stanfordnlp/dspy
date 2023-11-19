@@ -2,10 +2,8 @@ import inspect
 from typing import Any, Callable
 import dsp
 import dspy
-
 import logging
 import uuid
-from ..predict.retry import Retry
 
 #################### Assertion Helpers ####################
 
@@ -213,49 +211,41 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
     with updated signature if a suggestion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
+    from ..predict.retry import Retry
 
     def wrapper(*args, **kwargs):
+        nonlocal func
         target_module = handler_args.get("target_module", None)
         backtrack_to = None
         error_msg = None
         result = None
-        extended_predictors_to_original_forward = {}
+
+        predictors_to_original_forward = {}
         # predictor_feedback: Predictor -> List[feedback_msg]
         predictor_feedbacks = {}
 
-        # failure_traces: Predictor -> Dict[assertion, (input, op, msg)]
+        # failure_traces: Predictor -> Dict[assertion, (ip, op, msg)]
         failure_traces = {}
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
-<<<<<<< HEAD
-                retry_module = Retry(backtrack_to)
-
-                # set feedback field for predictor's forward function
-=======
                 # create a new retry module that wraps backtrack_to
-                retry_module = dspy.Retry(backtrack_to)
+                retry_module = Retry(backtrack_to)
 
                 # save the original forward function to revert back to
                 predictors_to_original_forward[backtrack_to] = backtrack_to.forward
 
                 # set the new fields
->>>>>>> 759d62ae604e5924cd2df6ffeb94a0d692939488
+                #TODO some handling of the past_outputs fields within Retry module? 
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
-
-                # set traces field for predictor's forward function
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
                 kwargs["feedback"] = feedback_msg
                 kwargs["traces"] = trace_passages
 
-<<<<<<< HEAD
-                kwargs['feedback'] = feedback_msg
-                kwargs['traces'] = trace_passages
-=======
-                # FIXME: need to replace backtrack_to.forward
-                # in the user's program with retry_module.forward
+                # TODO: verify if this correctly - replace backtrack_to.forward in the user's program with retry_module.forward
+                func = retry_module.forward.__get__(backtrack_to, backtrack_to.__class__)
+                # setattr(backtrack_to, 'forward', func)
                 # NOTE: this replacement needs to be thread safe if possible
->>>>>>> 759d62ae604e5924cd2df6ffeb94a0d692939488
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
@@ -264,12 +254,10 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
 
             else:
                 try:
-                    result = retry_module(*args, **kwargs)
+                    result = func(*args, **kwargs)
                     break
                 except DSPySuggestionError as e:
-                    suggest_id, error_msg = e.id, e.msg
-                    error_ip = e.state[-1][1]
-                    error_op = e.state[-1][2].__dict__["_store"]
+                    suggest_id, error_msg, error_state = e.id, e.msg, e.state[-1]
 
                     if dsp.settings.trace:
                         if target_module:
@@ -292,6 +280,11 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                             predictor_feedbacks[backtrack_to].append(error_msg)
 
                         # save latest failure trace for predictor per suggestion
+                        error_ip = error_state[1]
+                        error_op = error_state[2].__dict__["_store"]
+                        error_op.pop("_assert_feedback", None)
+                        error_op.pop("_assert_traces", None)
+
                         failure_traces.setdefault(backtrack_to, {})[suggest_id] = (
                             error_ip,
                             error_op,
@@ -304,13 +297,10 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                         )
 
         # revert any extended predictors to their originals
-        if extended_predictors_to_original_forward:
-            for (
-                predictor,
-                original_forward,
-            ) in extended_predictors_to_original_forward.items():
+        if predictors_to_original_forward:
+            for predictor, original_forward in predictors_to_original_forward.items():
                 _revert_predictor_signature(predictor, "feedback")
-                predictor.forward = original_forward
+                setattr(predictor, 'forward', original_forward.__get__(predictor))
 
         return result
 
