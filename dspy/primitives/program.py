@@ -23,7 +23,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     def __init__(self):
-        if dspy.settings.langfuse is not None:
+        if dspy.settings.langfuse:
             self.trace_id = uuid.uuid4().hex
             dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self._compiled = False

@@ -43,7 +43,7 @@ class Retrieve(Parameter):
 
         passages = dsp.retrieveEnsemble(queries, k=self.k)
         
-        if dsp.settings.langfuse is not None:
+        if dsp.settings.langfuse:
             _ = dspy.settings.langfuse_trace.span(CreateSpan(
                 name="vector-search",
                 startTime=retrievalStartTime,
