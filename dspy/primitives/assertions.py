@@ -35,14 +35,13 @@ def _build_error_msg(feedback_msgs):
 
 def _build_trace_passages(failure_traces):
     """Build a list of trace passages from a list of failure traces."""
+    trace_template = """Failed Instruction: {} | Output: {}"""
+    trace_passages = []
 
-    # print("Traces:")
-    # for id, (ip, op, msg) in failure_traces.items():
-    #     print(id, op, msg)
-    # print()
+    for id, (ip, op, msg) in failure_traces.items():
+        trace_passages.append(trace_template.format(msg, op))
 
-    # TODO complete this
-    return failure_traces
+    return trace_passages
 
 
 def _extend_predictor_signature(predictor, **kwargs):
@@ -236,14 +235,16 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                 predictors_to_original_forward[backtrack_to] = backtrack_to.forward
 
                 # set the new fields
-                #TODO some handling of the past_outputs fields within Retry module? 
+                # TODO some handling of the past_outputs fields within Retry module?
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
                 kwargs["feedback"] = feedback_msg
                 kwargs["traces"] = trace_passages
 
                 # TODO: verify if this correctly - replace backtrack_to.forward in the user's program with retry_module.forward
-                func = retry_module.forward.__get__(backtrack_to, backtrack_to.__class__)
+                func = retry_module.forward.__get__(
+                    backtrack_to, backtrack_to.__class__
+                )
                 # setattr(backtrack_to, 'forward', func)
                 # NOTE: this replacement needs to be thread safe if possible
 
@@ -300,7 +301,7 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
         if predictors_to_original_forward:
             for predictor, original_forward in predictors_to_original_forward.items():
                 _revert_predictor_signature(predictor, "feedback")
-                setattr(predictor, 'forward', original_forward.__get__(predictor))
+                setattr(predictor, "forward", original_forward.__get__(predictor))
 
         return result
 
