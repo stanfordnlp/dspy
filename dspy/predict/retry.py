@@ -1,7 +1,10 @@
 import dspy
 import dsp
 
-class Retry(dspy.Predict):
+from .predict import Predict
+
+
+class Retry(Predict):
     def __init__(self, module):
         super().__init__(module.signature)
         self.module = module
@@ -10,17 +13,23 @@ class Retry(dspy.Predict):
 
     def _create_new_signature(self, original_signature):
         extended_signature = {}
+
+        # FIXME: AttributeError: '_SignatureNamespace' object
+        # has no attribute 'items'.
+        # FIXME: the order of the input fields might be incorrect
+        # the new fields should be after the old input fields,
+        # but before the output fields.
         for key, value in original_signature.items():
             extended_signature[key] = value
-        extended_signature['traces'] = dspy.InputField(
-            prefix="Trace:", 
-            desc="Traces from your past attempts", 
-            format=dsp.passages2text
+
+        extended_signature["traces"] = dspy.InputField(
+            prefix="Trace:",
+            desc="Traces from your past attempts",
+            format=dsp.passages2text,
         )
-        extended_signature['feedback'] = dspy.InputField(
-            prefix="Instruction:", 
-            desc="Some instructions you must satisfy", 
-            format=str
+
+        extended_signature["feedback"] = dspy.InputField(
+            prefix="Instruction:", desc="Some instructions you must satisfy", format=str
         )
         return extended_signature
 

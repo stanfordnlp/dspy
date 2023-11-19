@@ -76,19 +76,6 @@ def _revert_predictor_signature(predictor, *args):
     predictor.extended_signature = new_signature
 
 
-def _wrap_forward_with_set_fields(predictor, default_args):
-    """Wrap the forward method of a predictor instance to enforce default arguments."""
-    original_forward = predictor.forward
-
-    def new_forward(**kwargs):
-        for arg, value in default_args.items():
-            kwargs.setdefault(arg, value)
-
-        return original_forward(**kwargs)
-
-    predictor.forward = new_forward
-
-
 #################### Assertion Exceptions ####################
 
 
@@ -241,16 +228,34 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
+<<<<<<< HEAD
                 retry_module = Retry(backtrack_to)
 
                 # set feedback field for predictor's forward function
+=======
+                # create a new retry module that wraps backtrack_to
+                retry_module = dspy.Retry(backtrack_to)
+
+                # save the original forward function to revert back to
+                predictors_to_original_forward[backtrack_to] = backtrack_to.forward
+
+                # set the new fields
+>>>>>>> 759d62ae604e5924cd2df6ffeb94a0d692939488
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
 
                 # set traces field for predictor's forward function
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
+                kwargs["feedback"] = feedback_msg
+                kwargs["traces"] = trace_passages
 
+<<<<<<< HEAD
                 kwargs['feedback'] = feedback_msg
                 kwargs['traces'] = trace_passages
+=======
+                # FIXME: need to replace backtrack_to.forward
+                # in the user's program with retry_module.forward
+                # NOTE: this replacement needs to be thread safe if possible
+>>>>>>> 759d62ae604e5924cd2df6ffeb94a0d692939488
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
