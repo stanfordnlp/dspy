@@ -34,7 +34,7 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
-                langfuse=Langfuse(debug=True),
+                langfuse=Langfuse(debug=False),
                 langufuse_trace=None,
             )
             cls._instance.__append(config)

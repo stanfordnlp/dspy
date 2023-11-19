@@ -7,18 +7,14 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
 from datetime import datetime
-from langfuse.model import InitialGeneration, CreateTrace
-import uuid
-import wonderwords
-r = wonderwords.RandomWord()
+from langfuse.model import InitialGeneration
+
 
 class Predict(Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
-        self.trace_id = uuid.uuid4().hex
-        dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self.reset()
 
         # if the signature is a string
@@ -110,7 +106,7 @@ class Predict(Parameter):
         pred = Prediction.from_completions(completions, signature=signature)
             
         if dsp.settings.trace is not None:
-            generation = dspy.settings.langfuse_trace.generation(InitialGeneration(
+            _ = dspy.settings.langfuse_trace.generation(InitialGeneration(
                 name=lm.kwargs["model"],
                 startTime=generationStartTime,
                 endTime=datetime.now(),
@@ -123,7 +119,7 @@ class Predict(Parameter):
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
 
-            # We need to integrate this somewhere to prepare for termination
+            # TODO: We need to integrate this somewhere to prepare for termination
             # but this is a blocking call, so we have to be careful.
             # langfuse.flush()
         return pred
