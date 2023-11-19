@@ -16,7 +16,6 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         if dspy.settings.langfuse.langfuse_client:
-            print("predict.__init__: creating new trace")
             dspy.settings.langfuse.create_new_trace(reset_in_context=True)
         self.reset()
 
@@ -65,7 +64,6 @@ class Predict(Parameter):
     def __call__(self, **kwargs):
         # trace events from same context should not be added to different context
         if dspy.settings.langfuse.langfuse_client and not dspy.settings.langfuse.langfuse_in_context_call:
-            print("predict.__call__: creating new trace")
             dspy.settings.langfuse.create_new_trace(reset_in_context=False)
         return self.forward(**kwargs)
     

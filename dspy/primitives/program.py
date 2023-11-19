@@ -21,7 +21,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def __call__(self, *args, **kwargs):
         if dspy.settings.langfuse.langfuse_client:
-            print("program.__call__: creating new trace")
             dspy.settings.langfuse.create_new_trace(reset_in_context=True)
             dspy.settings.langfuse.langfuse_in_context_call = True
         return self.forward(*args, **kwargs)
