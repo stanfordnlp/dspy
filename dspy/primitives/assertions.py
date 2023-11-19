@@ -74,19 +74,6 @@ def _revert_predictor_signature(predictor, *args):
     predictor.extended_signature = new_signature
 
 
-def _wrap_forward_with_set_fields(predictor, default_args):
-    """Wrap the forward method of a predictor instance to enforce default arguments."""
-    original_forward = predictor.forward
-
-    def new_forward(**kwargs):
-        for arg, value in default_args.items():
-            kwargs.setdefault(arg, value)
-
-        return original_forward(**kwargs)
-
-    predictor.forward = new_forward
-
-
 #################### Assertion Exceptions ####################
 
 
@@ -248,41 +235,21 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
-                # create a new traces field
-                traces_field = dspy.InputField(
-                    prefix="Counter Examples:",
-                    desc="Traces of some incorrect outputs that violate instructions",
-                    format=dsp.passages2text,
-                )
-
-                # create a new feedback field
-                feedback_field = dspy.InputField(
-                    prefix="Instruction:",
-                    desc="Some instructions you must satisfy",
-                    format=str,
-                )
+                # create a new retry module that wraps backtrack_to
+                retry_module = dspy.Retry(backtrack_to)
 
                 # save the original forward function to revert back to
                 predictors_to_original_forward[backtrack_to] = backtrack_to.forward
 
-                # extend signature with new fields
-                _extend_predictor_signature(
-                    backtrack_to,
-                    _assert_feedback=feedback_field,
-                    _assert_traces=traces_field,
-                )
-
                 # set the new fields
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
+                kwargs["feedback"] = feedback_msg
+                kwargs["traces"] = trace_passages
 
-                _wrap_forward_with_set_fields(
-                    backtrack_to,
-                    default_args={
-                        "_assert_feedback": feedback_msg,
-                        "_assert_traces": trace_passages,
-                    },
-                )
+                # FIXME: need to replace backtrack_to.forward
+                # in the user's program with retry_module.forward
+                # NOTE: this replacement needs to be thread safe if possible
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
