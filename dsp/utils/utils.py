@@ -16,7 +16,6 @@ def print_message(*s, condition=True, pad=False, sep=None):
 
     return msg
 
-
 def timestamp(daydir=False):
     format_str = f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
     result = datetime.datetime.now().strftime(format_str)

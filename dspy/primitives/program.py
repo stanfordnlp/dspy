@@ -1,10 +1,5 @@
 from dspy.primitives.module import BaseModule
-
-from langfuse.model import CreateTrace
-import dspy
-import wonderwords
-r = wonderwords.RandomWord()
-
+from dsp.utils.langfuse import create_trace
 
 class ProgramMeta(type):
     pass
@@ -23,7 +18,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def __init__(self):
         if dspy.settings.langfuse:
-            dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
+            dspy.settings.langfuse_trace = create_trace()
         self._compiled = False
 
     def __call__(self, *args, **kwargs):

@@ -6,11 +6,10 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
+from dsp.utils.langfuse import create_trace
 from datetime import datetime
-from langfuse.model import InitialGeneration, CreateTrace
-import dspy
-import wonderwords
-r = wonderwords.RandomWord()
+from langfuse.model import InitialGeneration
+
 
 class Predict(Parameter):
     def __init__(self, signature, **config):
@@ -18,7 +17,7 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         if dspy.settings.langfuse:
-            dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
+            dspy.settings.langfuse_trace = create_trace()
         self.reset()
 
         # if the signature is a string
