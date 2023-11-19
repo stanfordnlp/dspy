@@ -19,7 +19,7 @@ class Predict(Parameter):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
-        if dspy.settings.langfuse is not None:
+        if dspy.settings.langfuse:
             self.trace_id = uuid.uuid4().hex
             dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self.reset()
