@@ -105,7 +105,7 @@ class Predict(Parameter):
 
         pred = Prediction.from_completions(completions, signature=signature)
             
-        if dsp.settings.trace is not None:
+        if dsp.settings.langfuse is not None:
             _ = dspy.settings.langfuse_trace.generation(InitialGeneration(
                 name=lm.kwargs["model"],
                 startTime=generationStartTime,

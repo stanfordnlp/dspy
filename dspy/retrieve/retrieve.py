@@ -43,14 +43,15 @@ class Retrieve(Parameter):
 
         passages = dsp.retrieveEnsemble(queries, k=self.k)
         
-        _ = dspy.settings.langfuse_trace.span(CreateSpan(
-            name="vector-search",
-            startTime=retrievalStartTime,
-            endTime=datetime.now(),
-            input={"query": queries},
-            output={"passages": passages},
-            metadata={"stage": self.stage, "k": self.k}
-        ))
+        if dsp.settings.langfuse is not None:
+            _ = dspy.settings.langfuse_trace.span(CreateSpan(
+                name="vector-search",
+                startTime=retrievalStartTime,
+                endTime=datetime.now(),
+                input={"query": queries},
+                output={"passages": passages},
+                metadata={"stage": self.stage, "k": self.k}
+            ))
         
         return Prediction(passages=passages)
     

@@ -23,8 +23,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     def __init__(self):
-        self.trace_id = uuid.uuid4().hex
-        dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
+        if dspy.settings.langfuse is not None:
+            self.trace_id = uuid.uuid4().hex
+            dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self._compiled = False
 
     def __call__(self, *args, **kwargs):
