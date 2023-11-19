@@ -7,9 +7,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
 from datetime import datetime
-from langfuse.model import InitialGeneration
-from langfuse.model import CreateTrace
-import uuid
+from langfuse.model import InitialGeneration, CreateTrace
 import dspy
 import wonderwords
 r = wonderwords.RandomWord()
@@ -20,7 +18,6 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         if dspy.settings.langfuse:
-            self.trace_id = uuid.uuid4().hex
             dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
         self.reset()
 

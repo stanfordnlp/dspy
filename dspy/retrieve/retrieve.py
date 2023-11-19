@@ -5,7 +5,9 @@ import dspy
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from langfuse.model import CreateSpan
+from langfuse.model import CreateSpan, CreateTrace
+import wonderwords
+r = wonderwords.RandomWord()
 
 
 class Retrieve(Parameter):
@@ -44,6 +46,8 @@ class Retrieve(Parameter):
         passages = dsp.retrieveEnsemble(queries, k=self.k)
         
         if dsp.settings.langfuse:
+            if not dsp.settings.langfuse_trace:
+                dspy.settings.langfuse_trace = dspy.settings.langfuse.trace(CreateTrace(name=f"{r.word()}-{r.word()}"))
             _ = dspy.settings.langfuse_trace.span(CreateSpan(
                 name="vector-search",
                 startTime=retrievalStartTime,
