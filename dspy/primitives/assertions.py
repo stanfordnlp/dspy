@@ -234,7 +234,7 @@ def assert_no_except_handler(func):
     return wrapper
 
 
-def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
+def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
     """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
@@ -261,15 +261,13 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
 
                 # generate values for new fields
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
-                trace_passages = _build_trace_passages(failure_traces[backtrack_to])
-                # TODO separate past_outputs as a field from traces
 
                 # set values as default for the new fields
                 _wrap_forward_with_set_fields(
                     retry_module,
                     default_args={
                         "feedback": feedback_msg,
-                        "traces": trace_passages,
+                        "past_outputs": past_outputs,
                     },
                 )
 
@@ -311,17 +309,17 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
                         ):
                             predictor_feedbacks[backtrack_to].append(error_msg)
 
+                        output_fields = vars(error_state[0].signature.signature)
+                        past_outputs = {}
+                        for field_name, field_obj in output_fields.items():
+                            if isinstance(field_obj, dspy.OutputField):
+                                past_outputs[field_name] = getattr(error_state[2], field_name, None)
                         # save latest failure trace for predictor per suggestion
                         error_ip = error_state[1]
                         error_op = error_state[2].__dict__["_store"]
                         error_op.pop("_assert_feedback", None)
                         error_op.pop("_assert_traces", None)
 
-                        failure_traces.setdefault(backtrack_to, {})[suggest_id] = (
-                            error_ip,
-                            error_op,
-                            error_msg,
-                        )
 
                     else:
                         logger.error(

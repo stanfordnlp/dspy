@@ -18,31 +18,28 @@ class Retry(Predict):
         output_fields = original_signature.output_fields()
         modified_output_fields = {}
 
-        # @manish: TODO: verify this and remove past_outputs from traces
-        # for key, value in output_fields.items():
-        #     modified_output_fields[f"past_{key}"] = dspy.OutputField(
-        #         prefix="Past " + value.prefix, desc=value.desc, format=value.format
-        #     )
+        for key, value in output_fields.items():
+            modified_output_fields[f"past_{key}"] = dspy.InputField(
+                prefix="Past " + value.prefix, desc='past output with errors', format=value.format
+            )
 
         extended_signature.update(input_fields)
-        # extended_signature.update(modified_output_fields)
+        extended_signature.update(modified_output_fields)
 
         extended_signature["feedback"] = dspy.InputField(
             prefix="Instructions:",
             desc="Some instructions you must satisfy",
             format=str,
         )
-
-        extended_signature["traces"] = dspy.InputField(
-            prefix="Traces:",
-            desc="traces of failures from your past attempts",
-            format=dsp.passages2text,
-        )
-
         extended_signature.update(output_fields)
 
         return extended_signature
 
     def forward(self, *args, **kwargs):
+        for key, value in kwargs['past_outputs'].items():
+            past_key = f"past_{key}"
+            if past_key in self.new_signature:
+                kwargs[past_key] = value
+        del kwargs['past_outputs']
         kwargs["signature"] = self.new_signature
         return self.original_forward(**kwargs)
