@@ -247,9 +247,16 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
         target_module = handler_args.get("target_module", None)
         backtrack_to, error_msg, result = None, None, None
 
-        predictors_to_original_forward = {}
-        predictor_feedbacks = {}  # Predictor -> List[feedback_msg]
-        failure_traces = {}  # Predictor -> Dict[assertion, (ip, op, msg)]
+        # predictors_to_original_forward = {}
+        # predictor_feedbacks = {}  # Predictor -> List[feedback_msg]
+        # failure_traces = {}  # Predictor -> Dict[assertion, (ip, op, msg)]
+
+        if not hasattr(dspy.settings, 'predictor_feedbacks'):
+            dspy.settings.predictor_feedbacks = {}
+        # if not hasattr(dspy.settings, 'failure_traces'):
+        #     dspy.settings.failure_traces = {}
+        if not hasattr(dspy.settings, 'predictors_to_original_forward'):
+            dspy.settings.predictors_to_original_forward = {}
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
@@ -257,10 +264,10 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
                 retry_module = Retry(backtrack_to)
 
                 # save original forward function to revert back to
-                predictors_to_original_forward[backtrack_to] = backtrack_to.forward
+                dspy.settings.predictors_to_original_forward[backtrack_to] = backtrack_to.forward
 
                 # generate values for new fields
-                feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
+                feedback_msg = _build_error_msg(dspy.settings.predictor_feedbacks[backtrack_to])
 
                 # set values as default for the new fields
                 _wrap_forward_with_set_fields(
@@ -304,10 +311,10 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
                             logger.error("Specified module not found in trace")
 
                         # save unique feedback message for predictor
-                        if error_msg not in predictor_feedbacks.setdefault(
+                        if error_msg not in dspy.settings.predictor_feedbacks.setdefault(
                             backtrack_to, []
                         ):
-                            predictor_feedbacks[backtrack_to].append(error_msg)
+                            dspy.settings.predictor_feedbacks[backtrack_to].append(error_msg)
 
                         output_fields = vars(error_state[0].signature.signature)
                         past_outputs = {}
@@ -327,8 +334,8 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
                         )
 
         # revert any extended predictors to their originals
-        if predictors_to_original_forward:
-            for predictor, original_forward in predictors_to_original_forward.items():
+        if dspy.settings.predictors_to_original_forward:
+            for predictor, original_forward in dspy.settings.predictors_to_original_forward.items():
                 _revert_predictor_signature(predictor, "feedback")
                 setattr(predictor, "forward", original_forward.__get__(predictor))
 
