@@ -120,10 +120,13 @@ class DSPyAssertionError(AssertionError):
 class DSPySuggestionError(AssertionError):
     """Custom exception raised when a DSPy `Suggest` fails."""
 
-    def __init__(self, id: str, msg: str, state: Any = None) -> None:
+    def __init__(
+        self, id: str, msg: str, target_module: Any = None, state: Any = None
+    ) -> None:
         super().__init__(msg)
         self.id = id
         self.msg = msg
+        self.target_module = target_module
         self.state = state
 
 
@@ -131,6 +134,7 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
+
     def __init__(self, result: bool, msg: str = "", target_module=None):
         self.id = str(uuid.uuid4())
         self.result = result
@@ -172,7 +176,10 @@ class Suggest(Constraint):
             else:
                 logger.error(f"SuggestionFailed: {self.msg}")
                 raise DSPySuggestionError(
-                    id=self.id, msg=self.msg, state=dsp.settings.trace
+                    id=self.id,
+                    msg=self.msg,
+                    target_module=self.target_module,
+                    state=dsp.settings.trace,
                 )
         else:
             raise ValueError("Suggestion function should always return [bool]")
@@ -234,7 +241,7 @@ def assert_no_except_handler(func):
     return wrapper
 
 
-def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
+def suggest_backtrack_handler(func, max_backtracks=2):
     """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
@@ -244,7 +251,6 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
     from ..predict.retry import Retry
 
     def wrapper(*args, **kwargs):
-        target_module = handler_args.get("target_module", None)
         backtrack_to, error_msg, result = None, None, None
 
         predictors_to_original_forward = {}
@@ -287,14 +293,19 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
                     result = func(*args, **kwargs)
                     break
                 except DSPySuggestionError as e:
-                    suggest_id, error_msg, error_state = e.id, e.msg, e.state[-1]
+                    suggest_id, error_msg, suggest_target_module, error_state = (
+                        e.id,
+                        e.msg,
+                        e.target_module,
+                        e.state[-1],
+                    )
 
                     if dsp.settings.trace:
-                        if target_module:
+                        if suggest_target_module:
                             for i in range(len(dsp.settings.trace) - 1, -1, -1):
                                 trace_element = dsp.settings.trace[i]
                                 mod = trace_element[0]
-                                if mod.signature == target_module:
+                                if mod.signature == suggest_target_module:
                                     backtrack_to = mod
                                     break
                         else:
@@ -313,13 +324,14 @@ def suggest_backtrack_handler(func, max_backtracks=2, **handler_args):
                         past_outputs = {}
                         for field_name, field_obj in output_fields.items():
                             if isinstance(field_obj, dspy.OutputField):
-                                past_outputs[field_name] = getattr(error_state[2], field_name, None)
+                                past_outputs[field_name] = getattr(
+                                    error_state[2], field_name, None
+                                )
                         # save latest failure trace for predictor per suggestion
                         error_ip = error_state[1]
                         error_op = error_state[2].__dict__["_store"]
                         error_op.pop("_assert_feedback", None)
                         error_op.pop("_assert_traces", None)
-
 
                     else:
                         logger.error(
