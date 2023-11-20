@@ -104,6 +104,48 @@ def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
 def send_hftgi_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
+
+class HFClientVLLM(HFModel):
+    def __init__(self, model, port, url="http://localhost", **kwargs):
+        super().__init__(model=model, is_client=True)
+        self.url = f"{url}:{port}"
+        self.headers = {"Content-Type": "application/json"}
+
+    def _generate(self, prompt, **kwargs):
+        kwargs = {**self.kwargs, **kwargs}
+
+        payload = {
+            "model": kwargs["model"],
+            "prompt": prompt,
+            "max_tokens": kwargs["max_tokens"],
+            "temperature": kwargs["temperature"],
+        }
+
+        response = send_hfvllm_request_v00(
+            f"{self.url}/v1/completions",
+            json=payload,
+            headers=self.headers,
+        )
+
+        try:
+            json_response = response.json()
+            completions = json_response["choices"]
+            response = {
+                "prompt": prompt,
+                "choices": [{"text": c["text"]} for c in completions],
+            }
+            return response
+
+        except Exception as e:
+            print("Failed to parse JSON response:", response.text)
+            raise Exception("Received invalid JSON response from server")
+
+
+@CacheMemory.cache
+def send_hfvllm_request_v00(arg, **kwargs):
+    return requests.post(arg, **kwargs)
+
+
 class HFServerTGI:
     def __init__(self, user_dir):
         self.model_weights_dir = os.path.abspath(os.path.join(os.getcwd(), "text-generation-inference", user_dir))
