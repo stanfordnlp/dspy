@@ -205,42 +205,6 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 
 ###
 <details>
-  <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
-
-**[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
-
-**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
-
-**[Intro-03] Adding Complexity: Multi-stage Programs**
-
-**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
-
-</details>
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
-
-
-**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
-
-**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
-
-**[Advanced-03] Compiling & Teleprompters.**
-
-**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
-
-**[Advanced-05]: Agents and General Tool Use in DSPy.**
-
-**[Advanced-06]: Reproducibility, Saving Programs, and Advanced Caching.**
-
-
-</details>
-
-
-###
-<details>
   <summary><h3 style="display: inline">Module Reference</h3></summary>
 
 We have work-in-progress module documentation at [this PR](https://github.com/stanfordnlp/dspy/pull/93). Please let us know if anything there is unclear.
@@ -287,6 +251,43 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
 - [`dspy.teleprompt.Ensemble`](docs/teleprompters.md#telepromptensemble)
 - `dspy.teleprompt.kNN` [coming soon]
+
+</details>
+
+
+
+###
+<details>
+  <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
+
+**[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
+
+**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
+
+**[Intro-03] Adding Complexity: Multi-stage Programs**
+
+**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
+
+</details>
+
+
+###
+<details>
+  <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
+
+
+**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
+
+**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
+
+**[Advanced-03] Compiling & Teleprompters.**
+
+**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
+
+**[Advanced-05]: Agents and General Tool Use in DSPy.**
+
+**[Advanced-06]: Reproducibility, Saving Programs, and Advanced Caching.**
+
 
 </details>
 
