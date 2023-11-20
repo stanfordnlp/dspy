@@ -73,6 +73,37 @@ def _revert_predictor_signature(predictor, *args):
     predictor.extended_signature = new_signature
 
 
+def _wrap_forward_with_set_fields(predictor, default_args):
+    """Wrap the forward method of a predictor instance to enforce default arguments."""
+    original_forward = predictor.forward
+
+    def new_forward(*args, **kwargs):
+        for arg, value in default_args.items():
+            kwargs.setdefault(arg, value)
+
+        return original_forward(**kwargs)
+
+    predictor.forward = new_forward
+
+
+def _pprintdict(d):
+    """Pretty print a dictionary"""
+    import json
+    from termcolor import colored
+
+    formatted_dict = json.dumps(d, indent=4)
+    colored_lines = [
+        colored(line, "blue")
+        if ":" not in line
+        else ": ".join(
+            colored(part.strip(), "blue" if i == 0 else "green")
+            for i, part in enumerate(line.split(":", 1))
+        )
+        for line in formatted_dict.splitlines()
+    ]
+    return "\n".join(colored_lines) + "\n"
+
+
 #################### Assertion Exceptions ####################
 
 
@@ -213,40 +244,40 @@ def suggest_backtrack_handler(func, max_backtracks=10, **handler_args):
     from ..predict.retry import Retry
 
     def wrapper(*args, **kwargs):
-        nonlocal func
         target_module = handler_args.get("target_module", None)
-        backtrack_to = None
-        error_msg = None
-        result = None
+        backtrack_to, error_msg, result = None, None, None
 
         predictors_to_original_forward = {}
-        # predictor_feedback: Predictor -> List[feedback_msg]
-        predictor_feedbacks = {}
-
-        # failure_traces: Predictor -> Dict[assertion, (ip, op, msg)]
-        failure_traces = {}
+        predictor_feedbacks = {}  # Predictor -> List[feedback_msg]
+        failure_traces = {}  # Predictor -> Dict[assertion, (ip, op, msg)]
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
                 # create a new retry module that wraps backtrack_to
                 retry_module = Retry(backtrack_to)
 
-                # save the original forward function to revert back to
+                # save original forward function to revert back to
                 predictors_to_original_forward[backtrack_to] = backtrack_to.forward
 
-                # set the new fields
-                # TODO some handling of the past_outputs fields within Retry module?
+                # generate values for new fields
                 feedback_msg = _build_error_msg(predictor_feedbacks[backtrack_to])
                 trace_passages = _build_trace_passages(failure_traces[backtrack_to])
-                kwargs["feedback"] = feedback_msg
-                kwargs["traces"] = trace_passages
+                # TODO separate past_outputs as a field from traces
 
-                # TODO: verify if this correctly - replace backtrack_to.forward in the user's program with retry_module.forward
-                func = retry_module.forward.__get__(
-                    backtrack_to, backtrack_to.__class__
+                # set values as default for the new fields
+                _wrap_forward_with_set_fields(
+                    retry_module,
+                    default_args={
+                        "feedback": feedback_msg,
+                        "traces": trace_passages,
+                    },
                 )
-                # setattr(backtrack_to, 'forward', func)
-                # NOTE: this replacement needs to be thread safe if possible
+
+                # point backtrack_to.forward to retry_module.forward
+                # TODO: verify and make sure is thread safe
+                backtrack_to.forward = retry_module.forward.__get__(
+                    retry_module, retry_module.__class__
+                )
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
