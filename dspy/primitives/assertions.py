@@ -74,11 +74,13 @@ def _revert_predictor_signature(predictor, *args):
 
 
 def _wrap_forward_with_set_fields(predictor, default_args):
-    """Wrap the forward method of a predictor instance to enforce default arguments."""
     original_forward = predictor.forward
 
+    # Create a copy of default_args to use inside the closure
+    closure_args = default_args.copy()
+
     def new_forward(*args, **kwargs):
-        for arg, value in default_args.items():
+        for arg, value in closure_args.items():
             kwargs.setdefault(arg, value)
 
         return original_forward(**kwargs)
@@ -134,7 +136,6 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
-
     def __init__(self, result: bool, msg: str = "", target_module=None):
         self.id = str(uuid.uuid4())
         self.result = result
@@ -261,7 +262,13 @@ def suggest_backtrack_handler(func, max_backtracks=2):
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
-                # create a new retry module that wraps backtrack_to
+                # revert to original forward function if modified
+                if backtrack_to in dspy.settings.predictors_to_original_forward:
+                    backtrack_to.forward = dspy.settings.predictors_to_original_forward[
+                        backtrack_to
+                    ]
+
+                # create a new retry module wrapping backtrack_to
                 retry_module = Retry(backtrack_to)
 
                 # save original forward function to revert back to
@@ -272,11 +279,6 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                 # generate values for new fields
                 feedback_msg = _build_error_msg(
                     dspy.settings.predictor_feedbacks[backtrack_to]
-                )
-
-                print(
-                    "going to set feedback msg to: ",
-                    dspy.settings.predictor_feedbacks[backtrack_to],
                 )
 
                 # set values as default for the new fields
@@ -355,7 +357,7 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                             f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
 
-        # revert any extended predictors to their originals
+        # cleanup: after all tries revert any leftover predictors to their originals
         if dspy.settings.predictors_to_original_forward:
             for (
                 predictor,

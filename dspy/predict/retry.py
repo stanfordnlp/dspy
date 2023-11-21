@@ -20,7 +20,9 @@ class Retry(Predict):
 
         for key, value in output_fields.items():
             modified_output_fields[f"past_{key}"] = dspy.InputField(
-                prefix="Past " + value.prefix, desc='past output with errors', format=value.format
+                prefix="Past " + value.prefix,
+                desc="past output with errors",
+                format=value.format,
             )
 
         extended_signature.update(input_fields)
@@ -36,10 +38,10 @@ class Retry(Predict):
         return extended_signature
 
     def forward(self, *args, **kwargs):
-        for key, value in kwargs['past_outputs'].items():
+        for key, value in kwargs["past_outputs"].items():
             past_key = f"past_{key}"
             if past_key in self.new_signature:
                 kwargs[past_key] = value
-        del kwargs['past_outputs']
+        del kwargs["past_outputs"]
         kwargs["signature"] = self.new_signature
         return self.original_forward(**kwargs)
