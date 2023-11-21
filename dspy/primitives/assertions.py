@@ -253,16 +253,11 @@ def suggest_backtrack_handler(func, max_backtracks=2):
     def wrapper(*args, **kwargs):
         backtrack_to, error_msg, result = None, None, None
 
-        # predictors_to_original_forward = {}
-        # predictor_feedbacks = {}  # Predictor -> List[feedback_msg]
-        # failure_traces = {}  # Predictor -> Dict[assertion, (ip, op, msg)]
+        # Predictor -> List[feedback_msg]
+        dspy.settings.predictor_feedbacks = {}
 
-        if not hasattr(dspy.settings, 'predictor_feedbacks'):
-            dspy.settings.predictor_feedbacks = {}
-        # if not hasattr(dspy.settings, 'failure_traces'):
-        #     dspy.settings.failure_traces = {}
-        if not hasattr(dspy.settings, 'predictors_to_original_forward'):
-            dspy.settings.predictors_to_original_forward = {}
+        # Predictor -> Predictor.forward
+        dspy.settings.predictors_to_original_forward = {}
 
         for i in range(max_backtracks + 1):
             if i > 0 and backtrack_to is not None:
@@ -270,10 +265,19 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                 retry_module = Retry(backtrack_to)
 
                 # save original forward function to revert back to
-                dspy.settings.predictors_to_original_forward[backtrack_to] = backtrack_to.forward
+                dspy.settings.predictors_to_original_forward[
+                    backtrack_to
+                ] = backtrack_to.forward
 
                 # generate values for new fields
-                feedback_msg = _build_error_msg(dspy.settings.predictor_feedbacks[backtrack_to])
+                feedback_msg = _build_error_msg(
+                    dspy.settings.predictor_feedbacks[backtrack_to]
+                )
+
+                print(
+                    "going to set feedback msg to: ",
+                    dspy.settings.predictor_feedbacks[backtrack_to],
+                )
 
                 # set values as default for the new fields
                 _wrap_forward_with_set_fields(
@@ -322,10 +326,15 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                             logger.error("Specified module not found in trace")
 
                         # save unique feedback message for predictor
-                        if error_msg not in dspy.settings.predictor_feedbacks.setdefault(
-                            backtrack_to, []
+                        if (
+                            error_msg
+                            not in dspy.settings.predictor_feedbacks.setdefault(
+                                backtrack_to, []
+                            )
                         ):
-                            dspy.settings.predictor_feedbacks[backtrack_to].append(error_msg)
+                            dspy.settings.predictor_feedbacks[backtrack_to].append(
+                                error_msg
+                            )
 
                         output_fields = vars(error_state[0].signature.signature)
                         past_outputs = {}
@@ -334,6 +343,7 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                                 past_outputs[field_name] = getattr(
                                     error_state[2], field_name, None
                                 )
+
                         # save latest failure trace for predictor per suggestion
                         error_ip = error_state[1]
                         error_op = error_state[2].__dict__["_store"]
@@ -347,7 +357,10 @@ def suggest_backtrack_handler(func, max_backtracks=2):
 
         # revert any extended predictors to their originals
         if dspy.settings.predictors_to_original_forward:
-            for predictor, original_forward in dspy.settings.predictors_to_original_forward.items():
+            for (
+                predictor,
+                original_forward,
+            ) in dspy.settings.predictors_to_original_forward.items():
                 _revert_predictor_signature(predictor, "feedback")
                 setattr(predictor, "forward", original_forward.__get__(predictor))
 
