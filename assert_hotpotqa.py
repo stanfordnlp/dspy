@@ -1,6 +1,7 @@
 import dspy
 from dsp.utils import deduplicate
 from dspy.datasets import HotPotQA
+from dspy.predict.retry import Retry
 from dspy.teleprompt import BootstrapFewShot
 
 # pipeline configs
@@ -90,6 +91,7 @@ def validate_query_distinction_local(previous_queries, query):
 
 # declaration of dspy program
 class SimplifiedBaleen(dspy.Module):
+
     def __init__(self, passages_per_hop=2, max_hops=2):
         super().__init__()
 
@@ -128,8 +130,11 @@ class SimplifiedBaleen(dspy.Module):
 
 
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer_and_hops)
+
 compiled_baleen = teleprompter.compile(
-    SimplifiedBaleen(), teacher=SimplifiedBaleen(passages_per_hop=2), trainset=trainset
+    student=SimplifiedBaleen().map_named_predictors(Retry),
+    teacher=SimplifiedBaleen(passages_per_hop=2).map_named_predictors(Retry),
+    trainset=trainset,
 )
 
 print("=" * 50, "Validation Failures", "=" * 50)

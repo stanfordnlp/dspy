@@ -45,3 +45,11 @@ class Retry(Predict):
         del kwargs["past_outputs"]
         kwargs["signature"] = self.new_signature
         return self.original_forward(**kwargs)
+    
+    def __call__(self, **kwargs):
+        if dspy.settings.backtrack_to == self.module:
+            for key, value in dspy.settings.backtrack_to_args.items():
+                kwargs.setdefault(key, value)
+            return self.forward(**kwargs)
+        else:
+            return self.module(**kwargs)
