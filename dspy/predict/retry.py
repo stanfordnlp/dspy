@@ -52,4 +52,6 @@ class Retry(Predict):
                 kwargs.setdefault(key, value)
             return self.forward(**kwargs)
         else:
-            return self.module(**kwargs)
+            # seems like a hack, but it works for now
+            demos = kwargs.pop("demos", self.demos)
+            return self.module(demos=demos, **kwargs)
