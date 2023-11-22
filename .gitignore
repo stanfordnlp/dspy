@@ -41,3 +41,4 @@ finetuning_ckpts/
 * copy*
 .idea
 assertion.log
+*.log
