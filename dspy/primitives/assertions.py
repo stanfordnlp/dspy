@@ -250,7 +250,6 @@ def suggest_backtrack_handler(func, max_backtracks=2):
     with updated signature if a suggestion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
-    from ..predict.retry import Retry
 
     def wrapper(*args, **kwargs):
         error_msg, result = None, None
@@ -331,15 +330,6 @@ def suggest_backtrack_handler(func, max_backtracks=2):
                         logger.error(
                             f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
                         )
-
-        # cleanup: after all tries revert any leftover predictors to their originals
-        # if dspy.settings.predictors_to_original_forward:
-        #     for (
-        #         predictor,
-        #         original_forward,
-        #     ) in dspy.settings.predictors_to_original_forward.items():
-        #         _revert_predictor_signature(predictor, "feedback")
-        #         setattr(predictor, "forward", original_forward.__get__(predictor))
 
         return result
 
