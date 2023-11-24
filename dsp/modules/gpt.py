@@ -20,7 +20,7 @@ def backoff_hdlr(details):
     )
 
 
-class GPT3(LM):
+class GPT(LM):
     """Wrapper around OpenAI's GPT API. Supports both the OpenAI and Azure APIs.
 
     Args:

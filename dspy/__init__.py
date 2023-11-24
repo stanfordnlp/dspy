@@ -15,7 +15,7 @@ import dsp
 
 settings = dsp.settings
 
-OpenAI = dsp.GPT3
+OpenAI = dsp.GPT
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 

@@ -155,7 +155,7 @@ def finetune(training_data, target):
     jobname, ft = openai_finetune(name, target)
     print(ft)
 
-    ft = dsp.GPT3(model=ft, stop=" </s>")
+    ft = dsp.GPT(model=ft, stop=" </s>")
     return ft
 
 # 4. Return updated program.

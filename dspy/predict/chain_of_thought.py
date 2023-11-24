@@ -49,7 +49,7 @@ class ChainOfThought(Predict):
     def forward(self, **kwargs):
         signature = self.signature
 
-        if self.activated is True or (self.activated is None and isinstance(dsp.settings.lm, dsp.GPT3)):
+        if self.activated is True or (self.activated is None and isinstance(dsp.settings.lm, dsp.GPT)):
             signature = self.extended_signature
         
         return super().forward(signature=signature, **kwargs)
