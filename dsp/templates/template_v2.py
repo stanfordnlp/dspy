@@ -259,6 +259,7 @@ class TemplateV2:
                 query = self.query(example)
 
         rdemos = "\n\n".join(rdemos)
+        ademos = "\n\n".join(ademos)
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
             rdemos_and_query = "\n\n".join([rdemos, query])
             parts = [
@@ -270,7 +271,7 @@ class TemplateV2:
             parts = [
                 self.instructions,
                 self.guidelines(show_guidelines),
-                *ademos,
+                ademos,
                 query,
             ]
         else:
@@ -278,7 +279,7 @@ class TemplateV2:
                 self.instructions,
                 rdemos,
                 self.guidelines(show_guidelines),
-                *ademos,
+                ademos,
                 query,
             ]
 
