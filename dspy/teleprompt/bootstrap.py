@@ -63,9 +63,6 @@ class BootstrapFewShot(Teleprompter):
 
         assert self.student._compiled is False, "Student must be uncompiled."
 
-        self.student = assert_transform_module(self.student, noop_handler)
-        self.teacher = assert_transform_module(self.teacher, noop_handler)
-
         if self.max_labeled_demos and self.teacher._compiled is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)

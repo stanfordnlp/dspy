@@ -374,4 +374,6 @@ def assert_transform_module(
         module
     )
 
+    setattr(module, "_assert_transformed", True)
+
     return module
