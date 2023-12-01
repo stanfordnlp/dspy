@@ -130,7 +130,6 @@ class BootstrapFinetune(Teleprompter):
             'lr': lr
         }
 
-        import os
         compiler_config['save'] = os.path.join(path_prefix, compiler_config['save']) if path_prefix else compiler_config['save']
 
         from dsp.modules.finetuning import finetune_hf
