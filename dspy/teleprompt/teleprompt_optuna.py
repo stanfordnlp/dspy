@@ -36,7 +36,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         for (name, compiled_predictor), (_, program2_predictor) in zip(self.compiled_teleprompter.named_predictors(), program2.named_predictors()):
             all_demos = compiled_predictor.demos
             demo_index = trial.suggest_int(f"demo_index_for_{name}", 0, len(all_demos) - 1)
-            selected_demo = dict(all_demos[demo_index])
+            selected_demo = all_demos[demo_index]
             program2_predictor.demos = [selected_demo]
         evaluate = Evaluate(devset=self.valset, metric=self.metric, num_threads=self.num_threads,
                             display_table=False, display_progress=True)
