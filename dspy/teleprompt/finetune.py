@@ -59,7 +59,7 @@ class BootstrapFinetune(Teleprompter):
         
 
     def compile(self, student, *, teacher=None, trainset, valset=None,
-                target='t5-large', bsize=12, accumsteps=1, lr=5e-5, epochs=1, bf16=False, int8=False, peft=False):
+                target='t5-large', bsize=12, accumsteps=1, lr=5e-5, epochs=1, bf16=False, int8=False, peft=False, path_prefix=None):
 
         # It's usually better to supply a few-shot teacher, rather than uncompiled module (the student).
         if teacher is None:
@@ -129,6 +129,8 @@ class BootstrapFinetune(Teleprompter):
             'gradient_accumulation_steps': accumsteps, # 2,
             'lr': lr
         }
+
+        compiler_config['save'] = os.path.join(path_prefix, compiler_config['save']) if path_prefix else compiler_config['save']
 
         from dsp.modules.finetuning import finetune_hf
 
