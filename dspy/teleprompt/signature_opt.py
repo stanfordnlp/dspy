@@ -10,6 +10,7 @@ USAGE SUGGESTIONS:
 The following code can be used to compile a optimized signature teleprompter, and evaluate it on an end task:
 
 teleprompter = SignatureOptimizer(metric=metric, breadth=BREADTH, depth=DEPTH, init_temperature=INIT_TEMPERATURE, prompt_model=prompt_model, output_dir=optimizedV1_output_dir)
+kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 compiled_prompt_opt = teleprompter.compile(program.deepcopy(), devset=devset[:DEV_NUM], eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
@@ -20,7 +21,7 @@ Note that this teleprompter takes in the following parameters:
 * depth: The number of times we should ask our prompt model to genereate new prompts, with the history of the past prompts as input. Default=3.
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.4.
 * prompt_model: The model used for prompt generation.
-* verbose: Whether or not to print intermediate steps.
+* verbose: Tells the method whether or not to print intermediate steps.
 
 """
 class BasicGenerateInstruction(Signature):
