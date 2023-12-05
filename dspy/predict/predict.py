@@ -1,10 +1,13 @@
 import dsp
 import random
+import dspy
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import infer_prefix
+from datetime import datetime
+from langfuse.model import InitialGeneration
 
 
 class Predict(Parameter):
@@ -12,6 +15,8 @@ class Predict(Parameter):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
+        if dspy.settings.langfuse.langfuse_client:
+            dspy.settings.langfuse.create_new_trace(reset_in_context=True)
         self.reset()
 
         # if the signature is a string
@@ -57,9 +62,14 @@ class Predict(Parameter):
         self.demos = [dspy.Example(**x) for x in self.demos]
     
     def __call__(self, **kwargs):
+        # trace events from same context should not be added to different context
+        if dspy.settings.langfuse.langfuse_client and not dspy.settings.langfuse.langfuse_in_context_call:
+            dspy.settings.langfuse.create_new_trace(reset_in_context=False)
         return self.forward(**kwargs)
     
     def forward(self, **kwargs):
+        generationStartTime = datetime.now()
+        
         # Extract the three privileged keyword arguments.
         signature = kwargs.pop("signature", self.signature)
         demos = kwargs.pop("demos", self.demos)
@@ -100,10 +110,23 @@ class Predict(Parameter):
 
         pred = Prediction.from_completions(completions, signature=signature)
             
-        if dsp.settings.trace is not None:
+        if dsp.settings.langfuse:
+            _ = dspy.settings.langfuse.langfuse_trace.generation(InitialGeneration(
+                name=lm.kwargs["model"],
+                startTime=generationStartTime,
+                endTime=datetime.now(),
+                model=lm.kwargs["model"],
+                modelParameters=lm.kwargs,
+                prompt=lm.history[-1]['prompt'],
+                completion=pred.toDict(),
+                metadata=kwargs
+            ))
+            # TODO: We need to integrate this somewhere to prepare for termination
+            # but this is a blocking call, so we have to be careful.
+            # langfuse.flush()
+        if dsp.settings.trace:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
-
         return pred
 
     def __repr__(self):

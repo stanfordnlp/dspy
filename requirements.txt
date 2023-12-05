@@ -8,3 +8,5 @@ tqdm<=4.66.1
 datasets<=2.14.6
 requests<=2.31.0
 optuna<=3.4.0
+langfuse<=1.5.0
+wonderwords==2.2.0

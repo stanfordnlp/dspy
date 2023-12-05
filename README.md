@@ -201,6 +201,7 @@ While we work on new tutorials and documentation, please check out **[our intro 
 
 Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
+For newer documentations, please refer to our [documentation folder](https://github.com/stanfordnlp/dspy/tree/main/docs).
 
 
 ###

@@ -1,7 +1,5 @@
-import copy
-
+import dspy
 from dspy.primitives.module import BaseModule
-
 
 class ProgramMeta(type):
     pass
@@ -22,6 +20,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     def __call__(self, *args, **kwargs):
+        if dspy.settings.langfuse.langfuse_client:
+            dspy.settings.langfuse.create_new_trace(reset_in_context=True)
+            dspy.settings.langfuse.langfuse_in_context_call = True
         return self.forward(*args, **kwargs)
     
     def named_predictors(self):
