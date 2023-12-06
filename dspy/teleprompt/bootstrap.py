@@ -5,7 +5,6 @@ import threading
 from dspy.predict.retry import Retry
 
 from dspy.primitives import Example
-from dspy.primitives.assertions import assert_transform_module, noop_handler
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
