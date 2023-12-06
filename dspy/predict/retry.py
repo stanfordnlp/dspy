@@ -44,7 +44,7 @@ class Retry(Predict):
                 kwargs[past_key] = value
         del kwargs["past_outputs"]
         kwargs["signature"] = self.new_signature
-        demos = kwargs.pop("demos", self.demos)
+        demos = kwargs.pop("demos", self.demos if self.demos is not None else [])
         return self.original_forward(demos=demos, **kwargs)
     
     def __call__(self, **kwargs):
@@ -54,5 +54,5 @@ class Retry(Predict):
             return self.forward(**kwargs)
         else:
             # seems like a hack, but it works for now
-            demos = kwargs.pop("demos", self.demos)
+            demos = kwargs.pop("demos", self.demos if self.demos is not None else [])
             return self.module(demos=demos, **kwargs)
