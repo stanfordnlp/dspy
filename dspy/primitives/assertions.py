@@ -33,79 +33,6 @@ def _build_error_msg(feedback_msgs):
     return "\n".join([msg for msg in feedback_msgs])
 
 
-def _build_trace_passages(failure_traces):
-    """Build a list of trace passages from a list of failure traces."""
-    trace_template = """Failed Instruction: {} | Output: {}"""
-    trace_passages = []
-
-    for id, (ip, op, msg) in failure_traces.items():
-        trace_passages.append(trace_template.format(msg, op))
-
-    return trace_passages
-
-
-def _extend_predictor_signature(predictor, **kwargs):
-    """Update the signature of a predictor instance with specified fields."""
-    old_signature = predictor.extended_signature
-    old_keys = list(old_signature.kwargs.keys())
-
-    # include other input fields after question
-    position = old_keys.index("question") + 1
-    for key in reversed(kwargs):
-        old_keys.insert(position, key)
-
-    extended_kwargs = {
-        key: kwargs.get(key, old_signature.kwargs.get(key)) for key in old_keys
-    }
-
-    new_signature = dsp.Template(old_signature.instructions, **extended_kwargs)
-    predictor.extended_signature = new_signature
-
-
-def _revert_predictor_signature(predictor, *args):
-    """Revert the signature of a predictor by removing specified fields."""
-    old_signature_kwargs = predictor.extended_signature.kwargs
-    for key in args:
-        old_signature_kwargs.pop(key, None)
-    new_signature = dsp.Template(
-        predictor.extended_signature.instructions, **old_signature_kwargs
-    )
-    predictor.extended_signature = new_signature
-
-
-def _wrap_forward_with_set_fields(predictor, default_args):
-    original_forward = predictor.forward
-
-    # Create a copy of default_args to use inside the closure
-    closure_args = default_args.copy()
-
-    def new_forward(*args, **kwargs):
-        for arg, value in closure_args.items():
-            kwargs.setdefault(arg, value)
-
-        return original_forward(**kwargs)
-
-    predictor.forward = new_forward
-
-
-def _pprintdict(d):
-    """Pretty print a dictionary"""
-    import json
-    from termcolor import colored
-
-    formatted_dict = json.dumps(d, indent=4)
-    colored_lines = [
-        colored(line, "blue")
-        if ":" not in line
-        else ": ".join(
-            colored(part.strip(), "blue" if i == 0 else "green")
-            for i, part in enumerate(line.split(":", 1))
-        )
-        for line in formatted_dict.splitlines()
-    ]
-    return "\n".join(colored_lines) + "\n"
-
-
 #################### Assertion Exceptions ####################
 
 
@@ -136,7 +63,6 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
-
     def __init__(self, result: bool, msg: str = "", target_module=None):
         self.id = str(uuid.uuid4())
         self.result = result
