@@ -85,7 +85,6 @@ class BootstrapFewShot(Teleprompter):
             # retry.module to retry
             if isinstance(predictor1, Retry):
                 predictor2name[id(predictor1.module)] = name1
-                predictor2name[id(predictor2.module)] = name2
 
             predictor2name[id(predictor2)] = name2            
 
