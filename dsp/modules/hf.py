@@ -31,7 +31,7 @@ def openai_to_hf(**kwargs):
 class HFModel(LM):
     def __init__(self, model: str, checkpoint: Optional[str] = None, is_client: bool = False,
                  hf_device_map: Literal["auto", "balanced", "balanced_low_0", "sequential"] = "auto",
-                 model_kwargs: Optional[dict] = None):
+                 model_kwargs: Optional[dict] = {}):
         """wrapper for Hugging Face models
 
         Args:
