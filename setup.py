@@ -10,7 +10,7 @@ with open('requirements.txt', 'r', encoding='utf-8') as f:
 
 setup(
     name="dspy-ai",
-    version="2.0.3",
+    version="2.0.7",
     description="DSPy",
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -22,7 +22,10 @@ setup(
     python_requires='>=3.9',
     install_requires=requirements,
     extras_require={
-        "pinecone": ["pinecone-client~=2.2.4"]
+        "pinecone": ["pinecone-client~=2.2.4"],
+        "qdrant": ["qdrant-client~=1.6.2", "fastembed~=0.1.0"],
+        "chromadb": ["chromadb~=0.4.14"],
+        "marqo": ["marqo"]
     },
     classifiers=[
         "Development Status :: 3 - Alpha",

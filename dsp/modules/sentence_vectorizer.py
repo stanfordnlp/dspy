@@ -22,12 +22,10 @@ class BaseSentenceVectorizer(abc.ABC):
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         pass
 
-    def _extract_text_from_examples(self, inp_examples: List["Example"]) -> List[str]:
-        text_to_vectorize = [
-            getattr(example, self.field_to_vectorize)
-            for example in inp_examples
-        ]
-        return text_to_vectorize
+    def _extract_text_from_examples(self, inp_examples: List) -> List[str]:
+        if isinstance(inp_examples[0], str):
+            return inp_examples 
+        return [" ".join([example[key] for key in example._input_keys]) for example in inp_examples]
 
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
@@ -67,7 +65,7 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         self.vectorize_bs = vectorize_bs
         self.normalize_embeddings = normalize_embeddings
 
-    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+    def __call__(self, inp_examples: List) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
 
         if self.is_gpu and self.num_devices > 1:
