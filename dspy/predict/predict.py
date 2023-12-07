@@ -106,6 +106,12 @@ class Predict(Parameter):
 
         return pred
 
+    def update_config(self, **kwargs):
+        self.config = {**self.config, **kwargs}
+    
+    def get_config(self):
+        return self.config
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
