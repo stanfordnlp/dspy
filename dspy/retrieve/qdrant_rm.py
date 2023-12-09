@@ -22,7 +22,7 @@ class QdrantRM(dspy.Retrieve):
     Args:
         qdrant_collection_name (str): The name of the Qdrant collection.
         qdrant_client (QdrantClient): A QdrantClient instance.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
+        k (int, optional): The default number of top passages to retrieve. Defaults to 3.
 
     Examples:
         Below is a code snippet that shows how to use Qdrant as the default retriver:
@@ -57,7 +57,7 @@ class QdrantRM(dspy.Retrieve):
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
-
+            k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
