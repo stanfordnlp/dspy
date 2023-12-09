@@ -41,9 +41,9 @@ class HotPotQA(Dataset):
         else:
             self._dev = None
 
-        for example in self._train:
-            if keep_details == 'dev_titles':
-                del example['gold_titles']
+        # for example in self._train:
+        #     if keep_details == 'dev_titles':
+        #         del example['gold_titles']
         
         test = []
         for raw_example in hf_official_dev:
