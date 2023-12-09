@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import List, Union
 import dspy
+from typing import Optional
 
 try:
     from qdrant_client import QdrantClient
@@ -51,7 +52,7 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query
 
         Args:
@@ -66,9 +67,10 @@ class QdrantRM(dspy.Retrieve):
             else query_or_queries
         )
         queries = [q for q in queries if q]  # Filter empty queries
-
+        
+        k = k if k is not None else self.k
         batch_results = self._qdrant_client.query_batch(
-            self._qdrant_collection_name, query_texts=queries, limit=self.k)
+            self._qdrant_collection_name, query_texts=queries, limit=k)
 
         passages = defaultdict(float)
         for batch in batch_results:
@@ -77,5 +79,5 @@ class QdrantRM(dspy.Retrieve):
                 passages[result.document] += result.score
 
         sorted_passages = sorted(
-            passages.items(), key=lambda x: x[1], reverse=True)[:self.k]
+            passages.items(), key=lambda x: x[1], reverse=True)[:k]
         return dspy.Prediction(passages=[passage for passage, _ in sorted_passages])
