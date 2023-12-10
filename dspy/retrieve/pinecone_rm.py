@@ -149,7 +149,7 @@ class PineconeRM(dspy.Retrieve):
 
             # Sort results by score
             sorted_results = sorted(
-                results_dict["matches"], key=lambda x: x["score"], reverse=True
+                results_dict["matches"], key=lambda x: x.get("scores", 0.0), reverse=True
             )
             passages = [result["metadata"]["text"] for result in sorted_results]
             passages = [dotdict({"long_text": passage for passage in passages})]
