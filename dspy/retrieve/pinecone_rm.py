@@ -152,6 +152,7 @@ class PineconeRM(dspy.Retrieve):
                 results_dict["matches"], key=lambda x: x["score"], reverse=True
             )
             passages = [result["metadata"]["text"] for result in sorted_results]
+            passages = [dotdict({"long_text": passage for passage in passages})]
             return dspy.Prediction(passages=passages)
 
         # For multiple queries, query each and return the highest scoring passages
@@ -170,4 +171,4 @@ class PineconeRM(dspy.Retrieve):
         sorted_passages = sorted(
             passage_scores.items(), key=lambda x: x[1], reverse=True
         )[: self.k]
-        return dspy.Prediction(passages=[passage for passage, _ in sorted_passages])
+        return dspy.Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])
