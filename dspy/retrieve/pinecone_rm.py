@@ -80,13 +80,15 @@ class PineconeRM(dspy.Retrieve):
         index_name: str,
         api_key: Optional[str] = None,
         environment: Optional[str] = None,
+        dimension: Optional[int] = None,
+        distance_metric: Optional[str] = None,
     ) -> pinecone.Index:
         """Initialize pinecone and return the loaded index.
 
         Args:
-            index_name (str): The name of the index to load.
+            index_name (str): The name of the index to load. If the index is not does not exist, it will be created.
             api_key (str, optional): The Pinecone API key, defaults to env var PINECONE_API_KEY if not provided.
-            environment (str, optional): The environment (ie. `us-west1-gcp`. Defaults to env PINECONE_ENVIRONMENT.
+            environment (str, optional): The environment (ie. `us-west1-gcp` or `gcp-starter`. Defaults to env PINECONE_ENVIRONMENT.
 
         Raises:
             ValueError: If api_key or environment is not provided and not set as an environment variable.
@@ -102,6 +104,19 @@ class PineconeRM(dspy.Retrieve):
         if environment:
             kwargs["environment"] = environment
         pinecone.init(**kwargs)
+
+        active_indexes = pinecone.list_indexes()
+        if index_name not in active_indexes:
+            if dimension is None and distance_metric is None:
+                raise ValueError(
+                    "dimension and distance_metric must be provided since the index provided does not exist."
+                )
+
+            pinecone.create_index(
+                name=index_name,
+                dimension=dimension,
+                metric=distance_metric,
+            )
 
         return pinecone.Index(index_name)
 
