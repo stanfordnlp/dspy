@@ -169,7 +169,7 @@ def assert_no_except_handler(func):
     return wrapper
 
 
-def suggest_backtrack_handler(func, max_backtracks=2):
+def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
     """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
@@ -198,7 +198,7 @@ def suggest_backtrack_handler(func, max_backtracks=2):
 
             # if last backtrack: ignore suggestion errors
             if i == max_backtracks:
-                result = bypass_suggest_handler(func)(*args, **kwargs)
+                result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
                 break
 
             else:
