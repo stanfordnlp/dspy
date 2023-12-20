@@ -2,7 +2,19 @@ from dspy.primitives.example import Example
 
 
 class Prediction(Example):
+    """
+    The Prediction class is a subclass of the Example class.
+    It represents a prediction made by the model.
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize a new instance of the Prediction class.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+        """
         super().__init__(*args, **kwargs)
         
         del self._demos
@@ -12,6 +24,16 @@ class Prediction(Example):
     
     @classmethod
     def from_completions(cls, list_or_dict, signature=None):
+        """
+        Create a new instance of the Prediction class from completions.
+
+        Args:
+            list_or_dict (list or dict): The completions to use for creating the Prediction instance.
+            signature (str, optional): The signature of the completions. Defaults to None.
+
+        Returns:
+            Prediction: A new instance of the Prediction class.
+        """
         obj = cls()
         obj._completions = Completions(list_or_dict, signature=signature)
         obj._store = {k: v[0] for k, v in obj._completions.items()}
@@ -19,6 +41,12 @@ class Prediction(Example):
         return obj
     
     def __repr__(self):
+        """
+        Get a string representation of the Prediction instance.
+
+        Returns:
+            str: A string representation of the Prediction instance.
+        """
         store_repr = ',\n    '.join(f"{k}={repr(v)}" for k, v in self._store.items())
 
         if self._completions is None or len(self._completions) == 1:
@@ -28,10 +56,22 @@ class Prediction(Example):
         return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
         
     def __str__(self):
+        """
+        Get a string representation of the Prediction instance.
+
+        Returns:
+            str: A string representation of the Prediction instance.
+        """
         return self.__repr__()
 
     @property
     def completions(self):
+        """
+        Get the completions of the Prediction instance.
+
+        Returns:
+            Completions: The completions of the Prediction instance.
+        """
         return self._completions
 
 
