@@ -12,6 +12,7 @@ This documentation provides an overview of the DSPy Modules.
 | ChainOfThoughtWithHint | [ChainOfThoughtWithHint Section](#dspychainofthoughtwithhint) |
 | MultiChainComparison | [MultiChainComparison Section](#dspymultichaincomparison) |
 | ReAct | [ReAct Section](#dspyreact) |
+| Assertion Helpers | [Assertion Helpers Section](#dspyassertionhelpers) |
 
 ## dspy.Predict
 
@@ -29,6 +30,39 @@ class Predict(Parameter):
 
         if isinstance(signature, str):
             inputs, outputs = signature.split("->")
+## dspy.Assertion Helpers
+
+### Assertion Handlers
+
+The assertion handlers are used to control the behavior of assertions and suggestions in the DSPy framework. They can be used to bypass assertions or suggestions, handle assertion errors, and backtrack suggestions.
+
+#### `noop_handler(func)`
+
+This handler is used to bypass assertions and suggestions. When used, both assertions and suggestions will become no-operations (noops).
+
+#### `bypass_suggest_handler(func)`
+
+This handler is used to bypass suggestions only. If a suggestion fails, it will be logged but not raised. If an assertion fails, it will be raised.
+
+#### `bypass_assert_handler(func)`
+
+This handler is used to bypass assertions only. If an assertion fails, it will be logged but not raised. If a suggestion fails, it will be raised.
+
+#### `assert_no_except_handler(func)`
+
+This handler is used to ignore assertion failures and return None.
+
+#### `suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2)`
+
+This handler is used for backtracking suggestions. It re-runs the latest predictor up to `max_backtracks` times, with updated signature if a suggestion fails.
+
+#### `handle_assert_forward(assertion_handler, **handler_args)`
+
+This function is used to handle assertions. It wraps the `forward` method of a module with an assertion handler.
+
+#### `assert_transform_module(module, assertion_handler=default_assertion_handler, **handler_args)`
+
+This function is used to transform a module to handle assertions. It replaces the `forward` method of the module with a version that handles assertions.
             inputs, outputs = inputs.split(","), outputs.split(",")
             inputs, outputs = [field.strip() for field in inputs], [field.strip() for field in outputs]
 
@@ -44,6 +78,11 @@ class Predict(Parameter):
 
             for k, v in inputs.items():
                 v.finalize(k, infer_prefix(k))
+            
+            for k, v in outputs.items():
+                v.finalize(k, infer_prefix(k))
+
+            self.signature = dsp.Template(instructions, **inputs, **outputs)
             
             for k, v in outputs.items():
                 v.finalize(k, infer_prefix(k))
