@@ -38,3 +38,4 @@ blocked_dirs: []
 #   - PyGitHub: ["https://pygithub.readthedocs.io/en/latest/", "We use pygithub to interact with the GitHub API"]
 docs:
   - DSPy: ["https://github.com/stanfordnlp/dspy/docs", "Main repository for the DSPy framework"]
+  - ReadTheDocs: ["https://docs.readthedocs.io/en/stable/index.html", "ReadTheDocs, hosts our documentation"]
