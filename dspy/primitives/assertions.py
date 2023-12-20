@@ -9,6 +9,14 @@ import uuid
 
 
 def setup_logger():
+    """
+    Set up a logger for the module.
+
+    The logger logs messages with the level DEBUG to a file named "assertion.log".
+
+    Returns:
+        Logger: The set up logger.
+    """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
 
@@ -40,6 +48,14 @@ class DSPyAssertionError(AssertionError):
     """Custom exception raised when a DSPy `Assert` fails."""
 
     def __init__(self, id: str, msg: str, state: Any = None) -> None:
+        """
+        Initialize a new instance of the DSPyAssertionError class.
+
+        Args:
+            id (str): The ID of the assertion.
+            msg (str): The error message.
+            state (Any): The state of the assertion.
+        """
         super().__init__(msg)
         self.id = id
         self.msg = msg
@@ -52,6 +68,15 @@ class DSPySuggestionError(AssertionError):
     def __init__(
         self, id: str, msg: str, target_module: Any = None, state: Any = None
     ) -> None:
+        """
+        Initialize a new instance of the DSPySuggestionError class.
+
+        Args:
+            id (str): The ID of the suggestion.
+            msg (str): The error message.
+            target_module (Any): The target module of the suggestion.
+            state (Any): The state of the suggestion.
+        """
         super().__init__(msg)
         self.id = id
         self.msg = msg
@@ -76,6 +101,19 @@ class Assert(Constraint):
     """DSPy Assertion"""
 
     def __call__(self) -> bool:
+        """
+        Call the Assert instance.
+
+        If the result is True, return True. If the result is False and bypass_assert is set in the settings, log an error and return True.
+        If the result is False and bypass_assert is not set in the settings, log an error and raise a DSPyAssertionError.
+
+        Raises:
+            ValueError: If the result is not a boolean.
+            DSPyAssertionError: If the result is False and bypass_assert is not set in the settings.
+
+        Returns:
+            bool: The result of the assertion.
+        """
         if isinstance(self.result, bool):
             if self.result:
                 return True
