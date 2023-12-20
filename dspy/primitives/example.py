@@ -1,7 +1,19 @@
 import copy
 
 class Example:
+    """
+    The Example class is a flexible container for storing and manipulating key-value pairs.
+    It provides methods for accessing, setting, and deleting items, as well as other utility methods.
+    """
     def __init__(self, base=None, **kwargs):
+        """
+        Initialize a new instance of the Example class.
+
+        Args:
+            base (Example or dict, optional): If an Example instance is provided, its internal storage is copied.
+                If a dict is provided, it is copied. Defaults to None.
+            **kwargs: Additional key-value pairs to add to the internal storage.
+        """
         # Internal storage and other attributes
         self._store = {}
         self._demos = []
@@ -19,6 +31,18 @@ class Example:
         self._store.update(kwargs)
     
     def __getattr__(self, key):
+        """
+        Get an attribute of the Example instance.
+
+        Args:
+            key (str): The name of the attribute.
+
+        Raises:
+            AttributeError: If the attribute does not exist.
+
+        Returns:
+            Any: The value of the attribute.
+        """
         if key.startswith('__') and key.endswith('__'):
             raise AttributeError
         if key in self._store:
@@ -26,21 +50,59 @@ class Example:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
+        """
+        Set an attribute of the Example instance.
+
+        Args:
+            key (str): The name of the attribute.
+            value (Any): The value to set the attribute to.
+        """
         if key.startswith('_') or key in dir(self.__class__):  
             super().__setattr__(key, value)
         else:
             self._store[key] = value
     
     def __getitem__(self, key):
+        """
+        Get an item from the Example instance using key indexing.
+
+        Args:
+            key (str): The key of the item.
+
+        Returns:
+            Any: The value of the item.
+        """
         return self._store[key]
 
     def __setitem__(self, key, value):
+        """
+        Set an item of the Example instance using key indexing.
+
+        Args:
+            key (str): The key of the item.
+            value (Any): The value to set the item to.
+        """
         self._store[key] = value
 
     def __delitem__(self, key):
+        """
+        Delete an item from the Example instance using key indexing.
+
+        Args:
+            key (str): The key of the item.
+        """
         del self._store[key]
 
     def __contains__(self, key):
+        """
+        Check if an item exists in the Example instance.
+
+        Args:
+            key (str): The key of the item.
+
+        Returns:
+            bool: True if the item exists, False otherwise.
+        """
         return key in self._store
     
     def __len__(self):
