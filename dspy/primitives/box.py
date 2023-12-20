@@ -127,7 +127,6 @@ class BoxType(type):
 
         super().__init__(name, bases, attrs)
 
-
 class Box(metaclass=BoxType):
     def __init__(self, value, source=False):
         self._value = value
