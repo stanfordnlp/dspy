@@ -46,7 +46,7 @@ class RetrievalFinetuneDataset(Dataset):
     
     def generate_dataset(self):
         dataset = []
-        for row in tqdm(self.data):
+        for row in tqdm(self.data, desc='Creating dataset'):
             for _ in range(self.samples_per_query):
                 context = []
                 question = row['question']
@@ -56,6 +56,7 @@ class RetrievalFinetuneDataset(Dataset):
                     queries.append(query)
                     passages = self.retrieve_and_sample(query)
                     context = context + passages # deduplicate(context + passages)
+                    # context = [item[:500] for item in context]
                 dataset.append({'id': self.id_count, 'question': question, 'context': context, 'answer': row['answer'], 'queries': queries}) # 'supporting_facts': row['supporting_facts']
                 self.id_count += 1
                 
