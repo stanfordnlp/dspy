@@ -13,6 +13,8 @@ DSPy is a framework for programming with foundation models. It provides composab
    compiling
    tutorials
    faq
+   language_models_client
+   dspy.teleprompt.bootstrap
 
 API Documentation
 -----------------
