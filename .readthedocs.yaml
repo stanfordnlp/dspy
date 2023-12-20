@@ -5,3 +5,5 @@ python:
     - requirements: requirements.txt
 sphinx:
   configuration: docs/conf.py
+
+# BEANS FOR DAYS
