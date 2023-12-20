@@ -8,6 +8,6 @@ build:
 python:
   version: 3.9
   install:
-    - requirements: requirements.txt
+    - requirements: docs/requirements.txt
 sphinx:
   configuration: docs/conf.py
