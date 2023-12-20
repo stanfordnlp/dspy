@@ -1,0 +1,11 @@
+version: 2
+python:
+  version: 3.8
+  install:
+    - requirements: docs/requirements.txt
+sphinx:
+  configuration: docs/source/conf.py
+formats:
+  - html
+  - pdf
+  - epub

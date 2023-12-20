@@ -32,10 +32,10 @@ import builtins
 
 
 class InterpreterError(ValueError):
-    r"""An error raised when the interpreter cannot evaluate a Python
+    """
+    An error raised when the interpreter cannot evaluate a Python
     expression, due to syntax error or unsupported operations.
     """
-
     pass
 
 
@@ -60,6 +60,42 @@ class PythonInterpreter():
         You may obtain a copy of the License at
 
             http://www.apache.org/licenses/LICENSE-2.0
+class PythonInterpreter():
+    """
+    A customized python interpreter to control the execution of
+    LLM-generated codes. The interpreter makes sure the code can only execute
+    functions given in action space and import white list. It also supports
+    fuzzy variable matching to receive uncertain input variable name.
+
+    This class is adapted from the Camel adaptation https://github.com/camel-ai/
+    camel/blob/9a9d71874944e9736c55cdaed3df469a8becec05/camel/utils/python_interpreter.py 
+    which adapts from the hugging face implementation `python_interpreter.py 
+    <https://github.com/huggingface/transformers/blob/8f093fb799246f7dd9104ff44728da0c53a9f67a
+    /src/transformers/tools/python_interpreter.py>`_. The original license applies::
+
+        Copyright 2023 The HuggingFace Inc. team. All rights reserved.
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+    Args:
+        action_space (Dict[str, Any]): A dictionary that maps action names to
+            their corresponding functions or objects. The interpreter can only
+            execute functions that are either directly listed in this
+            dictionary or are member functions of objects listed in this
+            dictionary. The concept of :obj:`action_space` is derived from
+            EmbodiedAgent, representing the actions that an agent is capable of
+            performing.
+        import_white_list (Optional[List[str]], optional): A list that stores
+            the Python modules or functions that can be imported in the code.
+            All submodules and functions of the modules listed in this list are
+            importable. Any other import statements will be rejected. The
+            module and its submodule or function name are separated by a period
+            (:obj:`.`). (default: :obj:`None`)
+    """
 
         Unless required by applicable law or agreed to in writing, software
         distributed under the License is distributed on an "AS IS" BASIS,
