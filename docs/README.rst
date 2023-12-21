@@ -1,108 +1,29 @@
-Getting Started with Create React App
-=====================================
+.. _index:
 
-This project was bootstrapped with `Create React
-App <https://github.com/facebook/create-react-app>`__.
+DSPy
+==================
 
-Available Scripts
------------------
+.. image:: ../images/DSPy8.png
+   :align: center
+   :width: 460px
 
-In the project directory, you can run:
+DSPy: *Programming*—not prompting—Foundation Models
+----------------------------------------------------
 
-``npm start``
-~~~~~~~~~~~~~
+.. raw:: html
 
-| Runs the app in the development mode.
-| Open http://localhost:3000 to view it in your browser.
+   <a href="https://arxiv.org/abs/2310.03714"><img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" /></a>
 
-| The page will reload when you make changes.
-| You may also see any lint errors in the console.
+**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
 
-``npm test``
-~~~~~~~~~~~~
+To make this possible:
 
-| Launches the test runner in the interactive watch mode.
-| See the section about `running
-  tests <https://facebook.github.io/create-react-app/docs/running-tests>`__
-  for more information.
+- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted *string manipulation tricks* into truly modular *generalized operations that learn to adapt to your task*.
 
-``npm run build``
-~~~~~~~~~~~~~~~~~
+- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally *trace* your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
 
-| Builds the app for production to the ``build`` folder.
-| It correctly bundles React in production mode and optimizes the build
-  for the best performance.
+The **DSPy compiler** *bootstraps* prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
 
-| The build is minified and the filenames include the hashes.
-| Your app is ready to be deployed!
+For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the *same program* into different few-shot prompts and/or finetunes for each LM.
 
-See the section about
-`deployment <https://facebook.github.io/create-react-app/docs/deployment>`__
-for more information.
-
-``npm run eject``
-~~~~~~~~~~~~~~~~~
-
-**Note: this is a one-way operation. Once you ``eject``, you can’t go
-back!**
-
-If you aren’t satisfied with the build tool and configuration choices,
-you can ``eject`` at any time. This command will remove the single build
-dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive
-dependencies (webpack, Babel, ESLint, etc) right into your project so
-you have full control over them. All of the commands except ``eject``
-will still work, but they will point to the copied scripts so you can
-tweak them. At this point you’re on your own.
-
-You don’t have to ever use ``eject``. The curated feature set is
-suitable for small and middle deployments, and you shouldn’t feel
-obligated to use this feature. However we understand that this tool
-wouldn’t be useful if you couldn’t customize it when you are ready for
-it.
-
-Learn More
-----------
-
-You can learn more in the `Create React App
-documentation <https://facebook.github.io/create-react-app/docs/getting-started>`__.
-
-To learn React, check out the `React
-documentation <https://reactjs.org/>`__.
-
-Code Splitting
-~~~~~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/code-splitting
-
-Analyzing the Bundle Size
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
-
-Making a Progressive Web App
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
-
-Advanced Configuration
-~~~~~~~~~~~~~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/advanced-configuration
-
-Deployment
-~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/deployment
-
-``npm run build`` fails to minify
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This section has moved here:
-https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+If you want to see **DSPy** in action, **`open our intro tutorial notebook <intro.ipynb>`_**.
