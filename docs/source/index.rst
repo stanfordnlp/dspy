@@ -8,11 +8,7 @@ DSPy is a framework for programming with foundation models. It provides composab
 .. toctree::
    :maxdepth: 2
 
-   installation
-   syntax
-   compiling
-   tutorials
-   faq
+   readme
    language_models_client
    dspy.teleprompt.bootstrap
 
