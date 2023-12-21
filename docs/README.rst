@@ -12,7 +12,7 @@ DSPy: *Programming*—not prompting—Foundation Models
 
 .. raw:: html
 
-   <a href="https://arxiv.org/abs/2310.03714"><img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" /></a>
+   `DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines <https://arxiv.org/abs/2310.03714>`__ .. image:: https://colab.research.google.com/assets/colab-badge.svg :align: center
 Paper: `DSPy: Compiling Declarative Language Model Calls into
 Self-Improving Pipelines <https://arxiv.org/abs/2310.03714>`__
 
@@ -107,7 +107,7 @@ Suppose you want to build a simple retrieval-augmented generation (RAG)
 system for question answering. You can define your own ``RAG`` program
 like this:
 
-.. code:: python
+.. code-block:: python
 
    class RAG(dspy.Module):
        def __init__(self, num_passages=3):
@@ -199,7 +199,7 @@ separated by commas.
 
 In the ``RAG`` class earlier, we saw:
 
-.. code:: python
+.. code-block:: python
 
    self.generate_answer = dspy.ChainOfThought("context, question -> answer")
 
@@ -249,7 +249,7 @@ answer. **DSPy** will bootstrap any intermediate labels needed to
 support your pipeline. If you change your pipeline in any way, the data
 bootstrapped will change accordingly!
 
-.. code:: python
+.. code-block:: python
 
    my_rag_trainset = [
      dspy.Example(
@@ -263,7 +263,7 @@ Second, define your validation logic, which will express some
 constraints on the behavior of your program or individual modules. For
 ``RAG``, we might express a simple check like this:
 
-.. code:: python
+.. code-block:: python
 
    def validate_context_and_answer(example, pred, trace=None):
        # check the gold label and the predicted answer are the same
@@ -292,7 +292,15 @@ If we now use ``compiled_rag``, it will invoke our LM with rich prompts
 with few-shot demonstrations of chain-of-thought retrieval-augmented
 question answering on our data.
 
-4) Documentation & Tutorials
+4) Updating Documentation
+------------------------
+
+Please refer to our updated `Getting Started Guide <https://dspy.ai/getting-started>`__ and `API Reference <https://dspy.ai/api-reference>`__ for the most current information.
+
+Explore our new interactive tutorials to learn how to leverage DSPy for your projects:
+
+- `Basic Concepts Tutorial <https://dspy.ai/tutorials/basic-concepts>`__
+- `Advanced Usage Tutorial <https://dspy.ai/tutorials/advanced-usage>`__
 ============================
 
 5) FAQ: Is DSPy right for me?
@@ -309,13 +317,10 @@ a practitioner doing other things, please read on.
 .. _section-3:
 
 
-   <details>
 
 
-   <summary>
 
-
-   <h4 style="display: inline">
+**5.a) DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)**
 
 [5.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic
 templating)
@@ -350,7 +355,7 @@ Oh, and you wouldn’t need to maintain long, brittle, model-specific
 strings at the core of your project anymore.
 
 
-   </details>
+
 
 .. _section-4:
 
@@ -358,10 +363,7 @@ strings at the core of your project anymore.
    <details>
 
 
-   <summary>
-
-
-   <h4 style="display: inline">
+**5.b) DSPy vs. application development libraries like LangChain, LlamaIndex**
 
 [5.b] DSPy vs. application development libraries like LangChain,
 LlamaIndex
@@ -428,10 +430,7 @@ something you want to help with.
    <details>
 
 
-   <summary>
-
-
-   <h4 style="display: inline">
+**5.c) DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines**
 
 [5.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM,
 Outlines
@@ -488,7 +487,7 @@ To stay up to date or learn more, follow
 If you use DSPy or DSP in a research paper, please cite our work as
 follows:
 
-::
+.. code-block:: bibtex
 
    @article{khattab2023dspy,
      title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},
