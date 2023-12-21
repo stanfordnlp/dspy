@@ -4,7 +4,7 @@ import sys
 import sphinx
 
 # Set the root path of the project
-sys.path.insert(0, os.path.abspath('../dspy/'))
+sys.path.insert(0, os.path.abspath('../../dspy/'))
 
 # Specify the path to the master document
 master_doc = 'index'

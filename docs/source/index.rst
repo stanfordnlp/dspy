@@ -1,21 +1,19 @@
 .. _index:
 
-DSPy Documentation
+DSPy
 ==================
 
-DSPy is a framework for programming with foundation models. It provides composable and declarative modules for instructing language models in a familiar Pythonic syntax.
+.. image:: docs/images/DSPy8.png
+   :align: center
+   :width: 460px
 
-.. toctree::
-   :maxdepth: 2
+DSPy: *Programming*—not prompting—Foundation Models
+----------------------------------------------------
 
-   readme
-   language_models_client
-   dspy.teleprompt.bootstrap
+(links to paper and iamges from readme)
 
-API Documentation
------------------
+**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
 
-.. toctree::
-   :glob:
+To make this possible:
 
-   api/*
+- **DSPy** provides **composable and declarative modules** for instruct
