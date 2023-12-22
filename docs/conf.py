@@ -12,7 +12,7 @@ master_doc = 'index'
 # Set the project information
 project = 'DSPy'
 author = 'DSPy Team'
-version = sphinx.__display_version__
+version = 'x.y.z'  # TODO: insert actual current version of DSPy
 
 # Add the extensions that Sphinx should use
 extensions = [
@@ -71,7 +71,7 @@ nitpicky = True
 # redirects = {}
 
 gtagjs_ids = [
-    'G-BYVB1ZVE6J',  # Replace with DSPy's Google Tag Manager ID if necessary
+    'UA-XXXXXXX-Y',  # Replace with actual DSPy's Google Tag Manager ID
 ]
 
 # Other configurations from LlamaIndex can be added here if needed

@@ -1,9 +1,14 @@
-Welcome to LlamaIndex 🦙 !
+Welcome to DSPy
+##########################
+
+DSPy is an innovative framework for programmatically harnessing foundation models, providing tools and interfaces in Python and Typescript for enhanced interaction with large language models. Integrating domain-specific data with powerful language models allows users to design tailored applications in the fields of natural language processing, machine learning, and artificial intelligence.
+
+🚀 Why DSPy? 🦙 !
 ##########################
 
 LlamaIndex is a data framework for `LLM <https://en.wikipedia.org/wiki/Large_language_model>`_-based applications to ingest, structure, and access private or domain-specific data. It's available in Python (these docs) and `Typescript <https://ts.llamaindex.ai/>`_.
 
-🚀 Why LlamaIndex?
+🚀 Empowering Applications with Foundation Models
 ******************
 
 LLMs offer a natural language interface between humans and data. Widely available models come pre-trained on huge amounts of publicly available data like Wikipedia, mailing lists, textbooks, source code and more.
@@ -22,15 +27,15 @@ LlamaIndex provides the following tools:
 - **Engines** provide natural language access to your data. For example:
   - Query engines are powerful retrieval interfaces for knowledge-augmented output.
   - Chat engines are conversational interfaces for multi-message, "back and forth" interactions with your data.
-- **Data agents** are LLM-powered knowledge workers augmented by tools, from simple helper functions to API integrations and more.
-- **Application integrations** tie LlamaIndex back into the rest of your ecosystem. This could be LangChain, Flask, Docker, ChatGPT, or… anything else!
+- **Data agents** are foundation model-powered knowledge workers enhanced by tools, including helper functions to API integrations.
 
-👨‍👩‍👧‍👦 Who is LlamaIndex for?
+
+👨‍👩‍👧‍👦 Who is DSPy for?
 *******************************************
 
 LlamaIndex provides tools for beginners, advanced users, and everyone in between.
 
-Our high-level API allows beginner users to use LlamaIndex to ingest and query their data in 5 lines of code.
+Our intuitive high-level API empowers beginners to leverage the capabilities of DSPy to ingest and query their data in 5 lines of code.
 
 For more complex applications, our lower-level APIs allow advanced users to customize and extend any module—data connectors, indices, retrievers, query engines, reranking modules—to fit their needs.
 
@@ -39,38 +44,38 @@ Getting Started
 
 To install the library:
 
-``pip install llama-index``
+``pip install dspy``
 
-We recommend starting at `how to read these docs <./getting_started/reading.html>`_, which will point you to the right place based on your experience level.
+We recommend checking out our `Getting Started Guide <./getting_started/overview.html>`_ to help you navigate the documentation based on your expertise.
 
 🗺️ Ecosystem
 ************
 
 To download or contribute, find LlamaIndex on:
 
-- Github: https://github.com/jerryjliu/llama_index
+- Github: https://github.com/[DSPY_REPO_PATH]
 - PyPi:
 
-  - LlamaIndex: https://pypi.org/project/llama-index/.
-  - GPT Index (duplicate): https://pypi.org/project/gpt-index/.
+  - DSPy: https://pypi.org/project/dspy/.
+
 
 - NPM (Typescript/Javascript):
-   - Github: https://github.com/run-llama/LlamaIndexTS
-   - Docs: https://ts.llamaindex.ai/
-   - LlamaIndex.TS: https://www.npmjs.com/package/llamaindex
+   - Github: https://github.com/[DSPY_TS_REPO_PATH]
+   - Docs: https://ts.dspy.ai/
+   - DSPy.TS: https://www.npmjs.com/package/dspy
 
 Community
 ---------
 Need help? Have a feature suggestion? Join the LlamaIndex community:
 
-- Twitter: https://twitter.com/llama_index
-- Discord https://discord.gg/dGcwcsnxhU
+- Twitter: https://twitter.com/dspy_framework
+- Discord https://discord.gg/[DSPY_DISCORD_PATH]
 
 Associated projects
 -------------------
 
-- 🏡 LlamaHub: https://llamahub.ai | A large (and growing!) collection of custom data connectors
-- 🧪 LlamaLab: https://github.com/run-llama/llama-lab | Ambitious projects built on top of LlamaIndex
+- 🏡 DSPyHub: https://dspyhub.ai | A large (and growing!) collection of custom data connectors
+- 🧪 DSPyLab: https://github.com/[DSPY_LAB_REPO_PATH] | Innovative projects leveraging DSPy capabilities
 
 .. toctree::
    :maxdepth: 1
