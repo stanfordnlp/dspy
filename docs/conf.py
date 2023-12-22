@@ -12,7 +12,7 @@ master_doc = 'index'
 # Set the project information
 project = 'DSPy'
 author = 'DSPy Team'
-version = 'x.y.z'  # TODO: insert actual current version of DSPy
+version = 'latest'  # TODO: insert actual current version of DSPy
 
 # Add the extensions that Sphinx should use
 extensions = [
@@ -54,14 +54,14 @@ html_css_files = [
     'css/algolia.css',
     'https://cdn.jsdelivr.net/npm/@docsearch/css@3',
 ]
-html_js_files = [
-    'js/mendablesearch.js',
-    (
-        'https://cdn.jsdelivr.net/npm/@docsearch/js@3.3.3/dist/umd/index.js',
-        {'defer': 'defer'},
-    ),
-    ('js/algolia.js', {'defer': 'defer'}),
-]
+# html_js_files = [
+#     'js/mendablesearch.js',
+#     (
+#         'https://cdn.jsdelivr.net/npm/@docsearch/js@3.3.3/dist/umd/index.js',
+#         {'defer': 'defer'},
+#     ),
+#     ('js/algolia.js', {'defer': 'defer'}),
+# ]
 
 nb_execution_mode = 'off'
 autodoc_pydantic_model_show_json_error_strategy = 'coerce'
