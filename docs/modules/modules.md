@@ -16,9 +16,11 @@ This documentation provides an overview of the DSPy Modules.
 
 ## dspy.Predict
 
+The `Predict` class in DSPy uses a `signature` to define the input and output fields for a predictive model. The `signature` also provides instructions for the language model on how to generate predictions. If the `signature` is a string, it is processed to extract the input and output fields, generate instructions, and create a template for the specified `signature` type. For more details on `signatures`, refer to the [DSPy Signatures Documentation](../signatures/signatures.md).
+
 ### Constructor
 
-The constructor initializes the `Predict` class and sets up its attributes, taking in the `signature` and additional config options. If the `signature` is a string, it processes the input and output fields, generates instructions, and creates a template for the specified `signature` type.
+The constructor initializes the `Predict` class and sets up its attributes.
 
 ```python
 class Predict(Parameter):
@@ -30,25 +32,61 @@ class Predict(Parameter):
 
         if isinstance(signature, str):
             inputs, outputs = signature.split("->")
-## dspy.Assertion Helpers
+            inputs, outputs = inputs.split(","), outputs.split(",")
+            inputs, outputs = [field.strip() for field in inputs], [field.strip() for field in outputs]
 
-### Assertion Handlers
+            assert all(len(field.split()) == 1 for field in (inputs + outputs))
 
-The assertion handlers are used to control the behavior of assertions and suggestions in the DSPy framework. They can be used to bypass assertions or suggestions, handle assertion errors, and backtrack suggestions.
+            inputs_ = ', '.join([f"`{field}`" for field in inputs])
+            outputs_ = ', '.join([f"`{field}`" for field in outputs])
 
-#### `noop_handler(func)`
+            instructions = f"""Given the fields {inputs_}, produce the fields {outputs_}."""
 
-This handler is used to bypass assertions and suggestions. When used, both assertions and suggestions will become no-operations (noops).
+            inputs = {k: InputField() for k in inputs}
+            outputs = {k: OutputField() for k in outputs}
 
-#### `bypass_suggest_handler(func)`
+            for k, v in inputs.items():
+                v.finalize(k, infer_prefix(k))
+            
+            for k, v in outputs.items():
+                v.finalize(k, infer_prefix(k))
 
-This handler is used to bypass suggestions only. If a suggestion fails, it will be logged but not raised. If an assertion fails, it will be raised.
+            self.signature = dsp.Template(instructions, **inputs, **outputs)
+```
 
-#### `bypass_assert_handler(func)`
+**Parameters:**
+- `signature` (_Any_): Signature of predictive model.
+- `**config` (_dict_): Additional configuration parameters for model.
 
-This handler is used to bypass assertions only. If an assertion fails, it will be logged but not raised. If a suggestion fails, it will be raised.
+### Method
 
-#### `assert_no_except_handler(func)`
+#### `__call__(self, **kwargs)`
+
+This method serves as a wrapper for the `forward` method. It allows making predictions using the `Predict` class by providing keyword arguments.
+
+**Paramters:**
+- `**kwargs`: Keyword arguments required for prediction.
+
+**Returns:**
+- The result of `forward` method.
+
+### Examples
+
+```python
+# Define a signature for a task
+class MyTask(dspy.Signature):
+    """This is a task."""
+    input1 = dspy.InputField()
+    output1 = dspy.OutputField()
+
+# Use the signature in a Predict module
+my_module = dspy.Predict(MyTask)
+
+# Call the predictor on a particular input.
+pred = my_module(input1="example input")
+
+print(f"Predicted Output: {pred.output1}")
+```
 
 This handler is used to ignore assertion failures and return None.
 
