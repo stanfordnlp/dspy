@@ -1,21 +1,25 @@
-.. _index:
+.. contents::
+   :depth: 3
+..
 
-DSPy
-==================
+current docs link: https://dspy-ai.readthedocs.io/en/latest/
 
-.. image:: ../images/DSPy8.png
-   :align: center
-   :width: 460px
+
+   <p align="center">
+
+
+   </p>
+
+
+   <p align="left">
 
 DSPy: *Programming*—not prompting—Foundation Models
-----------------------------------------------------
+===================================================
 
-.. raw:: html
-
-   `DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines <https://arxiv.org/abs/2310.03714>`__ .. image:: https://colab.research.google.com/assets/colab-badge.svg :align: center
-Paper: `DSPy: Compiling Declarative Language Model Calls into
+Paper —— `DSPy: Compiling Declarative Language Model Calls into
 Self-Improving Pipelines <https://arxiv.org/abs/2310.03714>`__
 
+` <https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb>`__
 
 **DSPy** is the framework for solving advanced tasks with language
 models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for
@@ -26,13 +30,28 @@ learn.
 
 To make this possible:
 
-- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted *string manipulation tricks* into truly modular *generalized operations that learn to adapt to your task*.
+-  **DSPy** provides **composable and declarative modules** for
+   instructing LMs in a familiar Pythonic syntax. It upgrades “prompting
+   techniques” like chain-of-thought and self-reflection from
+   hand-adapted *string manipulation tricks* into truly modular
+   *generalized operations that learn to adapt to your task*.
 
-- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally *trace* your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
+-  **DSPy** introduces an **automatic compiler that teaches LMs** how to
+   conduct the declarative steps in your program. Specifically, the
+   **DSPy compiler** will internally *trace* your program and then
+   **craft high-quality prompts for large LMs (or train automatic
+   finetunes for small LMs)** to teach them the steps of your task.
 
-The **DSPy compiler** *bootstraps* prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
+The **DSPy compiler** *bootstraps* prompts and finetunes from minimal
+data **without needing manual labels for the intermediate steps** in
+your program. Instead of brittle “prompt engineering” with hacky string
+manipulation, you can explore a systematic space of modular and
+trainable pieces.
 
-For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the *same program* into different few-shot prompts and/or finetunes for each LM.
+For complex tasks, **DSPy** can routinely teach powerful models like
+``GPT-3.5`` and local models like ``T5-base`` or ``Llama2-13b`` to be
+much more reliable at tasks. **DSPy** will compile the *same program*
+into different few-shot prompts and/or finetunes for each LM.
 
 If you want to see **DSPy** in action, `open our intro tutorial
 notebook <intro.ipynb>`__.
@@ -66,6 +85,7 @@ create new effective prompts that fit your changes.
 
 1) Installation
 ===============
+
 All you need is:
 
 ::
@@ -107,7 +127,7 @@ Suppose you want to build a simple retrieval-augmented generation (RAG)
 system for question answering. You can define your own ``RAG`` program
 like this:
 
-.. code-block:: python
+.. code:: python
 
    class RAG(dspy.Module):
        def __init__(self, num_passages=3):
@@ -199,7 +219,7 @@ separated by commas.
 
 In the ``RAG`` class earlier, we saw:
 
-.. code-block:: python
+.. code:: python
 
    self.generate_answer = dspy.ChainOfThought("context, question -> answer")
 
@@ -249,7 +269,7 @@ answer. **DSPy** will bootstrap any intermediate labels needed to
 support your pipeline. If you change your pipeline in any way, the data
 bootstrapped will change accordingly!
 
-.. code-block:: python
+.. code:: python
 
    my_rag_trainset = [
      dspy.Example(
@@ -263,7 +283,7 @@ Second, define your validation logic, which will express some
 constraints on the behavior of your program or individual modules. For
 ``RAG``, we might express a simple check like this:
 
-.. code-block:: python
+.. code:: python
 
    def validate_context_and_answer(example, pred, trace=None):
        # check the gold label and the predicted answer are the same
@@ -292,16 +312,150 @@ If we now use ``compiled_rag``, it will invoke our LM with rich prompts
 with few-shot demonstrations of chain-of-thought retrieval-augmented
 question answering on our data.
 
-4) Updating Documentation
-------------------------
-
-Please refer to our updated `Getting Started Guide <https://dspy.ai/getting-started>`__ and `API Reference <https://dspy.ai/api-reference>`__ for the most current information.
-
-Explore our new interactive tutorials to learn how to leverage DSPy for your projects:
-
-- `Basic Concepts Tutorial <https://dspy.ai/tutorials/basic-concepts>`__
-- `Advanced Usage Tutorial <https://dspy.ai/tutorials/advanced-usage>`__
+4) Documentation & Tutorials
 ============================
+
+While we work on new tutorials and documentation, please check out `our
+intro notebook <intro.ipynb>`__.
+
+Or open it directly in free Google Colab:
+` <https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb>`__
+
+
+   <details>
+
+
+   <summary>
+
+
+   <h3 style="display: inline">
+
+Module Reference
+
+
+   </h3>
+
+
+   </summary>
+
+We have work-in-progress module documentation at `this
+PR <https://github.com/stanfordnlp/dspy/pull/93>`__. Please let us know
+if anything there is unclear.
+
+Language Model Clients
+~~~~~~~~~~~~~~~~~~~~~~
+
+-  ```dspy.OpenAI`` <docs/language_models_client.md#openai>`__
+-  ```dspy.Cohere`` <docs/language_models_client.md#cohere>`__
+-  ```dspy.TGI`` <docs/language_models_client.md#tgi>`__
+-  ```dspy.VLLM`` <docs/language_models_client.md#vllm>`__
+
+Retrieval Model Clients
+~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ```dspy.ColBERTv2`` <docs/retrieval_models_client.md#colbertv2>`__
+-  ```dspy.AzureCognitiveSearch`` <docs/retrieval_models_client.md#azurecognitivesearch>`__
+
+Signatures
+~~~~~~~~~~
+
+-  ``dspy.Signature``
+-  ``dspy.InputField``
+-  ``dspy.OutputField``
+
+Modules
+~~~~~~~
+
+-  ```dspy.Predict`` <docs/modules.md#dspypredict>`__
+-  ```dspy.Retrieve`` <docs/modules.md#dspyretrieve>`__
+-  ```dspy.ChainOfThought`` <docs/modules.md#dspychainofthought>`__
+-  ``dspy.majority`` (functional self-consistency)
+-  ``dspy.ProgramOfThought`` `[see open
+   PR] <https://github.com/stanfordnlp/dspy/pull/116>`__
+-  ```dspy.ReAct`` <docs/modules.md#dspyreact>`__
+-  ```dspy.MultiChainComparison`` <docs/modules.md#dspymultichaincomparison>`__
+-  ``dspy.SelfCritique`` [coming soon]
+-  ``dspy.SelfRevision`` [coming soon]
+
+Teleprompters
+~~~~~~~~~~~~~
+
+-  ```dspy.teleprompt.LabeledFewShot`` <docs/teleprompters.md#telepromptlabeledfewshot>`__
+-  ```dspy.teleprompt.BootstrapFewShot`` <docs/teleprompters.md#telepromptbootstrapfewshot>`__
+-  ```dspy.teleprompt.BootstrapFewShotWithRandomSearch`` <docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch>`__
+-  ``dspy.teleprompt.LabeledFinetune`` [coming soon]
+-  ```dspy.teleprompt.BootstrapFinetune`` <docs/teleprompters.md#telepromptbootstrapfinetune>`__
+-  ```dspy.teleprompt.Ensemble`` <docs/teleprompters.md#telepromptensemble>`__
+-  ``dspy.teleprompt.kNN`` [coming soon]
+
+
+   </details>
+
+.. _section-1:
+
+
+   <details>
+
+
+   <summary>
+
+
+   <h3 style="display: inline">
+
+Intro Tutorial [coming soon]
+
+
+   </h3>
+
+
+   </summary>
+
+**[Intro-01] Getting Started: High Quality Pipelined Prompts with
+Minimal Effort**
+
+**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
+
+**[Intro-03] Adding Complexity: Multi-stage Programs**
+
+**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
+
+
+   </details>
+
+.. _section-2:
+
+
+   <details>
+
+
+   <summary>
+
+
+   <h3 style="display: inline">
+
+Advanced Demos [coming soon]
+
+
+   </h3>
+
+
+   </summary>
+
+**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
+
+**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
+
+**[Advanced-03] Compiling & Teleprompters.**
+
+**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
+
+**[Advanced-05]: Agents and General Tool Use in DSPy.**
+
+**[Advanced-06]: Reproducibility, Saving Programs, and Advanced
+Caching.**
+
+
+   </details>
 
 5) FAQ: Is DSPy right for me?
 =============================
@@ -317,10 +471,13 @@ a practitioner doing other things, please read on.
 .. _section-3:
 
 
+   <details>
 
 
+   <summary>
 
-**5.a) DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)**
+
+   <h4 style="display: inline">
 
 [5.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic
 templating)
@@ -355,7 +512,7 @@ Oh, and you wouldn’t need to maintain long, brittle, model-specific
 strings at the core of your project anymore.
 
 
-
+   </details>
 
 .. _section-4:
 
@@ -363,7 +520,10 @@ strings at the core of your project anymore.
    <details>
 
 
-**5.b) DSPy vs. application development libraries like LangChain, LlamaIndex**
+   <summary>
+
+
+   <h4 style="display: inline">
 
 [5.b] DSPy vs. application development libraries like LangChain,
 LlamaIndex
@@ -430,7 +590,10 @@ something you want to help with.
    <details>
 
 
-**5.c) DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines**
+   <summary>
+
+
+   <h4 style="display: inline">
 
 [5.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM,
 Outlines
@@ -487,7 +650,7 @@ To stay up to date or learn more, follow
 If you use DSPy or DSP in a research paper, please cite our work as
 follows:
 
-.. code-block:: bibtex
+::
 
    @article{khattab2023dspy,
      title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},

@@ -1,7 +1,22 @@
-DSPy Documentation
+.. _index:
+.. toctree::
+   :maxdepth: 1
+
+   language_models_client
+   retrieval_models_client
+   teleprompters
+   using_local_models
+   modules
+
+DSPy
 ==================
 
-Welcome to the DSPy documentation! DSPy is a framework for programming with foundation models. It is designed with a focus on modularity and a declarative style, allowing you to easily build and customize your models.
+.. image:: ../images/DSPy8.png
+   :align: center
+   :width: 460px
+
+DSPy: *Programming*—not prompting—Foundation Models
+----------------------------------------------------
 
 Language Model Clients
 ----------------------
@@ -28,7 +43,3 @@ Teleprompters
 
 Teleprompters in DSPy are tools that help in generating prompts for the models. They can be used to improve the performance of your models. For a list of available teleprompters and their descriptions, refer to the :doc:`teleprompters`.
 
-Conclusion
-----------
-
-This documentation provides an overview of the DSPy framework and its components. By understanding and utilizing these components, you can effectively use DSPy to build and customize your models. Happy modeling!
