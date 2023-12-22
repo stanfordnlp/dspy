@@ -29,8 +29,8 @@ extensions = [
     'sphinxcontrib.autodoc_pydantic',
     'sphinx_reredirects',
     'sphinx_automodapi.automodapi',
-    'sphinxcontrib.gtagjs',
 ]
+source_suffix = ['.rst', '.md']
 
 # automodapi requires this to avoid duplicates apparently
 numpydoc_show_class_members = False
@@ -70,8 +70,3 @@ nitpicky = True
 # If DSPy requires redirects, they should be defined here
 # redirects = {}
 
-gtagjs_ids = [
-    'UA-XXXXXXX-Y',  # Replace with actual DSPy's Google Tag Manager ID
-]
-
-# Other configurations from LlamaIndex can be added here if needed

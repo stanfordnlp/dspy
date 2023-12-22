@@ -1,154 +1,91 @@
 Welcome to DSPy
 ##########################
 
-DSPy is an innovative framework for programmatically harnessing foundation models, providing tools and interfaces in Python and Typescript for enhanced interaction with large language models. Integrating domain-specific data with powerful language models allows users to design tailored applications in the fields of natural language processing, machine learning, and artificial intelligence.
 
-🚀 Why DSPy? 🦙 !
+.. image:: images/DSPy8.png
+   :width: 460px
+   :align: center
+
+DSPy is an innovative framework designed for solving advanced tasks with language models (LMs) and retrieval models (RMs). It unifies techniques for prompting, fine-tuning, and reasoning — along with approaches for self-improvement and augmentation with retrieval and tools — all expressed through modules that compose and learn.
+
+
+🚀 Why DSPy?
 ##########################
 
-LlamaIndex is a data framework for `LLM <https://en.wikipedia.org/wiki/Large_language_model>`_-based applications to ingest, structure, and access private or domain-specific data. It's available in Python (these docs) and `Typescript <https://ts.llamaindex.ai/>`_.
+DSPy provides composable and declarative modules for instructing LMs in a familiar Pythonic syntax, upgrading prompting techniques like chain-of-thought and self-reflection from hand-adapted string manipulation tricks into truly modular generalized operations that learn to adapt to your task.
 
-🚀 Empowering Applications with Foundation Models
-******************
+DSPy introduces an automatic compiler that teaches LMs how to conduct the declarative steps in your program. The DSPy compiler bootstraps prompts and finetunes from minimal data without needing manual labels for the intermediate steps in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
 
-LLMs offer a natural language interface between humans and data. Widely available models come pre-trained on huge amounts of publicly available data like Wikipedia, mailing lists, textbooks, source code and more.
+For complex tasks, DSPy can routinely teach powerful models like GPT-3.5 and local models like T5-base or Llama2-13b to be much more reliable at tasks. DSPy will compile the same program into different few-shot prompts and/or finetunes for each LM.
 
-However, while LLMs are trained on a great deal of data, they are not trained on **your** data, which may be private or specific to the problem you're trying to solve. It's behind APIs, in SQL databases, or trapped in PDFs and slide decks.
+To install the library:
 
-LlamaIndex solves this problem by connecting to these data sources and adding your data to the data LLMs already have. This is often called Retrieval-Augmented Generation (RAG). RAG enables you to use LLMs to query your data, transform it, and generate new insights. You can ask questions about your data, create chatbots, build semi-autonomous agents, and more. To learn more, check out our Use Cases on the left.
+.. code-block:: bash
 
-🦙 How can LlamaIndex help?
-***************************
+    pip install dspy-ai
 
-LlamaIndex provides the following tools:
+For the optional Pinecone, Qdrant, chromadb, or marqo retrieval integration(s), include the extra(s) below:
 
-- **Data connectors** ingest your existing data from their native source and format. These could be APIs, PDFs, SQL, and (much) more.
-- **Data indexes** structure your data in intermediate representations that are easy and performant for LLMs to consume.
-- **Engines** provide natural language access to your data. For example:
-  - Query engines are powerful retrieval interfaces for knowledge-augmented output.
-  - Chat engines are conversational interfaces for multi-message, "back and forth" interactions with your data.
-- **Data agents** are foundation model-powered knowledge workers enhanced by tools, including helper functions to API integrations.
+.. code-block:: bash
 
+    pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
 
 👨‍👩‍👧‍👦 Who is DSPy for?
 *******************************************
 
-LlamaIndex provides tools for beginners, advanced users, and everyone in between.
-
-Our intuitive high-level API empowers beginners to leverage the capabilities of DSPy to ingest and query their data in 5 lines of code.
-
-For more complex applications, our lower-level APIs allow advanced users to customize and extend any module—data connectors, indices, retrievers, query engines, reranking modules—to fit their needs.
+DSPy is designed for NLP/AI researchers and practitioners who require a powerful and flexible framework for composing and optimizing LM-based applications. The intuitive high-level API empowers beginners, while the lower-level APIs allow advanced users to customize and extend modules to fit their needs.
 
 Getting Started
 ****************
-
-To install the library:
-
-``pip install dspy``
 
 We recommend checking out our `Getting Started Guide <./getting_started/overview.html>`_ to help you navigate the documentation based on your expertise.
 
 🗺️ Ecosystem
 ************
 
-To download or contribute, find LlamaIndex on:
+To download or contribute, find DSPy on:
 
-- Github: https://github.com/[DSPY_REPO_PATH]
+- Github: https://github.com/stanfordnlp/dspy
 - PyPi:
 
-  - DSPy: https://pypi.org/project/dspy/.
-
+  - DSPy: https://pypi.org/project/dspy/
 
 - NPM (Typescript/Javascript):
-   - Github: https://github.com/[DSPY_TS_REPO_PATH]
+   - Github: https://github.com/stanfordnlp/dspy-ts
    - Docs: https://ts.dspy.ai/
    - DSPy.TS: https://www.npmjs.com/package/dspy
 
 Community
 ---------
-Need help? Have a feature suggestion? Join the LlamaIndex community:
+Need help? Have a feature suggestion? Join the DSPy community:
 
 - Twitter: https://twitter.com/dspy_framework
-- Discord https://discord.gg/[DSPY_DISCORD_PATH]
+- Discord: https://discord.gg/dspy
 
 Associated projects
 -------------------
 
 - 🏡 DSPyHub: https://dspyhub.ai | A large (and growing!) collection of custom data connectors
-- 🧪 DSPyLab: https://github.com/[DSPY_LAB_REPO_PATH] | Innovative projects leveraging DSPy capabilities
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Getting Started
-   :hidden:
-
-   getting_started/installation.md
-   getting_started/reading.md
-   getting_started/starter_example.md
-   getting_started/concepts.md
-   getting_started/customization.rst
-   getting_started/discover_llamaindex.md
+- 🧪 DSPyLab: https://github.com/stanfordnlp/dspy-lab | Innovative projects leveraging DSPy capabilities
 
 .. toctree::
    :maxdepth: 2
-   :caption: Use Cases
+   :caption: Table of Contents
    :hidden:
 
-   use_cases/q_and_a.md
-   use_cases/chatbots.md
-   use_cases/agents.md
-   use_cases/extraction.md
-   use_cases/multimodal.md
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Understanding
-   :hidden:
-
-   understanding/understanding.md
-   understanding/using_llms/using_llms.md
-   understanding/loading/loading.md
-   understanding/indexing/indexing.md
-   understanding/storing/storing.md
-   understanding/querying/querying.md
-   understanding/putting_it_all_together/putting_it_all_together.md
-   understanding/tracing_and_debugging/tracing_and_debugging.md
-   understanding/evaluating/evaluating.md
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Optimizing
-   :hidden:
-
-   optimizing/basic_strategies/basic_strategies.md
-   optimizing/advanced_retrieval/advanced_retrieval.md
-   optimizing/agentic_strategies/agentic_strategies.md
-   optimizing/evaluation/evaluation.md
-   optimizing/fine-tuning/fine-tuning.md
-   optimizing/production_rag.md
-   optimizing/building_rag_from_scratch.md
-.. toctree::
-   :maxdepth: 2
-   :caption: Module Guides
-   :hidden:
-
-   module_guides/models/models.md
-   module_guides/models/prompts.md
-   module_guides/loading/loading.md
-   module_guides/indexing/indexing.md
-   module_guides/storing/storing.md
-   module_guides/querying/querying.md
-   module_guides/observability/observability.md
-   module_guides/evaluating/root.md
-   module_guides/supporting_modules/supporting_modules.md
-
+   
+   modules/modules.md
+   retrieval/retrieval_models_client.md
+   teleprompters/teleprompters.md
+   language_models/language_models.md
+   language_models/using_local_models.md
 
 .. toctree::
    :maxdepth: 1
    :caption: API Reference
    :hidden:
 
-   api_reference/index.rst
+   api_reference/index
 
 .. toctree::
    :maxdepth: 2
@@ -161,16 +98,48 @@ Associated projects
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contributing
-   :hidden:
-
-   contributing/contributing.rst
-   contributing/documentation.rst
-
-.. toctree::
-   :maxdepth: 2
    :caption: Changes
    :hidden:
 
    changes/changelog.rst
    changes/deprecated_terms.md
+
+Contributors & Acknowledgements
+-------------------------------
+
+DSPy is led by Omar Khattab at Stanford NLP with Chris Potts and Matei Zaharia.
+
+Key contributors and team members include Arnav Singhvi, Paridhi Maheshwari, Keshav Santhanam, Sri Vardhamanan, Eric Zhang, Hanna Moazam, Thomas Joshi, Saiful Haq, and Ashutosh Sharma.
+
+DSPy includes important contributions from Rick Battle and Igor Kotenkov. It reflects discussions with Lisa Li, David Hall, Ashwin Paranjape, Heather Miller, Chris Manning, Percy Liang, and many others.
+
+The DSPy logo is designed by Chuyi Zhang.
+
+📜 Citation & Reading More
+--------------------------
+
+To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
+
+If you use DSPy or DSP in a research paper, please cite our work as follows:
+
+.. code-block:: bibtex
+
+    @article{khattab2023dspy,
+      title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},
+      author={Khattab, Omar and Singhvi, Arnav and Maheshwari, Paridhi and Zhang, Zhiyuan and Santhanam, Keshav and Vardhamanan, Sri and Haq, Saiful and Sharma, Ashutosh and Joshi, Thomas T. and Moazam, Hanna and Miller, Heather and Zaharia, Matei and Potts, Christopher},
+      journal={arXiv preprint arXiv:2310.03714},
+      year={2023}
+    }
+    @article{khattab2022demonstrate,
+      title={Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive {NLP}},
+      author={Khattab, Omar and Santhanam, Keshav and Li, Xiang Lisa and Hall, David and Liang, Percy and Potts, Christopher and Zaharia, Matei},
+      journal={arXiv preprint arXiv:2212.14024},
+      year={2022}
+    }
+
+You can also read more about the evolution of the framework from Demonstrate-Search-Predict to DSPy:
+* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023)
+* [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
+* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)

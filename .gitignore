@@ -9,6 +9,8 @@
 /docs/experiments/
 /docs/doctrees/
 /docs/html/
+/docs/_build/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

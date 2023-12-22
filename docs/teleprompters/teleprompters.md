@@ -1,4 +1,4 @@
-# Teleprompters Documentation
+# Teleprompters
 
 Teleprompters are powerful optimizers (included in DSPy) that can learn to bootstrap and select effective prompts for the modules of any program. (The "tele-" in the name means "at a distance", i.e., automatic prompting at a distance.)
 
