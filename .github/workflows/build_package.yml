@@ -37,3 +37,4 @@ jobs:
         shell: bash
         working-directory: ${{ vars.RUNNER_TEMP }}
         run: python -c "import dspy"
+        
