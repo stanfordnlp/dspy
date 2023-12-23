@@ -29,7 +29,7 @@ description: 'DSPy is a versatile and sophisticated Python framework designed to
 draft: False
 
 # This is a list of directories that Sweep will not be able to edit.
-blocked_dirs: []
+blocked_dirs: [./sweep.yaml]
 
 # This is a list of documentation links that Sweep will use to help it understand your code. You can add links to documentation for any packages you use here.
 #
