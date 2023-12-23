@@ -13,7 +13,7 @@ rules:
   - "All Jupyter Notebook examples should also be documented in the `docs` directory, using native, sphinx-parsable documentation."
 
 # This is the branch that Sweep will develop from and make pull requests to. Most people use 'main' or 'master' but some users also use 'dev' or 'staging'.
-branch: 'main'
+branch: 'dev'
 
 
 # By default Sweep will read the logs and outputs from your existing Github Actions. To disable this, set this to false.
