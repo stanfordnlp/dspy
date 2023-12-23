@@ -9,7 +9,7 @@ USAGE SUGGESTIONS:
 
 The following code can be used to compile a optimized signature teleprompter, and evaluate it on an end task:
 
-teleprompter = SignatureOptimizer(metric=metric, breadth=BREADTH, depth=DEPTH, init_temperature=INIT_TEMPERATURE, prompt_model=prompt_model, output_dir=optimizedV1_output_dir)
+teleprompter = SignatureOptimizer(prompt_model=prompt_model, metric=metric, breadth=BREADTH, depth=DEPTH, init_temperature=INIT_TEMPERATURE)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 compiled_prompt_opt = teleprompter.compile(program.deepcopy(), devset=devset[:DEV_NUM], eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
@@ -39,7 +39,7 @@ class GenerateInstructionGivenAttempts(Signature):
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
 class SignatureOptimizer(Teleprompter):
-    def __init__(self, metric=None, breadth=10, depth=3, init_temperature=1.4, prompt_model="gpt-3.5-turbo-1106", verbose=False):
+    def __init__(self, prompt_model, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False):
         self.metric = metric
         self.breadth = breadth
         self.depth = depth
@@ -108,13 +108,13 @@ class SignatureOptimizer(Teleprompter):
                 print(f"Starting iteration {d}/{self.depth}.")
         
             # Go through our module's predictors
-            for p_old, p_new in zip(module.predictors(), module_clone.predictors()):
+            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(), module_clone.predictors())):
                 candidates_ = latest_candidates[id(p_old)] # Use the most recently generated candidates for evaluation 
                 if len(module.predictors()) > 1:
                     candidates_ = all_candidates[id(p_old)] # Unless our program has multiple predictors, in which case we need to reevaluate all prompts with the new prompt(s) for the other predictor(s)   
 
                 # For each candidate
-                for c in candidates_:
+                for c_i, c in enumerate(candidates_):
                     
                     # Get the candidate instruction and prefix 
                     instruction, prefix = c.proposed_instruction.strip('"').strip(), c.proposed_prefix_for_output_field.strip('"').strip()
@@ -131,6 +131,7 @@ class SignatureOptimizer(Teleprompter):
                             print(f"i: {predictor.extended_signature.instructions}")
                             print(f"p: {predictor.extended_signature.fields[-1].name}")
                             print()
+                    print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
                     score = evaluate(module_clone, devset=devset, **eval_kwargs)
                     total_calls += 1
                     if (self.verbose):
