@@ -10,8 +10,7 @@ rules:
   - "Ensure that any new modules or features adhere to the DSPy framework's syntax and module structure."
   - "Maintain modularity and declarative style as per DSPy's design philosophy."
   - "All new capabilities or changes should be reflected in the documentation `docs/`."
-  - "All Jupyter Notebook examples should also be documented in the `docs` directory, using native, sphinx-parsable documentation."
-
+  
 # This is the branch that Sweep will develop from and make pull requests to. Most people use 'main' or 'master' but some users also use 'dev' or 'staging'.
 branch: 'main'
 
