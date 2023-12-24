@@ -17,7 +17,7 @@ eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
 Note that this teleprompter takes in the following parameters:
 
-* prompt_model: The model used for prompt generation.
+* prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
 * metric: The task metric used for optimization.
 * breadth: The number of new prompts to generate at each iteration. Default=10.
 * depth: The number of times we should ask our prompt model to genereate new prompts, with the history of the past prompts as input. Default=3.
@@ -47,7 +47,7 @@ Your task is to propose a new instruction that will lead a good language model t
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
 class SignatureOptimizer(Teleprompter):
-    def __init__(self, prompt_model, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False, track_stats=False):
+    def __init__(self, prompt_model=None, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False, track_stats=False):
         self.metric = metric
         self.breadth = breadth
         self.depth = depth
@@ -109,7 +109,10 @@ class SignatureOptimizer(Teleprompter):
             else:
                 basic_instruction = predictor.extended_signature1.instructions
                 basic_prefix = predictor.extended_signature1.fields[-1].name
-            with dspy.settings.context(lm=self.prompt_model):
+            if self.prompt_model: 
+                with dspy.settings.context(lm=self.prompt_model):
+                    instruct = dspy.Predict(BasicGenerateInstruction, n=self.breadth-1, temperature=self.init_temperature)(basic_instruction=basic_instruction)
+            else:
                 instruct = dspy.Predict(BasicGenerateInstruction, n=self.breadth-1, temperature=self.init_temperature)(basic_instruction=basic_instruction)
             # Add in our initial prompt as a candidate as well
             instruct.completions.proposed_instruction.append(basic_instruction)
@@ -117,7 +120,7 @@ class SignatureOptimizer(Teleprompter):
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
         
-        if self.verbose: print(f"{self.prompt_model.inspect_history(n=1)}")
+        if self.verbose and self.prompt_model: print(f"{self.prompt_model.inspect_history(n=1)}")
 
         latest_candidates = candidates
         all_candidates = candidates
@@ -164,7 +167,7 @@ class SignatureOptimizer(Teleprompter):
                         if self.verbose: print()
                     if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
                     score = evaluate(module_clone, devset=devset, **eval_kwargs)
-                    print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
+                    if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
                     if self.verbose: print(f"----------------")
 
@@ -249,15 +252,19 @@ class SignatureOptimizer(Teleprompter):
                     attempts.append(f'Resulting Score #{shortest_len-i}: {best_predictors[i]["score"]}')
             
                 # Generate next batch of potential prompts to optimize, with previous attempts as input
-                with dspy.settings.context(lm=self.prompt_model):
+                if self.prompt_model: 
+                    with dspy.settings.context(lm=self.prompt_model):
+                        instr = dspy.Predict(GenerateInstructionGivenAttempts, n=self.breadth, temperature=self.init_temperature)(attempted_instructions=attempts)
+                else:
                     instr = dspy.Predict(GenerateInstructionGivenAttempts, n=self.breadth, temperature=self.init_temperature)(attempted_instructions=attempts)
-                if self.verbose: print(f"{self.prompt_model.inspect_history(n=1)}")
+
+                if self.verbose and self.prompt_model: print(f"{self.prompt_model.inspect_history(n=1)}")
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions
                 all_candidates[id(p_base)].proposed_instruction.extend(instr.completions.proposed_instruction)
                 all_candidates[id(p_base)].proposed_prefix_for_output_field.extend(instr.completions.proposed_prefix_for_output_field)
 
-            if self.verbose: print(f"{self.prompt_model.inspect_history(n=1)}")
+            if self.verbose and self.prompt_model: print(f"{self.prompt_model.inspect_history(n=1)}")
             latest_candidates = new_candidates
         
         candidates = []
