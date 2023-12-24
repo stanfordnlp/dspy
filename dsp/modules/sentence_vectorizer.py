@@ -2,7 +2,9 @@ import abc
 from typing import List, Optional
 
 import numpy as np
-import openai
+from openai import OpenAI
+
+
 
 
 class BaseSentenceVectorizer(abc.ABC):
@@ -123,9 +125,10 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
     ):
         self.model = model
         self.embed_batch_size = embed_batch_size
-
         if api_key:
-            openai.api_key = api_key
+            self.client = OpenAI(api_key=api_key)
+        else:
+            self.client = OpenAI()
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
@@ -138,12 +141,9 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             cur_batch = text_to_vectorize[start_idx: end_idx]
             # OpenAI API call:
-            response = openai.Embedding.create(
-                model=self.model,
-                input=cur_batch
-            )
+            response = self.client.embeddings.create(model=self.model, input=cur_batch)
 
-            cur_batch_embeddings = [cur_obj['embedding'] for cur_obj in response['data']]
+            cur_batch_embeddings = [cur_obj.embedding for cur_obj in response.data]
             embeddings_list.extend(cur_batch_embeddings)
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
