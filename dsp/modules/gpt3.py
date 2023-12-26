@@ -1,12 +1,25 @@
 import functools
 import json
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, cast
 
 import backoff
 import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+
+try:
+    OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
+except Exception:
+    OPENAI_LEGACY = True
+
+try:
+    from openai.openai_object import OpenAIObject
+    import openai.error
+    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+except Exception:
+    ERRORS = (openai.RateLimitError, openai.APIError)
+    OpenAIObject = dict
 
 
 def backoff_hdlr(details):
@@ -90,11 +103,11 @@ class GPT3(LM):
             # caching mechanism requires hashable kwargs
             kwargs["messages"] = [{"role": "user", "content": prompt}]
             kwargs = {"stringify_request": json.dumps(kwargs)}
-            response = cached_gpt3_turbo_request(**kwargs).model_dump()
+            response = chat_request(**kwargs)
 
         else:
             kwargs["prompt"] = prompt
-            response = cached_gpt3_request(**kwargs).model_dump()
+            response = completions_request(**kwargs)
 
         history = {
             "prompt": prompt,
@@ -108,7 +121,7 @@ class GPT3(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.RateLimitError, openai.APIError),
+        ERRORS,
         max_time=1000,
         on_backoff=backoff_hdlr,
     )
@@ -183,32 +196,57 @@ class GPT3(LM):
         return completions
 
 
+
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
-    return openai.completions.create(**kwargs)
-
+    return openai.Completion.create(**kwargs)
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def cached_gpt3_request_v2_wrapped(**kwargs):
     return cached_gpt3_request_v2(**kwargs)
 
-
-cached_gpt3_request = cached_gpt3_request_v2_wrapped
-
-
 @CacheMemory.cache
-def _cached_gpt3_turbo_request_v2(**kwargs):
+def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
     if "stringify_request" in kwargs:
         kwargs = json.loads(kwargs["stringify_request"])
-
-    return openai.chat.completions.create(**kwargs)
-
+    return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
-def _cached_gpt3_turbo_request_v2_wrapped(**kwargs):
+def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
     return _cached_gpt3_turbo_request_v2(**kwargs)
 
+@CacheMemory.cache
+def v1_cached_gpt3_request_v2(**kwargs):
+    return openai.completions.create(**kwargs)
 
-cached_gpt3_turbo_request = _cached_gpt3_turbo_request_v2_wrapped
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def v1_cached_gpt3_request_v2_wrapped(**kwargs):
+    return v1_cached_gpt3_request_v2(**kwargs)
+
+@CacheMemory.cache
+def v1_cached_gpt3_turbo_request_v2(**kwargs):
+    if "stringify_request" in kwargs:
+        kwargs = json.loads(kwargs["stringify_request"])
+    return openai.chat.completions.create(**kwargs)
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
+    return v1_cached_gpt3_turbo_request_v2(**kwargs)
+
+
+
+def chat_request(**kwargs):
+    if OPENAI_LEGACY:
+        return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
+
+    return v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs).model_dump()
+
+def completions_request(**kwargs):
+    if OPENAI_LEGACY:
+        return cached_gpt3_request_v2_wrapped(**kwargs)
+
+    return v1_cached_gpt3_request_v2_wrapped(**kwargs).model_dump()
