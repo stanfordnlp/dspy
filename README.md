@@ -62,7 +62,7 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
+pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo] or [mongodb]
 ```
 
 ## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
