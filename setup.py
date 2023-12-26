@@ -25,7 +25,8 @@ setup(
         "pinecone": ["pinecone-client~=2.2.4"],
         "qdrant": ["qdrant-client~=1.6.2", "fastembed~=0.1.0"],
         "chromadb": ["chromadb~=0.4.14"],
-        "marqo": ["marqo"]
+        "marqo": ["marqo"],
+        "mongodb": ["pymongo~=3.12.0"],
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
