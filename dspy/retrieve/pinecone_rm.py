@@ -164,7 +164,7 @@ class PineconeRM(dspy.Retrieve):
  
     @backoff.on_exception(
         backoff.expo,
-        (openai.error.RateLimitError, openai.error.ServiceUnavailableError),
+        (openai.RateLimitError),
         max_time=15,
     )
     def _get_embeddings(
@@ -187,10 +187,10 @@ class PineconeRM(dspy.Retrieve):
             ) from exc
         
         if not self.use_local_model:
-            embedding = openai.Embedding.create(
+            embedding = openai.embeddings.create(
                 input=queries, model=self._openai_embed_model
             )
-            return [embedding["embedding"] for embedding in embedding["data"]]
+            return [embedding.embedding for embedding in embedding.data]
         
         # Use local model
         encoded_input = self._local_tokenizer(queries, padding=True, truncation=True, return_tensors="pt").to(self.device)
