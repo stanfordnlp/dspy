@@ -1,0 +1,64 @@
+{
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": "It is not true that there is not a single person walking in the city.",
+        "question": "Can we logically conclude for sure that it is not true that there is not a single celebrity walking in the city?",
+        "rationale": "produce the answer. We know that the double negative in the context implies that there is at least one person walking in the city. However, the context does not provide any information about the status or occupation of the person walking in the city. Therefore, we cannot logically conclude that the person walking in the city is a celebrity.",
+        "answer": "No"
+      },
+      {
+        "augmented": true,
+        "context": "the boy, not girl, will play an trombone, but not for another week",
+        "question": "Can we logically conclude for sure that the boy, not girl, will play an instrument, but not for another week?",
+        "rationale": "produce the answer. We know that the boy will play a trombone, which is a type of instrument. The context specifies that this will happen not for another week, which means it will happen in the future, but not immediately. The gender of the person is also specified as a boy, not a girl.",
+        "answer": "Yes"
+      },
+      {
+        "augmented": true,
+        "context": "A man is not holding anything in his hands.",
+        "question": "Can we logically conclude for sure that a man is not holding beverages in his hands?",
+        "rationale": "produce the answer. We know that the man is not holding anything in his hands. Beverages are a subset of \"anything.\" Therefore, if he is not holding anything, he is also not holding beverages.",
+        "answer": "Yes"
+      },
+      {
+        "augmented": true,
+        "context": "There is not a boat nearby.",
+        "question": "Can we logically conclude for sure that there is not a speedboat nearby?",
+        "rationale": "produce the answer. We know that there is not a boat nearby. A speedboat is a type of boat. If there are no boats nearby, then there cannot be a speedboat nearby either, because a speedboat is included in the category of boats.",
+        "answer": "Yes"
+      },
+      {
+        "augmented": true,
+        "context": "The man is not listening to music.",
+        "question": "Can we logically conclude for sure that the man is not listening to rockabilly?",
+        "rationale": "produce the answer. We know that the man is not listening to music. Rockabilly is a genre of music. If he is not listening to music at all, then he cannot be listening to rockabilly, which is a specific type of music.",
+        "answer": "Yes"
+      },
+      {
+        "augmented": true,
+        "context": "There is not a single person walking in the city.",
+        "question": "Can we logically conclude for sure that there is not a single mover walking in the city?",
+        "rationale": "produce the answer. We know that there is not a single person walking in the city. A mover is a type of person. If there are no people walking in the city, then there cannot be a mover walking in the city either, because a mover is included in the broader category of people.",
+        "answer": "Yes"
+      },
+      {
+        "augmented": true,
+        "context": "a man walks not so confidently, but he does not drop eggplants",
+        "question": "Can we logically conclude for sure that a man walks not so confidently, but he does not drop produce?",
+        "rationale": "produce the answer. We know that the man does not drop eggplants, which are a type of produce. However, the statement does not provide information about other types of produce. Therefore, we cannot conclude that he does not drop any type of produce, only that he does not drop eggplants specifically.",
+        "answer": "No"
+      },
+      {
+        "context": "The girl who is not here is not wearing any jewelry at all.",
+        "question": "Can we logically conclude for sure that the girl who is not here is not wearing any ringlets at all?",
+        "answer": "Yes",
+        "category": "one_scoped_one_not_scoped"
+      }
+    ]
+  }
+}
