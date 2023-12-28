@@ -58,6 +58,7 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 > _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
 
+By default, DSPy depends on `openai==0.28`. However, if you install `openai>=1.0`, the library will use that just fine. Both are supported.
 
 For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
 
