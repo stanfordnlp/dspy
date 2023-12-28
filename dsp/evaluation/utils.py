@@ -1,5 +1,3 @@
-from openai import InvalidRequestError
-from openai.error import APIError
 
 import dsp
 import tqdm
