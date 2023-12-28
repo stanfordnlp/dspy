@@ -1,7 +1,13 @@
 from typing import List, Optional, Union, Any
 import dspy
 import os
-import openai
+from openai import (
+    OpenAI,
+    APITimeoutError,
+    InternalServerError,
+    RateLimitError,
+    UnprocessableEntityError,
+)
 import backoff
 
 try:
@@ -39,24 +45,25 @@ def build_vector_search_pipeline(
 class Embedder:
     def __init__(self, provider: str, model: str):
         if provider == "openai":
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            if not openai.api_key:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
                 raise ValueError("Environment variable OPENAI_API_KEY must be set")
-            self.client = openai
+            self.client = OpenAI()
             self.model = model
 
     @backoff.on_exception(
         backoff.expo,
         (
-            openai.error.RateLimitError,
-            openai.error.ServiceUnavailableError,
-            openai.error.APIError,
+            APITimeoutError,
+            InternalServerError,
+            RateLimitError,
+            UnprocessableEntityError,
         ),
         max_time=15,
     )
     def __call__(self, queries) -> Any:
-        embedding = self.client.Embedding.create(input=queries, model=self.model)
-        return [embedding["embedding"] for embedding in embedding["data"]]
+        embedding = self.client.embeddings.create(input=queries, model=self.model)
+        return [result.embedding for result in embedding.data]
 
 
 class MongoDBAtlasRM(dspy.Retrieve):
