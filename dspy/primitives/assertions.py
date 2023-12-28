@@ -179,85 +179,86 @@ def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
 
     def wrapper(*args, **kwargs):
         error_msg, result = None, None
-        dspy.settings.backtrack_to = None
+        with dspy.settings.lock:
+            dspy.settings.backtrack_to = None
 
-        # Predictor -> List[feedback_msg]
-        dspy.settings.predictor_feedbacks = {}
+            # Predictor -> List[feedback_msg]
+            dspy.settings.predictor_feedbacks = {}
 
-        for i in range(max_backtracks + 1):
-            if i > 0 and dspy.settings.backtrack_to is not None:
-                # generate values for new fields
-                feedback_msg = _build_error_msg(
-                    dspy.settings.predictor_feedbacks[dspy.settings.backtrack_to]
-                )
-
-                dspy.settings.backtrack_to_args = {
-                    "feedback": feedback_msg,
-                    "past_outputs": past_outputs,
-                }
-
-            # if last backtrack: ignore suggestion errors
-            if i == max_backtracks:
-                result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
-                break
-
-            else:
-                try:
-                    result = func(*args, **kwargs)
-                    break
-                except DSPySuggestionError as e:
-                    suggest_id, error_msg, suggest_target_module, error_state = (
-                        e.id,
-                        e.msg,
-                        e.target_module,
-                        e.state[-1],
+            for i in range(max_backtracks + 1):
+                if i > 0 and dspy.settings.backtrack_to is not None:
+                    # generate values for new fields
+                    feedback_msg = _build_error_msg(
+                        dspy.settings.predictor_feedbacks[dspy.settings.backtrack_to]
                     )
 
-                    if dsp.settings.trace:
-                        if suggest_target_module:
-                            for i in range(len(dsp.settings.trace) - 1, -1, -1):
-                                trace_element = dsp.settings.trace[i]
-                                mod = trace_element[0]
-                                if mod.signature == suggest_target_module:
-                                    dspy.settings.backtrack_to = mod
-                                    break
-                        else:
-                            dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
+                    dspy.settings.backtrack_to_args = {
+                        "feedback": feedback_msg,
+                        "past_outputs": past_outputs,
+                    }
 
-                        if dspy.settings.backtrack_to is None:
-                            logger.error("Specified module not found in trace")
+                # if last backtrack: ignore suggestion errors
+                if i == max_backtracks:
+                    result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
+                    break
 
-                        # save unique feedback message for predictor
-                        if (
-                            error_msg
-                            not in dspy.settings.predictor_feedbacks.setdefault(
-                                dspy.settings.backtrack_to, []
-                            )
-                        ):
-                            dspy.settings.predictor_feedbacks[
-                                dspy.settings.backtrack_to
-                            ].append(error_msg)
-
-                        output_fields = vars(error_state[0].signature.signature)
-                        past_outputs = {}
-                        for field_name, field_obj in output_fields.items():
-                            if isinstance(field_obj, dspy.OutputField):
-                                past_outputs[field_name] = getattr(
-                                    error_state[2], field_name, None
-                                )
-
-                        # save latest failure trace for predictor per suggestion
-                        error_ip = error_state[1]
-                        error_op = error_state[2].__dict__["_store"]
-                        error_op.pop("_assert_feedback", None)
-                        error_op.pop("_assert_traces", None)
-
-                    else:
-                        logger.error(
-                            f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
+                else:
+                    try:
+                        result = func(*args, **kwargs)
+                        break
+                    except DSPySuggestionError as e:
+                        suggest_id, error_msg, suggest_target_module, error_state = (
+                            e.id,
+                            e.msg,
+                            e.target_module,
+                            e.state[-1],
                         )
 
-        return result
+                        if dsp.settings.trace:
+                            if suggest_target_module:
+                                for i in range(len(dsp.settings.trace) - 1, -1, -1):
+                                    trace_element = dsp.settings.trace[i]
+                                    mod = trace_element[0]
+                                    if mod.signature == suggest_target_module:
+                                        dspy.settings.backtrack_to = mod
+                                        break
+                            else:
+                                dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
+
+                            if dspy.settings.backtrack_to is None:
+                                logger.error("Specified module not found in trace")
+
+                            # save unique feedback message for predictor
+                            if (
+                                error_msg
+                                not in dspy.settings.predictor_feedbacks.setdefault(
+                                    dspy.settings.backtrack_to, []
+                                )
+                            ):
+                                dspy.settings.predictor_feedbacks[
+                                    dspy.settings.backtrack_to
+                                ].append(error_msg)
+
+                            output_fields = vars(error_state[0].signature.signature)
+                            past_outputs = {}
+                            for field_name, field_obj in output_fields.items():
+                                if isinstance(field_obj, dspy.OutputField):
+                                    past_outputs[field_name] = getattr(
+                                        error_state[2], field_name, None
+                                    )
+
+                            # save latest failure trace for predictor per suggestion
+                            error_ip = error_state[1]
+                            error_op = error_state[2].__dict__["_store"]
+                            error_op.pop("_assert_feedback", None)
+                            error_op.pop("_assert_traces", None)
+
+                        else:
+                            logger.error(
+                                f"UNREACHABLE: No trace available, this should not happen. Is this run time?"
+                            )
+
+            return result
 
     return wrapper
 
