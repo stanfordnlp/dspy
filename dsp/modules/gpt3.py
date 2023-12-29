@@ -76,7 +76,10 @@ class GPT3(LM):
             openai.api_key = api_key
 
         if api_base:
-            openai.base_url = api_base
+            if OPENAI_LEGACY:
+                openai.api_base = api_base
+            else:       
+                openai.base_url = api_base
 
         self.kwargs = {
             "temperature": 0.0,
