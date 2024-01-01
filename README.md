@@ -198,17 +198,11 @@ If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-s
 
 ## 4) Documentation & Tutorials
 
-While we work on new tutorials and documentation, please check out **[our intro notebook](intro.ipynb)**.
+While we work on new tutorials, please check out **[our intro notebook](intro.ipynb)**.
 
 Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Module Reference</h3></summary>
-
-We have work-in-progress module documentation at [this PR](https://github.com/stanfordnlp/dspy/pull/93). Please let us know if anything there is unclear.
+For module documentation, please refer to our [documentation folder](https://github.com/stanfordnlp/dspy/tree/main/docs).
 
 
 #### Language Model Clients
@@ -235,12 +229,12 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - [`dspy.Predict`](docs/modules.md#dspypredict)
 - [`dspy.Retrieve`](docs/modules.md#dspyretrieve)
 - [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
-- `dspy.majority` (functional self-consistency)
-- `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
+- `dspy.ProgramOfThought`
 - [`dspy.ReAct`](docs/modules.md#dspyreact)
 - [`dspy.MultiChainComparison`](docs/modules.md#dspymultichaincomparison)
 - `dspy.SelfCritique` [coming soon]
 - `dspy.SelfRevision` [coming soon]
+- `dspy.majority` (self-consistency)
 
   
 #### Teleprompters
@@ -251,46 +245,7 @@ We have work-in-progress module documentation at [this PR](https://github.com/st
 - `dspy.teleprompt.LabeledFinetune` [coming soon]
 - [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
 - [`dspy.teleprompt.Ensemble`](docs/teleprompters.md#telepromptensemble)
-- `dspy.teleprompt.kNN` [coming soon]
-
-</details>
-
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
-
-**[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
-
-**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
-
-**[Intro-03] Adding Complexity: Multi-stage Programs**
-
-**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
-
-</details>
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
-
-
-**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
-
-**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
-
-**[Advanced-03] Compiling & Teleprompters.**
-
-**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
-
-**[Advanced-05]: Agents and General Tool Use in DSPy.**
-
-**[Advanced-06]: Reproducibility, Saving Programs, and Advanced Caching.**
-
-
-</details>
+- `dspy.teleprompt.kNN`
 
 
 
