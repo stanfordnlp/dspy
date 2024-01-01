@@ -216,7 +216,11 @@ For module documentation, please refer to our [documentation folder](https://git
 
 - [`dspy.ColBERTv2`](docs/retrieval_models_client.md#colbertv2)
 - [`dspy.AzureCognitiveSearch`](docs/retrieval_models_client.md#azurecognitivesearch)
-
+- `dspy.Pyserini`
+- `dspy.Pinecone`
+- `dspy.Qdrant`
+- `dspy.Chromadb`
+- `dspy.Marqo`
 
 #### Signatures
 
