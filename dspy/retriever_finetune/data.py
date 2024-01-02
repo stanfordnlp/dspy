@@ -25,6 +25,7 @@ class RetrievalFinetuneDataset(Dataset):
         self.id_count = 0
         self.sample_weights = np.power(np.full(K, 0.8), np.arange(K))
         self.sample_weights = self.sample_weights / np.sum(self.sample_weights)
+        self.rng = np.random.default_rng(seed=0)
         self.generate_dataset()
         
     def retrieve_topK(self, query):
@@ -39,7 +40,7 @@ class RetrievalFinetuneDataset(Dataset):
         # can be really slow if samples_per_query is just less than comb(K, passages_per_hop), could sample from all perms -> remove seen tuples, but that would be memory expensive
         topK = self.retrieve_topK(query)
         while True:
-            passage_indices = tuple(np.random.choice(np.arange(self.k), size=self.passages_per_hop,replace=False, p=self.sample_weights))
+            passage_indices = tuple(self.rng.choice(np.arange(self.k), size=self.passages_per_hop,replace=False, p=self.sample_weights))
             if passage_indices not in self.tuple_history[query]:
                 self.tuple_history[query].add(passage_indices)
                 return [topK[i] for i in passage_indices]

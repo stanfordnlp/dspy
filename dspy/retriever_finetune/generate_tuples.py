@@ -14,17 +14,17 @@ import json
 
 
 if __name__ == '__main__':
-    dataset = HotPotQA(train_seed=1, train_size=50, eval_seed=2023, dev_size=20, test_size=0)
+    dataset = HotPotQA(train_seed=1, train_size=100, eval_seed=2023, dev_size=20, test_size=0)
     hotpot_trainset = [x.with_inputs('question') for x in dataset.train]
     
     colbert = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
     # llama2 = dspy.HFModel(model = 'meta-llama/Llama-2-7b-chat-hf')
-    turbo = dspy.OpenAI(model='gpt-3.5-turbo', max_tokens=128)
+    turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=128)
     dspy.settings.configure(rm=colbert, lm=turbo)
     
     multihop_dataset = RetrievalFinetuneDataset(data=hotpot_trainset, K=10, samples_per_query=3)
-    multihop_dataset.save_train('data/dataset-train-colbert-gpt-3.5-turbo.json')
-    multihop_dataset.save_dev('data/dataset-dev-colbert-gpt-3.5-turbo.json')
+    multihop_dataset.save_train('data/dataset-train-colbert-gpt-3.5-turbo-1106_100.json')
+    multihop_dataset.save_dev('data/dataset-dev-colbert-gpt-3.5-turbo-1106_100.json')
     
     trainset = [x.with_inputs('question', 'context') for x in multihop_dataset.train]
     evalset = [x.with_inputs('question', 'context') for x in multihop_dataset.dev]
@@ -50,7 +50,7 @@ if __name__ == '__main__':
                 passage_map[q][c] = False
     
     print(passage_map)
-    with open('data/passage-map-gpt-3.5-turbo.json', 'w') as f:
+    with open('data/passage-map-gpt-3.5-turbo-1106_100.json', 'w') as f:
         json.dump(passage_map, f)
         
     
