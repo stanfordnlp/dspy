@@ -6,11 +6,12 @@ from dspy.retriever_finetune import GenerateSearchQuery, TEMPERATURE
 import json
 import numpy as np
 from collections import defaultdict
+from itertools import combinations
 import math
     
     
 class RetrievalFinetuneDataset(Dataset):
-    def __init__(self, *args, data: Dataset, passages_per_hop=1, max_hops=2, K=20, samples_per_query=10, **kwargs):
+    def __init__(self, *args, data: Dataset, passages_per_hop=1, max_hops=2, K=20, samples_per_query=10, perturb=True, **kwargs):
         super().__init__(*args, **kwargs)
         assert samples_per_query < math.comb(K, passages_per_hop)
         self.data = data
@@ -23,8 +24,13 @@ class RetrievalFinetuneDataset(Dataset):
         self.query_retrieval_history = {} # query -> topk psgs retrieved
         self.tuple_history = defaultdict(set) # query -> set of passage tuples we have already seen
         self.id_count = 0
-        self.sample_weights = np.power(np.full(K, 0.8), np.arange(K))
-        self.sample_weights = self.sample_weights / np.sum(self.sample_weights)
+        self.perturb = perturb
+        if perturb:
+            self.sample_weights = np.power(np.full(K, 0.8), np.arange(K))
+            self.sample_weights = self.sample_weights / np.sum(self.sample_weights)
+        else:
+            self.combs = list(combinations(range(K), passages_per_hop))
+            self.combs.sort(key=lambda x:sum(x))
         self.rng = np.random.default_rng(seed=0)
         self.generate_dataset()
         
@@ -39,8 +45,13 @@ class RetrievalFinetuneDataset(Dataset):
     def retrieve_and_sample(self, query):
         # can be really slow if samples_per_query is just less than comb(K, passages_per_hop), could sample from all perms -> remove seen tuples, but that would be memory expensive
         topK = self.retrieve_topK(query)
+        comb_index = 0
         while True:
-            passage_indices = tuple(self.rng.choice(np.arange(self.k), size=self.passages_per_hop,replace=False, p=self.sample_weights))
+            if self.perturb:
+                passage_indices = tuple(self.rng.choice(np.arange(self.k), size=self.passages_per_hop,replace=False, p=self.sample_weights))
+            else:
+                passage_indices = self.combs[comb_index]
+                comb_index += 1
             if passage_indices not in self.tuple_history[query]:
                 self.tuple_history[query].add(passage_indices)
                 return [topK[i] for i in passage_indices]
