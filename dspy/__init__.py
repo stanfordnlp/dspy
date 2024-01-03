@@ -25,4 +25,3 @@ HFClientVLLM = HFClientVLLM
 Anyscale = dsp.Anyscale
 HFModel = dsp.HFModel
 
-LlamaCpp = dsp.LlamaCpp
