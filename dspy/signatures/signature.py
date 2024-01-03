@@ -12,6 +12,13 @@ class SignatureMeta(type):
             for key, value in fields.items():
                 setattr(self, key, value)
 
+        def input_fields(self):
+            return {k: v for k, v in self.__dict__.items() if isinstance(v, InputField)}
+
+        def output_fields(self):
+            return {k: v for k, v in self.__dict__.items() if isinstance(v, OutputField)}
+    
+
     def __new__(cls, name, bases, class_dict):
         type_attributes = {}
 
@@ -48,7 +55,7 @@ class SignatureMeta(type):
         # Redirect attribute access to the template object when accessed on the class directly
         if attr not in cls.__dict__:
             return getattr(cls._template, attr)
-        return super().__getattr__(attr)
+        return super().__getattr__(attr)    
 
 class Signature(metaclass=SignatureMeta):
     def __init__(self, signature: str = "", instructions: str = ""):
