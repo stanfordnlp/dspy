@@ -1,4 +1,3 @@
-from attr import dataclass
 
 try:
     from llama_cpp import Llama
@@ -8,8 +7,7 @@ except ImportError as exc:
     ) from exc
 
 from dsp.modules.lm import LM
-from typing import Any, Literal, Optional
-import os
+from typing import Any, Literal
 
 
 class LlamaCpp(LM):
@@ -26,7 +24,6 @@ class LlamaCpp(LM):
         self.model_type = model_type if model_type else default_model_type
         self.provider = "llama"
 
-        print(os.listdir())
         self.kwargs = {
             "temperature": 0.0,
             "max_tokens": 150,
