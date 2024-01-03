@@ -2,7 +2,7 @@ import os
 import json
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 
 from dsp.modules.lm import LM
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
@@ -99,7 +99,7 @@ class HFModel(LM):
         self.history.append(history)
 
         return response
-
+    
     def _generate(self, prompt, **kwargs):
         assert not self.is_client
         # TODO: Add caching
