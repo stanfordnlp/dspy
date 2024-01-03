@@ -24,6 +24,7 @@ class LlamaCpp(LM):
 
         default_model_type = "text"
         self.model_type = model_type if model_type else default_model_type
+        self.provider = "llama"
 
         print(os.listdir())
         self.kwargs = {
