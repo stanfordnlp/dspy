@@ -273,3 +273,52 @@ class ChatModuleClient(HFModel):
         except Exception as e:
             print("Failed to parse output:", response.text)
             raise Exception("Received invalid output")
+
+
+class HFClientSGLang(HFModel):
+    def __init__(self, model, port, url="http://localhost", **kwargs):
+        super().__init__(model=model, is_client=True)
+        self.url = f"{url}:{port}"
+        self.headers = {"Content-Type": "application/json"}
+
+        self.kwargs = {
+            "temperature": 0.01,
+            "max_tokens": 75,
+            "top_p": 0.97,
+            "n": 1,
+            "stop": ["\n", "\n\n"],
+            **kwargs,
+        }
+
+    def _generate(self, prompt, **kwargs):
+        kwargs = {**self.kwargs, **kwargs}
+
+        payload = {
+            "model": kwargs.get("model", "default"),
+            "prompt": prompt,
+            **kwargs,
+        }
+
+        response = send_hfsglang_request_v00(
+            f"{self.url}/v1/completions",
+            json=payload,
+            headers=self.headers,
+        )
+
+        try:
+            json_response = response.json()
+            completions = json_response["choices"]
+            response = {
+                "prompt": prompt,
+                "choices": [{"text": c["text"]} for c in completions],
+            }
+            return response
+
+        except Exception as e:
+            print("Failed to parse JSON response:", response.text)
+            raise Exception("Received invalid JSON response from server")
+
+
+@CacheMemory.cache
+def send_hfsglang_request_v00(arg, **kwargs):
+    return requests.post(arg, **kwargs)
