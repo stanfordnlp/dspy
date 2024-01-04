@@ -69,7 +69,7 @@ class LM(ABC):
             text = ""
             if provider == "cohere":
                 text = choices[0].text
-            elif provider == "openai":
+            elif provider == "openai" or provider == "ollama":
                 text = ' ' + self._get_choice_text(choices[0]).strip()
             else:
                 text = choices[0]["text"]
