@@ -6,9 +6,9 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
-Main Paper (Oct 2023) —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
-New Features (Dec 2023) —— **[DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)**     
-Old Abstractions (Dec 2022) —— **[Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)**
+**[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+**[DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)**     
+**[Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)**
 
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
