@@ -6,9 +6,12 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
-Paper —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**
+Main Paper (Oct 2023) —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+New Features (Dec 2023) —— **[DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)**     
+Old Abstractions (Dec 2022) —— **[Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)**
 
-[<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
+
+**Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
 **DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
@@ -31,9 +34,9 @@ If you want to see **DSPy** in action, **[open our intro tutorial notebook](intr
 
 
 1. **[Installation](#1-installation)**
-1. **[Framework Syntax](#2-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
-1. **[Compiling: Two Powerful Concepts](#3-two-powerful-concepts-signatures--teleprompters)**
-1. **[Tutorials & Documentation](#4-documentation--tutorials)**
+1. **[Tutorials & Documentation](#2-documentation)**
+1. **[Framework Syntax](#3-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
+1. **[Compiling: Two Powerful Concepts](#4-two-powerful-concepts-signatures--teleprompters)**
 1. **[FAQ: Is DSPy right for me?](#5-faq-is-dspy-right-for-me)**
 
 
@@ -66,7 +69,44 @@ For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chr
 pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
 ```
 
-## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
+## 2) Documentation
+
+The DSPy documentation is divided into **tutorials**, **guides**, and **examples**.
+
+### A) Tutorials:
+
+DSPy Tutorials illustate how to start from scratch and build a powerful DSPy program on a specific task.
+
+If you're new here, start with **[our intro tutorial](intro.ipynb)**. We recommend you open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
+
+
+### B) Guides:
+
+Each DSPy guide presents how to use specific parts of the library.
+
+You will probably refer to these guides frequently, first to understand each concept in DSPy in isolation and then to copy/paste snippets that you can edit for your work. If you're new to DSPy, it's _usually_ best to go in this order. It's not necessary, though.
+
+1. **[DSPy Signatures](docs/guides/signatures.ipynb)**
+
+2. **[Language Models](docs/guides/language_models.ipynb)** and **[Retrieval Models](docs/guides/retrieval_models.ipynb)**
+
+3. **[DSPy Modules](docs/guides/modules.ipynb)**
+
+4. **[DSPy Optimizers](docs/guides/optimizers.ipynb)**
+
+5. **[DSPy Metrics](docs/guides/metrics.ipynb)**
+
+6. **[DSPy Assertions](docs/guides/assertions.ipynb)**
+
+
+### C) Examples:
+
+These are self-contained programs that illustrate how to build programs with DSPy.
+
+You can find many individual **examples** inside _and outside!_ the `examples/` folder and a bunch others tweeted by [@lateinteraction](https://twitter.com/lateinteraction) on Twitter/X.
+
+
+## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
 
 **DSPy** hides tedious prompt engineering, but it cleanly exposes the important decisions you need to make: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
 
@@ -108,12 +148,12 @@ The next section will discuss how to compile our simple `RAG` program. When we c
 If you later decide you need another step in your pipeline, just add another module and compile again. Maybe add a module that takes the chat history into account during search?
 
 
-## 3) Two Powerful Concepts: Signatures & Teleprompters
+## 4) Two Powerful Concepts: Signatures & Teleprompters
 
 To make it possible to compile any program you write, **DSPy** introduces two simple concepts: Signatures and Teleprompters.
 
 
-#### 3.a) Declaring the input/output behavior of LMs with `dspy.Signature`
+#### 4.a) Declaring the input/output behavior of LMs with `dspy.Signature`
 
 When we assign tasks to LMs in **DSPy**, we specify the behavior we need as a **Signature**. A signature is a declarative specification of input/output behavior of a **DSPy module**.
 
@@ -151,7 +191,7 @@ self.generate_answer = dspy.ChainOfThought(GenerateSearchQuery)
 You can optionally provide a `prefix` and/or `desc` key for each input or output field to refine or constraint the behavior of modules using your signature. The description of the sub-task itself is specified as the docstring (i.e., `"""Write a simple..."""`).
 
 
-#### 3.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
+#### 4.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
 
 After defining the `RAG` program, we can **compile** it. Compiling a program will update the parameters stored in each module. For large LMs, this is primarily in the form of creating and validating good demonstrations for inclusion in your prompt(s).
 
@@ -195,61 +235,6 @@ compiled_rag = teleprompter.compile(RAG(), trainset=my_rag_trainset)
 
 If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-shot demonstrations of chain-of-thought retrieval-augmented question answering on our data.
 
-
-## 4) Documentation & Tutorials
-
-While we work on new tutorials, please check out **[our intro notebook](intro.ipynb)**.
-
-Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
-
-For module documentation, please refer to our [documentation folder](https://github.com/stanfordnlp/dspy/tree/main/docs).
-
-
-#### Language Model Clients
-
-- [`dspy.OpenAI`](docs/language_models_client.md#openai)
-- [`dspy.Cohere`](docs/language_models_client.md#cohere)
-- [`dspy.TGI`](docs/language_models_client.md#tgi)
-- [`dspy.VLLM`](docs/language_models_client.md#vllm)
-
-#### Retrieval Model Clients
-
-- [`dspy.ColBERTv2`](docs/retrieval_models_client.md#colbertv2)
-- [`dspy.AzureCognitiveSearch`](docs/retrieval_models_client.md#azurecognitivesearch)
-- `dspy.Pyserini`
-- `dspy.Pinecone`
-- `dspy.Qdrant`
-- `dspy.Chromadb`
-- `dspy.Marqo`
-
-#### Signatures
-
-- `dspy.Signature`
-- `dspy.InputField`
-- `dspy.OutputField`
-
-#### Modules
-
-- [`dspy.Predict`](docs/modules.md#dspypredict)
-- [`dspy.Retrieve`](docs/modules.md#dspyretrieve)
-- [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
-- `dspy.ProgramOfThought`
-- [`dspy.ReAct`](docs/modules.md#dspyreact)
-- [`dspy.MultiChainComparison`](docs/modules.md#dspymultichaincomparison)
-- `dspy.SelfCritique` [coming soon]
-- `dspy.SelfRevision` [coming soon]
-- `dspy.majority` (self-consistency)
-
-  
-#### Teleprompters
-
-- [`dspy.teleprompt.LabeledFewShot`](docs/teleprompters.md#telepromptlabeledfewshot)
-- [`dspy.teleprompt.BootstrapFewShot`](docs/teleprompters.md#telepromptbootstrapfewshot)
-- [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
-- `dspy.teleprompt.LabeledFinetune` [coming soon]
-- [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
-- [`dspy.teleprompt.Ensemble`](docs/teleprompters.md#telepromptensemble)
-- `dspy.teleprompt.kNN`
 
 
 
@@ -341,7 +326,9 @@ If you use DSPy or DSP in a research paper, please cite our work as follows:
 ```
 
 You can also read more about the evolution of the framework from Demonstrate-Search-Predict to DSPy:
-* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023)
+
+* [**DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines**](https://arxiv.org/abs/2312.13382)   (Academic Paper, Dec 2023) 
+* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023) 
 * [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)

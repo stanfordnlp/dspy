@@ -24,3 +24,6 @@ HFClientVLLM = HFClientVLLM
 
 Anyscale = dsp.Anyscale
 HFModel = dsp.HFModel
+
+configure = settings.configure
+context = settings.context
