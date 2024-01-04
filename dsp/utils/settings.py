@@ -15,6 +15,7 @@ class Settings(object):
 
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance.lock = threading.Lock()
             cls._instance.main_tid = threading.get_ident()
             cls._instance.main_stack = []
             cls._instance.stack_by_thread = {}
