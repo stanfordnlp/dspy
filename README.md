@@ -71,20 +71,25 @@ pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
 
 ## 2) Documentation
 
-The DSPy documentation is divided into **tutorials**, **guides**, and **examples**.
+The DSPy documentation is divided into **tutorials** (step-by-step illustration of solving a task in DSPy), **guides** (how to use specific parts of the API), and **examples** (self-contained programs that illustrate usage).
 
-### A) Tutorials:
+### A) Tutorials
 
-DSPy Tutorials illustate how to start from scratch and build a powerful DSPy program on a specific task.
+| **Level** |  **Tutorial** |  **Run in Colab** |  **Description** |
+| --- | -------------  |  -------------  |  -------------  | 
+| Beginner |  [**Getting Started**](intro.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)  |  Introduces the basic building blocks in DSPy. Tackles the task of complex question answering with HotPotQA. |
+| Beginner | [**Compiling for Tricky Tasks**](examples/nli/scone/scone.ipynb) | N/A | Teaches LMs to reason about logical statements and negation. Uses GPT-4 to bootstrap few-shot CoT demonstations for GPT-3.5. Establishes a state-of-the-art result on [ScoNe](https://arxiv.org/abs/2305.19426). Contributed by [Chris Potts](https://twitter.com/ChrisGPotts/status/1740033519446057077). |
+| Beginner | [**Local Models & Custom Training Data**](skycamp2023.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/skycamp2023.ipynb) | Illustrates two different things together: how to use local models (Llama-2-13B in particular) and how to use your own data examples for training and development.
+| Intermediate | [**The DSPy Paper**](https://arxiv.org/abs/2310.03714) | N/A | Sections 3, 5, 6, and 7 of the DSPy paper can be consumed as a tutorial. They include explained code snippets, results, and discussions of the abstractions and API.
+| Intermediate | [**Finetuning for Complex Programs**](https://twitter.com/lateinteraction/status/1712135660797317577) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/skycamp2023.ipynb) | Teaches a local T5 model (770M) to do exceptionally well on HotPotQA. Uses only 200 labeled answers. Uses no hand-written prompts, no calls to OpenAI, and no labels for retrieval or reasoning.
+| Advanced | [**Information Extraction**](https://twitter.com/KarelDoostrlnck/status/1724991014207930696) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/drive/1CpsOiLiLYKeGrhmq579_FmtGsD5uZ3Qe) | Tackles extracting information from long articles (biomedical research papers). Combines in-context learning and retrieval to set SOTA on BioDEX. Contributed by [Karel D’Oosterlinck](https://twitter.com/KarelDoostrlnck/status/1724991014207930696).  |
 
-If you're new here, start with **[our intro tutorial](intro.ipynb)**. We recommend you open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
-### B) Guides:
+### B) Guides
 
-Each DSPy guide presents how to use specific parts of the library.
+If you're new to DSPy, it's probably best to go in sequential order. You will probably refer to these guides frequently after that, e.g. to copy/paste snippets that you can edit for your own DSPy programs.
 
-You will probably refer to these guides frequently, first to understand each concept in DSPy in isolation and then to copy/paste snippets that you can edit for your work. If you're new to DSPy, it's _usually_ best to go in this order. It's not necessary, though.
 
 1. **[DSPy Signatures](docs/guides/signatures.ipynb)**
 
@@ -99,11 +104,13 @@ You will probably refer to these guides frequently, first to understand each con
 6. **[DSPy Assertions](docs/guides/assertions.ipynb)**
 
 
-### C) Examples:
+### C) Examples
 
-These are self-contained programs that illustrate how to build programs with DSPy.
+The DSPy team believes complexity has to be justified. We take this seriously: we never release a complex tutorial (above) or example (below) _unless we can demonstrate empirically that this complexity has generally led to improved quality or cost._ This kind of rule is rarely enforced by other frameworks or docs, but you can count on it in DSPy examples.
 
-You can find many individual **examples** inside _and outside!_ the `examples/` folder and a bunch others tweeted by [@lateinteraction](https://twitter.com/lateinteraction) on Twitter/X.
+There's a bunch of examples in the `examples/` directory and in the top-level directory. We welcome contributions!
+
+You can find other examples tweeted by [@lateinteraction](https://twitter.com/lateinteraction) on Twitter/X.
 
 
 ## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
