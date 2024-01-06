@@ -52,7 +52,7 @@ docs = [
 ]
 
 [project.urls]
-homepage = "https://github.com/stanfordnlp/dsp"
+homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy"
@@ -61,10 +61,12 @@ description = "DSPy"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/stanfordnlp/dsp"
-documentation = "https://dspy-ai.readthedocs.io"
-repository = "https://github.com/stanfordnlp/dsp"
-keywords = ["dsp", "ai", "signal processing"]
+homepage = "https://github.com/stanfordnlp/dspy"
+repository = "https://github.com/stanfordnlp/dspy"
+# documentation = "https://dspy-ai.readthedocs.io"
+keywords = ["dspy", "ai", "language models", "llm", "openai", "huggingface", "RAG", "retrieval", "llama", "optimization", "pytorch", "autogen"]
+# may be a bit much
+
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
