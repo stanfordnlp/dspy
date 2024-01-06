@@ -40,7 +40,7 @@ Getting Started
 We recommend checking out our `Getting Started Guide <./getting_started/overview.html>`_ to help you navigate the documentation based on your expertise.
 
 🗺️ Contributing
-************
+*****************
 
 # TODO
 
@@ -59,22 +59,19 @@ Associated projects
    :caption: Getting Started
    :hidden:
 
-   getting_started/README.md
    getting_started/beginner/intro.ipynb
+   .. getting_started/README.md
 
 .. toctree::
-   :maxdepth: 2
-   :caption: DSPy Constructs
+   :maxdepth: 1
+   :caption: Guides & Tutorials
    :hidden:
 
-   dspy_constructs/modules/modules.md
-   dspy_constructs/retrieval/retrieval_models_client.md
-   dspy_constructs/teleprompters/teleprompters.md
-   dspy_constructs/language_models/language_models.md
-   dspy_constructs/language_models/using_local_models.md
-   dspy_constructs/language_models/language_models_client.md
-   dspy_constructs/primitives/assertions.md
-   dspy_constructs/signatures/signatures.md
+   guides/modules.ipynb
+   guides/language_models.ipynb
+   guides/optimizers.ipynb
+   guides/signatures.ipynb
+
 
 
 
