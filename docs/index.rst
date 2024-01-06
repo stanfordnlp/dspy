@@ -60,7 +60,6 @@ Associated projects
    :hidden:
 
    getting_started/beginner/intro.ipynb
-   .. getting_started/README.md
 
 .. toctree::
    :maxdepth: 1
@@ -71,6 +70,13 @@ Associated projects
    guides/language_models.ipynb
    guides/optimizers.ipynb
    guides/signatures.ipynb
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+   :hidden:
+
+
 
 
 
