@@ -1,3 +1,4 @@
+# Assertions
 
 ## Suggest
 The `Suggest` class is a type of `Constraint` that represents a suggestion in the DSPy framework. It takes a boolean result and an optional message as parameters. If the result is `False`, it raises a `DSPySuggestionError` unless `bypass_suggest` is set in the settings.

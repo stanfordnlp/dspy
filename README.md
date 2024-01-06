@@ -26,7 +26,7 @@ The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **wit
 For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
 
 
-If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
+If you want to see **DSPy** in action, **[open our intro tutorial notebook](docs/getting_started/beginner/intro.ipynb)**.
 
 
 ### Table of Contents
@@ -199,7 +199,7 @@ If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-s
 
 ## 4) Documentation & Tutorials
 
-While we work on new tutorials and documentation, please check out **[our intro notebook](intro.ipynb)**.
+While we work on new tutorials and documentation, please check out **[our intro notebook](docs/getting_started/beginner/intro.ipynb)**.
 
 Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 

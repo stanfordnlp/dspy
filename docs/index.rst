@@ -60,11 +60,10 @@ Associated projects
    :hidden:
 
    getting_started/README.md
-
-
+   getting_started/beginner/intro.ipynb
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: DSPy Constructs
    :hidden:
 
@@ -73,6 +72,9 @@ Associated projects
    dspy_constructs/teleprompters/teleprompters.md
    dspy_constructs/language_models/language_models.md
    dspy_constructs/language_models/using_local_models.md
+   dspy_constructs/language_models/language_models_client.md
+   dspy_constructs/primitives/assertions.md
+   dspy_constructs/signatures/signatures.md
 
 
 
@@ -115,3 +117,51 @@ You can also read more about the evolution of the framework from Demonstrate-Sea
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
+
+| Beginner |  [**Getting Started**](intro.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)  |  Introduces the basic building blocks in DSPy. Tackles the task of complex question answering with HotPotQA. |
+| Beginner | [**Compiling for Tricky Tasks**](examples/nli/scone/scone.ipynb) | N/A | Teaches LMs to reason about logical statements and negation. Uses GPT-4 to bootstrap few-shot CoT demonstations for GPT-3.5. Establishes a state-of-the-art result on [ScoNe](https://arxiv.org/abs/2305.19426). Contributed by [Chris Potts](https://twitter.com/ChrisGPotts/status/1740033519446057077). |
+| Beginner | [**Local Models & Custom Training Data**](skycamp2023.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/skycamp2023.ipynb) | Illustrates two different things together: how to use local models (Llama-2-13B in particular) and how to use your own data examples for training and development.
+
+
+# TODO: map:
+#### Language Model Clients
+
+- [`dspy.OpenAI`](docs/language_models/language_models_client.md#openai)
+- [`dspy.Cohere`](docs/language_models/language_models_client.md#cohere)
+- [`dspy.TGI`](docs/language_models/language_models_client.md#tgi)
+- [`dspy.VLLM`](docs/language_models/language_models_client.md#vllm)
+
+#### Retrieval Model Clients
+
+- [`dspy.ColBERTv2`](docs/retrieval/retrieval_models_client.md#colbertv2)
+- [`dspy.AzureCognitiveSearch`](docs/retrieval/retrieval_models_client.md#azurecognitivesearch)
+
+
+#### Signatures
+
+- `dspy.Signature`
+- `dspy.InputField`
+- `dspy.OutputField`
+
+#### Modules
+
+- [`dspy.Predict`](docs/modules/modules.md#dspypredict)
+- [`dspy.Retrieve`](docs/modules/modules.md#dspyretrieve)
+- [`dspy.ChainOfThought`](docs/modules/modules.md#dspychainofthought)
+- `dspy.majority` (functional self-consistency)
+- `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
+- [`dspy.ReAct`](docs/modules/modules.md#dspyreact)
+- [`dspy.MultiChainComparison`](docs/modules/modules.md#dspymultichaincomparison)
+- `dspy.SelfCritique` [coming soon]
+- `dspy.SelfRevision` [coming soon]
+
+
+#### Teleprompters
+
+- [`dspy.teleprompt.LabeledFewShot`](docs/Teleprompters/teleprompters.md#telepromptlabeledfewshot)
+- [`dspy.teleprompt.BootstrapFewShot`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfewshot)
+- [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
+- `dspy.teleprompt.LabeledFinetune` [coming soon]
+- [`dspy.teleprompt.BootstrapFinetune`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfinetune)
+- [`dspy.teleprompt.Ensemble`](docs/Teleprompters/teleprompters.md#telepromptensemble)
+- `dspy.teleprompt.kNN` [coming soon]

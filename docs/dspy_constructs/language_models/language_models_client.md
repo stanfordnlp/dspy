@@ -17,12 +17,12 @@ for i, completion in enumerate(completions):
 
 ## Supported LM Clients
 
-| LM Client | Jump To |
-| --- | --- |
-| OpenAI | [OpenAI Section](#openai) |
-| Cohere | [Cohere Section](#cohere) |
-| TGI | [TGI Section](#tgi) |
-| VLLM | [VLLM Section](#vllm) |
+| LM Client                 | Jump To                                                  |
+|---------------------------|----------------------------------------------------------|
+| OpenAI                    | [OpenAI](#openai)                                        |
+| Cohere                    | [Cohere](#cohere)                                        |
+| Text-Generation-Inference | [HF TGI: Reccomended Local Model serving platform](#tgi) |
+| VLLM                      | [VLLM](#vllm)                                            |
 
 ## OpenAI
 

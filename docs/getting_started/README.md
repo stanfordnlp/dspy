@@ -1,9 +1,5 @@
 current docs link: https://dspy-ai.readthedocs.io/en/latest/
 
-<p align="center">
-  <img align="center" src="docs/images/DSPy8.png" width="460px" />
-</p>
-<p align="left">
 
 
 ## DSPy: _Programming_—not prompting—Foundation Models
@@ -212,47 +208,6 @@ Or open it directly in free Google Colab: [<img align="center" src="https://cola
 We have work-in-progress module documentation at [this PR](https://github.com/stanfordnlp/dspy/pull/93). Please let us know if anything there is unclear.
 
 
-#### Language Model Clients
-
-- [`dspy.OpenAI`](docs/language_models/language_models_client.md#openai)
-- [`dspy.Cohere`](docs/language_models/language_models_client.md#cohere)
-- [`dspy.TGI`](docs/language_models/language_models_client.md#tgi)
-- [`dspy.VLLM`](docs/language_models/language_models_client.md#vllm)
-
-#### Retrieval Model Clients
-
-- [`dspy.ColBERTv2`](docs/retrieval/retrieval_models_client.md#colbertv2)
-- [`dspy.AzureCognitiveSearch`](docs/retrieval/retrieval_models_client.md#azurecognitivesearch)
-
-
-#### Signatures
-
-- `dspy.Signature`
-- `dspy.InputField`
-- `dspy.OutputField`
-
-#### Modules
-
-- [`dspy.Predict`](docs/modules/modules.md#dspypredict)
-- [`dspy.Retrieve`](docs/modules/modules.md#dspyretrieve)
-- [`dspy.ChainOfThought`](docs/modules/modules.md#dspychainofthought)
-- `dspy.majority` (functional self-consistency)
-- `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
-- [`dspy.ReAct`](docs/modules/modules.md#dspyreact)
-- [`dspy.MultiChainComparison`](docs/modules/modules.md#dspymultichaincomparison)
-- `dspy.SelfCritique` [coming soon]
-- `dspy.SelfRevision` [coming soon]
-
-  
-#### Teleprompters
-
-- [`dspy.teleprompt.LabeledFewShot`](docs/Teleprompters/teleprompters.md#telepromptlabeledfewshot)
-- [`dspy.teleprompt.BootstrapFewShot`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfewshot)
-- [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
-- `dspy.teleprompt.LabeledFinetune` [coming soon]
-- [`dspy.teleprompt.BootstrapFinetune`](docs/Teleprompters/teleprompters.md#telepromptbootstrapfinetune)
-- [`dspy.teleprompt.Ensemble`](docs/Teleprompters/teleprompters.md#telepromptensemble)
-- `dspy.teleprompt.kNN` [coming soon]
 
 </details>
 
