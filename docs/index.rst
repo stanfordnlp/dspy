@@ -1,7 +1,6 @@
 Welcome to DSPy
 ##########################
 
-
 .. image:: images/DSPy8.png
    :width: 460px
    :align: center
@@ -40,69 +39,42 @@ Getting Started
 
 We recommend checking out our `Getting Started Guide <./getting_started/overview.html>`_ to help you navigate the documentation based on your expertise.
 
-🗺️ Ecosystem
+🗺️ Contributing
 ************
 
-To download or contribute, find DSPy on:
+# TODO
 
-- Github: https://github.com/stanfordnlp/dspy
-- PyPi:
-
-  - DSPy: https://pypi.org/project/dspy/
-
-- NPM (Typescript/Javascript):
-   - Github: https://github.com/stanfordnlp/dspy-ts
-   - Docs: https://ts.dspy.ai/
-   - DSPy.TS: https://www.npmjs.com/package/dspy
 
 Community
----------
+************
 Need help? Have a feature suggestion? Join the DSPy community:
 
-- Twitter: https://twitter.com/dspy_framework
 - Discord: https://discord.gg/dspy
 
 Associated projects
 -------------------
 
-- 🏡 DSPyHub: https://dspyhub.ai | A large (and growing!) collection of custom data connectors
-- 🧪 DSPyLab: https://github.com/stanfordnlp/dspy-lab | Innovative projects leveraging DSPy capabilities
-
 .. toctree::
    :maxdepth: 2
-   :caption: Table of Contents
+   :caption: Getting Started
    :hidden:
 
-   
-   modules/modules.md
-   retrieval/retrieval_models_client.md
-   teleprompters/teleprompters.md
-   language_models/language_models.md
-   language_models/using_local_models.md
+   getting_started/README.md
+
+
 
 .. toctree::
    :maxdepth: 1
-   :caption: API Reference
+   :caption: DSPy Constructs
    :hidden:
 
-   api_reference/index
+   dspy_constructs/modules/modules.md
+   dspy_constructs/retrieval/retrieval_models_client.md
+   dspy_constructs/teleprompters/teleprompters.md
+   dspy_constructs/language_models/language_models.md
+   dspy_constructs/language_models/using_local_models.md
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Community
-   :hidden:
 
-   community/integrations.md
-   community/frequently_asked_questions.md
-   community/full_stack_projects.md
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Changes
-   :hidden:
-
-   changes/changelog.rst
-   changes/deprecated_terms.md
 
 Contributors & Acknowledgements
 -------------------------------

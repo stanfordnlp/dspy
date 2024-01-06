@@ -51,8 +51,7 @@ html_static_path = ['_static']
 
 html_css_files = [
     'css/custom.css',
-    'css/algolia.css',
-    'https://cdn.jsdelivr.net/npm/@docsearch/css@3',
+
 ]
 # html_js_files = [
 #     'js/mendablesearch.js',
