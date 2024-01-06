@@ -37,7 +37,7 @@ DSPy is designed for NLP/AI researchers and practitioners who require a powerful
 Getting Started
 ****************
 
-We recommend checking out our `Getting Started Guide <./getting_started/overview.html>`_ to help you navigate the documentation based on your expertise.
+We recommend checking out our `Getting Started Guide <./getting_started/beginner/intro.html>`_ to help you understand how to work with DSPy.
 
 🗺️ Contributing
 *****************
@@ -61,6 +61,7 @@ Associated projects
 
    getting_started/beginner/intro.ipynb
 
+
 .. toctree::
    :maxdepth: 1
    :caption: Guides & Tutorials
@@ -75,6 +76,15 @@ Associated projects
    :maxdepth: 2
    :caption: API Reference
    :hidden:
+
+   api_reference/language_models/language_models_client
+   api_reference/language_models/using_local_models
+   api_reference/modules/modules
+   api_reference/primitives/assertions
+   api_reference/retrieval/retrieval_models_client
+   api_reference/signatures/signatures
+   api_reference/teleprompters/teleprompters
+
 
 
 
