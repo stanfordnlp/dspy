@@ -87,7 +87,8 @@ Associated projects
    :caption: Tutorials
    :hidden:
 
-   tutorials/beginner/intro.ipynb
+   tutorials/tuts.md
+   tutorials/intro.ipynb
 
 
 .. toctree::

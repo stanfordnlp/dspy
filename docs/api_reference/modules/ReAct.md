@@ -1,4 +1,4 @@
-# dspy.ReAct
+# ReAct
 
 ### Constructor
 
