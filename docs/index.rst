@@ -71,6 +71,7 @@ Associated projects
    guides/language_models.ipynb
    guides/optimizers.ipynb
    guides/signatures.ipynb
+   guides/assertions.ipynb
 
 .. toctree::
    :maxdepth: 2
@@ -78,7 +79,6 @@ Associated projects
    :hidden:
 
    api_reference/language_models/language_models_client
-   api_reference/language_models/using_local_models
    api_reference/modules/modules
    api_reference/primitives/assertions
    api_reference/retrieval/retrieval_models_client
@@ -137,12 +137,6 @@ You can also read more about the evolution of the framework from Demonstrate-Sea
 
 
 # TODO: map:
-#### Language Model Clients
-
-- [`dspy.OpenAI`](docs/language_models/language_models_client.md#openai)
-- [`dspy.Cohere`](docs/language_models/language_models_client.md#cohere)
-- [`dspy.TGI`](docs/language_models/language_models_client.md#tgi)
-- [`dspy.VLLM`](docs/language_models/language_models_client.md#vllm)
 
 #### Retrieval Model Clients
 
