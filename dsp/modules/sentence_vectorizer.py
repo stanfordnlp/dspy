@@ -109,6 +109,12 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
         return embeddings
 
 
+try:
+    OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
+except Exception:
+    OPENAI_LEGACY = True
+
+
 class OpenAIVectorizer(BaseSentenceVectorizer):
     '''
     This vectorizer uses OpenAI API to convert texts to embeddings. Changing `model` is not
@@ -124,6 +130,11 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
         self.model = model
         self.embed_batch_size = embed_batch_size
 
+        if OPENAI_LEGACY:
+            self.Embedding = openai.Embedding
+        else:
+            self.Embedding = openai.embeddings
+
         if api_key:
             openai.api_key = api_key
 
@@ -138,7 +149,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             cur_batch = text_to_vectorize[start_idx: end_idx]
             # OpenAI API call:
-            response = openai.Embedding.create(
+            response = self.Embedding.create(
                 model=self.model,
                 input=cur_batch
             )

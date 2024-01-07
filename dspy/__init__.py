@@ -1,5 +1,5 @@
 from dsp.modules.hf_client import ChatModuleClient
-from dsp.modules.hf_client import HFServerTGI, HFClientVLLM
+from dsp.modules.hf_client import HFServerTGI, HFClientVLLM, HFClientSGLang
 from .signatures import *
 
 from .retrieve import *
@@ -24,3 +24,6 @@ HFClientVLLM = HFClientVLLM
 
 Anyscale = dsp.Anyscale
 HFModel = dsp.HFModel
+
+configure = settings.configure
+context = settings.context
