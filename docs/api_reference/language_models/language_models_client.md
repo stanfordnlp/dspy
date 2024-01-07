@@ -20,9 +20,9 @@ for i, completion in enumerate(completions):
 ---
 maxdepth: 1
 ---
-OpenAI <./hosted/openai.md>
-Cohere <./hosted/cohere.md>
-Anyscale <./hosted/anyscale.md>
+OpenAI <openai.md>
+Cohere <cohere.md>
+Anyscale <anyscale.md>
 ```
 
 ### Local
@@ -32,8 +32,8 @@ Anyscale <./hosted/anyscale.md>
 maxdepth: 1
 ---
 
-HFModel <./local/HFModel.md>
-TGI <./local/HFTGI.md>
-VLLM <./local/vLLM.md>
-LiteLLM <./local/liteLLM.md>
+HFModel <HFModel.md>
+TGI <HFTGI.md>
+VLLM <vLLM.md>
+LiteLLM <liteLLM.md>
 ``` 

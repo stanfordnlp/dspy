@@ -5,18 +5,43 @@ Welcome to DSPy
    :width: 460px
    :align: center
 
-DSPy is an innovative framework designed for solving advanced tasks with language models (LMs) and retrieval models (RMs). It unifies techniques for prompting, fine-tuning, and reasoning — along with approaches for self-improvement and augmentation with retrieval and tools — all expressed through modules that compose and learn.
+**DSPy** is the framework for solving advanced tasks with language
+models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for
+**prompting** and **fine-tuning** LMs — and approaches for
+**reasoning**, **self-improvement**, and **augmentation with retrieval
+and tools**. All of these are expressed through modules that compose and
+learn.
+
 
 
 🚀 Why DSPy?
 ##########################
 
-DSPy provides composable and declarative modules for instructing LMs in a familiar Pythonic syntax, upgrading prompting techniques like chain-of-thought and self-reflection from hand-adapted string manipulation tricks into truly modular generalized operations that learn to adapt to your task.
+-  **DSPy** provides **composable and declarative modules** for
+   instructing LMs in a familiar Pythonic syntax. It upgrades “prompting
+   techniques” like chain-of-thought and self-reflection from
+   hand-adapted *string manipulation tricks* into truly modular
+   *generalized operations that learn to adapt to your task*.
 
-DSPy introduces an automatic compiler that teaches LMs how to conduct the declarative steps in your program. The DSPy compiler bootstraps prompts and finetunes from minimal data without needing manual labels for the intermediate steps in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
+-  **DSPy** introduces an **automatic compiler that teaches LMs** how to
+   conduct the declarative steps in your program. Specifically, the
+   **DSPy compiler** will internally *trace* your program and then
+   **craft high-quality prompts for large LMs (or train automatic
+   finetunes for small LMs)** to teach them the steps of your task.
 
-For complex tasks, DSPy can routinely teach powerful models like GPT-3.5 and local models like T5-base or Llama2-13b to be much more reliable at tasks. DSPy will compile the same program into different few-shot prompts and/or finetunes for each LM.
+The **DSPy compiler** *bootstraps* prompts and finetunes from minimal
+data **without needing manual labels for the intermediate steps** in
+your program. Instead of brittle “prompt engineering” with hacky string
+manipulation, you can explore a systematic space of modular and
+trainable pieces.
 
+For complex tasks, **DSPy** can routinely teach powerful models like
+``GPT-3.5`` and local models like ``T5-base`` or ``Llama2-13b`` to be
+much more reliable at tasks. **DSPy** will compile the *same program*
+into different few-shot prompts and/or finetunes for each LM.
+
+📦 Installation
+*************************
 To install the library:
 
 .. code-block:: bash
@@ -34,10 +59,13 @@ For the optional Pinecone, Qdrant, chromadb, or marqo retrieval integration(s), 
 
 DSPy is designed for NLP/AI researchers and practitioners who require a powerful and flexible framework for composing and optimizing LM-based applications. The intuitive high-level API empowers beginners, while the lower-level APIs allow advanced users to customize and extend modules to fit their needs.
 
-Getting Started
+
+
+Reading the Docs
 ****************
 
-We recommend checking out our `Getting Started Guide <./getting_started/beginner/intro.html>`_ to help you understand how to work with DSPy.
+The DSPy documentation is divided into **tutorials**  (step-by-step illustration of solving a task in DSPy), **guides** (how to use specific parts of the API), and **examples** (self-contained programs that illustrate usage).
+
 
 🗺️ Contributing
 *****************
@@ -56,15 +84,15 @@ Associated projects
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started
+   :caption: Tutorials
    :hidden:
 
-   getting_started/beginner/intro.ipynb
+   tutorials/beginner/intro.ipynb
 
 
 .. toctree::
    :maxdepth: 1
-   :caption: Guides & Tutorials
+   :caption: Guides
    :hidden:
 
    guides/modules.ipynb
@@ -72,6 +100,16 @@ Associated projects
    guides/optimizers.ipynb
    guides/signatures.ipynb
    guides/assertions.ipynb
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples
+   :hidden:
+
+   examples/nli/scone/scone.ipynb
+   examples/qa/hotpotqa/hotpotqa.ipynb
+   examples/qa/boolq/boolq.ipynb
+   
 
 .. toctree::
    :maxdepth: 2

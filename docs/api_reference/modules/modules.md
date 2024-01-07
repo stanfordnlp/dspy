@@ -1,4 +1,4 @@
-# dspy.Modules Documentation
+# Modules (detailed)
 
 This documentation provides an overview of the DSPy Modules.
 
