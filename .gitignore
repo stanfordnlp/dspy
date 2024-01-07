@@ -10,7 +10,7 @@
 /docs/doctrees/
 /docs/html/
 /docs/_build/
-
+docs/_static/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
