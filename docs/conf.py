@@ -29,7 +29,7 @@ extensions = [
     'sphinxcontrib.autodoc_pydantic',
     'sphinx_reredirects',
     'sphinx_automodapi.automodapi',
-    'hoverxref.extension',
+    # TODO: enable hover for easier grokking 'hoverxref.extension',
 ]
 source_suffix = ['.rst', '.md']
 
