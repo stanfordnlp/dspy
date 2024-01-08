@@ -85,6 +85,8 @@ The DSPy documentation is divided into **tutorials** (step-by-step illustration 
 | Advanced | [**Information Extraction**](https://twitter.com/KarelDoostrlnck/status/1724991014207930696) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/drive/1CpsOiLiLYKeGrhmq579_FmtGsD5uZ3Qe) | Tackles extracting information from long articles (biomedical research papers). Combines in-context learning and retrieval to set SOTA on BioDEX. Contributed by [Karel D’Oosterlinck](https://twitter.com/KarelDoostrlnck/status/1724991014207930696).  |
 
 
+You may also find this [YouTube intro](https://www.youtube.com/watch?v=im7bCLW2aM4) useful. Many people have told us they "got" the framework best after watching.
+
 
 ### B) Guides
 
