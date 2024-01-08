@@ -53,6 +53,7 @@ class GPT3(LM):
     ):
         super().__init__(model)
         self.provider = "openai"
+        openai.api_type = api_provider
 
         default_model_type = (
             "chat"
@@ -67,8 +68,7 @@ class GPT3(LM):
                 "engine" in kwargs or "deployment_id" in kwargs
             ), "Must specify engine or deployment_id for Azure API instead of model."
             assert "api_version" in kwargs, "Must specify api_version for Azure API"
-            assert "api_base" in kwargs, "Must specify api_base for Azure API"
-            openai.api_type = "azure"
+            assert api_base is not None, "Must specify api_base for Azure API"
             if kwargs.get("api_version"):
                 openai.api_version = kwargs["api_version"]
 
