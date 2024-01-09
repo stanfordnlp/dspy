@@ -188,7 +188,7 @@ def truncate_cell(content):
 def configure_dataframe_display(df, metric_name):
     """Set various pandas display options for DataFrame."""
     pd.options.display.max_colwidth = None
-    pd.set_option('display.max_colwidth', 15)  # Adjust the number as needed
+    pd.set_option('display.max_colwidth', 20)  # Adjust the number as needed
     pd.set_option('display.width', 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')

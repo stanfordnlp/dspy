@@ -39,6 +39,7 @@ class Settings(object):
                 release=0,
                 bypass_assert=False,
                 bypass_suggest=False,
+                langchain_history=[]
             )
             cls._instance.__append(config)
 

@@ -101,6 +101,7 @@ class LangChainPredict(Predict, Runnable): #, RunnableBinding):
         # print('#> len(demos) =', len(demos))
         # print(f"#> {prompt}")
         # print(f"#> PRED = {content}\n\n\n")
+        dspy.settings.langchain_history.append((prompt, pred))
             
         if dsp.settings.trace is not None:
             trace = dsp.settings.trace
