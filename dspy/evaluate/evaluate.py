@@ -192,7 +192,7 @@ def configure_dataframe_display(df, metric_name):
     pd.set_option('display.width', 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
+    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'{x}')
 
     # Return styled DataFrame
     return df.style.set_table_styles([
