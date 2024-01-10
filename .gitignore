@@ -42,4 +42,4 @@ finetuning_ckpts/
 .idea
 assertion.log
 *.log
-cache.db
+*.db
