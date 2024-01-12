@@ -9,6 +9,12 @@ import backoff
 from dsp.utils import dotdict
 
 try:
+    import openai.error
+    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+except Exception:
+    ERRORS = (openai.RateLimitError, openai.APIError)
+
+try:
     import chromadb
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
@@ -108,7 +114,7 @@ class ChromadbRM(dspy.Retrieve):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.RateLimitError),
+        ERRORS,
         max_time=15,
     )
     def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
