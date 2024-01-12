@@ -3,7 +3,11 @@ import tqdm
 import threading
 import pandas as pd
 
-from IPython.display import display as ipython_display, HTML
+try:
+    from IPython.display import display as ipython_display, HTML
+except ImportError:
+    ipython_display = print
+    HTML = lambda x: x
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dsp.utils import EM
