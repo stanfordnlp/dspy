@@ -3,7 +3,11 @@ import tqdm
 import threading
 import pandas as pd
 
-from IPython.display import display as ipython_display, HTML
+try:
+    from IPython.display import display as ipython_display, HTML
+except ImportError:
+    ipython_display = print
+    HTML = lambda x: x
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dsp.utils import EM
@@ -188,11 +192,11 @@ def truncate_cell(content):
 def configure_dataframe_display(df, metric_name):
     """Set various pandas display options for DataFrame."""
     pd.options.display.max_colwidth = None
-    pd.set_option('display.max_colwidth', 15)  # Adjust the number as needed
+    pd.set_option('display.max_colwidth', 20)  # Adjust the number as needed
     pd.set_option('display.width', 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
+    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'{x}')
 
     # Return styled DataFrame
     return df.style.set_table_styles([

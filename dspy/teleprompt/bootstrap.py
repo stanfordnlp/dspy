@@ -60,9 +60,9 @@ class BootstrapFewShot(Teleprompter):
         self.student = student.reset_copy()
         self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
-        assert self.student._compiled is False, "Student must be uncompiled."
+        assert getattr(self.student, '_compiled', False) is False, "Student must be uncompiled."
 
-        if self.max_labeled_demos and self.teacher._compiled is False:
+        if self.max_labeled_demos and getattr(self.teacher, '_compiled', False) is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
 
