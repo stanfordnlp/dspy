@@ -64,7 +64,7 @@ readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 # documentation = "https://dspy-ai.readthedocs.io"
-keywords = ["dspy", "ai", "language models", "llm", "openai", "huggingface", "RAG", "retrieval", "llama", "optimization", "pytorch", "autogen"]
+keywords = ["dspy", "ai", "language models", "llm", "openai"]
 # may be a bit much
 
 
