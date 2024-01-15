@@ -39,35 +39,47 @@ def _build_error_msg(feedback_msgs):
 class DSPyAssertionError(AssertionError):
     """Custom exception raised when a DSPy `Assert` fails."""
 
-    def __init__(self, id: str, msg: str, state: Any = None) -> None:
+    def __init__(
+        self, id: str, msg: str, state: Any = None, is_metric: bool = False
+    ) -> None:
         super().__init__(msg)
         self.id = id
         self.msg = msg
         self.state = state
+        self.is_metric = is_metric
 
 
 class DSPySuggestionError(AssertionError):
     """Custom exception raised when a DSPy `Suggest` fails."""
 
     def __init__(
-        self, id: str, msg: str, target_module: Any = None, state: Any = None
+        self,
+        id: str,
+        msg: str,
+        target_module: Any = None,
+        state: Any = None,
+        is_metric: bool = False,
     ) -> None:
         super().__init__(msg)
         self.id = id
         self.msg = msg
         self.target_module = target_module
         self.state = state
+        self.is_metric = is_metric
 
 
 #################### Assertion Primitives ####################
 
 
 class Constraint:
-    def __init__(self, result: bool, msg: str = "", target_module=None):
+    def __init__(
+        self, result: bool, msg: str = "", target_module=None, is_metric: bool = False
+    ):
         self.id = str(uuid.uuid4())
         self.result = result
         self.msg = msg
         self.target_module = target_module
+        self.is_metric = is_metric
 
         self.__call__()
 
@@ -85,7 +97,10 @@ class Assert(Constraint):
             else:
                 logger.error(f"AssertionError: {self.msg}")
                 raise DSPyAssertionError(
-                    id=self.id, msg=self.msg, state=dsp.settings.trace
+                    id=self.id,
+                    msg=self.msg,
+                    state=dsp.settings.trace,
+                    is_metric=self.is_metric,
                 )
         else:
             raise ValueError("Assertion function should always return [bool]")
@@ -108,6 +123,7 @@ class Suggest(Constraint):
                     msg=self.msg,
                     target_module=self.target_module,
                     state=dsp.settings.trace,
+                    is_metric=self.is_metric,
                 )
         else:
             raise ValueError("Suggestion function should always return [bool]")
@@ -200,7 +216,11 @@ def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
 
                 # if last backtrack: ignore suggestion errors
                 if i == max_backtracks:
-                    result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
+                    result = (
+                        bypass_suggest_handler(func)(*args, **kwargs)
+                        if bypass_suggest
+                        else None
+                    )
                     break
 
                 else:
@@ -216,7 +236,8 @@ def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                         )
 
                         # increment failure count for optimization
-                        dspy.settings.suggest_failure_count += 1
+                        if e.is_metric:
+                            dspy.settings.suggest_failure_count += 1
 
                         if dsp.settings.trace:
                             if suggest_target_module:
