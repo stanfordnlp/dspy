@@ -2,6 +2,8 @@ import dsp
 import tqdm
 import random
 import threading
+
+import dspy
 from dspy.predict.retry import Retry
 
 from dspy.primitives import Example
@@ -42,6 +44,9 @@ class BootstrapFewShot(Teleprompter):
         self.max_errors= max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
+        
+        self.suggest_failures = 0
+        self.assert_failures = 0
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
@@ -53,6 +58,10 @@ class BootstrapFewShot(Teleprompter):
 
         self.student = self._train()
         self.student._compiled = True
+        
+        # number of suggestion/assertion the student failed when it was learning
+        self.student._suggest_failures = self.suggest_failures
+        self.student._assert_failures = self.assert_failures
 
         return self.student
     
@@ -102,12 +111,14 @@ class BootstrapFewShot(Teleprompter):
                     break
 
                 if example_idx not in bootstrapped:
-                    success = self._bootstrap_one_example(example, round_idx)
+                    success, suggest_failures = self._bootstrap_one_example(example, round_idx)
 
                     if success:
                         bootstrapped[example_idx] = True
-            
+                        self.suggest_failures += suggest_failures
+
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
+        print(f"# of suggestion failures during bootstrapping: {self.suggest_failures}")
         
         # Unbootstrapped training examples
 
@@ -124,6 +135,7 @@ class BootstrapFewShot(Teleprompter):
         name2traces = self.name2traces
         teacher = self.teacher #.deepcopy()
         predictor_cache = {}
+        suggest_failures = 0
 
         try:
             with dsp.settings.context(trace=[], **self.teacher_settings):
@@ -141,8 +153,9 @@ class BootstrapFewShot(Teleprompter):
 
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
-
+                
                 success = (self.metric is None) or self.metric(example, prediction, trace)
+                suggest_failures = dspy.settings.suggest_failure_count
                 # print(success, example, prediction)
         except Exception as e:
             success = False
@@ -176,7 +189,7 @@ class BootstrapFewShot(Teleprompter):
 
                 name2traces[predictor_name].append(demo)
         
-        return success
+        return success, suggest_failures
 
     def _train(self):
         rng = random.Random(0)

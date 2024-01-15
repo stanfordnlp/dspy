@@ -99,6 +99,9 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             all_subscores.append(subscores)
 
+            if hasattr(program2, '_suggest_failures'):
+                score = score - program2._suggest_failures * 0.2
+
             print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors()])
 
             if len(scores) == 0 or score > max(scores):
