@@ -44,12 +44,10 @@ class WeaviateRM(dspy.Retrieve):
 
     def __init__(self, 
                  weaviate_collection_name: str, 
-                 weaviate_content_key: str, 
                  weaviate_client: weaviate.Client, 
                  k: int = 3
         ):
         self._weaviate_collection_name = weaviate_collection_name
-        self._weaviate_content_key = weaviate_content_key
         self._weaviate_client = weaviate_client
 
         super().__init__(k=k)
