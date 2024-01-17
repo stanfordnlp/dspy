@@ -185,7 +185,7 @@ def assert_no_except_handler(func):
     return wrapper
 
 
-def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
+def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
     """Handler for backtracking suggestion.
 
     Re-run the latest predictor up to `max_backtracks` times,
@@ -202,6 +202,7 @@ def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
             # Predictor -> List[feedback_msg]
             dspy.settings.predictor_feedbacks = {}
 
+            current_error = None
             for i in range(max_backtracks + 1):
                 if i > 0 and dspy.settings.backtrack_to is not None:
                     # generate values for new fields
@@ -216,18 +217,21 @@ def suggest_backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
 
                 # if last backtrack: ignore suggestion errors
                 if i == max_backtracks:
+                    if isinstance(current_error, DSPyAssertionError):
+                        raise current_error
                     result = (
                         bypass_suggest_handler(func)(*args, **kwargs)
                         if bypass_suggest
                         else None
                     )
                     break
-
                 else:
                     try:
                         result = func(*args, **kwargs)
                         break
-                    except DSPySuggestionError as e:
+                    except (DSPySuggestionError, DSPyAssertionError) as e:
+                        if not current_error:
+                            current_error = e
                         suggest_id, error_msg, suggest_target_module, error_state = (
                             e.id,
                             e.msg,
@@ -302,7 +306,7 @@ def handle_assert_forward(assertion_handler, **handler_args):
     return forward
 
 
-default_assertion_handler = suggest_backtrack_handler
+default_assertion_handler = backtrack_handler
 
 
 def assert_transform_module(
