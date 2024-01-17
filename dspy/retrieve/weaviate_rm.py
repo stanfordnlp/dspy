@@ -32,7 +32,7 @@ class WeaviateRM(dspy.Retrieve):
 
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
         weaviate_client = weaviate.Client("your-path-here")
-        retriever_model = WeaviatetRM("my_collection_name", weaviate_client=weaviate_client)
+        retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
