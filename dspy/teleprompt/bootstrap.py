@@ -152,7 +152,7 @@ class BootstrapFewShot(Teleprompter):
 
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
-                
+
                 success = (self.metric is None) or self.metric(example, prediction, trace)
                 suggest_failures = dspy.settings.suggest_failure_count
                 # print(success, example, prediction)
