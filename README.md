@@ -14,9 +14,10 @@
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 
-**DSPy** is a framework for developing **high-quality systems** with LMs. It brings in the reliable structure of traditional ML into the way we build systems with LMs. While prompting LMs can very quickly build (brittle demos), the best LM systems generally break down problems into steps and tune the prompts or LM weights of each step well.
+**DSPy** is a framework for developing **high-quality systems** with LMs. While prompting LMs can quickly build (brittle) demos, the best LM systems generally break down problems into steps and tune the prompts or LM weights of each step well. As a bonus, these systems use small LMs to save costs.
 
-This is hard to do because we usually don't have data to tune each of these steps, and writing good prompts that work well for all kinds of large and small LMs is not easy! **DSPy** treats prompts and LM weights as parameters that can be optimized in multi-step pipelines, as long as you can define (or find) metrics you want to maximize for your system.
+This is hard as we usually don't have data to tune each of these steps. **DSPy** treats prompts and LM weights as parameters to be optimized in LM pipelines, given the metrics you want to maximize.
+
 
 To make this possible:
 
