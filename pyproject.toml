@@ -126,3 +126,143 @@ mkdocs-gen-files = "^0.5.0"
 mkdocstrings-python = "^1.7.5"
 mkdocstrings = {extras = ["python"], version = ">=0.20.0"}
 mike = ">=2.0.0"
+
+[tool.coverage.run]
+branch = true
+omit = [
+  "*/__init__.py",
+  "*/test_*.py",
+  "*/tests/*.py",
+  "*/conftest.py",
+  "*/venv/*",
+  "*/virtualenv/*",
+  "*/.venv/*",
+  "*/.virtualenv/*",
+  "*/env/*",
+  "*/.env/*",
+  "*/setup.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == '__main__':",
+    "logger",
+    "try",
+    "except",
+    "^\\s*self\\.\\w+(:\\s*[^=]+)?\\s*=.*$",
+    "continue",
+]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py311"
+extend-unsafe-fixes = ["D"]
+
+[tool.ruff.lint]
+# List of rules: https://docs.astral.sh/ruff/rules
+select = [
+    # flake8-builtins
+    "A",
+    # flake8-commas
+    "COM812",
+    # flake8-comprehensions
+    "C4",
+    # pydocstyle
+    "D",
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # flake8-implicit-str-concat
+    "ISC",
+    # pep8-naming
+    "N",
+    # flake8-annotations
+    "ANN",
+    # flake8-async
+    "ASYNC",
+    # flake8-bandid selected
+    "S",
+    # flake8-print
+    "T20",
+    # flake8-return
+    "RET",
+    # flake8-simplify
+    "SIM",
+    # flake8-unused-arguments
+    "ARG",
+    # flake8-use-pathlib
+    "PTH",
+    # eradicate
+    "ERA",
+    # pandas-vet
+    "PD",
+]
+ignore = [
+    "D100",
+    "D101",
+    "D104",
+    "D106",
+    # missing-type-self
+    "ANN101",
+    # missing-type-cls
+    "ANN102",
+    # missing-type-kwargs
+    "ANN003",
+    # utf-8 encoding skip
+    "UP009",
+    # First argument of a method should be named `self`
+    "N805",
+    # 1 blank line required between summary line and description
+    "D205",
+    # Missing return type annotation for special method `__init__`
+    "ANN204",
+    # Avoid using the generic variable name `df` for DataFrames
+    "PD901",
+    # Unnecessary assignment to `df` before `return` statement
+    "RET504",
+    # commented code
+    "ERA001",
+    # Star-arg unpacking after a keyword argument is strongly discouraged
+    "B026",
+    # Missing type annotation for function argument `self`
+    "ANN001",
+    # Dynamically typed expressions (typing.Any) are disallowed in `wrapper`
+    "ANN401",
+    # Unnecessary `elif` after `return` statement
+    "RET505",
+    # Within an `except` clause, raise exceptions with `raise
+    "B904",
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/{test,docs}/*" = ["ALL"]
