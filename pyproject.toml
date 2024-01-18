@@ -117,3 +117,12 @@ docs = [
     "sphinx-reredirects",
     "sphinx-automodapi"
 ]
+
+[tool.poetry.group.doc.dependencies]
+mkdocs = ">=1.5.3"
+mkdocs-material = ">=9.0.6"
+mkdocs-material-extensions = ">=1.3.1"
+mkdocs-gen-files = "^0.5.0"
+mkdocstrings-python = "^1.7.5"
+mkdocstrings = {extras = ["python"], version = ">=0.20.0"}
+mike = ">=2.0.0"
