@@ -18,7 +18,7 @@ class WeaviateRM(dspy.Retrieve):
     A retrieval module that uses Weaviate to return the top passages for a given query.
 
     Assumes that a Weaviate collection has been created and populated with the following payload:
-        - document: The text of the passage
+        - content: The text of the passage
 
     Args:
         weaviate_collection_name (str): The name of the Weaviate collection.
@@ -63,10 +63,10 @@ class WeaviateRM(dspy.Retrieve):
             dspy.Prediction: An object containing the retrieved passages.
         """
 
-        # Please note, as stated above the WeaviateRM assumes you have a text key payload named: `document`
+        # Please note, as stated above the WeaviateRM assumes you have a text key payload named: `content`
         k = k if k is not None else self.k
         results = self._weaviate_client.query\
-            .get(self._weaviate_collection_name, ["document"])\
+            .get(self._weaviate_collection_name, ["content"])\
             .with_near_text({"concepts": [query]})\
             .with_limit(k)\
             .do()
