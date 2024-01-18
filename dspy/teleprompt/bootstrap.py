@@ -111,11 +111,10 @@ class BootstrapFewShot(Teleprompter):
                     break
 
                 if example_idx not in bootstrapped:
-                    success, suggest_failures = self._bootstrap_one_example(example, round_idx)
+                    success = self._bootstrap_one_example(example, round_idx)
 
                     if success:
                         bootstrapped[example_idx] = True
-                        self.suggest_failures += suggest_failures
 
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
         print(f"# of suggestion failures during bootstrapping: {self.suggest_failures}")
@@ -188,8 +187,11 @@ class BootstrapFewShot(Teleprompter):
                     raise KeyError(f'Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.') from e
 
                 name2traces[predictor_name].append(demo)
+            
+            # increment the suggest_failures encountered during bootstrapping
+            self.suggest_failures += suggest_failures
         
-        return success, suggest_failures
+        return success
 
     def _train(self):
         rng = random.Random(0)
