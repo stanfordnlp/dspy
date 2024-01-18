@@ -13,8 +13,7 @@
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
-
-**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
+It's easy to build quick demos with LMs — but building reliable, high-quality, and efficient LM systems is hard. DSPy is a very unusual LM framework: it treats prompts and LM weights as parameters that can be optimized in multi-step pipelines, as long as you can define (or find) metrics you want to maximize for your system. This subsumes a lot of the fractured work out there, like prompting techniques, multi-step prompt chains, autoamtic prompt optimizers, synthetic data generators, and new compositions of these.
 
 To make this possible:
 
@@ -22,7 +21,7 @@ To make this possible:
 
 - **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally _trace_ your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
 
-The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
+**DSPy** has many modules and optimizers built-in and we want you to add more. Think of this like PyTorch but for LM pipelines, not DNNs. The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
 
 For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
 
