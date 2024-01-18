@@ -13,9 +13,10 @@
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
-It's easy to build quick demos with LMs — but building reliable LM systems is hard. To achieve high quality and low cost, the best LM systems: (1) break down problems into manageable steps, (2) apply the right prompting techniques at each step, (3) tune the prompts or LM weights of each step, and (4) make sure this works for the smallest LM possible to cut costs.
 
-**DSPy** subsumes the fractured work on these four directions, and new compositions of them like pipeline-aware synthetic data generators or optimization with LM feedback. To do that, **DSPy** treats prompts and LM weights as parameters that can be optimized in multi-step pipelines, as long as you can define (or find) metrics you want to maximize for your system.
+**DSPy** is a framework for developing **high-quality systems** with LMs. It brings in the reliable structure of traditional ML into the way we build systems with LMs. While prompting LMs can very quickly build (brittle demos), the best LM systems generally break down problems into steps and tune the prompts or LM weights of each step well.
+
+This is hard to do because we usually don't have data to tune each of these steps, and writing good prompts that work well for all kinds of large and small LMs is not easy! **DSPy** treats prompts and LM weights as parameters that can be optimized in multi-step pipelines, as long as you can define (or find) metrics you want to maximize for your system.
 
 To make this possible:
 
