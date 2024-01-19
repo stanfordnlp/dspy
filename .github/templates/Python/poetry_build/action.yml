@@ -1,0 +1,50 @@
+name: Building and deploying python Package
+description: Building And Deploying python package using poetry and twine.
+
+inputs:
+  PYTHON_VERSION:
+    description: "Python version to use for this action. Default is 3.9"
+    required: false
+    default: 3.9
+  SEMANTIC_VERSION:
+    description: "Semantic Realsede version to use for teh package build"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "${{ inputs.PYTHON_VERSION }}"
+
+    - name: Install package dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+
+        # installing poetry
+        pip install poetry
+
+        # assuring we have all extras for testing as well
+        poetry install --all-extras --no-interaction
+
+        # incrementing package version based on semantic release
+        poetry version ${{ inputs.SEMANTIC_VERSION }}
+
+    - name: Display Publish Config List
+      shell: bash
+      run: |
+        echo 'Display Publish Config List'
+        poetry config --list
+
+    - name: Poetry Build and Publish
+      shell: bash
+      run: |
+        # building and publishing the package
+        poetry publish \
+        -r jfrog \
+        -u ${{ secrets.URL }} \
+        -p ${{ secrets.TOKEN }} \
+        --build
+        echo "ALL DONE !"

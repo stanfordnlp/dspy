@@ -1,0 +1,56 @@
+name: Python run pytests
+description: Installing dependencies and running unit-tests
+
+inputs:
+  pkg_folder:
+    description: "Folder of Python application"
+    required: false
+    default: src
+  PYTHON_VERSION:
+    description: "Python version to use for unit tests. Default is 3.9"
+    required: false
+    default: 3.9
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "${{ inputs.PYTHON_VERSION }}"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # installing poetry
+        pip install poetry
+        # assuring we have all extras for testing as well
+        poetry install --all-extras --no-interaction
+      shell: bash
+    - name: Test with pytest
+      shell: bash
+      run: |
+        pip install flake8 pytest pytest-cov
+        echo "Running unit-tests!"
+        # preparing tests config file
+        if [ -f "pytest.ini" ];
+        then
+          echo "pytest.ini exists."
+        else
+          touch pytest.ini
+          echo "[pytest]" >> pytest.ini
+          echo "pythonpath = . ${{ inputs.pkg_folder }}" >> pytest.ini
+        fi
+        # running tests
+        poetry run pytest --junitxml=pytest.xml --cov=${{ inputs.pkg_folder }}/ | tee pytest-coverage.txt
+        echo "TEST OK!"
+    - name: Pytest coverage comment
+      id: coverageComment
+      uses: MishaKav/pytest-coverage-comment@main
+      with:
+        pytest-coverage-path: pytest-coverage.txt
+        junitxml-path: pytest.xml
+      # - name: Update Readme with Coverage Html
+      #   # if: ${{ github.ref == 'refs/heads/main' }}
+      #   run: |
+      #     sed -i '/<!-- Pytest Coverage Comment:Begin -->/,/<!-- Pytest Coverage Comment:End -->/c\<!-- Pytest Coverage Comment:Begin -->\n\${{ steps.coverageComment.outputs.coverageHtml }}\n<!-- Pytest Coverage Comment:End -->' ./README.md
