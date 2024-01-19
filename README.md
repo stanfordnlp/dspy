@@ -15,7 +15,7 @@
 
 ----
 
-**DSPy** is a new paradigm and framework for building high-quality LM systems for complex tasks, especially if you don't have a lot of labeled data. LMs alone make it easy to build brittle demos, but developing reliable AI systems currently requires: (1) breaking down problems into steps, (2) prompting LMs well for each step, (3) creating synthetic data to improve quality, and (4) finetuning smaller LMs to save costs. Each of these is hard, and composing them into multi-step pipelines is harder.
+**DSPy** is a new paradigm and framework for building high-quality LM systems for complex tasks, especially if you don't have a lot of labeled data. LMs alone make it easy to build brittle demos. To develop reliable AI systems you currently need to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) bootstrap synthetic data to improve quality, and (4) finetune smaller LMs to save costs. Each of these is hard, and composing them into multi-step pipelines is harder.
 
 **DSPy** resolves this by analogy to how we build DNNs, think PyTorch. We separate the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights) that DSPy `optimizers` can tune given an objective.
 
@@ -24,7 +24,7 @@
 ✅ **Metrics** and **Assertions**: Automatic feedback and retries   
 ✅ **Optimizers**: Automatic tuning for instructions, few-shot examples, and LM weights in multi-step programs       
 
-Instead of "prompt engineering" with hacky strings, you should explore a systematic space of modular and trainable pieces. You select built-in layers (`modules`) to use, and give each layer a `signature` (input/output spec). You then simply call your modules in free-form Python code to define your control flow. Lastly, you use one of the DSPy `optimizers` to compile your high-level code into high-quality instructions, automatic few-shot examples, updated LM weights for large or small LMs.
+Instead of "prompt engineering" with hacky strings, you should explore a systematic space of modular and trainable pieces. **DSPy** proposes many new design patterns for how to do this, depending on your task complexity and amount of data you have (if any). You select built-in layers (`modules`) to use, and give each layer a `signature` (input/output spec). You then simply call your modules in free-form Python code to define your control flow. Lastly, you decide on your `metric` and you use one of the DSPy `optimizers` to compile your high-level code into high-quality instructions, automatic few-shot examples, updated LM weights for large or small LMs.
 
 For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
 
