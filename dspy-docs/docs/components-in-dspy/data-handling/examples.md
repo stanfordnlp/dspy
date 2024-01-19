@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Examples:DSPy :: Tensor:PyTorch
 
-If you are frameworks like NumPy, Pandas or PyTorch you might notice a similarity between them. The similarity can be suble but aside from the more sophisticated answer, simple answer is that they all have there own data structure that acts as the core data currency in that framework. Numpy have arrays, Pandas have dataframes, PyTorch has Tensor and DSPy has **Example**.
+If you are familiar with frameworks like NumPy, Pandas or PyTorch you might notice a similarity between them. The similarity can be suble but aside from the more sophisticated answer, simple answer is that they all have there own data structure that acts as the core data currency in that framework. Numpy have arrays, Pandas have dataframes, PyTorch has Tensor and DSPy has **Example**.
 
 ## Creating an Example Object
 
