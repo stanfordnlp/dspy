@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3.11
+  python: python3.9
 
 default_stages: [commit]
 default_install_hook_types: [pre-commit, commit-msg]
@@ -22,7 +22,7 @@ repos:
         args:
           [
             "--profile=black",
-            "--py=311",
+            "--py=39",
             "--line-length=120",
             "--multi-line=3",
             "--trailing-comma",

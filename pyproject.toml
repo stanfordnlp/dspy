@@ -161,7 +161,7 @@ exclude_lines = [
 [tool.ruff]
 line-length = 120
 indent-width = 4
-target-version = "py311"
+target-version = "py39"
 extend-unsafe-fixes = ["D"]
 
 [tool.ruff.lint]
