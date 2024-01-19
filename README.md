@@ -15,14 +15,9 @@
 
 ----
 
-**DSPy** is a new paradigm and framework for building high-quality LM systems for complex tasks, especially if you don't have a lot of labeled data. LMs alone make it easy to build brittle demos. To develop reliable AI systems you currently need to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) bootstrap synthetic data to improve quality, and (4) finetune smaller LMs to save costs. Each of these is hard, and composing them into multi-step pipelines is harder.
+**DSPy** is a framework for developing high-quality LM systems for complex tasks. It's easy enough to build brittle demos with LMs. But to develop reliable LM systems without DSPy, you currently have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) bootstrap synthetic data to improve quality, and (4) finetune smaller LMs to save costs. Each of these is hard, and composing them into multi-step pipelines is harder.
 
-**DSPy** resolves this by analogy to how we build DNNs, think PyTorch. We separate the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights) that DSPy `optimizers` can tune given an objective.
-
-✅ **Signatures**: Structured inputs and outputs for LMs      
-✅ **Modules**: Systematic abstractions for prompting patterns           
-✅ **Metrics** and **Assertions**: Automatic feedback and retries   
-✅ **Optimizers**: Automatic tuning for instructions, few-shot examples, and LM weights in multi-step programs       
+**DSPy** helps by separating the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights) that DSPy `optimizers` can tune given an objective. We follow a PyTorch-esque approach with familiar, flexible Python syntax.
 
 Instead of "prompt engineering" with hacky strings, you should explore a systematic space of modular and trainable pieces. You select built-in layers (`modules`) to use, and give each layer a `signature` (input/output spec). You then simply call your modules in free-form Python code to define your control flow. Lastly, you decide on your `metric` and you use one of the DSPy `optimizers` to compile your high-level code into high-quality instructions, automatic few-shot examples, updated LM weights for large or small LMs.
 
