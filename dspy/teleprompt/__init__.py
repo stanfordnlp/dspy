@@ -6,3 +6,4 @@ from .finetune import *
 from .teleprompt_optuna import *
 from .knn_fewshot import *
 from .signature_opt import SignatureOptimizer
+from .signature_opt_bayesian import BayesianSignatureOptimizer
