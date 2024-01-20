@@ -1,4 +1,4 @@
-## dspy.ChainOfThoughtWithHint
+# dspy.ChainOfThoughtWithHint
 
 ### Constructor
 

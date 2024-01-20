@@ -1,4 +1,4 @@
-## dspy.MultiChainComparison
+# dspy.MultiChainComparison
 
 ### Constructor
 

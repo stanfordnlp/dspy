@@ -1,4 +1,4 @@
-## dspy.ReAct
+# dspy.ReAct
 
 ### Constructor
 
@@ -35,6 +35,8 @@ Generates a signature for the Thought-Action-Observation cycle based on the numb
 **Returns:**
 - A dictionary representation of the signature.
 
+***
+
 #### `act(self, output, hop)`
 
 Processes an action and returns the observation or final answer.
@@ -45,6 +47,8 @@ Processes an action and returns the observation or final answer.
 
 **Returns:**
 - A string representing the final answer or `None`.
+
+***
 
 #### `forward(self, **kwargs)`
 

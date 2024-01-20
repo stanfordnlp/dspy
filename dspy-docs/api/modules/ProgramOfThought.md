@@ -1,4 +1,4 @@
-## dspy.ProgramOfThought
+# dspy.ProgramOfThought
 
 ### Constructor
 

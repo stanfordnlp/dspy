@@ -1,4 +1,4 @@
-## dspy.Retrieve
+# dspy.Retrieve
 
 ### Constructor
 
