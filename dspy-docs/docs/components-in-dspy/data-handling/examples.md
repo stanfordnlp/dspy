@@ -4,10 +4,11 @@ sidebar_position: 1
 
 # Examples:DSPy :: Tensor:PyTorch
 
-If you're familiar with frameworks like NumPy, Pandas or PyTorch, you may notice a similarity between them. While the resemblance may be subtle, they all share a common feature: each has its own core data structure. Numpy uses arrays, Pandas have dataframes, PyTorch utilizes Tensors and DSPy introduces **Example**.
+Many frameworks have a "core" data structure. For example, numpy uses arrays, pandas has dataframes, and PyTorch utilizes Tensors. In DSPy, we work with **Example**, which are very similar to Python `dict`s but have a few useful utilities.
 
-## Creating an Example Object
-Just like tensors in PyTorch, in DSPy, Examples serve as the primary data structure. The input to your Modules is of type `Example`, a class in DSPy that functions similarly to a Python Dictionary. Here's an example to illustrate:-
+## Creating an `Example`
+
+When you use DSPy, you will do a lot of evaluation and optimization runs. Your individual datapoints will be of type `Example`. Here's an example to illustrate:
 
 ```python
 qa_pair = dspy.Example(question="This is a question?", answer="This is an answer.")
