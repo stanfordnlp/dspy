@@ -2,4 +2,4 @@
 sidebar_position: 1
 ---
 
-# Simplified Ballen: A Step-by-Step Guide
+# Simplified Baleen: A Step-by-Step Guide
