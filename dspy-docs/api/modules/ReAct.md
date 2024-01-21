@@ -4,7 +4,7 @@
 
 The constructor initializes the `ReAct` class and sets up its attributes. It is specifically designed to compose the interleaved steps of Thought, Action, and Observation.
 
-Internally, the class follows a sequential process: Thoughts (or reasoning) lead to Actions (such as queries or activities). These Actions then result in Observations (like results or responses), which subsequently feedback into the next Thought. This cycle is maintained for a predefined number of iterations.
+
 
 ```python
 import dsp
