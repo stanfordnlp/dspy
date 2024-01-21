@@ -89,7 +89,7 @@ def _shuffle_and_sample(self, split, data, size, seed=0):
 
 The `_shuffle_and_sample()` method does two things:
 
-* It shuffles the data if `self.do_shuffle`` is True.
+* It shuffles the data if `self.do_shuffle` is True.
 * It then takes a sample of size `size` from the shuffled data.
 * It then loops through the sampled data and converts each element in `data` into an `Example` object. The `Example` along with example data also contains a unique ID, and the split name.
 
