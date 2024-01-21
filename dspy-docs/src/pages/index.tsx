@@ -32,7 +32,7 @@ export default function Home(): JSX.Element {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title={`${siteConfig.title} Documnentation`}
+      title={`${siteConfig.title} Documentation`}
       description="Programming—not prompting—Foundation Models">
       <HomepageHeader />
       <main>

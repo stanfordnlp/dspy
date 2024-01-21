@@ -3,7 +3,7 @@
 %autoreload 2
 ```
 
-<img src="../../../../docs/images/DSPy8.png" alt="DSPy Image" height="150"/>
+<img src="img/logo.png" alt="DSPy Image" height="150"/>
 
 
 ## Guide: **DSPy Modules**
@@ -12,7 +12,7 @@
 
 ### Quick Recap
 
-This guide assumes you followed the [intro tutorial](../../../../intro.ipynb) to build your first few DSPy programs.
+This guide assumes you followed the [intro tutorial](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) to build your first few DSPy programs.
 
 Remember that **DSPy program** is just Python code that calls one or more **DSPy modules**, like `dspy.Predict` or `dspy.ChainOfThought`, to use LMs.
 
@@ -47,15 +47,15 @@ dspy.configure(lm=dspy.OpenAI(model='gpt-3.5-turbo-1106'))
 
 ### 3) What DSPy Modules are currently built-in?
 
-1. **[`dspy.Predict`](../../../api/modules/Predict.md)**:
+1. **[`dspy.Predict`](/api/modules/Predict)**:
 
-2. **[`dspy.ChainOfThought`](../../../api/modules/ChainOfThought.md)**: 
+2. **[`dspy.ChainOfThought`](/api/modules/ChainOfThought)**: 
 
-3. **[`dspy.ProgramOfThought`](../../../api/modules/ProgramOfThought.md)**:
+3. **[`dspy.ProgramOfThought`](/api/modules/ProgramOfThought)**:
 
-4. **[`dspy.ReAct`](../../../api/modules/ReAct.md)**:
+4. **[`dspy.ReAct`](/api/modules/ReAct)**:
 
-5. **[`dspy.MultiChainComparison`](../../../api/modules/MultiChainComparison.md)**:
+5. **[`dspy.MultiChainComparison`](/api/modules/MultiChainComparison)**:
 
 
 We also have some function-style modules:

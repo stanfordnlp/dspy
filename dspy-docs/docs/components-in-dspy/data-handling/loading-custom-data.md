@@ -78,7 +78,14 @@ print(dataset.train[:3])
  Example({'context': nan, 'question': "Alice's parents have three daughters: Amy, Jessy, and what’s the name of the third daughter?", 'answer': 'The name of the third daughter is Alice'}) (input_keys={'question', 'context'})]
 ```
 
-Using the Dataset base class makes loading custom datasets incredibly easy. Load the data and populate the `self._train`, `self._dev`, `self._test`. The base Dataset class will handle converting the data into Example objects and shuffling/sampling the data. This avoids having to write all that boilerplate code ourselves for every new dataset.
+Let's understand the code step by step:
+
+* It subclasses the base `Dataset` class from DSPy. This inherits all the useful data loading/processing functionality.
+* We load the data in CSV into a DataFrame.
+* We get the **train** split i.e first 700 rows in the DataFrame and convert it to lists of dicts using `to_dict(orient='records')` method and is then assigned to `self._train`.
+* We get the **dev** split i.e first 300 rows in the DataFrame and convert it to lists of dicts using `to_dict(orient='records')` method and is then assigned to `self._dev`.
+
+Using the Dataset base class makes loading custom datasets incredibly easy. Load the data and populate the `self._train`, `self._dev`, `self._test`. The base `Dataset` class will handle converting the data into Example objects and shuffling/sampling the data. This avoids having to write all that boilerplate code ourselves for every new dataset.
 
 :::caution
 
