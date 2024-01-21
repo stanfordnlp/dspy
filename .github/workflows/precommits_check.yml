@@ -15,7 +15,6 @@ on:
 
 jobs:
   pre-commit-checks:
-    runs-on: [self-hosted, Linux, standard]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
