@@ -15,9 +15,9 @@
 
 ----
 
-**DSPy** is a framework for developing high-quality LM systems for complex tasks. To do that without DSPy, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) generate synthetic data to improve quality, and (4) finetune smaller LMs to cut costs. Composing these into the right multi-step pipelines is hard. DSPy offers you the tools to automate most of this, as long as you can define your high-level steps and metrics.
+**DSPy** is a framework for developing high-quality LM systems for complex tasks. Normally, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) generate synthetic data to improve quality, and (4) finetune smaller LMs to cut costs.
 
-**DSPy** helps by separating the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights), which DSPy `optimizers` can craft and tune if you give them an objective. This creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering'. We draw on lessons from DNN frameworks like PyTorch. DSPy `modules` are layers that hold parameters (like `ChainOfThought` or `ReAct`) that replace string-based prompting tricks. DSPy `optimizers` are algorithms that update parameters (like `BayesianSignatureOptimizer`) that replace prompt hacking or one-off synthetic data generators.
+Composing these into the right multi-step pipelines is hard. To help you automate most of this, **DSPy** separates the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights) of each step, which DSPy `optimizers` can craft and tune if you give them an objective. This creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering'.
 
 Using **DSPy** is an iterative process. You start by defining a task and the metrics you want to maximize. You also prepare a few example inputs, typically without labels (or only with labels for the final outputs, if your metric requires these). Then, you build your pipeline: select built-in layers (`modules`) to use, give each layer a `signature` (input/output spec), and then simply call your modules in free-form Python code to define your control flow. Lastly, use one of the DSPy `optimizers` to compile your code into high-quality instructions, automatic few-shot examples, updated LM weights for your LM.
 
@@ -39,7 +39,7 @@ For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` o
 
 When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
-Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and general optimizers (`BootstrapFewShotWithRandomSearch` or `SignatureOptimizer`) for your program and your metric. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
+Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `ReAct`, etc.), which replace string-based prompting tricks. To replace prompt hacking and one-off synthetic data generators, **DSPy** also gives you general optimizers (`BootstrapFewShotWithRandomSearch` or `BayesianSignatureOptimizer`), which are algorithms that update parameters in your program. Whenever you modify your code, your data, you assertions, or your metric, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
 
 
 ## 1) Installation
