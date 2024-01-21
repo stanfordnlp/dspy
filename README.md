@@ -15,7 +15,7 @@
 
 ----
 
-**DSPy** is a framework for developing high-quality LM systems for complex tasks. To do that without DSPy, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) bootstrap synthetic data to improve quality, and (4) finetune smaller LMs to cut costs. Composing these into multi-step pipelines is hard.
+**DSPy** is a framework for developing high-quality LM systems for complex tasks. To do that without DSPy, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) generate synthetic data to improve quality, and (4) finetune smaller LMs to cut costs. Composing these into the right multi-step pipelines is hard. DSPy offers you the tools to automate most of this, as long as you can define your high-level steps and metrics.
 
 **DSPy** helps by separating the flow of your program (`module`s) from the parameters (prompt instructions, few-shot examples, and LM weights), which DSPy `optimizer`s can craft and tune if you give them an objective. This creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering'. We draw on lessons from DNN frameworks like PyTorch. DSPy `modules` (or layers with parameters) replace 'prompting tricks'. DSPy `optimizers` replace prompt hacking or one-off synthetic data generators.
 
