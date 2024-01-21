@@ -13,21 +13,15 @@
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
+----
 
-**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
+**DSPy** is a framework for developing high-quality LM systems for complex tasks. To do that without DSPy, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) bootstrap synthetic data to improve quality, and (4) finetune smaller LMs to cut costs. Composing these into multi-step pipelines is hard.
 
-To make this possible:
+**DSPy** helps by separating the flow of your program (`modules`) from the parameters (prompt instructions, few-shot examples, and LM weights), which DSPy `optimizers` can tune if you give them an objective. This creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering'. We draw on lessons from DNN abstractions, particularly PyTorch. We want the community to think in terms of modules, or layers with parameters, not prompting tricks. And to think in terms of optimizers, not prompt hacking or one-off synthetic data generators.
 
-- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted _string manipulation tricks_ into truly modular _generalized operations that learn to adapt to your task_.
-
-- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally _trace_ your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
-
-The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
+Using **DSPy** is an iterative process. You must start by defining the task you want to solve and the metrics you want to maximize. Then, select built-in layers (`modules`) to use, give each layer a `signature` (input/output spec), and then simply call your modules in free-form Python code to define your control flow. Lastly, use one of the DSPy `optimizers` to compile your code into high-quality instructions, automatic few-shot examples, updated LM weights for large or small LMs.
 
 For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
-
-
-If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
 
 
 ### Table of Contents
@@ -45,7 +39,7 @@ If you want to see **DSPy** in action, **[open our intro tutorial notebook](intr
 
 When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
-Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and takes care of optimizing their prompts _for your program_ and your metric, whatever they aim to do. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
+Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and general optimizers (`BootstrapFewShotWithRandomSearch` or `SignatureOptimizer`) for your program and your metric. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
 
 
 ## 1) Installation
@@ -63,7 +57,7 @@ By default, DSPy depends on `openai==0.28`. However, if you install `openai>=1.0
 For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
+pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo] or [mongodb]
 ```
 
 ## 2) Documentation

@@ -1,0 +1,68 @@
+default_language_version:
+  python: python3.11
+
+default_stages: [commit]
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.1.11
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/timothycrosley/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args:
+          [
+            "--profile=black",
+            "--py=311",
+            "--line-length=120",
+            "--multi-line=3",
+            "--trailing-comma",
+            "--force-grid-wrap=0",
+            "--use-parentheses",
+            "--ensure-newline-before-comments",
+            "--project=CORE,src,config,preprocess,train,transform,main,model",
+          ]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: check-yaml
+        args: ["--allow-multiple-documents", "--unsafe"]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-docstring-first
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: requirements-txt-fixer
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: pretty-format-json
+        args:
+          - "--autofix"
+          - "--indent=2"
+  - repo: local
+    hooks:
+      - id: validate-commit-msg
+        name: Commit Message is Valid
+        language: pygrep
+        entry: ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([\w,\.,\-,\(,\),\/]+\)(!?)(:)\s{1}([\w,\W,:]+)
+        stages: [commit-msg]
+        args: [--negate]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+      - id: prettier
+        additional_dependencies:
+          - prettier@2.1.2
+          - "@prettier/plugin-xml@0.12.0"

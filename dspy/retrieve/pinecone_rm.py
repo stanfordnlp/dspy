@@ -5,7 +5,6 @@ Author: Dhar Rawal (@drawal1)
 
 from dsp.utils import dotdict
 from typing import Optional, List, Union
-import openai
 import dspy
 import backoff
 
@@ -19,6 +18,17 @@ if pinecone is None:
         "The pinecone library is required to use PineconeRM. Install it with `pip install dspy-ai[pinecone]`"
     )
 
+import openai
+try:
+    OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
+except Exception:
+    OPENAI_LEGACY = True
+
+try:
+    import openai.error
+    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+except Exception:
+    ERRORS = (openai.RateLimitError, openai.APIError)
 
 class PineconeRM(dspy.Retrieve):
     """
@@ -164,7 +174,7 @@ class PineconeRM(dspy.Retrieve):
  
     @backoff.on_exception(
         backoff.expo,
-        (openai.RateLimitError),
+        ERRORS,
         max_time=15,
     )
     def _get_embeddings(
@@ -187,10 +197,15 @@ class PineconeRM(dspy.Retrieve):
             ) from exc
         
         if not self.use_local_model:
-            embedding = openai.embeddings.create(
-                input=queries, model=self._openai_embed_model
-            )
-            return [embedding.embedding for embedding in embedding.data]
+            if OPENAI_LEGACY:
+                embedding = openai.Embedding.create(
+                    input=queries, model=self._openai_embed_model
+                )
+            else:
+                embedding = openai.embeddings.create(
+                    input=queries, model=self._openai_embed_model
+                ).model_dump()
+            return [embedding["embedding"] for embedding in embedding["data"]]
         
         # Use local model
         encoded_input = self._local_tokenizer(queries, padding=True, truncation=True, return_tensors="pt").to(self.device)
