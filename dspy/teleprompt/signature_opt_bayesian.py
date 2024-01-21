@@ -10,8 +10,6 @@ import numpy as np
 import optuna
 import math
 
-random.seed(42)
-
 """
 USAGE SUGGESTIONS:
 
@@ -70,9 +68,7 @@ class BayesianSignatureOptimizer(Teleprompter):
     
     def _print_model_history(self, model, n=1):
         if self.verbose: print(f"Model ({model}) History:")
-        history = model.inspect_history(n=1)
-        for history_item in history:
-            if self.verbose: print(f"{history_item}")
+        model.inspect_history(n=n)
     
     def _generate_first_N_candidates(self, module, N):
         candidates = {}
@@ -103,7 +99,9 @@ class BayesianSignatureOptimizer(Teleprompter):
         
         return candidates, evaluated_candidates
 
-    def compile(self, student, *, devset, optuna_trials_num, max_bootstrapped_demos, max_labeled_demos, eval_kwargs):
+    def compile(self, student, *, devset, optuna_trials_num, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42):
+
+        random.seed(seed)
         
         # Set up program and evaluation function
         module = student.deepcopy()
@@ -224,7 +222,8 @@ class BayesianSignatureOptimizer(Teleprompter):
 
         # Run the trial 
         objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, devset)
-        study = optuna.create_study(direction="maximize")
+        sampler = optuna.samplers.TPESampler(seed=seed)
+        study = optuna.create_study(direction="maximize", sampler=sampler)
         score = study.optimize(objective_function, n_trials=optuna_trials_num)
 
         if best_program is not None and self.track_stats:
