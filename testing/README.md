@@ -20,7 +20,7 @@ If you prefer to specify your own model parameters then you can pass models into
 task_model = dspy.HFClientTGI(...)
 prompt_model = dspy.OpenAI(...)
 
-tester = OptimizerTester()
+tester = OptimizerTester(task_model=task_model, prompt_model=prompt_model)
 ```
 
 If you just want to get baseline results for a particular task you're ready to go!
