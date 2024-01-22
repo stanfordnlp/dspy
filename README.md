@@ -15,9 +15,9 @@
 
 ----
 
-**DSPy** is a framework for developing high-quality LM systems for complex tasks. Normally, you have to: (1) break down problems into steps, (2) prompt LMs well for each step, (3) generate synthetic data to improve quality, and (4) finetune smaller LMs to cut costs.
+**DSPy** is a framework for developing and optimizing LM pipelines for complex tasks. To use LMs to build a complex system without DSPy, you generally have to: (1) break the problem down into steps, (2) prompt your LM well for each step, (3) generate synthetic data to tune each step, and (4) use that data to finetune smaller LMs to cut costs.
 
-Composing these into the right multi-step pipelines is hard. To help you automate most of this, **DSPy** separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step, which DSPy `optimizers` can craft and tune if you give them an objective. This creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering'.
+Composing these into the right multi-step pipelines is a hard, messy process. **DSPy** creates a systematic space of modular and trainable pieces, instead of hacky 'prompt engineering' or one-off pipeline tuning things you may do. To do that, **DSPy** separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step, which DSPy `optimizers` can craft and tune if you give them an objective. 
 
 Using **DSPy** is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
