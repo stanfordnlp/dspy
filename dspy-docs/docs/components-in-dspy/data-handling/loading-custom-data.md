@@ -4,16 +4,16 @@ sidebar_position: 3
 
 # Creating a Custom Dataset
 
-We saw until now how you can play around with `Example` objects and how you can use `HotPotQA` class to load HotPotQA dataset from HuggingFace to a list of `Example` object. But in production, rarely you'll see yourself working on such dataset. Rather you'll find yourself working on a custom dataset and you might question, how do I create my own dataset or what format should my dataset be in?
+We've seen how to work with with `Example` objects and use the `HotPotQA` class to load the HuggingFace HotPotQA dataset as a list of `Example` objects. But in production, such structured datasets are rare. Instead, you'll find yourself working on a custom dataset and might question: how do I create my own dataset or what format should it be?
 
-In DSPy, you need your dataset to be a list of `Examples`. So if your dataset has 1000 datapoints you'll need to transform that in a list of 1000 `Example` objects. Based on this fact we can do it in two ways:
+In DSPy, your dataset is a list of `Examples`, which we can accomplish in two ways:
 
 * **The Pythonic Way:** Using native python utility and logic.
 * **The DSPythonic Way:** Using DSPy's `Dataset` class.
 
 ## The Pythonic Way
 
-We essentially want to create a list of `Example` objects, so all we need to do is load the data from the data source like Comma-Seperated Values(CSV), HuggingFace, etc. and formulate it into a list of `Example` via a basic loop or list comprehension. Let's take an example CSV `sample.tsv` that contains 3 fields: **context**, **question** and **summary**. Let's start by loading it via Pandas:
+To create a list of `Example` objects, we can simply load data from the source and formulate it into a Python list. Let's load an example CSV `sample.csv` that contains 3 fields: (**context**, **question** and **summary**) via Pandas. From there, we can construct our data list.
 
 ```python
 import pandas as pd
@@ -25,9 +25,6 @@ print(df.shape)
 ```text
 (1000, 3)
 ```
-
-Now all we need to do is iterate over each row in `df` and append it to a list after adding data into an `Example` object.
-
 ```python
 dataset = []
 
@@ -43,17 +40,17 @@ print(dataset[:3])
  Example({'context': nan, 'question': "Alice's parents have three daughters: Amy, Jessy, and what’s the name of the third daughter?", 'answer': 'The name of the third daughter is Alice'}) (input_keys={'question', 'context'})]
 ```
 
-And there we go we have a dataset ready to be used, pretty simple right? Pretty minimalistic too, what if we do even less work? That's what the DSPythonic way will help us with!!
+While this is fairly simple, let's take a look at how loading datasets would look in DSPy - via the DSPythonic way!
 
 ## The DSPythonic Way
 
-In the Pythonic Way, we loaded the dataset and appended it in a list after converting it into a `Example` object. But there is an even easier way to do this by using `Dataset` class, using which we'll just need to load the dataset and rest of the processing will be taken care by class methods as we saw in the previous article. So to summarize what we'll be doing is:
+Let's take advantage of the `Dataset` class we defined in the previous article to accomplish the preprocessing: 
 
 * Load data from CSV to a dataframe.
 * Split the data to train, dev and test splits.
 * Populate `_train`, `_dev` and `_test` class attributes. Note that these attributes should be a list of dictionary, or an iterator over mapping like HuggingFace Dataset, to make it work.
 
-All the above stuff can be done in `__init__` method, meaning in the most minimalistic form `__init__` is the only method we need to implement.
+This is all done through the `__init__` method, which is the only method we have to implement.
 
 ```python
 import pandas as pd
@@ -80,12 +77,12 @@ print(dataset.train[:3])
 
 Let's understand the code step by step:
 
-* It subclasses the base `Dataset` class from DSPy. This inherits all the useful data loading/processing functionality.
+* It inherits the base `Dataset` class from DSPy. This inherits all the useful data loading/processing functionality.
 * We load the data in CSV into a DataFrame.
 * We get the **train** split i.e first 700 rows in the DataFrame and convert it to lists of dicts using `to_dict(orient='records')` method and is then assigned to `self._train`.
 * We get the **dev** split i.e first 300 rows in the DataFrame and convert it to lists of dicts using `to_dict(orient='records')` method and is then assigned to `self._dev`.
 
-Using the Dataset base class makes loading custom datasets incredibly easy. Load the data and populate the `self._train`, `self._dev`, `self._test`. The base `Dataset` class will handle converting the data into Example objects and shuffling/sampling the data. This avoids having to write all that boilerplate code ourselves for every new dataset.
+Using the Dataset base class now makes loading custom datasets incredibly easy and avoids having to write all that boilerplate code ourselves for every new dataset.
 
 :::caution
 
@@ -111,8 +108,10 @@ AttributeError                            Traceback (most recent call last)
 AttributeError: 'CSVDataset' object has no attribute '_test'
 ```
 
-To prevent that you'll just need to make sure `_test` is not `None` and populated with the approproate data.
+To prevent that you'll just need to make sure `_test` is not `None` and populated with the appropriate data.
 
 :::
 
-You can overide the methods in `Dataset` class to customize you class even more. So in summary, the Dataset base class provides a clean way to load and preprocess custom datasets in a consistent manner with minimal code!
+You can overide the methods in `Dataset` class to customize your class even more. 
+
+In summary, the Dataset base class provides a simplistic way to load and preprocess custom datasets with minimal code!

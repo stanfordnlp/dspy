@@ -2,9 +2,9 @@
 sidebar_position: 2
 ---
 
-# Utilizing Inbuilt Datasets
+# Utilizing Built-in Datasets
 
-DSPy offers support for loading several popular datasets, enabling you to swiftly begin implementing and experimenting with DSPy pipelines. As of now DSPy provides support for the following dataset out of the box:
+DSPy offers support for loading several popular datasets, enabling you to swiftly begin implementing and experimenting with DSPy pipelines. As of now, DSPy provides support for the following dataset out of the box:
 
 * **HotPotQA**
 * **GSM8k**
@@ -13,7 +13,7 @@ DSPy offers support for loading several popular datasets, enabling you to swiftl
 
 ## Loading HotPotQA
 
-Let's go ahead and import an existing dataset in DSPy i.e. HotPotQA which is basically a bunch of question answer pairs. One convinient thing that data modules makes convinient for us is that it'll convert all the QA-pairs to Example objects for us.
+Let's go ahead and import an existing dataset in DSPy, i.e. HotPotQA, which is a collection of question-answer pairs. One convenient aspect of data modules is that they automatically convert all the QA-pairs into Example objects for us.
 
 ```python
 from dspy.datasets import HotPotQA
@@ -31,7 +31,7 @@ print(dataset.train)
  Example({'question': 'Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?', 'answer': 'Tae Kwon Do Times'}) (input_keys=None)]
 ```
 
-We just loaded trainset ( examples) and devset (50 examples). Each example in our training set contains just a question and its (human-annotated) answer. As you can see it is loaded as a list of `Example` objects. However, one thing to note is that it doesn't set the input keys implicitly, so that is something that we'll need to do!!
+We just loaded trainset (5 examples) and devset (50 examples). Each example in our training set contains just a question and its (human-annotated) answer. As you can see, it is loaded as a list of `Example` objects. However, one thing to note is that it doesn't set the input keys implicitly, so that is something that we'll need to do!!
 
 ```python
 trainset = [x.with_inputs('question') for x in dataset.train]
@@ -53,11 +53,11 @@ DSPy typically requires very minimal labeling. Whereas your pipeline may involve
 
 ## Inside DSPy's `Dataset` class
 
-We've seen how you can use `HotPotQA` dataset class and load the HotPotQA dataset, but do you wonder how does it work? Actually `HotPotQA` class inherits `Dataset` class which takes care of the conversion of the data loaded from a source to train-test-dev split all of which are *list of examples*. Whereas in `HotPotQA` class you only implement `__init__` class where you populate the splits from HuggingFace into the variables `_train`, `_test` and `_dev`. Rest of the process is handled by methods in the `Dataset` class.
+We've seen how you can use `HotPotQA` dataset class and load the HotPotQA dataset, but how does it actually work? The `HotPotQA` class inherits from the `Dataset` class, which takes care of the conversion of the data loaded from a source into train-test-dev split, all of which are *list of examples*. In the `HotPotQA` class, you only implement the `__init__` method, where you populate the splits from HuggingFace into the variables `_train`, `_test` and `_dev`. The rest of the process is handled by methods in the `Dataset` class.
 
 ![Dataset Loading Process in HotPotQA Class](./img/data-loading.png)
 
-But how does `Dataset` class methods convert the data from HuggingFace? Let's take a deep breath and think step by step...pun intended. In example above we can see the splits being accessed by `.train`, `.dev` and `.test` methods. Wait methods, where are the `()`? Yep let's see the implementation of `train()` method:
+But how do the methods of the `Dataset` class convert the data from HuggingFace? Let's take a deep breath and think step by step...pun intended. In example above, we can see the splits accessed by `.train`, `.dev` and `.test` methods, so let's take a look at the implementation of the `train()` method:
 
 ```python
 @property
@@ -68,7 +68,7 @@ def train(self):
     return self._train_
 ```
 
-As you can see, the `train()` method is actually a property, not a regular method. This means it can be accessed like an attribute without parentheses. Inside the train property, it first checks if the `_train_` attribute exists. If not, it calls the `_shuffle_and_sample()` method to process the `self._train` where dataset from HuggingFace is loaded. Let's see the  `_shuffle_and_sample()` method:
+As you can see, the `train()` method serves as a property, not a regular method. Within this property, it first checks if the `_train_` attribute exists. If not, it calls the `_shuffle_and_sample()` method to process the `self._train` where the HuggingFace dataset is loaded. Let's see the  `_shuffle_and_sample()` method:
 
 ```python
 def _shuffle_and_sample(self, split, data, size, seed=0):
@@ -95,4 +95,4 @@ The `_shuffle_and_sample()` method does two things:
 
 Converting the raw examples into `Example` objects allows the Dataset class to process them in a standardized way later. For example, the collate method, which is used by the PyTorch DataLoader, expects each item to be an `Example`.
 
-So in summary, the `Dataset` class handles all the necessary data processing and provides a simple API to access the different splits. The actual dataset classes like HotpotQA only need to define how to load the raw data.
+To summarize, the `Dataset` class handles all the necessary data processing and provides a simple API to access the different splits. This differentiates from the dataset classes like HotpotQA which require only definitions on how to load the raw data.
