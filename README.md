@@ -154,6 +154,8 @@ If you later decide you need another step in your pipeline, just add another mod
 
 ## 4) Two Powerful Concepts: Signatures & Teleprompters
 
+**Note:** We will soon rename teleprompters to optimizers. This will not affect their functionality, but will simplify the terms used.
+
 To make it possible to compile any program you write, **DSPy** introduces two simple concepts: Signatures and Teleprompters.
 
 
