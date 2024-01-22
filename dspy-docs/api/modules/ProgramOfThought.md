@@ -85,21 +85,11 @@ Main method to execute the code generation and refinement process.
 generate_answer_signature = dspy.Signature("question -> answer")
 generate_answer_signature.attach(question=("Question:", "")).attach(answer=("Answer:", "often between 1 and 5 words"))
 
-# Define and use ProgramOfThought module
-class PoT(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.prog = dspy.ProgramOfThought(generate_answer_signature)
-
-    def forward(self, question):
-        prediction = self.prog(question=question)
-        return prediction
-
 # Pass signature to ProgramOfThought Module
 pot = dspy.ProgramOfThought(generate_answer_signature)
 
 #Call the ProgramOfThought module on a particular input
-question = 'question = Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
+question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
 result = pot(question=question)
 
 print(f"Question: {question}")
