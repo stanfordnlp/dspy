@@ -21,7 +21,7 @@ Composing these into the right multi-step pipelines is a hard, messy process: ev
 
 Using **DSPy** is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
-**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
+**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable (higher quality and/or avoiding specific failure patterns) at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
 
 **What can DSPy optimizers do?** Among other things, DSPy `optimizers` can inspect your data, simulate traces through your program to collect good (or bad) examples of each step, propose new instructions for each step based on past results, finetune the weights of your LM on self-generated examples, or combine several of these to improve quality or cut cost.
 
