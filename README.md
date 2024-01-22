@@ -23,7 +23,7 @@ Composing these into the right pipelines is a hard and messy process: every time
 
 ### Mini-FAQs
 
-**What can DSPy optimizers do?** Among other things, DSPy `optimizers` can inspect your data, simulate traces through your program to collect good (or bad) examples of each step, propose new instructions for each step based on past results, finetune the weights of your LM on self-generated examples, or combine several of these to improve quality or cut cost.
+**What can DSPy optimizers do?** Different DSPy optimizers work differently, but they all maximize a metric on your program. Among other things, DSPy `optimizers` can inspect your data, simulate traces through your program to collect good (or bad) examples of each step, propose new instructions for each step based on past results, finetune the weights of your LM on self-generated examples, or combine several of these to improve quality or cut cost.
 
 **How should I use DSPy for my task?** Using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
