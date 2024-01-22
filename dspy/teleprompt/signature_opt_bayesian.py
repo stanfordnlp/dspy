@@ -46,7 +46,7 @@ class BasicGenerateInstruction(Signature):
     proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
 class BayesianSignatureOptimizer(Teleprompter):
-    def __init__(self, prompt_model=None, task_model=None,  n=10, metric=None, init_temperature=1.0, verbose=False, track_stats=False):
+    def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, n=10, metric=None, init_temperature=1.0, verbose=False, track_stats=False):
         self.n = n
         self.metric = metric
         self.init_temperature = init_temperature
@@ -54,6 +54,7 @@ class BayesianSignatureOptimizer(Teleprompter):
         self.task_model = task_model
         self.verbose = verbose
         self.track_stats = track_stats
+        self.teacher_settings = teacher_settings
         
     def _print_full_program(self, program):
         for i,predictor in enumerate(program.predictors()):
@@ -119,7 +120,7 @@ class BayesianSignatureOptimizer(Teleprompter):
             rng = random.Random(seed)
             shuffled_devset = devset[:]  # Create a copy of devset
             rng.shuffle(shuffled_devset)  # Shuffle the copy
-            tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos)
+            tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, teacher_settings=self.teacher_settings)
             candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_devset)
 
             # Store the candidate demos
