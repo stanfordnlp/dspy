@@ -15,7 +15,7 @@
 
 ----
 
-**DSPy** is a framework for developing **LM pipelines** and automatically optimizing their quality and cost. LMs are sensitive to prompts. This becomes a serious challenge in multi-stage pipelines, where different prompts (or finetunes) have to compose effectively. To use LMs to build a complex system without DSPy, you generally have to: (1) break the problem down into steps, (2) prompt your LM well for each step, (3) update steps to work well together, (4) generate synthetic data to tune each step, and (5) use that data to finetune smaller LMs to cut costs.
+**DSPy** is a framework for developing **LM pipelines** and automatically optimizing their quality and cost. LMs are sensitive to prompts. This becomes a serious challenge in multi-stage pipelines, where different prompts (or finetunes) have to compose effectively. To use LMs to build a complex system without DSPy, you generally have to: (1) break the problem down into steps, (2) prompt your LM well until each step works well in isolation, (3) tweak the steps to work well together now, (4) generate synthetic data to tune each step, and (5) use that data to finetune smaller LMs to cut costs.
 
 Composing these into the right pipelines is a hard and messy process: every time you change your pipeline, your LM, or your data, all prompts may need to change! To make this all more systematic, **DSPy** separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step. **DSPy** introduces new `optimizers`, which are LM-driven algorithms that can craft and tune the parameters of your pipeline, given a `metric` you want to maximize.
 
