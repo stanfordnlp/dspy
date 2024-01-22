@@ -48,10 +48,14 @@ class Retry(Predict):
         return self.original_forward(demos=demos, **kwargs)
     
     def __call__(self, **kwargs):
+        # perform backtracking
         if dspy.settings.backtrack_to == self.module:
             for key, value in dspy.settings.backtrack_to_args.items():
                 kwargs.setdefault(key, value)
-            return self.forward(**kwargs)
+            kwargs["_trace"] = False
+            pred = self.forward(**kwargs)
+            dsp.settings.trace.append((self.module, {**kwargs}, pred))
+            return pred
         else:
             # seems like a hack, but it works for now
             demos = kwargs.pop("demos", self.demos if self.demos is not None else [])
