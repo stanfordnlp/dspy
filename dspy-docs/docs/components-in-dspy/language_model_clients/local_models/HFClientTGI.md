@@ -2,7 +2,7 @@
 
 ### Prerequisites - Launching TGI Server locally
 
-Refer to the [Text Generation-Inference Server API](../../../../../dspy-docs/api/local_language_models/TGI.md) for setting up the TGI server locally.
+Refer to the [Text Generation-Inference Server API](/api/hosting_language_models_locally/TGI) for setting up the TGI server locally.
 
 ```bash
 #Example TGI Server Launch

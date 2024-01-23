@@ -2,7 +2,7 @@
 
 ### Prerequisites - Launching vLLM Server locally
 
-Refer to the [vLLM Server API](../../../../../dspy-docs/api/local_language_models/vLLM.md) for setting up the vLLM server locally.
+Refer to the [vLLM Server API](/api/hosting_language_models_locally/vLLM) for setting up the vLLM server locally.
 
 ```bash
 #Example vLLM Server Launch

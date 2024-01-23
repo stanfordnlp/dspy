@@ -40,15 +40,15 @@ These models are managed services. You just need to sign up and obtain an API ke
 
 You need to host these models on your own GPU(s). Below, we include pointers for how to do that.
 
-4. `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](language_model_details/launching_tgi.md)
+4. `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](/docs/components-in-dspy/language_model_clients/local_models/HFClientTGI)
 
-5. `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](language_model_details/launching_vllm.md)
+5. `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](/docs/components-in-dspy/language_model_clients/local_models/HFClientVLLM)
 
 6. `dspy.HFModel` (experimental)
 
 7. `dspy.Ollama` (experimental)
 
-8. `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](language_model_details/launching_mlc.md)
+8. `dspy.ChatModuleClient` (experimental): How do I install and use MLC?
 
 
 
