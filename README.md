@@ -19,7 +19,7 @@
 
 Composing these into the right pipelines is a hard and messy process: every time you change your pipeline, your LM, or your data, all prompts may need to change. To make this more systematic, **DSPy** does two things. First, it separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step. Second, **DSPy** introduces new `optimizers`, which are LM-driven algorithms that can craft and tune the parameters of your pipeline, given a `metric` you want to maximize.
 
-**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. **tldr;** less prompting, higher scores, and a more systematic approach to solving tasks with LMs.
+**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. This is an entirely new paradigm and level of abstraction, wher LMs, their weights, and their prompts fade into the background as optimizable pieces of a larger system that can learn from data in new ways. **tldr;** less prompting, higher scores, and a more systematic approach to solving tasks with LMs.
 
 
 ### Table of Contents
