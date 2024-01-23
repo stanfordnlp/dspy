@@ -18,6 +18,7 @@ settings = dsp.settings
 OpenAI = dsp.GPT3
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
+Clarifai=dsp.ClarifaiLLM
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
