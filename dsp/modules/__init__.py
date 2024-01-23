@@ -9,5 +9,4 @@ from .pyserini import *
 from .ollama import *
 
 from .hf_client import HFClientTGI
-from .hf_client import HFClientVLLM
 from .hf_client import Anyscale
