@@ -197,7 +197,8 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
         error_msg, result = None, None
         with dspy.settings.lock:
             dspy.settings.backtrack_to = None
-            dspy.settings.suggest_failure_count = 0
+            dspy.settings.suggest_failures = 0
+            dspy.settings.assert_failures = 0
 
             # Predictor -> List[feedback_msg]
             dspy.settings.predictor_feedbacks = {}
@@ -239,9 +240,11 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             e.state[-1],
                         )
 
-                        # increment failure count for optimization
-                        if e.is_metric:
-                            dspy.settings.suggest_failure_count += 1
+                        # increment failure count depending on type of error
+                        if isinstance(e, DSPySuggestionError) and e.is_metric:
+                            dspy.settings.suggest_failures += 1
+                        elif isinstance(e, DSPyAssertionError) and e.is_metric:
+                            dspy.settings.assert_failures += 1
 
                         if dsp.settings.trace:
                             if suggest_target_module:
