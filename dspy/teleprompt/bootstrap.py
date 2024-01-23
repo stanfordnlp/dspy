@@ -44,9 +44,6 @@ class BootstrapFewShot(Teleprompter):
         self.max_errors= max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
-        
-        self.suggest_failures = 0
-        self.assert_failures = 0
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
@@ -58,10 +55,10 @@ class BootstrapFewShot(Teleprompter):
 
         self.student = self._train()
         self.student._compiled = True
-        
-        # number of suggestion/assertion the student failed when it was learning
-        self.student._suggest_failures = self.suggest_failures
-        self.student._assert_failures = self.assert_failures
+
+        # set assert_failures and suggest_failures as attributes of student w/ value 0
+        setattr(self.student, '_assert_failures', 0)
+        setattr(self.student, '_suggest_failures', 0)
 
         return self.student
     
@@ -117,7 +114,6 @@ class BootstrapFewShot(Teleprompter):
                         bootstrapped[example_idx] = True
 
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
-        print(f"# of suggestion failures during bootstrapping: {self.suggest_failures}")
         
         # Unbootstrapped training examples
 
@@ -134,7 +130,6 @@ class BootstrapFewShot(Teleprompter):
         name2traces = self.name2traces
         teacher = self.teacher #.deepcopy()
         predictor_cache = {}
-        suggest_failures = 0
 
         try:
             with dsp.settings.context(trace=[], **self.teacher_settings):
@@ -154,7 +149,6 @@ class BootstrapFewShot(Teleprompter):
                         predictor.demos = predictor_cache[name]
 
                 success = (self.metric is None) or self.metric(example, prediction, trace)
-                suggest_failures = dspy.settings.suggest_failure_count
                 # print(success, example, prediction)
         except Exception as e:
             success = False
@@ -187,9 +181,6 @@ class BootstrapFewShot(Teleprompter):
                     raise KeyError(f'Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.') from e
 
                 name2traces[predictor_name].append(demo)
-            
-            # increment the suggest_failures encountered during bootstrapping
-            self.suggest_failures += suggest_failures
         
         return success
 
