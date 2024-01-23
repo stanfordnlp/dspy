@@ -99,8 +99,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             all_subscores.append(subscores)
 
+            ############ Assertion-aware Optimization ############
             if hasattr(program2, '_suggest_failures'):
                 score = score - program2._suggest_failures * 0.2
+            if hasattr(program2, '_assert_failures'):
+                score = 0 if program2._assert_failures > 0 else score
+            ######################################################
 
             print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors()])
 
