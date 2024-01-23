@@ -4,40 +4,43 @@ sidebar_position: 1
 
 # Understanding Signatures
 
-A Signature is the most basic form of task description, all it needs is the inputs and outputs to the signature, optionally a small description about them and the task too.
+A DSPy Signature is the most basic form of task description which simply requires inputs and outputs and optionally, a small description about them and the task too.
 
-There are 2 ways to define a Signature: **Inline** and **Class-Based**. But before diving into the creation of signature, let's understand what is a signature and why we need it.
+There are 2 ways to define a Signature: **Inline** and **Class-Based**. But before diving into creating signatures, let's understand what a signature is and why we need it.
 
 ## What is a Signature?
 
-In a usual LLM pipeline you have 2 key components at work i.e. an LLM and a prompt. In DSPy, we have an LLM at work via the LM(Language Model) that we configure at the start of any DSPy script, we'll see how to do this in the next blog, and we have a prompt that work that we define via **Signatures**.
+In the typical LLM pipeline, you'll have two key components at work i.e. an LLM and a prompt. In DSPy, we have an LLM configured at the beginning of any DSPy script via the LM(Language Model - which is shown in the next blog) and a prompt defined via **Signatures**.
 
-A Signature is usually composed of 2 essential components: **Input Fields** and **Output Fields**. Optionally you can pass an instruction defining your task too but it's not necessary. An **Input Field** is a attribute of Signature that defines an input to the prompt and an **Output Field** is a attribute of Signature that defines an output of the prompt received from an LLM call. Let's understand this by an example.
+A Signature is usually composed of 2 essential components: **Input Fields** and **Output Fields**. You can optionally pass an instruction defining more robust requirements of your task. An **Input Field** is an attribute of Signature that defines an input to the prompt and an **Output Field** is an attribute of Signature that defines an output of the prompt received from an LLM call. Let's understand this by an example.
 
 ![DSPy Signatures](./img/dspy_signatures.png)
 
-Let's think of a basic Question-Answer task, you ask a question to the LLM and you get get the answer to it. In this the question is the input to the LLM and hence it'll be the **Input Field** in the Signature, and the answer to the question is the output you get from LLM and hence it'll be the **Output Field** in the Signature.
+Let's think of a basic Question-Answer task where the question serves as an input to the LLM from which you receive an answer response. We directly map this in DSPy as the question serves as the Signature's **Input Field** and the answer as the Signature's **Output Field** .
 
-Now that we a grasp on the components of a Signature, let's see how we can declare a signature and what a prompt for that signature looks like.
+Now that we understand the components of a Signature, let's see how we can declare a signature and what a prompt for that signature looks like.
 
 ## Inline Method
 
-If I have to tell you one of the most intuitive and simple way to define any task is to just tell the inputs and outputs for the task. This way you can convey the gist of the task in the most simple form, for example the for the above task if you told me the input is **question** and output is **answer** I'd be able to understand the gist of the task being a Question-Answer task. If you say inputs are **context** and **question**, and outputs are **answer** and **reason** I'll be able to get the idea that the task could be a RAG pipeline with Chain-Of-Thought prompting.
+DSPy offers an intuitive, simple approach for defining tasks: simply state the inputs and outputs to convey the task in its simplest form. For example, if your input is **question** and output is **answer**, it should be clear that the task is a Question-Answer task. If your inputs are **context** and **question** and outputs are **answer** and **reason**, this should imply some form of Chain-Of-Thought prompting, potentially within a RAG pipeline.
 
-Inspired by this idea, DSPy allows you to define you task as DSPy Signatures in an Einops like abstract manner, like:
+Inspired by this simplicity, DSPy Signatures mirrors an Einops-like abstract manner:
 
 ```text
 input_field_1,input_field_2,input_field_3...->output_field_1,output_field_2,output_field_3...
 ```
 
-Then names on the right side of the `->` would be the **Input Fields** of the Signature and Then names on the right side of the `->` would be the **Output Fields** of the Signature. So let's go ahead with the QA and RAG task we talked about in the above section and see how there signature would look like:
+**Input Fields** of the Signature are declared on the left side of `->` with the **Output Fields** on the right side. So let's go ahead and define DSPy signatures for the QA and RAG tasks:
 
 ```text
 QA Task: question->answer
 RAG Task: context,question->answer,rationale
 ```
 
-The naming of the fields is import for the LLM to understand the nature of inputs and outputs. But how does the prompt for the signature `question->answer` look like? Note that we didn't pass any instruction yet so DSPy would prepare that based on the fields. Let's take a deeper look at the prompt constructed by DSPy to understand it better:
+This simplistic naming of the fields is essential for the LLM to understand the nature of inputs and outputs, reducing sensitivity and ensuring clarity for expected inputs and generations. 
+
+However, this barebones signature may not provide a clear picture for how the model should approach the task, and to meet these needs, DSPy modules offer simplistic yet robust instructional templates that integrate the Signatures.
+Let's take a deeper look at the prompt constructed by DSPy to understand it better when used within a `dspy.Predict` module as `dspy.Predict(question->answer)`:
 
 ```
 Given the fields `question`, produce the fields `answer`.
@@ -54,11 +57,13 @@ Answer: ${answer}
 Question:
 ```
 
-As you can see based on the fields DSPy uses the instruction `Given the fields ``question``, produce the fields ``answer``.` to define the task. It provides instruction for the format and inputs/outputs, all based on the fields you define. And this format is pretty standard for any Signature you create, let's see how it happens for RAG:
+As you can see, DSPy populates the instruction `Given the fields ``question``, produce the fields ``answer``.` to define the task and provides instructions for the prompt format. And this format is pretty standard for any Signature you create as we can see in this prompting setup for RAG:
 
 ![Prompt Creation for Inline](./img/prompt_creation.png)
 
-The prompt that you create is gonna be dependant on the fields and their that you define in inline signature format. But wouldn't it be nice to have more control ove the prompt and fields? Luckily class-based signatures help us with that!!
+Now these instructional templates are well defined for their respective prompting techniques (CoT, ProgramOfThought, ReAct), leaving the user only having to define their task's Signature input and outputs with the rest handled by the DSPy modules library!
+
+However, it would be nice to give more instructions beyond the simplistic in-line signature and for this, we turn to class-based signatures.
 
 ## Class Based Method
 
@@ -76,9 +81,9 @@ class BasicQA(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words", prefix="Question's Answer:")
 ```
 
-The I/O Fields take 3 inputs: ``desc`, `prefix` and `format`. `desc` is the description to the input, `prefix` is the placeholder text of the field in the prompt(one that has been ${field_name} until now) and `format` which is a method that'll define how to handle non-string inputs. If the input to field is a list rather than a string we'll define how to format the content of that list to a string.
+The I/O Fields take 3 inputs: ``desc`, `prefix` and `format`. `desc` is the description to the input, `prefix` is the placeholder text of the field in the prompt(one that has been ${field_name} until now) and `format` which is a method that'll define how to handle non-string inputs. If the input to field is a list rather than a string, we can specify this through `format`.
 
-Not so surprisingly both the fields are similar in implimentation as well:
+Both `InputField` and `OutputField` are similar in implementation as well:
 
 ```python
 class InputField(Field):
@@ -90,7 +95,7 @@ class OutputField(Field):
         super().__init__(prefix=prefix, desc=desc, input=False, format=format)
 ```
 
-But how does the prompt for the class based signature look like, let's see:
+Let's take a look at how a prompt for the class based signature looks like:
 
 ```text
 Answer questions with short factoid answers.
@@ -107,6 +112,6 @@ Question's Answer: often between 1 and 5 words
 Question:
 ```
 
-As you can see the prefix for `answer` field has changed and been replaced with the `prefix` defined for it and the description is now the `desc` we defined for it. Where as in `question` field both `prefix` and `desc` were not defined so it remains same as the inline one. The instruction too is same as the docstring we pass to the class. This tells us that the essential prompt structure is the same for signature regardless of the way you define it, the only thing taht changes is the control we have to modify the content of that prompt.
+As you can see, the instruction is more well-defined by our task's instruction in the docstring. The prefix and description for the `answer` field reflects our definitions. This ensures a more refined prompt structure, giving the user more control on defining its contents per task requirements. 
 
 ![Class Based Prompt Creation](./img/class_based_prompt_creation.png)

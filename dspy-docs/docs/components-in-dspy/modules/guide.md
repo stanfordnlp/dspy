@@ -1,14 +1,6 @@
-```python
-%load_ext autoreload
-%autoreload 2
-```
-
-<img src="img/logo.png" alt="DSPy Image" height="150"/>
-
-
 ## Guide: **DSPy Modules**
 
-[<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/docs/guides/signatures.ipynb)
+[<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/docs/guides/modules.ipynb)
 
 ### Quick Recap
 
