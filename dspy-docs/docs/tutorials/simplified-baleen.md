@@ -8,6 +8,23 @@ From exploring the harder questions in the training/dev sets, a single search qu
 
 The standard approach for this challenge in the retrieval-augmented NLP literature is to build multi-hop search systems, like GoldEn (Qi et al., 2019) and Baleen (Khattab et al., 2021). These systems read the retrieved results and then generate additional queries to gather additional information if necessary. Using DSPy, we can easily simulate such systems in a few lines of code.
 
+## Configuring LM and RM
+
+We'll start by setting up the language model (LM) and retrieval model (RM). **DSPy** supports multiple API and local models. In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the retriever `ColBERTv2`.
+
+To make things easy, we've set up a ColBERTv2 server hosting a Wikipedia 2017 "abstracts" search index (i.e., containing first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)), so you don't need to worry about setting one up! It's free.
+
+```python
+import dspy
+
+turbo = dspy.OpenAI(model='gpt-3.5-turbo')
+colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+
+dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+```
+
+In the last line above, we configure **DSPy** to use the turbo LM and the ColBERTv2 retriever (over Wikipedia 2017 abstracts) by default. This will be easy to overwrite for local parts of our programs if needed.
+
 ## Loading the Dataset
 
 Since we talked about `HotPotQA` let's take is as a running example for this tutorial and load a tiny sample from the `HotPotQA` multi-hop dataset.
