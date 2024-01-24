@@ -54,8 +54,9 @@ function Feature({title, img, description}: FeatureItem) {
 
 export default function HomepageFeatures(): JSX.Element {
   return (
-    <section className={styles.features}>
+    <section className={styles.features} style={{marginBottom: "2rem"}}>
       <div className="container">
+        <p style={{color:`var(--hero-text-color)`, fontWeight:"700", fontSize: "2rem", textAlign: "center"}}>The Way of DSPy</p>
         <div className="row">
           {FeatureList.map((props, idx) => (
             <Feature key={idx} {...props} />

@@ -95,7 +95,7 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark', // Style of the footer
+      style: 'light', // Style of the footer
       links: [
         // Links configuration for the footer
         {

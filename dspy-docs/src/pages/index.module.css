@@ -21,3 +21,22 @@
   align-items: center;
   justify-content: center;
 }
+
+.buttonHoverEffect {
+  background-color: var(--bg-color);
+  color: var(--hero-text-color) !important;
+  border-color: var(--hero-text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.buttonHoverEffect[data-theme='dark'] {
+  background-color: var(--hero-text-color);
+  color: var(--bg-color) !important;
+  border-color: #0079f1;
+}
+
+.buttonHoverEffect:hover {
+  background-color: var(--hero-text-color);
+  color: var(--bg-color) !important;
+  border-color: var(--bg-color);
+}
