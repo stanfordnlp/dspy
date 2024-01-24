@@ -81,7 +81,7 @@ class ClarifaiRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-self.clarifai_search.top_k = k if k is not None else self.clarifai_search.top_k
+        self.clarifai_search.top_k = k if k is not None else self.clarifai_search.top_k
         passages = []
         queries = [q for q in queries if q]
 
