@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# BootstrapFewShot Teleprompter
+# BootstrapFewShot
 
 When compiling a DSPy program, we generally invoke a teleprompter, which is an optimizer that takes the program, a training set, and a metric—and returns a new optimized program. Different teleprompters apply different strategies for optimization. This family of teleprompters is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use teleprompter to optimizes it.
 

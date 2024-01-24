@@ -134,7 +134,7 @@ const config: Config = {
         },
       ],
       // Copyright statement for the footer
-      copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+      copyright: `Built with ⌨️`,
     },
     // Prism theme configuration for code syntax highlighting
     prism: {
