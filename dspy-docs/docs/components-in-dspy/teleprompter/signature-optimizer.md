@@ -99,7 +99,7 @@ Once the training is done you'll have better instructions and prefixes that you'
 
 ```text
 i: "Please answer the question and provide your reasoning for the answer. Your response should be clear and detailed, explaining the rationale behind your decision. Please ensure that your answer is well-reasoned and supported by relevant explanations and examples."
-p: "[Short Answer]
+p: "[Rationale]"
 Average Metric (78.9) ...
 ```
 
@@ -110,9 +110,13 @@ class CoTSignature(dspy.Signature):
     """Please answer the question and provide your reasoning for the answer. Your response should be clear and detailed, explaining the rationale behind your decision. Please ensure that your answer is well-reasoned and supported by relevant explanations and examples."""
 
     question = dspy.InputField(desc="question about something")
-    reasoning = dspy.OutputField(desc="reasoning for the answer")
-    answer = dspy.OutputField(desc="[Answer Evaluation]")
+    reasoning = dspy.OutputField(desc="reasoning for the answer", prefix="[Rationale]")
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
 ```
+
+:::note
+The prefix would be proposed only for the output field that is defined first i.e. reasoning in `CoTSignature`.
+:::
 
 Reinitialize the Pipeline object and reevaluate the pipeline! And now you have a more powerful predictor with more optimized Signature!
 
