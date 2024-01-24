@@ -1,14 +1,33 @@
 ---
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 # Signature Optimizer
 
 `SignatureOptimizer` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This teleprompter is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and un refine prompt.
 
-## Using `SignatureOptimizer`
+## Setting up a Sample Pipeline
 
-To demonstrate how `SignatureOptimizer` works, let's optimize the signatures within the following DSPy module:
+We'll be creating our CoT pipeline from scratch including the metric itself! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+
+```python
+import dspy
+
+turbo = dspy.OpenAI(model='gpt-3.5-turbo')
+dspy.settings.configure(lm=turbo)
+```
+
+Now that we have the LM client setup it's time to import the train-dev split in `HotPotQA` class that DSPy provides us:
+
+```python
+from dspy.datasets import HotPotQA
+
+dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0)
+
+trainset, devset = gms8k.train, gms8k.dev
+```
+
+We'll now define a class based signature for CoT similar to `question->reasoning,answer` and pass it to `Predict` module, that will give us the result from the LM client for this signature.
 
 ```python
 class CoTSignature(dspy.Signature):
@@ -33,26 +52,73 @@ class CoTPipeline(dspy.Module):
         )
 ```
 
-Next, let's dive into the process of using `SignatureOptimizer`:
+Now we need to evaluate this pipeline too!! So we'll use the `Evaluate` class that DSPy provides us, as for the metric we'll use the `validate_context_and_answer` that we'll define. `validate_context_and_answer` uses `dspy.evaluate.answer_exact_match` metric in DSPy which in essence sees if pred and example are same or not.
 
 ```python
-from dspy.teleprompt import SignatureOptimizer
+from dspy.evaluate import Evaluate
 
 def validate_context_and_answer(example, pred, trace=None):
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
     return answer_EM
 
-teleprompter = SignatureOptimizer(metric=validate_context_and_answer, verbose=True)
-kwargs = dict(num_threads=64, display_progress=True, display_table=0)
-
-compiled_prompt_opt = teleprompter.compile(CoTPipeline(), devset=devset, eval_kwargs=kwargs)
+evaluate = Evaluate(devset=devset, metric=validate_context_and_answer, num_threads=NUM_THREADS, display_progress=True, display_table=False)
 ```
 
-Once that is we
+To evaluate the `CoTPipeline` we'll need to create an object of it and pass it as an arg to the `evaluator` call.
+
+```python
+cot_baseline = CoTPipeline()
+
+evaluate(cot_baseline, devset=devset[:])
+```
+
+Now we have the baseline pipeline ready to use, so let's try using the `SignatureOptimizer` teleprompter and optimizing our pipeline to make it even better!
+
+## Using `SignatureOptimizer`
+
+Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `validate_context_and_answer` imported and used above:
+
+```python
+from dspy.teleprompt import SignatureOptimizer
+
+teleprompter = SignatureOptimizer(
+    metric=validate_context_and_answer,
+    verbose=True,
+)
+```
+
+In this teleprompter there is a breadth and depth argument that defines the number of instruction/prefix candidate and number of iterations in the optimization step. We'll understand this in depth in the next section. This teleprompter comes up with better instruction candidates for the signature and better prefix candidates for the output fields of the signature. Let's start optimizing our `CoT` module by calling the `compile` method in the teleprompter:
+
+```python
+kwargs = dict(num_threads=64, display_progress=True, display_table=0) # Used in Evaluate class in the optimization process
+
+compiled_prompt_opt = teleprompter.compile(cot, devset=devset, eval_kwargs=kwargs)
+```
+
+Once the training is done you'll have better instructions and prefixes that you'll need to edit in signature manually. So let's say the output during optimization is like:
+
+```text
+i: "Please answer the question and provide your reasoning for the answer. Your response should be clear and detailed, explaining the rationale behind your decision. Please ensure that your answer is well-reasoned and supported by relevant explanations and examples."
+p: "[Short Answer]
+Average Metric (78.9) ...
+```
+
+Then you'll copy this and edit the original instruction class to:
+
+```python
+class CoTSignature(dspy.Signature):
+    """Please answer the question and provide your reasoning for the answer. Your response should be clear and detailed, explaining the rationale behind your decision. Please ensure that your answer is well-reasoned and supported by relevant explanations and examples."""
+
+    question = dspy.InputField(desc="question about something")
+    reasoning = dspy.OutputField(desc="reasoning for the answer")
+    answer = dspy.OutputField(desc="[Answer Evaluation]")
+```
+
+Reinitialize the Pipeline object and reevaluate the pipeline! And now you have a more powerful predictor with more optimized Signature!
 
 ## How `SignatureOptimizer` works?
 
-It is interesting that to get optimal prefixes and instruction, `SignatureOptimizer` uses Signatures. Basically `SignatureOptimizer` uses Signature to optimize Signature!!
+It is interesting that to get optimal prefixes and instruction, `SignatureOptimizer` uses Signatures. Basically `SignatureOptimizer` uses Signature to optimize Signature!! Let's look at the codebase a bit more closely:
 
 ```python
 class BasicGenerateInstruction(Signature):
@@ -72,4 +138,6 @@ Your task is to propose a new instruction that will lead a good language model t
     proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 ```
 
-These two signatures are what give use the optimal instruction and prefixes. Now, the `BasicGenerateInstruction` will generate `n` instruction and prefixes based on the `breadth` parameter, basically `n=breadth`. It evaluates these instructions and based on all these pass them to `GenerateInstructionGivenAttempts` which outputs hopefully a more optimal instruction. This happens for `m` iterations which is the `depth` parameter in DSPy.
+These two signatures are what give use the optimal instruction and prefixes. Now, the `BasicGenerateInstruction` will generate `n` instruction and prefixes based on the `breadth` parameter, basically `n=breadth`. This happens only one time in the start to seed the instruction attempts.
+
+It uses these instructions and pass them to `GenerateInstructionGivenAttempts` which outputs hopefully a more optimal instruction. This then happens for `m` iterations which is the `depth` parameter in DSPy.
