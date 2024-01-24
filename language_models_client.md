@@ -80,7 +80,7 @@ After generation, the completions are post-processed based on the `model_type` p
 ### Usage
 
 ```python
-lm = dsp.Cohere(model='command-xlarge-nightly')
+lm = dsp.Cohere(model='command-nightly')
 ```
 
 ### Constructor
@@ -91,14 +91,14 @@ The constructor initializes the base class `LM` and verifies the `api_key` to se
 class Cohere(LM):
     def __init__(
         self,
-        model: str = "command-xlarge-nightly",
+        model: str = "command-nightly",
         api_key: Optional[str] = None,
         stop_sequences: List[str] = [],
     ):
 ```
 
 **Parameters:**
-- `model` (_str_): Cohere pretrained models. Defaults to `command-xlarge-nightly`.
+- `model` (_str_): Cohere pretrained models. Defaults to `command-nightly`.
 - `api_key` (_Optional[str]_, _optional_): API provider from Cohere. Defaults to None.
 - `stop_sequences` (_List[str]_, _optional_): List of stopping tokens to end generation.
 
