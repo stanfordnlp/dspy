@@ -4,15 +4,15 @@ sidebar_position: 1
 
 # RAG: A Step-by-Step Guide
 
-Retrieval augmented generation, or RAG for short, allows LLM to tap into a huge corpus of knowledge from sources like Wikipedia that they can access based on the query. So when asked something, LLM can search its knowledge store to find relevant passages/content to generate it's response.
+Retrieval-augmented generation (RAG) is an approach that allows LLMs to tap into a large corpus of knowledge from sources and query its knowledge store to find relevant passages/content and produce a well-refined response.
 
-RAG means LLMs can keep up with all sorts of topics and give thoughtful answers, even if they weren't originally trained on the subject. In many cases though they can be quite tricky to set up!! Luckily DSPy makes setting up retreiver into the pipeline quite seemless!!
+RAG ensures LLMs can dynamically utilize real-time knowledge even if not originally trained on the subject and give thoughtful answers. However, with this nuance comes greater complexities in setting up refined RAG pipelines. To reduce these intricacies, we turn to **DSPy**, which offers a seamless approach to setting up prompting pipelines!
 
 ## Configuring LM and RM
 
-We'll start by setting up the language model (LM) and retrieval model (RM). **DSPy** supports multiple API and local models. In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the retriever `ColBERTv2`.
+We'll start by setting up the language model (LM) and retrieval model (RM), **DSPy** supports through multiple APIs and local models hosting. 
 
-To make things easy, we've set up a ColBERTv2 server hosting a Wikipedia 2017 "abstracts" search index (i.e., containing first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)), so you don't need to worry about setting one up! It's free.
+In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
 
 ```python
 import dspy
@@ -23,11 +23,10 @@ colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17
 dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
 ```
 
-In the last line above, we configure **DSPy** to use the turbo LM and the ColBERTv2 retriever (over Wikipedia 2017 abstracts) by default. This will be easy to overwrite for local parts of our programs if needed.
 
 ## Loading the Dataset
 
-For the purpose of this tutorial let's use `HotPotQA` dataset to build our RAG pipeline. We can use `HotPotQA` class provided by DSPy for this which'll load 
+For this tutorial, we make use of the `HotPotQA` dataset, a collection of complex question-answer pairs typically answered in a multi-hop fashion. We can load this dataset provided by DSPy through the `HotPotQA` class:
 
 ```python
 from dspy.datasets import HotPotQA
@@ -46,11 +45,11 @@ len(trainset), len(devset)
 (20, 50)
 ```
 
-Now that we have the data loaded let's start defining the signatures for sub-tasks of out Baleen pipeline.
+## Building Signatures
 
-## Building Signature
+Now that we have the data loaded, let's start defining the signatures for the sub-tasks of our pipeline.
 
-Given a question, we'll search for the top-3 passages in Wikipedia and then feed them as context for answer generation. Let's start by defining this signature: `context, question --> answer`.
+We can identify our simple input `question` and output `answer`, but since we are building out a RAG pipeline, we wish to utilize some contextual information from our ColBERT corpus. So let's define our signature: `context, question --> answer`.
 
 ```python
 class GenerateAnswer(dspy.Signature):
@@ -61,14 +60,15 @@ class GenerateAnswer(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 ```
 
-With the answer generation signatures established, we can now start building the pipeline!
+We include small descriptions for the `context` and `answer` fields to define more robust guidelines on what the model will receive and should generate. 
 
 ## Building the Pipeline
 
-Our pipeline is a DSPy module, so it'll needs two methods:
+We will build our RAG pipeline as a DSPy module which will require two methods:
 
 * The `__init__` method will simply declare the sub-modules it needs: `dspy.Retrieve` and `dspy.ChainOfThought`. The latter is defined to implement our `GenerateAnswer` signature.
-* The `forward` method will describe the control flow of answering the question using the modules we have.
+* The `forward` method will describe the control flow of answering the question using the modules we have: Given a question, we'll search for the top-3 relevant passages and then feed them as context for answer generation.
+
 
 ```python
 class RAG(dspy.Module):
@@ -84,18 +84,16 @@ class RAG(dspy.Module):
         return dspy.Prediction(context=context, answer=prediction.answer)
 ```
 
-Having defined this program, let's now **compile** and optimize the predictors in it.
-
 ## Optimizing the Pipeline
 
 ##### Compiling the RAG program
 
-Having defined this program, let's now **compile** it. Compiling a program will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion in your prompt(s).
+Having defined this program, let's now **compile** it. Compiling a program will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion within the prompt(s).
 
 Compiling depends on three things:
 
 1. **A training set.** We'll just use our 20 question–answer examples from `trainset` above.
-1. **A metric for validation.** We'll define a quick `validate_context_and_answer` that checks that the predicted answer is correct. It'll also check that the retrieved context does actually contain that answer.
+1. **A metric for validation.** We'll define a simple `validate_context_and_answer` that checks that the predicted answer is correct and that the retrieved context actually contains the answer.
 1. **A specific teleprompter.** The **DSPy** compiler includes a number of **teleprompters** that can optimize your programs.
 
 ```python
@@ -116,10 +114,9 @@ compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
 ```
 
 :::note
-**Teleprompters:** Teleprompters are powerful optimizers that can take any program and learn to bootstrap and select effective prompts for its modules. Hence the name, which means "prompting at a distance".
+**Teleprompters:** Teleprompters are powerful optimizers that can take any program and learn to bootstrap and select effective prompts for its modules. Hence the name which means "prompting at a distance".
 
 Different teleprompters offer various tradeoffs in terms of how much they optimize cost versus quality, etc. We will used a simple default `BootstrapFewShot` in the example above.
-
 
 _If you're into analogies, you could think of this as your training data, your loss function, and your optimizer in a standard DNN supervised learning setup. Whereas SGD is a basic optimizer, there are more sophisticated (and more expensive!) ones like Adam or RMSProp._
 :::
@@ -160,11 +157,11 @@ Answer: Big Machine Records
 ...(truncated)
 ```
 
-Even though we haven't written any of this detailed demonstrations, we see that DSPy was able to bootstrap this 3,000 token prompt for 3-shot retrieval augmented generation with hard negative passages and chain of thought from our extremely simple program.
+Even though we haven't written any of this detailed demonstrations, we see that DSPy was able to bootstrap this 3,000 token prompt for 3-shot retrieval-augmented generation with hard negative passages and uses Chain-of-Thought reasoning within an extremely simply-written program.
 
-This illustrates the power of composition and learning. Of course, this was just generated by a particular teleprompter, which may or may not be perfect in each setting. As you'll see in DSPy, there is a large but systematic space of options you have to optimize and validate the quality and cost of your programs.
+This illustrates the power of composition and learning. Of course, this was just generated by a particular teleprompter, which may or may not be perfect in each setting. As you'll see in DSPy, there is a large but systematic space of options you have to optimize and validate with respect to your program's quality and cost.
 
-If you're so inclined, you can easily inspect the learned objects themselves.
+You can also easily inspect the learned objects themselves.
 
 ```python
 for name, parameter in compiled_rag.named_predictors():
@@ -177,7 +174,7 @@ for name, parameter in compiled_rag.named_predictors():
 
 We can now evaluate our `compiled_rag` program on the dev set. Of course, this tiny set is _not_ meant to be a reliable benchmark, but it'll be instructive to use it for illustration.
 
-For a start, let's evaluate the accuracy (exact match) of the predicted answer.
+Let's evaluate the accuracy (exact match) of the predicted answer.
 
 ```python
 from dspy.evaluate.evaluate import Evaluate
@@ -199,9 +196,9 @@ Average Metric: 22 / 50  (44.0%)
 
 ## Evaluating the Retreival
 
-It may also be instructive to look at the accuracy of retrieval. There are multiple ways to do this. Often, we can just check whether the rertieved passages contain the answer.
+It may also be instructive to look at the accuracy of retrieval. While there are multiple ways to do this, we can simply check whether the retrieved passages contain the answer.
 
-That said, since our dev set includes the gold titles that should be retrieved, we can just use these here.
+We can make use of our dev set which includes the gold titles that should be retrieved.
 
 ```python
 def gold_passages_retrieved(example, pred, trace=None):

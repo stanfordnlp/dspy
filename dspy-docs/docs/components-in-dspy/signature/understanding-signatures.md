@@ -112,6 +112,6 @@ Question's Answer: often between 1 and 5 words
 Question:
 ```
 
-As you can see, the instruction is more well-defined by our task's instruction in the docstring. The prefix and description for the `answer` field reflects our definitions. This ensures a more refined prompt structure, giving the user more control on defining its contents per task requirements. 
+As you can see, the instruction is more well-defined by our task's instruction in the docstring. The prefix and description for the `answer` field reflects our definitions. This ensures a more refined prompt structure, giving the user more control on defining its contents per task requirements.
 
 ![Class Based Prompt Creation](./img/class_based_prompt_creation.png)
