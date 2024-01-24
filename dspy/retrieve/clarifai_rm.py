@@ -41,7 +41,7 @@ class ClarifaiRM(dspy.Retrieve):
         self.user_id = clarifai_user_id
         self.pat = clarifai_pat if clarifai_pat is not None else os.environ["CLARIFAI_PAT"]
         self.k=k
-        
+        self.clarifai_search = Search(user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat)
         super().__init__(k=k)
     
     def retrieve_hits(self, hits):
@@ -77,13 +77,11 @@ class ClarifaiRM(dspy.Retrieve):
             else query_or_queries
         )
 
-        k = self.k if self.k is not None else k
         passages = []
         queries = [q for q in queries if q]
-        clarifai_search = Search(user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat)
 
         for query in queries:
-            search_response= clarifai_search.query(ranks=[{"text_raw": query}])
+            search_response= self.clarifai_search.query(ranks=[{"text_raw": query}])
 
             # Retrieve hits
             hits=[hit for data in search_response for hit in data.hits]
