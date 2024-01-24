@@ -1,4 +1,4 @@
-from collections import defaultdict
+"""Clarifai as retriver to retrieve hits"""
 from typing import List, Union
 import os
 import dspy
@@ -9,16 +9,25 @@ from concurrent.futures import ThreadPoolExecutor
 
 try:
     from clarifai.client.search import Search
-    from google.protobuf import json_format
-except ImportError:
+except ImportError as err:
     raise ImportError(
         "Clarifai is not installed. Install it using `pip install clarifai`"
-    )
+    ) from err
 
 
 class ClarifaiRM(dspy.Retrieve):
     """
     Retrieval module uses clarifai to return the Top K relevant pasages for the given query.
+    Assuming that you have ingested the source documents into clarifai App, where it is indexed and stored.
+
+    Args:
+        clarifai_user_id (str): Clarifai unique user_id.
+        clarfiai_app_id (str): Clarifai App ID, where the documents are stored.
+        clarifai_pat (str): Clarifai PAT key.
+        k (int): Top K documents to retrieve.
+    
+    Examples:
+        TODO
     """
 
     def __init__(self,
@@ -32,10 +41,18 @@ class ClarifaiRM(dspy.Retrieve):
         self.user_id = clarifai_user_id
         self.pat = clarifai_pat if clarifai_pat is not None else os.environ["CLARIFAI_PAT"]
         self.k=k
-
+        
         super().__init__(k=k)
     
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]):
+    def retrieve_hits(self, hits):
+                header = {"Authorization": f"Key {self.pat}"}
+                request = requests.get(hits.input.data.text.url, headers=header)
+                request.encoding = request.apparent_encoding
+                requested_text = request.text
+                return requested_text
+    
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None
+    ) -> dspy.Prediction:
 
         """Uses clarifai-python SDK search function and retrieves top_k similar passages for given query,
        Args:
@@ -49,7 +66,6 @@ class ClarifaiRM(dspy.Retrieve):
        Below is a code snippet that shows how to use Marqo as the default retriver:
         ```python
         import clarifai
-
         llm = dspy.Clarifai(model=MODEL_URL, api_key="YOUR CLARIFAI_PAT")
         retriever_model = ClarifaiRM(clarifai_user_id="USER_ID", clarfiai_app_id="APP_ID", clarifai_pat="YOUR CLARIFAI_PAT")
         dspy.settings.configure(lm=llm, rm=retriever_model)
@@ -60,37 +76,19 @@ class ClarifaiRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-        k = k if k is not None else self.k
+
+        k = self.k if self.k is not None else k
         passages = []
         queries = [q for q in queries if q]
+        clarifai_search = Search(user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat)
 
         for query in queries:
-            clarifai_search = Search(user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat)
             search_response= clarifai_search.query(ranks=[{"text_raw": query}])
 
             # Retrieve hits
             hits=[hit for data in search_response for hit in data.hits]
-            executor = ThreadPoolExecutor(max_workers=10)
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(self.retrieve_hits, hits))
+            passages.extend(dotdict({"long_text": d}) for d in results)
 
-            def retrieve_hits(hits):
-                header = {"Authorization": f"Key {self.pat}"}
-                request = requests.get(hits.input.data.text.url, headers=header)
-                request.encoding = request.apparent_encoding
-                requested_text = request.text
-                return requested_text
-            
-            futures = [executor.submit(retrieve_hits, hit) for hit in hits]
-            results = [future.result() for future in futures]
-            passages=[dotdict({"long_text": d}) for d in results]
-
-            return passages
-            
-
-
-
-
-
-
-
-
-    
+        return passages
