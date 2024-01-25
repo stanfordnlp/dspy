@@ -73,7 +73,8 @@ class Predict(Parameter):
         temperature = lm.kwargs['temperature'] if temperature is None else temperature
 
         num_generations = config.get("n", None)
-        num_generations = lm.kwargs['n'] if num_generations is None else num_generations
+        if num_generations is None:
+            num_generations = lm.kwargs.get('n', lm.kwargs.get('num_generations', None))
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7

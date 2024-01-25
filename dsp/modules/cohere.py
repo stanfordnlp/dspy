@@ -39,6 +39,7 @@ class Cohere(LM):
         model: str = "command-nightly",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
+        **kwargs
     ):
         """
         Parameters
@@ -51,6 +52,8 @@ class Cohere(LM):
             It can be obtained from https://dashboard.cohere.ai/register.
         stop_sequences : list of str
             Additional stop tokens to end generation.
+        **kwargs: dict
+            Additional arguments to pass to the API provider.
         """
         super().__init__(model)
         self.co = cohere.Client(api_key)
@@ -64,6 +67,7 @@ class Cohere(LM):
             "presence_penalty": 0,
             "num_generations": 1,
             "return_likelihoods": "GENERATION",
+            **kwargs
         }
         self.stop_sequences = stop_sequences
         self.max_num_generations = 5
