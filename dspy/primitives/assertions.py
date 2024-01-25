@@ -220,7 +220,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                 if i == max_backtracks:
                     if isinstance(current_error, DSPyAssertionError):
                         raise current_error
-                    dspy.settings.trace = []
+                    dsp.settings.trace.clear()
                     result = (
                         bypass_suggest_handler(func)(*args, **kwargs)
                         if bypass_suggest
@@ -229,7 +229,8 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                     break
                 else:
                     try:
-                        dspy.settings.trace = []
+                        dsp.settings.trace.clear()
+                        # print("backtrack", dspy.settings.backtrack_to)
                         result = func(*args, **kwargs)
                         break
                     except (DSPySuggestionError, DSPyAssertionError) as e:
