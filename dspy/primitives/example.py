@@ -105,3 +105,17 @@ class Example:
     
     def toDict(self):
         return self._store.copy()
+    
+    def dump_state(self):
+        state_keys = ['_store', '_demos', '_input_keys']
+        return {k: getattr(self, k) for k in state_keys}
+
+    def load_state(self, state):
+        for k, v in state.items():
+            setattr(self, k, v)
+
+    @classmethod
+    def from_state(cls, state):
+        example = Example()
+        example.load_state(state)
+        return example
