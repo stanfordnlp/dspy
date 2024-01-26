@@ -26,10 +26,8 @@ class BaseModule:
                 add_parameter(name, value)
 
             elif isinstance(value, BaseModule):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, '_compiled', False):
-                    for sub_name, param in value.named_parameters():
-                        add_parameter(f"{name}.{sub_name}", param)
+                for sub_name, param in value.named_parameters():
+                    add_parameter(f"{name}.{sub_name}", param)
             
             elif isinstance(value, (list, tuple)):
                 for idx, item in enumerate(value):
