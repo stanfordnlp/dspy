@@ -19,7 +19,7 @@ class BaseModule:
         def add_parameter(param_name, param_value):
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
                 # Exclude compiled modules if only_uncompiled is True.
-                if (not only_uncompiled or not getattr(value, '_compiled', False)):
+                if (not only_uncompiled or not getattr(param_value, '_compiled', False)):
                         visited.add(id(param_value))
                         named_parameters.append((param_name, param_value))
 
