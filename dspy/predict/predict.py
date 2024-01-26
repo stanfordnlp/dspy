@@ -13,6 +13,7 @@ class Predict(Parameter):
         self.signature = signature #.signature
         self.config = config
         self.lm = None
+        self._compiled = False
         self.reset()
 
         # if the signature is a string

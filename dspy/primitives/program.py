@@ -44,14 +44,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __repr__(self):
         s = []
 
-        for name, param in self.named_predictors():
+        for name, param in self.named_predictors(only_uncompiled=False):
             s.append(f"{name} = {param}")
 
         return "\n".join(s)
 
     def map_named_predictors(self, func):
         """Applies a function to all named predictors."""
-        for name, predictor in self.named_predictors():
+        for name, predictor in self.named_predictors(only_uncompiled=False):
             set_attribute_by_name(self, name, func(predictor))
         return self
 

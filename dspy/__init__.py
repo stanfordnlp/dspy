@@ -48,16 +48,20 @@ class Models:
     @classmethod
     def create_lm(cls, model_config):
         """ Create an LM based."""
-        model_config = {**model_config} # deepcopy config
-        model_name = model_config.pop('model')
+        try:
+            model_config = {**model_config} # deepcopy config
+            model_name = model_config.pop('model')
 
-        if "gpt-" in model_name:
-            lm = OpenAI(model=model_name, **model_config)
-        else:
-            lm = HFClientTGI(
-                model=model_name, port=[7140, 7141, 7142, 7143], **model_config
-            )
-        return lm
+            if "gpt-" in model_name:
+                lm = OpenAI(model=model_name, **model_config)
+            else:
+                lm = HFClientTGI(
+                    model=model_name, port=[7140, 7141, 7142, 7143], **model_config
+                )
+            return lm
+        except:
+            return None
+
 
     @classmethod
     def get_lm(cls, config_name):
