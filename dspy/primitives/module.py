@@ -4,7 +4,7 @@ import ujson
 
 class BaseModule:
     def __init__(self):
-        pass
+        self._compiled = False
 
     def named_parameters(self, only_uncompiled=False):
         """
@@ -19,7 +19,7 @@ class BaseModule:
         def add_parameter(param_name, param_value):
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
                 # Exclude compiled modules if only_uncompiled is True.
-                if (not only_uncompiled or not param_value._compiled):
+                if (not only_uncompiled or not not getattr(value, '_compiled', False)):
                         visited.add(id(param_value))
                         named_parameters.append((param_name, param_value))
 
