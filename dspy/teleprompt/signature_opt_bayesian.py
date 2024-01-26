@@ -84,7 +84,7 @@ class BayesianSignatureOptimizer(Teleprompter):
         self.view_data_batch_size = view_data_batch_size
         
     def _print_full_program(self, program):
-        for i,predictor in enumerate(program.predictors()):
+        for i,predictor in enumerate(program.predictors(only_uncompiled=True)):
             if self.verbose: print(f"Predictor {i}")
             if (hasattr(predictor, 'extended_signature')):
                 if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
@@ -130,7 +130,7 @@ class BayesianSignatureOptimizer(Teleprompter):
                 self.observations = self._observe_data(devset).replace("Observations:","")
 
         # Seed the prompt optimizer zero shot with just the instruction, generate BREADTH new prompts
-        for predictor in module.predictors():
+        for predictor in module.predictors(only_uncompiled=True):
             basic_instruction = None
             basic_prefix = None
             if (hasattr(predictor, 'extended_signature')):
@@ -185,7 +185,7 @@ class BayesianSignatureOptimizer(Teleprompter):
             candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_devset)
 
             # Store the candidate demos
-            for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
+            for module_p, candidate_p in zip(module.predictors(only_uncompiled=True), candidate_program.predictors(only_uncompiled=True)):
                 if id(module_p) not in demo_candidates.keys():
                     demo_candidates[id(module_p)] = []
                 demo_candidates[id(module_p)].append(candidate_p.demos)
@@ -207,7 +207,7 @@ class BayesianSignatureOptimizer(Teleprompter):
                 if self.verbose: print(f"Starting trial num: {trial_num}")
                 trial_logs[trial_num] = {}
 
-                for p_old, p_new in zip(baseline_program.predictors(), candidate_program.predictors()):
+                for p_old, p_new in zip(baseline_program.predictors(only_uncompiled=True), candidate_program.predictors(only_uncompiled=True)):
 
                     # Get instruction candidates for our given predictor
                     p_instruction_candidates = instruction_candidates[id(p_old)]

@@ -6,7 +6,7 @@ class BaseModule:
     def __init__(self):
         pass
 
-    def named_parameters(self):
+    def named_parameters(self, only_uncompiled=False):
         """
             Unlike PyTorch, handles (non-recursive) lists of parameters too.
         """
@@ -18,15 +18,18 @@ class BaseModule:
 
         def add_parameter(param_name, param_value):
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
-                visited.add(id(param_value))
-                named_parameters.append((param_name, param_value))
+                # Exclude compiled modules if only_uncompiled is True.
+                if (not only_uncompiled or not param_value._compiled):
+                        visited.add(id(param_value))
+                        named_parameters.append((param_name, param_value))
+
 
         for name, value in self.__dict__.items():
             if isinstance(value, Parameter):
                 add_parameter(name, value)
 
             elif isinstance(value, BaseModule):
-                for sub_name, param in value.named_parameters():
+                for sub_name, param in value.named_parameters(only_uncompiled=only_uncompiled):
                     add_parameter(f"{name}.{sub_name}", param)
             
             elif isinstance(value, (list, tuple)):

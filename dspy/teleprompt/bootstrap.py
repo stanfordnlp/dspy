@@ -70,9 +70,9 @@ class BootstrapFewShot(Teleprompter):
         name2predictor, predictor2name = {}, {}
         student, teacher = self.student, self.teacher
 
-        assert len(student.predictors()) == len(teacher.predictors()), "Student and teacher must have the same number of predictors."
+        assert len(student.predictors(only_uncompiled=True)) == len(teacher.predictors(only_uncompiled=True)), "Student and teacher must have the same number of predictors."
 
-        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
+        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(only_uncompiled=True), teacher.named_predictors(only_uncompiled=True)):
             assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature == predictor2.signature, f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
@@ -132,14 +132,14 @@ class BootstrapFewShot(Teleprompter):
                 new_settings = dict(lm=lm) if round_idx > 0 else {}
 
                 with dsp.settings.context(**new_settings):
-                    for name, predictor in teacher.named_predictors():
+                    for name, predictor in teacher.named_predictors(only_uncompiled=True):
                         predictor_cache[name] = predictor.demos
                         predictor.demos = [x for x in predictor.demos if x != example]
 
                     prediction = teacher(**example.inputs())
                     trace = dsp.settings.trace
 
-                    for name, predictor in teacher.named_predictors():
+                    for name, predictor in teacher.named_predictors(only_uncompiled=True):
                         predictor.demos = predictor_cache[name]
 
                 success = (self.metric is None) or self.metric(example, prediction, trace)
@@ -182,7 +182,7 @@ class BootstrapFewShot(Teleprompter):
         rng = random.Random(0)
         raw_demos = self.validation
 
-        for name, predictor in self.student.named_predictors():
+        for name, predictor in self.student.named_predictors(only_uncompiled=True):
             augmented_demos = self.name2traces[name][:self.max_bootstrapped_demos]
             
             sample_size = min(self.max_labeled_demos - len(augmented_demos), len(raw_demos))

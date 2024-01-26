@@ -28,18 +28,18 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def named_predictors(self):
+    def named_predictors(self, only_uncompiled=False):
         from dspy.predict.predict import Predict
 
-        named_parameters = self.named_parameters()
+        named_parameters = self.named_parameters(only_uncompiled=only_uncompiled)
         return [
             (name, param)
             for name, param in named_parameters
             if isinstance(param, Predict)
         ]
 
-    def predictors(self):
-        return [param for _, param in self.named_predictors()]
+    def predictors(self, only_uncompiled=False):
+        return [param for _, param in self.named_predictors(only_uncompiled=only_uncompiled)]
 
     def __repr__(self):
         s = []
