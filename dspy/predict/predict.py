@@ -12,6 +12,7 @@ class Predict(Parameter):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
+        self.lm = None
         self.reset()
 
         # if the signature is a string
@@ -40,7 +41,6 @@ class Predict(Parameter):
 
     
     def reset(self):
-        self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
