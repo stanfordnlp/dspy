@@ -70,7 +70,7 @@ class GenerateSearchQuery(dspy.Signature):
     query = dspy.OutputField()
 ```
 
-:::note
+:::info
 We could have written `context = GenerateAnswer.signature.context` to avoid duplicating the description of the context field.
 :::
 

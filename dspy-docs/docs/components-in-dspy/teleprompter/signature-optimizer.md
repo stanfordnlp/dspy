@@ -114,7 +114,7 @@ class CoTSignature(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 ```
 
-:::note
+:::info
 The prefix would be proposed only for the output field that is defined first i.e. reasoning in `CoTSignature`.
 :::
 

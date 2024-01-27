@@ -1,6 +1,10 @@
-## [ColBERTv2](https://github.com/stanford-futuredata/colbert)
+---
+sidebar_position: 1
+---
 
-### Setting up the ColBERTv2 Client
+# ColBERTv2
+
+## Setting up the ColBERTv2 Client
 
 The constructor initializes the `ColBERTv2` class instance and sets up the request parameters for interacting with the ColBERTv2 retrieval server. This server is hosted remotely at `'http://20.102.90.50:2017/wiki17_abstracts`. 
 
@@ -20,9 +24,9 @@ class ColBERTv2:
     ):
 ```
 
-### Under the Hood
+## Under the Hood
 
-#### `__call__(self, query: str, k: int = 10, simplify: bool = False) -> Union[list[str], list[dotdict]]`
+### `__call__(self, query: str, k: int = 10, simplify: bool = False) -> Union[list[str], list[dotdict]]`
 
 **Parameters:**
 - `query` (_str_): Search query string used for retrieval sent to ColBERTv2 server.
@@ -41,12 +45,7 @@ If `post_requests` is set, the method sends a query to the server via a POST req
 It then processes and returns the top-k passages from the response with the list of retrieved passages dependent on the `simplify` flag return condition above.
 
 
-### Using the ColBERTv2 Retrieval Client
-```python
-colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-```
-
-### Sending Retrieval Requests via ColBERTv2 Client
+## Sending Retrieval Requests via ColBERTv2 Client
 1) _**Recommended**_ Configure default RM using `dspy.configure`.
 
 This allows you to define programs in DSPy and have DSPy internally conduct retrieval using `dsp.retrieve` on the query on the configured RM.

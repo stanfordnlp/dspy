@@ -1,12 +1,16 @@
-## AzureCognitiveSearch
+---
+sidebar_position: 2
+---
 
-### Prerequisites
+# AzureCognitiveSearch
+
+## Prerequisites
 
 ```bash
 pip install azure-core
 ```
 
-### Setting up the Azure Client
+## Setting up the Azure Client
 
 The constructor initializes an instance of the `AzureCognitiveSearch` class and sets up parameters for sending queries and retrieving results with the Azure Cognitive Search server.
 
@@ -28,9 +32,9 @@ class AzureCognitiveSearch:
     ):
 ```
 
-### Under the Hood
+## Under the Hood
 
-#### `__call__(self, query: str, k: int = 10) -> Union[list[str], list[dotdict]]:`
+### `__call__(self, query: str, k: int = 10) -> Union[list[str], list[dotdict]]:`
 
 **Parameters:**
 - `query` (_str_): Search query string used for retrieval sent to Azure Cognitive Search service.
@@ -45,12 +49,7 @@ The method sends a query and number of desired passages (k) to Azure Cognitive S
 
 This is then converted to `dotdict` objects that internally map the retrieved content and scores, listed by descending order of relevance.
 
-### Using the Azure Retrieval Client
-```python
-TODO
-```
-
-### Sending Retrieval Requests via Azure Client
+## Sending Retrieval Requests via Azure Client
 1) _**Recommended**_ Configure default RM using `dspy.configure`.
 
 This allows you to define programs in DSPy and have DSPy internally conduct retrieval using `dsp.retrieve` on the query on the configured RM.

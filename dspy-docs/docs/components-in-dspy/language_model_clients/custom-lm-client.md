@@ -14,7 +14,7 @@ An LM client needs to implement 3 methods at minimum: `__init__`, `basic_request
 from dsp import LM
 
 
-class CustomLMClient():
+class CustomLMClient(LM):
     def __init__(self):
         self.provider = "default"
 
@@ -35,7 +35,7 @@ While for the most part you are free to add and customize the client in anyway y
 
 By now you must've realized the reason we have these rules is mainly for making the history inpection and modules work without breaking.
 
-:::note
+:::info
 You can mitigate the history issue by updating the history in the `__call__` itself. So if you can take care of history updates in `__call__` itself you just need to implement `__init__` and `__call__`.
 
 Or if you are up for ir rewrite `inspect_history` method in the class.
@@ -147,7 +147,7 @@ That's it! Now we can configure this as an `lm` in DSPy and use it in the pipeli
 ```python
 import dspy
 
-claude = dspy.OpenAI(model='claude-2')
+claude = Claude(model='claude-2')
 
 dspy.settings.configure(lm=claude)
 ```
