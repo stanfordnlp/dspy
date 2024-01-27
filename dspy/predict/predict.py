@@ -52,7 +52,7 @@ class Predict(Parameter):
         # add demos
         state = state | {"demos": [x.dump_state() for x in self.demos]}
         # add LM
-        state = state | {"lm": self.lm.dump_state() if self.lm else None }
+        state = state | {"lm": self.lm.kwargs if self.lm else None }
         return state
 
     def load_state(self, state):
