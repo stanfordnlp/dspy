@@ -31,6 +31,8 @@ class HFClientTGI(HFModel):
             "stop": ["\n", "\n\n"],
             **kwargs,
         }
+        if 'stop' in self.kwargs:
+            self.kwargs['stop'] = set(self.kwargs['stop'])
 
         # print(self.kwargs)
 
