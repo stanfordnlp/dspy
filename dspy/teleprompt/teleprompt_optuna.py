@@ -11,7 +11,7 @@ from .vanilla import LabeledFewShot
 from dspy.evaluate.evaluate import Evaluate
 
 class BootstrapFewShotWithOptuna(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, only_reset_uncompiled=False):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
@@ -31,8 +31,10 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
+        self.only_reset_uncompiled = only_reset_uncompiled
+
     def objective(self, trial):
-        program2 = self.student.reset_copy()
+        program2 = self.student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
         for (name, compiled_predictor), (_, program2_predictor) in zip(self.compiled_teleprompter.named_predictors(only_uncompiled=True), program2.named_predictors(only_uncompiled=True)):
             all_demos = compiled_predictor.demos
             demo_index = trial.suggest_int(f"demo_index_for_{name}", 0, len(all_demos) - 1)
@@ -48,8 +50,8 @@ class BootstrapFewShotWithOptuna(Teleprompter):
     def compile(self, student, *, teacher=None, max_demos, trainset, valset=None):
         self.trainset = trainset
         self.valset = valset or trainset
-        self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
+        self.student = student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
+        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
         teleprompter_optimize = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=max_demos,
                                         max_labeled_demos=self.max_labeled_demos,
                                         teacher_settings=self.teacher_settings,

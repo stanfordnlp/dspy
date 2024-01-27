@@ -28,7 +28,7 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None, only_reset_uncompiled=False):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
@@ -48,6 +48,8 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
+        self.only_reset_uncompiled = only_reset_uncompiled
+
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
@@ -65,7 +67,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             if seed == -3:
                 # zero-shot
-                program2 = student.reset_copy()
+                program2 = student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
             
             elif seed == -2:
                 # labels only
