@@ -32,7 +32,7 @@ class HFClientTGI(HFModel):
             **kwargs,
         }
         if 'stop' in self.kwargs:
-            self.kwargs['stop'] = set(self.kwargs['stop'])
+            self.kwargs['stop'] = tuple(self.kwargs)['stop'])
 
         # print(self.kwargs)
 
