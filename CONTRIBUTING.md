@@ -37,7 +37,7 @@ go to the root folder and then activate it as follows (it will first download al
 pre-commit install
 ```
 
-> Pre-commit hooks will attept to fix all your files and so you will need to (add + commit) them once the fixes are done !
+> Pre-commit hooks will attempt to fix all your files and so you will need to (add + commit) them once the fixes are done !
 
 ### Optional
 
