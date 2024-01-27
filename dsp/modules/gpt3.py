@@ -104,7 +104,7 @@ class GPT3(LM):
             **kwargs,
         }  # TODO: add kwargs above for </s>
         if 'stop' in self.kwargs:
-            self.kwargs['stop'] = tuple(self.kwargs)['stop'])
+            self.kwargs['stop'] = tuple(self.kwargs)['stop']
 
         if api_provider != "azure":
             self.kwargs["model"] = model
