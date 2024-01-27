@@ -25,6 +25,7 @@ class BaseModule:
 
 
         for name, value in self.__dict__.items():
+            #NOTE(Karel): Move '_compiled' check here so we can toggle entire Modules to be '_compiled'.
             if isinstance(value, Parameter):
                 add_parameter(name, value)
 
