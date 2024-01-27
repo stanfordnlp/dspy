@@ -65,7 +65,7 @@ class BootstrapFewShot(Teleprompter):
         assert getattr(self.student, '_compiled', False) is False, "Student must be uncompiled."
 
         if self.max_labeled_demos and getattr(self.teacher, '_compiled', False) is False:
-            teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+            teleprompter = LabeledFewShot(k=self.max_labeled_demos, only_reset_uncompiled=self.only_reset_uncompiled)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled), trainset=self.trainset)
 
     def _prepare_predictor_mappings(self):
