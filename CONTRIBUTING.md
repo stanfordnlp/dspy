@@ -50,7 +50,7 @@ pre-commit run --all-files
 
 ## Commit Message format
 
-Commit message format must be respected, with the followint regex:
+Commit message format must be respected, with the following regex:
 
 ```
 ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)
