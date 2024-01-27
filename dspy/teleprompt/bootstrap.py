@@ -32,7 +32,7 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
+    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5, only_reset_uncompiled=False):
         self.metric = metric
         self.teacher_settings = teacher_settings
 
@@ -42,6 +42,8 @@ class BootstrapFewShot(Teleprompter):
         self.max_errors= max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
+
+        self.only_reset_uncompiled = only_reset_uncompiled
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         self.trainset = trainset
@@ -57,14 +59,14 @@ class BootstrapFewShot(Teleprompter):
         return self.student
     
     def _prepare_student_and_teacher(self, student, teacher):
-        self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
+        self.student = student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
+        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
 
         assert getattr(self.student, '_compiled', False) is False, "Student must be uncompiled."
 
         if self.max_labeled_demos and getattr(self.teacher, '_compiled', False) is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
-            self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
+            self.teacher = teleprompter.compile(self.teacher.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled), trainset=self.trainset)
 
     def _prepare_predictor_mappings(self):
         name2predictor, predictor2name = {}, {}

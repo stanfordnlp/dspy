@@ -48,11 +48,15 @@ class BaseModule:
     def deepcopy(self):
         return copy.deepcopy(self)
 
-    def reset_copy(self):
+    def reset_copy(self, only_reset_uncompiled=False):
         obj = copy.deepcopy(self)
         
         for param in obj.parameters():
-            param.reset()
+            if only_reset_uncompiled:
+                if not hasattr(param, '_compiled') or not param._compiled:
+                    param.reset()
+            else:
+                param.reset()
         
         return obj
     
