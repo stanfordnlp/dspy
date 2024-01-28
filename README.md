@@ -7,6 +7,7 @@
 ## DSPy: _Programming_—not prompting—Foundation Models
 
 **[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
 [Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
 [Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
 
@@ -305,9 +306,9 @@ In contrast, **DSPy** automatically optimizes the prompts in your programs to al
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
+Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Shangyin Tan**, **Manish Shetty**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
 
-**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
+**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
 
