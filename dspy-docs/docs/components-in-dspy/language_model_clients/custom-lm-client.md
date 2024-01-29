@@ -2,9 +2,9 @@
 sidebar_position: 3
 ---
 
-# Creating Custom LM Client
+# Creating a Custom Local Model (LM) Client
 
-DSPy provides you with multiple LM clients that you can use to excute any of your pipeline. However, in case you have an API or local model that is not able to be executed by any of the existing client then you can create one yourself!! It's not too difficult so let's see how!!
+DSPy provides you with multiple LM clients that you can use to execute any of your pipelines. However, if you have an API or LM that is unable to be executed by any of the existing clients hosted in DSPy, you can create one yourself!! It's not too difficult so let's see how!!
 
 ## Format of LM Client
 
@@ -27,23 +27,23 @@ class CustomLMClient(LM):
         pass
 ```
 
-While for the most part you are free to add and customize the client in anyway you see fit, but some components need to be present and work in a certain way so you can utilize every feature of DSPy without interruption. On of these feture being viewing history of calls made to LLM via `inspect_history`. To elaborate:
+While you can mostly add to and customize the client per your requirements, the client should be configurable with some key components to utilize every feature of DSPy without interruption. One of these key features is viewing the history of calls made to the LM via `inspect_history`. To elaborate:
 
-* `__init__`: Should contain the `self.provider="default` and `self.history=[]`. `self.history` will contain the prompt-completion pair created via LLM call since the object was initialized. `self.provider` is used in `inspect_history` method andfor most part you can leave it as **"default"**.
-* `basic_request`: This function makes the call to LLM and get the completion for the given prompt over the given `kwargs` which usually have parameters like `temperature`, `max_tokens`, etc. After you get the completion is received from the LLM you must update the `self.history` list by appending the dictionary `{"prompt": prompt, "response": response}` feel free to add anything else but these 2 are mandatory.
-* `__call__`: This function should return the list of completions model returned, in the model basic case this is just a list of string with string being the completion. However it can be a tuple too like `Cohere` LM client returns the list of tuple where the tuple is a pair of completion and it's likelihood. Aside from the you must receive the completion via `request` call which unless modified just calls `basic_request` as is. This is to keep the history updated and that's all.
+* `__init__`: Should contain the `self.provider="default` and `self.history=[]`. `self.history` will contain the prompt-completion pair created via LM call since the object was initialized. `self.provider` is used in `inspect_history` method and for most part you can leave it as **"default"**.
+* `basic_request`: This function makes the call to the LM and retrieves the completion for the given prompt over the given `kwargs` which usually have parameters like `temperature`, `max_tokens`, etc. After you receive the completion from the LM, you must update the `self.history` list by appending the dictionary `{"prompt": prompt, "response": response}` to it. These fields are mandatory but you can add any other parameters as you see fit.
+* `__call__`: This function should return the list of completions returned by the model. This can be a list of string completions in the basic case. Or it can be a tuple pair with the completion and corresponding likelihood as returned by the `Cohere` LM client. Additionally, the completion should be received by the `request` call which unless modified just calls `basic_request` as is, ensuring the history is updated as well. 
 
-By now you must've realized the reason we have these rules is mainly for making the history inpection and modules work without breaking.
+By now you must've realized the reason we have these rules is mainly for making the history inspection and modules work without breaking.
 
 :::info
-You can mitigate the history issue by updating the history in the `__call__` itself. So if you can take care of history updates in `__call__` itself you just need to implement `__init__` and `__call__`.
+You can mitigate issues with updating the history in the `__call__` itself. So if you can take care of history updates in `__call__` itself, you just need to implement `__init__` and `__call__`.
 
-Or if you are up for ir rewrite `inspect_history` method in the class.
+Or if you are up for it, feel free to rewrite `inspect_history` method as per your requirements!
 :::
 
 ## Implementing our Custom LM
 
-Based on whatever we learned until now let's implement our custom LLM that calls the Claude's API. In Claude we need to initialize 2 things to make a successful call: `API_KEY` and `BASE_URL`. The base URL based on the [**docs**](https://docs.anthropic.com/claude/reference/messages_post) is `https://api.anthropic.com/v1/messages`. Let's write our `__init__` method:
+Based on whatever we have learned so far, let's implement our custom LM that calls the Claude API. In Claude, we need to initialize 2 components to make a successful call: `API_KEY` and `BASE_URL`. The base URL from on the [**Anthropic docs**](https://docs.anthropic.com/claude/reference/messages_post) is `https://api.anthropic.com/v1/messages`. Let's write our `__init__` method:
 
 ```python
 def __init__(model, api_key):
@@ -54,7 +54,7 @@ def __init__(model, api_key):
     self.base_url = "https://api.anthropic.com/v1/messages"
 ```
 
-Based on the above implementation you might've realized that we need to pass 2 parameters when we'll initialize this LM client i.e. the `model` like `claude-2` and the `api_key` which you'll get in Claude's API Console. Now it's time to define the `basic_request` method where we'll make the call to `self.base_url` and get the completion:
+Based on the implementation above, we want to now pass in our `model` like `claude-2` and the `api_key` which you'll see in Claude's API Console. Now it's time to define the `basic_request` method where we'll make the call to `self.base_url` and get the completion:
 
 ```python
 def basic_request(self, prompt: str, **kwargs):
@@ -95,7 +95,7 @@ def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
     return completions
 ```
 
-To write it all in a single class we'll get:
+To write it all in a single class, we'll get:
 
 ```python
 from dsp import LM
