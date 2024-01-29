@@ -3,12 +3,6 @@ from typing import Any, Optional
 
 from dsp.modules.lm import LM
 
-try:
-    from clarifai.client.model import Model
-except ImportError as err:
-    raise ImportError("ClarifaiLLM requires `pip install clarifai`.") from err
-
-
 class ClarifaiLLM(LM):
     """Integration to call models hosted in clarifai platform.
 
@@ -30,6 +24,12 @@ class ClarifaiLLM(LM):
         **kwargs,
     ):
         super().__init__(model)
+
+        try:
+            from clarifai.client.model import Model
+        except ImportError as err:
+            raise ImportError("ClarifaiLLM requires `pip install clarifai`.") from err
+
 
         self.provider = "clarifai"
         self.pat = api_key
