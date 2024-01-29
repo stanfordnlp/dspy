@@ -4,6 +4,9 @@ import dspy
 from typing import Optional
 import json
 import os
+import requests
+
+from dsp.utils import dotdict
 
 START_SNIPPET = "<%START%>"
 END_SNIPPET = "<%END%>"
@@ -45,7 +48,7 @@ class VectaraRM(dspy.Retrieve):
         vectara_customer_id: Optional[str] = None,
         vectara_corpus_id: Optional[str] = None,
         vectara_api_key: Optional[str] = None,
-        k: int = 3,
+        k: int = 5,
     ):
         if vectara_customer_id is None:
             vectara_customer_id = os.environ.get("VECTARA_CUSTOMER_ID", "")
@@ -58,6 +61,7 @@ class VectaraRM(dspy.Retrieve):
         self._vectara_corpus_id = vectara_corpus_id
         self._vectara_api_key = vectara_api_key
         self._n_sentences_before = self._n_sentences_after = 2
+        self._vectara_timeout = 120
         super().__init__(k=k)
 
     def _vectara_query(
@@ -72,7 +76,7 @@ class VectaraRM(dspy.Retrieve):
         corpus_key = {
             "customerId": self._vectara_customer_id,
             "corpusId": self._vectara_corpus_id,
-            "lexicalInterpolationConfig": {"lambda": 0.0 }
+            "lexicalInterpolationConfig": {"lambda": 0.025 }
         }
 
         data = {
@@ -92,11 +96,18 @@ class VectaraRM(dspy.Retrieve):
             ]
         }
 
-        response = self._index._session.post(
-            headers=self._get_post_headers(),
+        headers = {
+            "x-api-key": self._vectara_api_key,
+            "customer-id": self._vectara_customer_id,
+            "Content-Type": "application/json",
+            "X-Source": "dspy",
+        }
+
+        response = requests.post(
+            headers=headers,
             url="https://api.vectara.io/v1/query",
             data=json.dumps(data),
-            timeout=self._index.vectara_api_timeout,
+            timeout=self._vectara_timeout,
         )
 
         if response.status_code != 200:
@@ -108,12 +119,11 @@ class VectaraRM(dspy.Retrieve):
             return []
 
         result = response.json()
-
         responses = result["responseSet"][0]["response"]
 
         res = [
             {
-                "document": remove_snippet(x["text"]),
+                "text": remove_snippet(x["text"]),
                 "score": x["score"]
             } for x in responses
         ]
@@ -136,22 +146,18 @@ class VectaraRM(dspy.Retrieve):
         queries = [q for q in queries if q]  # Filter empty queries        
         k = k if k is not None else self.k
 
-        if len(queries) == 1:
-            # for a single query we use limit=k and just run this once to get op_
-            res = self._vectara_query(queries[0], limit=k)
-            content = [x["document"] for x in res]
-        else:
-            # For multiple queries, we query each in turn and accumulate the score if a passage is returned multiple times
-            # For this we use limit=3k to ensure reasonable coverage, and then take the top k at the end
-            passages = defaultdict(float)
-            for query in queries:
-                r = self._vectara_query(query, limit=3*k)
-                doc = r["document"]
-                score = r["score"]
-                passages[doc] += score
-            sorted_passages = sorted(
-                passages.items(), key=lambda x: x[1], reverse=True)[:k]
-            content = [p[0] for p in sorted_passages]
+        all_res = []
+        limit = 3*k if len(queries) > 1 else k
+        for query in queries:
+            _res = self._vectara_query(query, limit=limit)
+            all_res.append(_res)
 
-        return dspy.Prediction(passages=content)
+        passages = defaultdict(float)
+        for res_list in all_res:
+            for res in res_list:
+                passages[res["text"]] += res["score"]
+        sorted_passages = sorted(
+            passages.items(), key=lambda x: x[1], reverse=True)[:k]
+
+        return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]
     
