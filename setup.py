@@ -26,6 +26,7 @@ setup(
         "qdrant": ["qdrant-client~=1.6.2", "fastembed~=0.1.0"],
         "chromadb": ["chromadb~=0.4.14"],
         "marqo": ["marqo"],
+        "weaviate": ["weaviate-client~=3.26.1"],
         "mongodb": ["pymongo~=3.12.0"],
     },
     classifiers=[

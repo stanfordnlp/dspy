@@ -7,30 +7,20 @@
 ## DSPy: _Programming_—not prompting—Foundation Models
 
 **[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
 [Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
 [Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
 
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
+----
 
-**DSPy** is a framework for developing **high-quality systems** with LMs. While prompting LMs can quickly build (brittle) demos, the best LM systems generally break down problems into steps and tune the prompts or LM weights of each step well. As a bonus, these systems use small LMs to save costs.
+**DSPy is a framework for algorithmically optimizing LM prompts and weights**, especially when LMs are used one or more times within a pipeline. To use LMs to build a complex system without DSPy, you generally have to: (1) break the problem down into steps, (2) prompt your LM well until each step works well in isolation, (3) tweak the steps to work well together, (4) generate synthetic examples to tune each step, and (5) use these examples to finetune smaller LMs to cut costs. Currently, this is hard and messy: every time you change your pipeline, your LM, or your data, all prompts (or finetuning steps) may need to change.
 
-This is hard as we usually don't have data to tune each of these steps. **DSPy** treats prompts and LM weights as parameters to be optimized in LM pipelines, given the metrics you want to maximize.
+To make this more systematic and much more powerful, **DSPy** does two things. First, it separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step. Second, **DSPy** introduces new `optimizers`, which are LM-driven algorithms that can tune the prompts and/or the weights of your LM calls, given a `metric` you want to maximize.
 
-
-To make this possible:
-
-- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted _string manipulation tricks_ into truly modular _generalized operations that learn to adapt to your task_.
-
-- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally _trace_ your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
-
-**DSPy** has many modules and optimizers built-in and we want you to add more. Think of this like PyTorch but for LM pipelines, not DNNs. The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
-
-For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
-
-
-If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
+**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. This is a new paradigm in which LMs and their prompts fade into the background as optimizable pieces of a larger system that can learn from data. **tldr;** less prompting, higher scores, and a more systematic approach to solving hard tasks with LMs.
 
 
 ### Table of Contents
@@ -48,7 +38,15 @@ If you want to see **DSPy** in action, **[open our intro tutorial notebook](intr
 
 When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
-Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and takes care of optimizing their prompts _for your program_ and your metric, whatever they aim to do. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
+Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `ReAct`, etc.), which replace string-based prompting tricks. To replace prompt hacking and one-off synthetic data generators, **DSPy** also gives you general optimizers (`BootstrapFewShotWithRandomSearch` or `BayesianSignatureOptimizer`), which are algorithms that update parameters in your program. Whenever you modify your code, your data, your assertions, or your metric, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
+
+### Mini-FAQs
+
+**What do DSPy optimizers tune?** Each optimizer is different, but they all seek to maximize a metric on your program by updating prompts or LM weights. Current DSPy `optimizers` can inspect your data, simulate traces through your program to generate good/bad examples of each step, propose or refine instructions for each step based on past results, finetune the weights of your LM on self-generated examples, or combine several of these to improve quality or cut cost. We'd love to merge new optimizers that explore a richer space: most manual steps you currently go through for prompt engineering, "synthetic data" generation, or self-improvement can probably generalized into a DSPy optimizer that acts on arbitrary LM programs.
+
+**How should I use DSPy for my task?** Using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+
+**What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
 
 
 ## 1) Installation
@@ -158,6 +156,8 @@ If you later decide you need another step in your pipeline, just add another mod
 
 
 ## 4) Two Powerful Concepts: Signatures & Teleprompters
+
+**Note:** We will soon rename teleprompters to optimizers. This will not affect their functionality, but will simplify the terms used.
 
 To make it possible to compile any program you write, **DSPy** introduces two simple concepts: Signatures and Teleprompters.
 
@@ -306,9 +306,9 @@ In contrast, **DSPy** automatically optimizes the prompts in your programs to al
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
+Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Karel D'Oosterlinck**, **Shangyin Tan**, **Manish Shetty**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, **Ashutosh Sharma**, and **Herumb Shandilya**.
 
-**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
+**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
 

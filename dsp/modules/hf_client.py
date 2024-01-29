@@ -198,8 +198,8 @@ class Anyscale(HFModel):
     def __init__(self, model, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = os.getenv("OPENAI_API_BASE")
-        self.token = os.getenv("OPENAI_API_KEY")
+        self.api_base = os.getenv("ANYSCALE_API_BASE")
+        self.token = os.getenv("ANYSCALE_API_KEY")
         self.model = model
         self.kwargs = {
             "temperature": 0.0,
