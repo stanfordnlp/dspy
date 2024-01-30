@@ -24,6 +24,8 @@ class HFClientTGI(HFModel):
         self.headers = {"Content-Type": "application/json"}
 
         self.kwargs = {
+            "model": model,
+            "url": url, #NOTE(Karel): add url to kwargs to this gets saved.
             "temperature": 0.01,
             "max_tokens": 75,
             "top_p": 0.97,
@@ -39,6 +41,10 @@ class HFClientTGI(HFModel):
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
 
+        # NOTE(Karel): pop model / url to get consistency with previous cache. Need better serialization and caching of LMs.
+        kwargs.pop('model')
+        kwargs.pop('url')
+        
         payload = {
         "inputs": prompt,
         "parameters": {
