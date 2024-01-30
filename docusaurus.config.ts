@@ -37,13 +37,13 @@ const config: Config = {
           routeBasePath: '/docs/', // URL route for the documentation section
           sidebarPath: require.resolve('./sidebars.ts'), // Path to the sidebar configuration
           // URL for the "edit this page" feature
-          editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+          // editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
         // Configuration for the blog portion of the site
         blog: {
           showReadingTime: true, // Shows estimated reading time for blog posts
           // URL for the "edit this page" feature for blog posts
-          editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+          // editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
         // Configuration for the site theme
         theme: {
@@ -63,7 +63,7 @@ const config: Config = {
         routeBasePath: '/api/', // URL route for the API documentation section
         sidebarPath: require.resolve('./sidebars.ts'), // Path to the API sidebar configuration
         // URL for the "edit this page" feature for the API docs
-        editUrl: 'https://github.com/stanfordnlp/dspy/tree/main/api',
+        // editUrl: 'https://github.com/stanfordnlp/dspy/tree/main/api',
       },
     ],
   ],
