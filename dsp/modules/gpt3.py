@@ -206,7 +206,7 @@ class GPT3(LM):
 def cached_gpt3_request_v2(**kwargs):
     return openai.Completion.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def cached_gpt3_request_v2_wrapped(**kwargs):
     return cached_gpt3_request_v2(**kwargs)
@@ -217,7 +217,7 @@ def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
         kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
     return _cached_gpt3_turbo_request_v2(**kwargs)
@@ -226,7 +226,7 @@ def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
 def v1_cached_gpt3_request_v2(**kwargs):
     return openai.completions.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def v1_cached_gpt3_request_v2_wrapped(**kwargs):
     return v1_cached_gpt3_request_v2(**kwargs)
@@ -237,7 +237,7 @@ def v1_cached_gpt3_turbo_request_v2(**kwargs):
         kwargs = json.loads(kwargs["stringify_request"])
     return openai.chat.completions.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
     return v1_cached_gpt3_turbo_request_v2(**kwargs)
