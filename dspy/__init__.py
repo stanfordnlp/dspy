@@ -55,11 +55,13 @@ class Models:
             if "gpt-" in model_name:
                 lm = OpenAI(model=model_name, **model_config)
             else:
+                url = model_config.pop('url')
                 lm = HFClientTGI(
-                    model=model_name, port=[7140, 7141, 7142, 7143], **model_config
+                    model=model_name, url=url, port=[7140, 7141, 7142, 7143], **model_config
                 )
             return lm
-        except:
+        except Exception as error:
+            print(error)
             return None
 
 
