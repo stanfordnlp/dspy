@@ -81,7 +81,7 @@ class BasicQA(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words", prefix="Question's Answer:")
 ```
 
-The I/O Fields take 3 inputs: `desc`, `prefix` and `format`. `desc` is the description to the input, `prefix` is the placeholder text of the field in the prompt(one that has been ${field_name} until now) and `format` which is a method that'll define how to handle non-string inputs. If the input to field is a list rather than a string, we can specify this through `format`.
+The I/O Fields take 3 inputs: `desc`, `prefix` and `format`. `desc` is the description to the input, `prefix` is the placeholder text of the field in the prompt(one that has been `${field_name}` until now) and `format` which is a method that'll define how to handle non-string inputs. If the input to field is a list rather than a string, we can specify this through `format`.
 
 Both `InputField` and `OutputField` are similar in implementation as well:
 
