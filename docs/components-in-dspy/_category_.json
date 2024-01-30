@@ -1,0 +1,8 @@
+{
+    "label": "Components in DSPy",
+    "position": 3,
+    "link": {
+      "type": "generated-index",
+      "description": "An in-depth look into the components in DSPy that act as building blocks for the DSPy framework.",
+    }
+}
