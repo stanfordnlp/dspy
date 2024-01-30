@@ -1,0 +1,268 @@
+[build-system]
+requires = ["setuptools>=40.8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dspy-ai"
+version = "2.1.1"
+description = "DSPy"
+readme = "README.md"
+authors = [{name = "Omar Khattab", email = "okhattab@stanford.edu"}]
+license = {text = "MIT License"}
+requires-python = ">=3.9, <3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3", # removed 3.8
+    "Programming Language :: Python :: 3.9",
+]
+dependencies = [
+    "backoff~=2.2.1",
+    "joblib~=1.3.2",
+    "openai~=0.28.1",
+    "pandas~=2.1.1",
+    "regex~=2023.10.3",
+    "ujson~=5.8.0",
+    "tqdm~=4.66.1",
+    "datasets~=2.14.6",
+    "requests~=2.31.0",
+    "optuna~=3.4.0",
+]
+
+[project.optional-dependencies]
+pinecone = ["pinecone-client~=2.2.4"]
+qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
+chromadb = ["chromadb~=0.4.14"]
+marqo = ["marqo"]
+docs = [
+    "sphinx>=4.3.0",
+    "furo>=2023.3.27",
+    "docutils<0.17",
+    "m2r2",
+    "myst-parser",
+    "myst-nb",
+    "sphinx-autobuild",
+    "sphinx_rtd_theme",
+    "pydantic<2.0.0",
+    "autodoc_pydantic",
+    "sphinx-reredirects>=0.1.2",
+    "sphinx-automodapi==0.16.0"
+]
+
+[project.urls]
+homepage = "https://github.com/stanfordnlp/dspy"
+
+[tool.poetry]
+name = "dspy"
+version = "2.0.8"
+description = "DSPy"
+authors = ["Omar Khattab <okhattab@stanford.edu>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/stanfordnlp/dspy"
+repository = "https://github.com/stanfordnlp/dspy"
+# documentation = "https://dspy-ai.readthedocs.io"
+keywords = ["dspy", "ai", "language models", "llm", "openai"]
+# may be a bit much
+
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+backoff = "^2.2.1"
+joblib = "^1.3.2"
+openai = "^0.28.1"
+pandas = "^2.1.1"
+regex = "^2023.10.3"
+ujson = "^5.8.0"
+tqdm = "^4.66.1"
+datasets = "^2.14.6"
+requests = "^2.31.0"
+optuna = "^3.4.0"
+pinecone-client = {version = "^2.2.4", optional = true}
+qdrant-client = {version = "^1.6.2", optional = true}
+fastembed = {version = "^0.1.0", optional = true}
+chromadb = {version = "^0.4.14", optional = true}
+marqo = {version = "*", optional = true}
+sphinx = {version = ">=4.3.0", optional = true}
+furo = {version = ">=2023.3.27", optional = true}
+docutils = {version = "<0.17", optional = true}
+m2r2 = {version = "*", optional = true}
+myst-parser = {version = "*", optional = true}
+myst-nb = {version = "*", optional = true}
+sphinx-autobuild = {version = "*", optional = true}
+sphinx_rtd_theme = {version = "*", optional = true}
+pydantic = {version = "*", optional = true}
+autodoc_pydantic = {version = "*", optional = true}
+sphinx-reredirects = {version = "^0.1.2", optional = true}
+sphinx-automodapi = {version = "0.16.0", optional = true}
+
+[tool.poetry.extras]
+pinecone = ["pinecone-client"]
+qdrant = ["qdrant-client", "fastembed"]
+chromadb = ["chromadb"]
+marqo = ["marqo"]
+docs = [
+    "sphinx",
+    "furo",
+    "docutils",
+    "m2r2",
+    "myst-parser",
+    "myst-nb",
+    "sphinx-autobuild",
+    "sphinx_rtd_theme",
+    "pydantic",
+    "autodoc_pydantic",
+    "sphinx-reredirects",
+    "sphinx-automodapi"
+]
+
+[tool.poetry.group.doc.dependencies]
+mkdocs = ">=1.5.3"
+mkdocs-material = ">=9.0.6"
+mkdocs-material-extensions = ">=1.3.1"
+mkdocs-gen-files = "^0.5.0"
+mkdocstrings-python = "^1.7.5"
+mkdocstrings = {extras = ["python"], version = ">=0.20.0"}
+mike = ">=2.0.0"
+
+[tool.coverage.run]
+branch = true
+omit = [
+  "*/__init__.py",
+  "*/test_*.py",
+  "*/tests/*.py",
+  "*/conftest.py",
+  "*/venv/*",
+  "*/virtualenv/*",
+  "*/.venv/*",
+  "*/.virtualenv/*",
+  "*/env/*",
+  "*/.env/*",
+  "*/setup.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == '__main__':",
+    "logger",
+    "try",
+    "except",
+    "^\\s*self\\.\\w+(:\\s*[^=]+)?\\s*=.*$",
+    "continue",
+]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py39"
+extend-unsafe-fixes = ["D"]
+
+[tool.ruff.lint]
+# List of rules: https://docs.astral.sh/ruff/rules
+select = [
+    # flake8-builtins
+    "A",
+    # flake8-commas
+    "COM812",
+    # flake8-comprehensions
+    "C4",
+    # pydocstyle
+    "D",
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # flake8-implicit-str-concat
+    "ISC",
+    # pep8-naming
+    "N",
+    # flake8-annotations
+    "ANN",
+    # flake8-async
+    "ASYNC",
+    # flake8-bandid selected
+    "S",
+    # flake8-print
+    "T20",
+    # flake8-return
+    "RET",
+    # flake8-simplify
+    "SIM",
+    # flake8-unused-arguments
+    "ARG",
+    # flake8-use-pathlib
+    "PTH",
+    # eradicate
+    "ERA",
+    # pandas-vet
+    "PD",
+]
+ignore = [
+    "D100",
+    "D101",
+    "D104",
+    "D106",
+    # missing-type-self
+    "ANN101",
+    # missing-type-cls
+    "ANN102",
+    # missing-type-kwargs
+    "ANN003",
+    # utf-8 encoding skip
+    "UP009",
+    # First argument of a method should be named `self`
+    "N805",
+    # 1 blank line required between summary line and description
+    "D205",
+    # Missing return type annotation for special method `__init__`
+    "ANN204",
+    # Avoid using the generic variable name `df` for DataFrames
+    "PD901",
+    # Unnecessary assignment to `df` before `return` statement
+    "RET504",
+    # commented code
+    "ERA001",
+    # Star-arg unpacking after a keyword argument is strongly discouraged
+    "B026",
+    # Missing type annotation for function argument `self`
+    "ANN001",
+    # Dynamically typed expressions (typing.Any) are disallowed in `wrapper`
+    "ANN401",
+    # Unnecessary `elif` after `return` statement
+    "RET505",
+    # Within an `except` clause, raise exceptions with `raise
+    "B904",
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/{test,docs}/*" = ["ALL"]

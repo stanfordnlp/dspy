@@ -9,8 +9,15 @@ import backoff
 from dsp.utils import dotdict
 
 try:
+    import openai.error
+    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+except Exception:
+    ERRORS = (openai.RateLimitError, openai.APIError)
+
+try:
     import chromadb
     from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
 except ImportError:
     chromadb = None
 
@@ -70,17 +77,13 @@ class ChromadbRM(dspy.Retrieve):
 
         self._init_chromadb(collection_name, persist_directory)
 
-        # If not provided, defaults to env vars
-        if openai_api_key:
-            openai.api_key = openai_api_key
-        if openai_api_type:
-            openai.api_type = openai_api_type
-        if openai_api_base:
-            openai.api_base = openai_api_base
-        if openai_api_version:
-            openai.api_version = openai_api_version
-        if openai_api_provider:
-            self._openai_api_provider = openai_api_provider
+        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=openai_api_key,
+            api_base=openai_api_base,
+            api_type=openai_api_type,
+            api_version=openai_api_version,
+            model_name=openai_embed_model,
+        )
 
         super().__init__(k=k)
 
@@ -111,7 +114,7 @@ class ChromadbRM(dspy.Retrieve):
 
     @backoff.on_exception(
         backoff.expo,
-        (openai.error.RateLimitError, openai.error.ServiceUnavailableError),
+        ERRORS,
         max_time=15,
     )
     def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
@@ -124,24 +127,10 @@ class ChromadbRM(dspy.Retrieve):
             List[List[float]]: List of embeddings corresponding to each query.
         """
 
-        if self._openai_api_provider == "azure":
-            model_args = {
-                "engine": self._openai_embed_model,
-                "deployment_id": self._openai_embed_model,
-                "api_version": openai.api_version,
-                "api_base": openai.api_base,
-            }
-            embedding = openai.Embedding.create(
-                input=queries,
-                model=self._openai_embed_model,
-                **model_args,
-                api_provider=self._openai_api_provider
-            )
-        else:
-            embedding = openai.Embedding.create(
-                input=queries, model=self._openai_embed_model
-            )
-        return [embedding["embedding"] for embedding in embedding["data"]]
+        embedding = self.openai_ef._client.create(
+            input=queries, model=self._openai_embed_model
+        )
+        return [embedding.embedding for embedding in embedding.data]
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None

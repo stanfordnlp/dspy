@@ -22,12 +22,10 @@ class BaseSentenceVectorizer(abc.ABC):
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         pass
 
-    def _extract_text_from_examples(self, inp_examples: List["Example"]) -> List[str]:
-        text_to_vectorize = [
-            getattr(example, self.field_to_vectorize)
-            for example in inp_examples
-        ]
-        return text_to_vectorize
+    def _extract_text_from_examples(self, inp_examples: List) -> List[str]:
+        if isinstance(inp_examples[0], str):
+            return inp_examples 
+        return [" ".join([example[key] for key in example._input_keys]) for example in inp_examples]
 
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
@@ -67,7 +65,7 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         self.vectorize_bs = vectorize_bs
         self.normalize_embeddings = normalize_embeddings
 
-    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+    def __call__(self, inp_examples: List) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
 
         if self.is_gpu and self.num_devices > 1:
@@ -111,6 +109,12 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
         return embeddings
 
 
+try:
+    OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
+except Exception:
+    OPENAI_LEGACY = True
+
+
 class OpenAIVectorizer(BaseSentenceVectorizer):
     '''
     This vectorizer uses OpenAI API to convert texts to embeddings. Changing `model` is not
@@ -126,6 +130,11 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
         self.model = model
         self.embed_batch_size = embed_batch_size
 
+        if OPENAI_LEGACY:
+            self.Embedding = openai.Embedding
+        else:
+            self.Embedding = openai.embeddings
+
         if api_key:
             openai.api_key = api_key
 
@@ -140,7 +149,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             cur_batch = text_to_vectorize[start_idx: end_idx]
             # OpenAI API call:
-            response = openai.Embedding.create(
+            response = self.Embedding.create(
                 model=self.model,
                 input=cur_batch
             )

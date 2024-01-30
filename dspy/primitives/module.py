@@ -27,7 +27,7 @@ class BaseModule:
 
             elif isinstance(value, BaseModule):
                 # When a sub-module is pre-compiled, keep it frozen.
-                if not value._compiled:
+                if not getattr(value, '_compiled', False):
                     for sub_name, param in value.named_parameters():
                         add_parameter(f"{name}.{sub_name}", param)
             

@@ -259,6 +259,7 @@ class TemplateV2:
                 query = self.query(example)
 
         rdemos = "\n\n".join(rdemos)
+        
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
             rdemos_and_query = "\n\n".join([rdemos, query])
             parts = [

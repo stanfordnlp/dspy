@@ -45,14 +45,23 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                printed.append(
-                    (
-                        prompt,
-                        x["response"].generations
-                        if provider == "cohere"
-                        else x["response"]["choices"],
+
+                if provider=="clarifai":
+                    printed.append(
+                        (
+                            prompt,
+                            x['response']
+                        ) 
                     )
-                )
+                else:    
+                    printed.append(
+                        (
+                            prompt,
+                            x["response"].generations
+                            if provider == "cohere"
+                            else x["response"]["choices"],
+                        )
+                    )
 
             last_prompt = prompt
 
@@ -69,8 +78,10 @@ class LM(ABC):
             text = ""
             if provider == "cohere":
                 text = choices[0].text
-            elif provider == "openai":
+            elif provider == "openai" or provider == "ollama":
                 text = ' ' + self._get_choice_text(choices[0]).strip()
+            elif provider == "clarifai":
+                text=choices
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")

@@ -2,6 +2,7 @@ import dsp
 import tqdm
 import random
 import threading
+from dspy.predict.retry import Retry
 
 from dspy.primitives import Example
 
@@ -59,9 +60,9 @@ class BootstrapFewShot(Teleprompter):
         self.student = student.reset_copy()
         self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
-        assert self.student._compiled is False, "Student must be uncompiled."
+        assert getattr(self.student, '_compiled', False) is False, "Student must be uncompiled."
 
-        if self.max_labeled_demos and self.teacher._compiled is False:
+        if self.max_labeled_demos and getattr(self.teacher, '_compiled', False) is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
 
@@ -78,7 +79,13 @@ class BootstrapFewShot(Teleprompter):
 
             name2predictor[name1] = None # dict(student=predictor1, teacher=predictor2)
             predictor2name[id(predictor1)] = name1
-            predictor2name[id(predictor2)] = name2
+
+            # FIXME(shangyint): This is an ugly hack to bind traces of
+            # retry.module to retry
+            if isinstance(predictor1, Retry):
+                predictor2name[id(predictor1.module)] = name1
+
+            predictor2name[id(predictor2)] = name2            
 
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name

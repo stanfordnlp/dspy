@@ -12,7 +12,7 @@ except ImportError as e:
     )
 
 class AzureCognitiveSearch:
-    """Wrapper for the Azure Congitive Search Retrieval."""
+    """Wrapper for the Azure Cognitive Search Retrieval."""
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class AzureCognitiveSearch:
 
 def azure_search_request(key_content: str, key_score: str,  client: SearchClient, query: str, top: int =1):
     '''
-    Search in Azure Conginitve Search Index
+    Search in Azure Cognitive Search Index
     '''
     results = client.search(search_text=query,top=top)
     results = process_azure_result(results, key_content, key_content)
@@ -53,7 +53,7 @@ def azure_search_request(key_content: str, key_score: str,  client: SearchClient
 
 def process_azure_result(results:SearchItemPaged, content_key:str, content_score: str):
     '''
-    process received result from Azure cognitive search as dictionary array and map content and score to correct format
+    process received result from Azure Cognitive Search as dictionary array and map content and score to correct format
     '''
     res = []
     for result in results:
