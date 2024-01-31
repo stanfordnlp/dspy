@@ -27,45 +27,52 @@ class OllamaLocal(LM):
     Args:
         model (str, optional): Name of Ollama model. Defaults to "llama2".
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
+        base_url (str):  Protocol, host name, and port to the served ollama model. Defaults to "http://localhost:11434" as in ollama docs.
+        timeout_s (float): Timeout period (in seconds) for the post request to llm.
         **kwargs: Additional arguments to pass to the API.
     """
     
     def __init__(
         self,
         model: str = "llama2", 
-        model_type: Literal["chat", "text"] = None,
+        model_type: Literal["chat", "text"] = "text",
+        base_url: str = "http://localhost:11434",
+        timeout_s: float = 15,
+        temperature: float = 0.0,
+        max_tokens: int = 150,
+        top_p: int = 1,
+        top_k: int = 20,
+        frequency_penalty: float = 0,
+        presence_penalty: float = 0,
+        n: int = 1,
+        num_ctx: int = 1024,
         **kwargs,
     ):
         super().__init__(model)
+
         self.provider = "ollama"
-
-        self.base_url = "http://localhost:11434"  # where the model is hosted
-
-        default_model_type = "text"
-        self.model_type = model_type if model_type else default_model_type
-
+        self.model_type = model_type
+        self.base_url = base_url
         self.model_name = model
-        self.num_cores = multiprocessing.cpu_count()-1
-        self.timeout_duration = 15.0  # Seconds to wait for http requests to Ollama server
+        self.timeout_s = timeout_s
 
         self.kwargs = {
-            "temperature": 0.0,
-            "max_tokens": 150,
-            "top_p": 1, 
-            "top_k": 20, 
-            "frequency_penalty": 0,
-            "presence_penalty": 0, 
-            "n": 1, 
-            "num_ctx": 1024, 
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p, 
+            "top_k": top_k, 
+            "frequency_penalty": frequency_penalty,
+            "presence_penalty": presence_penalty, 
+            "n": n, 
+            "num_ctx": num_ctx, 
             **kwargs,
         } 
-        self.kwargs["num_predict"] = self.kwargs["max_tokens"]   # Ollama uses num_predict instead of max_tokens
+
+        # Ollama uses num_predict instead of max_tokens
+        self.kwargs["num_predict"] = self.kwargs["max_tokens"]   
 
         self.history: list[dict[str, Any]] = []
-        
-        self.version = ''
-        if 'version' in kwargs:
-            self.version = kwargs['version']
+        self.version = kwargs['version'] if 'version' in kwargs else ''
 
     def basic_request(self, prompt: str, **kwargs):
         
@@ -88,7 +95,7 @@ class OllamaLocal(LM):
         urlstr = f"{self.base_url}/api/chat" if self.model_type == "chat" else f"{self.base_url}/api/generate"
         tot_eval_tokens = 0
         for i in range(kwargs["n"]):
-            response = requests.post(urlstr, json=settings_dict)
+            response = requests.post(urlstr, json=settings_dict, timeout=self.timeout_s)
 
             # Check if the request was successful (HTTP status code 200)
             if response.status_code != 200:
