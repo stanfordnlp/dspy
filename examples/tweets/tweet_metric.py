@@ -30,7 +30,6 @@ def metric(gold, pred, trace=None):
 
     engaging = "Does the assessed text make for a self-contained, engaging tweet?"
     faithful = "Is the assessed text grounded in the context? Say no if it includes significant facts not in the context."
-    correct = f"The text above is should answer `{question}`. The gold answer is `{answer}`."
     correct = f"{correct} Does the assessed text above contain the gold answer?"
     
     with dspy.context(lm=gpt4T):
