@@ -17,7 +17,7 @@ class LabeledFewShot(Teleprompter):
 
         rng = random.Random(0)
 
-        for predictor in self.student.predictors():
+        for predictor in self.student.predictors(only_uncompiled=True):
             if sample:
                 predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
             else:

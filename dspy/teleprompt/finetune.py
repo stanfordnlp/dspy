@@ -76,7 +76,7 @@ class BootstrapFinetune(Teleprompter):
             multitask = self.multitask
 
             # Prepare finetune <prompt, completion> pairs.
-            for name, predictor in compiled.named_predictors():
+            for name, predictor in compiled.named_predictors(only_uncompiled=True):
                 name_ = 'all' if multitask else name
                 finetune_data[name_] = [] if name_ not in finetune_data else finetune_data[name_]
 
@@ -151,9 +151,9 @@ class BootstrapFinetune(Teleprompter):
         #
         compiled2 = compiled.reset_copy()
 
-        assert len(compiled.named_predictors()) == len(compiled2.named_predictors())
+        assert len(compiled.named_predictors(only_uncompiled=True)) == len(compiled2.named_predictors(only_uncompiled=True))
 
-        for (name, predictor), (name2, predictor2) in zip(compiled.named_predictors(), compiled2.named_predictors()):
+        for (name, predictor), (name2, predictor2) in zip(compiled.named_predictors(only_uncompiled=True), compiled2.named_predictors(only_uncompiled=True)):
             assert name == name2
             name = 'all' if multitask else name
 

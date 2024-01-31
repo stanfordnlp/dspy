@@ -99,7 +99,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             all_subscores.append(subscores)
 
-            print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors()])
+            print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors(only_uncompiled=True)])
 
             if len(scores) == 0 or score > max(scores):
                 print('New best score:', score, 'for seed', seed)
