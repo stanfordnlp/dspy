@@ -10,7 +10,7 @@ with open('requirements.txt', 'r', encoding='utf-8') as f:
 
 setup(	
     name="dspy-ai",	
-    version="2.1.5",	
+    version="2.1.6",	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	
