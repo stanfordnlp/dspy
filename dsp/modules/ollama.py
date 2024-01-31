@@ -113,7 +113,6 @@ class OllamaLocal(LM):
             tot_eval_tokens += response_json.get("eval_count")
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}
 
-        print('RESPONSE JSON', response_json)
         request_info["usage"] = {
             "prompt_tokens": response_json.get("prompt_eval_count"),
             "completion_tokens": tot_eval_tokens,
@@ -169,7 +168,7 @@ class OllamaLocal(LM):
             
         if only_completed and len(completed_choices):
             choices = completed_choices
-        print(choices)
+
         completions = [self._get_choice_text(c) for c in choices]
 
         return completions
