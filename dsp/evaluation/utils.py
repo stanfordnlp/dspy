@@ -3,7 +3,10 @@ import dsp
 import tqdm
 import pandas as pd
 
-from IPython.display import display
+try:
+    from IPython.display import display as ipython_display
+except ImportError:
+    ipython_display = print
 from dsp.utils import EM, F1, HotPotF1
 
 
@@ -27,7 +30,7 @@ def evaluateRetrieval(fn, dev, metric=None):
     df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    ipython_display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
 
 
 def evaluateAnswer(fn, dev, metric=EM):
@@ -52,7 +55,7 @@ def evaluateAnswer(fn, dev, metric=EM):
     df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    ipython_display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
 
 
 
@@ -78,7 +81,7 @@ def evaluate(fn, dev, metric=EM):
     df['correct'] = df['correct'].apply(lambda x: '✔️' if x else '❌')
 
     pd.options.display.max_colwidth = None
-    display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
+    ipython_display(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'left')]}, {'selector': 'td', 'props': [('text-align', 'left')]}]))
 
     return percentage
 
