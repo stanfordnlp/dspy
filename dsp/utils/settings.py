@@ -37,6 +37,7 @@ class Settings(object):
                 skip_logprobs=False,
                 trace=None,
                 release=0,
+                log_openai_usage=False,
                 bypass_assert=False,
                 bypass_suggest=False,
                 langchain_history=[]

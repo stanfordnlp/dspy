@@ -31,26 +31,29 @@ def giveup_hdlr(details):
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
-    Currently supported models include `medium-20221108`, `xlarge-20221108`, `command-medium-nightly`, and `command-xlarge-nightly`.
+    Currently supported models include `command`, `command-nightly`, `command-light`, `command-light-nightly`.
     """
 
     def __init__(
         self,
-        model: str = "command-xlarge-nightly",
+        model: str = "command-nightly",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
+        **kwargs
     ):
         """
         Parameters
         ----------
         model : str
             Which pre-trained model from Cohere to use?
-            Choices are ['medium-20221108', 'xlarge-20221108', 'command-medium-nightly', 'command-xlarge-nightly']
+            Choices are [`command`, `command-nightly`, `command-light`, `command-light-nightly`]
         api_key : str
             The API key for Cohere.
             It can be obtained from https://dashboard.cohere.ai/register.
         stop_sequences : list of str
             Additional stop tokens to end generation.
+        **kwargs: dict
+            Additional arguments to pass to the API provider.
         """
         super().__init__(model)
         self.co = cohere.Client(api_key)
@@ -64,6 +67,7 @@ class Cohere(LM):
             "presence_penalty": 0,
             "num_generations": 1,
             "return_likelihoods": "GENERATION",
+            **kwargs
         }
         self.stop_sequences = stop_sequences
         self.max_num_generations = 5
