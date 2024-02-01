@@ -18,18 +18,19 @@ try:
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
-try:
-    from deeplake import VectorStore
-except ImportError:
-    deeplake = None
 
-if deeplake is None:
-    raise ImportError(
-        "The deeplake library is required to use DeeplakeRM. Install it with `pip install dspy-ai[deeplake]`"
-    )
 
 
 class DeeplakeRM(dspy.RetrieverModel):
+    try:
+        from deeplake import VectorStore
+    except ImportError:
+        deeplake = None
+
+    if deeplake is None:
+        raise ImportError(
+            "The deeplake library is required to use DeeplakeRM. Install it with `pip install dspy-ai[deeplake]`"
+        )
     """
     A retriever module that uses deeplake to return the top passages for a given query.
 
