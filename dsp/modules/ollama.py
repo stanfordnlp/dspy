@@ -70,6 +70,10 @@ class OllamaLocal(LM):
         self.history: list[dict[str, Any]] = []
         self.version = kwargs["version"] if "version" in kwargs else ""
 
+        # Ollama occasionally does not send `prompt_eval_count` in response body.
+        # https://github.com/stanfordnlp/dspy/issues/293
+        self._prev_prompt_eval_count = 0
+
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
 
@@ -118,9 +122,9 @@ class OllamaLocal(LM):
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}
 
         request_info["usage"] = {
-            "prompt_tokens": response_json.get("prompt_eval_count"),
+            "prompt_tokens": response_json.get("prompt_eval_count", self._prev_prompt_eval_count),
             "completion_tokens": tot_eval_tokens,
-            "total_tokens": response_json.get("prompt_eval_count") + tot_eval_tokens,
+            "total_tokens": response_json.get("prompt_eval_count", self._prev_prompt_eval_count) + tot_eval_tokens,
         }
 
         history = {
