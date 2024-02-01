@@ -33,6 +33,28 @@ class DeeplakeRM(dspy.RetrieverModel):
     """
     A retriever module that uses deeplake to return the top passages for a given query.
 
+    Assumes that a Deep Lake Vector Store has been created and populated with the following payload:
+        - text: The text of the passage
+
+    Args:
+        deeplake_vectorstore_name (str): The name or path of the Deep Lake Vector Store.
+        deeplake_client (VectorStore): An instance of the Deep Lake client.
+        k (int, optional): The default number of top passages to retrieve. Defaults to 3.
+
+    Examples:
+        Below is a code snippet that shows how to use Deep Lake as the default retriver:
+        ```python
+        from deeplake import VectorStore
+        llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        deeplake_client = deeplake.Client()
+        retriever_model = DeeplakeRM("my_vectorstore_name", deeplake_client=deeplake_client)
+        dspy.settings.configure(lm=llm, rm=retriever_model)
+        ```
+
+        Below is a code snippet that shows how to use Deep Lake in the forward() function of a module
+        ```python
+        self.retrieve = DeeplakeRM("my_vectorstore_name", deeplake_client=deeplake_client, k=num_passages)
+        ```
     """
 
     def __init__(
@@ -59,6 +81,7 @@ class DeeplakeRM(dspy.RetrieverModel):
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int]
     ) -> dspy.Prediction:
+        
         """Search with DeepLake for self.k top passages for query
 
         Args:
@@ -76,11 +99,9 @@ class DeeplakeRM(dspy.RetrieverModel):
         queries = [q for q in queries if q]  # Filter empty queries
 
         k = k if k is not None else self.k
-        # batch_results = self._deeplake_client(
-        #     path=self._deeplake_vectorstore_name
-        # ).search(queries, embedding_function=self.embedding_function, k=k)
 
         passages = defaultdict(float)
+        #deeplake doesn't support batch querying, manually querying each query and storing them
         for query in queries:
             results = self._deeplake_client(
             path=self._deeplake_vectorstore_name,
