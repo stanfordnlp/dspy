@@ -80,4 +80,4 @@ class WeaviateRM(dspy.Retrieve):
             parsed_results = [result["content"] for result in results]
             passages.extend(dotdict({"long_text": d}) for d in parsed_results)
 
-        return dspy.Prediction(passages=passages)
+        return passages
