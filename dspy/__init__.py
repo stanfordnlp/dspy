@@ -26,6 +26,7 @@ HFClientVLLM = HFClientVLLM
 
 Anyscale = dsp.Anyscale
 HFModel = dsp.HFModel
+OllamaLocal = dsp.OllamaLocal
 
 configure = settings.configure
 context = settings.context

@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import List, Union
 import dspy
+from dsp.utils import dotdict
 from typing import Optional
 
 try:
@@ -77,6 +78,6 @@ class WeaviateRM(dspy.Retrieve):
 
             results = results["data"]["Get"][self._weaviate_collection_name]
             parsed_results = [result["content"] for result in results]
-            passages.extend(parsed_results)
+            passages.extend(dotdict({"long_text": d}) for d in parsed_results)
 
         return dspy.Prediction(passages=passages)
