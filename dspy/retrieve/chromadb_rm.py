@@ -10,7 +10,11 @@ from dsp.utils import dotdict
 
 try:
     import openai.error
-    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+    ERRORS = (
+        openai.error.RateLimitError,
+        openai.error.ServiceUnavailableError,
+        openai.error.APIError,
+    )
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
@@ -21,11 +25,18 @@ try:
 except ImportError:
     chromadb = None
 
+try:
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+except ImportError as exc:
+    raise ModuleNotFoundError(
+        "You need to install Hugging Face transformers library to use a local embedding model with ChromadbRM."
+    ) from exc
+
 if chromadb is None:
     raise ImportError(
         "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`"
     )
-
 
 class ChromadbRM(dspy.Retrieve):
     """
@@ -71,6 +82,7 @@ class ChromadbRM(dspy.Retrieve):
         openai_api_type: Optional[str] = None,
         openai_api_base: Optional[str] = None,
         openai_api_version: Optional[str] = None,
+        local_embed_model: Optional[str] = None,
         k: int = 7,
     ):
         self._openai_embed_model = openai_embed_model
@@ -84,6 +96,20 @@ class ChromadbRM(dspy.Retrieve):
             api_version=openai_api_version,
             model_name=openai_embed_model,
         )
+
+        if local_embed_model is not None:
+            self._local_embed_model = AutoModel.from_pretrained(local_embed_model)
+            self._local_tokenizer = AutoTokenizer.from_pretrained(local_embed_model)
+            self.use_local_model = True
+            self.device = torch.device(
+                "cuda:0"
+                if torch.cuda.is_available()
+                else "mps"
+                if torch.backends.mps.is_available()
+                else "cpu"
+            )
+        else:
+            self.use_local_model = False
 
         super().__init__(k=k)
 
@@ -127,10 +153,34 @@ class ChromadbRM(dspy.Retrieve):
             List[List[float]]: List of embeddings corresponding to each query.
         """
 
-        embedding = self.openai_ef._client.create(
-            input=queries, model=self._openai_embed_model
+        if not self.use_local_model:
+            # Using OpenAI's embedding model
+            embedding = openai.Embedding.create(
+                input=queries, model=self._openai_embed_model
+            )
+            return [embedding.embedding for embedding in embedding.data]
+
+        # Use local model for embeddings
+        encoded_input = self._local_tokenizer(
+            queries, padding=True, truncation=True, return_tensors="pt"
+        ).to(self.device)
+        with torch.no_grad():
+            model_output = self._local_embed_model(**encoded_input.to(self.device))
+
+        embeddings = self._mean_pooling(model_output, encoded_input["attention_mask"])
+        normalized_embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+        return normalized_embeddings.cpu().numpy().tolist()
+
+    def _mean_pooling(self, model_output, attention_mask):
+        token_embeddings = model_output[
+            0
+        ]  # First element of model_output contains all token embeddings
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         )
-        return [embedding.embedding for embedding in embedding.data]
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
+            input_mask_expanded.sum(1), min=1e-9
+        )
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None
