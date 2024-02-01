@@ -6,22 +6,18 @@ import requests
 
 import json
 
+
 def post_request_metadata(model_name, prompt):
     """Creates a serialized request object for the Ollama API."""
     timestamp = datetime.datetime.now().timestamp()
     id_string = str(timestamp) + model_name + prompt
     hashlib.sha1().update(id_string.encode("utf-8"))
     id_hash = hashlib.sha1().hexdigest()
-    return {
-        "id": f"chatcmpl-{id_hash}",
-        "object": "chat.completion",
-        "created": int(timestamp),
-        "model": model_name
-    }
+    return {"id": f"chatcmpl-{id_hash}", "object": "chat.completion", "created": int(timestamp), "model": model_name}
 
 
 class OllamaLocal(LM):
-    """Wrapper around a locally hosted Ollama model (API: https://github.com/jmorganca/ollama/blob/main/docs/modelfile.md#valid-parameters-and-values and https://github.com/jmorganca/ollama/blob/main/docs/api.md#generate-a-completion). 
+    """Wrapper around a locally hosted Ollama model (API: https://github.com/jmorganca/ollama/blob/main/docs/modelfile.md#valid-parameters-and-values and https://github.com/jmorganca/ollama/blob/main/docs/api.md#generate-a-completion).
     Returns dictionary info in the OpenAI API style (https://platform.openai.com/docs/api-reference/chat/object).
 
     Args:
@@ -31,10 +27,10 @@ class OllamaLocal(LM):
         timeout_s (float): Timeout period (in seconds) for the post request to llm.
         **kwargs: Additional arguments to pass to the API.
     """
-    
+
     def __init__(
         self,
-        model: str = "llama2", 
+        model: str = "llama2",
         model_type: Literal["chat", "text"] = "text",
         base_url: str = "http://localhost:11434",
         timeout_s: float = 15,
@@ -59,23 +55,22 @@ class OllamaLocal(LM):
         self.kwargs = {
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "top_p": top_p, 
-            "top_k": top_k, 
+            "top_p": top_p,
+            "top_k": top_k,
             "frequency_penalty": frequency_penalty,
-            "presence_penalty": presence_penalty, 
-            "n": n, 
-            "num_ctx": num_ctx, 
+            "presence_penalty": presence_penalty,
+            "n": n,
+            "num_ctx": num_ctx,
             **kwargs,
-        } 
+        }
 
         # Ollama uses num_predict instead of max_tokens
-        self.kwargs["num_predict"] = self.kwargs["max_tokens"]   
+        self.kwargs["num_predict"] = self.kwargs["max_tokens"]
 
         self.history: list[dict[str, Any]] = []
-        self.version = kwargs['version'] if 'version' in kwargs else ''
+        self.version = kwargs["version"] if "version" in kwargs else ""
 
     def basic_request(self, prompt: str, **kwargs):
-        
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
@@ -85,13 +80,13 @@ class OllamaLocal(LM):
         settings_dict = {
             "model": self.model_name,
             "options": {k: v for k, v in kwargs.items() if k not in ["n", "max_tokens"]},
-            "stream": False, 
+            "stream": False,
         }
         if self.model_type == "chat":
             settings_dict["messages"] = [{"role": "user", "content": prompt}]
         else:
             settings_dict["prompt"] = prompt
-        
+
         urlstr = f"{self.base_url}/api/chat" if self.model_type == "chat" else f"{self.base_url}/api/generate"
         tot_eval_tokens = 0
         for i in range(kwargs["n"]):
@@ -101,29 +96,38 @@ class OllamaLocal(LM):
             if response.status_code != 200:
                 # If the request was not successful, print an error message
                 print(f"Error: CODE {response.status_code} - {response.text}")
-            
+
             response_json = response.json()
-            
-            text = response_json.get("message").get("content") if self.model_type == "chat" else response_json.get("response")
-            request_info["choices"].append({
-                "index": i,
-                "message": { "role": "assistant", "content": ''.join(text), }, 
-                "finish_reason": "stop"
-            })
+
+            text = (
+                response_json.get("message").get("content")
+                if self.model_type == "chat"
+                else response_json.get("response")
+            )
+            request_info["choices"].append(
+                {
+                    "index": i,
+                    "message": {
+                        "role": "assistant",
+                        "content": "".join(text),
+                    },
+                    "finish_reason": "stop",
+                }
+            )
             tot_eval_tokens += response_json.get("eval_count")
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}
 
         request_info["usage"] = {
             "prompt_tokens": response_json.get("prompt_eval_count"),
             "completion_tokens": tot_eval_tokens,
-            "total_tokens": response_json.get("prompt_eval_count") + tot_eval_tokens
+            "total_tokens": response_json.get("prompt_eval_count") + tot_eval_tokens,
         }
 
         history = {
             "prompt": prompt,
             "response": request_info,
             "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs, 
+            "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
 
@@ -138,7 +142,7 @@ class OllamaLocal(LM):
 
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
         return choice["message"]["content"]
-    
+
     def __call__(
         self,
         prompt: str,
@@ -165,7 +169,7 @@ class OllamaLocal(LM):
         choices = response["choices"]
 
         completed_choices = [c for c in choices if c["finish_reason"] != "length"]
-            
+
         if only_completed and len(completed_choices):
             choices = completed_choices
 
