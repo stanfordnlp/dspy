@@ -44,7 +44,7 @@ class Retry(Predict):
             if past_key in self.new_signature:
                 kwargs[past_key] = value
         del kwargs["past_outputs"]
-        kwargs["signature"] = self.new_signature
+        kwargs["new_signature"] = self.new_signature
         return self.original_forward(**kwargs)
     
     def __call__(self, **kwargs):

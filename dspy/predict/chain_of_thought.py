@@ -53,8 +53,8 @@ class ChainOfThought(Predict):
         )
 
     def forward(self, **kwargs):
-        signature_kwargs = kwargs.pop("signature", None)
-        if signature_kwargs is None:
+        new_signature = kwargs.pop("new_signature", None)
+        if new_signature is None:
             if self.activated is True or (
                 self.activated is None and isinstance(dsp.settings.lm, dsp.GPT3)
             ):
@@ -62,7 +62,7 @@ class ChainOfThought(Predict):
             else:
                 signature = self.signature
         else:
-            signature = dsp.Template(self.signature.instructions, **signature_kwargs)
+            signature = dsp.Template(signature.instructions, **new_signature)
         return super().forward(signature=signature, **kwargs)
 
 
