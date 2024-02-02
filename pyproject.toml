@@ -29,7 +29,6 @@ dependencies = [
     "datasets~=2.14.6",
     "requests~=2.31.0",
     "optuna~=3.4.0",
-    "boto3~=1.34"
 ]
 
 [project.optional-dependencies]

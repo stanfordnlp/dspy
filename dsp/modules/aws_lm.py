@@ -6,8 +6,15 @@ from abc import abstractmethod
 import logging
 from typing import Any, Literal
 import json
-import boto3
 from dsp.modules.lm import LM
+
+try:
+    import boto3
+except ImportError as e:
+    raise ImportError(
+        "You need to install boto3 and update AWS CLI with your AWS credentials."
+        "Please use the command: pip install boto3"
+    )
 
 # Heuristic translating number of chars to tokens
 # ~4 chars = 1 token
