@@ -101,7 +101,7 @@ class Predict(Parameter):
 
         pred = Prediction.from_completions(completions, signature=signature)
             
-        if dsp.settings.trace is not None:
+        if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
 

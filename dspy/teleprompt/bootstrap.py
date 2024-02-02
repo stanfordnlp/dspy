@@ -2,6 +2,8 @@ import dsp
 import tqdm
 import random
 import threading
+
+import dspy
 from dspy.predict.retry import Retry
 
 from dspy.primitives import Example
@@ -53,6 +55,10 @@ class BootstrapFewShot(Teleprompter):
 
         self.student = self._train()
         self.student._compiled = True
+
+        # set assert_failures and suggest_failures as attributes of student w/ value 0
+        setattr(self.student, '_assert_failures', 0)
+        setattr(self.student, '_suggest_failures', 0)
 
         return self.student
     
@@ -106,7 +112,7 @@ class BootstrapFewShot(Teleprompter):
 
                     if success:
                         bootstrapped[example_idx] = True
-            
+
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
         
         # Unbootstrapped training examples
