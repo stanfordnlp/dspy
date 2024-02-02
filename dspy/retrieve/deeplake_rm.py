@@ -6,31 +6,22 @@ from typing import Optional, List, Union
 import openai
 import dspy
 from collections import defaultdict
+from dsp.utils import dotdict
 
 try:
     import openai.error
 
     ERRORS = (
-        openai.RateLimitError,
+        openai.error.RateLimitError,
         openai.error.ServiceUnavailableError,
         openai.error.APIError,
     )
 except Exception:
-    ERRORS = (openai.RateLimitError, openai.APIError)
+    ERRORS = (openai.error.RateLimitError, openai.error.APIError)
 
 
-
-
-class DeeplakeRM(dspy.RetrieverModel):
-    try:
-        from deeplake import VectorStore
-    except ImportError:
-        deeplake = None
-
-    if deeplake is None:
-        raise ImportError(
-            "The deeplake library is required to use DeeplakeRM. Install it with `pip install dspy-ai[deeplake]`"
-        )
+class DeeplakeRM(dspy.Retrieve):
+    
     """
     A retriever module that uses deeplake to return the top passages for a given query.
 
@@ -47,14 +38,14 @@ class DeeplakeRM(dspy.RetrieverModel):
         ```python
         from deeplake import VectorStore
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
-        deeplake_client = deeplake.Client()
-        retriever_model = DeeplakeRM("my_vectorstore_name", deeplake_client=deeplake_client)
+        deeplake_client = VectorStore
+        retriever_model = DeeplakeRM("my_vectorstore_path", deeplake_client=deeplake_client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
         Below is a code snippet that shows how to use Deep Lake in the forward() function of a module
         ```python
-        self.retrieve = DeeplakeRM("my_vectorstore_name", deeplake_client=deeplake_client, k=num_passages)
+        self.retrieve = DeeplakeRM("my_vectorstore_path", deeplake_client=deeplake_client, k=num_passages)
         ```
     """
 
@@ -64,12 +55,18 @@ class DeeplakeRM(dspy.RetrieverModel):
         deeplake_client: VectorStore,
         k: int = 3,
     ):
+        try:
+          from deeplake import VectorStore
+        except ImportError:
+          raise ImportError(
+              "The 'deeplake' extra is required to use DeepLakeRM. Install it with `pip install dspy-ai[deeplake]`"
+          )
         self._deeplake_vectorstore_name = deeplake_vectorstore_name
         self._deeplake_client = deeplake_client
 
         super().__init__(k=k)
 
-    def embedding_function(texts, model="text-embedding-ada-002"):
+    def embedding_function(self, texts, model="text-embedding-ada-002"):
         if isinstance(texts, str):
             texts = [texts]
 
@@ -115,4 +112,4 @@ class DeeplakeRM(dspy.RetrieverModel):
         sorted_passages = sorted(
             passages.items(), key=lambda x: x[1], reverse=True)[:k]
         
-        return dspy.Prediction(passages=[passage for passage, _ in sorted_passages])
+        return [dotdict({"long_text": p}) for p, _ in sorted_passages]
