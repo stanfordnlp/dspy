@@ -1,7 +1,20 @@
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        logging.FileHandler('openai_usage.log')
+    ]
+)
+
 import functools
 import json
 from typing import Any, Literal, Optional, cast
 
+import dsp
 import backoff
 import openai
 
@@ -98,6 +111,13 @@ class GPT3(LM):
     def _openai_client(self):
         return openai
 
+    def log_usage(self, response):
+            """Log the total tokens from the OpenAI API response."""
+            usage_data = response.get('usage')
+            if usage_data:
+                total_tokens = usage_data.get('total_tokens')  
+                logging.info(f'{total_tokens}')
+
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
 
@@ -168,6 +188,9 @@ class GPT3(LM):
         #         kwargs = {**kwargs, "logprobs": 5}
 
         response = self.request(prompt, **kwargs)
+
+        if dsp.settings.log_openai_usage:
+            self.log_usage(response)
 
         choices = response["choices"]
 
