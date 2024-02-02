@@ -4,9 +4,9 @@ import ujson
 
 class BaseModule:
     def __init__(self):
-        pass
+        self._compiled = False
 
-    def named_parameters(self):
+    def named_parameters(self, only_uncompiled=False):
         """
             Unlike PyTorch, handles (non-recursive) lists of parameters too.
         """
@@ -18,18 +18,20 @@ class BaseModule:
 
         def add_parameter(param_name, param_value):
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
-                visited.add(id(param_value))
-                named_parameters.append((param_name, param_value))
+                # Exclude compiled modules if only_uncompiled is True.
+                if (not only_uncompiled or not getattr(param_value, '_compiled', False)):
+                        visited.add(id(param_value))
+                        named_parameters.append((param_name, param_value))
+
 
         for name, value in self.__dict__.items():
+            #NOTE(Karel): Move '_compiled' check here so we can toggle entire Modules to be '_compiled'.
             if isinstance(value, Parameter):
                 add_parameter(name, value)
 
             elif isinstance(value, BaseModule):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, '_compiled', False):
-                    for sub_name, param in value.named_parameters():
-                        add_parameter(f"{name}.{sub_name}", param)
+                for sub_name, param in value.named_parameters(only_uncompiled=only_uncompiled):
+                    add_parameter(f"{name}.{sub_name}", param)
             
             elif isinstance(value, (list, tuple)):
                 for idx, item in enumerate(value):
@@ -47,11 +49,15 @@ class BaseModule:
     def deepcopy(self):
         return copy.deepcopy(self)
 
-    def reset_copy(self):
+    def reset_copy(self, only_reset_uncompiled=False):
         obj = copy.deepcopy(self)
         
         for param in obj.parameters():
-            param.reset()
+            if only_reset_uncompiled:
+                if not hasattr(param, '_compiled') or not param._compiled:
+                    param.reset()
+            else:
+                param.reset()
         
         return obj
     

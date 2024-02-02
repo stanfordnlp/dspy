@@ -5,11 +5,12 @@ from .teleprompt import Teleprompter
 
 
 class LabeledFewShot(Teleprompter):
-    def __init__(self, k=16):
+    def __init__(self, k=16, only_reset_uncompiled=False):
         self.k = k
+        self.only_reset_uncompiled = only_reset_uncompiled
 
     def compile(self, student, *, trainset, sample=True):
-        self.student = student.reset_copy()
+        self.student = student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
         self.trainset = trainset
 
         if len(self.trainset) == 0:
@@ -17,7 +18,7 @@ class LabeledFewShot(Teleprompter):
 
         rng = random.Random(0)
 
-        for predictor in self.student.predictors():
+        for predictor in self.student.predictors(only_uncompiled=True):
             if sample:
                 predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
             else:

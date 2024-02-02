@@ -12,6 +12,8 @@ class Predict(Parameter):
         self.stage = random.randbytes(8).hex()
         self.signature = signature #.signature
         self.config = config
+        self.lm = None
+        self._compiled = False
         self.reset()
 
         # if the signature is a string
@@ -40,22 +42,29 @@ class Predict(Parameter):
 
     
     def reset(self):
-        self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train", "demos"]
-        return {k: getattr(self, k) for k in state_keys}
+        state_keys = ["traces", "train"]
+        state = {k: getattr(self, k) for k in state_keys}
+        # add demos
+        state = state | {"demos": [x.dump_state() for x in self.demos]}
+        # add LM
+        state = state | {"lm": self.lm.kwargs if self.lm else None }
+        return state
 
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
 
         import dspy
-        self.demos = [dspy.Example(**x) for x in self.demos]
-    
+        # create demos
+        self.demos = [dspy.Example.from_state(x) for x in self.demos]
+        # create LM from the state
+        self.lm = dspy.Models.create_lm(self.lm)
+
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
     
@@ -87,7 +96,7 @@ class Predict(Parameter):
         if self.lm is None:
             x, C = dsp.generate(signature, **config)(x, stage=self.stage)
         else:
-            with dsp.settings.context(lm=self.lm, query_only=True):
+            with dsp.settings.context(lm=self.lm):
                 # print(f"using lm = {self.lm} !")
                 x, C = dsp.generate(signature, **config)(x, stage=self.stage)
 

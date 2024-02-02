@@ -28,30 +28,30 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def named_predictors(self):
+    def named_predictors(self, only_uncompiled=False):
         from dspy.predict.predict import Predict
 
-        named_parameters = self.named_parameters()
+        named_parameters = self.named_parameters(only_uncompiled=only_uncompiled)
         return [
             (name, param)
             for name, param in named_parameters
             if isinstance(param, Predict)
         ]
 
-    def predictors(self):
-        return [param for _, param in self.named_predictors()]
+    def predictors(self, only_uncompiled=False):
+        return [param for _, param in self.named_predictors(only_uncompiled=only_uncompiled)]
 
     def __repr__(self):
         s = []
 
-        for name, param in self.named_predictors():
+        for name, param in self.named_predictors(only_uncompiled=False):
             s.append(f"{name} = {param}")
 
         return "\n".join(s)
 
     def map_named_predictors(self, func):
         """Applies a function to all named predictors."""
-        for name, predictor in self.named_predictors():
+        for name, predictor in self.named_predictors(only_uncompiled=False):
             set_attribute_by_name(self, name, func(predictor))
         return self
 

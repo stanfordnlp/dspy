@@ -57,7 +57,7 @@ class SignatureOptimizer(Teleprompter):
         self.track_stats = track_stats
 
     def _check_candidates_equal(self, candidate1, candidate2):
-        for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
+        for p1, p2 in zip(candidate1["program"].predictors(only_uncompiled=True), candidate2["program"].predictors(only_uncompiled=True)):
             if not p1.extended_signature.instructions == p2.extended_signature.instructions:
                 return False
             if not p1.extended_signature.fields[-1] == p2.extended_signature.fields[-1]:
@@ -89,8 +89,8 @@ class SignatureOptimizer(Teleprompter):
         module = student.deepcopy()
         evaluate = Evaluate(devset=devset, metric=self.metric, **eval_kwargs)
         total_calls = 0
-        results_best = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors()}
-        results_latest = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors()}
+        results_best = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors(only_uncompiled=True)}
+        results_latest = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors(only_uncompiled=True)}
 
         if self.track_stats:
             import numpy as np
@@ -100,7 +100,7 @@ class SignatureOptimizer(Teleprompter):
         evaluated_candidates = defaultdict(dict)
 
         # Seed the prompt optimizer zero shot with just the instruction, generate BREADTH new prompts
-        for predictor in module.predictors():
+        for predictor in module.predictors(only_uncompiled=True):
             basic_instruction = None
             basic_prefix = None
             if (hasattr(predictor, 'extended_signature')):
@@ -134,9 +134,9 @@ class SignatureOptimizer(Teleprompter):
             latest_scores = []
         
             # Go through our module's predictors
-            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(), module_clone.predictors())):
+            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(only_uncompiled=True), module_clone.predictors(only_uncompiled=True))):
                 candidates_ = latest_candidates[id(p_old)] # Use the most recently generated candidates for evaluation 
-                if len(module.predictors()) > 1:
+                if len(module.predictors(only_uncompiled=True)) > 1:
                     candidates_ = all_candidates[id(p_old)] # Unless our program has multiple predictors, in which case we need to reevaluate all prompts with the new prompt(s) for the other predictor(s)   
 
                 # For each candidate
@@ -156,7 +156,7 @@ class SignatureOptimizer(Teleprompter):
 
                     # Score the instruction / prefix 
                     if self.verbose: print(f"----------------")
-                    for i,predictor in enumerate(module_clone.predictors()):
+                    for i,predictor in enumerate(module_clone.predictors(only_uncompiled=True)):
                         if self.verbose: print(f"Predictor {i}")
                         if (hasattr(predictor, 'extended_signature')):
                             if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
@@ -165,7 +165,7 @@ class SignatureOptimizer(Teleprompter):
                             if self.verbose: print(f"i: {predictor.extended_signature1.instructions}")
                             if self.verbose: print(f"p: {predictor.extended_signature1.fields[-1].name}")
                         if self.verbose: print()
-                    if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
+                    if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors(only_uncompiled=True))}.")
                     score = evaluate(module_clone, devset=devset, **eval_kwargs)
                     if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
@@ -212,7 +212,7 @@ class SignatureOptimizer(Teleprompter):
                     p_new.extended_signature2.fields[-1] = p_new.extended_signature2.fields[-1]._replace(name=best_candidate["prefix"])     
                 if self.verbose: print(f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}")
                 if self.verbose: print(f"Full predictor with update: ")
-                for i,predictor in enumerate(module_clone.predictors()):
+                for i,predictor in enumerate(module_clone.predictors(only_uncompiled=True)):
                     if self.verbose: print(f"Predictor {i}")
                     if (hasattr(predictor, 'extended_signature')):
                         if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
@@ -227,7 +227,7 @@ class SignatureOptimizer(Teleprompter):
 
             
             new_candidates = {}
-            for p_base in module.predictors():
+            for p_base in module.predictors(only_uncompiled=True):
                 # Build Few-Shot Example of Optimized Prompts
                 attempts = []
                 shortest_len = self.breadth
@@ -268,7 +268,7 @@ class SignatureOptimizer(Teleprompter):
             latest_candidates = new_candidates
         
         candidates = []
-        for predictor in module.predictors():
+        for predictor in module.predictors(only_uncompiled=True):
             candidates.extend(list(evaluated_candidates[id(predictor)].values()))
 
             if self.track_stats:

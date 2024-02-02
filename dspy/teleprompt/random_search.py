@@ -28,7 +28,7 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None, only_reset_uncompiled=False):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
@@ -48,6 +48,8 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
+        self.only_reset_uncompiled = only_reset_uncompiled
+
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
@@ -65,18 +67,18 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             if seed == -3:
                 # zero-shot
-                program2 = student.reset_copy()
+                program2 = student.reset_copy(only_reset_uncompiled=self.only_reset_uncompiled)
             
             elif seed == -2:
                 # labels only
-                teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+                teleprompter = LabeledFewShot(k=self.max_labeled_demos, only_reset_uncompiled=self.only_reset_uncompiled)
                 program2 = teleprompter.compile(student, trainset=trainset2)
             
             elif seed == -1:
                 # unshuffled few-shot
                 program = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=self.max_num_samples,
                                            max_labeled_demos=self.max_labeled_demos,
-                                           teacher_settings=self.teacher_settings, max_rounds=self.max_rounds)
+                                           teacher_settings=self.teacher_settings, max_rounds=self.max_rounds, only_reset_uncompiled=self.only_reset_uncompiled)
                 program2 = program.compile(student, teacher=teacher, trainset=trainset2)
 
             else:
@@ -88,7 +90,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 teleprompter = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=size,
                                                 max_labeled_demos=self.max_labeled_demos,
                                                 teacher_settings=self.teacher_settings,
-                                                max_rounds=self.max_rounds)
+                                                max_rounds=self.max_rounds, only_reset_uncompiled=self.only_reset_uncompiled)
 
                 program2 = teleprompter.compile(student, teacher=teacher, trainset=trainset2)
 
@@ -99,7 +101,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             all_subscores.append(subscores)
 
-            print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors()])
+            print('Score:', score, 'for set:', [len(predictor.demos) for predictor in program2.predictors(only_uncompiled=True)])
 
             if len(scores) == 0 or score > max(scores):
                 print('New best score:', score, 'for seed', seed)

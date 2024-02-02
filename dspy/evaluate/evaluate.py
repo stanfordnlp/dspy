@@ -73,7 +73,7 @@ class Evaluate:
 
     def __call__(self, program, metric=None, devset=None, num_threads=None,
                  display_progress=None, display_table=None, display=None,
-                 return_all_scores=False):
+                 return_all_scores=False, return_predictions=False):
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
@@ -160,9 +160,16 @@ class Evaluate:
                 ipython_display(HTML(message))
                 
         if return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
+            if not return_predictions:
+                return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
+            else:
+                return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset], data
 
-        return round(100 * ncorrect / ntotal, 2)
+        if not return_predictions:
+            return round(100 * ncorrect / ntotal, 2)
+        else:
+            return round(100 * ncorrect / ntotal, 2), data
+
 
 
 def merge_dicts(d1, d2):
