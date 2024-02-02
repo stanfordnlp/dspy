@@ -88,8 +88,8 @@ class BootstrapFewShot(Teleprompter):
 
             # FIXME(shangyint): This is an ugly hack to bind traces of
             # retry.module to retry
-            if isinstance(predictor1, Retry):
-                predictor2name[id(predictor1.module)] = name1
+            # if isinstance(predictor1, Retry):
+            #     predictor2name[id(predictor1.module)] = name1
 
             predictor2name[id(predictor2)] = name2            
 

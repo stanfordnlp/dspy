@@ -66,5 +66,7 @@ class Retry(Predict):
         for key in ["_trace", "demos", "signature", "config", "lm", "past_outputs"]:
             kwargs.pop(key, None)
 
-        dsp.settings.trace.append((self, {**kwargs}, pred))
+        if dsp.settings.trace is not None:
+            trace = dsp.settings.trace
+            trace.append((self, {**kwargs}, pred))
         return pred
