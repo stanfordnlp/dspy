@@ -2,6 +2,8 @@
 sidebar_position: 2
 ---
 
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
 # Utilizing Built-in Datasets
 
 It's easy to use your own data in DSPy: a dataset is just a list of `Example` objects. Using DSPy well involves being able to find and re-purpose existing datasets for your own pipelines in new ways; DSPy makes this a particularly powerful strategy.
@@ -98,3 +100,7 @@ The `_shuffle_and_sample()` method does two things:
 Converting the raw examples into `Example` objects allows the Dataset class to process them in a standardized way later. For example, the collate method, which is used by the PyTorch DataLoader, expects each item to be an `Example`.
 
 To summarize, the `Dataset` class handles all the necessary data processing and provides a simple API to access the different splits. This differentiates from the dataset classes like HotpotQA which require only definitions on how to load the raw data.
+
+***
+
+<AuthorDetails name="Herumb Shandilya"/>
