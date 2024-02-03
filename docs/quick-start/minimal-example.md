@@ -27,7 +27,7 @@ trainset, devset = gms8k.train, gms8k.dev
 
 ## Define the Module
 
-With our environment set up, let's define a custom module that utilizes the `ChainOfThought` module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the `ChainOfThought` module to perform step-by-step reasoning to generate answers:
 
 ```python
 class CoT(dspy.Module):
@@ -41,14 +41,14 @@ class CoT(dspy.Module):
 
 ## Compile and Evaluate the Model
 
-With our custom module in place, let's move on to optimizing the program by compiling the module using the `BootstrapFewShotWithRandomSearch` teleprompter:
+With our simple program in place, let's move on to optimizing it using the `BootstrapFewShotWithRandomSearch` teleprompter:
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
-# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 8-shot examples of our CoT programs.
+# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 8-shot examples of our CoT program.
 # The optimizer will repeat this 10 times (plus some initial attempts) before selecting its best attempt on the devset.
-config = dict(max_bootstrapped_demos=8, max_labeled_demos=8, num_candidate_programs=10, num_threads=NUM_THREADS)
+config = dict(max_bootstrapped_demos=8, max_labeled_demos=8, num_candidate_programs=10, num_threads=4)
 
 # Optimize! Use the `gms8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
 teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_metric, **config)
