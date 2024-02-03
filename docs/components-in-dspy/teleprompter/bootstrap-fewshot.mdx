@@ -2,6 +2,8 @@
 sidebar_position: 1
 ---
 
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
 # BootstrapFewShot
 
 When compiling a DSPy program, we generally invoke a teleprompter, which is an optimizer that takes the program, a training set, and a metric—and returns a new optimized program. Different teleprompters apply different strategies for optimization. This family of teleprompters is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use teleprompter to optimizes it.
@@ -120,3 +122,7 @@ cot_compiled.save('turbo_gsm8k.json')
 8. If the prediction is successful, a demonstration (demo) is created for each step in the trace. This demo includes the inputs to the predictor and the outputs it generated.
 
 This is how it works, aside from that. `BootstrapFewShotWithOptuna`, `BootstrapFewShotWithRandomSearch` etc. which work on the same principle with slight changes in the example discovery process.
+
+***
+
+<AuthorDetails name="Herumb Shandilya"/>

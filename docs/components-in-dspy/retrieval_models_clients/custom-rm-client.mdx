@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
 # Creating Custom RM Client
 
 DSPy provides support for various retrieval modules out of the box like `ColBERTv2`, `AzureCognitiveSearch`, `Pinecone`, `Weaviate`, etc. Unlike Language Model (LM) modules, creating a custom RM module is much more simple and flexible. 
@@ -233,3 +235,7 @@ When we call `dspy.Retrieve` the `__call__` method will execute the `forward` me
 
 If an `rm` is not initialized in `dsp.settings`, this would raise an error.
 :::
+
+***
+
+<AuthorDetails name="Arnav Singhvi"/>

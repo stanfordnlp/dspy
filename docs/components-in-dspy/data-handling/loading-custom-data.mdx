@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
 # Creating a Custom Dataset
 
 We've seen how to work with with `Example` objects and use the `HotPotQA` class to load the HuggingFace HotPotQA dataset as a list of `Example` objects. But in production, such structured datasets are rare. Instead, you'll find yourself working on a custom dataset and might question: how do I create my own dataset or what format should it be?
@@ -115,3 +117,7 @@ To prevent that you'll just need to make sure `_test` is not `None` and populate
 You can overide the methods in `Dataset` class to customize your class even more. 
 
 In summary, the Dataset base class provides a simplistic way to load and preprocess custom datasets with minimal code!
+
+***
+
+<AuthorDetails name="Herumb Shandilya"/>

@@ -120,6 +120,14 @@ const config: Config = {
               label: 'Omar Khattab',
               href: 'https://twitter.com/lateinteraction',
             },
+            {
+              label: 'Herumb Shandilya',
+              href: 'https://twitter.com/krypticmouse',
+            },
+            {
+              label: 'Arnav Singhvi',
+              href: 'https://twitter.com/arnav_thebigman',
+            },
           ],
         },
         // Additional links under the 'More' section

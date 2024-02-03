@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
 # Creating a Custom Local Model (LM) Client
 
 DSPy provides you with multiple LM clients that you can use to execute any of your pipelines. However, if you have an API or LM that is unable to be executed by any of the existing clients hosted in DSPy, you can create one yourself!! It's not too difficult so let's see how!!
@@ -151,3 +153,7 @@ claude = Claude(model='claude-2')
 
 dspy.settings.configure(lm=claude)
 ```
+
+***
+
+<AuthorDetails name="Arnav Singhvi"/>
