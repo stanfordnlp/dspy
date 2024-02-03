@@ -2,6 +2,8 @@ import dsp
 import tqdm
 import random
 import threading
+
+import dspy
 from dspy.predict.retry import Retry
 
 from dspy.primitives import Example
@@ -54,6 +56,10 @@ class BootstrapFewShot(Teleprompter):
         self.student = self._train()
         self.student._compiled = True
 
+        # set assert_failures and suggest_failures as attributes of student w/ value 0
+        setattr(self.student, '_assert_failures', 0)
+        setattr(self.student, '_suggest_failures', 0)
+
         return self.student
     
     def _prepare_student_and_teacher(self, student, teacher):
@@ -82,8 +88,8 @@ class BootstrapFewShot(Teleprompter):
 
             # FIXME(shangyint): This is an ugly hack to bind traces of
             # retry.module to retry
-            if isinstance(predictor1, Retry):
-                predictor2name[id(predictor1.module)] = name1
+            # if isinstance(predictor1, Retry):
+            #     predictor2name[id(predictor1.module)] = name1
 
             predictor2name[id(predictor2)] = name2            
 
@@ -106,7 +112,7 @@ class BootstrapFewShot(Teleprompter):
 
                     if success:
                         bootstrapped[example_idx] = True
-            
+
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
         
         # Unbootstrapped training examples

@@ -61,6 +61,7 @@ class Predict(Parameter):
     
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
+        new_signature = kwargs.pop("new_signature", None)
         signature = kwargs.pop("signature", self.signature)
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
@@ -84,6 +85,9 @@ class Predict(Parameter):
 
         x = dsp.Example(demos=demos, **kwargs)
 
+        if new_signature is not None:
+            signature = dsp.Template(signature.instructions, **new_signature)
+
         if self.lm is None:
             x, C = dsp.generate(signature, **config)(x, stage=self.stage)
         else:
@@ -101,7 +105,7 @@ class Predict(Parameter):
 
         pred = Prediction.from_completions(completions, signature=signature)
             
-        if dsp.settings.trace is not None:
+        if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
 

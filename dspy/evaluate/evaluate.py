@@ -96,6 +96,13 @@ class Evaluate:
             try:
                 prediction = program(**example.inputs())
                 score = metric(example, prediction)  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
+                
+                # increment assert and suggest failures to program's attributes
+                if hasattr(program, '_assert_failures'):
+                    program._assert_failures += dsp.settings.assert_failures
+                if hasattr(program, '_suggest_failures'):
+                    program._suggest_failures += dsp.settings.suggest_failures
+                
                 return example_idx, example, prediction, score
             except Exception as e:
                 with self.error_lock:

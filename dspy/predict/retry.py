@@ -1,3 +1,4 @@
+import copy
 import dspy
 import dsp
 
@@ -43,16 +44,29 @@ class Retry(Predict):
             if past_key in self.new_signature:
                 kwargs[past_key] = value
         del kwargs["past_outputs"]
-        kwargs["signature"] = self.new_signature
-        demos = kwargs.pop("demos", self.demos if self.demos is not None else [])
-        return self.original_forward(demos=demos, **kwargs)
+        kwargs["new_signature"] = self.new_signature
+        return self.original_forward(**kwargs)
     
     def __call__(self, **kwargs):
-        if dspy.settings.backtrack_to == self.module:
+        cached_kwargs = copy.deepcopy(kwargs)
+        kwargs["_trace"] = False
+        kwargs.setdefault("demos", self.demos if self.demos is not None else [])
+
+        # perform backtracking
+        if dspy.settings.backtrack_to == self:
             for key, value in dspy.settings.backtrack_to_args.items():
                 kwargs.setdefault(key, value)
-            return self.forward(**kwargs)
+            pred = self.forward(**kwargs)
         else:
-            # seems like a hack, but it works for now
-            demos = kwargs.pop("demos", self.demos if self.demos is not None else [])
-            return self.module(demos=demos, **kwargs)
+            pred = self.module(**kwargs)
+
+        # now pop multiple reserved keys
+        # NOTE(shangyin) past_outputs seems not useful to include in demos,
+        # therefore dropped
+        for key in ["_trace", "demos", "signature", "config", "lm", "past_outputs"]:
+            kwargs.pop(key, None)
+
+        if dsp.settings.trace is not None:
+            trace = dsp.settings.trace
+            trace.append((self, {**kwargs}, pred))
+        return pred
