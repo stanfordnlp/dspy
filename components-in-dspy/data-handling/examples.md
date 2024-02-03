@@ -2,9 +2,13 @@
 sidebar_position: 1
 ---
 
-# Examples:DSPy :: Tensor:PyTorch
+# Examples in DSPy
 
-Many frameworks have a "core" data structure. For example, pandas has dataframes and PyTorch utilizes Tensors. In DSPy, we work with **Example**, which are very similar to Python `dict`s but have a few useful utilities.
+Like tranditional ML, working in DSPy involves training sets, development sets, and test sets. Unlike, say, deep learning, you usually need far fewer labels (if any) to use DSPy effectively.
+
+The "core" data type for data in DSPy is `Example`. DSPy **Examples** are similar to Python `dict`s but have a few useful utilities. A major sub-class of `Example` is `Prediction`, which is the return type of DSPy modules.
+
+**Analogy**: DSPy `Example` is a core data type much the same way that Pandas has dataframes or PyTorch has Tensors.
 
 ## Creating an `Example`
 
