@@ -4,16 +4,18 @@ sidebar_position: 2
 
 # Utilizing Built-in Datasets
 
-DSPy offers support for loading several popular datasets, enabling you to swiftly begin implementing and experimenting with DSPy pipelines. As of now, DSPy provides support for the following dataset out of the box:
+It's easy to use your own data in DSPy: a dataset is just a list of `Example` objects. Using DSPy well involves being able to find and re-purpose existing datasets for your own pipelines in new ways; DSPy makes this a particularly powerful strategy.
 
-* **HotPotQA**
-* **GSM8k**
-* **Color**
+For convenience, DSPy currently also provides support for the following dataset out of the box:
+
+* **HotPotQA** (multi-hop question answering)
+* **GSM8k** (math questions)
+* **Color** (basic dataset of colors)
 
 
 ## Loading HotPotQA
 
-Let's go ahead and import an existing dataset in DSPy, i.e. HotPotQA, which is a collection of question-answer pairs. One convenient aspect of data modules is that they automatically convert all the QA-pairs into Example objects for us.
+HotPotQA is which is a collection of question-answer pairs.
 
 ```python
 from dspy.datasets import HotPotQA
@@ -51,7 +53,7 @@ print(trainset)
 DSPy typically requires very minimal labeling. Whereas your pipeline may involve six or seven complex steps, you only need labels for the initial question and the final answer. DSPy will bootstrap any intermediate labels needed to support your pipeline. If you change your pipeline in any way, the data bootstrapped will change accordingly!
 
 
-## Inside DSPy's `Dataset` class
+## Advanced: Inside DSPy's `Dataset` class (Optional)
 
 We've seen how you can use `HotPotQA` dataset class and load the HotPotQA dataset, but how does it actually work? The `HotPotQA` class inherits from the `Dataset` class, which takes care of the conversion of the data loaded from a source into train-test-dev split, all of which are *list of examples*. In the `HotPotQA` class, you only implement the `__init__` method, where you populate the splits from HuggingFace into the variables `_train`, `_test` and `_dev`. The rest of the process is handled by methods in the `Dataset` class.
 
