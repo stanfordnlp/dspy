@@ -4,15 +4,15 @@ sidebar_position: 1
 
 # Examples in DSPy
 
-Like tranditional ML, working in DSPy involves training sets, development sets, and test sets. Unlike, say, deep learning, you usually need far fewer labels (if any) to use DSPy effectively.
+Working in DSPy involves training sets, development sets, and test sets. This is like traditional ML, but you usually need far fewer labels (or zero labels) to use DSPy effectively.
 
-The "core" data type for data in DSPy is `Example`. DSPy **Examples** are similar to Python `dict`s but have a few useful utilities. A major sub-class of `Example` is `Prediction`, which is the return type of DSPy modules.
+The core data type for data in DSPy is `Example`. You will use **Examples** to represent items in your training set and test set. 
 
-**Analogy**: DSPy `Example` is a core data type much the same way that Pandas has dataframes or PyTorch has Tensors.
+DSPy **Examples** are similar to Python `dict`s but have a few useful utilities. Your DSPy modules will return values of the type `Prediction`, which is a special sub-class of `Example`.
 
 ## Creating an `Example`
 
-When you use DSPy, you will do a lot of evaluation and optimization runs. Your individual datapoints will be of type `Example`. Here's an example to illustrate:
+When you use DSPy, you will do a lot of evaluation and optimization runs. Your individual datapoints will be of type `Example`:
 
 ```python
 qa_pair = dspy.Example(question="This is a question?", answer="This is an answer.")
@@ -27,7 +27,8 @@ Example({'question': 'This is a question?', 'answer': 'This is an answer.'}) (in
 This is a question?
 This is an answer.
 ```
-Notice in the code above, we simply initialize the `qa_pair` `Example` object with key-value pairs (e.g. `question` and `answer` acting as arguments). This design approach streamlines data handling within DSPy, allowing for direct access and modification of values using familiar dictionary-like syntax.
+
+Examples can have any field keys and any value types, though usually values are strings.
 
 ```text
 object = Example(field1=value1, field2=value2, field3=value3, ...)
@@ -35,44 +36,22 @@ object = Example(field1=value1, field2=value2, field3=value3, ...)
 
 ## Specifying Input Keys
 
-In DSPy, defining inputs keys in `Examples` populates the input to the prompt and are set using the `with_inputs()` method in the `Example` class.
+In traditional ML, there are separated "inputs" and "labels".
+
+In DSPy, the `Example` objects have a `with_inputs()` method, which can mark specific fields as inputs. (The rest are just metadata or labels.)
 
 ```python
-# Single Input
+# Single Input.
 print(qa_pair.with_inputs("question"))
 
-# Multiple Inputs
+# Multiple Inputs; be careful about marking your labels as inputs unless you mean it.
 print(qa_pair.with_inputs("question", "answer"))
 ```
 
-For a single input, pass the desired key. For multiple inputs, pass multiple keys.
-
 This flexibility allows for customized tailoring of the `Example` object for different DSPy scenarios.
 
-Each `Example` object has an `_input_keys` attribute, updated with each call to `with_inputs()`.
+When you call `with_inputs()`, you get a new copy of the example. The original object is kept unchanged.
 
-:::caution
-
-If updating input keys through `with_inputs()`, you create a new copy of the current object with an updated `_input_key` attribute. Each call overwrites previous input keys.
-
-**Wrong** ❌
-```python
-print(qa_pair.with_inputs("question"))  # input_keys: question
-
-# SOME CODE HERE
-
-print(qa_pair.with_inputs("answer"))  # input_keys: answer, question will not be an input_key in this as this'll return a new Example object
-```
-
-**Correct** ✅
-```python
-print(qa_pair.with_inputs("question"))  # input_keys: question
-
-# SOME CODE HERE
-
-print(qa_pair.with_inputs("question", "answer"))  # input_keys: question, answer
-```
-:::
 
 ## Element Access and Updation
 
