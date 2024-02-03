@@ -8,10 +8,10 @@ We've seen how to work with with `Example` objects and use the `HotPotQA` class 
 
 In DSPy, your dataset is a list of `Examples`, which we can accomplish in two ways:
 
-* **The Pythonic Way:** Using native python utility and logic.
-* **The DSPythonic Way:** Using DSPy's `Dataset` class.
+* **Recommended: The Pythonic Way:** Using native python utility and logic.
+* **Advanced: Using DSPy's `Dataset` class**
 
-## The Pythonic Way
+## Recommended: The Pythonic Way
 
 To create a list of `Example` objects, we can simply load data from the source and formulate it into a Python list. Let's load an example CSV `sample.csv` that contains 3 fields: (**context**, **question** and **summary**) via Pandas. From there, we can construct our data list.
 
@@ -42,7 +42,7 @@ print(dataset[:3])
 
 While this is fairly simple, let's take a look at how loading datasets would look in DSPy - via the DSPythonic way!
 
-## The DSPythonic Way
+## Advanced: Using DSPy's `Dataset` class (Optional)
 
 Let's take advantage of the `Dataset` class we defined in the previous article to accomplish the preprocessing: 
 
