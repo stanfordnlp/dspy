@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Examples:DSPy :: Tensor:PyTorch
 
-Many frameworks have a "core" data structure. For example, numpy uses arrays, pandas has dataframes, and PyTorch utilizes Tensors. In DSPy, we work with **Example**, which are very similar to Python `dict`s but have a few useful utilities.
+Many frameworks have a "core" data structure. For example, pandas has dataframes and PyTorch utilizes Tensors. In DSPy, we work with **Example**, which are very similar to Python `dict`s but have a few useful utilities.
 
 ## Creating an `Example`
 
