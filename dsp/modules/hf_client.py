@@ -212,6 +212,11 @@ class Together(HFModel):
         self.api_base = os.getenv("TOGETHER_API_BASE")
         self.token = os.getenv("TOGETHER_API_KEY")
         self.model = model
+
+        self.use_inst_template = False
+        if "inst" in self.model.lower() or "instruct" in model.lower():
+            self.use_inst_template = True
+
         self.kwargs = {
             "temperature": 0.0,
             "max_tokens": 512,
@@ -219,6 +224,7 @@ class Together(HFModel):
             "top_k": 20,
             "repetition_penalty": 1,
             "n": 1,
+            "stop": ["\n\n", "---", "[/INST]"],
             **kwargs
         }
 
@@ -233,11 +239,14 @@ class Together(HFModel):
 
         kwargs = {**self.kwargs, **kwargs}
 
+        stop = kwargs.get("stop")
         temperature = kwargs.get("temperature")
         max_tokens = kwargs.get("max_tokens", 150)
         top_p = kwargs.get("top_p", 0.7)
         top_k = kwargs.get("top_k", 50)
         repetition_penalty = kwargs.get("repetition_penalty", 1)
+        prompt = f"[INST]{prompt}[/INST]" if self.use_inst_template else prompt
+
 
         if use_chat_api:
             url = f"{self.api_base}/chat/completions"
@@ -252,18 +261,19 @@ class Together(HFModel):
                 "max_tokens": max_tokens,
                 "top_p": top_p,
                 "top_k": top_k,
-                "repetition_penalty": repetition_penalty
+                "repetition_penalty": repetition_penalty,
+                "stop": stop,
             }
         else:
             body = {
                 "model": self.model,
-                "prompt": f"[INST]{prompt}[/INST]",
+                "prompt": prompt,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "top_p": top_p,
                 "top_k": top_k,
                 "repetition_penalty": repetition_penalty,
-                "stop": ["[/INST]", "</s>"]
+                "stop": stop,
             }
 
         headers = {"Authorization": f"Bearer {self.token}"}
