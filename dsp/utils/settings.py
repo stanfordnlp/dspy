@@ -40,6 +40,8 @@ class Settings(object):
                 log_openai_usage=False,
                 bypass_assert=False,
                 bypass_suggest=False,
+                assert_failures=0,
+                suggest_failures=0,
                 langchain_history=[]
             )
             cls._instance.__append(config)
