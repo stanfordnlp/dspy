@@ -84,6 +84,10 @@ class ChromadbRM(dspy.Retrieve):
             api_version=openai_api_version,
             model_name=openai_embed_model,
         )
+        self.api_version = openai_api_version
+        self.api_base = openai_api_base
+        self.model_name = openai_embed_model
+        self.openai_api_type = openai_api_type
 
         super().__init__(k=k)
 
@@ -127,8 +131,13 @@ class ChromadbRM(dspy.Retrieve):
             List[List[float]]: List of embeddings corresponding to each query.
         """
 
+        model_arg = {"engine": self.model_name,
+            "deployment_id": self.model_name,
+            "api_version": self.api_version,
+            "api_base": self.api_base,
+        }
         embedding = self.openai_ef._client.create(
-            input=queries, model=self._openai_embed_model
+            input=queries, model=self._openai_embed_model, **model_arg, api_provider=self.openai_api_type
         )
         return [embedding.embedding for embedding in embedding.data]
 
