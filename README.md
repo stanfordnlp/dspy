@@ -25,6 +25,7 @@ To make this more systematic and much more powerful, **DSPy** does two things. F
 
 ### Table of Contents
 
+If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
 
 1. **[Installation](#1-installation)**
 1. **[Tutorials & Documentation](#2-documentation)**
