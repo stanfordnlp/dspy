@@ -2,6 +2,8 @@
 A generalized AWS LLM.
 """
 
+from __future__ import annotations
+
 from abc import abstractmethod
 import logging
 from typing import Any, Literal
