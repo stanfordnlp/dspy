@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# 1️⃣ Signatures
+# Signatures
 
 ## What is a DSPy Signature?
 
