@@ -14,6 +14,3 @@ A **DSPy module** is a building block for programs that use LMs.
 
 
 ## How do I use a built-in module?
-
-We'll assume you are already at least a little familiar with [DSPy signatures], which are declarative specs for defining the behavior of any module we use in DSPy.
-
