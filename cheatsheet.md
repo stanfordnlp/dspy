@@ -1,7 +1,3 @@
----
-sidebar_position: 99
----
-
 # DSPy Cheatsheet
 
 This page will contain snippets for frequent usage patterns.
