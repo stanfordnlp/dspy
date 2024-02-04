@@ -1,18 +1,19 @@
 ---
-sidebar_position: 3
+sidebar_position: 1
 ---
 
-# Overview: Solving Your Own Task in DSPy
+# Using DSPy in 7 Steps
 
-DSPy is built to allow you to build your own programs to solve your own tasks. It's not a drop-in replacement for any existing framework you might be using currently. It's a new paradigm for doing higher-level machine learning (ML) with language models.
+Using DSPy well for solving a new task is just doing good machine learning with LMs.
 
-The decisions you make in each stage will probably be "wrong" initially. That's fine, iterative development is at the core of idiomatic usage of DSPy.
+What this means is that it's an iterative process. You make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
 
-**tl;dr** Using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+
 
 ## 1) Define your task.
 
-You cannot use DSPy well if you can't define the problem you're trying to solve.
+You cannot use DSPy well if you haven't defined the problem you're trying to solve.
 
 **Expected Input/Output Behavior:** Are you trying to build a chatbot over your data? A code assistant? A system for extracting information from papers? Or perhaps a translation system? Or a system for highlighting snippets from search results? Or a system to summarize information on a topic, with citations?
 
