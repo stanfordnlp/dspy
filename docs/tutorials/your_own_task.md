@@ -8,6 +8,8 @@ DSPy is built to allow you to build your own programs to solve your own tasks. I
 
 The decisions you make in each stage will probably be "wrong" initially. That's fine, iterative development is at the core of idiomatic usage of DSPy.
 
+**tl;dr** Using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+
 ## 1) Define your task.
 
 You cannot use DSPy well if you can't define the problem you're trying to solve.
@@ -97,3 +99,8 @@ At this point, go back to step 1 and revisit the major questions. Did you define
 Iterative development is key. DSPy gives you the pieces to do that incrementally: iterating on your data, your program structure, your assertions, your metric, and your optimization steps.
 
 Optimizing complex LM programs is an entirely new paradigm that only exists in DSPy at the time of writing, so naturally the norms around what to do are still emerging. If you need help, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
+
+
+#### TODOs for this page
+
+1. Include links to a guide for each step with more concrete code and pointers.
