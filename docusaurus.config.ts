@@ -5,7 +5,7 @@ import type { Config } from '@docusaurus/types';
 // Config object type declaration for TypeScript
 const config: Config = {
   title: 'DSPy',
-  tagline: 'Programming—not prompting—Foundation Models',
+  tagline: 'Programming—not prompting—Language Models',
   favicon: 'img/logo.png',
   
   // The URL and base URL for your project
@@ -82,7 +82,7 @@ const config: Config = {
           type: 'docSidebar', // Type of item is a doc sidebar
           sidebarId: 'tutorialSidebar', // ID of the sidebar to use
           position: 'left', // Position in the navbar
-          label: 'Tutorial', // Label for the navbar item
+          label: 'Documentation', // Label for the navbar item
         },
         // Navbar item for the API reference, linking to the intro document
         { to: '/api/intro', label: 'API References', position: 'left' },
@@ -103,7 +103,7 @@ const config: Config = {
           items: [
             // Individual link items for the docs
             {
-              label: 'Tutorial',
+              label: 'Documentation',
               to: '/docs/intro',
             },
             {
