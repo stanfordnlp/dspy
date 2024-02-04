@@ -8,23 +8,17 @@ sidebar_position: 2
 
 When we assign tasks to LMs in DSPy, we specify the behavior we need as a Signature.
 
-**A signature is a declarative specification of input/output behavior of a DSPy module.**
-
-What does that mean? It means tht signatures allow you tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
+**A signature is a declarative specification of input/output behavior of a DSPy module.** Signatures allow you tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
 
 
-## 2) Why are they called Signatures?
-
-You're probably familiar with function signatures, which specify the input and output arguments and their types.
-
-Ditto. DSPy signatures are similar, but the differences are that:
+You're probably familiar with function signatures, which specify the input and output arguments and their types. DSPy signatures are similar, but the differences are that:
 
 - While typical function signatures just _describe_ things, DSPy Signatures _define and control the behavior_ of modules.
 
 - The field names matter in DSPy Signatures. You express semantic roles in plain English: a `question` is different from an `answer`, a `sql_query` is different from `python_code`.
 
 
-## 3) Why should I use a DSPy Signature?
+## 2) Why should I use a DSPy Signature?
 
 **tl;dr** For modular and clean code, in which LM calls can be optimized into high-quality prompts (or automatic finetunes).
 
@@ -33,7 +27,7 @@ Ditto. DSPy signatures are similar, but the differences are that:
 Writing signatures is far more modular, adaptive, and reproducible than hacking at prompts or finetunes. The DSPy compiler will figure out how to build a highly-optimized prompt for your LM (or finetune your small LM) for your signature, on your data, and within your pipeline. In many cases, we found that compiling leads to better prompts than humans write. Not because DSPy optimizers are more creative than humans, but simply because they can try more things and tune the metrics directly.
 
 
-## 4) **Inline** DSPy Signatures
+## 3) **Inline** DSPy Signatures
 
 Signatures can be defined as a short string, with argument names that define semantic roles for inputs/outputs.
 
@@ -96,7 +90,7 @@ print("Rationale:", response.rationale)
 Rationale: produce the summary. We need to highlight the key points about Lee's performance for West Ham, his loan spells in League One, and his new contract with Barnsley. We also need to mention that his contract length has not been disclosed.
 ```
 
-## 5) **Class-based** DSPy Signatures
+## 4) **Class-based** DSPy Signatures
 
 For some advanced tasks, you need more verbose signatures. This is typically to:
 
@@ -161,7 +155,7 @@ Prediction(
 ```
 
 
-## 6) Building modules & compiling them
+## 5) Building modules & compiling them
 
 While signatures are covenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
 
