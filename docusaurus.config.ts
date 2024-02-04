@@ -89,7 +89,7 @@ const config: Config = {
         // Navbar item for the API reference, linking to the intro document
         { to: '/api/intro', label: 'API References', position: 'left' },
         // Navbar item for the API reference, linking to the intro document
-        { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'left' },
+        { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'right' },
         // Navbar item for the GitHub repository
         {
           href: 'https://github.com/stanfordnlp/dspy',
