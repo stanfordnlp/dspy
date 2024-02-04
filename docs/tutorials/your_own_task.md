@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# [Tutorial 03] Solving your own task in DSPy
+# [03] Solving Your Own Task in DSPy
 
 DSPy is built to allow you to build your own programs to solve your own tasks. It's not a drop-in replacement for any existing framework you might be using currently. It's a new paradigm for doing higher-level machine learning (ML) with language models.
 
