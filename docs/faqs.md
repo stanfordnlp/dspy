@@ -14,7 +14,7 @@ The **DSPy** philosophy and abstraction differ significantly from other librarie
 
 ## Basic Usage
 
-**How should I use DSPy for my task?** We wrote a [seven-step guide](docs/tutorials/your_own_task) on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+**How should I use DSPy for my task?** We wrote a [seven-step guide] on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
 **How do I convert my complex prompt into a DSPy pipeline?** See the same answer above.
 
