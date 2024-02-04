@@ -2,9 +2,9 @@
 sidebar_position: 2
 ---
 
-# [1] DSPy Signatures
+# 1️⃣ Signatures
 
-## 1) What is a DSPy Signature?
+## What is a DSPy Signature?
 
 When we assign tasks to LMs in DSPy, we specify the behavior we need as a Signature.
 
@@ -18,7 +18,7 @@ You're probably familiar with function signatures, which specify the input and o
 - The field names matter in DSPy Signatures. You express semantic roles in plain English: a `question` is different from an `answer`, a `sql_query` is different from `python_code`.
 
 
-## 2) Why should I use a DSPy Signature?
+## Why should I use a DSPy Signature?
 
 **tl;dr** For modular and clean code, in which LM calls can be optimized into high-quality prompts (or automatic finetunes).
 
@@ -27,7 +27,7 @@ You're probably familiar with function signatures, which specify the input and o
 Writing signatures is far more modular, adaptive, and reproducible than hacking at prompts or finetunes. The DSPy compiler will figure out how to build a highly-optimized prompt for your LM (or finetune your small LM) for your signature, on your data, and within your pipeline. In many cases, we found that compiling leads to better prompts than humans write. Not because DSPy optimizers are more creative than humans, but simply because they can try more things and tune the metrics directly.
 
 
-## 3) **Inline** DSPy Signatures
+## **Inline** DSPy Signatures
 
 Signatures can be defined as a short string, with argument names that define semantic roles for inputs/outputs.
 
@@ -90,7 +90,7 @@ print("Rationale:", response.rationale)
 Rationale: produce the summary. We need to highlight the key points about Lee's performance for West Ham, his loan spells in League One, and his new contract with Barnsley. We also need to mention that his contract length has not been disclosed.
 ```
 
-## 4) **Class-based** DSPy Signatures
+## **Class-based** DSPy Signatures
 
 For some advanced tasks, you need more verbose signatures. This is typically to:
 
@@ -155,7 +155,7 @@ Prediction(
 ```
 
 
-## 5) Building modules & compiling them
+## Using signatures to build modules & compiling them
 
 While signatures are covenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
 
