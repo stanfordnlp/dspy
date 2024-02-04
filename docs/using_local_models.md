@@ -92,7 +92,7 @@ Follow these steps to set up the vLLM Server:
 
    Example command:
    ```
-   python -m vllm.entrypoints.api_server --model mosaicml/mpt-7b --port 8000
+   python -m vllm.entrypoints.openai.api_server --model mosaicml/mpt-7b --port 8000
    ```
 
 This will launch the vLLM server.
