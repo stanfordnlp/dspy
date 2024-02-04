@@ -214,7 +214,7 @@ class Together(HFModel):
         self.model = model
 
         self.use_inst_template = False
-        if "inst" in self.model.lower() or "instruct" in model.lower():
+        if any(keyword in self.model.lower() for keyword in ["inst", "instruct"]):
             self.use_inst_template = True
 
         stop_default = "\n\n---"
