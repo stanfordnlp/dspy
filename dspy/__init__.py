@@ -5,6 +5,7 @@ from .signatures import *
 from .retrieve import *
 from .predict import *
 from .primitives import *
+
 # from .evaluation import *
 
 
@@ -28,6 +29,7 @@ Anyscale = dsp.Anyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
+Bedrock = dsp.Bedrock
 
 configure = settings.configure
 context = settings.context
