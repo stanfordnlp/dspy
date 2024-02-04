@@ -85,7 +85,7 @@ const config: Config = {
           label: 'Documentation', // Label for the navbar item
         },
         // Navbar item for the API reference, linking to the intro document
-        { to: '/docs/tutorials', label: 'Tutorials', position: 'left' },
+        { to: '/docs/category/tutorials', label: 'Tutorials', position: 'left' },
         // Navbar item for the API reference, linking to the intro document
         { to: '/api/intro', label: 'API References', position: 'left' },
         // Navbar item for the API reference, linking to the intro document
