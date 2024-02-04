@@ -13,7 +13,7 @@ A **DSPy module** is a building block for programs that use LMs.
 - Multiple modules can be composed into bigger modules (programs). DSPy modules are inspired directly by NN modules in PyTorch, but applied to LM programs.
 
 
-## How do I use a built-in module, like `dspy.Predict` or `dspy.ChainOfThought`?
+## How do I use a built-in module?
 
 Let's start with the most fundamental module, `dspy.Predict`. Internally, all other DSPy modules are just built using `dspy.Predict`.
 
