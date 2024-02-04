@@ -8,14 +8,6 @@ from typing import Any, Literal
 import json
 from dsp.modules.lm import LM
 
-try:
-    import boto3
-except ImportError as e:
-    raise ImportError(
-        "You need to install boto3 and update AWS CLI with your AWS credentials."
-        "Please use the command: pip install boto3"
-    )
-
 # Heuristic translating number of chars to tokens
 # ~4 chars = 1 token
 CHARS2TOKENS: int = 4
@@ -54,6 +46,9 @@ class AWSLM(LM):
         self._max_new_tokens: int = max_new_tokens
         self._model_name: str = model
         self._truncate_long_prompt_prompts: bool = truncate_long_prompts
+
+        import boto3
+        
         self.predictor = boto3.client(service_name, region_name=region_name)
 
     @abstractmethod
