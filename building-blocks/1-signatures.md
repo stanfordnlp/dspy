@@ -4,8 +4,6 @@ sidebar_position: 2
 
 # Signatures
 
-## What is a DSPy Signature?
-
 When we assign tasks to LMs in DSPy, we specify the behavior we need as a Signature.
 
 **A signature is a declarative specification of input/output behavior of a DSPy module.** Signatures allow you tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
