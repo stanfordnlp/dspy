@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# RAG: A Step-by-Step Guide
+# [Tutorial 01] RAG: A Step-by-Step Guide
 
 Retrieval-augmented generation (RAG) is an approach that allows LLMs to tap into a large corpus of knowledge from sources and query its knowledge store to find relevant passages/content and produce a well-refined response.
 
