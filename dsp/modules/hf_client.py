@@ -217,6 +217,8 @@ class Together(HFModel):
         if "inst" in self.model.lower() or "instruct" in model.lower():
             self.use_inst_template = True
 
+        stop_default = "\n\n---"
+
         self.kwargs = {
             "temperature": 0.0,
             "max_tokens": 512,
@@ -224,7 +226,7 @@ class Together(HFModel):
             "top_k": 20,
             "repetition_penalty": 1,
             "n": 1,
-            "stop": ["\n\n", "---", "[/INST]"],
+            "stop": stop_default if "stop" not in kwargs else kwargs["stop"],
             **kwargs
         }
 
@@ -246,7 +248,6 @@ class Together(HFModel):
         top_k = kwargs.get("top_k", 50)
         repetition_penalty = kwargs.get("repetition_penalty", 1)
         prompt = f"[INST]{prompt}[/INST]" if self.use_inst_template else prompt
-
 
         if use_chat_api:
             url = f"{self.api_base}/chat/completions"
