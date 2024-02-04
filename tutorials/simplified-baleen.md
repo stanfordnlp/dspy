@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# Simplified Baleen: A Step-by-Step Guide
+# [Tutorial 02] Simplified Baleen: A Step-by-Step Guide
 
 A single search query is often not enough for complex QA tasks. For instance, an example within `HotPotQA` includes a question about the birth city of the writer of "Right Back At It Again". A search query often identifies the author correctly as "Jeremy McKinnon", but lacks the capability to compose the intended answer in determining when he was born.
 
