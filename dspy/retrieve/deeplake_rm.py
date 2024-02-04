@@ -2,7 +2,7 @@
 Retriever model for deeplake
 """
 
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Type
 import openai
 import dspy
 from collections import defaultdict
@@ -52,7 +52,7 @@ class DeeplakeRM(dspy.Retrieve):
     def __init__(
         self,
         deeplake_vectorstore_name: str,
-        deeplake_client: VectorStore,
+        deeplake_client,
         k: int = 3,
     ):
         try:
