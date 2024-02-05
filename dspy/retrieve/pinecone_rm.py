@@ -219,7 +219,7 @@ class PineconeRM(dspy.Retrieve):
         # we need a pooling strategy to get a single vector representation of the input
         # so the default is to take the mean of the hidden states
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
         """Search with pinecone for self.k top passages for query
 
         Args:
@@ -228,6 +228,7 @@ class PineconeRM(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
+        k = k if k is not None else self.k
         queries = (
             [query_or_queries]
             if isinstance(query_or_queries, str)
