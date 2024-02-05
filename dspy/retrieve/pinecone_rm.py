@@ -189,13 +189,6 @@ class PineconeRM(dspy.Retrieve):
         Returns:
             List[List[float]]: List of embeddings corresponding to each query.
         """
-        try:
-            import torch
-        except ImportError as exc:
-            raise ModuleNotFoundError(
-                "You need to install torch to use a local embedding model with PineconeRM."
-            ) from exc
-        
         if not self.use_local_model:
             if OPENAI_LEGACY:
                 embedding = openai.Embedding.create(
@@ -206,6 +199,13 @@ class PineconeRM(dspy.Retrieve):
                     input=queries, model=self._openai_embed_model
                 ).model_dump()
             return [embedding["embedding"] for embedding in embedding["data"]]
+
+        try:
+            import torch
+        except ImportError as exc:
+            raise ModuleNotFoundError(
+                "You need to install torch to use a local embedding model with PineconeRM."
+            ) from exc
         
         # Use local model
         encoded_input = self._local_tokenizer(queries, padding=True, truncation=True, return_tensors="pt").to(self.device)
