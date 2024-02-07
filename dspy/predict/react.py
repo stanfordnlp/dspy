@@ -64,7 +64,7 @@ class ReAct(Module):
 
             if action_name == 'Finish': return action_val
 
-            output[f"Observation_{hop+1}"] = self.tools[action_name](action_val).passages
+            output[f"Observation_{hop+1}"] = self.tools[action_name](action_val)
 
         except Exception as e:
             output[f"Observation_{hop+1}"] = "Failed to parse action. Bad formatting or incorrect action name."
