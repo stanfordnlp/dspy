@@ -13,6 +13,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Vim
+*.swp
+
 # Jupyter Notebook
 .ipynb_checkpoints
 # notebooks/

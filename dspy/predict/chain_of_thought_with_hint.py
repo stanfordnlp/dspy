@@ -1,4 +1,4 @@
-import dsp
+import dsp, dspy
 
 from .predict import Predict
 
@@ -9,27 +9,18 @@ from .predict import Predict
 class ChainOfThoughtWithHint(Predict):
     def __init__(self, signature, rationale_type=None, activated=True, **config):
         super().__init__(signature, **config)
-
         self.activated = activated
-
         signature = self.signature
-        *keys, last_key = signature.kwargs.keys()
 
-        DEFAULT_HINT_TYPE = dsp.Type(prefix="Hint:", desc="${hint}")
+        *keys, last_key = signature.fields.keys()
+        rationale_type = rationale_type or dspy.OutputField(
+            prefix="Reasoning: Let's think step by step in order to",
+            desc="${produce the " + last_key + "}. We ...",
+        )
+        self.extended_signature1 = self.signature.insert(-2, "rationale", rationale_type, type_=str)
 
-        DEFAULT_RATIONALE_TYPE = dsp.Type(prefix="Reasoning: Let's think step by step in order to",
-                                          desc="${produce the " + last_key + "}. We ...")
-
-        rationale_type = rationale_type or DEFAULT_RATIONALE_TYPE
-        
-        extended_kwargs1 = {key: signature.kwargs[key] for key in keys}
-        extended_kwargs1.update({'rationale': rationale_type, last_key: signature.kwargs[last_key]})
-
-        extended_kwargs2 = {key: signature.kwargs[key] for key in keys}
-        extended_kwargs2.update({'hint': DEFAULT_HINT_TYPE, 'rationale': rationale_type, last_key: signature.kwargs[last_key]})
-        
-        self.extended_signature1 = dsp.Template(signature.instructions, **extended_kwargs1)
-        self.extended_signature2 = dsp.Template(signature.instructions, **extended_kwargs2)
+        DEFAULT_HINT_TYPE = dspy.OutputField()
+        self.extended_signature2 = self.extended_signature1.insert(-2, "hint", DEFAULT_HINT_TYPE, type_=str)
     
     def forward(self, **kwargs):
         signature = self.signature
