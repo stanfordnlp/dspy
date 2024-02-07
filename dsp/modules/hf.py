@@ -9,6 +9,7 @@ from dsp.modules.lm import LM
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 import functools
 
+
 def openai_to_hf(**kwargs):
     hf_kwargs = {}
     for k, v in kwargs.items():
@@ -53,28 +54,35 @@ class HFModel(LM):
                 raise ModuleNotFoundError(
                     "You need to install Hugging Face transformers library to use HF models."
                 ) from exc
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu")
             try:
-                architecture = AutoConfig.from_pretrained(model).__dict__["architectures"][0]
-                self.encoder_decoder_model = ("ConditionalGeneration" in architecture) or ("T5WithLMHeadModel" in architecture)
-                self.decoder_only_model = ("CausalLM" in architecture) or ("GPT2LMHeadModel" in architecture)
+                architecture = AutoConfig.from_pretrained(
+                    model).__dict__["architectures"][0]
+                self.encoder_decoder_model = ("ConditionalGeneration" in architecture) or (
+                    "T5WithLMHeadModel" in architecture)
+                self.decoder_only_model = ("CausalLM" in architecture) or (
+                    "GPT2LMHeadModel" in architecture)
                 assert self.encoder_decoder_model or self.decoder_only_model, f"Unknown HuggingFace model class: {model}"
-                self.tokenizer = AutoTokenizer.from_pretrained(model if checkpoint is None else checkpoint)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    model if checkpoint is None else checkpoint)
 
                 self.rationale = True
                 AutoModelClass = AutoModelForSeq2SeqLM if self.encoder_decoder_model else AutoModelForCausalLM
                 if checkpoint:
                     # with open(os.path.join(checkpoint, '..', 'compiler_config.json'), 'r') as f:
                     #     config = json.load(f)
-                    self.rationale = False #config['rationale']
+                    self.rationale = False  # config['rationale']
                     # if config['peft']:
                     #     peft_config = PeftConfig.from_pretrained(checkpoint)
                     #     self.model = AutoModelClass.from_pretrained(peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map=hf_device_map)
                     #     self.model = PeftModel.from_pretrained(self.model, checkpoint)
                     # else:
-                    self.model = AutoModelClass.from_pretrained(checkpoint).to("cuda")
+                    self.model = AutoModelClass.from_pretrained(
+                        checkpoint).to(self.device)
                 else:
-                    self.model = AutoModelClass.from_pretrained(model).to("cuda")
+                    self.model = AutoModelClass.from_pretrained(
+                        model).to(self.device)
                 self.drop_prompt_from_output = False
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
