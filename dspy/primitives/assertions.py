@@ -186,10 +186,10 @@ def assert_no_except_handler(func):
 
 
 def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
-    """Handler for backtracking suggestion.
+    """Handler for backtracking suggestion and assertion.
 
     Re-run the latest predictor up to `max_backtracks` times,
-    with updated signature if a suggestion fails. updated signature adds a new
+    with updated signature if an assertion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
 
@@ -335,6 +335,13 @@ def assert_transform_module(
     module.forward = handle_assert_forward(assertion_handler, **handler_args).__get__(
         module
     )
+
+    if all(map(lambda p: isinstance(p, dspy.retry.Retry), module.named_predictors())):
+        pass # we already applied the Retry mapping outside
+    elif all(map(lambda p: not isinstance(p, dspy.retry.Retry), module.named_predictors())):
+        module.map_named_predictors(dspy.retry.Retry)
+    else:
+        raise RuntimeError("Module has mixed predictors, can't apply Retry mapping.")
 
     setattr(module, "_assert_transformed", True)
 
