@@ -336,9 +336,9 @@ def assert_transform_module(
         module
     )
 
-    if all(map(lambda p: isinstance(p, dspy.retry.Retry), module.named_predictors())):
+    if all(map(lambda p: isinstance(p[1], dspy.retry.Retry), module.named_predictors())):
         pass # we already applied the Retry mapping outside
-    elif all(map(lambda p: not isinstance(p, dspy.retry.Retry), module.named_predictors())):
+    elif all(map(lambda p: not isinstance(p[1], dspy.retry.Retry), module.named_predictors())):
         module.map_named_predictors(dspy.retry.Retry)
     else:
         raise RuntimeError("Module has mixed predictors, can't apply Retry mapping.")
