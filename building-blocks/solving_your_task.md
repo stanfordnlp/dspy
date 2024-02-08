@@ -81,7 +81,9 @@ Look at the outputs and the metric scores. This will probably allow you to spot 
 
 Given some data and a metric, we can now optimize the program you built.
 
-DSPy includes many optimizers that do different things. Here's the general guidance on getting started:
+DSPy includes many optimizers that do different things. Remember: DSPy optimizers will create examples of each step, craft instructions, and/or update LM weights. In general, you don't need to have labels for your pipeline steps, but your data examples need to have input values and whatever labels your metric requires (e.g., no labels if your metric is reference-free, but final output labels otherwise in most cases).
+
+Here's the general guidance on getting started:
 
 * If you have very little data, e.g. 10 examples of your task, use `BootstrapFewShot`.
 
