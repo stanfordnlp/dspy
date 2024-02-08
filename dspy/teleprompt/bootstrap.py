@@ -34,7 +34,7 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
+    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=8, max_rounds=1, max_errors=5):
         self.metric = metric
         self.teacher_settings = teacher_settings
 
