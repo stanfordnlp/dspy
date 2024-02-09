@@ -124,6 +124,6 @@ class Predict(Parameter):
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
-# affect exeuction. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
+# affect execution. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
 # Generally, unless overwritten, we'd see n=None, temperature=None.
 # That will eventually mean we have to learn them.
