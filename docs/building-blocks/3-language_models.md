@@ -4,27 +4,10 @@ sidebar_position: 4
 
 # Language Models
 
-This guide assumes you followed the [intro tutorial](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) to build your first few DSPy programs.
 
-Remember that a **DSPy program** is just Python code that calls one or more DSPy modules, like `dspy.Predict` or `dspy.ChainOfThought`, to use LMs.
+## Remote LMs.
 
-## 1) Short Intro to LMs in DSPy {#1-short-intro-to-lms-in-dspy}
-
-``` python
-# Install `dspy-ai` if needed.
-
-try: import dspy
-except ImportError:
-    %pip install dspy-ai
-    import dspy
-```
-
-## 2) Supported LM clients. {#2-supported-lm-clients}
-
-### Remote LMs. {#remote-lms}
-
-These models are managed services. You just need to sign up and obtain
-an API key.
+These models are managed services. You just need to sign up and obtain an API key.
 
 1.  `dspy.OpenAI` for GPT-3.5 and GPT-4.
 
@@ -32,10 +15,9 @@ an API key.
 
 3.  `dspy.Anyscale` for hosted Llama2 models.
 
-### Local LMs. {#local-lms}
+### Local LMs.
 
-You need to host these models on your own GPU(s). Below, we include
-pointers for how to do that.
+You need to host these models on your own GPU(s). Below, we include pointers for how to do that.
 
 1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](/api/hosting_language_models_locally/TGI)
 
@@ -49,7 +31,7 @@ pointers for how to do that.
 
 If there are other clients you want added, let us know!
 
-## 3) Setting up the LM client. {#3-setting-up-the-lm-client}
+## Setting up the LM client.
 
 You can just call the constructor that connects to the LM. Then, use
 `dspy.configure` to declare this as the default LM.
@@ -57,8 +39,6 @@ You can just call the constructor that connects to the LM. Then, use
 For example, for OpenAI, you can do it as follows.
 
 ``` python
-# TODO: Add a graceful line for OPENAI_API_KEY.
-
 gpt3_turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=300)
 gpt4_turbo = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=300)
 
@@ -69,13 +49,11 @@ gpt4_turbo = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=300)
 dspy.configure(lm=gpt3_turbo)
 ```
 
-## 4) Using a different LM within a code block. {#4-using-a-different-lm-within-a-code-block}
+## Using multiple LMs at once.
 
-The default LM above is GPT-3.5, `gpt3_turbo`. What if I want to run a
-piece of code with, say, GPT-4 or LLama-2?
+The default LM above is GPT-3.5, `gpt3_turbo`. What if I want to run a piece of code with, say, GPT-4 or LLama-2?
 
-Instead of changing the default LM, you can just change it inside a
-block of code.
+Instead of changing the default LM, you can just change it inside a block of code.
 
 **Tip:** Using `dspy.configure` and `dspy.context` is thread-safe!
 
@@ -93,7 +71,7 @@ with dspy.context(lm=gpt4_turbo):
     The castle David Gregory inherited has 7 floors.
     The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
 
-## 5) Tips and Tricks. {#5-tips-and-tricks}
+## Tips and Tricks.
 
 In DSPy, all LM calls are cached. If you repeat the same call, you will
 get the same outputs. (If you change the inputs or configurations, you
