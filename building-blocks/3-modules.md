@@ -96,20 +96,20 @@ True
 
 The others are very similar. They mainly change the internal behavior with which your signature is implemented!
 
-1. **`dspy.Predict`**:
+1. **`dspy.Predict`**: Basic predictor. Does not modify the signature. Handles the key forms of learning (i.e., storing the instructions and demonstrations and updates to the LM).
 
-2. **`dspy.ChainOfThought`**: 
+2. **`dspy.ChainOfThought`**: Teaches the LM to think step-by-step before committing to the signature's response.
 
-3. **`dspy.ProgramOfThought`**:
+3. **`dspy.ProgramOfThought`**: Teaches the LM to output code, whose execution results will dictate the response.
 
-4. **`dspy.ReAct`**:
+4. **`dspy.ReAct`**: An agent that can use tools to implement the given signature.
 
-5. **`dspy.MultiChainComparison`**:
+5. **`dspy.MultiChainComparison`**: Can compare multiple outputs from `ChainOfThought` to produce a final prediction.
 
 
 We also have some function-style modules:
 
-6. **`dspy.majority`**:
+6. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
 
 
 More example soon!
