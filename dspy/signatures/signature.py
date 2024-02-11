@@ -1,3 +1,4 @@
+from copy import deepcopy
 import dsp
 from pydantic import BaseModel, Field, create_model
 from typing import Type, Union, Dict, Tuple
@@ -56,14 +57,23 @@ class SignatureMeta(type(BaseModel)):
     @property
     def instructions(cls) -> str:
         return getattr(cls, "__doc__", "")
-    
+
     def with_instructions(cls, instructions: str):
-        return create_model(cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields)
+        return create_model(
+            cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields
+        )
 
     @property
     def fields(cls):
         return cls.__fields__
-    
+
+    def with_updated_field(cls, name, field_key, field_value):
+        """Returns a new Signature type with the field, name, updated
+        with field.json_schema_extra[field_key] = field_value."""
+        fields_copy = deepcopy(cls.fields)
+        fields_copy[name].json_schema_extra[field_key] = field_value
+        return create_model(cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy)
+
     @property
     def input_fields(cls):
         return cls._get_fields_with_type("input")
@@ -167,7 +177,7 @@ class SignatureMeta(type(BaseModel)):
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
         return cls.model_json_schema() == other.model_json_schema()
-    
+
     def __repr__(cls):
         """
         Outputs something on the form:
@@ -180,7 +190,7 @@ class SignatureMeta(type(BaseModel)):
         field_reprs = []
         for name, field in cls.fields.items():
             field_reprs.append(f"{name} = {field}")
-        field_repr = '\n    '.join(field_reprs)
+        field_repr = "\n    ".join(field_reprs)
         return (
             f"{cls.__name__}({cls.signature}\n"
             f"    instructions={repr(cls.instructions)}\n"

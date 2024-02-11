@@ -46,16 +46,6 @@ Your task is to propose a new instruction that will lead a good language model t
         proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
-def last_field(signature):
-    *_, (k, v) = signature.fields.items()
-    return v
-
-def get_last_prefix(signature):
-    return last_field(signature).json_schema_extra['prefix']
-
-def set_last_prefix(signature, prefix):
-    last_field(signature).json_schema_extra['prefix'] = prefix
-
 class SignatureOptimizer(Teleprompter):
     def __init__(self, prompt_model=None, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False, track_stats=False):
         self.metric = metric
@@ -70,7 +60,9 @@ class SignatureOptimizer(Teleprompter):
         for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
             if not p1.extended_signature.instructions == p2.extended_signature.instructions:
                 return False
-            if not last_field(p1.extended_signature) == last_field(p2.extended_signature):
+            *_, p1_last_field = p1.extended_signature.fields.values()
+            *_, p2_last_field = p2.extended_signature.fields.values()
+            if not p1_last_field == p2_last_field:
                 return False
         return True
 
@@ -113,12 +105,13 @@ class SignatureOptimizer(Teleprompter):
         for predictor in module.predictors():
             basic_instruction = None
             basic_prefix = None
+            *_, last_key = predictor.extended_signature.fields.keys()
             if (hasattr(predictor, 'extended_signature')):
                 basic_instruction = predictor.extended_signature.instructions
-                basic_prefix = get_last_prefix(predictor.extended_signature)
+                basic_prefix = predictor.extended_signature.fields[last_key].json_schema_extra['prefix']
             else:
                 basic_instruction = predictor.extended_signature1.instructions
-                basic_prefix = get_last_prefix(predictor.extended_signature1)
+                basic_prefix = predictor.extended_signature1.fields[last_key].json_schema_extra['prefix']
             if self.prompt_model: 
                 with dspy.settings.context(lm=self.prompt_model):
                     instruct = dspy.Predict(BasicGenerateInstruction, n=self.breadth-1, temperature=self.init_temperature)(basic_instruction=basic_instruction)
@@ -156,13 +149,19 @@ class SignatureOptimizer(Teleprompter):
 
                     # Set this new module with our instruction / prefix 
                     if (hasattr(p_new, 'extended_signature')):
-                        p_new.extended_signature = p_new.extended_signature.with_instructions(instruction)
-                        set_last_prefix(p_new.extended_signature, prefix)
+                        *_, last_key = p_new.extended_signature.fields.keys()
+                        p_new.extended_signature = p_new.extended_signature \
+                            .with_instructions(instruction) \
+                            .with_updated_field(last_key, "prefix", prefix)
                     else:
-                        p_new.extended_signature1 = p_new.extended_signature1.with_instructions(instruction)
-                        set_last_prefix(p_new.extended_signature1, prefix)
-                        p_new.extended_signature2 = p_new.extended_signature2.with_instructions(instruction)
-                        set_last_prefix(p_new.extended_signature2, prefix)
+                        *_, last_key = p_new.extended_signature1.fields.keys()
+                        p_new.extended_signature1 = p_new.extended_signature1 \
+                            .with_instructions(instruction) \
+                            .with_updated_field(last_key, "prefix", prefix)
+                        *_, last_key = p_new.extended_signature2.fields.keys()
+                        p_new.extended_signature2 = p_new.extended_signature2 \
+                            .with_instructions(instruction) \
+                            .with_updated_field(last_key, "prefix", prefix)
 
                     # Score the instruction / prefix 
                     if self.verbose: print(f"----------------")
@@ -213,13 +212,19 @@ class SignatureOptimizer(Teleprompter):
                 # to ensure the next round of scores reflect the best possible version
                 best_candidate = max(evaluated_candidates[id(p_old)].values(), key=lambda candidate: candidate['score'])
                 if (hasattr(p_new, 'extended_signature')):
-                    p_new.extended_signature = p_new.extended_signature.with_instructions(best_candidate["instruction"])
-                    set_last_prefix(p_new.extended_signature, best_candidate["prefix"])
+                    *_, last_key = p_old.extended_signature.fields.keys()
+                    p_new.extended_signature = p_new.extended_signature \
+                        .with_instructions(best_candidate["instruction"]) \
+                        .with_updated_field(last_key, "prefix", best_candidate["prefix"])
                 else:
-                    p_new.extended_signature1 = p_new.extended_signature.with_instructions(best_candidate["instruction"])
-                    set_last_prefix(p_new.extended_signature1, best_candidate["prefix"])
-                    p_new.extended_signature2 = p_new.extended_signature.with_instructions(best_candidate["instruction"])
-                    set_last_prefix(p_new.extended_signature2, best_candidate["prefix"])
+                    *_, last_key1 = p_old.extended_signature1.fields.keys()
+                    p_new.extended_signature1 = p_new.extended_signature \
+                        .with_instructions(best_candidate["instruction"]) \
+                        .with_updated_field(last_key1, "prefix", best_candidate["prefix"])
+                    *_, last_key2 = p_old.extended_signature2.fields.keys()
+                    p_new.extended_signature2 = p_new.extended_signature \
+                        .with_instructions(best_candidate["instruction"]) \
+                        .with_updated_field(last_key2, "prefix", best_candidate["prefix"])
                 if self.verbose: print(f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}")
                 if self.verbose: print(f"Full predictor with update: ")
                 for i,predictor in enumerate(module_clone.predictors()):

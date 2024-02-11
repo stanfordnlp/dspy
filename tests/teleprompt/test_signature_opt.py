@@ -79,7 +79,6 @@ def test_optimization_and_output_verification():
     test_input = "What is the capital of France?"
     prediction = optimized_student(input=test_input)
 
-    print(prediction)
     print(dsp.settings.lm.get_convo(-1))
     
     assert prediction.output == "No more responses"

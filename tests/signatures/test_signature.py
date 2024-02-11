@@ -45,6 +45,17 @@ def test_with_signature():
     assert signature2.instructions == "This is a test"
     assert signature1 is not signature2, "The type should be immutable"
 
+def test_with_updated_field():
+    signature1 = Signature("input1, input2 -> output")
+    signature2 = signature1.with_updated_field('input1', 'prefix', 'Modified:')
+    assert signature2.input_fields['input1'].json_schema_extra['prefix'] == "Modified:"
+    assert signature1.input_fields['input1'].json_schema_extra['prefix'] == "Input 1:"
+    assert signature1 is not signature2, "The type should be immutable"
+    for key in signature1.fields.keys():
+        if key != 'input1':
+            assert signature1.fields[key].json_schema_extra == signature2.fields[key].json_schema_extra
+    assert signature1.instructions == signature2.instructions
+
 def test_empty_signature():
     with pytest.raises(ValueError):
         Signature("")
