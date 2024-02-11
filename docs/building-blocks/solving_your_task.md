@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Using DSPy in 7 Steps
+# Using DSPy in 8 Steps
 
 Using DSPy well for solving a new task is just doing good machine learning with LMs.
 
@@ -77,7 +77,7 @@ Now that you have some data and a metric, run evaluation on your pipeline before
 
 Look at the outputs and the metric scores. This will probably allow you to spot any major issues, and it will define a baseline for your next step.
 
-## 6) Compile with a DSPy optimizer.
+## 7) Compile with a DSPy optimizer.
 
 Given some data and a metric, we can now optimize the program you built.
 
@@ -93,7 +93,7 @@ Here's the general guidance on getting started:
 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very efficient program, compile that down to a small LM with `BootstrapFinetune`.
 
-## 7) Iterate.
+## 8) Iterate.
 
 At this point, you are either very happy with everything (we've seen quite a few people get it right on first try with DSPy) or, more likely, you've made a lot of progress but you don't like something about the final program or the metric.
 
