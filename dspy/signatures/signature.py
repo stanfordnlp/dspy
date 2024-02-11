@@ -56,11 +56,14 @@ class SignatureMeta(type(BaseModel)):
     @property
     def instructions(cls) -> str:
         return getattr(cls, "__doc__", "")
+    
+    def with_instructions(cls, instructions: str):
+        return create_model(cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields)
 
     @property
     def fields(cls):
         return cls.__fields__
-
+    
     @property
     def input_fields(cls):
         return cls._get_fields_with_type("input")

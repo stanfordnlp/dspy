@@ -39,6 +39,12 @@ def test_signature_parsing():
     assert 'input2' in signature.input_fields
     assert 'output' in signature.output_fields
 
+def test_with_signature():
+    signature1 = Signature("input1, input2 -> output")
+    signature2 = signature1.with_instructions("This is a test")
+    assert signature2.instructions == "This is a test"
+    assert signature1 is not signature2, "The type should be immutable"
+
 def test_empty_signature():
     with pytest.raises(ValueError):
         Signature("")
