@@ -54,6 +54,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
         for name, predictor in self.named_predictors():
             set_attribute_by_name(self, name, func(predictor))
         return self
+    
+    def activate_assertions(self, handler=backtrack_handler, **handler_args):
+        """
+        Activates assertions for the module.
+        The default handler is the backtrack_handler.
+        """
+        assert_transform_module(self, handler, **handler_args)
+        return self
 
     # def __deepcopy__(self, memo):
     #     # memo is a dict of id's to copies already made during the current call
