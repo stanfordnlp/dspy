@@ -119,6 +119,15 @@ There's a bunch of examples in the `examples/` directory and in the top-level di
 
 You can find other examples tweeted by [@lateinteraction](https://twitter.com/lateinteraction) on Twitter/X.
 
+**Some other examples (not exhaustive, feel free to add more via PR):**
+
+- [Compiling LCEL runnables from LangChain in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/compiling_langchain.ipynb)
+- [AI feedback, or writing LM-based metrics in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/tweet_metric.py)
+- [DSPy Optimizers Benchmark on a bunch of different tasks, by Michael Ryan](https://github.com/stanfordnlp/dspy/tree/main/testing/tasks)
+- [Indian Languages NLI with gains due to compiling by Saiful Haq][https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb]
+- [Sophisticated Extreme Multi-Class Classification, IReRa, by Karel D’Oosterlinck](https://github.com/KarelDO/xmc.dspy)
+- [Using Ollama with DSPy for Mistral (quantized) by @jrknox1977](https://gist.github.com/jrknox1977/78c17e492b5a75ee5bbaf9673aee4641)
+
 
 ## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
 
