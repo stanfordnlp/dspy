@@ -121,6 +121,7 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 
 **Some other examples (not exhaustive, feel free to add more via PR):**
 
+- [Generating long answers with citations via DSPy Assertions, by Arnav Singhvi](https://github.com/stanfordnlp/dspy/blob/main/examples/longformqa/longformqa_assertions.ipynb)
 - [Compiling LCEL runnables from LangChain in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/compiling_langchain.ipynb)
 - [AI feedback, or writing LM-based metrics in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/tweet_metric.py)
 - [DSPy Optimizers Benchmark on a bunch of different tasks, by Michael Ryan](https://github.com/stanfordnlp/dspy/tree/main/testing/tasks)
