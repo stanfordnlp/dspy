@@ -47,7 +47,7 @@ def test_with_signature():
 
 def test_with_updated_field():
     signature1 = Signature("input1, input2 -> output")
-    signature2 = signature1.with_updated_field('input1', 'prefix', 'Modified:')
+    signature2 = signature1.with_updated_fields('input1', prefix='Modified:')
     assert signature2.input_fields['input1'].json_schema_extra['prefix'] == "Modified:"
     assert signature1.input_fields['input1'].json_schema_extra['prefix'] == "Input 1:"
     assert signature1 is not signature2, "The type should be immutable"

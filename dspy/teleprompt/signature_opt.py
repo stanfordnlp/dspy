@@ -152,16 +152,16 @@ class SignatureOptimizer(Teleprompter):
                         *_, last_key = p_new.extended_signature.fields.keys()
                         p_new.extended_signature = p_new.extended_signature \
                             .with_instructions(instruction) \
-                            .with_updated_field(last_key, "prefix", prefix)
+                            .with_updated_fields(last_key, prefix=prefix)
                     else:
                         *_, last_key = p_new.extended_signature1.fields.keys()
                         p_new.extended_signature1 = p_new.extended_signature1 \
                             .with_instructions(instruction) \
-                            .with_updated_field(last_key, "prefix", prefix)
+                            .with_updated_fields(last_key, prefix=prefix)
                         *_, last_key = p_new.extended_signature2.fields.keys()
                         p_new.extended_signature2 = p_new.extended_signature2 \
                             .with_instructions(instruction) \
-                            .with_updated_field(last_key, "prefix", prefix)
+                            .with_updated_fields(last_key, prefix=prefix)
 
                     # Score the instruction / prefix 
                     if self.verbose: print(f"----------------")
@@ -215,16 +215,16 @@ class SignatureOptimizer(Teleprompter):
                     *_, last_key = p_old.extended_signature.fields.keys()
                     p_new.extended_signature = p_new.extended_signature \
                         .with_instructions(best_candidate["instruction"]) \
-                        .with_updated_field(last_key, "prefix", best_candidate["prefix"])
+                        .with_updated_fields(last_key, prefix=best_candidate["prefix"])
                 else:
                     *_, last_key1 = p_old.extended_signature1.fields.keys()
                     p_new.extended_signature1 = p_new.extended_signature \
                         .with_instructions(best_candidate["instruction"]) \
-                        .with_updated_field(last_key1, "prefix", best_candidate["prefix"])
+                        .with_updated_fields(last_key1, prefix=best_candidate["prefix"])
                     *_, last_key2 = p_old.extended_signature2.fields.keys()
                     p_new.extended_signature2 = p_new.extended_signature \
                         .with_instructions(best_candidate["instruction"]) \
-                        .with_updated_field(last_key2, "prefix", best_candidate["prefix"])
+                        .with_updated_fields(last_key2, prefix=best_candidate["prefix"])
                 if self.verbose: print(f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}")
                 if self.verbose: print(f"Full predictor with update: ")
                 for i,predictor in enumerate(module_clone.predictors()):
