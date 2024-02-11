@@ -49,6 +49,7 @@ Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThoug
 
 **What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
 
+**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically.
 
 ## 1) Installation
 
@@ -60,7 +61,7 @@ pip install dspy-ai
 
 Or open our intro notebook in Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
-By default, DSPy depends on `openai==0.28`. However, if you install `openai>=1.0`, the library will use that just fine. Both are supported.
+By default, DSPy installs the latest `openai` from pip. However, if you install old version before OpenAI changed their API `openai~=0.28.1`, the library will use that just fine. Both are supported.
 
 For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
 

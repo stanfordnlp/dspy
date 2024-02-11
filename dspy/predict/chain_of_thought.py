@@ -62,7 +62,7 @@ class ChainOfThought(Predict):
             else:
                 signature = self.signature
         else:
-            signature = dsp.Template(signature.instructions, **new_signature)
+            signature = dsp.Template(self.signature.instructions, **new_signature)
         return super().forward(signature=signature, **kwargs)
 
 

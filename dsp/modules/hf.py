@@ -40,19 +40,20 @@ class HFModel(LM):
             hf_device_map (str, optional): HF config strategy to load the model. 
                 Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
         """
-        try:
-            from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
-            import torch
-        except ImportError as exc:
-            raise ModuleNotFoundError(
-                "You need to install Hugging Face transformers library to use HF models."
-            ) from exc
+
         super().__init__(model)
         self.provider = "hf"
         self.is_client = is_client
         self.device_map = hf_device_map
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not self.is_client:
+            try:
+                from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
+                import torch
+            except ImportError as exc:
+                raise ModuleNotFoundError(
+                    "You need to install Hugging Face transformers library to use HF models."
+                ) from exc
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             try:
                 architecture = AutoConfig.from_pretrained(model).__dict__["architectures"][0]
                 self.encoder_decoder_model = ("ConditionalGeneration" in architecture) or ("T5WithLMHeadModel" in architecture)

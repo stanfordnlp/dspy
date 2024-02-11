@@ -2,6 +2,8 @@
 A generalized AWS LLM.
 """
 
+from __future__ import annotations
+
 from abc import abstractmethod
 import logging
 from typing import Any, Literal
@@ -52,7 +54,7 @@ class AWSLM(LM):
         self.predictor = boto3.client(service_name, region_name=region_name)
 
     @abstractmethod
-    def _create_body(self, prompt: str, **kwargs) -> dict[str, str | float]:
+    def _create_body(self, prompt: str, **kwargs):
         pass
 
     def _sanitize_kwargs(self, query_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -90,7 +92,7 @@ class AWSLM(LM):
             formatted_prompt = self._format_prompt(truncated_prompt)
         else:
             formatted_prompt = self._format_prompt((prompt))
-        body: dict[str, str | float] = self._create_body(formatted_prompt, **kwargs)
+        body = self._create_body(formatted_prompt, **kwargs)
         json_body: str = json.dumps(body)
 
         generated: str = self._call_model(json_body)
