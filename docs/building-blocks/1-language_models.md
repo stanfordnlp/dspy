@@ -18,8 +18,10 @@ For example, to use OpenAI language models, you can do it as follows.
 gpt3_turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=300)
 dspy.configure(lm=gpt3_turbo)
 ```
-
-    ['Hello! How can I assist you today?']
+**Output:**
+```text
+['Hello! How can I assist you today?']
+```
 
 ## Directly calling the LM.
 
@@ -43,9 +45,10 @@ qa = dspy.ChainOfThought('question -> answer')
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 print(response.answer)
 ```
-
-    The castle David Gregory inherited has 7 floors.
-
+**Output:**
+```text
+The castle David Gregory inherited has 7 floors.
+```
 
 ## Using multiple LMs at once.
 
@@ -67,10 +70,11 @@ with dspy.context(lm=gpt4_turbo):
     response = qa(question="How many floors are in the castle David Gregory inherited?")
     print('GPT-4-turbo:', response.answer)
 ```
-
-    GPT-3.5: The castle David Gregory inherited has 7 floors.
-    GPT-4-turbo: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
-
+**Output:**
+```text
+GPT-3.5: The castle David Gregory inherited has 7 floors.
+GPT-4-turbo: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
+```
 
 ## Tips and Tricks.
 
@@ -87,12 +91,14 @@ qa = dspy.ChainOfThought('question -> answer', n=5)
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 response.completions.answer
 ```
-
-    ["The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.",
-     'The castle David Gregory inherited has 4 floors.',
-     'The castle David Gregory inherited has 5 floors.',
-     'David Gregory inherited 10 floors in the castle.',
-     'The castle David Gregory inherited has 5 floors.']
+**Output:**
+```text
+["The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.",
+    'The castle David Gregory inherited has 4 floors.',
+    'The castle David Gregory inherited has 5 floors.',
+    'David Gregory inherited 10 floors in the castle.',
+    'The castle David Gregory inherited has 5 floors.']
+```
 
 If you just call `qa(...)` in a loop with the same input, it will always
 return the same value! That\'s by design.
@@ -105,13 +111,14 @@ for idx in range(5):
     response = qa(question="How many floors are in the castle David Gregory inherited?", config=dict(temperature=0.7+0.0001*idx))
     print(f'{idx+1}.', response.answer)
 ```
-
-    1. The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.
-    2. It is not possible to determine the exact number of floors in the castle David Gregory inherited without specific information about the castle's layout and history.
-    3. The castle David Gregory inherited has 5 floors.
-    4. We need more information to determine the number of floors in the castle David Gregory inherited.
-    5. The castle David Gregory inherited has a total of 6 floors.
-
+**Output:**
+```text
+1. The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.
+2. It is not possible to determine the exact number of floors in the castle David Gregory inherited without specific information about the castle's layout and history.
+3. The castle David Gregory inherited has 5 floors.
+4. We need more information to determine the number of floors in the castle David Gregory inherited.
+5. The castle David Gregory inherited has a total of 6 floors.
+```
 
 ## Remote LMs.
 
@@ -138,7 +145,7 @@ You need to host these models on your own GPU(s). Below, we include pointers for
 
 5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](/api/hosting_language_models_locally/MLC)
 
-If there are other clients you want added, let us know!
+If there are other clients you want added, let us know or open a PR! Read the doc page on how to create a new LM client.
 
 
 <!-- TODO: Usage examples for these all.
