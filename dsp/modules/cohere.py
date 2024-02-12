@@ -66,7 +66,6 @@ class Cohere(LM):
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "num_generations": 1,
-            "return_likelihoods": "GENERATION",
             **kwargs
         }
         self.stop_sequences = stop_sequences
