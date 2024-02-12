@@ -102,8 +102,8 @@ class BayesianSignatureOptimizer(Teleprompter):
         self.n = n
         self.metric = metric
         self.init_temperature = init_temperature
-        self.prompt_model = prompt_model
-        self.task_model = task_model
+        self.prompt_model = prompt_model if prompt_model is not None else dspy.settings.lm
+        self.task_model = task_model if task_model is not None else dspy.settings.lm
         self.verbose = verbose
         self.track_stats = track_stats
         self.teacher_settings = teacher_settings
@@ -170,10 +170,7 @@ class BayesianSignatureOptimizer(Teleprompter):
         if view_data:
             # Create data observations
             self.observations = None
-            if self.prompt_model:
-                with dspy.settings.context(lm=self.prompt_model):
-                    self.observations = self._observe_data(devset).replace("Observations:","").replace("Summary:","")
-            else:
+            with dspy.settings.context(lm=self.prompt_model):
                 self.observations = self._observe_data(devset).replace("Observations:","").replace("Summary:","")
             
         if view_examples:
@@ -209,35 +206,7 @@ class BayesianSignatureOptimizer(Teleprompter):
             else:
                 basic_instruction = predictor.extended_signature1.instructions
                 basic_prefix = predictor.extended_signature1.fields[-1].name
-            if self.prompt_model: 
-                with dspy.settings.context(lm=self.prompt_model):
-                    # Data & Examples
-                    if view_data and view_examples:
-                        instruct = None
-                        for i in range(1,self.n):
-                            new_instruct = dspy.Predict(BasicGenerateInstructionWithExamplesAndDataObservations, n=1, temperature=self.init_temperature)(basic_instruction=basic_instruction, observations=self.observations, examples=example_sets[id(predictor)][i])
-                            if not instruct:
-                                instruct = new_instruct
-                            else:
-                                instruct.completions.proposed_instruction.extend(new_instruct.completions.proposed_instruction)
-                                instruct.completions.proposed_prefix_for_output_field.extend(new_instruct.completions.proposed_prefix_for_output_field)
-                    # Just data
-                    elif view_data: 
-                        instruct = dspy.Predict(BasicGenerateInstructionWithDataObservations, n=N-1, temperature=self.init_temperature)(basic_instruction=basic_instruction, observations=self.observations)
-                    # Just examples
-                    elif view_examples: 
-                        instruct = None
-                        for i in range(1,self.n): # Note: skip over the first example set which is empty
-                            new_instruct = dspy.Predict(BasicGenerateInstructionWithExamples, n=1, temperature=self.init_temperature)(basic_instruction=basic_instruction, examples=example_sets[id(predictor)][i])
-                            if not instruct:
-                                instruct = new_instruct
-                            else:
-                                instruct.completions.proposed_instruction.extend(new_instruct.completions.proposed_instruction)
-                                instruct.completions.proposed_prefix_for_output_field.extend(new_instruct.completions.proposed_prefix_for_output_field)
-                    # Neither
-                    else: 
-                        instruct = dspy.Predict(BasicGenerateInstruction, n=N-1, temperature=self.init_temperature)(basic_instruction=basic_instruction)
-            else:
+            with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
                 if view_data and view_examples:
                     instruct = None
@@ -271,7 +240,7 @@ class BayesianSignatureOptimizer(Teleprompter):
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
         
-        if self.verbose and self.prompt_model: self._print_model_history(self.prompt_model)
+        if self.verbose: self._print_model_history(self.prompt_model)
         
         return candidates, evaluated_candidates
 

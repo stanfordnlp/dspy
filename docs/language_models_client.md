@@ -23,6 +23,8 @@ for i, completion in enumerate(completions):
 | Cohere | [Cohere Section](#cohere) |
 | TGI | [TGI Section](#tgi) |
 | VLLM | [VLLM Section](#vllm) |
+| Anyscale | [Anyscale Section](#anyscale) |
+| Together | [Together Section](#together) |
 
 ## OpenAI
 
@@ -152,6 +154,64 @@ Refer to the [vLLM Server](https://github.com/stanfordnlp/dspy/blob/local_models
 ### Constructor
 
 Refer to [`dspy.TGI`](#tgi) documentation. Replace with `HFClientVLLM`.
+
+### Methods
+
+Refer to [`dspy.OpenAI`](#openai) documentation.
+
+## Anyscale
+
+### Usage
+
+```python
+lm = dspy.Anyscale(model="mistralai/Mistral-7B-Instruct-v0.1")
+```
+
+### Constructor
+
+The constructor initializes the base class `LM` and verifies the `api_key` for using Anyscale API.
+We expect the following environment variables to be set:
+- `ANYSCALE_API_KEY`: API key for Together.
+- `ANYSCALE_API_BASE`: API base URL for Together.
+
+
+```python
+class Anyscale(HFModel):
+    def __init__(self, model, **kwargs):
+```
+
+**Parameters:**
+- `model` (_str_): models hosted on Together.
+
+### Methods
+
+Refer to [`dspy.OpenAI`](#openai) documentation.
+
+
+## Together
+
+### Usage
+
+```python
+lm = dspy.Together(model="mistralai/Mistral-7B-v0.1")
+```
+
+### Constructor
+
+The constructor initializes the base class `LM` and verifies the `api_key` for using Together API.
+We expect the following environment variables to be set:
+- `TOGETHER_API_KEY`: API key for Together.
+- `TOGETHER_API_BASE`: API base URL for Together.
+
+
+```python
+class Together(HFModel):
+    def __init__(self, model, **kwargs):
+```
+
+**Parameters:**
+- `model` (_str_): models hosted on Together.
+- `stop` (_List[str]_, _optional_): List of stopping tokens to end generation.
 
 ### Methods
 
