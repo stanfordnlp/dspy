@@ -73,7 +73,6 @@ class DataLoader(Dataset):
             else:
                 raise ValueError("No splits provided and dataset has more than one split. At this moment multiple splits will be concatenated into one single split.")
         
-        print(dataset)
         if not fields:
             fields = list(dataset.features)    
 
