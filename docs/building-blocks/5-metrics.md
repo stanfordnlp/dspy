@@ -9,9 +9,7 @@ DSPy is a machine learning framework, so you must think about your **automatic m
 
 ## What is a metric and how do I define a metric for my task?
 
-What makes outputs from your system good or bad? Invest in defining metrics and improving them over time incrementally. It's really hard to consistently improve what you aren't able to define.
-
-A metric is just a function that will take examples from your data and take the output of your system, and return a score that quantifies how good the output is.
+A metric is just a function that will take examples from your data and take the output of your system, and return a score that quantifies how good the output is. What makes outputs from your system good or bad? 
 
 For simple tasks, this could be just "accuracy" or "exact match" or "F1 score". This may be the case for simple classification or short-form QA tasks.
 
@@ -26,7 +24,7 @@ A DSPy metric is just a function in Python that takes `example` (e.g., from your
 
 Your metric should also accept an optional third argument called `trace`. You can ignore this for a moment, but it will enable some powerful tricks if you want to use your metric for optimization.
 
-Here's a simple example of a metric that's comparing `example.answer` and `pred.answer`.
+Here's a simple example of a metric that's comparing `example.answer` and `pred.answer`. This particular metric will return a `bool`.
 
 ```python
 def validate_answer(example, pred, trace=None):
@@ -38,7 +36,7 @@ Some people find these utilities (built-in) convenient:
 - `dspy.evaluate.metrics.answer_exact_match`
 - `dspy.evaluate.metrics.answer_passage_match`
 
-Your metrics could be more complex, e.g. check for multiple properties.
+Your metrics could be more complex, e.g. check for multiple properties. The metric below will return a `float` if `trace is None` (i.e., if it's used for evaluation or optimization), and will return a `bool` otherwise (i.e., if it's used to bootstrap demonstrations).
 
 ```python
 def validate_context_and_answer(example, pred, trace=None):
@@ -48,7 +46,10 @@ def validate_context_and_answer(example, pred, trace=None):
     # check the predicted answer comes from one of the retrieved contexts
     context_match = any((pred.answer.lower() in c) for c in pred.context)
 
-    return answer_match and context_match
+    if trace is None: # if we're doing evaluation or optimization
+        return (answer_match + context_match) / 2.0
+    else: # if we're doing bootstrapping, i.e. self-generating good demonstrations of each step
+        return answer_match and context_match
 ```
 
 Defining a good metric is an iterative process, so doing some initial evaluations and looking at your data and your outputs are key.
