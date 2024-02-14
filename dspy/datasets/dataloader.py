@@ -12,6 +12,9 @@ class DataLoader(Dataset):
         dataset: Dataset,
         fields: List[str] = None
     ):
+        if not(self.train_size and self.dev_size and self.test_size):
+            self.train_size = 1.0
+        
         train_split_size = self.train_size if self.train_size else 0
         dev_split_size = self.dev_size if self.dev_size else 0
         test_split_size = self.test_size if self.test_size else 0
@@ -20,9 +23,13 @@ class DataLoader(Dataset):
             train_split_size = int(len(dataset) * train_split_size)
         
         if train_split_size:
-            tmp_dataset = dataset.train_test_split(test_size=(dev_split_size+test_split_size))
-            train_dataset = tmp_dataset["train"]
-            dataset = tmp_dataset["test"]
+            test_size = dev_split_size + test_split_size
+            if test_size > 0:
+                tmp_dataset = dataset.train_test_split(test_size=test_size)
+                train_dataset = tmp_dataset["train"]
+                dataset = tmp_dataset["test"]
+            else:
+                train_dataset = dataset
 
         if isinstance(dev_split_size, float):
             dev_split_size = int(len(dataset) * dev_split_size)
@@ -43,6 +50,10 @@ class DataLoader(Dataset):
         
         if test_split_size:
             self._test = [{field:row[field] for field in fields} for row in test_dataset]
+        
+        self.train_size = train_split_size
+        self.dev_size = dev_split_size
+        self.test_size = test_split_size
 
     def from_huggingface(
         self,
