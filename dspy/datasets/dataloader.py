@@ -60,7 +60,9 @@ class DataLoader(Dataset):
                 splits = [splits]
             
             try:
-                ri = sum([ReadInstruction(split) for split in splits])
+                ri = ReadInstruction(splits[0])
+                for split in splits[1:]:
+                    ri += ReadInstruction(split)
                 dataset = load_dataset(dataset_name, split=ri, revision=revision)
             except:
                 raise ValueError("Invalid split name provided. Please provide a valid split name or list of split names.")
