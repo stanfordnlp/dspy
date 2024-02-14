@@ -38,7 +38,7 @@ class Predict(Parameter):
 
             self.signature = dsp.Template(instructions, **inputs, **outputs)
 
-        self.lm = config.get("lm")
+        self.lm = config.pop("lm", None)
 
     def reset(self):
         self.lm = None

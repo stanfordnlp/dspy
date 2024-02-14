@@ -15,7 +15,7 @@ class Retrieve(Parameter):
         self.k = k
         self.reset()
 
-        self.rm = config.get("rm")
+        self.rm = config.pop("rm", None)
 
     def reset(self):
         self.rm = None
