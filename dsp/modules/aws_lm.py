@@ -28,7 +28,7 @@ class AWSLM(LM):
         max_new_tokens: int,
         truncate_long_prompts: bool = False,
         input_output_ratio: int = 3,
-        batch_n: bool = False,
+        batch_n: bool = True,
     ) -> None:
         """_summary_
 

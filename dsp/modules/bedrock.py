@@ -30,6 +30,7 @@ class Bedrock(AWSLM):
             truncate_long_prompts=False,
             input_output_ratio=input_output_ratio,
             max_new_tokens=max_new_tokens,
+            batch_n=True,  # Bedrock does not support the `n` parameter
         )
         self._validate_model(model)
 
