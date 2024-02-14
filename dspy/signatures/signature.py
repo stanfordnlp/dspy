@@ -65,7 +65,8 @@ class SignatureMeta(type(BaseModel)):
 
     @property
     def fields(cls):
-        return cls.__fields__
+        # Make sure to give input fields before output fields
+        return {**cls.input_fields, **cls.output_fields}
 
     def with_updated_fields(cls, name, **kwargs):
         """Returns a new Signature type with the field, name, updated
@@ -184,7 +185,7 @@ class SignatureMeta(type(BaseModel)):
     def __repr__(cls):
         """
         Outputs something on the form:
-        cls.__name__(question, context -> answer
+        Signature(question, context -> answer
             question: str = InputField(desc="..."),
             context: List[str] = InputField(desc="..."),
             answer: int = OutputField(desc="..."),
@@ -192,10 +193,10 @@ class SignatureMeta(type(BaseModel)):
         """
         field_reprs = []
         for name, field in cls.fields.items():
-            field_reprs.append(f"{name} = {field}")
+            field_reprs.append(f"{name} = Field({field})")
         field_repr = "\n    ".join(field_reprs)
         return (
-            f"{cls.__name__}({cls.signature}\n"
+            f"Signature({cls.signature}\n"
             f"    instructions={repr(cls.instructions)}\n"
             f"    {field_repr}\n)"
         )
