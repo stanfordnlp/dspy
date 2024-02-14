@@ -32,13 +32,14 @@ class Predict(Parameter):
 
             for k, v in inputs.items():
                 v.finalize(k, infer_prefix(k))
-            
+
             for k, v in outputs.items():
                 v.finalize(k, infer_prefix(k))
 
             self.signature = dsp.Template(instructions, **inputs, **outputs)
 
-    
+        self.lm = config.get("lm")
+
     def reset(self):
         self.lm = None
         self.traces = []
@@ -55,10 +56,10 @@ class Predict(Parameter):
 
         import dspy
         self.demos = [dspy.Example(**x) for x in self.demos]
-    
+
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
-    
+
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
         new_signature = kwargs.pop("new_signature", None)
@@ -67,7 +68,7 @@ class Predict(Parameter):
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+        lm = kwargs.pop("lm", None) or self.lm or dsp.settings.lm
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature", None)
@@ -88,12 +89,8 @@ class Predict(Parameter):
         if new_signature is not None:
             signature = dsp.Template(signature.instructions, **new_signature)
 
-        if self.lm is None:
+        with dsp.settings.context(lm=lm):
             x, C = dsp.generate(signature, **config)(x, stage=self.stage)
-        else:
-            with dsp.settings.context(lm=self.lm, query_only=True):
-                # print(f"using lm = {self.lm} !")
-                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
 
         completions = []
 
@@ -104,7 +101,7 @@ class Predict(Parameter):
                     completions[-1][field.output_variable] = getattr(c, field.output_variable)
 
         pred = Prediction.from_completions(completions, signature=signature)
-            
+
         if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
@@ -113,7 +110,7 @@ class Predict(Parameter):
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}
-    
+
     def get_config(self):
         return self.config
 
