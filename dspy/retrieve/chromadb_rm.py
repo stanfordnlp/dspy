@@ -18,6 +18,11 @@ try:
     import chromadb
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
+    from chromadb.api.types import (
+        Embeddable,
+        EmbeddingFunction
+    )
+    import chromadb.utils.embedding_functions as ef
 except ImportError:
     chromadb = None
 
@@ -65,29 +70,14 @@ class ChromadbRM(dspy.Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        openai_embed_model: str = "text-embedding-ada-002",
-        openai_api_provider: Optional[str] = None,
-        openai_api_key: Optional[str] = None,
-        openai_api_type: Optional[str] = None,
-        openai_api_base: Optional[str] = None,
-        openai_api_version: Optional[str] = None,
+        embedding_function: Optional[
+            EmbeddingFunction[Embeddable]
+        ] = ef.DefaultEmbeddingFunction(),
         k: int = 7,
     ):
-        self._openai_embed_model = openai_embed_model
-
         self._init_chromadb(collection_name, persist_directory)
 
-        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=openai_api_key,
-            api_base=openai_api_base,
-            api_type=openai_api_type,
-            api_version=openai_api_version,
-            model_name=openai_embed_model,
-        )
-        self.api_version = openai_api_version
-        self.api_base = openai_api_base
-        self.model_name = openai_embed_model
-        self.openai_api_type = openai_api_type
+        self.ef = embedding_function
 
         super().__init__(k=k)
 
@@ -130,16 +120,7 @@ class ChromadbRM(dspy.Retrieve):
         Returns:
             List[List[float]]: List of embeddings corresponding to each query.
         """
-
-        model_arg = {"engine": self.model_name,
-            "deployment_id": self.model_name,
-            "api_version": self.api_version,
-            "api_base": self.api_base,
-        }
-        embedding = self.openai_ef._client.create(
-            input=queries, model=self._openai_embed_model, **model_arg, api_provider=self.openai_api_type
-        )
-        return [embedding.embedding for embedding in embedding.data]
+        return self.ef(queries)
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None
