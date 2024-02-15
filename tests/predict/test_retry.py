@@ -32,7 +32,7 @@ def test_retry_simple():
     )
 
 
-def test_retry_forward_with_feedback():
+def test_retry_forward_with_feedback_suggest_success():
     # First we make a mistake, then we fix it
     dsp.settings.lm = lm = DummyLM(["red", "blue"])
     dsp.settings.trace = []
@@ -65,3 +65,32 @@ def test_retry_forward_with_feedback():
         "Instructions: Please think harder\n\n"
         "Answer: blue"
     )
+
+def test_retry_forward_with_feedback_assert_failure():
+    # We make a mistake, but can't fix it
+    dsp.settings.lm = lm = DummyLM(["red", "red"])
+    dsp.settings.trace = []
+
+    class SimpleModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = dspy.Predict("question -> answer")
+
+        def forward(self, **kwargs):
+            result = self.predictor(**kwargs)
+            print(f"SimpleModule got {result.answer=}")
+            try:
+                dspy.Assert(result.answer == "blue", "Please think harder")
+            except dspy.primitives.assertions.DSPyAssertionError as e:
+                assert "Please think harder" in str(e)
+            return result
+
+    program = SimpleModule()
+    program = assert_transform_module(
+        program.map_named_predictors(dspy.Retry),
+        functools.partial(backtrack_handler, max_backtracks=1),
+    )
+
+    result = program(question="What color is the sky?")
+
+    assert result.answer == "red"
