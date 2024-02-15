@@ -16,15 +16,25 @@ Before we delve into the example, let's ensure our environment is properly confi
 
 ```python
 import dspy
-from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
+# from dspy.datasets import DataLoader
+from dspy.datasets.gsm8k import gsm8k_metric
 
 # Set up the LM
 turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
 dspy.settings.configure(lm=turbo)
 
 # Load math questions from the GSM8K dataset
-gms8k = GSM8K()
-trainset, devset = gms8k.train, gms8k.dev
+dl = DataLoader()
+
+gms8k = dl.from_huggingface('gsm8k', "main", input_keys=('question'))
+
+gsm8k_train = dl.sample(gms8k['train'], 10)
+gsm8k_valid = dl.sample(gms8k['test'], 10)
+
+# Split into test and dev sets
+split = dl.train_test_split(gsm8k_valid, train_size=0.5)
+gsm8k_valid = split['train']
+gsm8k_test = split['test']
 ```
 
 ## Define the Module
@@ -46,15 +56,14 @@ class CoT(dspy.Module):
 With our simple program in place, let's move on to optimizing it using the `BootstrapFewShotWithRandomSearch` teleprompter:
 
 ```python
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt import BootstrapFewShot
 
-# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 8-shot examples of our CoT program.
-# The optimizer will repeat this 10 times (plus some initial attempts) before selecting its best attempt on the devset.
-config = dict(max_bootstrapped_demos=8, max_labeled_demos=8, num_candidate_programs=10, num_threads=4)
+# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 4-shot examples of our CoT program.
+config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
 
 # Optimize! Use the `gms8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
-teleprompter = BootstrapFewShotWithRandomSearch(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=trainset, valset=devset)
+teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
+optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_train, valset=gsm8k_valid)
 ```
 
 ## Evaluate
