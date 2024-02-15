@@ -42,10 +42,8 @@ class ChromadbRM(dspy.Retrieve):
     Args:
         collection_name (str): chromadb collection name
         persist_directory (str): chromadb persist directory
-        openai_embed_model (str, optional): The OpenAI embedding model to use. Defaults to "text-embedding-ada-002".
-        openai_api_key (str, optional): The API key for OpenAI. Defaults to None.
-        openai_org (str, optional): The organization for OpenAI. Defaults to None.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
+        embedding_function (Optional[EmbeddingFunction[Embeddable]]): Optional function to use to embed documents. Defaults to DefaultEmbeddingFunction.
+        k (int, optional): The number of top passages to retrieve. Defaults to 7.
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
