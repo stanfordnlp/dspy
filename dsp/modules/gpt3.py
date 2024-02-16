@@ -134,7 +134,10 @@ class GPT3(LM):
         self.history: list[dict[str, Any]] = []
 
     def _openai_client(self):
-        return client
+        if OPENAI_LEGACY:
+            return openai
+
+        return self.client
 
     def log_usage(self, response):
         """Log the total tokens from the OpenAI API response."""
