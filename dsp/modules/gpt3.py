@@ -1,23 +1,20 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.FileHandler('openai_usage.log')
-    ]
+    format="%(message)s",
+    handlers=[logging.FileHandler("openai_usage.log")],
 )
 
 import functools
 import json
 from typing import Any, Literal, Optional, cast
 
-import dsp
 import backoff
 import openai
 
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -27,9 +24,14 @@ except Exception:
     OPENAI_LEGACY = True
 
 try:
-    from openai.openai_object import OpenAIObject
     import openai.error
-    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+    from openai.openai_object import OpenAIObject
+
+    ERRORS = (
+        openai.error.RateLimitError,
+        openai.error.ServiceUnavailableError,
+        openai.error.APIError,
+    )
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
     OpenAIObject = dict
@@ -40,8 +42,11 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
+
+
+client = None
 
 
 class GPT3(LM):
@@ -66,8 +71,40 @@ class GPT3(LM):
     ):
         super().__init__(model)
         self.provider = "openai"
-        openai.api_type = api_provider
 
+        # Assert that all variables are available
+        assert api_key is not None, "Must provide api_key for OpenAI/Azure API"
+        if api_provider == "azure":
+            assert (
+                "engine" in kwargs or "deployment_id" in kwargs
+            ), "Must specify engine or deployment_id for Azure API instead of model."
+            assert "api_version" in kwargs, "Must specify api_version for Azure API"
+            assert api_base is not None, "Must specify api_base for Azure API"
+
+        # Define Client
+        if OPENAI_LEGACY:
+            openai.api_base = api_base
+            openai.api_key = api_key
+            openai.api_type = api_provider
+
+            if api_provider == "azure":
+                openai.api_version = kwargs["api_version"]
+
+            self.client = None
+
+        else:
+            if api_provider == "azure":
+                client = openai.AzureOpenAI(
+                    azure_endpoint=api_base,
+                    api_key=api_key,
+                    api_version=kwargs["api_version"],
+                )
+            else:
+                client = openai.OpenAI(api_key=api_key, base_url=api_base)
+
+            self.client = client
+
+        # Define model type
         default_model_type = (
             "chat"
             if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
@@ -76,23 +113,17 @@ class GPT3(LM):
         )
         self.model_type = model_type if model_type else default_model_type
 
-        if api_provider == "azure":
-            assert (
-                "engine" in kwargs or "deployment_id" in kwargs
-            ), "Must specify engine or deployment_id for Azure API instead of model."
-            assert "api_version" in kwargs, "Must specify api_version for Azure API"
-            assert api_base is not None, "Must specify api_base for Azure API"
-            if kwargs.get("api_version"):
-                openai.api_version = kwargs["api_version"]
+        if api_provider == "azure" and "model" not in kwargs:
+            if "deployment_id" in kwargs:
+                kwargs["model"] = kwargs["deployment_id"]
+                del kwargs["deployment_id"]
+            elif "engine" in kwargs:
+                kwargs["model"] = kwargs["engine"]
 
-        if api_key:
-            openai.api_key = api_key
+            del kwargs["api_version"]
 
-        if api_base:
-            if OPENAI_LEGACY:
-                openai.api_base = api_base
-            else:       
-                openai.base_url = api_base
+        if "model" not in kwargs:
+            kwargs["model"] = model
 
         self.kwargs = {
             "temperature": 0.0,
@@ -104,19 +135,17 @@ class GPT3(LM):
             **kwargs,
         }  # TODO: add kwargs above for </s>
 
-        if api_provider != "azure":
-            self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 
     def _openai_client(self):
-        return openai
+        return client
 
     def log_usage(self, response):
-            """Log the total tokens from the OpenAI API response."""
-            usage_data = response.get('usage')
-            if usage_data:
-                total_tokens = usage_data.get('total_tokens')  
-                logging.info(f'{total_tokens}')
+        """Log the total tokens from the OpenAI API response."""
+        usage_data = response.get("usage")
+        if usage_data:
+            total_tokens = usage_data.get("total_tokens")
+            logging.info(f"{total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -126,11 +155,11 @@ class GPT3(LM):
             # caching mechanism requires hashable kwargs
             kwargs["messages"] = [{"role": "user", "content": prompt}]
             kwargs = {"stringify_request": json.dumps(kwargs)}
-            response = chat_request(**kwargs)
+            response = chat_request(self.client, **kwargs)
 
         else:
             kwargs["prompt"] = prompt
-            response = completions_request(**kwargs)
+            response = completions_request(self.client, **kwargs)
 
         history = {
             "prompt": prompt,
@@ -222,15 +251,16 @@ class GPT3(LM):
         return completions
 
 
-
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
     return openai.Completion.create(**kwargs)
+
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def cached_gpt3_request_v2_wrapped(**kwargs):
     return cached_gpt3_request_v2(**kwargs)
+
 
 @CacheMemory.cache
 def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
@@ -238,41 +268,50 @@ def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
         kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
+
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
     return _cached_gpt3_turbo_request_v2(**kwargs)
 
-@CacheMemory.cache
-def v1_cached_gpt3_request_v2(**kwargs):
-    return openai.completions.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def v1_cached_gpt3_request_v2_wrapped(**kwargs):
-    return v1_cached_gpt3_request_v2(**kwargs)
+def v1_chat_request(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
+        @CacheMemory.cache
+        def v1_cached_gpt3_turbo_request_v2(**kwargs):
+            if "stringify_request" in kwargs:
+                kwargs = json.loads(kwargs["stringify_request"])
+            return client.chat.completion.create(**kwargs)
 
-@CacheMemory.cache
-def v1_cached_gpt3_turbo_request_v2(**kwargs):
-    if "stringify_request" in kwargs:
-        kwargs = json.loads(kwargs["stringify_request"])
-    return openai.chat.completions.create(**kwargs)
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
-    return v1_cached_gpt3_turbo_request_v2(**kwargs)
-
-
-
-def chat_request(**kwargs):
-    if OPENAI_LEGACY:
-        return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
+        return v1_cached_gpt3_turbo_request_v2(**kwargs)
 
     return v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs).model_dump()
 
-def completions_request(**kwargs):
+
+def v1_completions_request(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def v1_cached_gpt3_request_v2_wrapped(**kwargs):
+        @CacheMemory.cache
+        def v1_cached_gpt3_request_v2(**kwargs):
+            return client.completions.create(**kwargs)
+
+        return v1_cached_gpt3_request_v2(**kwargs)
+
+    return v1_cached_gpt3_request_v2_wrapped(**kwargs).model_dump()
+
+
+def chat_request(client, **kwargs):
+    if OPENAI_LEGACY:
+        return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
+
+    return v1_chat_request(client, **kwargs)
+
+
+def completions_request(client, **kwargs):
     if OPENAI_LEGACY:
         return cached_gpt3_request_v2_wrapped(**kwargs)
 
-    return v1_cached_gpt3_request_v2_wrapped(**kwargs).model_dump()
+    return v1_completions_request(client, **kwargs)
