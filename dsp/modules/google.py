@@ -55,7 +55,7 @@ class Google(LM):
         self.provider = "google"
         self.kwargs = {
             "model_name": model,
-            "temperature": 0.0,
+            "temperature": 0.0 if "temperature" not in kwargs else kwargs["temperature"],
             "max_output_tokens": 2048,
             "top_p": 1,
             "top_k": 1,
