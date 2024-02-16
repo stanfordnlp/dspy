@@ -36,7 +36,6 @@ class Google(LM):
         self,
         model: str = "gemini-pro-1.0",
         api_key: Optional[str] = None,
-        stop_sequences: list[str] = [],
         **kwargs
     ):
         """
