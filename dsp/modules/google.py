@@ -52,7 +52,7 @@ class Google(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        self.google = genai.configure(api_key="")
+        self.google = genai.configure(api_key=self.api_key)
         self.provider = "google"
         self.kwargs = {
             "model_name": model,
