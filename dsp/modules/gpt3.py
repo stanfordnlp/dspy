@@ -19,7 +19,7 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn
 from dsp.modules.lm import LM
 
 try:
-    OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
+    OPENAI_LEGACY = int(openai.__version__[0]) == 0
 except Exception:
     OPENAI_LEGACY = True
 
@@ -44,9 +44,6 @@ def backoff_hdlr(details):
         "calling function {target} with kwargs "
         "{kwargs}".format(**details),
     )
-
-
-client = None
 
 
 class GPT3(LM):
@@ -113,14 +110,13 @@ class GPT3(LM):
         )
         self.model_type = model_type if model_type else default_model_type
 
-        if api_provider == "azure" and "model" not in kwargs:
+        if not OPENAI_LEGACY and api_provider == "azure" and "model" not in kwargs:
             if "deployment_id" in kwargs:
                 kwargs["model"] = kwargs["deployment_id"]
                 del kwargs["deployment_id"]
-            elif "engine" in kwargs:
-                kwargs["model"] = kwargs["engine"]
 
-            del kwargs["api_version"]
+            if "api_version" in kwargs:
+                del kwargs["api_version"]
 
         if "model" not in kwargs:
             kwargs["model"] = model
