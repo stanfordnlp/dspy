@@ -43,7 +43,7 @@ class PythonInterpreter():
     r"""A customized python interpreter to control the execution of
     LLM-generated codes. The interpreter makes sure the code can only execute
     functions given in action space and import white list. It also supports
-    fuzzy variable matching to reveive uncertain input variable name.
+    fuzzy variable matching to receive uncertain input variable name.
 
     .. highlight:: none
 
@@ -116,9 +116,9 @@ class PythonInterpreter():
             code (str): Generated python code to be executed.
             state (Optional[Dict[str, Any]], optional): External variables that
                 may be used in the generated code. (default: :obj:`None`)
-            fuzz_state (Optional[Dict[str, Any]], optional): External varibles
-                that do not have certain varible names. The interpreter will
-                use fuzzy matching to access these varibales. For example, if
+            fuzz_state (Optional[Dict[str, Any]], optional): External variables
+                that do not have certain variable names. The interpreter will
+                use fuzzy matching to access these variables. For example, if
                 :obj:`fuzz_state` has a variable :obj:`image`, the generated
                 code can use :obj:`input_image` to access it. (default:
                 :obj:`None`)
@@ -577,7 +577,7 @@ class CodePrompt(TextPrompt):
         Args:
             interpreter (PythonInterpreter, optional): interpreter to be used
                 during code execution. (default: :obj:`None`)
-            user_variable (Optional[Dict[str, Any]]): varibales that can be
+            user_variable (Optional[Dict[str, Any]]): variables that can be
                 used in the code, which applying fuzzy matching, such as images
                 or documents. (default: :obj:`None`)
 
