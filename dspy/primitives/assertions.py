@@ -40,11 +40,17 @@ class DSPyAssertionError(AssertionError):
     """Custom exception raised when a DSPy `Assert` fails."""
 
     def __init__(
-        self, id: str, msg: str, state: Any = None, is_metric: bool = False
+        self,
+        id: str,
+        msg: str,
+        target_module: Any = None,
+        state: Any = None,
+        is_metric: bool = False,
     ) -> None:
         super().__init__(msg)
         self.id = id
         self.msg = msg
+        self.target_module = target_module
         self.state = state
         self.is_metric = is_metric
 
@@ -72,6 +78,7 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
+
     def __init__(
         self, result: bool, msg: str = "", target_module=None, is_metric: bool = False
     ):
@@ -99,6 +106,7 @@ class Assert(Constraint):
                 raise DSPyAssertionError(
                     id=self.id,
                     msg=self.msg,
+                    target_module=self.target_module,
                     state=dsp.settings.trace,
                     is_metric=self.is_metric,
                 )
@@ -186,10 +194,10 @@ def assert_no_except_handler(func):
 
 
 def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
-    """Handler for backtracking suggestion.
+    """Handler for backtracking suggestion and assertion.
 
     Re-run the latest predictor up to `max_backtracks` times,
-    with updated signature if a suggestion fails. updated signature adds a new
+    with updated signature if an assertion fails. updated signature adds a new
     input field to the signature, which is the feedback.
     """
 
@@ -230,13 +238,12 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                 else:
                     try:
                         dsp.settings.trace.clear()
-                        # print("backtrack", dspy.settings.backtrack_to)
                         result = func(*args, **kwargs)
                         break
                     except (DSPySuggestionError, DSPyAssertionError) as e:
                         if not current_error:
                             current_error = e
-                        suggest_id, error_msg, suggest_target_module, error_state = (
+                        error_id, error_msg, error_target_module, error_state = (
                             e.id,
                             e.msg,
                             e.target_module,
@@ -250,11 +257,11 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             dspy.settings.assert_failures += 1
 
                         if dsp.settings.trace:
-                            if suggest_target_module:
+                            if error_target_module:
                                 for i in range(len(dsp.settings.trace) - 1, -1, -1):
                                     trace_element = dsp.settings.trace[i]
                                     mod = trace_element[0]
-                                    if mod.signature == suggest_target_module:
+                                    if mod.signature == error_target_module:
                                         dspy.settings.backtrack_to = mod
                                         break
                             else:
@@ -274,13 +281,13 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                     dspy.settings.backtrack_to
                                 ].append(error_msg)
 
-                            output_fields = vars(error_state[0].signature.signature)
+                            # assert isinstance(error_state[0].signature, dspy.Signature)
+                            output_fields = error_state[0].signature.output_fields
                             past_outputs = {}
-                            for field_name, field_obj in output_fields.items():
-                                if isinstance(field_obj, dspy.OutputField):
-                                    past_outputs[field_name] = getattr(
-                                        error_state[2], field_name, None
-                                    )
+                            for field_name in output_fields.keys():
+                                past_outputs[field_name] = getattr(
+                                    error_state[2], field_name, None
+                                )
 
                             # save latest failure trace for predictor per suggestion
                             error_ip = error_state[1]
@@ -335,6 +342,17 @@ def assert_transform_module(
     module.forward = handle_assert_forward(assertion_handler, **handler_args).__get__(
         module
     )
+
+    if all(
+        map(lambda p: isinstance(p[1], dspy.retry.Retry), module.named_predictors())
+    ):
+        pass  # we already applied the Retry mapping outside
+    elif all(
+        map(lambda p: not isinstance(p[1], dspy.retry.Retry), module.named_predictors())
+    ):
+        module.map_named_predictors(dspy.retry.Retry)
+    else:
+        raise RuntimeError("Module has mixed predictors, can't apply Retry mapping.")
 
     setattr(module, "_assert_transformed", True)
 

@@ -91,8 +91,8 @@ class TemplateV2:
                 if field.input_variable in self.format_handlers:
                     format_handler = self.format_handlers[field.input_variable]
                 else:
-
                     def format_handler(x):
+                        assert type(x) == str, f"Need format_handler for {field.input_variable} of type {type(x)}"
                         return " ".join(x.split())
                 
                 formatted_value = format_handler(example[field.input_variable])
