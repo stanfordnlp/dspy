@@ -23,7 +23,7 @@ setup(
     install_requires=requirements,	
     extras_require={	
         "pinecone": ["pinecone-client~=2.2.4"],	
-        "qdrant": ["qdrant-client~=1.7.3", "fastembed~=0.2.1"],	
+        "qdrant": ["qdrant-client", "fastembed"],	
         "chromadb": ["chromadb~=0.4.14"],	
         "marqo": ["marqo"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
