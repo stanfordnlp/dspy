@@ -293,6 +293,8 @@ class Together(HFModel):
                 print(f"resp_json:{resp_json}")
             print(f"Failed to parse JSON response: {e}")
             raise Exception("Received invalid JSON response from server")
+
+
 class Anyscale(HFModel):
     def __init__(self, model, **kwargs):
         super().__init__(model=model, is_client=True)
@@ -337,14 +339,16 @@ class Anyscale(HFModel):
         headers = {"Authorization": f"Bearer {self.token}"}
 
         try:
-            with self.session.post(url, headers=headers, json=body) as resp:
-                resp_json = resp.json()
-                if use_chat_api:
-                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
-                else:
-                    completions = [resp_json.get('choices', [])[0].get('text', "")]
-                response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
-                return response
+            completions = []
+            for i in range(kwargs.get('n', 1)):
+                with self.session.post(url, headers=headers, json=body) as resp:
+                    resp_json = resp.json()
+                    if use_chat_api:
+                        completions.extend([resp_json.get('choices', [])[0].get('message', {}).get('content', "")])
+                    else:
+                        completions.extend([resp_json.get('choices', [])[0].get('text', "")])
+            response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
+            return response
         except Exception as e:
             print(f"Failed to parse JSON response: {e}")
             raise Exception("Received invalid JSON response from server")
