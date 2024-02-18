@@ -66,6 +66,27 @@ class ChainOfThought(Predict):
         return super().forward(signature=signature, **kwargs)
 
 
+    def dump_state(self):
+        state = super().dump_state()
+
+        # Cache the signature instructions and the last field's name.
+        state["extended_signature_instructions"] = self.extended_signature.instructions
+        state["extended_signature_prefix"] = self.extended_signature.fields[-1].name
+
+        return state
+
+    def load_state(self, state):
+        super().load_state(state)
+        
+        # Reconstruct the signature.
+        if "extended_signature_instructions" in state:
+            instructions = state["extended_signature_instructions"]
+            self.extended_signature.instructions = instructions
+        
+        if "extended_signature_prefix" in state:
+            prefix = state["extended_signature_prefix"]
+            self.extended_signature.fields[-1] = self.extended_signature.fields[-1]._replace(name=prefix)
+
 """
 TODO: In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
 
