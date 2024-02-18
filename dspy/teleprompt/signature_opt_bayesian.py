@@ -303,8 +303,8 @@ class BayesianSignatureOptimizer(Teleprompter):
                     p_demo_candidates = demo_candidates[id(p_old)]
 
                     # Suggest the index of the instruction candidate to use in our trial
-                    instruction_idx = trial.suggest_int(f"{id(p_old)}_predictor_instruction",low=0, high=len(p_instruction_candidates)-1)
-                    demos_idx = trial.suggest_int(f"{id(p_old)}_predictor_demos",low=0, high=len(p_demo_candidates)-1)
+                    instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
+                    demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
                     trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
                     trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 
