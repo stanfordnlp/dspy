@@ -47,14 +47,26 @@ class Predict(Parameter):
 
     def dump_state(self):
         state_keys = ["lm", "traces", "train", "demos"]
-        return {k: getattr(self, k) for k in state_keys}
+        state = {k: getattr(self, k) for k in state_keys}
+
+        # Cache the signature instructions and the last field's name.
+        state["signature_instructions"] = self.signature.instructions
+        state["signature_prefix"] = self.signature.fields[-1].name
+
+        return state
 
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
-
-        import dspy
-        self.demos = [dspy.Example(**x) for x in self.demos]
+        
+        # Reconstruct the signature.
+        if "signature_instructions" in state:
+            instructions = state["signature_instructions"]
+            self.signature.instructions = instructions
+        
+        if "signature_prefix" in state:
+            prefix = state["signature_prefix"]
+            self.signature.fields[-1] = self.signature.fields[-1]._replace(name=prefix)
     
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
