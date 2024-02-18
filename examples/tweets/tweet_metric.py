@@ -10,7 +10,7 @@ devset = [x.without('id', 'type').with_inputs('question') for x in dataset.dev]
 valset, devset = devset[:50], devset[50:]
 
 
-# Define the signature for autoamtic assessments.
+# Define the signature for automatic assessments.
 class Assess(dspy.Signature):
     """Assess the quality of a tweet along the specified dimension."""
 
