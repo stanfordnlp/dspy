@@ -45,7 +45,7 @@ class BootstrapFewShot(Teleprompter):
         self.error_count = 0
         self.error_lock = threading.Lock()
 
-    def compile(self, student, *, teacher=None, trainset, valset=None):
+    def compile(self, student, *, teacher=None, trainset, valset=None, step=False):
         self.trainset = trainset
         self.valset = valset
 
@@ -96,7 +96,7 @@ class BootstrapFewShot(Teleprompter):
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
 
-    def _bootstrap(self, *, max_bootstraps=None):
+    def _bootstrap(self, *, max_bootstraps=None, step=False):
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
 
         bootstrapped = {}
@@ -112,6 +112,11 @@ class BootstrapFewShot(Teleprompter):
 
                     if success:
                         bootstrapped[example_idx] = True
+            if step:
+                user_input = input("Continue bootstrapping? (Y/n): ")
+                if user_input.lower() == 'n':
+                    print("Bootstrapping interrupted by user.")
+                    return  # Exit the loop and method
 
         print(f'Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.')
         
