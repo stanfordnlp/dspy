@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from dsp.utils.utils import dotdict
+from dsp.utils.utils import dotdict, load_encoder_for_lm
 import threading
 
 
@@ -75,12 +75,19 @@ class Settings(object):
         if thread_id in self.stack_by_thread:
             self.stack_by_thread[thread_id].pop()
 
+
     def configure(self, inherit_config: bool = True, **kwargs):
         """Set configuration settings.
 
         Args:
             inherit_config (bool, optional): Set configurations for the given, and use existing configurations for the rest. Defaults to True.
         """
+        if 'lm' in kwargs:
+            # Load and cache the encoder for the new LM configuration
+            encoder = load_encoder_for_lm(kwargs['lm'].kwargs['model'])
+            # Optionally, store the encoder in the configuration if needed
+            kwargs['encoder'] = encoder
+
         if inherit_config:
             config = {**self.config, **kwargs}
         else:

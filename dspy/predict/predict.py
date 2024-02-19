@@ -110,11 +110,23 @@ class Predict(Parameter):
                 x, C = dsp.generate(signature, **config)(x, stage=self.stage, dry_run=dry_run)
 
         if dry_run:
-            print(f"Generated prompt:")
-            print(f"{'='*80}\n")
-            for _x in x.split("\n"):
-                print(textwrap.fill(_x, width=80, replace_whitespace=False, drop_whitespace=False))
-            return
+            # Prepare a structured output for the dry run
+            dry_run_info = {
+                'prompt': x,  # The prepared prompt
+                'config': config,  # The configuration used for generation
+                'signature': str(signature),  # The signature being used
+                'stage': self.stage,  # The current stage
+            }
+
+            # If an encoder is available, include encoded tokens in the output
+            encoder = dsp.settings.config.get('encoder', None)
+            if encoder is not None:
+                encoded_tokens = encoder.encode(x)
+                dry_run_info['encoded_tokens'] = encoded_tokens
+                dry_run_info['token_count'] = len(encoded_tokens)
+
+            # Option 1: Return the dry run information for further inspection
+            return dry_run_info
 
         completions = []
 
