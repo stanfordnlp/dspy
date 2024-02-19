@@ -4,10 +4,11 @@ A generalized AWS LLM.
 
 from __future__ import annotations
 
-from abc import abstractmethod
-import logging
-from typing import Any, Literal
 import json
+import logging
+from abc import abstractmethod
+from typing import Any, Literal, Optional
+
 from dsp.modules.lm import LM
 
 # Heuristic translating number of chars to tokens
@@ -26,6 +27,7 @@ class AWSLM(LM):
         region_name: str,
         service_name: str,
         max_new_tokens: int,
+        profile_name: Optional[str] = None,
         truncate_long_prompts: bool = False,
         input_output_ratio: int = 3,
         batch_n: bool = True,
@@ -54,7 +56,12 @@ class AWSLM(LM):
 
         import boto3
 
-        self.predictor = boto3.client(service_name, region_name=region_name)
+        if profile_name is None:
+            self.predictor = boto3.client(service_name, region_name=region_name)
+        else:
+            self.predictor = boto3.Session(profile_name=profile_name).client(
+                service_name, region_name=region_name
+            )
 
     @abstractmethod
     def _create_body(self, prompt: str, **kwargs):
