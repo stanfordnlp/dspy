@@ -1,0 +1,114 @@
+name: "Semantic Release for Projects"
+description: "Custom implementation of Semantic Release able to handle per project releases"
+
+inputs:
+  PROJECT_NAME:
+    description: "Name of the project to release"
+    required: true
+  PROJECT_DIRECTORY:
+    description: "Folder patht to the project directory"
+    required: true
+  BRANCHES:
+    description: "List of branches for semantic release"
+    required: false
+    default: main
+  GITHUB_TOKEN:
+    description: "Token to use for Github"
+    required: true
+  TEMPLATE_FILE:
+    description: "Semantic release template file"
+    required: false
+    default: .github/templates/github/semantic_release/.releaserc.json.template
+  DRY_RUN:
+    description: "Should we execute in a dry run mode?"
+    required: false
+    default: true
+
+outputs:
+  new_release_version:
+    description: "New TAG attached to the Semantic Release version"
+    value: ${{ steps.semantic-release.outputs.new_release_version }}
+  new_release_notes:
+    description: "Release notes for Semantic Release"
+    value: ${{ env.new_release_notes }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Creating Project Related Template"
+      id: semantic-release-template
+      shell: bash
+      run: |
+        # creating project name variables
+        export PROJECT_NAME_UPPER=$(echo ${{ inputs.PROJECT_NAME }} | tr 'a-z' 'A-Z')
+        export PROJECT_NAME_LOWER=$(echo ${{ inputs.PROJECT_NAME }} | tr 'A-Z' 'a-z')
+        # populating project specific template for the semantic release
+        envsubst '${PROJECT_NAME_UPPER} ${PROJECT_NAME_LOWER}' < ${{ inputs.TEMPLATE_FILE }} > ${{ inputs.PROJECT_DIRECTORY }}/.releaserc.json
+
+    - name: "Setup Node"
+      uses: actions/setup-node@v3
+      with:
+        node-version: 14
+
+    - name: "Configure Git user"
+      shell: bash
+      run: |
+        git config user.email "actions@github.com"
+        git config user.name "GitHub Actions"
+
+    - name: "Semantic Release"
+      id: semantic-release
+      uses: cycjimmy/semantic-release-action@v3.4.1
+      env:
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+      with:
+        branches: ${{ inputs.BRANCHES }}
+        dry_run: ${{ inputs.DRY_RUN }}
+        working_directory: ${{ inputs.PROJECT_DIRECTORY }}
+        extra_plugins: |
+          @semantic-release/commit-analyzer
+          @semantic-release/release-notes-generator
+          @semantic-release/changelog
+          @semantic-release/github
+          @semantic-release/git
+          conventional-changelog-conventionalcommits@5.0.0
+
+    - name: "export released version"
+      id: export-released-version
+      shell: bash
+      run: |
+        if [ "${{ steps.semantic-release.outputs.new_release_version }}" != "" ] ;
+          then echo "new_release_version=${{ steps.semantic-release.outputs.new_release_version }}" >> $GITHUB_OUTPUT ;
+          else if [ "${{ steps.semantic-release.outputs.new_release_version }}" != "" ] ;
+            then echo "new_release_version=${{ steps.semantic-release.outputs.new_release_version }}" >> $GITHUB_OUTPUT ;
+          fi ;
+        fi
+
+    - name: "export release notes"
+      id: export-released-notes
+      shell: bash
+      run: |
+        if [ "${{ steps.semantic-release.outputs.new_release_notes }}" != "" ] ; then
+          RELEASE_NOTES="${{ steps.semantic-release.outputs.new_release_notes }}"
+          RELEASE_NOTES="${RELEASE_NOTES//'%'/'%25'}"
+          RELEASE_NOTES="${RELEASE_NOTES//$'\r'/'%0D'}"
+          RELEASE_NOTES="$(echo "$RELEASE_NOTES" | sed -z 's/\n/\\n/g')"
+          echo "new_release_notes=${RELEASE_NOTES}" >> $GITHUB_OUTPUT ;
+        else if [ "${{ steps.semantic-release.outputs.new_release_notes }}" != "" ] ; then
+          RELEASE_NOTES="${{ steps.semantic-release.outputs.new_release_notes }}"
+          RELEASE_NOTES="${RELEASE_NOTES//'%'/'%25'}"
+          RELEASE_NOTES="${RELEASE_NOTES//$'\r'/'%0D'}"
+          RELEASE_NOTES="$(echo "$RELEASE_NOTES" | sed -z 's/\n/\\n/g')"
+          echo "new_release_notes=${RELEASE_NOTES}" >> $GITHUB_OUTPUT ;
+          fi ;
+        fi
+
+    - name: "Do something else when a new release published"
+      if: steps.semantic-release.outputs.new_release_published == 'true'
+      shell: bash
+      run: |
+        echo ${{ steps.semantic-release.outputs.new_release_version }}
+        echo ${{ steps.semantic-release.outputs.new_release_major_version }}
+        echo ${{ steps.semantic-release.outputs.new_release_minor_version }}
+        echo ${{ steps.semantic-release.outputs.new_release_patch_version }}
+        echo ${{ steps.semantic-release.outputs.new_release_patch_version }}

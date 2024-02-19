@@ -1,0 +1,57 @@
+{
+  "branches": "main",
+  "tagFormat": "${PROJECT_NAME_LOWER}.${version}",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/github",
+    "@semantic-release/changelog",
+    ["@semantic-release/git", {
+        "assets": ["CHANGELOG.md"]
+      }]
+  ],
+  "preset": "conventionalcommits",
+  "presetConfig": {
+    "types": [
+      {"type": "break", "hidden": false, "section": ":boom: Breaking Changes"},
+      {"type": "feat", "hidden": false, "section": ":gift: Features"},
+      {"type": "init", "hidden": false, "section": ":gift: Features"},
+      {"type": "enh", "hidden": false, "section": ":gift: Features"},
+      {"type": "refactor", "hidden": false, "section": ":tools: Maintenance"},
+      {"type": "style", "hidden": false, "section": ":tools: Maintenance"},
+      {"type": "maint", "hidden": false, "section": ":tools: Maintenance"},
+      {"type": "perf", "hidden": false, "section": ":tools: Maintenance"},
+      {"type": "ci", "hidden": false, "section": ":hotsprings: Infra"},
+      {"type": "ops", "hidden": false, "section": ":hotsprings: Infra"},
+      {"type": "build", "hidden": true, "section": ":hotsprings: Infra"},
+      {"type": "test", "hidden": true, "section": ":hotsprings: Infra"},
+      {"type": "hotfix", "hidden": false, "section": ":fire: Hotfixes"},
+      {"type": "fix", "hidden": false, "section": ":beetle: Bug Fixes"},
+      {"type": "revert", "hidden": false, "section": ":track_previous: Reverts"},
+      {"type": "docs", "hidden": true, "section": ":books: Documentation"}
+    ]
+  },
+  "parserOpts": {
+    "revertPattern": "^Revert\\s(\\w*:\\s{0,1}\\[${PROJECT_NAME_LOWER}|${PROJECT_NAME_UPPER}.*\\]*\\ .*).\\s*This reverts commit (\\w*)?",
+    "headerPattern": "^(\\w*)(?:\\((?:${PROJECT_NAME_LOWER}|${PROJECT_NAME_UPPER}).*\\):|:\\s{0,1}\\[(?:${PROJECT_NAME_LOWER}|${PROJECT_NAME_UPPER}).*\\]) (?:.*)$"
+
+  },
+  "releaseRules": [
+    {"type": "break", "release": "major"},
+    {"type": "feat", "release": "minor"},
+    {"type": "init", "release": "minor"},
+    {"type": "ci", "release": "minor"},
+    {"type": "ops", "release": "minor"},
+    {"type": "test", "release": "patch"},
+    {"type": "enh", "release": "patch"},
+    {"type": "refactor", "release": "patch"},
+    {"type": "style", "release": "patch"},
+    {"type": "maint", "release": "patch"},
+    {"type": "perf", "release": "patch"},
+    {"type": "build", "release": "patch"},
+    {"type": "hotfix", "release": "patch"},
+    {"type": "fix", "release": "patch"},
+    {"type": "revert", "release": "patch"},
+    {"type": "docs", "release": "patch"}
+  ]
+}
