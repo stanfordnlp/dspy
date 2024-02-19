@@ -1,6 +1,7 @@
 import abc
 from typing import List, Optional
 
+import cohere
 import numpy as np
 import openai
 
@@ -106,6 +107,48 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
             for cur_example in inp_examples
         ]
         embeddings = np.concatenate(embeddings, axis=0).astype(np.float32)
+        return embeddings
+
+
+class CohereVectorizer(BaseSentenceVectorizer):
+    '''
+    This vectorizer uses the Cohere API to convert texts to embeddings.
+    More about the available models: https://docs.cohere.com/reference/embed
+    `api_key` should be passed as an argument and can be retrieved
+    from https://dashboard.cohere.com/api-keys
+    '''
+    def __init__(
+        self,
+        api_key: str,
+        model: str = 'embed-english-v3.0',
+        embed_batch_size: int = 96,
+        embedding_type: str = 'search_document'  # for details check Cohere embed docs
+    ):
+        self.model = model
+        self.embed_batch_size = embed_batch_size
+        self.embedding_type = embedding_type
+        self.client = cohere.Client(api_key)
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+
+        embeddings_list = []
+
+        n_batches = (len(text_to_vectorize) - 1) // self.embed_batch_size + 1
+        for cur_batch_idx in range(n_batches):
+            start_idx = cur_batch_idx * self.embed_batch_size
+            end_idx = (cur_batch_idx + 1) * self.embed_batch_size
+            cur_batch = text_to_vectorize[start_idx: end_idx]
+
+            response = self.client.embed(
+                texts=cur_batch,
+                model=self.model,
+                input_type=self.embedding_type
+            )
+
+            embeddings_list.extend(response.embeddings)
+
+        embeddings = np.array(embeddings_list, dtype=np.float32)
         return embeddings
 
 
