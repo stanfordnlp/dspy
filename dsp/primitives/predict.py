@@ -63,7 +63,7 @@ def _generate(template: Template, **kwargs) -> Callable:
     generator = dsp.settings.lm
 
     def do_generate(
-        example: Example, stage: str, max_depth: int = 2, original_example=None
+        example: Example, stage: str, max_depth: int = 2, original_example=None, dry_run=False
     ):
         if not dsp.settings.lm:
             raise AssertionError("No LM is loaded.")
@@ -75,6 +75,11 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
+
+        if dry_run:
+            # In dry run mode, return the prompt instead of calling the LM
+            return prompt, []
+
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 

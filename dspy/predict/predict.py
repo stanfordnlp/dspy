@@ -1,5 +1,6 @@
 import dsp
 import random
+import textwrap
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -76,6 +77,7 @@ class Predict(Parameter):
         new_signature = kwargs.pop("new_signature", None)
         signature = kwargs.pop("signature", self.signature)
         demos = kwargs.pop("demos", self.demos)
+        dry_run = kwargs.pop("dry_run", False)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -101,11 +103,18 @@ class Predict(Parameter):
             signature = dsp.Template(signature.instructions, **new_signature)
 
         if self.lm is None:
-            x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+            x, C = dsp.generate(signature, **config)(x, stage=self.stage, dry_run=dry_run)
         else:
             with dsp.settings.context(lm=self.lm, query_only=True):
                 # print(f"using lm = {self.lm} !")
-                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+                x, C = dsp.generate(signature, **config)(x, stage=self.stage, dry_run=dry_run)
+
+        if dry_run:
+            print(f"Generated prompt:")
+            print(f"{'='*80}\n")
+            for _x in x.split("\n"):
+                print(textwrap.fill(_x, width=80, replace_whitespace=False, drop_whitespace=False))
+            return
 
         completions = []
 
