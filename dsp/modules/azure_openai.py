@@ -4,7 +4,7 @@ import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
-    handlers=[logging.FileHandler("openai_usage.log")],
+    handlers=[logging.FileHandler("azure_openai_usage.log")],
 )
 
 import functools
@@ -131,7 +131,7 @@ class AzureOpenAI(LM):
         return self.client
 
     def log_usage(self, response):
-        """Log the total tokens from the OpenAI API response."""
+        """Log the total tokens from the Azure OpenAI API response."""
         usage_data = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
