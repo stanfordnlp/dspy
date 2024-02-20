@@ -31,7 +31,7 @@ class SignatureMeta(type(BaseModel)):
         cls._validate_fields()
 
         # Ensure all fields have a prefix
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             if "prefix" not in field.json_schema_extra:
                 field.json_schema_extra["prefix"] = infer_prefix(name) + ":"
             if "desc" not in field.json_schema_extra:
@@ -40,7 +40,7 @@ class SignatureMeta(type(BaseModel)):
         return cls
 
     def _validate_fields(cls):
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             extra = field.json_schema_extra or {}
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
@@ -89,7 +89,7 @@ class SignatureMeta(type(BaseModel)):
     def _get_fields_with_type(cls, field_type):
         return {
             k: v
-            for k, v in cls.__fields__.items()
+            for k, v in cls.model_fields.items()
             if v.json_schema_extra["__dspy_field_type"] == field_type
         }
 
@@ -223,10 +223,10 @@ def infer_prefix(attribute_name: str) -> str:
 
     # Insert underscores around numbers to ensure spaces in the final output
     with_underscores_around_numbers = re.sub(
-        "([a-zA-Z])(\d)", r"\1_\2", intermediate_name
+        r"([a-zA-Z])(\d)", r"\1_\2", intermediate_name
     )
     with_underscores_around_numbers = re.sub(
-        "(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers
+        r"(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers
     )
 
     # Convert snake_case to 'Proper Title Case', but ensure acronyms are uppercased
