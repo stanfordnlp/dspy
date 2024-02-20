@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import numpy as np
 import openai
+import nomic
 
 
 class BaseSentenceVectorizer(abc.ABC):
@@ -158,4 +159,38 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             embeddings_list.extend(cur_batch_embeddings)
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
+        return embeddings
+
+
+class NomicVectorizer(BaseSentenceVectorizer):
+    '''
+    This vectorizer uses the Nomic Embedding API to convert texts to embeddings. Changing `model` is not
+    recommended. More about variable sized output models at https://docs.nomic.ai/atlas/guides/embeddings
+    `api_key` should be passed as an argument or as env variable (`NOMIC_API_KEY`).
+    `dimensionality`: Defaults to 256 for fast local ops.
+    '''
+    def __init__(
+        self,
+        model: str = 'nomic-embed-text-v1.5',
+        dimensionality: int = 256,
+        task_type: str = 'search_document',
+        api_key: Optional[str] = None
+    ):
+        self.model = model
+        self.dimensionality = dimensionality
+        self.task_type = task_type
+
+        if api_key:
+            nomic.login(api_key)
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+
+
+        output = nomic.embed.text(texts=text_to_vectorize,
+                                  task_type=self.task_type,
+                                  model=self.model,
+                                  dimensionality=self.dimensionality)
+
+        embeddings = np.array(output['embeddings'], dtype=np.float32)
         return embeddings
