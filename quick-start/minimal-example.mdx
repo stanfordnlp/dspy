@@ -65,7 +65,7 @@ Now that we have a compiled (optimized) DSPy program, let's move to evaluating i
 from dspy.evaluate import Evaluate
 
 # Set up the evaluator, which can be used multiple times.
-evaluate = Evaluate(devset=devset, metric=gsm8k_metric, num_threads=4, display_progress=True, display_table=0)
+evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, display_progress=True, display_table=0)
 
 # Evaluate our `optimized_cot` program.
 evaluate(optimized_cot)
