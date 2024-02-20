@@ -1,18 +1,17 @@
-from dsp.modules.hf_client import ChatModuleClient
-from dsp.modules.hf_client import HFServerTGI, HFClientVLLM, HFClientSGLang
-from .signatures import *
+import dsp
+from dsp.modules.hf_client import HFClientVLLM
 
-from .retrieve import *
+from .backends import *
 from .predict import *
 from .primitives import *
+from .retrieve import *
+from .signatures import *
 
 # from .evaluation import *
 
 
 # FIXME:
 
-
-import dsp
 
 settings = dsp.settings
 
