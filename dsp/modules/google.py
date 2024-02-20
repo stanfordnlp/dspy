@@ -8,7 +8,7 @@ try:
     import google.generativeai as genai
 except ImportError:
     google_api_error = Exception
-    print("Not loading Google because it is not installed.")
+    # print("Not loading Google because it is not installed.")
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
