@@ -23,7 +23,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         self.num_candidate_sets = num_candidate_programs
         # self.max_num_traces = 1 + int(max_bootstrapped_demos / 2.0 * self.num_candidate_sets)
 
-        # Semi-hacky way to get the parent class's _boostrap function to stop early.
+        # Semi-hacky way to get the parent class's _bootstrap function to stop early.
         # self.max_bootstrapped_demos = self.max_num_traces
         self.max_labeled_demos = max_labeled_demos
 

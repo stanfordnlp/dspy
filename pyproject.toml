@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspy-ai"
-version = "2.1.9"
+version = "2.1.10"
 description = "DSPy"
 readme = "README.md"
 authors = [{name = "Omar Khattab", email = "okhattab@stanford.edu"}]
@@ -26,7 +26,7 @@ dependencies = [
     "regex~=2023.10.3",
     "ujson~=5.8.0",
     "tqdm~=4.66.1",
-    "datasets~=2.14.6",
+    "datasets~=2.14.6,<3.0.0",
     "requests~=2.31.0",
     "optuna~=3.4.0",
 ]

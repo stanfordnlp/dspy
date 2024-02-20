@@ -64,7 +64,12 @@ class ReAct(Module):
 
             if action_name == 'Finish': return action_val
 
-            output[f"Observation_{hop+1}"] = self.tools[action_name](action_val).passages
+            try: 
+                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val).passages
+            except AttributeError:
+                # Handle the case where 'passages' attribute is missing
+                # TODO: This is a hacky way to handle this. Need to fix this.
+                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val)
 
         except Exception as e:
             output[f"Observation_{hop+1}"] = "Failed to parse action. Bad formatting or incorrect action name."
