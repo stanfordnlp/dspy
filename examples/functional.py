@@ -32,9 +32,9 @@ def _dspy_method(func, cot=False):
 
     # Chain of Thought
     if cot:
-        # TODO: If the function already has a field called rationale, this will
+        # TODO: If the function already has a field called reasoning, this will
         # be overwritten.
-        fields["rationale"] = dspy.OutputField(
+        fields["reasoning"] = dspy.OutputField(
             prefix="Reasoning: Let's think step by step in order to",
             desc="${produce the " + output + "}. We ...",
         )
@@ -62,7 +62,6 @@ def _dspy_method(func, cot=False):
     def inner(self, **kwargs):
         modified_kwargs = kwargs.copy()
         signature = dspy.Signature(fields, instructions)
-        print(signature)
         for _ in range(3):
             predictor = dspy.Predict(signature)
             result = getattr(predictor(**modified_kwargs), output)
@@ -82,19 +81,11 @@ def _dspy_method(func, cot=False):
 class QA(dspy.Module):
     @predictor
     def hard_question(self, topic: str) -> str:
-        """Think of a hard factual question about a topic. It should be answerale with a number."""
+        """Think of a hard factual question about a topic. It should be answerable with a number."""
 
     @cot
-    def answer(self, question: Annotated[str, "Question to ask"]) -> float:
+    def answer(self, question: Annotated[str, "Question to answer"]) -> float:
         pass
-
-    # @predictor
-    # def hard_question(self,
-    #            topic: str = InputField("Topic of question"),
-    #            question: str = OutputField("Question to ask"),
-    #            ):
-    #     """Think of a hard factual question about a topic. It should be answerale with a number."""
-    #     assert "fire" in question.lower(), "The question should be about fire"
 
     def forward(self, **kwargs):
         question = self.hard_question(**kwargs)
@@ -106,3 +97,4 @@ with dspy.context(lm=lm):
     print(question)
     print(answer)
     lm.inspect_history(n=5)
+
