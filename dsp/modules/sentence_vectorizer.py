@@ -1,7 +1,6 @@
 import abc
 from typing import List, Optional
 
-import cohere
 import numpy as np
 import openai
 
@@ -127,6 +126,8 @@ class CohereVectorizer(BaseSentenceVectorizer):
         self.model = model
         self.embed_batch_size = embed_batch_size
         self.embedding_type = embedding_type
+
+        import cohere
         self.client = cohere.Client(api_key)
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
