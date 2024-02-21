@@ -1,6 +1,8 @@
 import inspect, os, openai, dspy, functools, typing, pydantic, re
 from typing import Annotated
 
+MAX_RETRIES = 3
+
 def predictor(func):
     return _dspy_method(func, cot=False)
 
@@ -58,7 +60,7 @@ def _dspy_method(func, cot=False):
     else:
         kwargs["desc"] = ""
     if annotation in (str, int, float, bool):
-        kwargs["prefix"] = output + " = "
+        # kwargs["prefix"] = output + " = "
         kwargs["desc"] = desc=f"a single {annotation.__name__} value"
         kwargs["format"] = lambda x: x if isinstance(x, str) else str(x)
     # Anything else we wrap in a pydantic object
@@ -69,18 +71,16 @@ def _dspy_method(func, cot=False):
                     "Output", value=(annotation, ...), __base__=pydantic.BaseModel)
             wrapped = True
 
-        #kwargs["prefix"] = output + " = {"
-        kwargs["desc"] += f" Respond with a single JSON object using the schema {annotation.schema()}"
+        kwargs["desc"] += f" Respond with a single JSON object using the schema {annotation.model_json_schema()}"
         kwargs["format"] = lambda x: x if isinstance(x, str) else x.json()
-        #parser = lambda x: annotation.parse_raw("{" + x)
-        parser = lambda x: annotation.parse_raw(_unwrap_json(x))
+        parser = lambda x: annotation.model_validate_json(_unwrap_json(x))
 
     fields[output] = dspy.OutputField(**kwargs)
 
     def inner(*args, **kwargs):
         modified_kwargs = kwargs.copy()
         signature = dspy.Signature(fields, instructions)
-        for _ in range(3):
+        for _ in range(MAX_RETRIES):
             predictor = dspy.Predict(signature)
             result = getattr(predictor(**modified_kwargs), output)
             try:
@@ -89,7 +89,7 @@ def _dspy_method(func, cot=False):
                     parsed = parsed.value
                 return parsed
             except (pydantic.ValidationError, ValueError) as e:
-                # TODO: Use free field name
+                # Add a new field explaining the error
                 fields['error'] = dspy.InputField(
                     prefix="Past Error:",
                     desc="An error to avoid in the future"
@@ -98,14 +98,20 @@ def _dspy_method(func, cot=False):
                 signature = dspy.Signature(fields, instructions)
     return inner
 
+
 def main():
+    class Answer(pydantic.BaseModel):
+        value: float
+        certainty: float
+        comments: list[str] = pydantic.Field(description="At least two comments about the answer")
+
     class QA(dspy.Module):
         @predictor
         def hard_question(self, topic: str) -> str:
             """Think of a hard factual question about a topic. It should be answerable with a number."""
 
         @cot
-        def answer(self, question: Annotated[str, "Question to answer"]) -> float:
+        def answer(self, question: Annotated[str, "Question to answer"]) -> Answer:
             pass
 
         def forward(self, **kwargs):
@@ -113,14 +119,18 @@ def main():
             return (question, self.answer(question=question))
 
     openai.api_key = os.getenv("OPENAI_API_KEY")
-    #lm = dspy.OpenAI(model="gpt-3.5-turbo")
-    lm = dspy.OpenAI(model="gpt-4")
+    lm = dspy.OpenAI(model="gpt-3.5-turbo", max_tokens=4000)
+    #lm = dspy.OpenAI(model="gpt-4", max_tokens=4000)
+    #lm = dspy.OpenAI(model="gpt-4-preview-1106", max_tokens=4000)
     with dspy.context(lm=lm):
         qa = QA()
         question, answer = qa(topic="Physics")
+        lm.inspect_history(n=5)
+
+        print("Results:")
         print(question)
         print(answer)
-        lm.inspect_history(n=5)
+
 
 if __name__ == '__main__':
     main()
