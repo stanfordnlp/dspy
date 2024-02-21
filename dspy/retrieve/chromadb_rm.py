@@ -18,6 +18,11 @@ try:
     import chromadb
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
+    from chromadb.api.types import (
+        Embeddable,
+        EmbeddingFunction
+    )
+    import chromadb.utils.embedding_functions as ef
 except ImportError:
     chromadb = None
 
@@ -37,10 +42,8 @@ class ChromadbRM(dspy.Retrieve):
     Args:
         collection_name (str): chromadb collection name
         persist_directory (str): chromadb persist directory
-        openai_embed_model (str, optional): The OpenAI embedding model to use. Defaults to "text-embedding-ada-002".
-        openai_api_key (str, optional): The API key for OpenAI. Defaults to None.
-        openai_org (str, optional): The organization for OpenAI. Defaults to None.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
+        embedding_function (Optional[EmbeddingFunction[Embeddable]]): Optional function to use to embed documents. Defaults to DefaultEmbeddingFunction.
+        k (int, optional): The number of top passages to retrieve. Defaults to 7.
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
@@ -65,29 +68,14 @@ class ChromadbRM(dspy.Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        openai_embed_model: str = "text-embedding-ada-002",
-        openai_api_provider: Optional[str] = None,
-        openai_api_key: Optional[str] = None,
-        openai_api_type: Optional[str] = None,
-        openai_api_base: Optional[str] = None,
-        openai_api_version: Optional[str] = None,
+        embedding_function: Optional[
+            EmbeddingFunction[Embeddable]
+        ] = ef.DefaultEmbeddingFunction(),
         k: int = 7,
     ):
-        self._openai_embed_model = openai_embed_model
-
         self._init_chromadb(collection_name, persist_directory)
 
-        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=openai_api_key,
-            api_base=openai_api_base,
-            api_type=openai_api_type,
-            api_version=openai_api_version,
-            model_name=openai_embed_model,
-        )
-        self.api_version = openai_api_version
-        self.api_base = openai_api_base
-        self.model_name = openai_embed_model
-        self.openai_api_type = openai_api_type
+        self.ef = embedding_function
 
         super().__init__(k=k)
 
@@ -130,16 +118,7 @@ class ChromadbRM(dspy.Retrieve):
         Returns:
             List[List[float]]: List of embeddings corresponding to each query.
         """
-
-        model_arg = {"engine": self.model_name,
-            "deployment_id": self.model_name,
-            "api_version": self.api_version,
-            "api_base": self.api_base,
-        }
-        embedding = self.openai_ef._client.create(
-            input=queries, model=self._openai_embed_model, **model_arg, api_provider=self.openai_api_type
-        )
-        return [embedding.embedding for embedding in embedding.data]
+        return self.ef(queries)
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None

@@ -1910,13 +1910,13 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "litellm"
-version = "1.25.0"
+version = "1.26.3"
 description = "Library to easily interface with LLM API providers"
 optional = false
 python-versions = ">=3.8, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*, !=3.7.*"
 files = [
-    {file = "litellm-1.25.0-py3-none-any.whl", hash = "sha256:2f679776c6292e88c5b5e672a8566ac6e2ffb572a8e4c264ced25c279ce6fb19"},
-    {file = "litellm-1.25.0.tar.gz", hash = "sha256:44af5985d7da7ad7b012ffab9f944322fe85de193e2e5325154e678ab8a20216"},
+    {file = "litellm-1.26.3-py3-none-any.whl", hash = "sha256:3a6b8772354309afd446797a6de06cc3702916b53ec3bb19243a81419ebc442a"},
+    {file = "litellm-1.26.3.tar.gz", hash = "sha256:949988d1ea247c95557685cdef73e2773693daed914b23eb445e89b1f83f38f4"},
 ]
 
 [package.dependencies]
@@ -5785,4 +5785,4 @@ qdrant = ["fastembed", "qdrant-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "18a79a257d412840ff5032cb7e7d11fdb8224cc297b7aefd28790971f39be143"
+content-hash = "48475cc5dc9bc7454a9497f7faf8a386fdffd56af7aab6c712e46e220c3a7eb7"

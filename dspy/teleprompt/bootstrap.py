@@ -96,15 +96,15 @@ class BootstrapFewShot(Teleprompter):
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
 
-    def _bootstrap(self, *, max_bootsraps=None):
-        max_bootsraps = max_bootsraps or self.max_bootstrapped_demos
+    def _bootstrap(self, *, max_bootstraps=None):
+        max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
 
         bootstrapped = {}
         self.name2traces = {name: [] for name in self.name2predictor}
 
         for round_idx in range(self.max_rounds):
             for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-                if len(bootstrapped) >= max_bootsraps:
+                if len(bootstrapped) >= max_bootstraps:
                     break
 
                 if example_idx not in bootstrapped:
