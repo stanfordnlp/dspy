@@ -39,7 +39,7 @@ class MultiHopTweet(dspy.Module):
             context += self.retrieve(query).passages
         return dspy.Prediction(context=context, answer=self.generate_answer(context = context , question = question).answer)
 
-# Define the signature for autoamtic assessments.
+# Define the signature for automatic assessments.
 class Assess(dspy.Signature):
     """Assess the quality of a tweet along the specified dimension."""
 
