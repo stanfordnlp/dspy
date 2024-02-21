@@ -1902,7 +1902,7 @@ tornado = {version = "*", markers = "python_version > \"2.7\""}
 name = "loguru"
 version = "0.7.2"
 description = "Python logging made (stupidly) simple"
-optional = true
+optional = false
 python-versions = ">=3.5"
 files = [
     {file = "loguru-0.7.2-py3-none-any.whl", hash = "sha256:003d71e3d3ed35f0f8984898359d65b79e5b21943f78af86aa5491210429b8eb"},
@@ -5325,7 +5325,7 @@ files = [
 name = "win32-setctime"
 version = "1.1.0"
 description = "A small Python utility to set file creation time on Windows"
-optional = true
+optional = false
 python-versions = ">=3.5"
 files = [
     {file = "win32_setctime-1.1.0-py3-none-any.whl", hash = "sha256:231db239e959c2fe7eb1d7dc129f11172354f98361c4fa2d6d2d7e278baa8aad"},
@@ -5659,4 +5659,4 @@ qdrant = ["fastembed", "qdrant-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "5c20585de8e3d4c586c421a01c5b59a022f302eab6cf15657a621e0dd88207db"
+content-hash = "94485ed6edee41b31c9c5d0c1f39012c6bc5c959d55ac484cd252a62bd0f3e15"

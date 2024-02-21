@@ -97,6 +97,7 @@ pydantic = {version = "*", optional = true}
 autodoc_pydantic = {version = "*", optional = true}
 sphinx-reredirects = {version = "^0.1.2", optional = true}
 sphinx-automodapi = {version = "0.16.0", optional = true}
+loguru = "^0.7.2"
 
 [tool.poetry.extras]
 pinecone = ["pinecone-client"]
