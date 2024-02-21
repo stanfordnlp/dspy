@@ -109,7 +109,7 @@ class AzureOpenAI(LM):
 - `api_base` (str): Azure Base URL.
 - `api_version` (str): Version identifier for Azure OpenAI API.
 - `api_key` (_Optional[str]_, _optional_): API provider authentication token. Retrieves from `AZURE_OPENAI_KEY` environment variable if None.
-- `model_type` (_Literal["chat", "text"]_): Specified model type to use.
+- `model_type` (_Literal["chat", "text"]_): Specified model type to use, defaults to 'chat'.
 - `**kwargs`: Additional language model arguments to pass to the API provider.
 
 ### Methods
