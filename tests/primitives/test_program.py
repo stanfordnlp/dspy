@@ -34,3 +34,16 @@ def test_forward():
     dsp.settings.lm = DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
     result = program(question="What is 1+1?").answer
     assert result == "2"
+
+def test_nested_named_predictors():
+    class Hop2Module(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.hop = HopModule()
+
+    module = Hop2Module()
+    named_preds = module.named_predictors()
+    assert len(named_preds) == 2
+    names, _preds = zip(*named_preds)
+    assert "hop.predict1" in names
+    assert "hop.predict2" in names
