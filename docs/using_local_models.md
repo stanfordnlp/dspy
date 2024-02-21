@@ -10,6 +10,8 @@ DSPy supports various methods including `built-in wrappers`, `server integration
 | Cohere | [Cohere Section](#cohere) |
 | TGI | [TGI Section](#tgi) |
 | VLLM | [VLLM Section](#vllm) |
+| MLC LLM | [MLC LLM Section](#mlc-llm) |
+| Ollama | [Ollama Section](#ollama) |
 
 
 # HFModel
@@ -152,3 +154,45 @@ Please refer to the [official vLLM repository](https://github.com/vllm-project/v
    llama = dspy.ChatModuleClient(model='dist/prebuilt/mlc-chat-Llama-2-7b-chat-hf-q4f16_1', model_path='dist/prebuilt/lib/Llama-2-7b-chat-hf-q4f16_1-cuda.so')
    ```
 Please refer to the [official MLC repository](https://github.com/mlc-ai/mlc-llm) for more detailed information and [documentation](https://mlc.ai/mlc-llm/docs/get_started/try_out.html).
+
+# Ollama
+
+Ollama is a good software tool that allows you to run LLMs locally, such as Mistral, Llama2, and Phi.
+The following are the instructions to install and run Ollama.
+
+## Prerequisites
+
+Install Ollama by following the instructions from this page:
+
+- https://ollama.ai
+
+Download model: `ollama pull`
+
+Download a model by running the `ollama pull` command. You can download Mistral, Llama2, and Phi.
+
+```bash
+# download mistral
+ollama pull mistral
+```
+
+Here is the list of other models you can download:
+- https://ollama.ai/library
+
+## Running Ollama model
+
+Run model: `ollama run`
+
+You can test a model by running the model with the `ollama run` command.
+
+```bash
+# run mistral
+ollama run mistral
+```
+
+## Sending requests to the server
+
+Here is the code to load a model through Ollama:
+
+```python
+lm = dspy.OllamaLocal(model='mistral')
+```

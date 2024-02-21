@@ -28,6 +28,7 @@ class AWSLM(LM):
         max_new_tokens: int,
         truncate_long_prompts: bool = False,
         input_output_ratio: int = 3,
+        batch_n: bool = True,
     ) -> None:
         """_summary_
 
@@ -40,6 +41,7 @@ class AWSLM(LM):
             input_output_ratio (int, optional): The rough size of the number of input tokens to output tokens in the worst case. Defaults to 3.
             temperature (float, optional): _description_. Defaults to 0.0.
             truncate_long_prompts (bool, optional): If True, remove extremely long inputs to context. Defaults to False.
+            batch_n (bool, False): If False, call the LM N times rather than batching. Not all AWS models support the n parameter.
         """
         super().__init__(model=model)
         # AWS doesn't have an equivalent of max_tokens so let's clarify
@@ -48,9 +50,10 @@ class AWSLM(LM):
         self._max_new_tokens: int = max_new_tokens
         self._model_name: str = model
         self._truncate_long_prompt_prompts: bool = truncate_long_prompts
+        self._batch_n: bool = batch_n
 
         import boto3
-        
+
         self.predictor = boto3.client(service_name, region_name=region_name)
 
     @abstractmethod
@@ -72,7 +75,7 @@ class AWSLM(LM):
         return query_kwargs
 
     @abstractmethod
-    def _call_model(self, body: str) -> str:
+    def _call_model(self, body: str) -> str | list[str]:
         """Call model, get generated input without the formatted prompt"""
         pass
 
@@ -82,7 +85,20 @@ class AWSLM(LM):
     ) -> dict[str, str | float | int]:
         pass
 
-    def basic_request(self, prompt, **kwargs) -> str:
+    def _simple_api_call(self, formatted_prompt: str, **kwargs) -> str | list[str]:
+        body = self._create_body(formatted_prompt, **kwargs)
+        json_body = json.dumps(body)
+        llm_out: str | list[str] = self._call_model(json_body)
+        if isinstance(llm_out, str):
+            llm_out = llm_out.replace(formatted_prompt, "")
+        else:
+            llm_out = [generated.replace(formatted_prompt, "") for generated in llm_out]
+        self.history.append(
+            {"prompt": formatted_prompt, "response": llm_out, "kwargs": body}
+        )
+        return llm_out
+
+    def basic_request(self, prompt, **kwargs) -> str | list[str]:
         """Query the endpoint."""
 
         # Remove any texts that are too long
@@ -92,16 +108,28 @@ class AWSLM(LM):
             formatted_prompt = self._format_prompt(truncated_prompt)
         else:
             formatted_prompt = self._format_prompt((prompt))
-        body = self._create_body(formatted_prompt, **kwargs)
-        json_body: str = json.dumps(body)
 
-        generated: str = self._call_model(json_body)
+        llm_out: str | list[str]
+        if "n" in kwargs.keys():
+            if self._batch_n:
+                llm_out = self._simple_api_call(
+                    formatted_prompt=formatted_prompt, **kwargs
+                )
+            else:
+                del kwargs["n"]
+                llm_out = []
+                for _ in range(0, kwargs["n"]):
+                    generated: str | list[str] = self._simple_api_call(
+                        formatted_prompt=formatted_prompt, **kwargs
+                    )
+                    if isinstance(generated, str):
+                        llm_out.append(generated)
+                    else:
+                        raise TypeError("Error, list type was returned from LM call")
+        else:
+            llm_out = self._simple_api_call(formatted_prompt=formatted_prompt, **kwargs)
 
-        self.history.append(
-            {"prompt": formatted_prompt, "response": generated, "kwargs": body}
-        )
-
-        return generated.replace(formatted_prompt, "")
+        return llm_out
 
     def _estimate_tokens(self, text: str) -> int:
         return len(text) * CHARS2TOKENS

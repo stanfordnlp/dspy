@@ -20,7 +20,7 @@ Note that this teleprompter takes in the following parameters:
 * prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
 * metric: The task metric used for optimization.
 * breadth: The number of new prompts to generate at each iteration. Default=10.
-* depth: The number of times we should ask our prompt model to genereate new prompts, with the history of the past prompts as input. Default=3.
+* depth: The number of times we should ask our prompt model to generate new prompts, with the history of the past prompts as input. Default=3.
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.4.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
