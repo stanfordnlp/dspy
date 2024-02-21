@@ -70,7 +70,7 @@ class SignatureMeta(type(BaseModel)):
 
     def with_updated_fields(cls, name, **kwargs):
         """Returns a new Signature type with the field, name, updated
-        with field.json_schema_extra[field_key] = field_value."""
+        with fields[name].json_schema_extra[key] = value."""
         fields_copy = deepcopy(cls.fields)
         fields_copy[name].json_schema_extra = {
             **fields_copy[name].json_schema_extra,
