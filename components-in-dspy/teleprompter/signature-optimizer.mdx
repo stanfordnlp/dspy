@@ -29,14 +29,13 @@ dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, tes
 trainset, devset = gms8k.train, gms8k.dev
 ```
 
-We'll now define a class based signature for CoT similar to `question->reasoning,answer` and pass it to `Predict` module, that will give us the result from the LM client for this signature.
+We'll now define a class based signature for QA task similar to `question->answer` and pass it to `ChainOfThought` module, that will give us the result via Chain Of Thought from the LM client for this signature.
 
 ```python
 class CoTSignature(dspy.Signature):
     """Answer the question and give the reasoning for the same."""
 
     question = dspy.InputField(desc="question about something")
-    reasoning = dspy.OutputField(desc="reasoning for the answer")
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 
 class CoTPipeline(dspy.Module):
@@ -44,7 +43,7 @@ class CoTPipeline(dspy.Module):
         super().__init__()
 
         self.signature = CoTSignature
-        self.predictor = dspy.Predict(self.signature)
+        self.predictor = dspy.ChainOfThought(self.signature)
 
     def forward(self, question):
         result = self.predictor(question=question)
