@@ -1,5 +1,5 @@
 from .cache_utils import *
-from .azure_openai import *
+from .azure_openai import AzureOpenAI
 from .gpt3 import *
 from .hf import HFModel
 from .colbertv2 import ColBERTv2
