@@ -54,7 +54,7 @@ class AzureOpenAI(LM):
         api_version (str): Version identifier for API.
         model (str, optional): OpenAI or Azure supported LLM model to use. Defaults to "text-davinci-002".
         api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
-        model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
+        model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "chat".
         **kwargs: Additional arguments to pass to the API provider.
     """
 
@@ -64,7 +64,7 @@ class AzureOpenAI(LM):
         api_version: str,
         model: str = "gpt-3.5-turbo-instruct",
         api_key: Optional[str] = None,
-        model_type: Literal["chat", "text"] = None,
+        model_type: Literal["chat", "text"] = "chat",
         **kwargs,
     ):
         super().__init__(model)
@@ -93,14 +93,7 @@ class AzureOpenAI(LM):
 
             self.client = client
 
-        # Define model type
-        default_model_type = (
-            "chat"
-            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
-            and ("instruct" not in model)
-            else "text"
-        )
-        self.model_type = model_type if model_type else default_model_type
+        self.model_type = model_type
 
         if not OPENAI_LEGACY and "model" not in kwargs:
             if "deployment_id" in kwargs:
@@ -268,7 +261,7 @@ def v1_chat_request(client, **kwargs):
         def v1_cached_gpt3_turbo_request_v2(**kwargs):
             if "stringify_request" in kwargs:
                 kwargs = json.loads(kwargs["stringify_request"])
-            return client.chat.completion.create(**kwargs)
+            return client.chat.completions.create(**kwargs)
 
         return v1_cached_gpt3_turbo_request_v2(**kwargs)
 
