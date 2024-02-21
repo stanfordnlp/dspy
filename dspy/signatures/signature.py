@@ -1,14 +1,14 @@
 from copy import deepcopy
 import dsp
 from pydantic import BaseModel, Field, create_model
-from typing import Type, Union, Dict, Tuple
+from typing import Optional, Union
 import re
 
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
 
-def signature_to_template(signature):
-    """Convert from new to legacy format"""
+def signature_to_template(signature) -> dsp.Template:
+    """Convert from new to legacy format."""
     return dsp.Template(
         signature.instructions,
         **{name: new_to_old_field(field) for name, field in signature.fields.items()},
@@ -60,7 +60,10 @@ class SignatureMeta(type(BaseModel)):
 
     def with_instructions(cls, instructions: str):
         return create_model(
-            cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields
+            cls.__name__,
+            __base__=Signature,
+            __doc__=instructions,
+            **cls.fields,
         )
 
     @property
@@ -75,17 +78,19 @@ class SignatureMeta(type(BaseModel)):
             **fields_copy[name].json_schema_extra,
             **kwargs,
         }
-        return create_model(cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy)
+        return create_model(
+            cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy
+        )
 
     @property
-    def input_fields(cls):
+    def input_fields(cls) -> dict:
         return cls._get_fields_with_type("input")
 
     @property
-    def output_fields(cls):
+    def output_fields(cls) -> dict:
         return cls._get_fields_with_type("output")
 
-    def _get_fields_with_type(cls, field_type):
+    def _get_fields_with_type(cls, field_type) -> dict:
         return {
             k: v
             for k, v in cls.__fields__.items()
@@ -98,8 +103,8 @@ class SignatureMeta(type(BaseModel)):
     def append(cls, name, field, type_=None):
         return cls.insert(-1, name, field, type_)
 
-    def insert(cls, index: int, name: str, field, type_: Type = None):
-        # It's posisble to set the type as annotation=type in pydantic.Field(...)
+    def insert(cls, index: int, name: str, field, type_: Optional[type] = None):
+        # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is not None:
             field.annotation = type_
@@ -127,7 +132,7 @@ class SignatureMeta(type(BaseModel)):
         new_signature.__doc__ = cls.instructions
         return new_signature
 
-    def _parse_signature(cls, signature: str) -> Tuple[Type, Field]:
+    def _parse_signature(cls, signature: str) -> tuple[type, Field]:
         pattern = r"^\s*[\w\s,]+\s*->\s*[\w\s,]+\s*$"
         if not re.match(pattern, signature):
             raise ValueError(f"Invalid signature format: '{signature}'")
@@ -144,7 +149,9 @@ class SignatureMeta(type(BaseModel)):
         return fields
 
     def __call__(
-        cls, signature: Union[str, Dict[str, Field]], instructions: str = None
+        cls,
+        signature: Union[str, dict[str, Field]],
+        instructions: Optional[str] = None,
     ):
         """
         Creates a new Signature type with the given fields and instructions.
@@ -215,7 +222,6 @@ def ensure_signature(signature):
 
 def infer_prefix(attribute_name: str) -> str:
     """Infers a prefix from an attribute name."""
-
     # Convert camelCase to snake_case, but handle sequences of capital letters properly
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", attribute_name)
     intermediate_name = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1)
