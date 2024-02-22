@@ -2,7 +2,7 @@ import datetime
 import json
 import textwrap
 import pydantic
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
 
 import pytest
@@ -268,14 +268,61 @@ def test_raises():
     def flight_information(email: str) -> TravelInformation:
         pass
 
-    lm = DummyLM([
-        "A list of bad inputs",
-        '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-        '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
-    ])
+    lm = DummyLM(
+        [
+            "A list of bad inputs",
+            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
+        ]
+    )
     dspy.settings.configure(lm=lm)
 
     with pytest.raises(ValueError):
         flight_information(email="Some email")
 
 
+def test_field_validator():
+    class UserDetails(BaseModel):
+        name: str
+        age: int
+
+        @field_validator("name")
+        @classmethod
+        def validate_name(cls, v):
+            if v.upper() != v:
+                raise ValueError("Name must be in uppercase.")
+            return v
+
+    @predictor
+    def get_user_details() -> UserDetails:
+        pass
+
+    # Keep making the mistake (lower case name) until we run
+    # out of retries.
+    lm = DummyLM(
+        [
+            '{"name": "lower case name", "age": 25}',
+        ]
+        * 10
+    )
+    dspy.settings.configure(lm=lm)
+
+    with pytest.raises(ValueError):
+        get_user_details()
+
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
+        Given the fields , produce the fields `get_user_details`.
+
+        ---
+
+        Follow the following format.
+
+        Past Error (get_user_details): An error to avoid in the future
+        Get User Details: ${get_user_details}. Respond with a single JSON object using the schema {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
+
+        ---
+
+        Past Error (get_user_details): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+        Get User Details: {"name": "lower case name", "age": 25}"""
+    )
