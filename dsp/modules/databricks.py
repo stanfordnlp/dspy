@@ -55,7 +55,7 @@ class Databricks(GPT3):
         model: str,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
-        model_type: Literal["chat", "text"] = None,
+        model_type: Literal["chat", "text", "embeddings"] = None,
         **kwargs,
     ):
         super().__init__(
