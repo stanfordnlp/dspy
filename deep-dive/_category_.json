@@ -6,4 +6,3 @@
       "description": "DSPy introduces signatures (to abstract prompts), modules (to abstract prompting techniques), and optimizers that can tune the prompts (or weights) of modules."
     }
 }
-a
