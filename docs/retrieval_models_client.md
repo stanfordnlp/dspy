@@ -9,6 +9,7 @@ This documentation provides an overview of the DSPy Retrieval Model Clients.
 | ColBERTv2 | [ColBERTv2 Section](#ColBERTv2) |
 | AzureCognitiveSearch | [AzureCognitiveSearch Section](#AzureCognitiveSearch) |
 | ChromadbRM | [ChromadbRM Section](#ChromadbRM) |
+| PineconeRM | [PineconeRM Section](#PineconeRM) |
 
 ## ColBERTv2
 
@@ -138,6 +139,7 @@ ChromadbRM(
 ```
 
 **Parameters:**
+
 - `collection_name` (_str_): The name of the chromadb collection.
 - `persist_directory` (_str_): Path to the directory where chromadb data is persisted.
 - `embedding_function` (_Optional[EmbeddingFunction[Embeddable]]_, _optional_): The function used for embedding documents and queries. Defaults to `DefaultEmbeddingFunction()` if not specified.
@@ -150,8 +152,68 @@ ChromadbRM(
 Search the chromadb collection for the top `k` passages matching the given query or queries, using embeddings generated via the specified `embedding_function`.
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with a `long_text` attribute.
+
+## PineconeRM
+
+### Quickstart with Cohere Embeddings
+
+PineconeRM provides a retrieval module utilizing Pinecone to retrieve the top passages for a given query. It offers suppport for openai and cohere as cloud-based embedding providers and the use of local models like all-mpnet-base-v2. This example showcases the utilization of Cohere embeddings.
+
+```python
+from dspy.retrieve.pinecone_rm import PineconeRM, CohereEmbed
+
+retriever_model = PineconeRM(
+    pinecone_index_name="your_index_name",
+    cloud_emded_provider=CohereEmbed(),
+)
+
+results = retriever_model("How does machine learning work?", k=5)
+
+for result in results:
+    print("Passage:", result.long_text, "\n")
+```
+
+### Constructor
+
+Initialize an instance of the PineconeRM class with options for embedding providers.
+
+```python
+PineconeRM(
+    pinecone_index_name: str,
+    pinecone_api_key: Optional[str] = None,
+    local_embed_model: Optional[str] = None,
+    cloud_emded_provider: Optional[CloudEmbedProvider] = None,
+    k: int = 3,
+)
+```
+
+**Parameters:**
+
+- `pinecone_index_name` (_str_): The name of the Pinecone index to query against.
+- `pinecone_api_key` (_Optional[str], optional_): The Pinecone API key. Defaults to None.
+- `local_embed_model` (_Optional[str], optional_): The local embedding model to use. Defaults to None.
+- `cloud_emded_provider` (_Optional[CloudEmbedProvider], optional_): The cloud embedding provider to use. Defaults to None.
+- `k` (_int, optional_): The number of top passages to retrieve. Defaults to 3.
+  
+### Methods
+
+### `forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction`
+
+Searches the Pinecone index for the top k passages matching the given query or queries using embeddings generated via the specified embedding provider.
+
+**Parameters:**
+
+- `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
+- `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
+
+**Returns:**
+
+- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with a `long_text` attribute.
+
