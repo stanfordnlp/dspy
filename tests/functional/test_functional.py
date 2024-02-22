@@ -1,6 +1,8 @@
+import datetime
 import json
 import textwrap
 import pydantic
+from pydantic import Field, BaseModel
 from typing import Annotated
 
 import dspy
@@ -9,8 +11,8 @@ from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.utils.dummies import DummyLM
 
-def test_simple():
 
+def test_simple():
     @predictor
     def hard_question(topic: str) -> str:
         """Think of a hard factual question about a topic."""
@@ -24,6 +26,7 @@ def test_simple():
 
     assert question == expected
 
+
 def test_simple_type():
     class Question(pydantic.BaseModel):
         value: str
@@ -31,7 +34,7 @@ def test_simple_type():
     @predictor
     def hard_question(topic: str) -> Question:
         """Think of a hard factual question about a topic."""
-    
+
     expected = "What is the speed of light?"
     lm = DummyLM([f'{{"value": "{expected}"}}'])
     dspy.settings.configure(lm=lm)
@@ -63,15 +66,21 @@ def test_simple_class():
             question = self.hard_question(**kwargs)
             return (question, self.answer(question=question))
 
-    expected = Answer(value=3e8, certainty=0.9, comments=["It is the speed of light", "It is a constant"])
+    expected = Answer(
+        value=3e8,
+        certainty=0.9,
+        comments=["It is the speed of light", "It is a constant"],
+    )
 
-    lm = DummyLM([
-        "What is the speed of light?",
-        "Some bad reasoning, 3e8 m/s.",
-        "3e8",  # Bad answer 1
-        "Some good reasoning...",
-        expected.model_dump_json(),  # Good answer
-    ])
+    lm = DummyLM(
+        [
+            "What is the speed of light?",
+            "Some bad reasoning, 3e8 m/s.",
+            "3e8",  # Bad answer 1
+            "Some good reasoning...",
+            expected.model_dump_json(),  # Good answer
+        ]
+    )
     dspy.settings.configure(lm=lm)
 
     qa = QA()
@@ -88,13 +97,15 @@ def test_simple_oop():
     class MySignature(dspy.Signature):
         topic: str = dspy.InputField()
         output: Question = dspy.OutputField()
-    
+
     # Run the signature
     program = TypedPredictor(MySignature)
     expected = "What is the speed of light?"
-    lm = DummyLM([
-        Question(value=expected).model_dump_json(),
-    ])
+    lm = DummyLM(
+        [
+            Question(value=expected).model_dump_json(),
+        ]
+    )
     dspy.settings.configure(lm=lm)
 
     question = program(topic="Physics").output
@@ -107,10 +118,11 @@ def test_equivalent_signatures():
     class ClassSignature(dspy.Signature):
         input: str = dspy.InputField()
         output: str = dspy.OutputField()
-    
+
     @predictor
     def output(input: str) -> str:
         pass
+
     function_signature = output.predictor.signature
 
     simple_signature = dspy.Signature("input -> output")
@@ -128,7 +140,7 @@ def test_named_params():
         @cot
         def answer(self, question: str) -> str:
             pass
-    
+
     qa = QA()
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
@@ -141,16 +153,23 @@ def test_bootstrap_effectiveness():
         @predictor
         def output(self, input: str) -> str:
             pass
+
         def forward(self, **kwargs):
             return self.output(**kwargs)
 
     def simple_metric(example, prediction, trace=None):
         return example.output == prediction.output
 
-    examples = [ex.with_inputs("input") for ex in (
-        Example(input="What is the color of the sky?", output="blue"),
-        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"),
-    )]
+    examples = [
+        ex.with_inputs("input")
+        for ex in (
+            Example(input="What is the color of the sky?", output="blue"),
+            Example(
+                input="What does the fox say?",
+                output="Ring-ding-ding-ding-dingeringeding!",
+            ),
+        )
+    ]
     trainset = [examples[0]]
     valset = [examples[1]]
 
@@ -161,8 +180,10 @@ def test_bootstrap_effectiveness():
 
     lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
-    
-    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+
+    bootstrap = BootstrapFewShot(
+        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
+    )
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
@@ -171,7 +192,7 @@ def test_bootstrap_effectiveness():
     assert len(compiled_student.output.predictor.demos) == 1
     assert compiled_student.output.predictor.demos[0].input == trainset[0].input
     assert compiled_student.output.predictor.demos[0].output == trainset[0].output
-    
+
     # Test the compiled student's prediction.
     # We are using a DummyLM with follow_examples=True, which means that
     # even though it would normally reply with "Ring-ding-ding-ding-dingeringeding!"
@@ -180,7 +201,8 @@ def test_bootstrap_effectiveness():
     prediction = compiled_student(input=trainset[0].input)
     assert prediction == trainset[0].output
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         Given the fields `input`, produce the fields `output`.
 
         ---
@@ -198,4 +220,37 @@ def test_bootstrap_effectiveness():
         ---
 
         Input: What is the color of the sky?
-        Output: blue""")
+        Output: blue"""
+    )
+
+
+def test_regex():
+    class TravelInformation(BaseModel):
+        origin: str = Field(pattern=r"^[A-Z]{3}$")
+        destination: str = Field(pattern=r"^[A-Z]{3}$")
+        date: datetime.date
+
+    @predictor
+    def flight_information(email: str) -> TravelInformation:
+        pass
+
+    email = textwrap.dedent(
+        """\
+        We're excited to welcome you aboard your upcoming flight from 
+        John F. Kennedy International Airport (JFK) to Los Angeles International Airport (LAX)
+        on December 25, 2022. Here's everything you need to know before you take off: ...
+    """
+    )
+    lm = DummyLM(
+        [
+            # Example with a bad origin code.
+            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            # Fixed
+            '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    assert flight_information(email=email) == TravelInformation(
+        origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
+    )
