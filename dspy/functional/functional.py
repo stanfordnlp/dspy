@@ -131,7 +131,7 @@ class TypedPredictor(dspy.Module):
                     *_, last_output = signature.output_fields.keys()
                     return result[last_output]
                 return result
-        print("Warning: Too many retries")
+        raise ValueError("Too many retries")
 
 
 def _func_to_signature(func):

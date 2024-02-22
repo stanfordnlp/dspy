@@ -5,6 +5,8 @@ import pydantic
 from pydantic import Field, BaseModel
 from typing import Annotated
 
+import pytest
+
 import dspy
 from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor
 from dspy.primitives.example import Example
@@ -254,3 +256,26 @@ def test_regex():
     assert flight_information(email=email) == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
+
+
+def test_raises():
+    class TravelInformation(BaseModel):
+        origin: str = Field(pattern=r"^[A-Z]{3}$")
+        destination: str = Field(pattern=r"^[A-Z]{3}$")
+        date: datetime.date
+
+    @predictor
+    def flight_information(email: str) -> TravelInformation:
+        pass
+
+    lm = DummyLM([
+        "A list of bad inputs",
+        '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+        '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
+    ])
+    dspy.settings.configure(lm=lm)
+
+    with pytest.raises(ValueError):
+        flight_information(email="Some email")
+
+
