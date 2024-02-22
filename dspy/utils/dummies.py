@@ -58,7 +58,11 @@ class DummyLM(LM):
             ]
         }
         
-        print(f"DummyLM got {prompt=}, sent {answer=}")
+        RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
+        print("=== DummyLM ===")
+        print(prompt, end="")
+        print(f"{RED}{answer}{RESET}")
+        print("===")
 
         # Simulate processing and storing the request and response.
         history_entry = {

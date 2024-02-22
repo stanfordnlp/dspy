@@ -15,6 +15,12 @@ def signature_to_template(signature):
     )
 
 
+def _default_instructions(cls):
+    inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields.keys()])
+    outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields.keys()])
+    return f"Given the fields {inputs_}, produce the fields {outputs_}."
+
+
 class SignatureMeta(type(BaseModel)):
     def __new__(mcs, name, bases, namespace, **kwargs):
         # Set `str` as the default type for all fields
@@ -26,6 +32,9 @@ class SignatureMeta(type(BaseModel)):
 
         # Let Pydantic do its thing
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+
+        if cls.__doc__ is None:
+            cls.__doc__ = _default_instructions(cls)
 
         # Ensure all fields are declared with InputField or OutputField
         cls._validate_fields()
@@ -76,7 +85,9 @@ class SignatureMeta(type(BaseModel)):
             **fields_copy[name].json_schema_extra,
             **kwargs,
         }
-        return create_model(cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy)
+        return create_model(
+            cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy
+        )
 
     @property
     def input_fields(cls):
@@ -145,7 +156,9 @@ class SignatureMeta(type(BaseModel)):
         return fields
 
     def __call__(
-        cls, signature: Union[str, Dict[str, Field]], instructions: str = None
+        cls,
+        signature: Union[str, Dict[str, Tuple[type, Field]]],
+        instructions: str = None,
     ):
         """
         Creates a new Signature type with the given fields and instructions.
@@ -161,16 +174,12 @@ class SignatureMeta(type(BaseModel)):
         if isinstance(signature, str):
             fields = cls._parse_signature(signature)
         else:
-            fields = {k: (f.annotation or str, f) for k, f in signature.items()}
+            fields = signature
 
         # Default prompt when no instructions are provided
         if instructions is None:
             sig = Signature(signature, "")  # Simple way to parse input/output fields
-            inputs_ = ", ".join(f"`{name}`" for name in sig.input_fields.keys())
-            outputs_ = ", ".join(f"`{name}`" for name in sig.output_fields.keys())
-            instructions = (
-                f"""Given the fields {inputs_}, produce the fields {outputs_}."""
-            )
+            instructions = _default_instructions(sig)
 
         signature = create_model("Signature", __base__=Signature, **fields)
         signature.__doc__ = instructions

@@ -1,9 +1,10 @@
+import json
 import textwrap
 import pydantic
 from typing import Annotated
 
 import dspy
-from dspy.functional import predictor, cot, FunctionalModule
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.utils.dummies import DummyLM
@@ -30,14 +31,14 @@ def test_simple_type():
     @predictor
     def hard_question(topic: str) -> Question:
         """Think of a hard factual question about a topic."""
-
+    
     expected = "What is the speed of light?"
     lm = DummyLM([f'{{"value": "{expected}"}}'])
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
-    lm.inspect_history(n=2)
 
+    assert isinstance(question, Question)
     assert question.value == expected
 
 
@@ -75,10 +76,47 @@ def test_simple_class():
 
     qa = QA()
     question, answer = qa(topic="Physics")
-    lm.inspect_history(n=6)
 
     assert question == "What is the speed of light?"
     assert answer == expected
+
+
+def test_simple_oop():
+    class Question(pydantic.BaseModel):
+        value: str
+
+    class MySignature(dspy.Signature):
+        topic: str = dspy.InputField()
+        output: Question = dspy.OutputField()
+    
+    # Run the signature
+    program = TypedPredictor(MySignature)
+    expected = "What is the speed of light?"
+    lm = DummyLM([
+        Question(value=expected).model_dump_json(),
+    ])
+    dspy.settings.configure(lm=lm)
+
+    question = program(topic="Physics").output
+
+    assert isinstance(question, Question)
+    assert question.value == expected
+
+
+def test_equivalent_signatures():
+    class ClassSignature(dspy.Signature):
+        input: str = dspy.InputField()
+        output: str = dspy.OutputField()
+    
+    @predictor
+    def output(input: str) -> str:
+        pass
+    function_signature = output.predictor.signature
+
+    simple_signature = dspy.Signature("input -> output")
+
+    assert ClassSignature.equals(function_signature)
+    assert ClassSignature.equals(simple_signature)
 
 
 def test_named_params():
@@ -150,7 +188,7 @@ def test_bootstrap_effectiveness():
         Follow the following format.
 
         Input: ${input}
-        Output: a single str value
+        Output: ${output}. Respond with a single str value
 
         ---
 

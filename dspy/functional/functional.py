@@ -1,18 +1,21 @@
-import inspect, os, openai, dspy, functools, typing, pydantic, re
+import inspect, os, openai, dspy, typing, pydantic
 from typing import Annotated
-from dsp.templates import passages2text, format_answers
-import copy
+import typing
+from dsp.templates import passages2text
+import json
 
 
 MAX_RETRIES = 3
 
 
 def predictor(func):
-    return _FunctionalPredict(func, cot=False)
+    signature = _func_to_signature(func)
+    return TypedPredictor(signature, chain_of_thought=False, simple_output=True)
 
 
 def cot(func):
-    return _FunctionalPredict(func, cot=True)
+    signature = _func_to_signature(func)
+    return TypedPredictor(signature, chain_of_thought=True, simple_output=True)
 
 
 class FunctionalModule(dspy.Module):
@@ -20,133 +23,158 @@ class FunctionalModule(dspy.Module):
         super().__init__()
         for name in dir(self):
             attr = getattr(self, name)
-            if isinstance(attr, _FunctionalPredict):
+            if isinstance(attr, dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-class _FunctionalPredict(dspy.Module):
-    def __init__(self, func, cot=False):
+class TypedPredictor(dspy.Module):
+    def __init__(self, signature, chain_of_thought=False, simple_output=False):
         super().__init__()
-        self.func = func
-        self.cot = cot
-        (
-            self.signature,
-            self.parser,
-            self.wrapped,
-            self.output_key,
-        ) = self._func_to_fields(func, cot=cot)
-        self.predictor = dspy.Predict(self.signature)
+        self.signature = signature
+        self.predictor = dspy.Predict(signature)
+        self.chain_of_thought = chain_of_thought
+        self.simple_output = simple_output
 
     def copy(self):
-        return _FunctionalPredict(self.func, self.cot)
+        return TypedPredictor(self.signature, self.chain_of_thought, self.simple_output)
+
+    def _prepare_signature(self):
+        """Add formats and parsers to the signature fields, based on the type
+        annotations of the fields."""
+        signature = self.signature
+        for name, field in self.signature.fields.items():
+            is_output = field.json_schema_extra["__dspy_field_type"] == "output"
+            type_ = field.annotation
+            if is_output:
+                if type_ in (str, int, float, bool):
+                    signature = signature.with_updated_fields(
+                        name,
+                        desc=field.json_schema_extra.get("desc", "")
+                        + (f". Respond with a single {type_.__name__} value"),
+                        format=lambda x: x if isinstance(x, str) else str(x),
+                        parser=type_,
+                    )
+                else:
+                    # Anything else we wrap in a pydantic object
+                    unwrap = lambda x: x
+                    if not inspect.isclass(type_) or not issubclass(
+                        type_, pydantic.BaseModel
+                    ):
+                        type_ = pydantic.create_model(
+                            "Output", value=(type_, ...), __base__=pydantic.BaseModel
+                        )
+                        unwrap = lambda x: x.value
+                    signature = signature.with_updated_fields(
+                        name,
+                        desc=field.json_schema_extra.get("desc", "")
+                        + (
+                            f". Respond with a single JSON object using the schema "
+                            + json.dumps(type_.model_json_schema())
+                        ),
+                        format=lambda x: x if isinstance(x, str) else x.json(),
+                        parser=lambda x: unwrap(
+                            type_.model_validate_json(_unwrap_json(x))
+                        ),
+                    )
+            else:  # If input field
+                format = lambda x: x if isinstance(x, str) else str(x)
+                if type_ in (list[str], tuple[str]):
+                    format = passages2text
+                elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
+                    format = (lambda x: x if isinstance(x, str) else x.json(),)
+                signature = signature.with_updated_fields(name, format=format)
+
+        if self.chain_of_thought:
+            output_keys = ", ".join(signature.output_fields.keys())
+            signature = signature.prepend(
+                "reasoning",
+                dspy.OutputField(
+                    prefix="Reasoning: Let's think step by step in order to",
+                    desc="${produce the " + output_keys + "}. We ...",
+                ),
+            )
+        print("Signature:", signature)
+        return signature
 
     def forward(self, **kwargs):
         modified_kwargs = kwargs.copy()
-        try:
-            for _ in range(MAX_RETRIES):
-                result = getattr(self.predictor(**modified_kwargs), self.output_key)
+        signature = self._prepare_signature()
+        for _ in range(MAX_RETRIES):
+            result = self.predictor(**modified_kwargs, new_signature=signature)
+            errors = {}
+            parsed_results = {}
+            # Parse the outputs
+            for name, field in signature.output_fields.items():
                 try:
-                    parsed = self.parser(result)
-                    if self.wrapped:
-                        parsed = parsed.value
-                    return parsed
+                    value = getattr(result, name)
+                    parser = field.json_schema_extra.get("parser", lambda x: x)
+                    parsed_results[name] = parser(value)
                 except (pydantic.ValidationError, ValueError) as e:
-                    # Add a new field explaining the error
-                    modified_kwargs["error"] = str(e)
-                    self.predictor.signature = self.signature.prepend(
-                        "error",
+                    errors[name] = e
+            if errors:
+                # Add new fields for each error
+                modified_kwargs = kwargs.copy()
+                signature = self._prepare_signature()
+                for name, error in errors.items():
+                    modified_kwargs[f"error_{name}"] = str(error)
+                    signature = signature.append(
+                        f"error_{name}",
                         dspy.InputField(
-                            prefix="Past Error:", desc="An error to avoid in the future"
+                            prefix=f"Past Error ({name}):",
+                            desc="An error to avoid in the future",
                         ),
                     )
-            print("Warning: Too many retries")
-        finally:
-            # Restore the original signature, so we don't show the error field in the next call
-            self.predictor.signature = self.signature
-
-    def _func_to_fields(self, func, cot=False):
-        sig = inspect.signature(func)
-        annotations = typing.get_type_hints(func)
-        output_key = func.__name__
-        instructions = func.__doc__
-        fields = {}
-
-        # Input fields
-        for param in sig.parameters.values():
-            if param.name == "self":
-                continue
-            # We default to str as the type of the input
-            annotation = annotations.get(param.name, str)
-            kwargs = {}
-            # Check if annotation is an Annotated[type, desc]
-            if hasattr(annotation, "__metadata__"):
-                kwargs["desc"] = annotation.__metadata__
-                annotation = annotation.__origin__
-            if annotation == list[str]:
-                kwargs["format"] = passages2text
             else:
-                # TODO: This may not be the best way to handle pydantic input types
-                # should we use .model_dump_json() for pydantic inputs instead?
-                kwargs["format"] = lambda x: x if isinstance(x, str) else str(x)
-            fields[param.name] = dspy.InputField(**kwargs)
+                # If there are no errors, we return the parsed results
+                for name, value in parsed_results.items():
+                    setattr(result, name, value)
+                if self.simple_output:
+                    *_, last_output = signature.output_fields.keys()
+                    return result[last_output]
+                return result
+        print("Warning: Too many retries")
 
-        # Chain of Thought
-        if cot:
-            fields["reasoning"] = dspy.OutputField(
-                prefix="Reasoning: Let's think step by step in order to",
-                desc="${produce the " + output_key + "}. We ...",
-            )
 
-        # Output field
+def _func_to_signature(func):
+    """Make a dspy.Signature based on a function definition."""
+    sig = inspect.signature(func)
+    annotations = typing.get_type_hints(func)
+    output_key = func.__name__
+    instructions = func.__doc__
+    fields = {}
+
+    # Input fields
+    for param in sig.parameters.values():
+        if param.name == "self":
+            continue
+        # We default to str as the type of the input
+        annotation = annotations.get(param.name, str)
         kwargs = {}
-        annotation = annotations.get("return", str)
-        wrapped = False  # Whether the output is wrapped in an "Output" pydantic model
-        if hasattr(annotation, "__metadata__"):
-            kwargs["desc"] = annotation.__metadata__
-            annotation = annotation.__origin__
-        else:
-            kwargs["desc"] = ""
-        if annotation in (str, int, float, bool):
-            kwargs["desc"] = desc = f"a single {annotation.__name__} value"
-            kwargs["format"] = lambda x: x if isinstance(x, str) else str(x)
-            parser = annotation  # For simple types the parser is the type itself
-        # TODO: I'm not sure how format_answers really works
-        # elif annotation == list[str]:
-        #     kwargs["desc"] = desc = "a list of strings"
-        #     kwargs["format"] = format_answers
-        #     parser = lambda x: x
-        else:
-            # Anything else we wrap in a pydantic object
-            if not inspect.isclass(annotation) or not issubclass(
-                annotation, pydantic.BaseModel
-            ):
-                annotation = pydantic.create_model(
-                    "Output", value=(annotation, ...), __base__=pydantic.BaseModel
-                )
-                wrapped = True
+        if typing.get_origin(annotation) is Annotated:
+            annotation, kwargs["desc"] = typing.get_args(annotation)
+        fields[param.name] = (annotation, dspy.InputField(**kwargs))
 
-            kwargs["desc"] += (
-                f" Respond with a single JSON object using the schema"
-                f" {annotation.model_json_schema()}"
-            )
-            kwargs["format"] = lambda x: x if isinstance(x, str) else x.json()
-            parser = lambda x: annotation.model_validate_json(self._unwrap_json(x))
+    # Output field
+    kwargs = {}
+    annotation = annotations.get("return", str)
+    if typing.get_origin(annotation) is Annotated:
+        annotation, kwargs["desc"] = typing.get_args(annotation)
+    fields[output_key] = (annotation, dspy.OutputField(**kwargs))
 
-        fields[output_key] = dspy.OutputField(**kwargs)
-        signature = dspy.Signature(fields, instructions)
-        return signature, parser, wrapped, output_key
+    return dspy.Signature(fields, instructions)
 
-    def _unwrap_json(self, output):
-        output = output.strip()
-        if output.startswith("```"):
-            if not output.startswith("```json"):
-                raise ValueError("json output should start with ```json")
-            if not output.endswith("```"):
-                raise ValueError("json output should end with ```")
-            output = output[7:-3].strip()
-        if not output.startswith("{") or not output.endswith("}"):
-            raise ValueError("json output should start and end with { and }")
-        return output
+
+def _unwrap_json(output):
+    output = output.strip()
+    if output.startswith("```"):
+        if not output.startswith("```json"):
+            raise ValueError("json output should start with ```json")
+        if not output.endswith("```"):
+            raise ValueError("json output should end with ```")
+        output = output[7:-3].strip()
+    if not output.startswith("{") or not output.endswith("}"):
+        raise ValueError("json output should start and end with { and }")
+    return output
 
 
 ################################################################################
@@ -239,7 +267,7 @@ def hotpot():
     print("Done")
 
     class SimplifiedBaleen(FunctionalModule):
-        def __init__(self, passages_per_hop=1, max_hops=2):
+        def __init__(self, passages_per_hop=3, max_hops=1):
             super().__init__()
             self.retrieve = dspy.Retrieve(k=passages_per_hop)
             self.max_hops = max_hops
@@ -293,7 +321,7 @@ def hotpot():
         "Compiled Baleen retrieval score:",
         evaluate_on_hotpotqa(compiled_baleen, metric=gold_passages_retrieved),
     )
-    lm.inspect_history(n=5)
+    # lm.inspect_history(n=5)
 
 
 if __name__ == "__main__":

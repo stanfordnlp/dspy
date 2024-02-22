@@ -1,1 +1,1 @@
-from .functional import cot, predictor, FunctionalModule
+from .functional import cot, predictor, FunctionalModule, TypedPredictor
