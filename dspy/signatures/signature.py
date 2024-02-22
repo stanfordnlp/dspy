@@ -180,7 +180,13 @@ class SignatureMeta(type(BaseModel)):
         """Compare the JSON schema of two Pydantic models."""
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
-        return cls.model_json_schema() == other.model_json_schema()
+        if cls.instructions != other.instructions:
+            return False
+        for name in cls.fields.keys() | other.fields.keys():
+            if name not in other.fields or name not in cls.fields:
+                return False
+            # TODO: Should we compare the fields?
+        return True
 
     def __repr__(cls):
         """

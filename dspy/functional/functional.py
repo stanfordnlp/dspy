@@ -1,29 +1,34 @@
 import inspect, os, openai, dspy, functools, typing, pydantic, re
 from typing import Annotated
 from dsp.templates import passages2text, format_answers
+import copy
 
 
 MAX_RETRIES = 3
 
 
 def predictor(func):
-    return _FunctionalModule(func, cot=False)
+    return _FunctionalPredict(func, cot=False)
 
 
 def cot(func):
-    return _FunctionalModule(func, cot=True)
+    return _FunctionalPredict(func, cot=True)
 
 
 class FunctionalModule(dspy.Module):
     def __init__(self):
         super().__init__()
+        for name in dir(self):
+            attr = getattr(self, name)
+            if isinstance(attr, _FunctionalPredict):
+                self.__dict__[name] = attr.copy()
 
 
-
-
-class _FunctionalModule(dspy.Module):
+class _FunctionalPredict(dspy.Module):
     def __init__(self, func, cot=False):
         super().__init__()
+        self.func = func
+        self.cot = cot
         (
             self.signature,
             self.parser,
@@ -31,6 +36,9 @@ class _FunctionalModule(dspy.Module):
             self.output_key,
         ) = self._func_to_fields(func, cot=cot)
         self.predictor = dspy.Predict(self.signature)
+
+    def copy(self):
+        return _FunctionalPredict(self.func, self.cot)
 
     def forward(self, **kwargs):
         modified_kwargs = kwargs.copy()
@@ -78,6 +86,7 @@ class _FunctionalModule(dspy.Module):
                 kwargs["format"] = passages2text
             else:
                 # TODO: This may not be the best way to handle pydantic input types
+                # should we use .model_dump_json() for pydantic inputs instead?
                 kwargs["format"] = lambda x: x if isinstance(x, str) else str(x)
             fields[param.name] = dspy.InputField(**kwargs)
 
@@ -101,7 +110,6 @@ class _FunctionalModule(dspy.Module):
             kwargs["desc"] = desc = f"a single {annotation.__name__} value"
             kwargs["format"] = lambda x: x if isinstance(x, str) else str(x)
             parser = annotation  # For simple types the parser is the type itself
-            # TODO: Use .model_dump_json() for pydantic inputs?
         # TODO: I'm not sure how format_answers really works
         # elif annotation == list[str]:
         #     kwargs["desc"] = desc = "a list of strings"
@@ -109,7 +117,9 @@ class _FunctionalModule(dspy.Module):
         #     parser = lambda x: x
         else:
             # Anything else we wrap in a pydantic object
-            if not inspect.isclass(annotation) or not issubclass(annotation, pydantic.BaseModel):
+            if not inspect.isclass(annotation) or not issubclass(
+                annotation, pydantic.BaseModel
+            ):
                 annotation = pydantic.create_model(
                     "Output", value=(annotation, ...), __base__=pydantic.BaseModel
                 )
@@ -143,6 +153,7 @@ class _FunctionalModule(dspy.Module):
 # Example usage
 ################################################################################
 
+
 def main():
     class Answer(pydantic.BaseModel):
         value: float
@@ -171,7 +182,7 @@ def main():
     with dspy.context(lm=lm):
         qa = QA()
         question, answer = qa(topic="Physics")
-        #lm.inspect_history(n=5)
+        # lm.inspect_history(n=5)
 
         print("Question:", question)
         print("Answer:", answer)
@@ -180,6 +191,7 @@ def main():
 ################################################################################
 # HotpotQA example with SimpleBaleen
 ################################################################################
+
 
 def validate_context_and_answer_and_hops(example, pred, trace=None):
     if not dspy.evaluate.answer_exact_match(example, pred):
@@ -201,6 +213,7 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
 
     return True
 
+
 def gold_passages_retrieved(example, pred, trace=None):
     gold_titles = set(map(dspy.evaluate.normalize_text, example["gold_titles"]))
     found_titles = set(
@@ -208,6 +221,7 @@ def gold_passages_retrieved(example, pred, trace=None):
     )
 
     return gold_titles.issubset(found_titles)
+
 
 def hotpot():
     from dsp.utils import deduplicate
@@ -217,13 +231,15 @@ def hotpot():
     from dspy.teleprompt.bootstrap import BootstrapFewShot
 
     print("Load the dataset.")
-    dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0)
+    dataset = HotPotQA(
+        train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0
+    )
     trainset = [x.with_inputs("question") for x in dataset.train]
     devset = [x.with_inputs("question") for x in dataset.dev]
     print("Done")
 
-    class SimplifiedBaleen(dspy.Module):
-        def __init__(self, passages_per_hop=3, max_hops=2):
+    class SimplifiedBaleen(FunctionalModule):
+        def __init__(self, passages_per_hop=1, max_hops=2):
             super().__init__()
             self.retrieve = dspy.Retrieve(k=passages_per_hop)
             self.max_hops = max_hops
@@ -241,8 +257,7 @@ def hotpot():
         def forward(self, question):
             context = []
 
-            #for hop in range(self.max_hops):
-            for hop in range(1):
+            for hop in range(self.max_hops):
                 query = self.generate_query(context=context, question=question)
                 passages = self.retrieve(query).passages
                 context = deduplicate(context + passages)
@@ -255,35 +270,32 @@ def hotpot():
     lm = dspy.OpenAI(model="gpt-3.5-turbo", max_tokens=4000)
     dspy.settings.configure(lm=lm, rm=rm, trace=[])
 
-    uncompiled_baleen = SimplifiedBaleen()  # uncompiled (i.e., zero-shot) program
-    print(f"{uncompiled_baleen.generate_answer.predictor.demos=}")
+    evaluate_on_hotpotqa = Evaluate(
+        devset=devset, num_threads=10, display_progress=True, display_table=5
+    )
 
-    print("Named predictors:", list(uncompiled_baleen.generate_query.named_predictors()))
-    print("Named predictors:", list(uncompiled_baleen.named_predictors()))
-    return
+    # uncompiled (i.e., zero-shot) program
+    uncompiled_baleen = SimplifiedBaleen()
+    print(
+        "Uncompiled Baleen retrieval score:",
+        evaluate_on_hotpotqa(uncompiled_baleen, metric=gold_passages_retrieved),
+    )
 
-    teleprompter = BootstrapFewShot(metric=validate_context_and_answer_and_hops)
-    compiled_baleen = teleprompter.compile(
+    # compiled (i.e., few-shot) program
+    compiled_baleen = BootstrapFewShot(
+        metric=validate_context_and_answer_and_hops
+    ).compile(
         SimplifiedBaleen(),
         teacher=SimplifiedBaleen(passages_per_hop=2),
         trainset=trainset,
     )
-    print(f"{compiled_baleen.generate_answer.predictor.demos=}")
-
-    evaluate_on_hotpotqa = Evaluate(
-        devset=devset, num_threads=10, display_progress=True, display_table=5
+    print(
+        "Compiled Baleen retrieval score:",
+        evaluate_on_hotpotqa(compiled_baleen, metric=gold_passages_retrieved),
     )
-    uncompiled_baleen_retrieval_score = evaluate_on_hotpotqa(
-        uncompiled_baleen, metric=gold_passages_retrieved, display=False
-    )
-    print("Uncompiled Baleen retrieval score:", uncompiled_baleen_retrieval_score)
-
-    compiled_baleen_retrieval_score = evaluate_on_hotpotqa(
-        compiled_baleen, metric=gold_passages_retrieved
-    )
-    print("Compiled Baleen retrieval score:", compiled_baleen_retrieval_score)
     lm.inspect_history(n=5)
 
+
 if __name__ == "__main__":
-    #main()
+    # main()
     hotpot()

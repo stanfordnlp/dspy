@@ -1,8 +1,11 @@
+import textwrap
 import pydantic
 from typing import Annotated
 
 import dspy
-from dspy.functional import predictor, cot
+from dspy.functional import predictor, cot, FunctionalModule
+from dspy.primitives.example import Example
+from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.utils.dummies import DummyLM
 
 def test_simple():
@@ -79,7 +82,7 @@ def test_simple_class():
 
 
 def test_named_params():
-    class QA(dspy.Module):
+    class QA(FunctionalModule):
         @predictor
         def hard_question(self, topic: str) -> str:
             """Think of a hard factual question about a topic. It should be answerable with a number."""
@@ -89,9 +92,72 @@ def test_named_params():
             pass
     
     qa = QA()
-    print(dir(qa))
-    print(qa.__dict__)
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
     names, _ = zip(*qa.named_predictors())
-    assert names == ["hard_question", "answer"]
+    assert set(names) == {"hard_question.predictor", "answer.predictor"}
+
+
+def test_bootstrap_effectiveness():
+    class SimpleModule(FunctionalModule):
+        @predictor
+        def output(self, input: str) -> str:
+            pass
+        def forward(self, **kwargs):
+            return self.output(**kwargs)
+
+    def simple_metric(example, prediction, trace=None):
+        return example.output == prediction.output
+
+    examples = [ex.with_inputs("input") for ex in (
+        Example(input="What is the color of the sky?", output="blue"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"),
+    )]
+    trainset = [examples[0]]
+    valset = [examples[1]]
+
+    # This test verifies if the bootstrapping process improves the student's predictions
+    student = SimpleModule()
+    teacher = SimpleModule()
+    assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
+
+    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
+    dspy.settings.configure(lm=lm, trace=[])
+    
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
+
+    lm.inspect_history(n=2)
+
+    # Check that the compiled student has the correct demos
+    assert len(compiled_student.output.predictor.demos) == 1
+    assert compiled_student.output.predictor.demos[0].input == trainset[0].input
+    assert compiled_student.output.predictor.demos[0].output == trainset[0].output
+    
+    # Test the compiled student's prediction.
+    # We are using a DummyLM with follow_examples=True, which means that
+    # even though it would normally reply with "Ring-ding-ding-ding-dingeringeding!"
+    # on the second output, if it seems an example that perfectly matches the
+    # prompt, it will use that instead. That is why we expect "blue" here.
+    prediction = compiled_student(input=trainset[0].input)
+    assert prediction == trainset[0].output
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Output: a single str value
+
+        ---
+
+        Input: What is the color of the sky?
+        Output: blue
+
+        ---
+
+        Input: What is the color of the sky?
+        Output: blue""")
