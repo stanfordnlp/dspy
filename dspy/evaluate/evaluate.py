@@ -142,7 +142,7 @@ class Evaluate:
         # Truncate every cell in the DataFrame
         df = df.applymap(truncate_cell)
 
-        # Rename the 'correct' column to the name of the metric function
+        # Rename the 'correct' column to the name of the metric object
         assert(callable(metric))
         metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
         df.rename(columns={'correct': metric_name}, inplace=True)
