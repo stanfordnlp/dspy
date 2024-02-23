@@ -1,6 +1,6 @@
 import typing as t
 
-from litellm import completion
+from litellm import completion, token_counter
 from pydantic import Field
 
 
@@ -8,7 +8,7 @@ from .base import BaseLM
 
 
 class LiteLLM(BaseLM):
-    STANDARD_PARAMS = {
+    STANDARD_PARAMS: t.Dict[str, t.Union[float, int]] = {
         "temperature": 0.0,
         "max_tokens": 150,
         "top_p": 1,
@@ -33,3 +33,9 @@ class LiteLLM(BaseLM):
         )
         choices = [c for c in response["choices"] if c["finish_reason"] != "length"]
         return [c["message"]["content"] for c in choices]
+
+    def count_tokens(self, prompt: str) -> int:
+        """Counts the number of tokens for a specific prompt."""
+        return token_counter(
+            model=self.model, messages=[{"role": "user", "content": prompt}]
+        )

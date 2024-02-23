@@ -15,3 +15,8 @@ class BaseLM(BaseModel, ABC):
     ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         ...
+
+    @abstractmethod
+    def count_tokens(self, prompt: str) -> int:
+        """Counts the number of tokens for a specific prompt."""
+        ...
