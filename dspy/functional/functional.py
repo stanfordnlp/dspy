@@ -93,7 +93,6 @@ class TypedPredictor(dspy.Module):
                     desc="${produce the " + output_keys + "}. We ...",
                 ),
             )
-        print("Prepared signature:", signature)
         return signature
 
     def forward(self, **kwargs):
