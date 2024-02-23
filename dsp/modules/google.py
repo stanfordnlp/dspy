@@ -8,7 +8,8 @@ try:
     import google.generativeai as genai
 except ImportError:
     google_api_error = Exception
-    print("Not loading Google because it is not installed.")
+    # print("Not loading Google because it is not installed.")
+
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -33,10 +34,7 @@ class Google(LM):
     """
 
     def __init__(
-        self,
-        model: str = "gemini-pro-1.0",
-        api_key: Optional[str] = None,
-        **kwargs
+        self, model: str = "gemini-pro-1.0", api_key: Optional[str] = None, **kwargs
     ):
         """
         Parameters
@@ -51,15 +49,17 @@ class Google(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        self.google = genai.configure(api_key=self.api_key)
+        self.google = genai.configure(api_key=api_key)
         self.provider = "google"
         self.kwargs = {
             "model_name": model,
-            "temperature": 0.0 if "temperature" not in kwargs else kwargs["temperature"],
+            "temperature": 0.0
+            if "temperature" not in kwargs
+            else kwargs["temperature"],
             "max_output_tokens": 2048,
             "top_p": 1,
             "top_k": 1,
-            **kwargs
+            **kwargs,
         }
 
         self.history: list[dict[str, Any]] = []
@@ -85,7 +85,7 @@ class Google(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (google_api_error),
+        (Exception),
         max_time=1000,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
@@ -99,6 +99,6 @@ class Google(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs
+        **kwargs,
     ):
         return self.request(prompt, **kwargs)
