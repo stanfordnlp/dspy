@@ -301,6 +301,57 @@ def test_raises():
         flight_information(email="Some email")
 
 
+def test_multi_errors():
+    class TravelInformation(BaseModel):
+        origin: str = Field(pattern=r"^[A-Z]{3}$")
+        destination: str = Field(pattern=r"^[A-Z]{3}$")
+        date: datetime.date
+
+    @predictor
+    def flight_information(email: str) -> TravelInformation:
+        pass
+
+    lm = DummyLM(
+        [
+            # First origin is wrong, then destination, then all is good
+            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
+            '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    assert flight_information(email="Some email") == TravelInformation(
+        origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
+    )
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
+        Given the fields `email`, produce the fields `flight_information`.
+
+        ---
+
+        Follow the following format.
+
+        Email: ${email}
+
+        Past Error (flight_information): An error to avoid in the future
+
+        Past Error (flight_information, 2): An error to avoid in the future
+
+        Flight Information: ${flight_information}. Respond with a single JSON object using the schema {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
+
+        ---
+
+        Email: Some email
+
+        Past Error (flight_information): 1 validation error for TravelInformation origin String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='JF0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+
+        Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+
+        Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
+    )
+
+
 def test_field_validator():
     class UserDetails(BaseModel):
         name: str
@@ -339,10 +390,12 @@ def test_field_validator():
         Follow the following format.
 
         Past Error (get_user_details): An error to avoid in the future
+        Past Error (get_user_details, 2): An error to avoid in the future
         Get User Details: ${get_user_details}. Respond with a single JSON object using the schema {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
         ---
 
         Past Error (get_user_details): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+        Past Error (get_user_details, 2): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
         Get User Details: {"name": "lower case name", "age": 25}"""
     )

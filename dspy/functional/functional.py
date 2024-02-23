@@ -98,7 +98,7 @@ class TypedPredictor(dspy.Module):
     def forward(self, **kwargs):
         modified_kwargs = kwargs.copy()
         signature = self._prepare_signature()
-        for _ in range(MAX_RETRIES):
+        for try_i in range(MAX_RETRIES):
             result = self.predictor(**modified_kwargs, new_signature=signature)
             errors = {}
             parsed_results = {}
@@ -112,14 +112,13 @@ class TypedPredictor(dspy.Module):
                     errors[name] = e
             if errors:
                 # Add new fields for each error
-                modified_kwargs = kwargs.copy()
-                signature = self._prepare_signature()
                 for name, error in errors.items():
-                    modified_kwargs[f"error_{name}"] = str(error)
+                    modified_kwargs[f"error_{name}_{try_i}"] = str(error)
                     signature = signature.append(
-                        f"error_{name}",
+                        f"error_{name}_{try_i}",
                         dspy.InputField(
-                            prefix=f"Past Error ({name}):",
+                            prefix=f"Past Error "
+                            + (f"({name}):" if try_i == 0 else f"({name}, {try_i+1}):"),
                             desc="An error to avoid in the future",
                         ),
                     )
