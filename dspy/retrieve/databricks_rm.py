@@ -2,6 +2,8 @@ import dspy
 import os
 import requests
 from typing import Union, List, Optional
+from collections import defaultdict
+from dspy.primitives.prediction import Prediction
 
 class DatabricksRM(dspy.Retrieve):
     """
@@ -113,7 +115,16 @@ class DatabricksRM(dspy.Retrieve):
             headers=headers
         )
         results = response.json()
-        docs = []
+
+        docs = defaultdict(float)
+        text, score = None, None
         for data_row in results["result"]["data_array"]:
-            docs.append({col: val for col, val in zip(results["manifest"]["columns"], data_row)})        
-        return dspy.Prediction(embeddings=docs)
+            for col, val in zip(results["manifest"]["columns"], data_row):
+                if col["name"] == 'text':
+                    text = val
+                if col["name"] == 'score':
+                    score = val
+            docs[text] += score
+
+        sorted_docs = sorted(docs.items(), key=lambda x: x[1], reverse=True)[:self.k]
+        return Prediction(docs=[doc for doc, _ in sorted_docs])
