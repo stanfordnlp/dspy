@@ -34,9 +34,14 @@ class DummyLM(LM):
                 prefix = prompt.split("\n")[-1]
                 _instructions, _format, *examples, _output = prompt.split("\n---\n")
                 examples_str = "\n".join(examples)
-                if match := re.search(prefix + r"\s*(.*)", examples_str):
-                    answer = match.group(1)
+                possible_answers = re.findall(prefix + r"\s*(.*)", examples_str)
+                if possible_answers:
+                    # We take the last answer, as the first one is just from
+                    # the "Follow the following format" section.
+                    answer = possible_answers[-1]
                     print(f"DummyLM got found previous example for {prefix} with value {answer=}")
+                else:
+                    print(f"DummyLM couldn't find previous example for {prefix=}")
 
             if answer is None:
                 if isinstance(self.answers, dict):
