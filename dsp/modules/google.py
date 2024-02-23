@@ -56,8 +56,12 @@ class Google(LM):
         super().__init__(model)
         api_key = os.environ.get("GOOGLE_API_KEY") if api_key is None else api_key
         genai.configure(api_key=api_key)
+
+        # Google API uses "candidate_count" instead of "n" or "num_generations"
+        # For now, google API only supports 1 generation at a time. Raises an error if candidate_count > 1
+        num_generations = kwargs.pop("n", kwargs.pop("num_generations", 1))
         self.provider = "google"
-        self.kwargs = {
+        kwargs = {
             "candidate_count": 1,
             "temperature": 0.0 if "temperature" not in kwargs else kwargs["temperature"],
             "max_output_tokens": 2048,
@@ -66,8 +70,13 @@ class Google(LM):
             **kwargs
         }
 
-        self.config = genai.GenerationConfig(**self.kwargs)
+        self.config = genai.GenerationConfig(**kwargs)
         self.llm = genai.GenerativeModel(model_name=model, generation_config=self.config)
+
+        self.kwargs = {
+            "n": num_generations,
+            **kwargs,
+        }
 
         self.history: list[dict[str, Any]] = []
 
@@ -78,7 +87,9 @@ class Google(LM):
             **kwargs,
         }
 
-        # Google uses "candidate_count" instead of "num_generations"
+        # Google disallows "n" arguments
+        kwargs.pop("n", None)
+
         response = self.llm.generate_content(prompt, generation_config=kwargs)
 
         history = {
@@ -109,4 +120,14 @@ class Google(LM):
         return_sorted: bool = False,
         **kwargs
     ):
-        return self.request(prompt, **kwargs)
+        assert only_completed, "for now"
+        assert return_sorted is False, "for now"
+
+        n = kwargs.pop("n", 1)
+
+        completions = []
+        for i in range(n):
+            response = self.request(prompt, **kwargs)
+            completions.append(response.text)
+
+        return completions
