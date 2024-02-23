@@ -12,6 +12,6 @@ class BaseLM(BaseModel, ABC):
         max_tokens: int,
         n: int,
         **kwargs,
-    ) -> list[dict[str, str]]:
+    ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         ...

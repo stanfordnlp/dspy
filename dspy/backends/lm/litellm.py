@@ -7,7 +7,7 @@ from pydantic import Field
 from .base import BaseLM
 
 
-class LiteLM(BaseLM):
+class LiteLLM(BaseLM):
     STANDARD_PARAMS = {
         "temperature": 0.0,
         "max_tokens": 150,
@@ -23,7 +23,7 @@ class LiteLM(BaseLM):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[dict[str, str]]:
+    ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         response = completion(

@@ -68,8 +68,8 @@ def _generate(template: Template, **kwargs) -> Callable:
         max_depth: int = 2,
         original_example=None,
     ):
-        if not dsp.settings.lm:
-            raise AssertionError("No LM is loaded.")
+        if not dsp.settings.lm or not dsp.settings.backend:
+            raise AssertionError("No LM or backend is loaded.")
         original_example = original_example or example
         assert stage is not None
 
@@ -77,9 +77,14 @@ def _generate(template: Template, **kwargs) -> Callable:
         example = example.demos_at(lambda d: d[stage])
 
         # Generate and extract the fields.
-        prompt = template(example)
-        completions: list[dict[str, Any]] = generator(prompt, **kwargs)
-        completions: list[Example] = [template.extract(example, p) for p in completions]
+        if dsp.settings.backend:
+            completions: list[Example] = dsp.settings.backend(template, **kwargs)
+        else:
+            prompt = template(example)
+            completions: list[dict[str, Any]] = generator(prompt, **kwargs)
+            completions: list[Example] = [
+                template.extract(example, p) for p in completions
+            ]
 
         # Find the completions that are most complete.
         field_names: list[str] = [field.input_variable for field in template.fields]
