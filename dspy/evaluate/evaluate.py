@@ -1,5 +1,6 @@
 import dsp
 import tqdm
+import types
 import threading
 import pandas as pd
 
@@ -142,7 +143,8 @@ class Evaluate:
         df = df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric function
-        metric_name = metric.__name__
+        assert(callable(metric))
+        metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
         df.rename(columns={'correct': metric_name}, inplace=True)
 
         if display_table:
