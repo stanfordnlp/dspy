@@ -4,10 +4,8 @@ from logging.handlers import RotatingFileHandler
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.FileHandler('openai_usage.log')
-    ]
+    format="%(message)s",
+    handlers=[logging.FileHandler("openai_usage.log")],
 )
 
 import functools
@@ -29,7 +27,12 @@ except Exception:
 try:
     from openai.openai_object import OpenAIObject
     import openai.error
-    ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
+
+    ERRORS = (
+        openai.error.RateLimitError,
+        openai.error.ServiceUnavailableError,
+        openai.error.APIError,
+    )
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
     OpenAIObject = dict
@@ -91,7 +94,7 @@ class GPT3(LM):
         if api_base:
             if OPENAI_LEGACY:
                 openai.api_base = api_base
-            else:       
+            else:
                 openai.base_url = api_base
 
         self.kwargs = {
@@ -112,11 +115,11 @@ class GPT3(LM):
         return openai
 
     def log_usage(self, response):
-            """Log the total tokens from the OpenAI API response."""
-            usage_data = response.get('usage')
-            if usage_data:
-                total_tokens = usage_data.get('total_tokens')  
-                logging.info(f'{total_tokens}')
+        """Log the total tokens from the OpenAI API response."""
+        usage_data = response.get("usage")
+        if usage_data:
+            total_tokens = usage_data.get("total_tokens")
+            logging.info(f"{total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -166,7 +169,7 @@ class GPT3(LM):
         only_completed: bool = True,
         return_sorted: bool = False,
         **kwargs,
-    ) -> list[dict[str, Any]]:
+    ) -> list[str]:
         """Retrieves completions from GPT-3.
 
         Args:
@@ -222,15 +225,16 @@ class GPT3(LM):
         return completions
 
 
-
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
     return openai.Completion.create(**kwargs)
+
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def cached_gpt3_request_v2_wrapped(**kwargs):
     return cached_gpt3_request_v2(**kwargs)
+
 
 @CacheMemory.cache
 def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
@@ -238,19 +242,23 @@ def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
         kwargs = json.loads(kwargs["stringify_request"])
     return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
+
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
     return _cached_gpt3_turbo_request_v2(**kwargs)
 
+
 @CacheMemory.cache
 def v1_cached_gpt3_request_v2(**kwargs):
     return openai.completions.create(**kwargs)
+
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def v1_cached_gpt3_request_v2_wrapped(**kwargs):
     return v1_cached_gpt3_request_v2(**kwargs)
+
 
 @CacheMemory.cache
 def v1_cached_gpt3_turbo_request_v2(**kwargs):
@@ -258,11 +266,11 @@ def v1_cached_gpt3_turbo_request_v2(**kwargs):
         kwargs = json.loads(kwargs["stringify_request"])
     return openai.chat.completions.create(**kwargs)
 
+
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 @NotebookCacheMemory.cache
 def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
     return v1_cached_gpt3_turbo_request_v2(**kwargs)
-
 
 
 def chat_request(**kwargs):
@@ -270,6 +278,7 @@ def chat_request(**kwargs):
         return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
 
     return v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs).model_dump()
+
 
 def completions_request(**kwargs):
     if OPENAI_LEGACY:

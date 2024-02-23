@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
-from .lm.base import BaseLM
-
 
 class BaseBackend(BaseModel, ABC):
-    lm: BaseLM
+    """A backend takes a signature, its params, and returns a list of structured predictions."""
 
     @abstractmethod
     def __call__(
