@@ -21,13 +21,13 @@ setup(
     packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),	
     python_requires='>=3.9',	
     install_requires=requirements,	
-    extras_require={	
+    extras_require={
+        "chromadb": ["chromadb~=0.4.14"],
+        "qdrant": ["qdrant-client", "fastembed"],
+        "marqo": ["marqo"],
+        "mongodb": ["pymongo~=3.12.0"],			
         "pinecone": ["pinecone-client~=2.2.4"],	
-        "qdrant": ["qdrant-client", "fastembed"],	
-        "chromadb": ["chromadb~=0.4.14"],	
-        "marqo": ["marqo"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
-        "mongodb": ["pymongo~=3.12.0"],	
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
