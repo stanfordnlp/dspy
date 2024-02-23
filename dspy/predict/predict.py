@@ -77,7 +77,6 @@ class Predict(Parameter):
         new_signature = kwargs.pop("new_signature", None)
         signature = kwargs.pop("signature", self.signature)
         demos = kwargs.pop("demos", self.demos)
-        dry_run = kwargs.pop("dry_run", False)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -103,30 +102,11 @@ class Predict(Parameter):
             signature = dsp.Template(signature.instructions, **new_signature)
 
         if self.lm is None:
-            x, C = dsp.generate(signature, **config)(x, stage=self.stage, dry_run=dry_run)
+            x, C = dsp.generate(signature, **config)(x, stage=self.stage)
         else:
             with dsp.settings.context(lm=self.lm, query_only=True):
                 # print(f"using lm = {self.lm} !")
-                x, C = dsp.generate(signature, **config)(x, stage=self.stage, dry_run=dry_run)
-
-        if dry_run:
-            # Prepare a structured output for the dry run
-            dry_run_info = {
-                'prompt': x,  # The prepared prompt
-                'config': config,  # The configuration used for generation
-                'signature': str(signature),  # The signature being used
-                'stage': self.stage,  # The current stage
-            }
-
-            # If an encoder is available, include encoded tokens in the output
-            encoder = dsp.settings.config.get('encoder', None)
-            if encoder is not None:
-                encoded_tokens = encoder.encode(x)
-                dry_run_info['encoded_tokens'] = encoded_tokens
-                dry_run_info['token_count'] = len(encoded_tokens)
-
-            # Option 1: Return the dry run information for further inspection
-            return dry_run_info
+                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
 
         completions = []
 

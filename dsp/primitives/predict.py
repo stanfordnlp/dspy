@@ -1,4 +1,5 @@
 from collections import Counter
+from contextlib import contextmanager
 from typing import Callable, Any, Optional
 
 import dsp
@@ -63,7 +64,7 @@ def _generate(template: Template, **kwargs) -> Callable:
     generator = dsp.settings.lm
 
     def do_generate(
-        example: Example, stage: str, max_depth: int = 2, original_example=None, dry_run=False
+        example: Example, stage: str, max_depth: int = 2, original_example=None
     ):
         if not dsp.settings.lm:
             raise AssertionError("No LM is loaded.")
@@ -75,10 +76,6 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
-
-        if dry_run:
-            # In dry run mode, return the prompt instead of calling the LM
-            return prompt, []
 
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
@@ -240,3 +237,110 @@ def majority_vote_(completions: Completions, normalize: bool, prediction_field: 
     )
 
     return [pred]
+
+from contextlib import contextmanager
+
+@contextmanager
+def dry_run(predict_instance):
+    """
+    A context manager for performing a dry run of the prediction process without actually generating predictions.
+
+    This function temporarily replaces the `forward` method of the prediction instance with a mock version that simulates
+    the generation process. It is useful for testing and debugging purposes, allowing the examination of the inputs and
+    configurations that would be used in a real prediction call.
+
+    Args:
+        predict_instance: The prediction instance whose `forward` method is to be mocked.
+
+    Yields:
+        None: This function does not yield any value but allows the execution of code within its context.
+
+    Raises:
+        AssertionError: If no language model is loaded in the settings.
+    """
+    # Save the original generate method of the instance
+    original_forward = predict_instance.forward
+
+    def mock_generate(template, **kwargs):
+        """A mock generate function that simulates the generation process."""
+        if not dsp.settings.lm:
+            raise AssertionError("No LM is loaded.")
+        
+        def _mock_do_generate(example, stage, max_depth=2, original_example=None):
+            """Simulates the do_generate process without actual generation."""
+            if not dsp.settings.lm:
+                raise AssertionError("No LM is loaded.")
+            original_example = original_example or example
+            assert stage is not None, "Stage must be specified"
+
+            # Simulate looking up the appropriate fields in each demonstration.
+            example = example.demos_at(lambda d: d[stage])
+
+            # Simulate generating and extracting the fields.
+            prompt = template(example)
+
+            return prompt, []
+
+        return _mock_do_generate
+
+    def mock_forward(self, **kwargs):
+        """
+        A mock version of the forward method that simulates the prediction process.
+
+        This function extracts configuration parameters from the provided keyword arguments,
+        simulates the generation process, and constructs a dictionary containing information
+        about the dry run, including the generated prompt, configuration, and signature.
+        """
+        # Extract the three privileged keyword arguments.
+        new_signature = kwargs.pop("new_signature", None)
+        signature = kwargs.pop("signature", predict_instance.signature)
+        demos = kwargs.pop("demos", predict_instance.demos)
+        config = dict(**predict_instance.config, **kwargs.pop("config", {}))
+
+        # Determine the language model to use.
+        lm = kwargs.pop("lm", predict_instance.lm) or dsp.settings.lm
+
+        # Adjust temperature based on the number of generations requested.
+        temperature = config.get("temperature", None)
+        temperature = lm.kwargs['temperature'] if temperature is None else temperature
+        num_generations = config.get("n", None)
+        if num_generations is None:
+            num_generations = lm.kwargs.get('n', lm.kwargs.get('num_generations', None))
+        if (temperature is None or temperature <= 0.15) and num_generations > 1:
+            config["temperature"] = 0.7
+
+        # Simulate the generation process.
+        x = dsp.Example(demos=demos, **kwargs)
+        if new_signature is not None:
+            signature = dsp.Template(signature.instructions, **new_signature)
+        if predict_instance.lm is None:
+            x, C = mock_generate(signature, **config)(x, stage=predict_instance.stage)
+        else:
+            with dsp.settings.context(lm=predict_instance.lm, query_only=True):
+                x, C = mock_generate(signature, **config)(x, stage=predict_instance.stage)
+
+        # Construct the dry run information.
+        dry_run_info = {
+            'prompt': x,
+            'config': config,
+            'signature': str(signature),
+            'stage': predict_instance.stage,
+        }
+
+        # Encode the prompt if an encoder is available.
+        encoder = dsp.settings.config.get('encoder', None)
+        if encoder is not None:
+            encoded_tokens = encoder.encode(x)
+            dry_run_info['encoded_tokens'] = encoded_tokens
+            dry_run_info['token_count'] = len(encoded_tokens)
+
+        return dry_run_info
+
+    # Temporarily replace the generate method of the instance with the mock_generate
+    predict_instance.forward = mock_forward.__get__(predict_instance, predict_instance.__class__)
+    try:
+        # Yield control back to the with block, allowing the user to call predict_instance methods
+        yield
+    finally:
+        # Restore the original generate method to the instance after exiting the with block
+        predict_instance.forward = original_forward
