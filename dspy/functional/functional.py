@@ -81,7 +81,7 @@ class TypedPredictor(dspy.Module):
                 if type_ in (list[str], tuple[str]):
                     format = passages2text
                 elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
-                    format = (lambda x: x if isinstance(x, str) else x.json(),)
+                    format = lambda x: x if isinstance(x, str) else x.json()
                 signature = signature.with_updated_fields(name, format=format)
 
         if self.chain_of_thought:
@@ -93,6 +93,7 @@ class TypedPredictor(dspy.Module):
                     desc="${produce the " + output_keys + "}. We ...",
                 ),
             )
+        print("Prepared signature:", signature)
         return signature
 
     def forward(self, **kwargs):

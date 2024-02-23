@@ -47,6 +47,26 @@ def test_simple_type():
     assert question.value == expected
 
 
+def test_simple_type_input():
+    class Question(pydantic.BaseModel):
+        value: str
+
+    class Answer(pydantic.BaseModel):
+        value: str
+
+    @predictor
+    def answer(question: Question) -> Answer:
+        pass
+
+    question = Question(value="What is the speed of light?")
+    lm = DummyLM([f'{{"value": "3e8"}}'])
+    dspy.settings.configure(lm=lm)
+
+    result = answer(question=question)
+
+    assert result == Answer(value="3e8")
+
+
 def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
