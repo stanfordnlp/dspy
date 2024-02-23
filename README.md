@@ -66,7 +66,7 @@ By default, DSPy installs the latest `openai` from pip. However, if you install 
 For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chrome), or [Qdrant](https://github.com/qdrant/qdrant), [Marqo](https://github.com/marqo-ai/marqo), Pinecone, or [Weaviate](https://github.com/weaviate/weaviate) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[chromadb]  # or [qdrant] or or [marqo] or [mongodb] or [pinecone] or [weaviate]
+pip install dspy-ai[chromadb]  # or [qdrant] or [marqo] or [mongodb] or [pinecone] or [weaviate]
 ```
 
 ## 2) Documentation
