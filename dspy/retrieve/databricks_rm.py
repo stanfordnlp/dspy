@@ -39,7 +39,7 @@ class DatabricksRM(dspy.Retrieve):
         #Example for Direct Vector Acces Index
 
         index = client.create_direct_access_index(
-            endpoint_name="your_endpoint_url",
+            endpoint_name="your_databricks_host_url",
             index_name="your_index_name",
             primary_key="id",
             embedding_dimension=1024,
@@ -53,7 +53,7 @@ class DatabricksRM(dspy.Retrieve):
         
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
         retriever_model = DatabricksRM(databricks_index_name = "your_index_name", 
-        databricks_endpoint = "your_endpoint_url", databricks_token = "your_databricks_token", columns= ["id", "field2", "field3", "text_vector"], k=3)
+        databricks_endpoint = "your_databricks_host_url", databricks_token = "your_databricks_token", columns= ["id", "field2", "field3", "text_vector"], k=3)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
