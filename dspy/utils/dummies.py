@@ -24,45 +24,42 @@ class DummyLM(LM):
         self.answers = answers
         self.follow_examples = follow_examples
 
-    def basic_request(self, prompt, **kwargs):
+    def basic_request(self, prompt, n=1, **kwargs):
         """Generates a dummy response based on the prompt."""
+        dummy_response = {"choices": []}
+        for _ in range(n):
+            answer = None
 
-        answer = None
+            if self.follow_examples:
+                prefix = prompt.split("\n")[-1]
+                _instructions, _format, *examples, _output = prompt.split("\n---\n")
+                examples_str = "\n".join(examples)
+                if match := re.search(prefix + r"\s*(.*)", examples_str):
+                    answer = match.group(1)
+                    print(f"DummyLM got found previous example for {prefix} with value {answer=}")
 
-        if self.follow_examples:
-            prefix = prompt.split("\n")[-1]
-            _instructions, _format, *examples, _output = prompt.split("\n---\n")
-            examples_str = "\n".join(examples)
-            if match := re.search(prefix + r"\s*(.*)", examples_str):
-                answer = match.group(1)
-                print(f"DummyLM got found previous example for {prefix} with value {answer=}")
+            if answer is None:
+                if isinstance(self.answers, dict):
+                    answer = next((v for k, v in self.answers.items() if k in prompt), None)
+                else:
+                    if len(self.answers) > 0:
+                        answer = self.answers[0]
+                        self.answers = self.answers[1:]
 
-        if answer is None:
-            if isinstance(self.answers, dict):
-                answer = next((v for k, v in self.answers.items() if k in prompt), None)
-            else:
-                if len(self.answers) > 0:
-                    answer = self.answers[0]
-                    self.answers = self.answers[1:]
+            if answer is None:
+                answer = "No more responses"
 
-        if answer is None:
-            answer = "No more responses"
-
-        # Mimic the structure of a real language model response.
-        dummy_response = {
-            "choices": [
-                {
-                    "text": answer,
-                    "finish_reason": "simulated completion",
-                }
-            ]
-        }
-        
-        RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
-        print("=== DummyLM ===")
-        print(prompt, end="")
-        print(f"{RED}{answer}{RESET}")
-        print("===")
+            # Mimic the structure of a real language model response.
+            dummy_response["choices"].append({
+                "text": answer,
+                "finish_reason": "simulated completion",
+            })
+            
+            RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
+            print("=== DummyLM ===")
+            print(prompt, end="")
+            print(f"{RED}{answer}{RESET}")
+            print("===")
 
         # Simulate processing and storing the request and response.
         history_entry = {
