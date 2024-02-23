@@ -213,7 +213,8 @@ class BayesianSignatureOptimizer(Teleprompter):
                 basic_prefix = last_field.json_schema_extra["prefix"]
             with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
-                if view_data and view_examples and 1 in example_sets[id(predictor)].keys():
+                #if view_data and view_examples and 1 in example_sets[id(predictor)].keys():
+                if view_data and view_examples:
                     instruct = None
                     for i in range(1, self.n):
                         new_instruct = dspy.Predict(

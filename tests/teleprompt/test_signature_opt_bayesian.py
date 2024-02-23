@@ -7,7 +7,7 @@ from dspy import Example
 import dsp
 
 # Define a simple metric function for testing
-def simple_metric(example, prediction):
+def simple_metric(example, prediction, trace=None):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
 
@@ -37,7 +37,8 @@ class SimpleModule(dspy.Module):
         return self.predictor(**kwargs)
 
 def test_signature_optimizer_optimization_process():
-    dsp.settings.lm = DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
+    #dsp.settings.lm = DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
+    dsp.settings.lm = DummyLM([f"Optimized instruction {i}" for i in range(30)])
     
     student = SimpleModule(signature='input -> output')
     
@@ -46,7 +47,7 @@ def test_signature_optimizer_optimization_process():
     # Adjustments: Include required parameters for the compile method
     optimized_student = optimizer.compile(
         student=student, 
-        devset=trainset, 
+        devset=trainset*30, 
         optuna_trials_num=10, 
         max_bootstrapped_demos=3, 
         max_labeled_demos=5, 
