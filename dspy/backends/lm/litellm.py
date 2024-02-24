@@ -8,7 +8,7 @@ from .base import BaseLM
 
 
 class LiteLLM(BaseLM):
-    STANDARD_PARAMS: t.Dict[str, t.Union[float, int]] = {
+    STANDARD_PARAMS: dict[str, t.Union[float, int]] = {
         "temperature": 0.0,
         "max_tokens": 150,
         "top_p": 1,
@@ -23,7 +23,7 @@ class LiteLLM(BaseLM):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[str]:
+    ) -> list[dict[str, t.Any]]:
         """Generates `n` predictions for the signature output."""
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         response = completion(
@@ -32,7 +32,7 @@ class LiteLLM(BaseLM):
             **options,
         )
         choices = [c for c in response["choices"] if c["finish_reason"] != "length"]
-        return [c["message"]["content"] for c in choices]
+        return [c["message"]["content"] for c in choices]  # TODO: Needs to change
 
     def count_tokens(self, prompt: str) -> int:
         """Counts the number of tokens for a specific prompt."""
