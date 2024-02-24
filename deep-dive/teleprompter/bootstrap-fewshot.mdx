@@ -10,7 +10,7 @@ When compiling a DSPy program, we generally invoke a teleprompter, which is an o
 
 ## Setting up a Sample Pipeline
 
-We'll be making a basic answer genration pipeline over GSM8K dataset that we saw in the [Minimal Example](/docs/quick-start/minimal-example), we won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+We'll be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](/docs/quick-start/minimal-example), we won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
 
 ```python
 import dspy
@@ -107,11 +107,11 @@ cot_compiled.save('turbo_gsm8k.json')
 `BootStrapFewShot` starts by doing this only, it starts by:
 1. Initializing a student program which which is the one we are optimizing and a teacher program which unless specified otherwise is a clone of the student.
 
-2. Then to the teacher it add the demos by using `LabeledFewShot` telepromtpter.
+2. Then to the teacher it add the demos by using `LabeledFewShot` teleprompter.
 
 3. Mappings are created between the names of predictors and their corresponding instances in both student and teacher models.
 
-4. The maximum number of bootstrap demonstrations (max_bootsraps) is determined. This limits the amount of initial training data generated.
+4. The maximum number of bootstrap demonstrations (max_bootstraps) is determined. This limits the amount of initial training data generated.
 
 5. The process iterates over each example in the training set. For each example, the method checks if the maximum number of bootstraps has been reached. If so, the process stops.
 
