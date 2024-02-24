@@ -14,9 +14,7 @@ Remember that **DSPy program** is just Python code that calls one or more **DSPy
 
 A **DSPy module** is a building block for programs that use LMs.
 
-#TODO link signatures docs
-<!-- - Each built-in module abstracts a **prompting technique** (like chain of thought or ReAct). Crucially, they are generalized to handle any [DSPy Signature](). -->
-- Each built-in module abstracts a **prompting technique** (like chain of thought or ReAct). Crucially, they are generalized to handle any DSPy Signature.
+- Each built-in module abstracts a **prompting technique** (like chain of thought or ReAct). Crucially, they are generalized to handle any [DSPy Signature](/docs/building-blocks/2-signatures.md).
 
 - A DSPy module has **learnable parameters** (i.e., the little pieces comprising the prompt and the LM weights) and can be invoked (called) to process inputs and return outputs.
 
@@ -29,7 +27,7 @@ TODO. I typically take this as self-evident, but I'll spell it out here.
 
 ```python
 # Install `dspy-ai` if needed. Then set up a default language model.
-# TODO: Add a graceful line for OPENAI_API_KEY.
+#openai.api_key = os.getenv("OPENAI_API_KEY")
 
 try: import dspy
 except ImportError:
@@ -60,10 +58,7 @@ We also have some function-style modules:
 
 Let's start with the most fundamental one, `dspy.Predict`. Internally, all of the others are just built using it!
 
-#TODO link signatures docs
-<!-- We'll assume you are already at least a little familiar with [DSPy signatures](), which are declarative specs for defining the behavior of any module we use in DSPy. -->
-We'll assume you are already at least a little familiar with DSPy signatures, which are declarative specs for defining the behavior of any module we use in DSPy.
-
+We'll assume you are already at least a little familiar with [DSPy signatures](/docs/building-blocks/2-signatures.md), which are declarative specs for defining the behavior of any module we use in DSPy.
 To use a module, we first **declare** it by giving it a signature. Then we **call** the module with the input arguments, and extract the output fields!
 
 

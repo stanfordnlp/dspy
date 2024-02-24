@@ -122,7 +122,11 @@ for idx in range(5):
 
 ## Remote LMs.
 
-These models are managed services. You just need to sign up and obtain an API key.
+These models are managed services. You just need to sign up and obtain an API key. Calling any of the remote LMs below assumes authentication and mirrors the following format for setting up the LM:
+
+```python
+lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="...")
+```
 
 1.  `dspy.OpenAI` for GPT-3.5 and GPT-4.
 
@@ -139,29 +143,33 @@ You need to host these models on your own GPU(s). Below, we include pointers for
 
 1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](/api/hosting_language_models_locally/TGI)
 
+```python
+tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
+```
+
 2.  `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](/api/hosting_language_models_locally/vLLM)
 
-3.  `dspy.HFModel` (experimental)
+```python
+vllm_llama2 = dspy.HFClientVLLM(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
+```
 
-4.  `dspy.Ollama` (experimental)
+3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](/api/hosting_language_models_locally/HFModel.md)
+
+```python
+llama = dspy.HFModel(model = 'meta-llama/Llama-2-7b-hf')
+```
+
+4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama.md)\n",
+
+```python
+mistral_ollama = dspy.OllamaLocal(model='mistral')
+```
 
 5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](/api/hosting_language_models_locally/MLC)
 
-6.  `dspy.HFModel` (experimental)
-
-7. 7. `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama.md)\n",
-
-If there are other clients you want added, let us know or open a PR! Read the doc page on how to create a new LM client.
-
-
-<!-- TODO: Usage examples for these all.
-
 ```python
+model = 'dist/prebuilt/mlc-chat-Llama-2-7b-chat-hf-q4f16_1'
+model_path = 'dist/prebuilt/lib/Llama-2-7b-chat-hf-q4f16_1-cuda.so'
 
-# cohere = dspy.Cohere(...)
-# anyscale = dspy.Anyscale(...)
-# together = dspy.Together(...)
-# ollama = dspy.OllamaLocal(...)
-# tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
-
-``` -->
+llama = dspy.ChatModuleClient(model=model, model_path=model_path)
+```
