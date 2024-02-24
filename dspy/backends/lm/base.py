@@ -6,11 +6,10 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
 from joblib import Memory
-from dsp.modules.cache_utils import cachedir
 
 
-cachedir = os.environ.get("DSP_CACHEDIR") or os.path.join(Path.home(), ".joblib_cache")
-_cache_memory = Memory(cachedir, verbose=0)
+_cachedir = os.environ.get("DSP_CACHEDIR") or os.path.join(Path.home(), ".joblib_cache")
+_cache_memory = Memory(_cachedir, verbose=0)
 
 
 class BaseLM(BaseModel, ABC):
