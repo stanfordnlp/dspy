@@ -65,3 +65,9 @@ def test_config_management():
     config = predict_instance.get_config()
     assert "new_key" in config and config["new_key"] == "value"
 
+def test_multi_output():
+    program = Predict("question -> answer", n=2)
+    dsp.settings.lm = DummyLM(["my first answer", "my second answer"])
+    results = program(question="What is 1+1?")
+    assert results.completions.answer[0] == "my first answer"
+    assert results.completions.answer[1] == "my second answer"

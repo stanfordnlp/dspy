@@ -94,6 +94,12 @@ def test_signature_inequality():
     sig2 = Signature("input2 -> output2")
     assert not sig1.equals(sig2)
 
+def test_equality_format():
+    class TestSignature(Signature):
+        input = InputField(format=lambda x: x)
+        output = OutputField()
+    assert TestSignature.equals(TestSignature)
+
 def test_signature_reverse():
     sig = Signature("input1 -> output1")
     assert sig.signature == "input1 -> output1"

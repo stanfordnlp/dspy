@@ -64,7 +64,7 @@ def test_signature_optimizer_statistics_tracking():
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
 
 def test_optimization_and_output_verification():
-    optimizer = SignatureOptimizer(metric=simple_metric, breadth=1, depth=1, init_temperature=1.4)
+    optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     dsp.settings.lm = DummyLM([
         "Optimized Prompt",
         "Optimized Prefix",
@@ -103,7 +103,7 @@ def test_optimization_and_output_verification():
 def test_statistics_tracking_during_optimization():
     dsp.settings.lm = DummyLM(["Optimized instruction for stats tracking"])
     
-    optimizer = SignatureOptimizer(metric=simple_metric, breadth=1, depth=1, init_temperature=1.4)
+    optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
     
     student = SimpleModule("input -> output")
