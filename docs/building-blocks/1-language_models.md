@@ -130,6 +130,8 @@ These models are managed services. You just need to sign up and obtain an API ke
 
 3.  `dspy.Anyscale` for hosted Llama2 models.
 
+4. `dspy.Together` for hosted various open source models.
+
 
 ### Local LMs.
 
@@ -145,6 +147,10 @@ You need to host these models on your own GPU(s). Below, we include pointers for
 
 5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](/api/hosting_language_models_locally/MLC)
 
+6.  `dspy.HFModel` (experimental)
+
+7. 7. `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama.md)\n",
+
 If there are other clients you want added, let us know or open a PR! Read the doc page on how to create a new LM client.
 
 
@@ -154,6 +160,8 @@ If there are other clients you want added, let us know or open a PR! Read the do
 
 # cohere = dspy.Cohere(...)
 # anyscale = dspy.Anyscale(...)
+# together = dspy.Together(...)
+# ollama = dspy.OllamaLocal(...)
 # tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
 
 ``` -->
