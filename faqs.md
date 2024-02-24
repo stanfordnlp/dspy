@@ -16,7 +16,7 @@ The **DSPy** philosophy and abstraction differ significantly from other librarie
 
 ## Basic Usage
 
-**How should I use DSPy for my task?** We wrote a [seven-step guide](https://dspy-docs.vercel.app/docs/building-blocks/solving_your_task) on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+**How should I use DSPy for my task?** We wrote a [seven-step guide](/docs/building-blocks/solving_your_task.md) on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
 **How do I convert my complex prompt into a DSPy pipeline?** See the same answer above.
 
@@ -26,35 +26,94 @@ Other FAQs (TODO). We welcome PRs to add formal answers to each of these here. Y
 
 - **How do I get multiple outputs?**
 
+You can specify multiple output fields. For the short-form signature, you can list multiple outputs as comma separated values, following the "->" indicator (e.g. "inputs -> output1, output2"). For the long-form signature, you can include multiple `dspy.OutputField`s.
+
 - **How can I work with long responses?**
 
 - **How do I define my own metrics? Can metrics return a float?**
 
+You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](/docs/building-blocks/5-metrics.md) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
+
 - **How expensive or slow is compiling??**
+
+To reflect compiling metrics, we highlight an experiment for reference, compiling the [`SimplifiedBaleen`](/docs/tutorials/simplified-baleen.md) using the `dspy.BootstrapFewShotWithRandomSearch` optimizer on the `gpt-3.5-turbo-1106` model over 7 candidate programs and 10 threads. We report that compiling this program takes around 6 minutes with 3200 API calls, 2.7 million input tokens and 156,000 output tokens, reporting a total cost of $3 USD (at the current pricing of the OpenAI model).
+
+Compiling DSPy `optimizers` naturally will incur additional LM calls, but we substantiate this overhead with minimalistic executions with the goal of maximizing performance. This invites avenues to enhance performance of smaller models by compiling DSPy programs with larger models to learn enhanced behavior during compile-time and propagate such behavior to the tested smaller model during inference-time.  
 
 
 ## Deployment or Reproducibility Concerns
 
 - **How do I save a checkpoint of my compiled program?**
+
+Here is an example of saving/loading a compiled module:
+
+```python
+cot_compiled = teleprompter.compile(CoT(), trainset=trainset, valset=devset)
+
+#Saving
+cot_compiled.save('compiled_cot_gsm8k.json')
+
+#Loading:
+cot = CoT()
+cot.load('compiled_cot_gsm8k.json')
+```
+
 - **How do I export for deployment?**
 - **How do I search my own data?**
 - **How do I turn off the cache? How do I export the cache?**
 
+You can turn off the cache by setting the [`cache_turn_on` flag to `False`](https://github.com/stanfordnlp/dspy/blob/9d8a40c477b9dd6dcdc007647b5b9ddad2b5657a/dsp/modules/cache_utils.py#L10).
+
+Your local cache will be saved to the global env directory `os.environ["DSP_NOTEBOOK_CACHEDIR"]` which you can usually set to `os.path.join(repo_path, 'cache')` and export this cache from here.
+
+
 ## Advanced Usage
 
-- **How do I parallalize?**
+- **How do I parallelize?**
+You can parallelize DSPy programs during both compilation and evaluation by specifying multiple thread settings in the respective DSPy `optimizers` or within the `dspy.Evaluate` utility function.
+
 - **How do freeze a module?**
 - **How do I get JSON output?**
+
+You can specify JSON-type descriptions in the `desc` field of the long-form signature `dspy.OutputField` (e.g. `output = dspy.OutputField(desc='key-value pairs')`).
+
+If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/docs/deep-dive/modules/assertions.mdx) (or the next question!)
+
 - **How do I use DSPy assertions?**
+
+    a) **How to Add Assertions to Your Program**:
+    - **Define Constraints**: Use `dspy.Assert` and/or `dspy.Suggest` to define constraints within your DSPy program. These are based on boolean validation checks for the outcomes you want to enforce, which can simply be Python functions to validate the model outputs.
+    - **Integrating Assertions**: Keep your Assertion statements following a model generations (hint: following a module layer)
+
+    b) **How to Activate the Assertions**:
+    1. **Using `assert_transform_module`**:
+        - Wrap your DSPy module with assertions using the `assert_transform_module` function, along with a `backtrack_handler`. This function transforms your program to include internal assertions backtracking and retry logic, which can be customized as well:
+        `program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)`
+    2. **Activate Assertions**:
+        - Directly call `activate_assertions` on your DSPy program with assertions: `program_with_assertions = ProgramWithAssertions().activate_assertions()`
+
+    **Note**: To use Assertions properly, you must **activate** a program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
 
 ## Errors
 
 - **How do I deal with "context too long" errors?**
+
+If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
+
+A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`).
+
 - **How do I deal with timeouts or backoff errors?**
 
+Firstly, please refer to your LM/RM provider to ensure stable status or sufficient rate limits for your use case!
+
+Additionally, try reducing the number of threads you are testing on as the corresponding servers may get overloaded with requests and trigger a backoff + retry mechanism.
+
+If all variables seem stable, you may be experiencing timeouts or backoff errors due to incorrect payload requests sent to the api providers. Please verify your arguments are compatible with the SDK you are interacting with. At times, DSPy may have hard-coded arguments that are not relevant for your compatible, in which case, please free to open a PR alerting this or comment out these default settings for your usage. 
 
 ## Contributing
 
 **What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
 
-**How can I add my favorite LM or vector store?** TODO.
+**How can I add my favorite LM or vector store?** 
+
+Check out these walkthroughs on setting up a [Custom LM client](/docs/deep-dive/language_model_clients/custom-lm-client.mdx) and [Custom RM client](/docs/deep-dive/retrieval_models_clients/custom-rm-client.mdx).
