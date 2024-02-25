@@ -1,6 +1,7 @@
 import dspy
 import os
 import requests
+from dsp.utils import dotdict
 
 from typing import Union, List, Optional
 
@@ -43,4 +44,4 @@ class YouRM(dspy.Retrieve):
             for hit in results["hits"][:k]:
                 for snippet in hit["snippets"]:
                     docs.append(snippet)
-        return dspy.Prediction(passages=docs)
+        return [dotdict({"long_text": document}) for document in docs]
