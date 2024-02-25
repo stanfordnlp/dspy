@@ -78,7 +78,10 @@ class Predict(Parameter):
         if new_signature is not None:
             signature = new_signature
 
-        assert all(k in kwargs for k in signature.input_fields), "Not all input fields were provided."
+        if not all(k in kwargs for k in signature.input_fields):
+            present = [k for k in signature.input_fields if k in kwargs]
+            missing = [k for k in signature.input_fields if k not in kwargs]
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
