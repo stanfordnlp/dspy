@@ -152,7 +152,7 @@ class BootstrapFewShot(Teleprompter):
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)
                     if self.metric_threshold:
-                        success = metric_val > self.metric_threshold
+                        success = metric_val >= self.metric_threshold
                     else:
                         success = metric_val
                 else:
