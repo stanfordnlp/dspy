@@ -120,7 +120,7 @@ test_dataset = splits['test']
 sampled_example = dl.sample(dataset, n=5) # `dataset` is a List of dspy.Example
 ```
 
-## DSPy Programs.
+## DSPy Programs
 
 ### dspy.Signature
 
@@ -196,7 +196,7 @@ for idx, passage in enumerate(topK_passages):
     print(f'{idx+1}]', passage, '\n')
 ```
 
-## DSPy Metrics.
+## DSPy Metrics
 
 ### Function as Metric
 
@@ -243,7 +243,7 @@ def factuality_metric(example, pred):
     return int(factual=="Yes")
 ```
 
-## DSPy Evaluation.
+## DSPy Evaluation
 
 ```python
 from dspy.evaluate import Evaluate
@@ -253,7 +253,7 @@ evaluate_program = Evaluate(devset=devset, metric=your_defined_metric, num_threa
 evaluate_program(your_dspy_program)
 ```
 
-## DSPy Optimizers.
+## DSPy Optimizers
 
 ### dspy.LabeledFewShot 
 ```python
