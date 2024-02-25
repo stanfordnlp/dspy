@@ -9,11 +9,173 @@ This page will contain snippets for frequent usage patterns.
 
 ## DSPy Datasets.
 
+TODO
+
 ## DSPy Programs.
+
+TODO
 
 ## DSPy Metrics.
 
+TODO - python func metrics
+
+TODO - LLM-as-judge metrics
+
 ## DSPy Evaluation.
+
+```python
+from dspy.evaluate import Evaluate
+
+evaluate_program = Evaluate(devset=devset, metric=your_defined_metric, num_threads=NUM_THREADS, display_progress=True, display_table=num_rows_to_display)
+
+evaluate_program(your_dspy_program)
+```
 
 ## DSPy Optimizers.
 
+### dspy.LabeledFewShot 
+```python
+from dspy.teleprompt import LabeledFewShot
+
+labeled_fewshot_optimizer = dspy.LabeledFewShot(k=8)
+your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+```
+
+### dspy.BootstrapFewShot 
+```python
+from dspy.teleprompt import BootstrapFewShot
+
+fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5)
+
+your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+```
+
+#### Using another LM for compilation, specifying in teacher_settings
+```python
+from dspy.teleprompt import BootstrapFewShot
+
+fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5, teacher_settings=dict(lm=gpt4))
+
+your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+```
+
+#### Compiling a compiled program - bootstrapping a bootstraped program
+
+your_dspy_program_compiledx2 = teleprompter.compile(your_dspy_program, teacher=your_dspy_program_compiled, trainset=trainset)
+
+
+### dspy.BootstrapFewShotWithRandomSearch
+
+```python
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+
+fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
+
+your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
+
+```
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
+
+
+### dspy.Ensemble
+
+```python
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch, Ensemble
+
+fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
+your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
+
+ensemble_optimizer = dspy.Ensemble(reduce_fn=dspy.majority)
+your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(your_dspy_program_compiled.programs[:3])
+```
+
+### dspy.BootstrapFinetune
+
+```python
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch, BootstrapFinetune
+
+#Compile program on current dspy.settings.lm
+fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_threads=NUM_THREADS)
+your_dspy_program_compiled = tp.compile(your_dspy_program, trainset=trainset[:some_num], valset=trainset[some_num:])
+
+#Configure model to finetune
+config = dict(target=model_to_finetune, epochs=2, bf16=True, bsize=6, accumsteps=2, lr=5e-5)
+
+#Compile program on BootstrapFinetune
+finetune_optimizer = BootstrapFinetune(metric=your_defined_metric)
+finetune_program = finetune_optimizer.compile(your_dspy_program, trainset=some_new_dataset_for_finetuning_model, **config)
+
+finetune_program = your_dspy_program
+
+#Load program and activate model's parameters in program before evaluation
+ckpt_path = "saved_checkpoint_path_from_finetuning"
+LM = dspy.HFModel(checkpoint=ckpt_path, model=model_to_finetune)
+
+for p in finetune_program.predictors():
+    p.lm = LM
+    p.activated = False
+```
+
+### dspy.SignatureOptimizer
+
+```python
+from dspy.teleprompt import SignatureOptimizer
+
+eval_kwargs = dict(num_threads=16, display_progress=True, display_table=0)
+
+signature_optimizer_teleprompter = SignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory
+)
+compiled_program_optimized_signature = signature_optimizer_teleprompter.compile(your_dspy_program.deepcopy(), devset=trainset, evalset=devset, eval_kwargs=eval_kwargs)
+```
+
+### dspy.BayesianSignatureOptimizer
+
+
+```python
+from dspy.teleprompt import BayesianSignatureOptimizer
+
+teleprompter = BayesianSignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, n=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
+kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
+compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+
+```
+
+### dspy.KNNFewShot
+
+TODO
+
+### dspy.BootstrapFewShotWithOptuna
+
+TODO
+
+
+## DSPy Assertions
+
+### Including `dspy.Assert` and `dspy.Suggest` statements
+```python
+dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+
+dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+```
+
+### Activating DSPy Program with Assertions 
+
+**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+
+```python
+#1. Using `assert_transform_module:
+from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+
+program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)
+
+#2. Using `activate_assertions()`
+program_with_assertions = ProgramWithAssertions().activate_assertions()
+```
+
+## Compiling with DSPy Programs with Assertions
+
+```python
+program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)
+fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric = your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=6)
+compiled_dspy_program_with_assertions = fewshot_optimizer.compile(student=program_with_assertions, teacher = program_with_assertions, trainset=trainset, valset=devset) #student can also be program_without_assertions
+```

@@ -103,7 +103,7 @@ If you notice outputs are still not conforming to JSON formatting, try Asserting
     2. **Activate Assertions**:
         - Directly call `activate_assertions` on your DSPy program with assertions: `program_with_assertions = ProgramWithAssertions().activate_assertions()`
 
-    **Note**: To use Assertions properly, you must **activate** a program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+    **Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
 
 ## Errors
 
