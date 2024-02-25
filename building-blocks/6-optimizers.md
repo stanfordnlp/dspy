@@ -57,9 +57,9 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 #### Program Transformations
 
-7. **`KNNFewShot`**.
+7. **`KNNFewShot`**. TODO - fill out
 
-8. **`Ensemble`**.
+8. **`Ensemble`**. TODO - fill out
 
 
 ## Which optimizer should I use?
