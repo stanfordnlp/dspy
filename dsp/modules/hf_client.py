@@ -121,6 +121,13 @@ class HFClientVLLM(HFModel):
         super().__init__(model=model, is_client=True)
         self.url = f"{url}:{port}"
         self.headers = {"Content-Type": "application/json"}
+        self.kwargs = {
+            "model": model,
+            "temperature": 0.0,
+            "max_tokens": 150,
+            "n": 1,
+            **kwargs,
+        }
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
