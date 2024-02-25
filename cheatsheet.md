@@ -198,9 +198,50 @@ for idx, passage in enumerate(topK_passages):
 
 ## DSPy Metrics.
 
-TODO - python func metrics
+### Function as Metric
 
-TODO - LLM-as-judge metrics
+To create a custom metric you can create a function that returns either a number or a boolean value:
+
+```python
+def parse_integer_answer(answer, only_first_line=True):
+    try:
+        if only_first_line:
+            answer = answer.strip().split('\n')[0]
+
+        # find the last token that has a number in it
+        answer = [token for token in answer.split() if any(c.isdigit() for c in token)][-1]
+        answer = answer.split('.')[0]
+        answer = ''.join([c for c in answer if c.isdigit()])
+        answer = int(answer)
+
+    except (ValueError, IndexError):
+        # print(answer)
+        answer = 0
+    
+    return answer
+
+# Metric Function
+def gsm8k_metric(gold, pred, trace=None) -> int:
+    return int(parse_integer_answer(str(gold.answer))) == int(parse_integer_answer(str(pred.answer)))
+```
+
+### LLM as Judge
+
+```python
+class FactJudge(dspy.Signature):
+    """Judge if the answer is factually correct based on the context."""
+
+    context = dspy.InputField(desc="Context for the prediciton")
+    question = dspy.InputField(desc="Question to be answered")
+    answer = dspy.InputField(desc="Answer for the question")
+    factually_correct = dspy.OutputField(desc="Is the answer factually correct based on the context?", prefix="Facual[Yes/No]:")
+
+judge = dspy.ChainOfThought(FactJudge)
+
+def factuality_metric(example, pred):
+    factual = judge(context=example.context, question=example.question, answer=pred.answer)
+    return int(factual=="Yes")
+```
 
 ## DSPy Evaluation.
 
