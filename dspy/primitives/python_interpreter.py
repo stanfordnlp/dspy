@@ -14,6 +14,7 @@
 import ast
 import difflib
 import importlib
+import re
 import typing
 import inspect
 from typing import (
@@ -506,10 +507,11 @@ class TextPrompt(str):
 
     @property
     def key_words(self) -> Set[str]:
-        r"""Returns a set of strings representing the keywords in the prompt.
-        """
-        from camel.utils import get_prompt_template_key_words
-        return get_prompt_template_key_words(self)
+        """Returns a set of strings representing the keywords in the prompt."""
+        # Regex to find format placeholders within the string, excluding escaped braces
+        pattern = re.compile(r"\{([^{}]+)\}")
+        found = pattern.findall(self)
+        return set(found)
 
     def format(self, *args: Any, **kwargs: Any) -> 'TextPrompt':
         r"""Overrides the built-in :obj:`str.format` method to allow for

@@ -80,7 +80,7 @@ class BootstrapFewShot(Teleprompter):
 
         for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
             assert name1 == name2, "Student and teacher must have the same program structure."
-            assert predictor1.signature == predictor2.signature, f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+            assert predictor1.signature.equals(predictor2.signature), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
             name2predictor[name1] = None # dict(student=predictor1, teacher=predictor2)

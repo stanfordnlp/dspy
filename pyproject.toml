@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspy-ai"
-version = "2.1.10"
+version = "2.1.9"
 description = "DSPy"
 readme = "README.md"
 authors = [{name = "Omar Khattab", email = "okhattab@stanford.edu"}]
@@ -26,17 +26,16 @@ dependencies = [
     "regex~=2023.10.3",
     "ujson~=5.8.0",
     "tqdm~=4.66.1",
-    "datasets~=2.14.6,<3.0.0",
+    "datasets~=2.14.6",
     "requests~=2.31.0",
     "optuna~=3.4.0",
 ]
 
 [project.optional-dependencies]
-chromadb = ["chromadb~=0.4.14"]
-qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
-marqo = ["marqo"]
 pinecone = ["pinecone-client~=2.2.4"]
-weaviate = ["weaviate-client~=3.26.1"]
+qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
+chromadb = ["chromadb~=0.4.14"]
+marqo = ["marqo"]
 docs = [
     "sphinx>=4.3.0",
     "furo>=2023.3.27",
@@ -81,12 +80,11 @@ tqdm = "^4.66.1"
 datasets = "^2.14.6"
 requests = "^2.31.0"
 optuna = "^3.4.0"
-chromadb = {version = "^0.4.14", optional = true}
-fastembed = {version = "^0.1.0", optional = true}
-marqo = {version = "*", optional = true}
-qdrant-client = {version = "^1.6.2", optional = true}
 pinecone-client = {version = "^2.2.4", optional = true}
-weaviate-client = {version = "^3.26.1", optional=true}
+qdrant-client = {version = "^1.6.2", optional = true}
+fastembed = {version = "^0.1.0", optional = true}
+chromadb = {version = "^0.4.14", optional = true}
+marqo = {version = "*", optional = true}
 sphinx = {version = ">=4.3.0", optional = true}
 furo = {version = ">=2023.3.27", optional = true}
 docutils = {version = "<0.17", optional = true}
@@ -101,11 +99,10 @@ sphinx-reredirects = {version = "^0.1.2", optional = true}
 sphinx-automodapi = {version = "0.16.0", optional = true}
 
 [tool.poetry.extras]
-chromadb = ["chromadb"]
-qdrant = ["qdrant-client", "fastembed"]
-marqo = ["marqo"]
 pinecone = ["pinecone-client"]
-weaviate = ["weaviate-client"]
+qdrant = ["qdrant-client", "fastembed"]
+chromadb = ["chromadb"]
+marqo = ["marqo"]
 docs = [
     "sphinx",
     "furo",
