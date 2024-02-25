@@ -345,8 +345,8 @@ from dspy.teleprompt import SignatureOptimizer
 
 eval_kwargs = dict(num_threads=16, display_progress=True, display_table=0)
 
-signature_optimizer_teleprompter = SignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory
-)
+signature_optimizer_teleprompter = SignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory)
+
 compiled_program_optimized_signature = signature_optimizer_teleprompter.compile(your_dspy_program.deepcopy(), devset=trainset, evalset=devset, eval_kwargs=eval_kwargs)
 ```
 
@@ -357,18 +357,33 @@ compiled_program_optimized_signature = signature_optimizer_teleprompter.compile(
 from dspy.teleprompt import BayesianSignatureOptimizer
 
 teleprompter = BayesianSignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, n=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
-kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 
+kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
+
+compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 ```
 
 ### dspy.KNNFewShot
 
-TODO
+```python
+from dspy.predict import KNN
+from dspy.teleprompt import KNNFewShot
+
+knn_optimizer = KNNFewShot(KNN, k=3, trainset=trainset)
+
+your_dspy_program_compiled = knn_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
+```
 
 ### dspy.BootstrapFewShotWithOptuna
 
-TODO
+```python
+from dspy.teleprompt import BootstrapFewShotWithOptuna
+
+fewshot_optuna_optimizer = BootstrapFewShotWithOptuna(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
+
+your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
+```
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
 
 
 ## DSPy Assertions
