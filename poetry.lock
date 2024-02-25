@@ -2131,13 +2131,13 @@ files = [
 
 [[package]]
 name = "marqo"
-version = "0.11.0"
+version = "3.1.0"
 description = "Tensor search for humans"
 optional = true
 python-versions = ">=3"
 files = [
-    {file = "marqo-0.11.0-py3-none-any.whl", hash = "sha256:e1a5409beeb02dcec725566cfbc5fd88a84ce65ca7bce08a1120f8082badeab4"},
-    {file = "marqo-0.11.0.tar.gz", hash = "sha256:808e691cf06f5f7d67d422dc7f5f6fcc53b9acc6a4bc000abbcae8a817fd765d"},
+    {file = "marqo-3.1.0-py3-none-any.whl", hash = "sha256:e777949b1ff4d6229c8d92e7f3e0c34ed229755b7795ef3af7c2430bc6c32531"},
+    {file = "marqo-3.1.0.tar.gz", hash = "sha256:4a9160f4a194cb1d594dfcc7b3310bcabc640c06fd0343251e169391735fdbcd"},
 ]
 
 [package.dependencies]

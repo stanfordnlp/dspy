@@ -24,7 +24,7 @@ setup(
     extras_require={
         "chromadb": ["chromadb~=0.4.14"],
         "qdrant": ["qdrant-client", "fastembed"],
-        "marqo": ["marqo"],
+        "marqo": ["marqo~=3.1.0"],
         "mongodb": ["pymongo~=3.12.0"],			
         "pinecone": ["pinecone-client~=2.2.4"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
