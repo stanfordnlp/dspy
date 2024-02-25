@@ -153,13 +153,13 @@ tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="
 vllm_llama2 = dspy.HFClientVLLM(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
 ```
 
-3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](/api/hosting_language_models_locally/HFModel.md)
+3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](/api/hosting_language_models_locally/HFModel)
 
 ```python
 llama = dspy.HFModel(model = 'meta-llama/Llama-2-7b-hf')
 ```
 
-4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama.md)\n",
+4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama)\n",
 
 ```python
 mistral_ollama = dspy.OllamaLocal(model='mistral')

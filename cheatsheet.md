@@ -7,9 +7,118 @@ sidebar_position: 999
 
 This page will contain snippets for frequent usage patterns.
 
-## DSPy Datasets.
+## DSPy DataLoaders
 
-TODO
+Import and initializing a DataLoader Object:
+
+```python
+import dspy
+from dspy.datasets import DataLoader
+
+dl = DataLoader()
+```
+
+### Loading from HuggingFace Datasets
+
+```python
+code_alpaca = dl.from_huggingface("HuggingFaceH4/CodeAlpaca_20K")
+```
+
+You can access the dataset of the splits by calling key of the corresponding split:
+
+```python
+train_dataset = code_alpaca['train']
+test_dataset = code_alpaca['test']
+```
+
+### Loading specific splits from HuggingFace
+
+You can also manually specify splits you want to include as a parameters and it'll return a dictionary where keys are splits that you specified:
+
+```python
+code_alpaca = dl.from_huggingface(
+    "HuggingFaceH4/CodeAlpaca_20K",
+    split = ["train", "test"],
+)
+
+print(f"Splits in dataset: {code_alpaca.keys()}")
+```
+
+If you specify a single split then dataloader will return a List of `dspy.Example` instead of dictionary:
+
+```python
+code_alpaca = dl.from_huggingface(
+    "HuggingFaceH4/CodeAlpaca_20K",
+    split = "train",
+)
+
+print(f"Number of examples in split: {len(code_alpaca)}")
+```
+
+You can slice the split just like you do with HuggingFace Dataset too:
+
+```python
+code_alpaca_80 = dl.from_huggingface(
+    "HuggingFaceH4/CodeAlpaca_20K",
+    split = "train[:80%]",
+)
+
+print(f"Number of examples in split: {len(code_alpaca_80)}")
+
+code_alpaca_20_80 = dl.from_huggingface(
+    "HuggingFaceH4/CodeAlpaca_20K",
+    split = "train[20%:80%]",
+)
+
+print(f"Number of examples in split: {len(code_alpaca_20_80)}")
+```
+
+### Loading specific subset from HuggingFace
+
+If a dataset has a subset you can pass it as an arg like you do with `load_dataset` in HuggingFace:
+
+```python
+gms8k = dl.from_huggingface(
+    "gsm8k",
+    "main",
+    input_keys = ("question",),
+)
+
+print(f"Keys present in the returned dict: {list(gms8k.keys())}")
+
+print(f"Number of examples in train set: {len(gms8k['train'])}")
+print(f"Number of examples in test set: {len(gms8k['test'])}")
+```
+
+### Loading from CSV
+
+```python
+dolly_100_dataset = dl.from_csv("dolly_subset_100_rows.csv",)
+```
+
+You can choose only selected columns from the csv by specifying them in the arguments:
+
+```python
+dolly_100_dataset = dl.from_csv(
+    "dolly_subset_100_rows.csv",
+    fields=["instruction", "context", "response"],
+    input_keys=("instruction", "context")
+)
+```
+
+### Splitting a List of `dspy.Example`
+
+```python
+splits = dl.train_test_split(dataset, train_size=0.8) # `dataset` is a List of dspy.Example
+train_dataset = splits['train']
+test_dataset = splits['test']
+```
+
+### Sampling from List of `dspy.Example`
+
+```python
+sampled_example = dl.sample(dataset, n=5) # `dataset` is a List of dspy.Example
+```
 
 ## DSPy Programs.
 
