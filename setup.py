@@ -28,6 +28,7 @@ setup(
         "mongodb": ["pymongo~=3.12.0"],			
         "pinecone": ["pinecone-client~=2.2.4"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
+        "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
