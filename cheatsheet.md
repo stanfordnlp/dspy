@@ -122,7 +122,79 @@ sampled_example = dl.sample(dataset, n=5) # `dataset` is a List of dspy.Example
 
 ## DSPy Programs.
 
-TODO
+### dspy.Signature
+
+```python
+class BasicQA(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
+```
+
+### dspy.ChainOfThought
+
+```python
+generate_answer = dspy.ChainOfThought(BasicQA)
+
+# Call the predictor on a particular input alongside a hint.
+question='What is the color of the sky?'
+hint = "It's what you often see during a sunny day."
+pred = generate_answer(question=question)
+```
+
+### dspy.ChainOfThoughtwithHint
+
+```python
+generate_answer = dspy.ChainOfThoughtWithHint(BasicQA)
+
+# Call the predictor on a particular input alongside a hint.
+question='What is the color of the sky?'
+hint = "It's what you often see during a sunny day."
+pred = generate_answer(question=question, hint=hint)
+```
+
+### dspy.ProgramOfThought
+
+```python
+pot = dspy.ProgramOfThought(BasicQA)
+
+question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
+result = pot(question=question)
+
+print(f"Question: {question}")
+print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}")
+```
+
+### dspy.ReACT
+
+```python
+react_module = dspy.ReAct(BasicQA)
+
+question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
+result = react_module(question=question)
+
+print(f"Question: {question}")
+print(f"Final Predicted Answer (after ReAct process): {result.answer}")
+```
+
+### dspy.Retreive
+
+```python
+colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+dspy.settings.configure(rm=colbertv2_wiki17_abstracts)
+
+#Define Retrieve Module
+retriever = dspy.Retrieve(k=3)
+
+query='When was the first FIFA World Cup held?'
+
+# Call the retriever on a particular query.
+topK_passages = retriever(query).passages
+
+for idx, passage in enumerate(topK_passages):
+    print(f'{idx+1}]', passage, '\n')
+```
 
 ## DSPy Metrics.
 
