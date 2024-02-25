@@ -1,6 +1,8 @@
 import textwrap
 import pytest
+import re
 import dspy
+from dsp.modules import LM
 from dspy.teleprompt.signature_opt_bayesian import BayesianSignatureOptimizer
 from dspy.utils.dummies import DummyLM
 from dspy import Example
@@ -11,6 +13,20 @@ def simple_metric(example, prediction, trace=None):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
 
+# Some example data
+capitals = {
+    "Germany": "Berlin",
+    "France": "Paris",
+    "Denmark": "Copenhagen",
+    "Sweden": "Stockholm",
+    "Norway": "Oslo",
+}
+# Not used for training data
+extra_capitals = {
+    "Spain": "Madrid",
+    "Portugal": "Lisbon",
+    "Italy": "Rome",
+}
 
 # Example training and validation sets
 trainset = [
@@ -18,13 +34,82 @@ trainset = [
     Example(
         input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"
     ).with_inputs("input"),
-    Example(input="What is the capital of France?", output="Paris").with_inputs(
-        "input"
-    ),
-    Example(input="What is the capital of Germany?", output="Berlin").with_inputs(
-        "input"
-    ),
-]
+] + [Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input") for country, capital in capitals.items()]
+
+
+class ConditionalLM(LM):
+    def __init__(self):
+        super().__init__("conditional-lm")
+
+    def basic_request(self, prompt, n=1, **kwargs):
+        # If we are in the "optimization" stage, we don't say much.
+        if prompt.endswith("Observations:"):
+            answer = " (*silence*)"
+        elif prompt.endswith("Proposed Instruction:"):
+            answer = " Input: "
+        elif prompt.endswith("Proposed Prefix For Output Field:"):
+            answer = " Output: "
+        elif prompt.endswith("Summary:"):
+            answer = " summarizing..."
+        else:
+            pairs = re.findall(r"Input: (.*)\nOutput: (.*)", prompt)
+
+            print("PROMPT:", prompt)
+            print("PAIRS:", pairs)
+
+            last = re.search(r"Input: (.*)\nReasoning: (.*)$", prompt)
+            current_question = last.group(1)
+
+            if match := re.match(r"What is the capital of (.*?)\?", current_question):
+                country = match.group(1)
+                # If we had a previous example of a question about a capital, the model
+                # has learned the format, and will answer with question correctly.
+                if any("capital" in question for question, _ in pairs):
+                    answer = (capitals | extra_capitals)[country]
+                # Otherwise, it is confused and will answer with the country's name.
+                else:
+                    answer = country
+            # For other questions, the model will answer with the last word of the question.
+            else:
+                answer = current_question.split()[-1]
+            
+            answer = "think deeply.\nOutput: " + answer
+
+        RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
+        print("=== DummyLM ===")
+        print(prompt, end="")
+        print(f"{RED}{answer}{RESET}")
+        print("===")
+
+        dummy_response = {"choices": []}
+        for _ in range(n):
+            dummy_response["choices"].append(
+                {
+                    "text": answer,
+                    "finish_reason": "done",
+                }
+            )
+
+        # Simulate processing and storing the request and response.
+        history_entry = {
+            "prompt": prompt,
+            "response": dummy_response,
+            "kwargs": kwargs,
+            "raw_kwargs": kwargs,
+        }
+        self.history.append(history_entry)
+
+        return dummy_response
+
+    def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
+        response = self.basic_request(prompt, **kwargs)
+        return [choice["text"] for choice in response["choices"]]
+
+    def get_convo(self, index):
+        """get the prompt + anwer from the ith message"""
+        return self.history[index]['prompt'] \
+            + " " \
+            + self.history[index]['response']['choices'][0]['text']
 
 
 def test_bayesian_signature_optimizer_initialization():
@@ -51,8 +136,8 @@ class SimpleModule(dspy.Module):
 
 
 def test_signature_optimizer_optimization_process():
-    # Make LM that is always right
-    dspy.settings.configure(lm=DummyLM({ex.input: ex.output for ex in trainset}))
+    lm = ConditionalLM()
+    dspy.settings.configure(lm=lm)
 
     student = SimpleModule(signature="input -> output")
 
@@ -74,7 +159,7 @@ def test_signature_optimizer_optimization_process():
         eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
-    assert len(optimized_student.predictor.demos) == 4
+    assert len(optimized_student.predictor.demos) == 5
 
 
 def test_signature_optimizer_bad_lm():
@@ -107,7 +192,7 @@ def test_signature_optimizer_bad_lm():
 def test_optimization_and_output_verification():
     # Make a language model that is always right, except on the last
     # example in the train set.
-    lm = DummyLM({ex.input: ex.output for ex in trainset[:-1]}, follow_examples=True)
+    lm = ConditionalLM()
     dspy.settings.configure(lm=lm)
 
     optimizer = BayesianSignatureOptimizer(
@@ -124,35 +209,24 @@ def test_optimization_and_output_verification():
     optimized_student = optimizer.compile(
         student=student,
         devset=trainset,
-        optuna_trials_num=10,
-        max_bootstrapped_demos=3,
-        max_labeled_demos=5,
+        optuna_trials_num=4,
+        max_bootstrapped_demos=2,
+        max_labeled_demos=3,
         eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
     # Simulate calling the optimized student with a new input
-    test_input = "What is the capital of France?"
+    test_input = "What is the capital of Spain?"
     prediction = optimized_student(input=test_input)
 
     print("CORRECT ANSWER")
     print(lm.get_convo(-1))
 
-    assert prediction.output == "blue"
+    assert prediction.output == "Madrid"
 
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
-        Given the fields `input`, produce the fields `output`.
-
-        ---
-
-        Input: What does the fox say?
-        Output: Ring-ding-ding-ding-dingeringeding!
-
-        Input: What is the capital of Germany?
-        Output: Berlin
-
-        Input: What is the capital of France?
-        Output: Paris
+        Input:
 
         ---
 
@@ -164,13 +238,24 @@ def test_optimization_and_output_verification():
 
         ---
 
-        Input: What is the color of the sky?
-        Reasoning: Let's think step by step in order to blue
-        Output: blue
+        Input: What is the capital of Norway?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Oslo
+
+        ---
+
+        Input: What is the capital of Sweden?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Stockholm
 
         ---
 
         Input: What is the capital of France?
-        Reasoning: Let's think step by step in order to blue
-        Output: blue"""
+        Output: Paris
+
+        ---
+
+        Input: What is the capital of Spain?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Madrid"""
     )

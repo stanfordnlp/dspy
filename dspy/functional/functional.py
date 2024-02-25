@@ -71,7 +71,7 @@ class TypedPredictor(dspy.Module):
                             f". Respond with a single JSON object using the schema "
                             + json.dumps(type_.model_json_schema())
                         ),
-                        format=lambda x: x if isinstance(x, str) else x.json(),
+                        format=lambda x: x if isinstance(x, str) else x.model_dump_json(),
                         parser=lambda x: unwrap(
                             type_.model_validate_json(_unwrap_json(x))
                         ),
@@ -81,7 +81,7 @@ class TypedPredictor(dspy.Module):
                 if type_ in (list[str], tuple[str]):
                     format = passages2text
                 elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
-                    format = lambda x: x if isinstance(x, str) else x.json()
+                    format = lambda x: x if isinstance(x, str) else x.model_dump_json()
                 signature = signature.with_updated_fields(name, format=format)
 
         if self.chain_of_thought:
