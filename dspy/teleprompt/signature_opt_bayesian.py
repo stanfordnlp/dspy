@@ -1,5 +1,6 @@
 import dsp
 import dspy
+from dspy.signatures.signature import signature_to_template
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.signatures import Signature
 from dspy.evaluate.evaluate import Evaluate
@@ -114,10 +115,12 @@ class BayesianSignatureOptimizer(Teleprompter):
             if self.verbose: print(f"Predictor {i}")
             if (hasattr(predictor, 'extended_signature')):
                 if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
-                if self.verbose: print(f"p: {predictor.extended_signature.fields[-1].name}")
+                *_, last_field = predictor.extended_signature.fields.values()
+                if self.verbose: print(f"p: {last_field.json_schema_extra['prefix']}")
             else:
                 if self.verbose: print(f"i: {predictor.extended_signature1.instructions}")
-                if self.verbose: print(f"p: {predictor.extended_signature1.fields[-1].name}")
+                *_, last_field = predictor.extended_signature1.fields.values()
+                if self.verbose: print(f"p: {last_field.json_schema_extra['prefix']}")
             if self.verbose: print("\n")
     
     def _print_model_history(self, model, n=1):
@@ -186,8 +189,8 @@ class BayesianSignatureOptimizer(Teleprompter):
                                 if example["augmented"]:
                                     if example_set_i not in example_set:
                                         example_set[example_set_i] = []
-                                    fields_to_use = predictor.signature.fields
-                                    input_variable_names = [field.input_variable for field in fields_to_use]
+                                    fields_to_use = signature_to_template(predictor.signature).fields
+                                    input_variable_names = list(predictor.signature.input_fields.keys())
                                     example_with_only_signature_fields = {key: value for key, value in example.items() if key in input_variable_names}
                                     example_string = self._create_example_string(fields_to_use, example_with_only_signature_fields)
                                     example_set[example_set_i].append(example_string)
@@ -202,16 +205,28 @@ class BayesianSignatureOptimizer(Teleprompter):
             basic_prefix = None
             if (hasattr(predictor, 'extended_signature')):
                 basic_instruction = predictor.extended_signature.instructions
-                basic_prefix = predictor.extended_signature.fields[-1].name
+                *_, last_field = predictor.extended_signature.fields.values()
+                basic_prefix = last_field.json_schema_extra["prefix"]
             else:
                 basic_instruction = predictor.extended_signature1.instructions
-                basic_prefix = predictor.extended_signature1.fields[-1].name
+                *_, last_field = predictor.extended_signature1.fields.values()
+                basic_prefix = last_field.json_schema_extra["prefix"]
             with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
                 if view_data and view_examples:
+                    if 1 not in example_sets[id(predictor)].keys():
+                        raise ValueError("No examples found for the given predictor")
                     instruct = None
-                    for i in range(1,self.n):
-                        new_instruct = dspy.Predict(BasicGenerateInstructionWithExamplesAndDataObservations, n=1, temperature=self.init_temperature)(basic_instruction=basic_instruction, observations=self.observations, examples=example_sets[id(predictor)][i])
+                    for i in range(1, self.n):
+                        new_instruct = dspy.Predict(
+                            BasicGenerateInstructionWithExamplesAndDataObservations,
+                            n=1,
+                            temperature=self.init_temperature
+                        )(
+                            basic_instruction=basic_instruction,
+                            observations=self.observations,
+                            examples=example_sets[id(predictor)][i]
+                        )
                         if not instruct:
                             instruct = new_instruct
                         else:
@@ -224,7 +239,14 @@ class BayesianSignatureOptimizer(Teleprompter):
                 elif view_examples: 
                     instruct = None
                     for i in range(1,self.n): # Note: skip over the first example set which is empty
-                        new_instruct = dspy.Predict(BasicGenerateInstructionWithExamples, n=1, temperature=self.init_temperature)(basic_instruction=basic_instruction, examples=example_sets[id(predictor)][i])
+                        new_instruct = dspy.Predict(
+                            BasicGenerateInstructionWithExamples,
+                            n=1,
+                            temperature=self.init_temperature
+                        )(
+                            basic_instruction=basic_instruction,
+                            examples=example_sets[id(predictor)][i]
+                        )
                         if not instruct:
                             instruct = new_instruct
                         else:
@@ -303,8 +325,11 @@ class BayesianSignatureOptimizer(Teleprompter):
                     p_demo_candidates = demo_candidates[id(p_old)]
 
                     # Suggest the index of the instruction candidate to use in our trial
-                    instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
-                    demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                    #instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
+                    #demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                    instruction_idx = trial.suggest_int(f"{id(p_old)}_predictor_instruction",low=0, high=len(p_instruction_candidates)-1)
+                    demos_idx = trial.suggest_int(f"{id(p_old)}_predictor_demos",low=0, high=len(p_demo_candidates)-1)
+
                     trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
                     trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 
@@ -314,8 +339,10 @@ class BayesianSignatureOptimizer(Teleprompter):
                     selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip('"').strip()
 
                     # Use this candidates in our program
-                    p_new.extended_signature.instructions = selected_instruction
-                    p_new.extended_signature.fields[-1] = p_new.extended_signature.fields[-1]._replace(name=selected_prefix)
+                    *_, last_field = p_new.extended_signature.fields.keys()
+                    p_new.extended_signature = p_new.extended_signature \
+                        .with_instructions(selected_instruction) \
+                        .with_updated_fields(last_field, prefix=selected_prefix)
 
                     # Get the selected demos
                     selected_demos = p_demo_candidates[demos_idx]
@@ -353,8 +380,9 @@ class BayesianSignatureOptimizer(Teleprompter):
                         trial_num += 1 
                         raise optuna.TrialPruned()
                 
-                if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
-                self._print_model_history(self.task_model, n=1)
+                if self.verbose:
+                    print(f"Fully evaled score: {curr_weighted_avg_score}")
+                    self._print_model_history(self.task_model, n=1)
                 score = curr_weighted_avg_score
                 
                 trial_logs[trial_num]["score"] = curr_weighted_avg_score

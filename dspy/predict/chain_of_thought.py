@@ -1,6 +1,7 @@
-import dsp
+import dsp, dspy
+from dspy.signatures.signature import ensure_signature
 
-from .predict import Predict
+from .predict import Predict, signature_to_template
 
 
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
@@ -33,24 +34,15 @@ class ChainOfThought(Predict):
 
         self.activated = activated
 
-        signature = self.signature
-        *keys, last_key = signature.kwargs.keys()
+        signature = ensure_signature(self.signature)
+        *_keys, last_key = signature.output_fields.keys()
 
-        DEFAULT_RATIONALE_TYPE = dsp.Type(
+        rationale_type = rationale_type or dspy.OutputField(
             prefix="Reasoning: Let's think step by step in order to",
             desc="${produce the " + last_key + "}. We ...",
         )
 
-        rationale_type = rationale_type or DEFAULT_RATIONALE_TYPE
-
-        extended_kwargs = {key: signature.kwargs[key] for key in keys}
-        extended_kwargs.update(
-            {"rationale": rationale_type, last_key: signature.kwargs[last_key]}
-        )
-
-        self.extended_signature = dsp.Template(
-            signature.instructions, **extended_kwargs
-        )
+        self.extended_signature = signature.prepend("rationale", rationale_type, type_=str)
 
     def forward(self, **kwargs):
         new_signature = kwargs.pop("new_signature", None)
@@ -62,7 +54,8 @@ class ChainOfThought(Predict):
             else:
                 signature = self.signature
         else:
-            signature = dsp.Template(self.signature.instructions, **new_signature)
+            signature = new_signature
+            # template = dsp.Template(self.signature.instructions, **new_signature)
         return super().forward(signature=signature, **kwargs)
 
 
