@@ -28,8 +28,8 @@ jobs:
         run: poetry install
       - name: Run tests with pytest
         run: poetry run pytest tests/
-  build:
-    name: Build
+  build_poetry:
+    name: Build Poetry
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -50,3 +50,25 @@ jobs:
         run: python -c "import dspy"
       - name: Test import dsp
         run: python -c "import dsp"
+  build_setup:
+    name: Build Setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9"]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+      - name: Run setup.py build
+        run: python setup.py build
+      - name: Install the package
+        run: python setup.py install
+      - name: Import dspy package
+        run: python -c "import dspy; print('dspy package imported successfully')"
+      - name: Import dsp package
+        run: python -c "import dsp; print('dsp package imported successfully')"
