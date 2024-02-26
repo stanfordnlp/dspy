@@ -1,13 +1,6 @@
 name: Pre-commit checks
 on:
-  pull_request:
-    branches:
-      - dev
-      - main
-    types:
-      - opened
-      - edited
-      - synchronize
+  workflow_dispatch:
 
 jobs:
   pre-commit-checks:

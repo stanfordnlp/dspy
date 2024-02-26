@@ -326,8 +326,27 @@ This is very useful in many settings, but it's generally focused on low-level, s
 In contrast, **DSPy** automatically optimizes the prompts in your programs to align them with various task needs, which may also include producing valid structured ouputs. That said, we are considering allowing **Signatures** in **DSPy** to express regex-like constraints that are implemented by these libraries.
 </details>
 
+## Testing
 
+To run the tests, you need to first clone the repository.
 
+Then install the package through poetry:
+Note - You may need to 
+
+```bash
+poetry install --with test
+```
+
+Then run the all tests, or a specific test suite, with the following commands:
+
+```bash
+poetry run pytest
+poetry run pytest tests/PATH_TO_TEST_SUITE
+```
+
+## Contribution Quickstart
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to DSPy.
 
 ## Contributors & Acknowledgements
 
