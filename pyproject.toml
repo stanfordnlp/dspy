@@ -99,6 +99,8 @@ pydantic = {version = "*", optional = true}
 autodoc_pydantic = {version = "*", optional = true}
 sphinx-reredirects = {version = "^0.1.2", optional = true}
 sphinx-automodapi = {version = "0.16.0", optional = true}
+pgvector = {version = "*", optional = true}
+psycopg2 = {version = "*", optional = true}
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
@@ -106,6 +108,7 @@ qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
 pinecone = ["pinecone-client"]
 weaviate = ["weaviate-client"]
+pgvector = ["pgvector", "psycopg2"]
 docs = [
     "sphinx",
     "furo",
