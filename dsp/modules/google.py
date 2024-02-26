@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 import backoff
 
 from dsp.modules.lm import LM
@@ -80,6 +80,9 @@ class Google(LM):
         # Google API uses "candidate_count" instead of "n" or "num_generations"
         # For now, google API only supports 1 generation at a time. Raises an error if candidate_count > 1
         num_generations = kwargs.pop("n", kwargs.pop("num_generations", 1))
+        if num_generations > 1 and kwargs['temperature'] == 0.0:
+            kwargs['temperature'] = 0.7
+
         self.provider = "google"
         kwargs = {
             "candidate_count": 1,
@@ -110,7 +113,9 @@ class Google(LM):
         }
 
         # Google disallows "n" arguments
-        kwargs.pop("n", None)
+        n = kwargs.pop("n", None)
+        if n is not None and n > 1 and kwargs['temperature'] == 0.0:
+            kwargs['temperature'] = 0.7
 
         response = self.llm.generate_content(prompt, generation_config=kwargs)
 
@@ -128,6 +133,7 @@ class Google(LM):
         backoff.expo,
         (google_api_error),
         max_time=1000,
+        max_tries=5,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )
@@ -150,6 +156,6 @@ class Google(LM):
         completions = []
         for i in range(n):
             response = self.request(prompt, **kwargs)
-            completions.append(response.text)
+            completions.append(response.parts[0].text)
 
         return completions
