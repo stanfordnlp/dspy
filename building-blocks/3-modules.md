@@ -65,7 +65,7 @@ response.completions.answer
  'One great thing about the ColBERT retrieval model is its ability to incorporate user feedback and support complex queries.']
 ```
 
-Let's dicuss the output object here.
+Let's discuss the output object here.
 
 The `dspy.ChainOfThought` module will generally inject a `rationale` before the output field(s) of your signature.
 
@@ -89,7 +89,9 @@ We can also access the different completions as a list of `Prediction`s or as se
 response.completions[3].rationale == response.completions.rationale[3]
 ```
 **Output:**
+```text
 True
+```
 
 
 ## What other DSPy modules are there? How can I use them?
@@ -112,7 +114,7 @@ We also have some function-style modules:
 6. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
 
 
-More example soon!
+Check out further examples in [each module's respective guide](/api/modules/).
 
 
 ## How do I compose multiple modules into a bigger program?
