@@ -1,7 +1,5 @@
 name: Build and Run Tests
 
-# Build package on its own without additional pip install
-
 on:
   push:
     branches:
