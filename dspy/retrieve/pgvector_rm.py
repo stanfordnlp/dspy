@@ -95,15 +95,13 @@ class PgVectorRM(dspy.Retrieve):
         related_paragraphs = []
 
         sql_query = sql.SQL(
-            "select {fields} from {table} order by {embedding_field} <-> {query_embedding}::vector limit {limit}").format(
+            "select {fields} from {table} order by {embedding_field} <-> %s::vector limit %s").format(
             fields=sql.SQL(',').join([
                 sql.Identifier(f)
                 for f in self.fields
             ]),
-            embedding_field=sql.Identifier(self.embedding_field),
             table=sql.Identifier(self.pg_table_name),
-            query_embedding=sql.Identifier('query_embedding'),
-            limit=sql.Identifier('limit')
+            embedding_field=sql.Identifier(self.embedding_field)
         )
 
         with self.conn as conn:
