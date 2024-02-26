@@ -10,6 +10,7 @@ class Predict(Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
+        self.extended_signature = None
         self.config = config
         self.reset()
 
