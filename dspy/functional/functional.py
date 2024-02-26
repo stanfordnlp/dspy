@@ -28,15 +28,30 @@ class FunctionalModule(dspy.Module):
 
 
 class TypedPredictor(dspy.Module):
-    def __init__(self, signature, chain_of_thought=False, simple_output=False):
+    def __init__(
+        self, signature, chain_of_thought=False, simple_output=False, make_example=False
+    ):
         super().__init__()
         self.signature = signature
         self.predictor = dspy.Predict(signature)
         self.chain_of_thought = chain_of_thought
         self.simple_output = simple_output
+        self.make_example = make_example
 
     def copy(self):
         return TypedPredictor(self.signature, self.chain_of_thought, self.simple_output)
+
+    @staticmethod
+    def _make_example(type_):
+        return dspy.Predict(
+            dspy.Signature(
+                "json_schema -> json_object",
+                "Make a very succinct json object that validates with the following schema",
+            )
+        )(json_schema=json.dumps(type_.model_json_schema())).json_object
+        # TODO: Another fun idea is to only (but automatically) do this if the output fails.
+        # We could also have a more general "suggest solution" prompt that tries to fix the output
+        # More directly.
 
     def _prepare_signature(self):
         """Add formats and parsers to the signature fields, based on the type
@@ -68,10 +83,14 @@ class TypedPredictor(dspy.Module):
                         name,
                         desc=field.json_schema_extra.get("desc", "")
                         + (
+                            # f". Put the answer in the following JSON structure "
                             f". Respond with a single JSON object using the schema "
                             + json.dumps(type_.model_json_schema())
+                            + (". For example: " + self._make_example(type_) if self.make_example else "")
                         ),
-                        format=lambda x: x if isinstance(x, str) else x.model_dump_json(),
+                        format=lambda x: (
+                            x if isinstance(x, str) else x.model_dump_json()
+                        ),
                         parser=lambda x: unwrap(
                             type_.model_validate_json(_unwrap_json(x))
                         ),
