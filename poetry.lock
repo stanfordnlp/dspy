@@ -5559,7 +5559,7 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 
 [extras]
 chromadb = ["chromadb"]
-docs = ["autodoc_pydantic", "docutils", "furo", "m2r2", "myst-nb", "myst-parser", "pydantic", "sphinx", "sphinx-autobuild", "sphinx-automodapi", "sphinx-reredirects", "sphinx_rtd_theme"]
+docs = ["autodoc_pydantic", "docutils", "furo", "m2r2", "myst-nb", "myst-parser", "sphinx", "sphinx-autobuild", "sphinx-automodapi", "sphinx-reredirects", "sphinx_rtd_theme"]
 marqo = ["marqo"]
 pinecone = ["pinecone-client"]
 qdrant = ["fastembed", "qdrant-client"]
@@ -5568,4 +5568,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "16256ad3918b09c53a48abbcdf985d42c3e7e5cdd476cc4b06a49ecccfbe6c48"
+content-hash = "8b4cc583653becb3be9f5bc4c34cdf5ced146ba32157a5bb4bdc7885291c0403"
