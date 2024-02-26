@@ -10,8 +10,7 @@ try:
     google_api_error = GoogleAPICallError
 except ImportError:
     google_api_error = Exception
-    # print("Not loading Google because it is not installed.")
-
+    print("Not loading Google because it is not installed.")
 
 
 def backoff_hdlr(details):
@@ -132,7 +131,7 @@ class Google(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (Exception),
+        (google_api_error),
         max_time=1000,
         max_tries=5,
         on_backoff=backoff_hdlr,
@@ -147,7 +146,7 @@ class Google(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs,
+        **kwargs
     ):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
