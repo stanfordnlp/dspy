@@ -1,10 +1,10 @@
-import dspy
 import os
-import requests
-from urllib.parse import quote
-from dsp.utils import dotdict
-
 from typing import Union, List, Optional
+
+import requests
+
+import dspy
+from dsp.utils import dotdict
 
 
 class YouRM(dspy.Retrieve):
