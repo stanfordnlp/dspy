@@ -34,8 +34,9 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShot(Teleprompter):
-    def __init__(self, metric=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
+    def __init__(self, metric=None, metric_threshold=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
         self.metric = metric
+        self.metric_threshold = metric_threshold
         self.teacher_settings = teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
@@ -147,8 +148,15 @@ class BootstrapFewShot(Teleprompter):
 
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
-
-                success = (self.metric is None) or self.metric(example, prediction, trace)
+                
+                if self.metric:
+                    metric_val = self.metric(example, prediction, trace)
+                    if self.metric_threshold:
+                        success = metric_val >= self.metric_threshold
+                    else:
+                        success = metric_val
+                else:
+                    success = True
                 # print(success, example, prediction)
         except Exception as e:
             success = False
