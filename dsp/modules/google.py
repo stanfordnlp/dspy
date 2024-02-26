@@ -29,6 +29,25 @@ def giveup_hdlr(details):
     return True
 
 
+BLOCK_ONLY_HIGH = [
+  {
+    "category": "HARM_CATEGORY_HARASSMENT",
+    "threshold": "BLOCK_ONLY_HIGH"
+  },
+  {
+    "category": "HARM_CATEGORY_HATE_SPEECH",
+    "threshold": "BLOCK_ONLY_HIGH"
+  },
+  {
+    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    "threshold": "BLOCK_ONLY_HIGH"
+  },
+  {
+    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+    "threshold": "BLOCK_ONLY_HIGH"
+  },
+]
+
 class Google(LM):
     """Wrapper around Google's API.
 
@@ -39,6 +58,7 @@ class Google(LM):
         self,
         model: str = "models/gemini-1.0-pro",
         api_key: Optional[str] = None,
+        safety_settings: Optional[Iterable] = BLOCK_ONLY_HIGH,
         **kwargs
     ):
         """
@@ -71,7 +91,9 @@ class Google(LM):
         }
 
         self.config = genai.GenerationConfig(**kwargs)
-        self.llm = genai.GenerativeModel(model_name=model, generation_config=self.config)
+        self.llm = genai.GenerativeModel(model_name=model,
+                                         generation_config=self.config,
+                                         safety_settings=safety_settings)
 
         self.kwargs = {
             "n": num_generations,
