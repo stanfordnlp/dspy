@@ -1,9 +1,15 @@
 import dspy
 import openai
-import psycopg2
-from psycopg2 import sql
 from typing import List, Union, Optional
-from pgvector.psycopg2 import register_vector
+
+try:
+    from pgvector.psycopg2 import register_vector
+    import psycopg2
+    from psycopg2 import sql
+except ImportError:
+    raise ImportError(
+        "The 'pgvector' extra is required to use PgVectorRM. Install it with `pip install dspy-ai[pgvector]`"
+    )
 
 
 class PgVectorRM(dspy.Retrieve):
@@ -55,7 +61,7 @@ class PgVectorRM(dspy.Retrieve):
             openai_client: openai.OpenAI,
             k: Optional[int]=20,
             embedding_field: str = "embedding",
-            fields: List[str] = ['text', 'document_id']
+            fields: List[str] = ['text']
     ):
         """
         k = 20 is the number of paragraphs to retrieve
