@@ -6,3 +6,4 @@ from .react import ReAct
 from .aggregation import majority
 from .program_of_thought import ProgramOfThought
 from .retry import Retry
+from .knn import KNN

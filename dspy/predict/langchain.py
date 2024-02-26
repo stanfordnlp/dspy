@@ -13,6 +13,8 @@ from dspy.signatures.signature import infer_prefix
 from langchain_core.pydantic_v1 import Extra
 from langchain_core.runnables import Runnable
 
+# TODO: This class is currently hard to test, because it hardcodes gpt-4 usage:
+# gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=4000, model_type='chat')
 
 class Template2Signature(dspy.Signature):
     """You are a processor for prompts. I will give you a prompt template (Python f-string) for an arbitrary task for other LMs.

@@ -3,42 +3,16 @@ import random
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from dspy.signatures.field import InputField, OutputField
-from dspy.signatures.signature import infer_prefix
 
+from dspy.signatures.signature import ensure_signature, signature_to_template
 
 class Predict(Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
-        self.signature = signature #.signature
+        self.signature = ensure_signature(signature)
         self.config = config
         self.reset()
 
-        # if the signature is a string
-        if isinstance(signature, str):
-            inputs, outputs = signature.split("->")
-            inputs, outputs = inputs.split(","), outputs.split(",")
-            inputs, outputs = [field.strip() for field in inputs], [field.strip() for field in outputs]
-
-            assert all(len(field.split()) == 1 for field in (inputs + outputs))
-
-            inputs_ = ', '.join([f"`{field}`" for field in inputs])
-            outputs_ = ', '.join([f"`{field}`" for field in outputs])
-
-            instructions = f"""Given the fields {inputs_}, produce the fields {outputs_}."""
-
-            inputs = {k: InputField() for k in inputs}
-            outputs = {k: OutputField() for k in outputs}
-
-            for k, v in inputs.items():
-                v.finalize(k, infer_prefix(k))
-            
-            for k, v in outputs.items():
-                v.finalize(k, infer_prefix(k))
-
-            self.signature = dsp.Template(instructions, **inputs, **outputs)
-
-    
     def reset(self):
         self.lm = None
         self.traces = []
@@ -51,43 +25,47 @@ class Predict(Parameter):
 
         # Cache the signature instructions and the last field's name.
         state["signature_instructions"] = self.signature.instructions
-        state["signature_prefix"] = self.signature.fields[-1].name
+
+        *_, last_key = self.signature.fields.keys()
+        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra['prefix']
 
         return state
 
     def load_state(self, state):
         for name, value in state.items():
             setattr(self, name, value)
-        
+
         # Reconstruct the signature.
         if "signature_instructions" in state:
             instructions = state["signature_instructions"]
-            self.signature.instructions = instructions
-        
+            self.signature = self.signature.with_instructions(instructions)
+
         if "signature_prefix" in state:
             prefix = state["signature_prefix"]
-            self.signature.fields[-1] = self.signature.fields[-1]._replace(name=prefix)
-    
+            *_, last_key = self.signature.fields.keys()
+            self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
-    
+
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
-        new_signature = kwargs.pop("new_signature", None)
-        signature = kwargs.pop("signature", self.signature)
+        new_signature = ensure_signature(kwargs.pop("new_signature", None))
+        signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+        assert lm is not None, "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature", None)
-        temperature = lm.kwargs['temperature'] if temperature is None else temperature
+        temperature = lm.kwargs["temperature"] if temperature is None else temperature
 
         num_generations = config.get("n", None)
         if num_generations is None:
-            num_generations = lm.kwargs.get('n', lm.kwargs.get('num_generations', None))
+            num_generations = lm.kwargs.get("n", lm.kwargs.get("num_generations", None))
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
@@ -98,25 +76,38 @@ class Predict(Parameter):
         x = dsp.Example(demos=demos, **kwargs)
 
         if new_signature is not None:
-            signature = dsp.Template(signature.instructions, **new_signature)
+            signature = new_signature
+
+        if not all(k in kwargs for k in signature.input_fields):
+            present = [k for k in signature.input_fields if k in kwargs]
+            missing = [k for k in signature.input_fields if k not in kwargs]
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+
+        # Switch to legacy format for dsp.generate
+        template = signature_to_template(signature)
 
         if self.lm is None:
-            x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+            x, C = dsp.generate(template, **config)(x, stage=self.stage)
         else:
+            # Note: query_only=True means the instructions and examples are not included.
+            # I'm not really sure why we'd want to do that, but it's there.
             with dsp.settings.context(lm=self.lm, query_only=True):
-                # print(f"using lm = {self.lm} !")
-                x, C = dsp.generate(signature, **config)(x, stage=self.stage)
+                x, C = dsp.generate(template, **config)(x, stage=self.stage)
+
+        assert self.stage in x, "The generated (input, output) example was not stored"
 
         completions = []
 
         for c in C:
             completions.append({})
-            for field in signature.fields:
+            for field in template.fields:
                 if field.output_variable not in kwargs.keys():
-                    completions[-1][field.output_variable] = getattr(c, field.output_variable)
+                    completions[-1][field.output_variable] = getattr(
+                        c, field.output_variable
+                    )
 
         pred = Prediction.from_completions(completions, signature=signature)
-            
+
         if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
             trace = dsp.settings.trace
             trace.append((self, {**kwargs}, pred))
@@ -125,13 +116,12 @@ class Predict(Parameter):
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}
-    
+
     def get_config(self):
         return self.config
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
-
 
 
 # TODO: get some defaults during init from the context window?

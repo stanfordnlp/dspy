@@ -1,8 +1,9 @@
 import dspy
 import os
 import requests
+from dsp.utils import dotdict
 
-from typing import Union, List
+from typing import Union, List, Optional
 
 
 class YouRM(dspy.Retrieve):
@@ -15,15 +16,19 @@ class YouRM(dspy.Retrieve):
         else:
             self.ydc_api_key = os.environ["YDC_API_KEY"]
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
         """Search with You.com for self.k top passages for query or queries
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
+            k (Optional[int]): The number of context strings to return, if not already specified in self.k
 
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
+
+        k = k if k is not None else self.k
+
         queries = (
             [query_or_queries]
             if isinstance(query_or_queries, str)
@@ -36,7 +41,7 @@ class YouRM(dspy.Retrieve):
                 f"https://api.ydc-index.io/search?query={query}",
                 headers=headers,
             ).json()
-            for hit in results["hits"][:self.k]:
+            for hit in results["hits"][:k]:
                 for snippet in hit["snippets"]:
                     docs.append(snippet)
-        return dspy.Prediction(passages=docs)
+        return [dotdict({"long_text": document}) for document in docs]
