@@ -382,7 +382,7 @@ def test_field_validator():
         ]
         * 10
     )
-    dspy.settings.configure(lm=lm)
+    dspy.settings.configure(lm=lm) 
 
     with pytest.raises(ValueError):
         get_user_details()
