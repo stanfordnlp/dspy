@@ -1,12 +1,10 @@
-import dsp, dspy
-from dspy.signatures.signature import ensure_signature
-
-from .predict import Predict, signature_to_template
-
+from dsp import GPT3, settings
+from dspy.signatures.field import OutputField
+from dspy.primitives.program import Module
+from dspy.predict.predict import Predict
 
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
 
-# TODO: This shouldn't inherit from Predict. It should be a module that has one or two predictors.
 # Let's focus on the activated case. It's a predictor with the expanded signature.
 # Now, when deactivated, it's a predictor with the original signature.
 # When activate is None, though, we need the expanded one but during forward we need to pass the right signature.
@@ -28,57 +26,108 @@ class ChainOfThought(dspy.Module):
 """
 
 
-class ChainOfThought(Predict):
+class ChainOfThought(Module):
+    """
+    The ChainOfThought class is a module that uses a Predict object to make predictions based on a given signature.
+    It can be activated or deactivated, and it can have an extended signature that includes a rationale.
+
+    Attributes:
+        predict (Predict): The Predict object used for making predictions.
+    """
+
     def __init__(self, signature, rationale_type=None, activated=True, **config):
-        super().__init__(signature, **config)
+        """
+        The constructor for the ChainOfThought class.
 
-        self.activated = activated
-
-        signature = ensure_signature(self.signature)
-        *_keys, last_key = signature.output_fields.keys()
-
-        rationale_type = rationale_type or dspy.OutputField(
-            prefix="Reasoning: Let's think step by step in order to",
-            desc="${produce the " + last_key + "}. We ...",
-        )
-
-        self.extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        Parameters:
+            signature (Signature): The signature used for making predictions.
+            rationale_type (OutputField, optional): The rationale type for the extended signature. Defaults to None.
+            activated (bool, optional): A flag indicating whether the module is activated. Defaults to True.
+            **config: Arbitrary keyword arguments.
+        """
+        self.predict = Predict(signature, **config)
+        self.predict.activated = activated
+        self.predict.extended_signature = self._get_extended_signature(rationale_type)
 
     def forward(self, **kwargs):
-        new_signature = kwargs.pop("new_signature", None)
-        if new_signature is None:
-            if self.activated is True or (
-                self.activated is None and isinstance(dsp.settings.lm, dsp.GPT3)
-            ):
-                signature = self.extended_signature
-            else:
-                signature = self.signature
-        else:
-            signature = new_signature
-            # template = dsp.Template(self.signature.instructions, **new_signature)
-        return super().forward(signature=signature, **kwargs)
+        """
+        The forward method for the ChainOfThought class.
 
+        Parameters:
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            Predict: The result of the forward method of the Predict object.
+        """
+        signature = kwargs.pop("new_signature", None) or self._get_signature()
+        return self.predict.forward(signature=signature, **kwargs)
 
     def dump_state(self):
-        state = super().dump_state()
+        """
+        The dump_state method for the ChainOfThought class.
 
-        # Cache the signature instructions and the last field's name.
-        state["extended_signature_instructions"] = self.extended_signature.instructions
-        state["extended_signature_prefix"] = self.extended_signature.fields[-1].name
-
+        Returns:
+            dict: A dictionary containing the state of the Predict object and the extended signature.
+        """
+        state = self.predict.dump_state()
+        state["extended_signature_instructions"] = self.predict.extended_signature.instructions
+        state["extended_signature_prefix"] = self.predict.extended_signature.fields[-1].name
         return state
 
     def load_state(self, state):
-        super().load_state(state)
-        
-        # Reconstruct the signature.
+        """
+        The load_state method for the ChainOfThought class.
+
+        Parameters:
+            state (dict): A dictionary containing the state of the Predict object and the extended signature.
+        """
+        self.predict.load_state(state)
+        self._reconstruct_signature(state)
+
+    def _get_extended_signature(self, rationale_type):
+        """
+        A private method to get the extended signature for the Predict object.
+
+        Parameters:
+            rationale_type (OutputField): The rationale type for the extended signature.
+
+        Returns:
+            Signature: The extended signature for the Predict object.
+        """
+        *_keys, last_key = self.predict.signature.output_fields.keys()
+        rationale_type = rationale_type or OutputField(
+            prefix="Reasoning: Let's think step by step in order to",
+            desc="${produce the " + last_key + "}. We ...",
+        )
+        return self.predict.signature.prepend("rationale", rationale_type, type_=str)
+
+    def _get_signature(self):
+        """
+        A private method to get the signature for the Predict object.
+
+        Returns:
+            Signature: The signature for the Predict object.
+        """
+        if self.predict.activated is True or (
+                self.predict.activated is None and isinstance(settings.lm, GPT3)
+        ):
+            return self.predict.extended_signature
+        else:
+            return self.predict.signature
+
+    def _reconstruct_signature(self, state):
+        """
+        A private method to reconstruct the signature for the Predict object.
+
+        Parameters:
+            state (dict): A dictionary containing the state of the Predict object and the extended signature.
+        """
         if "extended_signature_instructions" in state:
-            instructions = state["extended_signature_instructions"]
-            self.extended_signature.instructions = instructions
-        
+            self.predict.extended_signature.instructions = state["extended_signature_instructions"]
         if "extended_signature_prefix" in state:
             prefix = state["extended_signature_prefix"]
-            self.extended_signature.fields[-1] = self.extended_signature.fields[-1]._replace(name=prefix)
+            self.predict.extended_signature.fields[-1] = self.predict.extended_signature.fields[-1]._replace(
+                name=prefix)
 
 """
 TODO: In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
