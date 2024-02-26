@@ -159,7 +159,7 @@ def test_signature_optimizer_optimization_process():
         eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
-    assert len(optimized_student.predictor.demos) == 5
+    assert len(optimized_student.predictor.predict.demos) == 5
 
 
 def test_signature_optimizer_bad_lm():
