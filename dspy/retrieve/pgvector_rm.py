@@ -57,7 +57,7 @@ class PgVectorRM(dspy.Retrieve):
     def __init__(
             self,
             db_url: str,
-            pg_table_name: Optional[str],
+            pg_table_name: str,
             openai_client: openai.OpenAI,
             k: Optional[int]=20,
             embedding_field: str = "embedding",
