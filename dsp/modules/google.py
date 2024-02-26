@@ -159,3 +159,41 @@ class Google(LM):
             completions.append(response.parts[0].text)
 
         return completions
+
+    def inspect_history(self, n: int = 1, skip: int = 0):
+        """Prints the last n prompts and their completions.
+        TODO: print the valid choice that contains filled output field instead of the first
+        """
+
+        last_prompt = None
+        printed = []
+        n = n + skip
+
+        for x in reversed(self.history[-100:]):
+            prompt = x["prompt"]
+
+            if prompt != last_prompt:
+                printed.append(
+                    (
+                        prompt,
+                        x['response']
+                    )
+                )
+
+            last_prompt = prompt
+
+            if len(printed) >= n:
+                break
+
+        for idx, (prompt, response) in enumerate(reversed(printed)):
+            # skip the first `skip` prompts
+            if (n - idx - 1) < skip:
+                continue
+
+            print("\n\n\n")
+            print(prompt, end="")
+            text = response.parts[0].text
+            self.print_green(text, end="")
+            print("\n\n\n")
+
+
