@@ -47,25 +47,35 @@ class SimpleModule(dspy.Module):
 def _test_knn_few_shot_compile(setup_knn_few_shot):
     """Tests the compile method of KNNFewShot with SimpleModule as student."""
     student = SimpleModule("input -> output")
-    teacher = SimpleModule("input -> output")  # Assuming teacher uses the same module type
+    teacher = SimpleModule(
+        "input -> output"
+    )  # Assuming teacher uses the same module type
 
     # Setup DummyLM with a response for a query similar to one of the training examples
-    dsp.settings.lm = DummyLM(["Madrid", "10"])  # Responses for the capital of Spain and the result of 5+5
+    lm = DummyLM(["Madrid", "10"])
+    dspy.settings.configure(
+        lm=lm
+    )  # Responses for the capital of Spain and the result of 5+5)
 
     knn_few_shot = setup_knn_few_shot
     trainset = knn_few_shot.KNN.trainset
-    compiled_student = knn_few_shot.compile(student, teacher=teacher, trainset=trainset, valset=None)
+    compiled_student = knn_few_shot.compile(
+        student, teacher=teacher, trainset=trainset, valset=None
+    )
 
     assert len(compiled_student.predictor.demos) == 1
     assert compiled_student.predictor.demos[0].input == trainset[0].input
     assert compiled_student.predictor.demos[0].output == trainset[0].output
-    
+
     # Simulate a query that is similar to one of the training examples
-    output = compiled_student.forward(input = "What is the capital of Spain?").output
+    output = compiled_student.forward(input="What is the capital of Spain?").output
 
     print("CONVO")
-    print(dsp.settings.lm.get_convo(-1))
+    print(lm.get_convo(-1))
 
     # Validate that the output corresponds to one of the expected DummyLM responses
     # This assumes the compiled_student's forward method will execute the predictor with the given query
-    assert output in ["Madrid", "10"], "The compiled student did not return the correct output based on the query"
+    assert output in [
+        "Madrid",
+        "10",
+    ], "The compiled student did not return the correct output based on the query"

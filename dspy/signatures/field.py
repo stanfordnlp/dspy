@@ -10,7 +10,7 @@ def move_kwargs(**kwargs):
     pydantic_kwargs = {}
     json_schema_extra = {}
     for k, v in kwargs.items():
-        if k in ["desc", "prefix", "format", "__dspy_field_type"]:
+        if k in ["desc", "prefix", "format", "parser", "__dspy_field_type"]:
             json_schema_extra[k] = v
         else:
             pydantic_kwargs[k] = v

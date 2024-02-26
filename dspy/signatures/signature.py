@@ -1,7 +1,7 @@
 from copy import deepcopy
 import dsp
 from pydantic import BaseModel, Field, create_model
-from typing import Optional, Union
+from typing import Type, Union, Tuple, Optional
 import re
 
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
@@ -13,6 +13,12 @@ def signature_to_template(signature) -> dsp.Template:
         signature.instructions,
         **{name: new_to_old_field(field) for name, field in signature.fields.items()},
     )
+
+
+def _default_instructions(cls):
+    inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields.keys()])
+    outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields.keys()])
+    return f"Given the fields {inputs_}, produce the fields {outputs_}."
 
 
 class SignatureMeta(type(BaseModel)):
@@ -27,11 +33,14 @@ class SignatureMeta(type(BaseModel)):
         # Let Pydantic do its thing
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
+        if cls.__doc__ is None:
+            cls.__doc__ = _default_instructions(cls)
+
         # Ensure all fields are declared with InputField or OutputField
         cls._validate_fields()
 
         # Ensure all fields have a prefix
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             if "prefix" not in field.json_schema_extra:
                 field.json_schema_extra["prefix"] = infer_prefix(name) + ":"
             if "desc" not in field.json_schema_extra:
@@ -40,7 +49,7 @@ class SignatureMeta(type(BaseModel)):
         return cls
 
     def _validate_fields(cls):
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             extra = field.json_schema_extra or {}
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
@@ -60,19 +69,17 @@ class SignatureMeta(type(BaseModel)):
 
     def with_instructions(cls, instructions: str):
         return create_model(
-            cls.__name__,
-            __base__=Signature,
-            __doc__=instructions,
-            **cls.fields,
+            cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields
         )
 
     @property
     def fields(cls):
-        return cls.__fields__
+        # Make sure to give input fields before output fields
+        return {**cls.input_fields, **cls.output_fields}
 
     def with_updated_fields(cls, name, **kwargs):
         """Returns a new Signature type with the field, name, updated
-        with field.json_schema_extra[field_key] = field_value."""
+        with fields[name].json_schema_extra[key] = value."""
         fields_copy = deepcopy(cls.fields)
         fields_copy[name].json_schema_extra = {
             **fields_copy[name].json_schema_extra,
@@ -83,17 +90,17 @@ class SignatureMeta(type(BaseModel)):
         )
 
     @property
-    def input_fields(cls) -> dict:
+    def input_fields(cls):
         return cls._get_fields_with_type("input")
 
     @property
-    def output_fields(cls) -> dict:
+    def output_fields(cls):
         return cls._get_fields_with_type("output")
 
-    def _get_fields_with_type(cls, field_type) -> dict:
+    def _get_fields_with_type(cls, field_type):
         return {
             k: v
-            for k, v in cls.__fields__.items()
+            for k, v in cls.model_fields.items()
             if v.json_schema_extra["__dspy_field_type"] == field_type
         }
 
@@ -103,8 +110,8 @@ class SignatureMeta(type(BaseModel)):
     def append(cls, name, field, type_=None):
         return cls.insert(-1, name, field, type_)
 
-    def insert(cls, index: int, name: str, field, type_: Optional[type] = None):
-        # It's possible to set the type as annotation=type in pydantic.Field(...)
+    def insert(cls, index: int, name: str, field, type_: Type = None):
+        # It's posisble to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is not None:
             field.annotation = type_
@@ -132,7 +139,7 @@ class SignatureMeta(type(BaseModel)):
         new_signature.__doc__ = cls.instructions
         return new_signature
 
-    def _parse_signature(cls, signature: str) -> tuple[type, Field]:
+    def _parse_signature(cls, signature: str) -> Tuple[Type, Field]:
         pattern = r"^\s*[\w\s,]+\s*->\s*[\w\s,]+\s*$"
         if not re.match(pattern, signature):
             raise ValueError(f"Invalid signature format: '{signature}'")
@@ -167,16 +174,12 @@ class SignatureMeta(type(BaseModel)):
         if isinstance(signature, str):
             fields = cls._parse_signature(signature)
         else:
-            fields = {k: (f.annotation or str, f) for k, f in signature.items()}
+            fields = signature
 
         # Default prompt when no instructions are provided
         if instructions is None:
             sig = Signature(signature, "")  # Simple way to parse input/output fields
-            inputs_ = ", ".join(f"`{name}`" for name in sig.input_fields.keys())
-            outputs_ = ", ".join(f"`{name}`" for name in sig.output_fields.keys())
-            instructions = (
-                f"""Given the fields {inputs_}, produce the fields {outputs_}."""
-            )
+            instructions = _default_instructions(sig)
 
         signature = create_model("Signature", __base__=Signature, **fields)
         signature.__doc__ = instructions
@@ -186,12 +189,19 @@ class SignatureMeta(type(BaseModel)):
         """Compare the JSON schema of two Pydantic models."""
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
-        return cls.model_json_schema() == other.model_json_schema()
+        if cls.instructions != other.instructions:
+            return False
+        for name in cls.fields.keys() | other.fields.keys():
+            if name not in other.fields or name not in cls.fields:
+                return False
+            # TODO: Should we compare the fields?
+        return True
 
     def __repr__(cls):
         """
         Outputs something on the form:
         cls.__name__(question, context -> answer
+        Signature(question, context -> answer
             question: str = InputField(desc="..."),
             context: List[str] = InputField(desc="..."),
             answer: int = OutputField(desc="..."),
@@ -199,10 +209,10 @@ class SignatureMeta(type(BaseModel)):
         """
         field_reprs = []
         for name, field in cls.fields.items():
-            field_reprs.append(f"{name} = {field}")
+            field_reprs.append(f"{name} = Field({field})")
         field_repr = "\n    ".join(field_reprs)
         return (
-            f"{cls.__name__}({cls.signature}\n"
+            f"Signature({cls.signature}\n"
             f"    instructions={repr(cls.instructions)}\n"
             f"    {field_repr}\n)"
         )
@@ -222,16 +232,17 @@ def ensure_signature(signature):
 
 def infer_prefix(attribute_name: str) -> str:
     """Infers a prefix from an attribute name."""
+
     # Convert camelCase to snake_case, but handle sequences of capital letters properly
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", attribute_name)
     intermediate_name = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1)
 
     # Insert underscores around numbers to ensure spaces in the final output
     with_underscores_around_numbers = re.sub(
-        "([a-zA-Z])(\d)", r"\1_\2", intermediate_name
+        r"([a-zA-Z])(\d)", r"\1_\2", intermediate_name
     )
     with_underscores_around_numbers = re.sub(
-        "(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers
+        r"(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers
     )
 
     # Convert snake_case to 'Proper Title Case', but ensure acronyms are uppercased

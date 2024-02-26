@@ -9,7 +9,9 @@ import re
 class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
-    def __init__(self, answers: Union[List[str], Dict[str,str]], follow_examples: bool = False):
+    def __init__(
+        self, answers: Union[List[str], Dict[str, str]], follow_examples: bool = False
+    ):
         """
         Initializes the dummy language model.
         Parameters:
@@ -24,41 +26,53 @@ class DummyLM(LM):
         self.answers = answers
         self.follow_examples = follow_examples
 
-    def basic_request(self, prompt, **kwargs):
+    def basic_request(self, prompt, n=1, **kwargs):
         """Generates a dummy response based on the prompt."""
+        dummy_response = {"choices": []}
+        for _ in range(n):
+            answer = None
 
-        answer = None
+            if self.follow_examples:
+                prefix = prompt.split("\n")[-1]
+                _instructions, _format, *examples, _output = prompt.split("\n---\n")
+                examples_str = "\n".join(examples)
+                possible_answers = re.findall(prefix + r"\s*(.*)", examples_str)
+                if possible_answers:
+                    # We take the last answer, as the first one is just from
+                    # the "Follow the following format" section.
+                    answer = possible_answers[-1]
+                    print(
+                        f"DummyLM got found previous example for {prefix} with value {answer=}"
+                    )
+                else:
+                    print(f"DummyLM couldn't find previous example for {prefix=}")
 
-        if self.follow_examples:
-            prefix = prompt.split("\n")[-1]
-            _instructions, _format, *examples, _output = prompt.split("\n---\n")
-            examples_str = "\n".join(examples)
-            if match := re.search(prefix + r"\s*(.*)", examples_str):
-                answer = match.group(1)
-                print(f"DummyLM got found previous example for {prefix} with value {answer=}")
+            if answer is None:
+                if isinstance(self.answers, dict):
+                    answer = next(
+                        (v for k, v in self.answers.items() if k in prompt), None
+                    )
+                else:
+                    if len(self.answers) > 0:
+                        answer = self.answers[0]
+                        self.answers = self.answers[1:]
 
-        if answer is None:
-            if isinstance(self.answers, dict):
-                answer = next((v for k, v in self.answers.items() if k in prompt), None)
-            else:
-                if len(self.answers) > 0:
-                    answer = self.answers[0]
-                    self.answers = self.answers[1:]
+            if answer is None:
+                answer = "No more responses"
 
-        if answer is None:
-            answer = "No more responses"
-
-        # Mimic the structure of a real language model response.
-        dummy_response = {
-            "choices": [
+            # Mimic the structure of a real language model response.
+            dummy_response["choices"].append(
                 {
                     "text": answer,
                     "finish_reason": "simulated completion",
                 }
-            ]
-        }
-        
-        print(f"DummyLM got {prompt=}, sent {answer=}")
+            )
+
+            RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
+            print("=== DummyLM ===")
+            print(prompt, end="")
+            print(f"{RED}{answer}{RESET}")
+            print("===")
 
         # Simulate processing and storing the request and response.
         history_entry = {
@@ -83,38 +97,45 @@ class DummyLM(LM):
 
     def get_convo(self, index):
         """Get the prompt + anwer from the ith message"""
-        return self.history[index]['prompt'] \
-            + " " \
-            + self.history[index]['response']['choices'][0]['text']
+        return (
+            self.history[index]["prompt"]
+            + " "
+            + self.history[index]["response"]["choices"][0]["text"]
+        )
 
 
 def dummy_rm(passages=()):
     if not passages:
-        def inner(query:str, *, k:int, **kwargs):
+
+        def inner(query: str, *, k: int, **kwargs):
             assert False, "No passages defined"
+
         return inner
     max_length = max(map(len, passages)) + 100
     vectorizer = DummyVectorizer(max_length)
     passage_vecs = vectorizer(passages)
-    def inner(query:str, *, k:int, **kwargs):
+
+    def inner(query: str, *, k: int, **kwargs):
         assert k <= len(passages)
         query_vec = vectorizer([query])[0]
         scores = passage_vecs @ query_vec
         largest_idx = (-scores).argsort()[:k]
-        #return dspy.Prediction(passages=[passages[i] for i in largest_idx])
+        # return dspy.Prediction(passages=[passages[i] for i in largest_idx])
         return [dotdict(dict(long_text=passages[i])) for i in largest_idx]
+
     return inner
 
 
 class DummyVectorizer:
     """Simple vectorizer based on n-grams"""
+
     def __init__(self, max_length=100, n_gram=2):
         self.max_length = max_length
         self.n_gram = n_gram
         self.P = 10**9 + 7  # A large prime number
         random.seed(123)
         self.coeffs = [random.randrange(1, self.P) for _ in range(n_gram)]
-    
+
     def _hash(self, gram):
         """Hashes a string using a polynomial hash function"""
         h = 1
@@ -126,13 +147,17 @@ class DummyVectorizer:
     def __call__(self, texts: List[str]) -> np.ndarray:
         vecs = []
         for text in texts:
-            grams = [text[i:i+self.n_gram] for i in range(len(text) - self.n_gram + 1)]
+            grams = [
+                text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)
+            ]
             vec = [0] * self.max_length
             for gram in grams:
                 vec[self._hash(gram)] += 1
             vecs.append(vec)
-        
+
         vecs = np.array(vecs, dtype=np.float32)
         vecs -= np.mean(vecs, axis=1, keepdims=True)
-        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10  # Added epsilon to avoid division by zero
+        vecs /= (
+            np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10
+        )  # Added epsilon to avoid division by zero
         return vecs
