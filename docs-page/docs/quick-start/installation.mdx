@@ -1,0 +1,59 @@
+---
+sidebar_position: 1
+---
+
+# Installation
+
+To install DSPy run:
+
+
+```text
+pip install dspy-ai
+```
+
+Or open our intro notebook in Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
+
+By default, DSPy depends on `openai==0.28`. However, if you install `openai>=1.0`, the library will use that just fine. Both are supported.
+
+For the optional Pinecone, Qdrant, ChromaDB, or Marqo retrieval integration(s), include the extra(s) below:
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+:::info[Installation Command]
+
+<Tabs>
+    <TabItem value="default" label="No Extras">
+        ```text
+        pip install dspy-ai
+        ```
+    </TabItem>
+    <TabItem value="pinecone" label="Pinecone">
+        ```text
+        pip install dspy-ai[pinecone]
+        ```
+    </TabItem>
+    <TabItem value="qdrant" label="Qdrant">
+        ```text
+        pip install dspy-ai[qdrant]
+        ```
+    </TabItem>
+    <TabItem value="chromadb" label="ChromaDB">
+        ```text
+        pip install dspy-ai[chromadb]
+        ```
+    </TabItem>
+    <TabItem value="marqo" label="Marqo">
+        ```text
+        pip install dspy-ai[marqo]
+        ```
+    </TabItem>
+    <TabItem value="mongodb" label="MongoDB">
+        ```text
+        pip install dspy-ai[mongodb]
+        ```
+    </TabItem>
+    
+</Tabs>
+
+:::

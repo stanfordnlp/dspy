@@ -1,12 +1,3 @@
-# from dsp.modules.gpt3 import GPT3
-# from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-# from openai import OpenAI
-# import openai
-# import backoff
-# import dsp
-# from typing import Any, Literal, Optional, cast
-# import json
-# import functools
 # import logging
 # from logging.handlers import RotatingFileHandler
 
@@ -19,12 +10,22 @@
 #     ]
 # )
 
+# import functools
+# import json
+# from typing import Any, Literal, Optional, cast
+
+# import dsp
+# import backoff
+# import openai
+# from openai import OpenAI
+
+# from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+# from dsp.modules.gpt3 import GPT3
 
 # try:
 #     from openai.openai_object import OpenAIObject
 #     import openai.error
-#     ERRORS = (openai.error.RateLimitError,
-#               openai.error.ServiceUnavailableError, openai.error.APIError)
+#     ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
 # except Exception:
 #     ERRORS = (openai.RateLimitError, openai.APIError)
 #     OpenAIObject = dict
@@ -37,7 +38,6 @@
 #         "calling function {target} with kwargs "
 #         "{kwargs}".format(**details)
 #     )
-
 
 # class Databricks(GPT3):
 #     """Wrapper around DSPy's OpenAI Wrapper. Supports Databricks Model Serving Endpoints for OpenAI SDK on both Chat, Completions, and Embeddings models.
@@ -68,23 +68,22 @@
 #         )
 
 #         self.kwargs.pop('frequency_penalty', None)
-#         self.kwargs.pop('presence_penalty', None)
+#         self.kwargs.pop('presence_penalty', None)    
 
 #     def basic_request(self, prompt: str, **kwargs):
 #         raw_kwargs = kwargs
 
 #         kwargs = {**self.kwargs, **kwargs}
 #         if self.model_type == "chat":
-#             kwargs["messages"] = [{"role": "system", "content": "You are a helpful assistant."}, {
-#                 "role": "user", "content": prompt}]
+#             kwargs["messages"] = [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": prompt}]
 #             kwargs = {"stringify_request": json.dumps(kwargs)}
 #             response = custom_client_chat_request(**kwargs).json()
 #             response = json.loads(response)
 #         else:
 #             kwargs["prompt"] = prompt
-#             response = custom_client_completions_request(**kwargs).json()
+#             response = custom_client_completions_request(**kwargs).json()    
 #             response = json.loads(response)
-
+        
 #         history = {
 #             "prompt": prompt,
 #             "response": response,
@@ -93,7 +92,7 @@
 #         }
 #         self.history.append(history)
 #         return response
-
+    
 #     def embeddings(self, prompt: str, **kwargs):
 #         kwargs = {**self.kwargs, **kwargs}
 #         kwargs["input"] = prompt
@@ -101,30 +100,26 @@
 #         kwargs.pop('max_tokens', None)
 #         kwargs.pop('top_p', None)
 #         kwargs.pop('n', None)
-#         response = custom_client_embeddings_request(**kwargs).json()
+#         response = custom_client_embeddings_request(**kwargs).json()    
 #         response = json.loads(response)
 #         embeddings = [cur_obj['embedding'] for cur_obj in response['data']][0]
 #         return embeddings
-
+    
 #     def __call__(self, prompt: str, **kwargs):
 #         if self.model_type == "embeddings":
 #             return self.embeddings(prompt, **kwargs)
 #         else:
 #             return super().__call__(prompt, **kwargs)
 
-
 # def create_custom_client():
 #     client = OpenAI(api_key=openai.api_key, base_url=openai.base_url)
 #     return client
 
-
 # def custom_client_chat_request(**kwargs):
 #     return cached_custom_client_chat_request_v2_wrapped(**kwargs)
 
-
 # def custom_client_embeddings_request(**kwargs):
 #     return cached_custom_client_embeddings_request_v2_wrapped(**kwargs)
-
 
 # def custom_client_completions_request(**kwargs):
 #     return cached_custom_client_completions_request_v2_wrapped(**kwargs)
@@ -135,7 +130,6 @@
 #     client = create_custom_client()
 #     return client.chat.completions.create(**kwargs)
 
-
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 # @NotebookCacheMemory.cache
 # def cached_custom_client_chat_request_v2_wrapped(**kwargs):
@@ -143,24 +137,20 @@
 #         kwargs = json.loads(kwargs["stringify_request"])
 #     return cached_custom_client_chat_request_v2(**kwargs)
 
-
 # @CacheMemory.cache
 # def cached_custom_client_completions_request_v2(**kwargs):
 #     client = create_custom_client()
 #     return client.completions.create(**kwargs)
-
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 # @NotebookCacheMemory.cache
 # def cached_custom_client_completions_request_v2_wrapped(**kwargs):
 #     return cached_custom_client_completions_request_v2(**kwargs)
 
-
 # @CacheMemory.cache
 # def cached_custom_client_embeddings_request_v2(**kwargs):
 #     client = create_custom_client()
 #     return client.embeddings.create(**kwargs)
-
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
 # @NotebookCacheMemory.cache
