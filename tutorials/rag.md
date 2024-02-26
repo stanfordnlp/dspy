@@ -47,7 +47,7 @@ len(trainset), len(devset)
 
 ## Building Signatures
 
-Now that we have the data loaded, let's start defining the [signatures](/docs/building-blocks/2-signatures.md) for the sub-tasks of our pipeline.
+Now that we have the data loaded, let's start defining the [signatures](/docs/building-blocks/2-signatures) for the sub-tasks of our pipeline.
 
 We can identify our simple input `question` and output `answer`, but since we are building out a RAG pipeline, we wish to utilize some contextual information from our ColBERT corpus. So let's define our signature: `context, question --> answer`.
 
@@ -64,7 +64,7 @@ We include small descriptions for the `context` and `answer` fields to define mo
 
 ## Building the Pipeline
 
-We will build our RAG pipeline as a [DSPy module](/docs/building-blocks/3-modules.md) which will require two methods:
+We will build our RAG pipeline as a [DSPy module](/docs/building-blocks/3-modules) which will require two methods:
 
 * The `__init__` method will simply declare the sub-modules it needs: `dspy.Retrieve` and `dspy.ChainOfThought`. The latter is defined to implement our `GenerateAnswer` signature.
 * The `forward` method will describe the control flow of answering the question using the modules we have: Given a question, we'll search for the top-3 relevant passages and then feed them as context for answer generation.
@@ -88,7 +88,7 @@ class RAG(dspy.Module):
 
 ##### Compiling the RAG program
 
-Having defined this program, let's now **compile** it. [Compiling a program](/docs/building-blocks/6-optimizers.md) will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion within the prompt(s).
+Having defined this program, let's now **compile** it. [Compiling a program](/docs/building-blocks/6-optimizers) will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion within the prompt(s).
 
 Compiling depends on three things:
 
