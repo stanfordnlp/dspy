@@ -237,7 +237,9 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                     break
                 else:
                     try:
-                        dsp.settings.trace.clear()
+                        # only try to clear the trace if one exists
+                        if dsp.settings.trace is not None:
+                            dsp.settings.trace.clear()
                         result = func(*args, **kwargs)
                         break
                     except (DSPySuggestionError, DSPyAssertionError) as e:
