@@ -1,4 +1,4 @@
-name: Build Package
+name: Run Tests
 
 # Build package on its own without additional pip install
 
@@ -25,17 +25,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Poetry
         uses: snok/install-poetry@v1
-      - name: Build
-        shell: bash
-        run: poetry build
-      - name: Test installing built package
-        shell: bash
-        run: python -m pip install .
-      - name: Test import dspy
-        shell: bash
-        working-directory: ${{ vars.RUNNER_TEMP }}
-        run: python -c "import dspy"
-      - name: Test import dsp
-        shell: bash
-        working-directory: ${{ vars.RUNNER_TEMP }}
-        run: python -c "import dsp"
+      - name: Install dependencies
+        run: poetry install
+      - name: Run tests with pytest
+        run: poetry run pytest tests/
