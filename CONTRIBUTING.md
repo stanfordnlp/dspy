@@ -28,6 +28,15 @@ poetry run pytest
 poetry run pytest tests/PATH_TO_TEST_SUITE
 ```
 
+If you are changing CI actions, you can use the [act](https://nektosact.com/introduction.html) tool to test the CI locally.
+
+Example for testing the push action:
+You may need the `--container-architecture linux/amd64` flag if you are on an M1/2 mac.
+
+```bash
+ act push
+```
+
 ## Commit Message format
 
 Commit message format must be respected, with the following regex:

@@ -28,9 +28,6 @@ jobs:
       - name: Build
         shell: bash
         run: poetry build
-      - name: Test installing built package
-        shell: bash
-        run: python -m pip install .
       - name: Test import dspy
         shell: bash
         working-directory: ${{ vars.RUNNER_TEMP }}
