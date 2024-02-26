@@ -4,6 +4,7 @@ import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
+import warnings
 
 import pytest
 
@@ -198,15 +199,18 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule()
     teacher = SimpleModule()
-    assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
+    assert student.output.predictor.signature.equals(
+        teacher.output.predictor.signature)
 
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
+    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"],
+                 follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
-    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
+    compiled_student = bootstrap.compile(
+        student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
 
@@ -324,6 +328,7 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
+    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields `email`, produce the fields `flight_information`.
@@ -349,6 +354,7 @@ def test_multi_errors():
         Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
 
         Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
+        # Note: Pydantic version is hardcoded in the url here
     )
 
 
@@ -381,6 +387,7 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
+    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
