@@ -14,7 +14,7 @@ const FeatureList: FeatureItem[] = [
     img: '/img/optimize.png',
     description: (
       <>
-        Choose from a range of optimizers to enhance your program. Whether it's generating refining instructions, or fine-tuning weights, DSPy's optimizers are engineered to maximize efficiency and effectiveness.
+        Choose from a range of optimizers to enhance your program. Whether it's generating refined instructions, or fine-tuning weights, DSPy's optimizers are engineered to maximize efficiency and effectiveness.
       </>
     ),
   },

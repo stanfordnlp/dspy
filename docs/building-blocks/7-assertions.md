@@ -1,9 +1,3 @@
----
-sidebar_position: 2
----
-
-import AuthorDetails from '@site/src/components/AuthorDetails';
-
 # DSPy Assertions 
 ## Introduction
 
@@ -262,6 +256,3 @@ compiled_with_assertions_baleen = teleprompter.compile(student = baleen, teacher
 compiled_baleen_with_assertions = teleprompter.compile(student=baleen_with_assertions, teacher = baleen_with_assertions, trainset=trainset, valset=devset)
 
 ```
-***
-
-<AuthorDetails name="Arnav Singhvi"/>

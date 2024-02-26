@@ -10,7 +10,7 @@ The standard approach for this challenge in retrieval-augmented NLP literature i
 
 ## Configuring LM and RM
 
-We'll start by setting up the language model (LM) and retrieval model (RM), **DSPy** supports through multiple APIs and local models hosting. 
+We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](/docs/deep-dive/language_model_clients/remote_models/) and [RM](/docs/deep-dive/retrieval_models_clients/) APIs and [local models hosting](/docs/deep-dive/language_model_clients/local_models/). 
 
 In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
 
@@ -76,7 +76,7 @@ We could have written `context = GenerateAnswer.signature.context` to avoid dupl
 
 Now that we have the necessary signatures in place, we can start building the Baleen pipeline!
 
-## Buiding the Pipeline
+## Building the Pipeline
 
 So, let's define the program itself `SimplifiedBaleen`. There are many possible ways to implement this, but we'll keep this version down to the key elements.
 

@@ -20,24 +20,7 @@ A **DSPy module** is a building block for programs that use LMs.
 
 - Multiple modules can be composed into bigger modules (programs). DSPy modules are inspired directly by NN modules in PyTorch, but applied to LM programs.
 
-### 2) Why should I use a DSPy Module?
-
-TODO. I typically take this as self-evident, but I'll spell it out here.
-
-
-```python
-# Install `dspy-ai` if needed. Then set up a default language model.
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-
-try: import dspy
-except ImportError:
-    %pip install dspy-ai
-    import dspy
-
-dspy.configure(lm=dspy.OpenAI(model='gpt-3.5-turbo-1106'))
-```
-
-### 3) What DSPy Modules are currently built-in?
+### 2) What DSPy Modules are currently built-in?
 
 1. **[`dspy.Predict`](/api/modules/Predict)**:
 
@@ -54,7 +37,7 @@ We also have some function-style modules:
 
 6. **`dspy.majority`**:
 
-### 4) How do I use a built-in module, like `dspy.Predict` or `dspy.ChainOfThought`?
+### 3) How do I use a built-in module, like `dspy.Predict` or `dspy.ChainOfThought`?
 
 Let's start with the most fundamental one, `dspy.Predict`. Internally, all of the others are just built using it!
 
@@ -75,7 +58,9 @@ response = classify(sentence=sentence)
 print(response.sentiment)
 ```
 
-    Positive
+```text
+Positive
+```
     
 
 When we declare a module, we can pass configuration keys to it.
@@ -98,18 +83,16 @@ response = classify(question=question)
 response.completions.answer
 ```
 
+```text
+['One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.',
+ 'Its ability to efficiently retrieve relevant information from large document collections.',
+ 'One great thing about the ColBERT retrieval model is its superior performance compared to other models and its efficient use of pre-trained language models.',
+ 'One great thing about the ColBERT retrieval model is its superior efficiency and accuracy compared to other models.',
+ 'One great thing about the ColBERT retrieval model is its ability to incorporate user feedback and support complex queries.']
+```
 
 
-
-    ['One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.',
-     'Its ability to efficiently retrieve relevant information from large document collections.',
-     'One great thing about the ColBERT retrieval model is its superior performance compared to other models and its efficient use of pre-trained language models.',
-     'One great thing about the ColBERT retrieval model is its superior efficiency and accuracy compared to other models.',
-     'One great thing about the ColBERT retrieval model is its ability to incorporate user feedback and support complex queries.']
-
-
-
-Let's dicuss the output object here.
+Let's discuss the output object here.
 
 The `dspy.ChainOfThought` module will generally inject a `rationale` before the output field(s) of your signature.
 
@@ -134,20 +117,19 @@ We can also access the different completions as a list of `Prediction`s or as se
 response.completions[3].rationale == response.completions.rationale[3]
 ```
 
+```text
+True
+```
 
 
 
-    True
-
-
-
-### 5) How do I use more complex built-in modules?
+### 4) How do I use more complex built-in modules?
 
 The others are very similar, `dspy.ReAct` and `dspy.ProgramOfThought` etc. They mainly change the internal behavior with which your signature is implemented!
 
-More examples soon!
+Check out further examples in [each module's respective guide](/api/modules/).
 
-### 6) How do I compose multiple modules into a bigger program?
+### 5) How do I compose multiple modules into a bigger program?
 
 DSPy is just Python code that uses modules in any control flow you like. (There's some magic internally at `compile` time to trace your LM calls.)
 

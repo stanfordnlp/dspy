@@ -88,7 +88,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 You can specify JSON-type descriptions in the `desc` field of the long-form signature `dspy.OutputField` (e.g. `output = dspy.OutputField(desc='key-value pairs')`).
 
-If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/docs/deep-dive/modules/assertions.mdx) (or the next question!)
+If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/docs/building-blocks/7-assertions.md) (or the next question!)
 
 - **How do I use DSPy assertions?**
 

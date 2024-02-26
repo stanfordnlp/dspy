@@ -42,6 +42,8 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 3. **`BootstrapFewShotWithRandomSearch`**: Applies `BootstrapFewShot` several times with random search over generated demonstrations, and selects the best program.
 
+4. **`BootstrapFewShotWithOptuna`**: Applies `BootstrapFewShot` through Optuna hyperparameter optimization across demonstration sets, running trials to maximize evaluation metrics. 
+
 
 #### Automatic Instruction Optimization
 
@@ -57,9 +59,9 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 #### Program Transformations
 
-7. **`KNNFewShot`**. TODO - fill out
+7. **`KNNFewShot`**. Selects demonstrations through k-Nearest Neighbors algorithm integrating `BootstrapFewShot` for bootstrapping/selection process. 
 
-8. **`Ensemble`**. TODO - fill out
+8. **`Ensemble`**: Ensembles a set of DSPy programs and either uses the full set or randomly samples a subset into a single program.
 
 
 ## Which optimizer should I use?
