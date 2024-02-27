@@ -4,53 +4,44 @@
 
 ### Bounty Board
 
-The bounty board will have various features, issues, and requests that are up for grabs.
+The bounty board will have various features, issues, and requests that are up for grabs. We are still working on this. Come to the discord and ask for the current bounties.
 
 See the spreadsheet [here](https://docs.google.com/spreadsheets/d/1psHSfFXENAxhQTd5veKRzKydVubD2Ov62aKQHiYC-CQ/edit?usp=sharing) for the current bounties.
 
-
 ## Setting-up
 
-### Create new environment
+To run the tests, you need to first clone the repository.
+
+Then install the package through poetry:
+Note - You may need to install poetry. See [here](https://python-poetry.org/docs/#installing-with-the-official-installer)
 
 ```bash
-conda create --name dspy python=3.11
+poetry install --with test
 ```
 
-or
+## Testing
+
+To run the all tests, or a specific test suite, use the following commands:
 
 ```bash
-python3 -m venv dspy
+poetry run pytest
+poetry run pytest tests/PATH_TO_TEST_SUITE
 ```
 
-## Pre-commit hook
+If you are changing CI actions, you can use the [act](https://nektosact.com/introduction.html) tool to test the CI locally.
 
-Before using pre-commit hook you need to install it in your python environment.
-
-```bash
-conda install -c conda-forge pre-commit
-```
-
-go to the root folder and then activate it as follows (it will first download all required dependencies):
+Example for testing the push action:
+You may need the `--container-architecture linux/amd64` flag if you are on an M1/2 mac.
 
 ```bash
-pre-commit install
-```
-
-> Pre-commit hooks will attempt to fix all your files and so you will need to (add + commit) them once the fixes are done !
-
-### Optional
-
-Generally the pre-commit will run automatically before each of your commit,
-but you can also manually trigger it, as follows:
-
-```bash
-pre-commit run --all-files
+ act push
 ```
 
 ## Commit Message format
 
 Commit message format must be respected, with the following regex:
+
+This ends up looking like feature(dspy): added new feature
 
 ```
 ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)
