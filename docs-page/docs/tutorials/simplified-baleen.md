@@ -180,6 +180,8 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
 We'll use one of the most basic teleprompters in **DSPy**, namely, `BootstrapFewShot` to optimize the predictors in pipeline with few-shot examples.
 
 ```python
+from dspy.teleprompt import BootstrapFewShot
+
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer_and_hops)
 compiled_baleen = teleprompter.compile(SimplifiedBaleen(), teacher=SimplifiedBaleen(passages_per_hop=2), trainset=trainset)
 ```
