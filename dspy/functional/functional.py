@@ -4,21 +4,40 @@ import typing
 from dsp.templates import passages2text
 import json
 
+from dspy.signatures.signature import ensure_signature
+
 
 MAX_RETRIES = 3
 
 
 def predictor(func):
     signature = _func_to_signature(func)
-    return TypedPredictor(signature, chain_of_thought=False, simple_output=True)
+    *_, output_key = signature.output_fields.keys()
+    return _StripOutput(TypedPredictor(signature), output_key)
 
 
 def cot(func):
     signature = _func_to_signature(func)
-    return TypedPredictor(signature, chain_of_thought=True, simple_output=True)
+    *_, output_key = signature.output_fields.keys()
+    return _StripOutput(TypedChainOfThought(signature), output_key)
+
+
+class _StripOutput(dspy.Module):
+    def __init__(self, predictor, output_key):
+        super().__init__()
+        self.predictor = predictor
+        self.output_key = output_key
+    
+    def copy(self):
+        return _StripOutput(self.predictor.copy(), self.output_key)
+
+    def forward(self, **kwargs):
+        prediction = self.predictor(**kwargs)
+        return prediction[self.output_key]
 
 
 class FunctionalModule(dspy.Module):
+    """ To use the @cot and @predictor decorators, your module needs to inheret form this class. """
     def __init__(self):
         super().__init__()
         for name in dir(self):
@@ -27,19 +46,28 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
+def TypedChainOfThought(signature, make_example=False):
+    """ Just like TypedPredictor, but adds a ChainOfThought OutputField. """
+    signature = ensure_signature(signature)
+    output_keys = ", ".join(signature.output_fields.keys())
+    return TypedPredictor(signature.prepend(
+        "reasoning",
+        dspy.OutputField(
+            prefix="Reasoning: Let's think step by step in order to",
+            desc="${produce the " + output_keys + "}. We ...",
+        ),
+    ), make_example)
+
+
 class TypedPredictor(dspy.Module):
-    def __init__(
-        self, signature, chain_of_thought=False, simple_output=False, make_example=False
-    ):
+    def __init__(self, signature, make_example=False):
         super().__init__()
         self.signature = signature
         self.predictor = dspy.Predict(signature)
-        self.chain_of_thought = chain_of_thought
-        self.simple_output = simple_output
         self.make_example = make_example
 
     def copy(self):
-        return TypedPredictor(self.signature, self.chain_of_thought, self.simple_output)
+        return TypedPredictor(self.signature, self.make_example)
 
     @staticmethod
     def _make_example(type_):
@@ -103,15 +131,6 @@ class TypedPredictor(dspy.Module):
                     format = lambda x: x if isinstance(x, str) else x.model_dump_json()
                 signature = signature.with_updated_fields(name, format=format)
 
-        if self.chain_of_thought:
-            output_keys = ", ".join(signature.output_fields.keys())
-            signature = signature.prepend(
-                "reasoning",
-                dspy.OutputField(
-                    prefix="Reasoning: Let's think step by step in order to",
-                    desc="${produce the " + output_keys + "}. We ...",
-                ),
-            )
         return signature
 
     def forward(self, **kwargs):
@@ -145,9 +164,6 @@ class TypedPredictor(dspy.Module):
                 # If there are no errors, we return the parsed results
                 for name, value in parsed_results.items():
                     setattr(result, name, value)
-                if self.simple_output:
-                    *_, last_output = signature.output_fields.keys()
-                    return result[last_output]
                 return result
         raise ValueError("Too many retries")
 

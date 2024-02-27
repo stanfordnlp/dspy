@@ -1,0 +1,10 @@
+from dspy.teleprompt.teleprompt import Teleprompter
+
+class SignatureOptimizerLLMO(Teleprompter):
+    def __init__(self, evaluate):
+        super().__init__()
+        self.evaluate = evaluate
+
+    def compile(self, module):
+        for predictor in module.predictors():
+            predictor.signature
