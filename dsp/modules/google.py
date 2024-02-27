@@ -132,7 +132,7 @@ class Google(LM):
         backoff.expo,
         (google_api_error),
         max_time=1000,
-        max_tries=5,
+        max_tries=8,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )
