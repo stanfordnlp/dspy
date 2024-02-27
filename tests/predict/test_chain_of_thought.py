@@ -1,16 +1,22 @@
 import textwrap
-import dsp
+import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
 
+
 def test_initialization_with_string_signature():
-    dsp.settings.lm = DummyLM(["find the number after 1", "2"])
+    lm = DummyLM(["find the number after 1", "2"])
+    dspy.settings.configure(lm=lm)
     predict = ChainOfThought("question -> answer")
-    assert list(predict.extended_signature.output_fields.keys()) == ["rationale", "answer"]
+    assert list(predict.extended_signature.output_fields.keys()) == [
+        "rationale",
+        "answer",
+    ]
     assert predict(question="What is 1+1?").answer == "2"
 
-    print(dsp.settings.lm.get_convo(-1))
-    assert dsp.settings.lm.get_convo(-1) == textwrap.dedent("""\
+    print(lm.get_convo(-1))
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         Given the fields `question`, produce the fields `answer`.
 
         ---
@@ -25,4 +31,5 @@ def test_initialization_with_string_signature():
 
         Question: What is 1+1?
         Reasoning: Let's think step by step in order to find the number after 1
-        Answer: 2""")
+        Answer: 2"""
+    )

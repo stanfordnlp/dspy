@@ -17,10 +17,12 @@ import dsp
 settings = dsp.settings
 
 OpenAI = dsp.GPT3
+Databricks = dsp.Databricks
 Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
+Google = dsp.Google
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM

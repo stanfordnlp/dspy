@@ -48,6 +48,8 @@ Your task is to propose a new instruction that will lead a good language model t
 
 class SignatureOptimizer(Teleprompter):
     def __init__(self, prompt_model=None, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False, track_stats=False):
+        if breadth <= 1:
+            raise ValueError("Breadth must be greater than 1")
         self.metric = metric
         self.breadth = breadth
         self.depth = depth
