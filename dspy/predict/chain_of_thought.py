@@ -64,21 +64,24 @@ class ChainOfThought(Predict):
 
         # Cache the signature instructions and the last field's name.
         state["extended_signature_instructions"] = self.extended_signature.instructions
-        state["extended_signature_prefix"] = self.extended_signature.fields[-1].name
+
+        *_, last_key = self.signature.fields.keys()
+        state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra['prefix']
 
         return state
 
     def load_state(self, state):
         super().load_state(state)
-        
+                    
         # Reconstruct the signature.
         if "extended_signature_instructions" in state:
             instructions = state["extended_signature_instructions"]
-            self.extended_signature.instructions = instructions
-        
+            self.extended_signature = self.extended_signature.with_instructions(instructions)
+
         if "extended_signature_prefix" in state:
             prefix = state["extended_signature_prefix"]
-            self.extended_signature.fields[-1] = self.extended_signature.fields[-1]._replace(name=prefix)
+            *_, last_key = self.extended_signature.fields.keys()
+            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
 """
 TODO: In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
