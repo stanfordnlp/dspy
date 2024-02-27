@@ -22,7 +22,7 @@ Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
-Google = dsp.Google
+Google = dsp.GoogleGenerativeAI
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
