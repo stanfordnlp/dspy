@@ -48,6 +48,7 @@ BLOCK_ONLY_HIGH = [
   },
 ]
 
+
 class Google(LM):
     """Wrapper around Google's API.
 
@@ -80,8 +81,6 @@ class Google(LM):
         # Google API uses "candidate_count" instead of "n" or "num_generations"
         # For now, google API only supports 1 generation at a time. Raises an error if candidate_count > 1
         num_generations = kwargs.pop("n", kwargs.pop("num_generations", 1))
-        if num_generations > 1 and kwargs['temperature'] == 0.0:
-            kwargs['temperature'] = 0.7
 
         self.provider = "google"
         kwargs = {
@@ -195,5 +194,3 @@ class Google(LM):
             text = response.parts[0].text
             self.print_green(text, end="")
             print("\n\n\n")
-
-
