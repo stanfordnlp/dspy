@@ -19,7 +19,7 @@ class LiteLLM(BaseLM):
     model: str
     default_params: dict[str, t.Any] = Field(default_factory=dict)
 
-    def __call__(
+    def _call(
         self,
         prompt: str,
         **kwargs,
