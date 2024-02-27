@@ -27,8 +27,8 @@ def giveup_hdlr(details):
     return True
 
 
-class Google(LM):
-    """Wrapper around Google's API.
+class GoogleGenerativeAI(LM):
+    """Wrapper around Google's GenerativeAI API.
 
     Currently supported models include `gemini-pro-1.0`.
     """
@@ -50,9 +50,7 @@ class Google(LM):
         """
         super().__init__(model)
         self.google = genai.configure(api_key=api_key)
-        self.provider = "google"
         self.kwargs = {
-            "model_name": model,
             "temperature": 0.0
             if "temperature" not in kwargs
             else kwargs["temperature"],
@@ -61,6 +59,12 @@ class Google(LM):
             "top_k": 1,
             **kwargs,
         }
+        self.model = genai.GenerativeModel(model_name="gemini-1.0-pro",
+                                           generation_config=self.kwargs,
+                                           safety_settings=[])
+        self.convo = self.model.start_chat(history=[])
+        self.provider = "googlegenerativeai"
+        
 
         self.history: list[dict[str, Any]] = []
 
@@ -71,7 +75,8 @@ class Google(LM):
             "prompt": prompt,
             **kwargs,
         }
-        response = self.co.generate(**kwargs)
+        self.convo.send_message(prompt)
+        response = self.convo.last.text
 
         history = {
             "prompt": prompt,
