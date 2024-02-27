@@ -16,6 +16,7 @@ import dsp
 
 settings = dsp.settings
 
+AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3
 Databricks = dsp.Databricks
 Cohere = dsp.Cohere
