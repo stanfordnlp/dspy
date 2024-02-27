@@ -10,7 +10,7 @@ try:
     google_api_error = GoogleAPICallError
 except ImportError:
     google_api_error = Exception
-    print("Not loading Google because it is not installed.")
+    # print("Not loading Google because it is not installed.")
 
 
 def backoff_hdlr(details):
