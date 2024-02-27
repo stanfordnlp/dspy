@@ -30,8 +30,8 @@ class BaseSentenceVectorizer(abc.ABC):
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
     '''
-    Vectorizer bsaed on `SentenceTransformers` models. You can pick any model from this link:
-    https://huggingface.co/sentence-transformers
+    Vectorizer based on `SentenceTransformers` models. You can pick any model from this link:
+    https://huggingface.co/models?library=sentence-transformers
     More details about models:
     https://www.sbert.net/docs/pretrained_models.html
     '''
