@@ -17,7 +17,6 @@ from typing import Any, Literal, Optional, cast
 import dsp
 import backoff
 import openai
-from openai import OpenAI
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.gpt3 import GPT3
@@ -112,6 +111,8 @@ class Databricks(GPT3):
             return super().__call__(prompt, **kwargs)
 
 def create_custom_client():
+    from openai import OpenAI
+    
     client = OpenAI(api_key=openai.api_key, base_url=openai.base_url)
     return client
 
