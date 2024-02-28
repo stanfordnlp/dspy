@@ -87,6 +87,17 @@ class SignatureOptimizer(Teleprompter):
             if not repeat:
                 final_candidates.append(c)
         return final_candidates
+
+    def _print_signature(self, predictor):
+        if self.verbose:
+            if (hasattr(predictor, 'extended_signature')):
+                signature = predictor.extended_signature
+            else:
+                signature = predictor.extended_signature1
+            print(f"i: {signature.instructions}")
+            print(f"p: {list(signature.fields().values())[-1].json_schema_extra['prefix']}")
+            print()
+
     
     def compile(self, student, *, devset, eval_kwargs):
         """student is a program that needs to be optimized, note that it may be zero-shot or already pre-optimized for demos != []"""
@@ -169,13 +180,7 @@ class SignatureOptimizer(Teleprompter):
                     if self.verbose: print(f"----------------")
                     for i,predictor in enumerate(module_clone.predictors()):
                         if self.verbose: print(f"Predictor {i}")
-                        if (hasattr(predictor, 'extended_signature')):
-                            if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
-                            if self.verbose: print(f"p: {predictor.extended_signature.fields[-1].name}")
-                        else:
-                            if self.verbose: print(f"i: {predictor.extended_signature1.instructions}")
-                            if self.verbose: print(f"p: {predictor.extended_signature1.fields[-1].name}")
-                        if self.verbose: print()
+                        self._print_signature(predictor)
                     if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
                     score = evaluate(module_clone, devset=devset, **eval_kwargs)
                     if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
@@ -231,13 +236,7 @@ class SignatureOptimizer(Teleprompter):
                 if self.verbose: print(f"Full predictor with update: ")
                 for i,predictor in enumerate(module_clone.predictors()):
                     if self.verbose: print(f"Predictor {i}")
-                    if (hasattr(predictor, 'extended_signature')):
-                        if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
-                        if self.verbose: print(f"p: {predictor.extended_signature.fields[-1].name}")
-                    else:
-                        if self.verbose: print(f"i: {predictor.extended_signature1.instructions}")
-                        if self.verbose: print(f"p: {predictor.extended_signature1.fields[-1].name}")
-                    if self.verbose: print()
+                    self._print_signature(predictor)
 
             if d == self.depth-1:
                 break
