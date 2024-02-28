@@ -93,7 +93,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 program2 = teleprompter.compile(student, teacher=teacher, trainset=trainset2)
 
             evaluate = Evaluate(devset=self.valset, metric=self.metric, num_threads=self.num_threads,
-                                display_table=False, display_progress=True, max_errors=100)
+                                display_table=False, display_progress=True)
 
             score, subscores = evaluate(program2, return_all_scores=True)
 

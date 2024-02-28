@@ -137,6 +137,8 @@ class TypedPredictor(dspy.Module):
 
     def forward(self, **kwargs):
         modified_kwargs = kwargs.copy()
+        # We have to re-prepare the signature on every forward call, because the base
+        # signature might have been modified by an optimizer or something like that.
         signature = self._prepare_signature()
         for try_i in range(MAX_RETRIES):
             result = self.predictor(**modified_kwargs, new_signature=signature)

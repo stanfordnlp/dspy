@@ -9,7 +9,7 @@ import warnings
 import pytest
 
 import dspy
-from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.utils.dummies import DummyLM
@@ -76,7 +76,7 @@ def test_simple_class():
             description="At least two comments about the answer"
         )
 
-    class QA(dspy.Module):
+    class QA(FunctionalModule):
         @predictor
         def hard_question(self, topic: str) -> str:
             """Think of a hard factual question about a topic. It should be answerable with a number."""
@@ -107,7 +107,12 @@ def test_simple_class():
     dspy.settings.configure(lm=lm)
 
     qa = QA()
+    assert isinstance(qa, FunctionalModule)
+    assert isinstance(qa.answer, functional._StripOutput)
+
     question, answer = qa(topic="Physics")
+
+    print(qa.answer)
 
     assert question == "What is the speed of light?"
     assert answer == expected
@@ -168,7 +173,7 @@ def test_named_params():
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
     names, _ = zip(*qa.named_predictors())
-    assert set(names) == {"hard_question.predictor", "answer.predictor"}
+    assert set(names) == {"hard_question.predictor.predictor", "answer.predictor.predictor"}
 
 
 def test_bootstrap_effectiveness():
@@ -215,9 +220,9 @@ def test_bootstrap_effectiveness():
     lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    assert len(compiled_student.output.predictor.demos) == 1
-    assert compiled_student.output.predictor.demos[0].input == trainset[0].input
-    assert compiled_student.output.predictor.demos[0].output == trainset[0].output
+    assert len(compiled_student.output.predictor.predictor.demos) == 1
+    assert compiled_student.output.predictor.predictor.demos[0].input == trainset[0].input
+    assert compiled_student.output.predictor.predictor.demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
     # We are using a DummyLM with follow_examples=True, which means that
