@@ -1,6 +1,7 @@
 from copy import deepcopy
 import dsp
 from pydantic import BaseModel, Field, create_model
+from pydantic.fields import FieldInfo
 from typing import Type, Union, Dict, Tuple
 import re
 
@@ -68,9 +69,7 @@ class SignatureMeta(type(BaseModel)):
         return getattr(cls, "__doc__", "")
 
     def with_instructions(cls, instructions: str):
-        return create_model(
-            cls.__name__, __base__=Signature, __doc__=instructions, **cls.fields
-        )
+        return Signature(cls.fields, instructions)
 
     @property
     def fields(cls):
@@ -85,9 +84,7 @@ class SignatureMeta(type(BaseModel)):
             **fields_copy[name].json_schema_extra,
             **kwargs,
         }
-        return create_model(
-            cls.__name__, __base__=Signature, __doc__=cls.instructions, **fields_copy
-        )
+        return Signature(fields_copy, cls.instructions)
 
     @property
     def input_fields(cls):
@@ -113,8 +110,10 @@ class SignatureMeta(type(BaseModel)):
     def insert(cls, index: int, name: str, field, type_: Type = None):
         # It's posisble to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
-        if type_ is not None:
-            field.annotation = type_
+        if type_ is None:
+            type_ = field.annotation 
+        if type_ is None:
+            type_ = str
 
         input_fields = list(cls.input_fields.items())
         output_fields = list(cls.output_fields.items())
@@ -130,14 +129,10 @@ class SignatureMeta(type(BaseModel)):
             index += len(lst) + 1
         if index < 0 or index > len(lst):
             raise ValueError(f"Invalid index: {index}")
-        lst.insert(index, (name, field))
+        lst.insert(index, (name, (type_, field)))
 
         new_fields = dict(input_fields + output_fields)
-        new_signature = create_model(
-            cls.__name__ + "'", __base__=Signature, **new_fields
-        )
-        new_signature.__doc__ = cls.instructions
-        return new_signature
+        return Signature(new_fields, cls.instructions)
 
     def _parse_signature(cls, signature: str) -> Tuple[Type, Field]:
         pattern = r"^\s*[\w\s,]+\s*->\s*[\w\s,]+\s*$"
@@ -157,7 +152,7 @@ class SignatureMeta(type(BaseModel)):
 
     def __call__(
         cls,
-        signature: Union[str, Dict[str, Tuple[type, Field]]],
+        signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
         instructions: str = None,
     ):
         """
@@ -175,13 +170,35 @@ class SignatureMeta(type(BaseModel)):
             fields = cls._parse_signature(signature)
         else:
             fields = signature
+        
+        # Validate the fields, this is important because we sometimes forget the
+        # slightly unintuitive syntax with tuples of (type, Field)
+        fixed_fields = {}
+        for name, type_field in fields.items():
+            assert isinstance(name, str), f"Field names must be strings, not {type(name)}"
+            if isinstance(type_field, FieldInfo):
+                type_ = type_field.annotation
+                field = type_field
+            else:
+                assert isinstance(type_field, tuple), f"Field values must be tuples, not {type(type_field)}"
+                type_, field = type_field
+            # It might be better to be explicit about the type, but it currently would break
+            # program of thought and teleprompters, so we just silently default to string.
+            if type_ is None:
+                type_ = str
+            assert isinstance(type_, type), f"Field types must be types, not {type(type_)}"
+            assert isinstance(field, FieldInfo), f"Field values must be Field instances, not {type(field)}"
+            fixed_fields[name] = (type_, field)
+        
+        # Fixing the fields shouldn't change the order
+        assert list(fixed_fields.keys()) == list(fields.keys())
 
         # Default prompt when no instructions are provided
         if instructions is None:
             sig = Signature(signature, "")  # Simple way to parse input/output fields
             instructions = _default_instructions(sig)
 
-        signature = create_model("Signature", __base__=Signature, **fields)
+        signature = create_model("Signature", __base__=Signature, **fixed_fields)
         signature.__doc__ = instructions
         return signature
 
