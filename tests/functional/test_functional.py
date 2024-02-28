@@ -220,9 +220,10 @@ def test_bootstrap_effectiveness():
     lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    assert len(compiled_student.output.predictor.predictor.demos) == 1
-    assert compiled_student.output.predictor.predictor.demos[0].input == trainset[0].input
-    assert compiled_student.output.predictor.predictor.demos[0].output == trainset[0].output
+    demos = compiled_student.predictors()[0].demos
+    assert len(demos) == 1
+    assert demos[0].input == trainset[0].input
+    assert demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
     # We are using a DummyLM with follow_examples=True, which means that
