@@ -1,4 +1,5 @@
 from copy import deepcopy
+import typing
 import dsp
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -111,7 +112,7 @@ class SignatureMeta(type(BaseModel)):
         # It's posisble to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
-            type_ = field.annotation 
+            type_ = field.annotation
         if type_ is None:
             type_ = str
 
@@ -170,26 +171,34 @@ class SignatureMeta(type(BaseModel)):
             fields = cls._parse_signature(signature)
         else:
             fields = signature
-        
+
         # Validate the fields, this is important because we sometimes forget the
         # slightly unintuitive syntax with tuples of (type, Field)
         fixed_fields = {}
         for name, type_field in fields.items():
-            assert isinstance(name, str), f"Field names must be strings, not {type(name)}"
+            assert isinstance(
+                name, str
+            ), f"Field names must be strings, not {type(name)}"
             if isinstance(type_field, FieldInfo):
                 type_ = type_field.annotation
                 field = type_field
             else:
-                assert isinstance(type_field, tuple), f"Field values must be tuples, not {type(type_field)}"
+                assert isinstance(
+                    type_field, tuple
+                ), f"Field values must be tuples, not {type(type_field)}"
                 type_, field = type_field
             # It might be better to be explicit about the type, but it currently would break
             # program of thought and teleprompters, so we just silently default to string.
             if type_ is None:
                 type_ = str
-            assert isinstance(type_, type), f"Field types must be types, not {type(type_)}"
-            assert isinstance(field, FieldInfo), f"Field values must be Field instances, not {type(field)}"
+            assert isinstance(type_, type) or isinstance(
+                typing.get_origin(type_), type
+            ), f"Field types must be types, not {type(type_)}"
+            assert isinstance(
+                field, FieldInfo
+            ), f"Field values must be Field instances, not {type(field)}"
             fixed_fields[name] = (type_, field)
-        
+
         # Fixing the fields shouldn't change the order
         assert list(fixed_fields.keys()) == list(fields.keys())
 
