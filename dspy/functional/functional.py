@@ -71,6 +71,7 @@ class TypedPredictor(dspy.Module):
 
     @staticmethod
     def _make_example(type_):
+        # Note: DSPy will cache this call so we only pay the first time TypedPredictor is called.
         return dspy.Predict(
             dspy.Signature(
                 "json_schema -> json_object",
@@ -80,6 +81,8 @@ class TypedPredictor(dspy.Module):
         # TODO: Another fun idea is to only (but automatically) do this if the output fails.
         # We could also have a more general "suggest solution" prompt that tries to fix the output
         # More directly.
+        # TODO: Instead of using a language model to create the example, we can also just use a
+        # library like https://pypi.org/project/polyfactory/ that's made exactly to do this.
 
     def _prepare_signature(self):
         """Add formats and parsers to the signature fields, based on the type
@@ -111,7 +114,6 @@ class TypedPredictor(dspy.Module):
                         name,
                         desc=field.json_schema_extra.get("desc", "")
                         + (
-                            # f". Put the answer in the following JSON structure "
                             f". Respond with a single JSON object using the schema "
                             + json.dumps(type_.model_json_schema())
                             + (". For example: " + self._make_example(type_) if self.make_example else "")
