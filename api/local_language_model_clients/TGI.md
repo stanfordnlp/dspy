@@ -1,42 +1,42 @@
-## Launching a Text Generation Inference (TGI) Server
+# dspy.HFClientTGI
 
-### Prerequisites
+## Prerequisites
 
 - Docker must be installed on your system. If you don't have Docker installed, you can get it from [here](https://docs.docker.com/get-docker/).
 
-### Setting up the Text-Generation-Inference Server
+## Setting up the Text-Generation-Inference Server
 
 1. Clone the Text-Generation-Inference repository from GitHub by executing the following command:
 
-```bash
-git clone https://github.com/huggingface/text-generation-inference.git
-```
+   ```
+   git clone https://github.com/huggingface/text-generation-inference.git
+   ```
 
 2. Change into the cloned repository directory:
 
-```bash
-cd text-generation-inference
-```
+   ```
+   cd text-generation-inference
+   ```
 
 3. Execute the Docker command under the "Get Started" section to run the server:
 
-```bash
-model=mosaicml/mpt-30b # set to the specific Hugging Face model ID you wish to use.
-num_shard=1 # set to the number of shards you wish to use.
-volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
+   ```
+   model=meta-llama/Llama-2-7b-hf # set to the specific Hugging Face model ID you wish to use.
+   num_shard=2 # set to the number of shards you wish to use.
+   volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
 
-docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:latest --model-id $model --num-shard $num_shard
+   docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:0.9 --model-id $model --num-shard $num_shard
+   ```
+
+   This command will start the server and make it accessible at `http://localhost:8080`.
+
+If you want to connect to [Meta Llama 2 models](https://huggingface.co/meta-llama), make sure to use version 9.3 (or higher) of the docker image (ghcr.io/huggingface/text-generation-inference:0.9.3) and pass in your huggingface token as an environment variable.
+
+```
+   docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data -e HUGGING_FACE_HUB_TOKEN={your_token} ghcr.io/huggingface/text-generation-inference:0.9.3 --model-id $model --num-shard $num_shard
 ```
 
-This command will start the server and make it accessible at `http://localhost:8080`.
-
-If you want to connect to private HuggingFace models such as [Meta Llama 2 models](https://huggingface.co/meta-llama), make sure to use version 9.3 (or higher) of the docker image (ghcr.io/huggingface/text-generation-inference:0.9.3) and pass in your huggingface token as an environment variable.
-
-```bash
-docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data -e HUGGING_FACE_HUB_TOKEN={your_token} ghcr.io/huggingface/text-generation-inference:latest --model-id $model --num-shard $num_shard
-```
-
-### Sending requests to the server
+## Sending requests to the server
 
 After setting up the text-generation-inference server and ensuring that it displays "Connected" when it's running, you can interact with it using the `HFClientTGI`.
 
@@ -57,4 +57,4 @@ Initialize the `HFClientTGI` within your program with the desired parameters. He
    - `--max-input-length`: Set the maximum allowed input length for the text.
    - `--max-total-tokens`: Set the maximum total tokens allowed for text generation.
 
-Please refer to the [official TGI repository](https://github.com/huggingface/text-generation-inference) for detailed docs.
+Please refer to the [official Text-Generation-Inference repository](https://github.com/huggingface/text-generation-inference) for more detailed information and documentation.
