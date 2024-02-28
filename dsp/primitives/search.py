@@ -10,6 +10,11 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
     passages = dsp.settings.rm(query, k=k, **kwargs)
+
+    # Check if the returned object has a 'passages' attribute (i.e a Prediction object)  
+    # TODO: use a better approach to determine the Prediction object
+    if hasattr(passages, 'passages'):
+        passages = passages.passages
     if not isinstance(passages, Iterable):
         # it's not an iterable yet; make it one.
         # TODO: we should unify the type signatures of dspy.Retriever
