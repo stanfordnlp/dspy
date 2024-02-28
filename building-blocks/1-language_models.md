@@ -141,31 +141,31 @@ lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="..."
 
 You need to host these models on your own GPU(s). Below, we include pointers for how to do that.
 
-1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](/api/hosting_language_models_locally/TGI)
+1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](/api/local_language_model_clients/TGI)
 
 ```python
 tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
 ```
 
-2.  `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](/api/hosting_language_models_locally/vLLM)
+2.  `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](/api/local_language_model_clients/vLLM)
 
 ```python
 vllm_llama2 = dspy.HFClientVLLM(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
 ```
 
-3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](/api/hosting_language_models_locally/HFModel)
+3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](/api/local_language_model_clients/HFModel)
 
 ```python
 llama = dspy.HFModel(model = 'meta-llama/Llama-2-7b-hf')
 ```
 
-4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/hosting_language_models_locally/Ollama)\n",
+4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](/api/local_language_model_clients/Ollama)\n",
 
 ```python
 mistral_ollama = dspy.OllamaLocal(model='mistral')
 ```
 
-5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](/api/hosting_language_models_locally/MLC)
+5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](/api/local_language_model_clients/MLC)
 
 ```python
 model = 'dist/prebuilt/mlc-chat-Llama-2-7b-chat-hf-q4f16_1'
