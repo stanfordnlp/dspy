@@ -65,12 +65,12 @@ Your task is to propose an instruction that will lead a good language model to p
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
 class BasicGenerateInstructionWithExamplesAndDataObservations(dspy.Signature):
-        ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will also provide you with the current ``basic instruction`` that is being used for this task. I will also provide you with some ``observations`` I have made about the dataset and task, along with some ``examples`` of the expected inputs and outputs.
+        ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will give you some ``observations`` I have made about the dataset and task, along with some ``examples`` of the expected inputs and outputs. I will also provide you with the current ``basic instruction`` that is being used for this task.
 
 Your task is to propose a new improved instruction and prefix for the output field that will lead a good language model to perform the task well. Don't be afraid to be creative.""")
-        basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
         observations = dspy.InputField(desc="Observations about the dataset and task")
         examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
+        basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
         proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
 
@@ -112,12 +112,8 @@ class BayesianSignatureOptimizer(Teleprompter):
     def _print_full_program(self, program):
         for i,predictor in enumerate(program.predictors()):
             if self.verbose: print(f"Predictor {i}")
-            if (hasattr(predictor, 'extended_signature')):
-                if self.verbose: print(f"i: {predictor.extended_signature.instructions}")
-                if self.verbose: print(f"p: {predictor.extended_signature.fields[-1].name}")
-            else:
-                if self.verbose: print(f"i: {predictor.extended_signature1.instructions}")
-                if self.verbose: print(f"p: {predictor.extended_signature1.fields[-1].name}")
+            if self.verbose: print(f"i: {self._get_signature(predictor).instructions}")
+            if self.verbose: print(f"p: {self._get_signature(predictor).fields[-1].name}")
             if self.verbose: print("\n")
     
     def _print_model_history(self, model, n=1):
@@ -162,6 +158,12 @@ class BayesianSignatureOptimizer(Teleprompter):
 
         # Joining all the field strings
         return '\n'.join(output)
+
+    def _get_signature(self, predictor):
+        if (hasattr(predictor, 'extended_signature')):
+            return predictor.extended_signature
+        elif (hasattr(predictor, 'signature')):
+            return predictor.signature
     
     def _generate_first_N_candidates(self, module, N, view_data, view_examples, demo_candidates, devset):
         candidates = {}
@@ -186,7 +188,7 @@ class BayesianSignatureOptimizer(Teleprompter):
                                 if example["augmented"]:
                                     if example_set_i not in example_set:
                                         example_set[example_set_i] = []
-                                    fields_to_use = predictor.signature.fields
+                                    fields_to_use = self._get_signature(predictor).fields
                                     input_variable_names = [field.input_variable for field in fields_to_use]
                                     example_with_only_signature_fields = {key: value for key, value in example.items() if key in input_variable_names}
                                     example_string = self._create_example_string(fields_to_use, example_with_only_signature_fields)
@@ -200,12 +202,8 @@ class BayesianSignatureOptimizer(Teleprompter):
         for predictor in module.predictors():
             basic_instruction = None
             basic_prefix = None
-            if (hasattr(predictor, 'extended_signature')):
-                basic_instruction = predictor.extended_signature.instructions
-                basic_prefix = predictor.extended_signature.fields[-1].name
-            else:
-                basic_instruction = predictor.extended_signature1.instructions
-                basic_prefix = predictor.extended_signature1.fields[-1].name
+            basic_instruction = self._get_signature(predictor).instructions
+            basic_prefix = self._get_signature(predictor).fields[-1].name
             with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
                 if view_data and view_examples:
@@ -251,6 +249,14 @@ class BayesianSignatureOptimizer(Teleprompter):
         # Set up program and evaluation function
         module = student.deepcopy()
         evaluate = Evaluate(devset=devset, metric=self.metric, **eval_kwargs)
+        
+        # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
+        if max_bootstrapped_demos==0 and max_labeled_demos==0: #TODO: address case when max_bootstrapped alone is 0
+            max_bootstrapped_demos_for_candidate_gen = 1 
+            max_labeled_demos_for_candidate_gen = 1 #TODO: this might only need to be 0
+        else:
+            max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos 
+            max_labeled_demos_for_candidate_gen = max_labeled_demos
 
         # Generate N few shot example sets
         demo_candidates = {}
@@ -267,7 +273,7 @@ class BayesianSignatureOptimizer(Teleprompter):
                 rng = random.Random(i)
                 shuffled_devset = devset[:]  # Create a copy of devset
                 rng.shuffle(shuffled_devset)  # Shuffle the copy
-                tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, teacher_settings=self.teacher_settings)
+                tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen, max_labeled_demos=max_labeled_demos_for_candidate_gen, teacher_settings=self.teacher_settings)
                 candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_devset)
 
                 # Store the candidate demos
@@ -275,9 +281,13 @@ class BayesianSignatureOptimizer(Teleprompter):
                     if id(module_p) not in demo_candidates.keys():
                         demo_candidates[id(module_p)] = []
                     demo_candidates[id(module_p)].append(candidate_p.demos)
-
+            
         # Generate N candidate prompts
         instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, devset)
+
+        # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
+        if max_bootstrapped_demos==0 and max_labeled_demos==0:
+            demo_candidates = None
 
         # Initialize variables to store the best program and its score
         best_score = float('-inf')
@@ -293,20 +303,20 @@ class BayesianSignatureOptimizer(Teleprompter):
                 candidate_program = baseline_program.deepcopy()
 
                 # Suggest the instruction to use for our predictor 
-                if self.verbose: print(f"Starting trial num: {trial_num}")
+                print(f"Starting trial #{trial_num}")
                 trial_logs[trial_num] = {}
 
                 for p_old, p_new in zip(baseline_program.predictors(), candidate_program.predictors()):
 
                     # Get instruction candidates for our given predictor
                     p_instruction_candidates = instruction_candidates[id(p_old)]
-                    p_demo_candidates = demo_candidates[id(p_old)]
+                    if demo_candidates: p_demo_candidates = demo_candidates[id(p_old)]
 
                     # Suggest the index of the instruction candidate to use in our trial
                     instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
-                    demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                    if demo_candidates: demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
                     trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
-                    trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
+                    if demo_candidates: trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 
                     # Get the selected instruction candidate 
                     selected_candidate = p_instruction_candidates[instruction_idx]
@@ -314,17 +324,17 @@ class BayesianSignatureOptimizer(Teleprompter):
                     selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip('"').strip()
 
                     # Use this candidates in our program
-                    p_new.extended_signature.instructions = selected_instruction
-                    p_new.extended_signature.fields[-1] = p_new.extended_signature.fields[-1]._replace(name=selected_prefix)
+                    self._get_signature(p_new).instructions = selected_instruction
+                    self._get_signature(p_new).fields[-1] = self._get_signature(p_new).fields[-1]._replace(name=selected_prefix)
 
                     # Get the selected demos
-                    selected_demos = p_demo_candidates[demos_idx]
+                    if demo_candidates: selected_demos = p_demo_candidates[demos_idx]
 
                     # Use these demos in our program
-                    p_new.demos = selected_demos
+                    if demo_candidates: p_new.demos = selected_demos
                 
                 if self.verbose: print("Evaling the following program:")
-                self._print_full_program(candidate_program)
+                if self.verbose: self._print_full_program(candidate_program)
                 trial_logs[trial_num]["program"] = candidate_program
 
                 # Evaluate with the new prompts
@@ -347,14 +357,14 @@ class BayesianSignatureOptimizer(Teleprompter):
 
                     # Handle pruning based on the intermediate value.
                     if trial.should_prune():
-                        if self.verbose: print(f"Optuna decided to prune!")
+                        print(f"Trial pruned.")
                         trial_logs[trial_num]["score"] = curr_weighted_avg_score
                         trial_logs[trial_num]["pruned"] = True
                         trial_num += 1 
                         raise optuna.TrialPruned()
                 
                 if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
-                self._print_model_history(self.task_model, n=1)
+                if self.verbose: self._print_model_history(self.task_model, n=1)
                 score = curr_weighted_avg_score
                 
                 trial_logs[trial_num]["score"] = curr_weighted_avg_score
