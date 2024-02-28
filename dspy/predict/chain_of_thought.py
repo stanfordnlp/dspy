@@ -126,9 +126,9 @@ class ChainOfThought(Module):
         """
         if "extended_signature_instructions" in state:
             instructions = state["extended_signature_instructions"]
-            self.extended_signature = self.extended_signature.with_instructions(instructions)
+            self.predict.extended_signature.instructions = (
+                self.predict.extended_signature.with_instructions(instructions))
 
-            self.predict.extended_signature.instructions = state["extended_signature_instructions"]
         if "extended_signature_prefix" in state:
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.predict.extended_signature.fields.keys()
