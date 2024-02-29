@@ -1,29 +1,29 @@
 import dspy
 from typing import List
+from datasets import DatasetDict
+
+def format_examples(examples: List[dspy.Example]):
+    if isinstance(examples, str):
+        return examples
+
+    formatted_example = ""
+
+    for example in examples:
+        input_keys = example.inputs().keys()
+        label_keys = example.labels().keys()
+
+        formatted_example += f"Input:\n"
+        for key in input_keys:
+            formatted_example += f"{key}: {example[key]}\n"
+
+        formatted_example += f"Output:\n"
+        for key in label_keys:
+            formatted_example += f"{key}: {example[key]}\n"
+
+    return formatted_example
 
 class ExplainTask(dspy.Signature):
     """Imagine you're a detective in a game where your mission is to unlock the mystery of a hidden treasure. The treasure map, in this case, is the task description. Your first step is to study the map carefully to understand where the treasure is hidden and how to get there. This means figuring out what the task is all about—like decoding clues. Once you've got a good grasp, your job is to explain your plan to your team in a way that's super easy to understand, as if you're telling a friend how to find the treasure without using the map. You won't be using the clues directly in your explanation but rather your understanding of them to guide your team clearly and simply to the treasure."""
-
-    @staticmethod
-    def format_examples(examples: List[dspy.Example]):
-        if isinstance(examples, str):
-            return examples
-
-        formatted_example = ""
-
-        for example in examples:
-            input_keys = example.inputs().keys()
-            label_keys = example.labels().keys()
-
-            formatted_example += f"Input:\n"
-            for key in input_keys:
-                formatted_example += f"{key}: {example[key]}\n"
-
-            formatted_example += f"Output:\n"
-            for key in label_keys:
-                formatted_example += f"{key}: {example[key]}\n"
-
-        return formatted_example
 
     examples = dspy.InputField(
         prefix="Few Shot Examples:-",
@@ -53,7 +53,11 @@ class GenerateFieldDescription(dspy.Signature):
 
 class GenerateInputFieldsData(dspy.Signature):
     """You are an expert data generator with 30 years of experience in generating synthetic data. We want you to put these skills at work, I'll be providing you with some input fields that are columns of the csv file and the explanation of the task thse fields would be an input to. Your task is to generate synthetic for these fields."""
-    pass
+    
+    task_description = dspy.InputField(
+        prefix="Task Description:",
+        desc="Description of the task the field is an input to.",
+    )
 
 class GenerateOutputFieldsData(dspy.Signature):
     pass
@@ -66,40 +70,86 @@ class Synthesizer:
         self.generate_input_data = GenerateInputFieldsData()
         self.generate_output_data = GenerateOutputFieldsData()
 
-    def _prepare_synthetic_data_signature(self, signature: dspy.Signature):
-        signature
+    def _prepare_synthetic_data_signatures(self, input_keys: List[str], output_keys: List[str], task_description: str):
+        for key in input_keys:
+            field_details = self.generate_field_description(
+                task_description=task_description,
+                field_name=key,
+            )
+
+            field_name = field_details.field_name
+            field_description = field_details.field_description
+            
+            output_field = dspy.OutputField(
+                prefix=f"{field_name}:",
+                desc=field_description,
+            )
+            setattr(self.generate_input_data, field_name, output_field)
+
+            input_field = dspy.InputField(
+                prefix=f"{field_name}:",
+                desc=field_description,
+            )
+            setattr(self.generate_output_data, field_name, input_field)
+        
+        for key in output_keys:
+            field_details = self.generate_field_description(
+                task_description=task_description,
+                field_name=key,
+            )
+
+            field_name = field_details.field_name
+            field_description = field_details.field_description
+
+            output_field = dspy.OutputField(
+                prefix=f"{field_name}:",
+                desc=field_description,
+            )
+            setattr(self.generate_output_data, field_name, output_field)
+        
+        return dspy.Predict(self.generate_input_data), dspy.Predict(self.generate_output_data)
 
     def generate(self, examples: List[dspy.Example], num_data: int) -> List[dspy.Example]:
-        input_keys = examples[0].keys()
-
         task_description = self.explain_task(examples=examples)
-        self.generate_output_data.__doc__ = task_description
+        self.generate_output_data.__doc__ = task_description.explanation
 
-        self._prepare_synthetic_data_signature()
+        input_keys = [key for key in examples[0].inputs()]
+        output_keys = [key for key in examples[0].labels()]
+
+        self.input_predictor, self.output_predictor = self._prepare_synthetic_data_signatures(
+            input_keys=input_keys,
+            output_keys=output_keys,
+            task_description=task_description,
+        )
 
         data = []
         for _ in range(num_data):
-            synthetic_data = {field: self.generate_synthetic_data() for field in fields}
-            data.append(synthetic_data)
+            inputs = self.input_predictor(task_description=task_description)
+
+            input_kwargs = {
+                key: inputs[key]
+                for key in input_keys
+            }
+
+            outputs = self.output_predictor(**input_kwargs)
+
+            output_kwargs = {
+                key: outputs[key]
+                for key in output_keys
+            }
+
+            data.append(dspy.Example(**input_kwargs, **output_kwargs).with_inputs(*input_keys))
+
+        return data
             
 
-    def export(self):
-        pass
+    def export(self, data: List[dspy.Example], path: str, mode: str = None):
+        extention = mode or path.split(".")[-1]
+        dataset_dict = DatasetDict(
+            [example.toDict() for example in data]
+        )
 
-    def _to_csv(self):
-        pass
-
-    def _to_jsonl(self):
-        pass
-
-    def _to_pickle(self):
-        pass
-
-    def _to_sql(self):
-        pass
-
-    def _to_parquet(self):
-        pass
-
-    def _to_arrow(self):
-        pass
+        dataset_dict.save_to_disk(
+            path=path,
+            extention=extention,
+        )
