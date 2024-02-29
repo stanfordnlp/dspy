@@ -7,9 +7,12 @@ from pydantic import Field
 from .base import BaseLM
 
 
-class LiteLLM(BaseLM):
-    STANDARD_PARAMS: dict[str, t.Union[float, int]] = {
-        "temperature": 0.0,
+Choice = t.TypeVar("Choice", dict[str, t.Any])
+
+
+class LiteLM(BaseLM):
+    STANDARD_PARAMS: dict[str, t.Any] = {
+        "temperature": 0,
         "max_tokens": 150,
         "top_p": 1,
         "frequency_penalty": 0,
@@ -19,11 +22,11 @@ class LiteLLM(BaseLM):
     model: str
     default_params: dict[str, t.Any] = Field(default_factory=dict)
 
-    def _call(
+    def generate(
         self,
         prompt: str,
         **kwargs,
-    ) -> list[dict[str, t.Any]]:
+    ) -> list[Choice]:
         """Generates `n` predictions for the signature output."""
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         response = completion(
@@ -32,10 +35,11 @@ class LiteLLM(BaseLM):
             **options,
         )
         choices = [c for c in response["choices"] if c["finish_reason"] != "length"]
-        return [c["message"]["content"] for c in choices]  # TODO: Needs to change
+        return choices
 
     def count_tokens(self, prompt: str) -> int:
         """Counts the number of tokens for a specific prompt."""
         return token_counter(
-            model=self.model, messages=[{"role": "user", "content": prompt}]
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
         )

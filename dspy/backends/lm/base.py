@@ -8,28 +8,31 @@ from pydantic import BaseModel
 from joblib import Memory
 
 
-_cachedir = os.environ.get("DSP_CACHEDIR") or os.path.join(Path.home(), ".joblib_cache")
+_cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
+
+Completion = t.TypeVar("Completion", bound=dict)
+
+
+MinimalLM = t.Callable[[str, float, int, int], list[Completion]]
 
 
 class BaseLM(BaseModel, ABC):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._cached = _cache_memory.cache(self._call)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.generate_with_cache = _cache_memory.cache(self.generate)
 
     def __call__(self, prompt: str, **kwargs) -> list[str]:
         """Generates `n` predictions for the signature output."""
-        if dspy.settings.cache:
-            return self._cached(prompt, **kwargs)
-        else:
-            return self._call(prompt, **kwargs)
+        generator = self.generate_with_cache if dspy.settings.cache else self.generate
+        return generator(prompt, **kwargs)
 
     @abstractmethod
-    def _call(
+    def generate(
         self,
         prompt: str,
         **kwargs,
-    ) -> list[dict[str, t.Any]]:
+    ) -> list[Completion]:
         """Generates `n` predictions for the signature output."""
         ...
 

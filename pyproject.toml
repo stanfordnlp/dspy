@@ -15,7 +15,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",    # removed 3.8
+    "Programming Language :: Python :: 3", # removed 3.8
     "Programming Language :: Python :: 3.9",
 ]
 # We have both project and tool.poetry.dependencies. Should we remove one?
@@ -59,7 +59,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy"
-version = "2.0.8"
+version = "2.3.4"
 description = "DSPy"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 license = "MIT"
@@ -68,9 +68,8 @@ homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 # documentation = "https://dspy-ai.readthedocs.io"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
+
 # may be a bit much
-
-
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 pydantic = "2.5.0"
@@ -100,18 +99,11 @@ sphinx_rtd_theme = { version = "*", optional = true }
 autodoc_pydantic = { version = "*", optional = true }
 sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
-<<<<<<< HEAD
 snoop = "^0.4.3"
 litellm = "^1.26.3"
-||||||| f550eaed
-snoop = "^0.4.3"
-=======
-
 
 [tool.poetry.group.test.dependencies]
 pytest = "^6.2.5"
-
->>>>>>> main
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
@@ -261,7 +253,6 @@ ignore = [
     # Within an `except` clause, raise exceptions with `raise
     "B904",
 ]
-
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []

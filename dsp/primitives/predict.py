@@ -55,12 +55,15 @@ def generate(template: Template, **kwargs) -> Callable:
         return dsp.predict._generate(template, **kwargs)
 
 
+class UnsetBackendError(AssertionError):
+    """Raised when no backend is configured."""
+
+
 def _generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    if not dsp.settings.lm:
-        raise AssertionError("No LM is loaded.")
-
     generator = dsp.settings.lm
+    if not generator:
+        raise UnsetBackendError("No backend configured.")
 
     def do_generate(
         example: Example,
@@ -68,7 +71,7 @@ def _generate(template: Template, **kwargs) -> Callable:
         max_depth: int = 2,
         original_example=None,
     ):
-        if not dsp.settings.lm or not dsp.settings.backend:
+        if not dsp.settings.lm:
             raise AssertionError("No LM or backend is loaded.")
         original_example = original_example or example
         assert stage is not None
@@ -77,14 +80,9 @@ def _generate(template: Template, **kwargs) -> Callable:
         example = example.demos_at(lambda d: d[stage])
 
         # Generate and extract the fields.
-        if dsp.settings.backend:
-            completions: list[Example] = dsp.settings.backend(template, **kwargs)
-        else:
-            prompt = template(example)
-            completions: list[dict[str, Any]] = generator(prompt, **kwargs)
-            completions: list[Example] = [
-                template.extract(example, p) for p in completions
-            ]
+        prompt = template(example)
+        completions: list[dict[str, Any]] = generator(prompt, **kwargs)
+        completions: list[Example] = [template.extract(example, p) for p in completions]
 
         # Find the completions that are most complete.
         field_names: list[str] = [field.input_variable for field in template.fields]
