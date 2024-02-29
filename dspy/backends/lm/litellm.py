@@ -7,7 +7,7 @@ from pydantic import Field
 from .base import BaseLM
 
 
-Choice = t.TypeVar("Choice", dict[str, t.Any])
+Choice = t.TypeVar("Choice", bound=dict[str, t.Any])
 
 
 class LiteLM(BaseLM):
