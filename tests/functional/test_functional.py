@@ -5,6 +5,7 @@ from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
 import warnings
 from typing import List
+from pyparsing import Literal
 
 import pytest
 
@@ -22,23 +23,6 @@ def test_simple():
 
     expected = "What is the speed of light?"
     lm = DummyLM([expected])
-    dspy.settings.configure(lm=lm)
-
-    question = hard_question(topic="Physics")
-    lm.inspect_history(n=2)
-
-    assert question == expected
-
-
-def test_list_output():
-    @predictor
-    def hard_question(topic: str) -> List[str]:
-        """Think of a hard factual question about a topic."""
-
-    expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(
-        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
-    )
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")

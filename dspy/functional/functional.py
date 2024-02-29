@@ -72,12 +72,18 @@ class TypedPredictor(dspy.Module):
     @staticmethod
     def _make_example(type_):
         # Note: DSPy will cache this call so we only pay the first time TypedPredictor is called.
-        return dspy.Predict(
+        json_object = dspy.Predict(
             dspy.Signature(
                 "json_schema -> json_object",
                 "Make a very succinct json object that validates with the following schema",
             )
         )(json_schema=json.dumps(type_.model_json_schema())).json_object
+        # We use the model_validate_json method to make sure the example is valid
+        try:
+            type_.model_validate_json(_unwrap_json(json_object))
+        except (pydantic.ValidationError, ValueError):
+            return ""  # Unable to make an example
+        return json_object
         # TODO: Another fun idea is to only (but automatically) do this if the output fails.
         # We could also have a more general "suggest solution" prompt that tries to fix the output
         # More directly.
