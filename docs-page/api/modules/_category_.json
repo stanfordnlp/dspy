@@ -1,6 +1,6 @@
 {
     "label": "Modules",
-    "position": 3,
+    "position": 1,
     "link": {
       "type": "generated-index",
       "description": "Modules in DSPy"
