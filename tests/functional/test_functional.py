@@ -1,10 +1,10 @@
 import datetime
-import json
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
 import warnings
+from typing import List
 
 import pytest
 
@@ -22,6 +22,40 @@ def test_simple():
 
     expected = "What is the speed of light?"
     lm = DummyLM([expected])
+    dspy.settings.configure(lm=lm)
+
+    question = hard_question(topic="Physics")
+    lm.inspect_history(n=2)
+
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_question(topic: str) -> List[str]:
+        """Think of a hard factual question about a topic."""
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(
+        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
+    )
+    dspy.settings.configure(lm=lm)
+
+    question = hard_question(topic="Physics")
+    lm.inspect_history(n=2)
+
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_question(topic: str) -> List[str]:
+        """Think of a hard factual question about a topic."""
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(
+        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
+    )
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
@@ -72,7 +106,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: list[str] = pydantic.Field(
+        comments: List[str] = pydantic.Field(
             description="At least two comments about the answer"
         )
 
@@ -173,7 +207,10 @@ def test_named_params():
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
     names, _ = zip(*qa.named_predictors())
-    assert set(names) == {"hard_question.predictor.predictor", "answer.predictor.predictor"}
+    assert set(names) == {
+        "hard_question.predictor.predictor",
+        "answer.predictor.predictor",
+    }
 
 
 def test_bootstrap_effectiveness():
@@ -204,18 +241,15 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule()
     teacher = SimpleModule()
-    assert student.output.predictor.signature.equals(
-        teacher.output.predictor.signature)
+    assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"],
-                 follow_examples=True)
+    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
 
@@ -388,7 +422,7 @@ def test_field_validator():
         ]
         * 10
     )
-    dspy.settings.configure(lm=lm) 
+    dspy.settings.configure(lm=lm)
 
     with pytest.raises(ValueError):
         get_user_details()

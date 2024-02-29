@@ -103,9 +103,7 @@ class TypedPredictor(dspy.Module):
                 else:
                     # Anything else we wrap in a pydantic object
                     unwrap = lambda x: x
-                    if not inspect.isclass(type_) or not issubclass(
-                        type_, pydantic.BaseModel
-                    ):
+                    if not (inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)):
                         type_ = pydantic.create_model(
                             "Output", value=(type_, ...), __base__=pydantic.BaseModel
                         )
