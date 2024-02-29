@@ -213,7 +213,9 @@ class BayesianSignatureOptimizer(Teleprompter):
                 basic_prefix = last_field.json_schema_extra["prefix"]
             with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
-                if view_data and view_examples and 1 in example_sets[id(predictor)].keys():
+                if view_data and view_examples:
+                    if 1 not in example_sets[id(predictor)].keys():
+                        raise ValueError("No examples found for the given predictor")
                     instruct = None
                     for i in range(1, self.n):
                         new_instruct = dspy.Predict(
@@ -323,8 +325,11 @@ class BayesianSignatureOptimizer(Teleprompter):
                     p_demo_candidates = demo_candidates[id(p_old)]
 
                     # Suggest the index of the instruction candidate to use in our trial
-                    instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
-                    demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                    #instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
+                    #demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                    instruction_idx = trial.suggest_int(f"{id(p_old)}_predictor_instruction",low=0, high=len(p_instruction_candidates)-1)
+                    demos_idx = trial.suggest_int(f"{id(p_old)}_predictor_demos",low=0, high=len(p_demo_candidates)-1)
+
                     trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
                     trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 

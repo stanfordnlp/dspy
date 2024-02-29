@@ -24,7 +24,7 @@ def test_evaluate_initialization():
     assert ev.display_progress == False
 
 def test_evaluate_call():
-    dsp.settings.lm = DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"})
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -37,7 +37,7 @@ def test_evaluate_call():
     assert score == 100.0
 
 def test_evaluate_call_bad():
-    dsp.settings.lm = DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"})
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     ev = Evaluate(

@@ -1,0 +1,83 @@
+---
+sidebar_position: 2
+---
+
+import AuthorDetails from '@site/src/components/AuthorDetails';
+
+# AzureCognitiveSearch
+
+## Prerequisites
+
+```bash
+pip install azure-core
+```
+
+## Setting up the Azure Client
+
+The constructor initializes an instance of the `AzureCognitiveSearch` class and sets up parameters for sending queries and retrieving results with the Azure Cognitive Search server.
+
+- `search_service_name` (_str_): Name of Azure Cognitive Search server.
+- `search_api_key` (_str_): API Authentication token for accessing Azure Cognitive Search server.
+- `search_index_name` (_str_): Name of search index in the Azure Cognitive Search server.
+- `field_text` (_str_): Field name that maps to DSP "content" field.
+- `field_score` (_str_): Field name that maps to DSP "score" field.
+
+```python
+class AzureCognitiveSearch:
+    def __init__(
+        self,
+        search_service_name: str,
+        search_api_key: str,
+        search_index_name: str,
+        field_text: str,
+        field_score: str, # required field to map with "score" field in dsp framework
+    ):
+```
+
+## Under the Hood
+
+### `__call__(self, query: str, k: int = 10) -> Union[list[str], list[dotdict]]:`
+
+**Parameters:**
+- `query` (_str_): Search query string used for retrieval sent to Azure Cognitive Search service.
+- `k` (_int_, _optional_): Number of passages to retrieve. Defaults to 10.
+
+**Returns:**
+- `Union[list[str], list[dotdict]]`: list of top-k search results 
+
+Internally, the method handles the specifics of preparing the request query to the Azure Cognitive Search service and corresponding payload to obtain the response. 
+
+The method sends a query and number of desired passages (k) to Azure Cognitive Search using `azure_search_request`. This function communicates with Azure and processes the search results as a list of dictionaries. 
+
+This is then converted to `dotdict` objects that internally map the retrieved content and scores, listed by descending order of relevance.
+
+## Sending Retrieval Requests via Azure Client
+1) _**Recommended**_ Configure default RM using `dspy.configure`.
+
+This allows you to define programs in DSPy and have DSPy internally conduct retrieval using `dsp.retrieve` on the query on the configured RM.
+
+```python
+import dspy
+import dsp
+
+dspy.settings.configure(rm= TODO)
+retrieval_response = dsp.retrieve("When was the first FIFA World Cup held?", k=5)
+
+for result in retrieval_response:
+    print("Text:", result, "\n")
+```
+
+
+2) Generate responses using the client directly.
+```python
+import dspy
+
+retrieval_response = TODO('When was the first FIFA World Cup held?', k=5)
+
+for result in retrieval_response:
+    print("Text:", result['text'], "\n")
+```
+
+***
+
+<AuthorDetails name="Arnav Singhvi"/>

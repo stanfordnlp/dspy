@@ -1,0 +1,12 @@
+backoff
+joblib<=1.3.2
+openai>=0.28.1,<2.0.0
+pandas
+regex
+ujson
+tqdm
+datasets
+requests
+optuna
+pydantic==2.5.0
+# To be deleted

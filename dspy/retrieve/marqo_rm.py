@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import List, Union
 import dspy
+from dspy import dotdict
 
 try:
     import marqo
@@ -20,6 +21,9 @@ class MarqoRM(dspy.Retrieve):
         marqo_index_name (str): The name of the marqo index.
         marqo_client (marqo.client.Client): A marqo client instance.
         k (int, optional): The number of top passages to retrieve. Defaults to 3.
+        page_content (str, optional): The name of the field in the marqo index that contains the text of the passage. Defaults to 'document'.
+        filter_string (str, optional): A filter string to use when searching. Defaults to None.
+        **kwargs: Additional keyword arguments to pass to the marqo search function.
 
     Examples:
         Below is a code snippet that shows how to use Marqo as the default retriver:
@@ -43,13 +47,17 @@ class MarqoRM(dspy.Retrieve):
         marqo_index_name: str,
         marqo_client: marqo.client.Client,
         k: int = 3,
+        page_content: str = 'document',
+        filter_string: str = None
     ):
         self._marqo_index_name = marqo_index_name
         self._marqo_client = marqo_client
+        self.page_content = page_content
+        self.filter_string = filter_string
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k=None, **kwargs) -> dspy.Prediction:
         """Search with Marqo for self.k top passages for query
 
         Args:
@@ -63,13 +71,16 @@ class MarqoRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-        queries = [q for q in queries if q]  
+        queries = [q for q in queries if q]
+        limit = k if k else self.k
 
         all_query_results = []
         for query in queries:
             _result = self._marqo_client.index(self._marqo_index_name).search(
                 q=query,
-                limit=self.k
+                limit=limit,
+                filter_string=self.filter_string,
+                **kwargs
             )
             all_query_results.append(_result)
 
@@ -77,8 +88,8 @@ class MarqoRM(dspy.Retrieve):
 
         for result_dict in all_query_results:
             for result in result_dict['hits']:
-                passages[result['document']] += result['_score']
+                passages[result[self.page_content]] += result['_score']
 
         sorted_passages = sorted(
-            passages.items(), key=lambda x: x[1], reverse=True)[:self.k]
-        return dspy.Prediction(passages=[passage for passage, _ in sorted_passages])
+            passages.items(), key=lambda x: x[1], reverse=True)[:limit]
+        return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]

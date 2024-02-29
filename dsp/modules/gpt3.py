@@ -48,12 +48,12 @@ def backoff_hdlr(details):
 
 
 class GPT3(LM):
-    """Wrapper around OpenAI's GPT API. Supports both the OpenAI and Azure APIs.
+    """Wrapper around OpenAI's GPT API.
 
     Args:
-        model (str, optional): OpenAI or Azure supported LLM model to use. Defaults to "text-davinci-002".
+        model (str, optional): OpenAI supported LLM model to use. Defaults to "text-davinci-002".
         api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
-        api_provider (Literal["openai", "azure"], optional): The API provider to use. Defaults to "openai".
+        api_provider (Literal["openai"], optional): The API provider to use. Defaults to "openai".
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
         **kwargs: Additional arguments to pass to the API provider.
     """
@@ -62,7 +62,7 @@ class GPT3(LM):
         self,
         model: str = "gpt-3.5-turbo-instruct",
         api_key: Optional[str] = None,
-        api_provider: Literal["openai", "azure"] = "openai",
+        api_provider: Literal["openai"] = "openai",
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         **kwargs,
@@ -71,6 +71,10 @@ class GPT3(LM):
         self.provider = "openai"
         openai.api_type = api_provider
 
+        assert (
+            api_provider != "azure"
+        ), "Azure functionality with base OpenAI has been deprecated, please use dspy.AzureOpenAI instead."
+
         default_model_type = (
             "chat"
             if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
@@ -78,15 +82,6 @@ class GPT3(LM):
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type
-
-        if api_provider == "azure":
-            assert (
-                "engine" in kwargs or "deployment_id" in kwargs
-            ), "Must specify engine or deployment_id for Azure API instead of model."
-            assert "api_version" in kwargs, "Must specify api_version for Azure API"
-            assert api_base is not None, "Must specify api_base for Azure API"
-            if kwargs.get("api_version"):
-                openai.api_version = kwargs["api_version"]
 
         if api_key:
             openai.api_key = api_key
@@ -107,8 +102,7 @@ class GPT3(LM):
             **kwargs,
         }  # TODO: add kwargs above for </s>
 
-        if api_provider != "azure":
-            self.kwargs["model"] = model
+        self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
 
     def _openai_client(self):

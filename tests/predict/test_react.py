@@ -1,11 +1,16 @@
-import dsp
 import dspy
 from dspy.utils.dummies import dummy_rm
 
 
 def test_example_no_tools():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    dsp.settings.rm = dummy_rm()
+    lm = dspy.utils.DummyLM(
+        [
+            "Initial thoughts",  # Thought_1
+            "Finish[blue]",  # Action_1
+        ]
+    )
+    dspy.settings.configure(lm=lm, rm=dummy_rm())
 
     program = dspy.ReAct("question -> answer")
 
@@ -13,20 +18,16 @@ def test_example_no_tools():
     assert isinstance(program.tools["Finish"], dspy.Example)
 
     # Call the ReAct module on a particular input
-    question = 'What is the color of the sky?'
-    dsp.settings.lm = lm = dspy.utils.DummyLM([
-        "Initial thoughts", # Thought_1
-        "Finish[blue]",     # Action_1
-    ])
+    question = "What is the color of the sky?"
     result = program(question=question)
     assert result.answer == "blue"
 
     # For debugging
-    print('---')
+    print("---")
     for row in lm.history:
-        print(row['prompt'])
-        print("Response:", row['response']['choices'][0]['text'])
-        print('---')
+        print(row["prompt"])
+        print("Response:", row["response"]["choices"][0]["text"])
+        print("---")
 
     assert lm.get_convo(-1).endswith(
         "Question: What is the color of the sky?\n"
@@ -35,17 +36,27 @@ def test_example_no_tools():
     )
 
 
-
 def test_example_search():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    dsp.settings.rm = dummy_rm([
-        "We all know the color of the sky is blue.",
-        "Somethng about the sky colors",
-        "This sentence is completely irellevant to answer the question.",
-        "Let's add some more sentences to act as summy passages.",
-        "Let's add some more sentences to act as summy passages.",
-        "Let's add some more sentences to act as summy passages.",
-    ])
+    lm = dspy.utils.DummyLM(
+        [
+            "Initial thoughts",  # Thought_1
+            "Search[the color of the sky]",  # Thought_1
+            "More thoughts",  # Thought_2
+            "Finish[blue]",  # Action_2
+        ]
+    )
+    rm = dummy_rm(
+        [
+            "We all know the color of the sky is blue.",
+            "Somethng about the sky colors",
+            "This sentence is completely irellevant to answer the question.",
+            "Let's add some more sentences to act as summy passages.",
+            "Let's add some more sentences to act as summy passages.",
+            "Let's add some more sentences to act as summy passages.",
+        ]
+    )
+    dspy.settings.configure(lm=lm, rm=rm)
 
     program = dspy.ReAct("question -> answer")
 
@@ -55,13 +66,7 @@ def test_example_search():
     assert isinstance(program.tools["Finish"], dspy.Example)
 
     # Call the ReAct module on a particular input
-    question = 'What is the color of the sky?'
-    dsp.settings.lm = lm = dspy.utils.DummyLM([
-        "Initial thoughts",             # Thought_1
-        "Search[the color of the sky]", # Thought_1
-        "More thoughts",                # Thought_2
-        "Finish[blue]",                 # Action_2
-    ])
+    question = "What is the color of the sky?"
     result = program(question=question)
     assert result.answer == "blue"
 

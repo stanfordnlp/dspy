@@ -1,4 +1,3 @@
-import dsp
 from dspy import Signature, ProgramOfThought
 import dspy
 from dspy.utils import DummyLM
@@ -16,7 +15,7 @@ def test_pot_code_generation():
         "Reason_B",
         "2",
     ])
-    dsp.settings.lm = lm
+    dspy.settings.configure(lm=lm)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
     assert lm.get_convo(index=-1) == textwrap.dedent("""\
@@ -58,7 +57,7 @@ def test_pot_code_generation_with_error():
         "Reason_C",
         "2",
     ])
-    dsp.settings.lm = lm
+    dspy.settings.configure(lm=lm)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
 

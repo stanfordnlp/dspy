@@ -1,10 +1,8 @@
 import textwrap
-import pytest
 import dspy
 from dspy.teleprompt.signature_opt import SignatureOptimizer
 from dspy.utils.dummies import DummyLM
 from dspy import Example
-import dsp
 
 # Define a simple metric function for testing
 def simple_metric(example, prediction):
@@ -35,7 +33,7 @@ class SimpleModule(dspy.Module):
 
 def test_signature_optimizer_optimization_process():
     optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
-    dsp.settings.lm = DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"]))
     
     student = SimpleModule("input -> output")
     
@@ -53,7 +51,7 @@ def test_signature_optimizer_statistics_tracking():
     optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
-    dsp.settings.lm = DummyLM(["Optimized instruction"])
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction"]))
     student = SimpleModule("input -> output")
     optimized_student = optimizer.compile(student, devset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False})
 
@@ -64,11 +62,12 @@ def test_signature_optimizer_statistics_tracking():
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
 
 def test_optimization_and_output_verification():
-    optimizer = SignatureOptimizer(metric=simple_metric, breadth=1, depth=1, init_temperature=1.4)
-    dsp.settings.lm = DummyLM([
+    lm = DummyLM([
         "Optimized Prompt",
         "Optimized Prefix",
     ])
+    dspy.settings.configure(lm=lm)
+    optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     
     student = SimpleModule("input -> output")
     
@@ -79,11 +78,11 @@ def test_optimization_and_output_verification():
     test_input = "What is the capital of France?"
     prediction = optimized_student(input=test_input)
 
-    print(dsp.settings.lm.get_convo(-1))
+    print(lm.get_convo(-1))
     
     assert prediction.output == "No more responses"
 
-    assert dsp.settings.lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent("""\
         Optimized Prompt
 
         ---
@@ -101,9 +100,9 @@ def test_optimization_and_output_verification():
         Optimized Prefix No more responses""")
 
 def test_statistics_tracking_during_optimization():
-    dsp.settings.lm = DummyLM(["Optimized instruction for stats tracking"])
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction for stats tracking"]))
     
-    optimizer = SignatureOptimizer(metric=simple_metric, breadth=1, depth=1, init_temperature=1.4)
+    optimizer = SignatureOptimizer(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
     
     student = SimpleModule("input -> output")
