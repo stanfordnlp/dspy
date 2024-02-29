@@ -70,11 +70,11 @@ class ChromadbRM(dspy.Retrieve):
         persist_directory: str,
         embedding_function: Optional[
             EmbeddingFunction[Embeddable]
-        ] = None,
+        ] = ef.DefaultEmbeddingFunction(),
         k: int = 7,
     ):
         self._init_chromadb(collection_name, persist_directory)
-        self.ef = embedding_function or self._chromadb_collection._embedding_function
+        self.ef = embedding_function
 
         super().__init__(k=k)
 
