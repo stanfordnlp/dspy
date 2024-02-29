@@ -18,13 +18,13 @@ MinimalLM = t.Callable[[str, float, int, int], list[Completion]]
 
 
 class BaseLM(BaseModel, ABC):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.generate_with_cache = _cache_memory.cache(self.generate)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._generate_with_cache = _cache_memory.cache(self.generate)
 
     def __call__(self, prompt: str, **kwargs) -> list[str]:
         """Generates `n` predictions for the signature output."""
-        generator = self.generate_with_cache if dspy.settings.cache else self.generate
+        generator = self._generate_with_cache if dspy.settings.cache else self.generate
         return generator(prompt, **kwargs)
 
     @abstractmethod

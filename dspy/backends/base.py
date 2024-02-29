@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from dspy.signatures.signature import Signature
 
 
-ReturnValue = t.TypeVar("ReturnValue", bound=dict)
+GeneratedOutput = t.TypeVar("GeneratedOutput", bound=dict)
 
 
 class BaseBackend(BaseModel, ABC):
@@ -16,10 +16,7 @@ class BaseBackend(BaseModel, ABC):
     def __call__(
         self,
         signature: Signature,
-        temperature: float,
-        max_tokens: int,
-        n: int,
         **kwargs,
-    ) -> list[ReturnValue]:
+    ) -> list[GeneratedOutput]:
         """Generates `n` predictions for the signature output."""
         pass
