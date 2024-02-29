@@ -207,7 +207,7 @@ class TemplateV2:
             self.query(demo, is_demo=True)
             for demo in example.demos
             if (
-                ("augmented" not in demo or not demo.augmented)
+                (not demo.get('augmented', False))
                 and (  # validate that the training example has the same primitive input var as the template
                     self.fields[-1].input_variable in demo
                     and demo[self.fields[-1].input_variable] is not None
