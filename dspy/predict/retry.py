@@ -9,41 +9,36 @@ class Retry(Predict):
     def __init__(self, module):
         super().__init__(module.signature)
         self.module = module
-        self.original_signature = module.signature.signature
+        self.original_signature = module.signature
         self.original_forward = module.forward
         self.new_signature = self._create_new_signature(self.original_signature)
 
-    def _create_new_signature(self, original_signature):
-        extended_signature = {}
-        input_fields = original_signature.input_fields()
-        output_fields = original_signature.output_fields()
-        modified_output_fields = {}
-
-        for key, value in output_fields.items():
-            modified_output_fields[f"past_{key}"] = dspy.InputField(
-                prefix="Past " + value.prefix,
+    def _create_new_signature(self, signature):
+        # Add "Past" input fields for each output field
+        for key, value in signature.output_fields.items():
+            signature = signature.append(f"past_{key}", dspy.InputField(
+                prefix="Past " + value.json_schema_extra["prefix"],
                 desc="past output with errors",
-                format=value.format,
-            )
+                format=value.json_schema_extra.get("format"),
+            ))
 
-        extended_signature.update(input_fields)
-        extended_signature.update(modified_output_fields)
-
-        extended_signature["feedback"] = dspy.InputField(
+        signature = signature.append("feedback", dspy.InputField(
             prefix="Instructions:",
             desc="Some instructions you must satisfy",
             format=str,
-        )
-        extended_signature.update(output_fields)
+        ))
 
-        return extended_signature
+        return signature
 
-    def forward(self, *args, **kwargs):
-        for key, value in kwargs["past_outputs"].items():
+    def forward(self, *, past_outputs, **kwargs):
+        # Convert the dict past_outputs={"answer": ...} to kwargs
+        # {past_answer=..., ...}
+        for key, value in past_outputs.items():
             past_key = f"past_{key}"
-            if past_key in self.new_signature:
+            if past_key in self.new_signature.input_fields:
                 kwargs[past_key] = value
-        del kwargs["past_outputs"]
+        # Tell the wrapped module to use the new signature.
+        # Note: This only works if the wrapped module is a Predict or ChainOfThought.
         kwargs["new_signature"] = self.new_signature
         return self.original_forward(**kwargs)
     

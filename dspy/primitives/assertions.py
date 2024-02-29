@@ -238,7 +238,6 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                 else:
                     try:
                         dsp.settings.trace.clear()
-                        # print("backtrack", dspy.settings.backtrack_to)
                         result = func(*args, **kwargs)
                         break
                     except (DSPySuggestionError, DSPyAssertionError) as e:
@@ -282,13 +281,13 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                     dspy.settings.backtrack_to
                                 ].append(error_msg)
 
-                            output_fields = vars(error_state[0].signature.signature)
+                            # assert isinstance(error_state[0].signature, dspy.Signature)
+                            output_fields = error_state[0].signature.output_fields
                             past_outputs = {}
-                            for field_name, field_obj in output_fields.items():
-                                if isinstance(field_obj, dspy.OutputField):
-                                    past_outputs[field_name] = getattr(
-                                        error_state[2], field_name, None
-                                    )
+                            for field_name in output_fields.keys():
+                                past_outputs[field_name] = getattr(
+                                    error_state[2], field_name, None
+                                )
 
                             # save latest failure trace for predictor per suggestion
                             error_ip = error_state[1]
