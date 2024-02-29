@@ -114,7 +114,7 @@ If you're new to DSPy, it's probably best to go in sequential order. You will pr
 
 4. **[Optimizers (formerly Teleprompters)](https://dspy-docs.vercel.app/docs/building-blocks/optimizers)**
 
-6. **[DSPy Assertions](docs/assertions.md)**
+6. **[DSPy Assertions](https://dspy-docs.vercel.app/docs/building-blocks/assertions)**
 
 
 ### C) Examples
