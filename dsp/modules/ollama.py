@@ -33,7 +33,7 @@ class OllamaLocal(LM):
         model: str = "llama2",
         model_type: Literal["chat", "text"] = "text",
         base_url: str = "http://localhost:11434",
-        timeout_s: float = 15,
+        timeout_s: float = 120,
         temperature: float = 0.0,
         max_tokens: int = 150,
         top_p: int = 1,
