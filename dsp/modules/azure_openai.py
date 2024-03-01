@@ -1,17 +1,5 @@
 import logging, os
 
-import functools
-import json
-from typing import Any, Literal, Optional, cast
-
-import backoff
-import openai
-
-import dsp
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-from dsp.modules.lm import LM
-
-
 # Configure logging path
 log_file_path = f'azure_openai_usage.log'
 if "DSPY_USAGE_LOGGING_DIR" in os.environ:
@@ -23,6 +11,17 @@ logging.basicConfig(
     format="%(message)s",
     handlers=[logging.FileHandler(log_file_path)],
 )
+
+import functools
+import json
+from typing import Any, Literal, Optional, cast
+
+import backoff
+import openai
+
+import dsp
+from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.lm import LM
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
