@@ -28,7 +28,7 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, max_errors=10, stop_at_score=None):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
@@ -37,6 +37,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.stop_at_score = stop_at_score
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
+        self.max_erros = max_errors
         self.num_candidate_sets = num_candidate_programs
         # self.max_num_traces = 1 + int(max_bootstrapped_demos / 2.0 * self.num_candidate_sets)
 
@@ -93,7 +94,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 program2 = teleprompter.compile(student, teacher=teacher, trainset=trainset2)
 
             evaluate = Evaluate(devset=self.valset, metric=self.metric, num_threads=self.num_threads,
-                                display_table=False, display_progress=True)
+                                max_errors=self.max_errors, display_table=False, display_progress=True)
 
             score, subscores = evaluate(program2, return_all_scores=True)
 
