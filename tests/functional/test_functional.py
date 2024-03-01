@@ -1,14 +1,15 @@
 import datetime
-import json
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
+import warnings
+from typing import List
 
 import pytest
 
 import dspy
-from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.utils.dummies import DummyLM
@@ -21,6 +22,40 @@ def test_simple():
 
     expected = "What is the speed of light?"
     lm = DummyLM([expected])
+    dspy.settings.configure(lm=lm)
+
+    question = hard_question(topic="Physics")
+    lm.inspect_history(n=2)
+
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_question(topic: str) -> List[str]:
+        """Think of a hard factual question about a topic."""
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(
+        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
+    )
+    dspy.settings.configure(lm=lm)
+
+    question = hard_question(topic="Physics")
+    lm.inspect_history(n=2)
+
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_question(topic: str) -> List[str]:
+        """Think of a hard factual question about a topic."""
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(
+        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
+    )
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
@@ -71,11 +106,11 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: list[str] = pydantic.Field(
+        comments: List[str] = pydantic.Field(
             description="At least two comments about the answer"
         )
 
-    class QA(dspy.Module):
+    class QA(FunctionalModule):
         @predictor
         def hard_question(self, topic: str) -> str:
             """Think of a hard factual question about a topic. It should be answerable with a number."""
@@ -106,7 +141,12 @@ def test_simple_class():
     dspy.settings.configure(lm=lm)
 
     qa = QA()
+    assert isinstance(qa, FunctionalModule)
+    assert isinstance(qa.answer, functional._StripOutput)
+
     question, answer = qa(topic="Physics")
+
+    print(qa.answer)
 
     assert question == "What is the speed of light?"
     assert answer == expected
@@ -167,7 +207,10 @@ def test_named_params():
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
     names, _ = zip(*qa.named_predictors())
-    assert set(names) == {"hard_question.predictor", "answer.predictor"}
+    assert set(names) == {
+        "hard_question.predictor.predictor",
+        "answer.predictor.predictor",
+    }
 
 
 def test_bootstrap_effectiveness():
@@ -211,9 +254,10 @@ def test_bootstrap_effectiveness():
     lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    assert len(compiled_student.output.predictor.demos) == 1
-    assert compiled_student.output.predictor.demos[0].input == trainset[0].input
-    assert compiled_student.output.predictor.demos[0].output == trainset[0].output
+    demos = compiled_student.predictors()[0].demos
+    assert len(demos) == 1
+    assert demos[0].input == trainset[0].input
+    assert demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
     # We are using a DummyLM with follow_examples=True, which means that
@@ -324,6 +368,7 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
+    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields `email`, produce the fields `flight_information`.
@@ -349,6 +394,7 @@ def test_multi_errors():
         Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
 
         Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
+        # Note: Pydantic version is hardcoded in the url here
     )
 
 
@@ -381,6 +427,7 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
+    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.

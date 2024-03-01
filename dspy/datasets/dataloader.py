@@ -32,16 +32,16 @@ class DataLoader(Dataset):
             returned_split = {}
             for split_name in dataset.keys():
                 if fields:
-                    returned_split[split_name] = [dspy.Example({field:row[field] for field in fields}).with_inputs(input_keys) for row in dataset[split_name]]
+                    returned_split[split_name] = [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset[split_name]]
                 else:
-                    returned_split[split_name] = [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(input_keys) for row in dataset[split_name]]
+                    returned_split[split_name] = [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(*input_keys) for row in dataset[split_name]]
 
             return returned_split
         except AttributeError:
             if fields:
-                return [dspy.Example({field:row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
+                return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
             else:
-                return [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(input_keys) for row in dataset]
+                return [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(*input_keys) for row in dataset]
 
     def from_csv(self, file_path:str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         dataset = load_dataset("csv", data_files=file_path)["train"]
@@ -49,7 +49,7 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
         
-        return [dspy.Example({field:row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
+        return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_json(self, file_path:str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         dataset = load_dataset("json", data_files=file_path)["train"]
@@ -57,7 +57,7 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
         
-        return [dspy.Example({field:row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
+        return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
 
     def sample(
