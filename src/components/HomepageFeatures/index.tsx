@@ -28,7 +28,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Universal Compatibility',
+    title: 'Cross-LM Compatibility',
     img: '/img/universal_compatibility.png',
     description: (
       <>
