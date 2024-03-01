@@ -42,7 +42,8 @@ class Settings(object):
                 bypass_suggest=False,
                 assert_failures=0,
                 suggest_failures=0,
-                langchain_history=[]
+                langchain_history=[],
+                cache=True,
             )
             cls._instance.__append(config)
 

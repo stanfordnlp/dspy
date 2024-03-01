@@ -55,18 +55,24 @@ def generate(template: Template, **kwargs) -> Callable:
         return dsp.predict._generate(template, **kwargs)
 
 
+class UnsetBackendError(AssertionError):
+    """Raised when no backend is configured."""
+
+
 def _generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    if not dsp.settings.lm:
-        raise AssertionError("No LM is loaded.")
-
     generator = dsp.settings.lm
+    if not generator:
+        raise UnsetBackendError("No backend configured.")
 
     def do_generate(
-        example: Example, stage: str, max_depth: int = 2, original_example=None
+        example: Example,
+        stage: str,
+        max_depth: int = 2,
+        original_example=None,
     ):
         if not dsp.settings.lm:
-            raise AssertionError("No LM is loaded.")
+            raise AssertionError("No LM or backend is loaded.")
         original_example = original_example or example
         assert stage is not None
 
@@ -83,9 +89,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         last_field_idx = 0
         for field_idx, key in enumerate(field_names):
-            completions_ = [
-                c for c in completions if key in c.keys() and c[key] is not None
-            ]
+            completions_ = [c for c in completions if c.get(key, None) is not None]
 
             # Filter out completions that are missing fields that are present in at least one completion.
             if len(completions_):
