@@ -3,9 +3,7 @@ import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
 from typing import Annotated
-import warnings
 from typing import List
-from pyparsing import Literal
 
 import pytest
 
@@ -118,6 +116,7 @@ def test_simple_class():
             "What is the speed of light?",
             "Some bad reasoning, 3e8 m/s.",
             "3e8",  # Bad answer 1
+            "{...}",  # Model is asked to create an example
             "Some good reasoning...",
             expected.model_dump_json(),  # Good answer
         ]
@@ -295,6 +294,8 @@ def test_regex():
         [
             # Example with a bad origin code.
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            # Example to help the model understand
+            '{...}',
             # Fixed
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
@@ -343,7 +344,9 @@ def test_multi_errors():
         [
             # First origin is wrong, then destination, then all is good
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            '{...}', # Example to help the model understand
             '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
+            '{...}', # Example to help the model understand
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
     )
@@ -352,7 +355,6 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
-    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields `email`, produce the fields `flight_information`.
@@ -373,12 +375,11 @@ def test_multi_errors():
 
         Email: Some email
 
-        Past Error (flight_information): 1 validation error for TravelInformation origin String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='JF0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+        Past Error (flight_information): String should match pattern '^[A-Z]{3}$': origin (error type: string_pattern_mismatch)
 
-        Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+        Past Error (flight_information, 2): String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
 
         Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
-        # Note: Pydantic version is hardcoded in the url here
     )
 
 
@@ -411,7 +412,6 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
-    warnings.warn("This test is dependent on the version of pydantic used.")
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
@@ -426,7 +426,7 @@ def test_field_validator():
 
         ---
 
-        Past Error (get_user_details): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
-        Past Error (get_user_details, 2): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+        Past Error (get_user_details): Value error, Name must be in uppercase.: name (error type: value_error)
+        Past Error (get_user_details, 2): Value error, Name must be in uppercase.: name (error type: value_error)
         Get User Details: {"name": "lower case name", "age": 25}"""
     )

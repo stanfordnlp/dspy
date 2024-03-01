@@ -46,7 +46,7 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, make_example=False):
+def TypedChainOfThought(signature):
     """ Just like TypedPredictor, but adds a ChainOfThought OutputField. """
     signature = ensure_signature(signature)
     output_keys = ", ".join(signature.output_fields.keys())
@@ -56,18 +56,17 @@ def TypedChainOfThought(signature, make_example=False):
             prefix="Reasoning: Let's think step by step in order to",
             desc="${produce the " + output_keys + "}. We ...",
         ),
-    ), make_example)
+    ))
 
 
 class TypedPredictor(dspy.Module):
-    def __init__(self, signature, make_example=False):
+    def __init__(self, signature):
         super().__init__()
         self.signature = signature
         self.predictor = dspy.Predict(signature)
-        self.make_example = make_example
 
     def copy(self):
-        return TypedPredictor(self.signature, self.make_example)
+        return TypedPredictor(self.signature)
 
     @staticmethod
     def _make_example(type_):
@@ -120,7 +119,6 @@ class TypedPredictor(dspy.Module):
                         + (
                             f". Respond with a single JSON object using the schema "
                             + json.dumps(type_.model_json_schema())
-                            + (". For example: " + self._make_example(type_) if self.make_example else "")
                         ),
                         format=lambda x: (
                             x if isinstance(x, str) else x.model_dump_json()
@@ -155,11 +153,23 @@ class TypedPredictor(dspy.Module):
                     parser = field.json_schema_extra.get("parser", lambda x: x)
                     parsed_results[name] = parser(value)
                 except (pydantic.ValidationError, ValueError) as e:
-                    errors[name] = e
+                    errors[name] = _format_error(e)
+                    # If we can, we add an example to the error message
+                    current_desc = field.json_schema_extra.get("desc", "")
+                    i = current_desc.find("Respond with a single JSON object using the schema")
+                    if i == -1:
+                        continue  # Only add examples to JSON objects
+                    suffix, current_desc = current_desc[i:], current_desc[:i]
+                    prefix = "You MUST use this format: "
+                    if try_i + 1 < MAX_RETRIES and prefix not in current_desc:
+                        if example := self._make_example(field.annotation):
+                            signature = signature.with_updated_fields(name,
+                                desc = current_desc + "\n" + prefix + example + "\n" + suffix
+                            )
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():
-                    modified_kwargs[f"error_{name}_{try_i}"] = str(error)
+                    modified_kwargs[f"error_{name}_{try_i}"] = error
                     signature = signature.append(
                         f"error_{name}_{try_i}",
                         dspy.InputField(
@@ -173,7 +183,19 @@ class TypedPredictor(dspy.Module):
                 for name, value in parsed_results.items():
                     setattr(result, name, value)
                 return result
-        raise ValueError("Too many retries")
+        raise ValueError("Too many retries trying to get the correct output format. "
+                         + "Try simplifying the requirements.")
+
+
+def _format_error(error: Exception):
+    if isinstance(error, pydantic.ValidationError):
+        errors = []
+        for e in error.errors():
+            fields = ", ".join(e["loc"])
+            errors.append(f"{e['msg']}: {fields} (error type: {e['type']})")
+        return "; ".join(errors)
+    else:
+        return str(error)
 
 
 def _func_to_signature(func):
