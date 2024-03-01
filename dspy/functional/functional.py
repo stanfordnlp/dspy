@@ -104,7 +104,7 @@ class TypedPredictor(dspy.Module):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
-                        + (f". Respond with a single {type_.__name__} value"),
+                        + (f" (Respond with a single {type_.__name__} value)" if type_ != str else ""),
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=type_,
                     )
@@ -195,7 +195,7 @@ def _format_error(error: Exception):
             errors.append(f"{e['msg']}: {fields} (error type: {e['type']})")
         return "; ".join(errors)
     else:
-        return str(error)
+        return repr(error)
 
 
 def _func_to_signature(func):
