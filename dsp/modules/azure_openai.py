@@ -1,12 +1,5 @@
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler("azure_openai_usage.log")],
-)
-
 import functools
 import json
 from typing import Any, Literal, Optional, cast
@@ -17,6 +10,14 @@ import openai
 import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+
+if dsp.settings.log_openai_usage:
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        handlers=[logging.FileHandler("azure_openai_usage.log")],
+    )
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
