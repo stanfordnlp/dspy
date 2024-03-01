@@ -254,6 +254,15 @@ ignore = [
     "RET505",
     # Within an `except` clause, raise exceptions with `raise
     "B904",
+    # We don't need docstrings for every method
+    "ANN202",
+    "D107",
+    "D102",
+    "D103",
+    # Inline lambdas
+    "E731",
+    # Sometimes we need List and Tuple
+    "UP006",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
