@@ -274,4 +274,5 @@ line-ending = "auto"
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**/{test,docs}/*" = ["ALL"]
+"**/{tests,docs}/*" = ["ALL"]
+"**__init__.py" = ["F401"]
