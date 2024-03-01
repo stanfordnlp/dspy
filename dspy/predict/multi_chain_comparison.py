@@ -3,7 +3,6 @@ from dspy.signatures.signature import ensure_signature
 from .predict import Predict
 from ..primitives.program import Module
 
-import dsp
 
 
 class MultiChainComparison(Module):
@@ -19,7 +18,7 @@ class MultiChainComparison(Module):
             signature = signature.append(
                 f"reasoning_attempt_{idx+1}",
                 dspy.InputField(
-                    prefix=f"Student Attempt #{idx+1}:", desc="${reasoning attempt}"
+                    prefix=f"Student Attempt #{idx+1}:", desc="${reasoning attempt}",
                 ),
             )
 
@@ -40,7 +39,7 @@ class MultiChainComparison(Module):
             rationale = c.rationale.strip().split("\n")[0].strip()
             answer = c[self.last_key].strip().split("\n")[0].strip()
             attempts.append(
-                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»"
+                f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»",
             )
 
         assert len(attempts) == self.M, len(attempts)

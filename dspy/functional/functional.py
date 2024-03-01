@@ -1,6 +1,10 @@
-import inspect, os, openai, dspy, typing, pydantic
-from typing import Annotated, List, Tuple
+import inspect
+import os
+import openai
+import dspy
 import typing
+import pydantic
+from typing import Annotated, List, Tuple
 from dsp.templates import passages2text
 import json
 
@@ -58,7 +62,7 @@ def TypedChainOfThought(signature):
                 prefix="Reasoning: Let's think step by step in order to",
                 desc="${produce the " + output_keys + "}. We ...",
             ),
-        )
+        ),
     )
 
 
@@ -78,7 +82,7 @@ class TypedPredictor(dspy.Module):
             dspy.Signature(
                 "json_schema -> json_object",
                 "Make a very succinct json object that validates with the following schema",
-            )
+            ),
         )(json_schema=json.dumps(type_.model_json_schema())).json_object
         # We use the model_validate_json method to make sure the example is valid
         try:
@@ -120,7 +124,7 @@ class TypedPredictor(dspy.Module):
                         name,
                         desc=field.json_schema_extra.get("desc", "")
                         + (
-                            f". Respond with a single JSON object. JSON Schema: "
+                            ". Respond with a single JSON object. JSON Schema: "
                             + json.dumps(type_.model_json_schema())
                         ),
                         format=lambda x: (x if isinstance(x, str) else wrap(x).model_dump_json()),
@@ -164,7 +168,7 @@ class TypedPredictor(dspy.Module):
                     if try_i + 1 < MAX_RETRIES and prefix not in current_desc:
                         if example := self._make_example(field.annotation):
                             signature = signature.with_updated_fields(
-                                name, desc=current_desc + "\n" + prefix + example + "\n" + suffix
+                                name, desc=current_desc + "\n" + prefix + example + "\n" + suffix,
                             )
             if errors:
                 # Add new fields for each error
@@ -173,7 +177,7 @@ class TypedPredictor(dspy.Module):
                     signature = signature.append(
                         f"error_{name}_{try_i}",
                         dspy.InputField(
-                            prefix=f"Past Error " + (f"({name}):" if try_i == 0 else f"({name}, {try_i+1}):"),
+                            prefix="Past Error " + (f"({name}):" if try_i == 0 else f"({name}, {try_i+1}):"),
                             desc="An error to avoid in the future",
                         ),
                     )
@@ -183,7 +187,7 @@ class TypedPredictor(dspy.Module):
                     setattr(result, name, value)
                 return result
         raise ValueError(
-            "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.", errors
+            "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.", errors,
         )
 
 

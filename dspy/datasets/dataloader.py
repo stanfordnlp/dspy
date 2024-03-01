@@ -3,7 +3,8 @@ import random
 from dspy.datasets import Dataset
 
 from datasets import load_dataset
-from typing import Union, List, Mapping, Tuple
+from typing import Union, List, Tuple
+from collections.abc import Mapping
 
 class DataLoader(Dataset):
     def __init__(self,):
@@ -15,13 +16,13 @@ class DataLoader(Dataset):
         *args,
         input_keys: Tuple[str] = (),
         fields: Tuple[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Union[Mapping[str, List[dspy.Example]], List[dspy.Example]]:
         if fields and not isinstance(fields, tuple):
-            raise ValueError(f"Invalid fields provided. Please provide a tuple of fields.")
+            raise ValueError("Invalid fields provided. Please provide a tuple of fields.")
 
         if not isinstance(input_keys, tuple):
-            raise ValueError(f"Invalid input keys provided. Please provide a tuple of input keys.")
+            raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
 
         dataset = load_dataset(dataset_name, *args, **kwargs)
         
@@ -65,7 +66,7 @@ class DataLoader(Dataset):
         dataset: List[dspy.Example],
         n: int,
         *args,
-        **kwargs
+        **kwargs,
     ) -> List[dspy.Example]:
         if not isinstance(dataset, list):
             raise ValueError(f"Invalid dataset provided of type {type(dataset)}. Please provide a list of examples.")
@@ -77,7 +78,7 @@ class DataLoader(Dataset):
         dataset: List[dspy.Example],
         train_size: Union[int, float] = 0.75,
         test_size: Union[int, float] = None,
-        random_state: int = None
+        random_state: int = None,
     ) -> Mapping[str, List[dspy.Example]]:
         if random_state is not None:
             random.seed(random_state)

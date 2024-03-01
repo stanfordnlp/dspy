@@ -40,7 +40,7 @@ class ReAct(Module):
         for idx, tool in enumerate(self.tools):
             tool = self.tools[tool]
             instr.append(
-                f"({idx+1}) {tool.name}[{tool.input_variable}], which {tool.desc}"
+                f"({idx+1}) {tool.name}[{tool.input_variable}], which {tool.desc}",
             )
 
         instr = "\n".join(instr)
@@ -65,7 +65,7 @@ class ReAct(Module):
                     f"{tool.name}[{tool.input_variable}]"
                     for tool in self.tools.values()
                     if tool.name != "Finish"
-                ]
+                ],
             )
             signature_dict[f"Action_{j}"] = dspy.OutputField(
                 prefix=f"Action {j}:",

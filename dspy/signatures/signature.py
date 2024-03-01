@@ -56,7 +56,7 @@ class SignatureMeta(type(BaseModel)):
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField."
+                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField.",
                 )
 
     @property
@@ -179,14 +179,14 @@ class SignatureMeta(type(BaseModel)):
         fixed_fields = {}
         for name, type_field in fields.items():
             assert isinstance(
-                name, str
+                name, str,
             ), f"Field names must be strings, not {type(name)}"
             if isinstance(type_field, FieldInfo):
                 type_ = type_field.annotation
                 field = type_field
             else:
                 assert isinstance(
-                    type_field, tuple
+                    type_field, tuple,
                 ), f"Field values must be tuples, not {type(type_field)}"
                 type_, field = type_field
             # It might be better to be explicit about the type, but it currently would break
@@ -194,10 +194,10 @@ class SignatureMeta(type(BaseModel)):
             if type_ is None:
                 type_ = str
             assert isinstance(type_, type) or isinstance(
-                typing.get_origin(type_), type
+                typing.get_origin(type_), type,
             ), f"Field types must be types, not {type(type_)}"
             assert isinstance(
-                field, FieldInfo
+                field, FieldInfo,
             ), f"Field values must be Field instances, not {type(field)}"
             fixed_fields[name] = (type_, field)
 
@@ -266,10 +266,10 @@ def infer_prefix(attribute_name: str) -> str:
 
     # Insert underscores around numbers to ensure spaces in the final output
     with_underscores_around_numbers = re.sub(
-        r"([a-zA-Z])(\d)", r"\1_\2", intermediate_name
+        r"([a-zA-Z])(\d)", r"\1_\2", intermediate_name,
     )
     with_underscores_around_numbers = re.sub(
-        r"(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers
+        r"(\d)([a-zA-Z])", r"\1_\2", with_underscores_around_numbers,
     )
 
     # Convert snake_case to 'Proper Title Case', but ensure acronyms are uppercased

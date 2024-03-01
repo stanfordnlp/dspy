@@ -1,5 +1,3 @@
-import copy
-import inspect
 
 from dspy.primitives.module import BaseModule
 from dspy.primitives.assertions import *

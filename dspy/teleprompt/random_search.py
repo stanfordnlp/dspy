@@ -1,5 +1,3 @@
-import dsp
-import tqdm
 import random
 
 from dspy.teleprompt.teleprompt import Teleprompter

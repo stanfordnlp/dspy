@@ -1,7 +1,6 @@
 import os
 import time
 import dsp
-import tqdm
 import random
 
 import ujson
@@ -130,7 +129,7 @@ class BootstrapFinetune(Teleprompter):
             'batch_size': bsize,
             'epochs': epochs,
             'gradient_accumulation_steps': accumsteps, # 2,
-            'lr': lr
+            'lr': lr,
         }
 
         compiler_config['save'] = os.path.join(path_prefix, compiler_config['save']) if path_prefix else compiler_config['save']

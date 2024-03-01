@@ -27,7 +27,7 @@ def file_tqdm(file):
     print(f"#> Reading {file.name}")
 
     with tqdm.tqdm(
-        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB"
+        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB",
     ) as pbar:
         for line in file:
             yield line
@@ -214,7 +214,7 @@ def lengths2offsets(lengths):
 
 
 # see https://stackoverflow.com/a/45187287
-class NullContextManager(object):
+class NullContextManager:
     def __init__(self, dummy_resource=None):
         self.dummy_resource = dummy_resource
 

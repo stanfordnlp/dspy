@@ -1,12 +1,8 @@
-import dsp
-import tqdm
-import random
 import optuna
 
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
-from .vanilla import LabeledFewShot
 
 from dspy.evaluate.evaluate import Evaluate
 

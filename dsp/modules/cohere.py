@@ -17,7 +17,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 
@@ -39,7 +39,7 @@ class Cohere(LM):
         model: str = "command-nightly",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
-        **kwargs
+        **kwargs,
     ):
         """
         Parameters
@@ -66,7 +66,7 @@ class Cohere(LM):
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "num_generations": 1,
-            **kwargs
+            **kwargs,
         }
         self.stop_sequences = stop_sequences
         self.max_num_generations = 5
@@ -109,7 +109,7 @@ class Cohere(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs
+        **kwargs,
     ):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
