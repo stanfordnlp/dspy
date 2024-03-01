@@ -10,7 +10,7 @@ This guide is for contributors looking to make changes to the documentation in t
 
 ```bash
 #Ensure you are in the top-level dspy/ folder
-git subtree pull --prefix=docs <subtree-repo-URL> <branch>
+git subtree pull --prefix=docs https://github.com/krypticmouse/dspy-docs master
 ```
 
 2. **Push your new changes on a new branch**: Feel free to add or edit existing documentation and open a PR for your changes. Once your PR is reviewed and approved, the changes will be ready to merge into main. 
@@ -19,5 +19,5 @@ git subtree pull --prefix=docs <subtree-repo-URL> <branch>
 
 ```bash
 #Ensure you are in the top-level dspy/ folder
-git subtree push --prefix=docs <subtree-repo-URL> <branch>
+git subtree push --prefix=docs https://github.com/krypticmouse/dspy-docs master
 ```
