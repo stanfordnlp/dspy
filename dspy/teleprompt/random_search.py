@@ -37,7 +37,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.stop_at_score = stop_at_score
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
-        self.max_erros = max_errors
+        self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         # self.max_num_traces = 1 + int(max_bootstrapped_demos / 2.0 * self.num_candidate_sets)
 
@@ -49,7 +49,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
-    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None):
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
@@ -70,7 +70,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             
             elif seed == -2:
                 # labels only
-                teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+                teleprompter = LabeledFewShot(k=self.max_labeled_demos, sample=labeled_sample)
                 program2 = teleprompter.compile(student, trainset=trainset2)
             
             elif seed == -1:
