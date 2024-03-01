@@ -31,8 +31,8 @@ def test_simple():
 
 def test_list_output():
     @predictor
-    def hard_question(topic: str) -> List[str]:
-        """Think of a hard factual question about a topic."""
+    def hard_questions(topics: List[str]) -> List[str]:
+        pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
     lm = DummyLM(
@@ -40,7 +40,7 @@ def test_list_output():
     )
     dspy.settings.configure(lm=lm)
 
-    question = hard_question(topic="Physics")
+    question = hard_questions(topics=["Physics", "Music"])
     lm.inspect_history(n=2)
 
     assert question == expected
@@ -369,7 +369,7 @@ def test_multi_errors():
 
         Past Error (flight_information, 2): An error to avoid in the future
 
-        Flight Information: ${flight_information}. Respond with a single JSON object using the schema {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
+        Flight Information: ${flight_information}. Respond with a single JSON object. JSON Schema: {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
 
         ---
 
@@ -422,7 +422,7 @@ def test_field_validator():
 
         Past Error (get_user_details): An error to avoid in the future
         Past Error (get_user_details, 2): An error to avoid in the future
-        Get User Details: ${get_user_details}. Respond with a single JSON object using the schema {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
+        Get User Details: ${get_user_details}. Respond with a single JSON object. JSON Schema: {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
         ---
 
@@ -430,3 +430,20 @@ def test_field_validator():
         Past Error (get_user_details, 2): Value error, Name must be in uppercase.: name (error type: value_error)
         Get User Details: {"name": "lower case name", "age": 25}"""
     )
+
+
+def test_annotated_field():
+    # Since we don't currently validate fields on the main signature,
+    # the annotated fields are also not validated.
+    # But at least it should not crash.
+
+    @predictor
+    def test(input: Annotated[str, Field(description="description")]) -> Annotated[float, Field(gt=0, lt=1)]:
+        pass
+
+    lm = DummyLM(["0.5"])
+    dspy.settings.configure(lm=lm)
+
+    output = test(input="input")
+
+    assert output == 0.5

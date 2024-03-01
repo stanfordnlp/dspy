@@ -1,5 +1,5 @@
 import inspect, os, openai, dspy, typing, pydantic
-from typing import Annotated
+from typing import Annotated, List, Tuple
 import typing
 from dsp.templates import passages2text
 import json
@@ -27,7 +27,7 @@ class _StripOutput(dspy.Module):
         super().__init__()
         self.predictor = predictor
         self.output_key = output_key
-    
+
     def copy(self):
         return _StripOutput(self.predictor.copy(), self.output_key)
 
@@ -37,7 +37,8 @@ class _StripOutput(dspy.Module):
 
 
 class FunctionalModule(dspy.Module):
-    """ To use the @cot and @predictor decorators, your module needs to inheret form this class. """
+    """To use the @cot and @predictor decorators, your module needs to inheret form this class."""
+
     def __init__(self):
         super().__init__()
         for name in dir(self):
@@ -47,16 +48,18 @@ class FunctionalModule(dspy.Module):
 
 
 def TypedChainOfThought(signature):
-    """ Just like TypedPredictor, but adds a ChainOfThought OutputField. """
+    """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
     signature = ensure_signature(signature)
     output_keys = ", ".join(signature.output_fields.keys())
-    return TypedPredictor(signature.prepend(
-        "reasoning",
-        dspy.OutputField(
-            prefix="Reasoning: Let's think step by step in order to",
-            desc="${produce the " + output_keys + "}. We ...",
-        ),
-    ))
+    return TypedPredictor(
+        signature.prepend(
+            "reasoning",
+            dspy.OutputField(
+                prefix="Reasoning: Let's think step by step in order to",
+                desc="${produce the " + output_keys + "}. We ...",
+            ),
+        )
+    )
 
 
 class TypedPredictor(dspy.Module):
@@ -108,28 +111,25 @@ class TypedPredictor(dspy.Module):
                 else:
                     # Anything else we wrap in a pydantic object
                     unwrap = lambda x: x
+                    wrap = lambda x: x
                     if not (inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)):
-                        type_ = pydantic.create_model(
-                            "Output", value=(type_, ...), __base__=pydantic.BaseModel
-                        )
+                        type_ = pydantic.create_model("Output", value=(type_, ...), __base__=pydantic.BaseModel)
+                        wrap = lambda x: type_(value=x)
                         unwrap = lambda x: x.value
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
                         + (
-                            f". Respond with a single JSON object using the schema "
+                            f". Respond with a single JSON object. JSON Schema: "
                             + json.dumps(type_.model_json_schema())
                         ),
-                        format=lambda x: (
-                            x if isinstance(x, str) else x.model_dump_json()
-                        ),
-                        parser=lambda x: unwrap(
-                            type_.model_validate_json(_unwrap_json(x))
-                        ),
+                        format=lambda x: (x if isinstance(x, str) else wrap(x).model_dump_json()),
+                        parser=lambda x: unwrap(type_.model_validate_json(_unwrap_json(x))),
+                        type_=type_,
                     )
             else:  # If input field
                 format = lambda x: x if isinstance(x, str) else str(x)
-                if type_ in (list[str], tuple[str]):
+                if type_ in (List[str], list[str], Tuple[str], tuple[str]):
                     format = passages2text
                 elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
                     format = lambda x: x if isinstance(x, str) else x.model_dump_json()
@@ -156,15 +156,15 @@ class TypedPredictor(dspy.Module):
                     errors[name] = _format_error(e)
                     # If we can, we add an example to the error message
                     current_desc = field.json_schema_extra.get("desc", "")
-                    i = current_desc.find("Respond with a single JSON object using the schema")
+                    i = current_desc.find("JSON Schema: ")
                     if i == -1:
                         continue  # Only add examples to JSON objects
                     suffix, current_desc = current_desc[i:], current_desc[:i]
                     prefix = "You MUST use this format: "
                     if try_i + 1 < MAX_RETRIES and prefix not in current_desc:
                         if example := self._make_example(field.annotation):
-                            signature = signature.with_updated_fields(name,
-                                desc = current_desc + "\n" + prefix + example + "\n" + suffix
+                            signature = signature.with_updated_fields(
+                                name, desc=current_desc + "\n" + prefix + example + "\n" + suffix
                             )
             if errors:
                 # Add new fields for each error
@@ -173,8 +173,7 @@ class TypedPredictor(dspy.Module):
                     signature = signature.append(
                         f"error_{name}_{try_i}",
                         dspy.InputField(
-                            prefix=f"Past Error "
-                            + (f"({name}):" if try_i == 0 else f"({name}, {try_i+1}):"),
+                            prefix=f"Past Error " + (f"({name}):" if try_i == 0 else f"({name}, {try_i+1}):"),
                             desc="An error to avoid in the future",
                         ),
                     )
@@ -183,8 +182,9 @@ class TypedPredictor(dspy.Module):
                 for name, value in parsed_results.items():
                     setattr(result, name, value)
                 return result
-        raise ValueError("Too many retries trying to get the correct output format. "
-                         + "Try simplifying the requirements.")
+        raise ValueError(
+            "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.", errors
+        )
 
 
 def _format_error(error: Exception):
@@ -249,9 +249,7 @@ def main():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: list[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: list[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(dspy.Module):
         @predictor
@@ -290,16 +288,11 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
     if not dspy.evaluate.answer_passage_match(example, pred):
         return False
 
-    hops = [example.question] + [
-        outputs.query for *_, outputs in trace if "query" in outputs
-    ]
+    hops = [example.question] + [outputs.query for *_, outputs in trace if "query" in outputs]
 
     if max([len(h) for h in hops]) > 100:
         return False
-    if any(
-        dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
-        for idx in range(2, len(hops))
-    ):
+    if any(dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8) for idx in range(2, len(hops))):
         return False
 
     return True
@@ -307,9 +300,7 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
 
 def gold_passages_retrieved(example, pred, trace=None):
     gold_titles = set(map(dspy.evaluate.normalize_text, example["gold_titles"]))
-    found_titles = set(
-        map(dspy.evaluate.normalize_text, [c.split(" | ")[0] for c in pred.context])
-    )
+    found_titles = set(map(dspy.evaluate.normalize_text, [c.split(" | ")[0] for c in pred.context]))
 
     return gold_titles.issubset(found_titles)
 
@@ -322,9 +313,7 @@ def hotpot():
     from dspy.teleprompt.bootstrap import BootstrapFewShot
 
     print("Load the dataset.")
-    dataset = HotPotQA(
-        train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0
-    )
+    dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0)
     trainset = [x.with_inputs("question") for x in dataset.train]
     devset = [x.with_inputs("question") for x in dataset.dev]
     print("Done")
@@ -361,9 +350,7 @@ def hotpot():
     lm = dspy.OpenAI(model="gpt-3.5-turbo", max_tokens=4000)
     dspy.settings.configure(lm=lm, rm=rm, trace=[])
 
-    evaluate_on_hotpotqa = Evaluate(
-        devset=devset, num_threads=10, display_progress=True, display_table=5
-    )
+    evaluate_on_hotpotqa = Evaluate(devset=devset, num_threads=10, display_progress=True, display_table=5)
 
     # uncompiled (i.e., zero-shot) program
     uncompiled_baleen = SimplifiedBaleen()
@@ -373,9 +360,7 @@ def hotpot():
     )
 
     # compiled (i.e., few-shot) program
-    compiled_baleen = BootstrapFewShot(
-        metric=validate_context_and_answer_and_hops
-    ).compile(
+    compiled_baleen = BootstrapFewShot(metric=validate_context_and_answer_and_hops).compile(
         SimplifiedBaleen(),
         teacher=SimplifiedBaleen(passages_per_hop=2),
         trainset=trainset,
