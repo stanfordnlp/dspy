@@ -1,12 +1,18 @@
-import logging
+import logging, os
 from logging.handlers import RotatingFileHandler
+
+
+# Configure logging path
+log_file_path = f'openai_usage.log'
+if "DSPY_USAGE_LOGGING_DIR" in os.environ:
+    log_file_path = os.path.join(os.environ["DSPY_USAGE_LOGGING_DIR"], log_file_path)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
     handlers=[
-        logging.FileHandler('openai_usage.log')
+        logging.FileHandler(log_file_path)
     ]
 )
 
