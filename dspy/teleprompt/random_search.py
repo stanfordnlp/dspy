@@ -70,8 +70,8 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             
             elif seed == -2:
                 # labels only
-                teleprompter = LabeledFewShot(k=self.max_labeled_demos, sample=labeled_sample)
-                program2 = teleprompter.compile(student, trainset=trainset2)
+                teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+                program2 = teleprompter.compile(student, trainset=trainset2, sample=labeled_sample)
             
             elif seed == -1:
                 # unshuffled few-shot
