@@ -101,4 +101,4 @@ class LM(ABC):
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop('model')
 
-        return self.__class__(model, **kwargs)
+        return self.__class__(model=model, **kwargs)
