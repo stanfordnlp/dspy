@@ -1,7 +1,8 @@
 import dspy
+import random
 from typing import List
 from tqdm import tqdm, trange
-from datasets import DatasetDict
+from datasets import Dataset
 
 def format_examples(examples: List[dspy.Example]):
     if isinstance(examples, str):
@@ -38,7 +39,7 @@ class ExplainTask(dspy.Signature):
 
 class GenerateFieldDescription(dspy.Signature):
     """Generate a concise and informative description for a given field based on the provided name and task description. This description should be no longer than 10 words and should be in simple english."""
-    
+
     task_description = dspy.InputField(
         prefix="Task Description:",
         desc="Description of the task the field is an input to.",
@@ -53,6 +54,13 @@ class GenerateFieldDescription(dspy.Signature):
     )
 
 class GenerateInputFieldsData(dspy.Signature):
+    """Generate synthetic data based on the task description and the given knowledge seed."""
+    
+    knowledge_seed = dspy.InputField(
+        prefix="Knowledge Seed:",
+        desc="Seed for the knowledge base search.",
+        format=lambda x: str(x),
+    )
     task_description = dspy.InputField(
         prefix="Task Description:",
         desc="Description of the task the field is an input to.",
@@ -78,7 +86,7 @@ class Synthesizer:
 
             field_name = key
             field_description = field_details.field_description
-            
+
             output_field = dspy.OutputField(
                 prefix=f"{field_name}:",
                 desc=field_description,
@@ -98,7 +106,7 @@ class Synthesizer:
                 field_name,
                 input_field
             )
-        
+
         for key in tqdm(output_keys, desc="Preparing Output Fields"):
             field_details = self.generate_field_description(
                 task_description=task_description,
@@ -117,8 +125,8 @@ class Synthesizer:
                 field_name,
                 output_field
             )
-        
-        return dspy.Predict(self.generate_input_data), dspy.Predict(self.generate_output_data)
+
+        return dspy.ChainOfThought(self.generate_input_data), dspy.Predict(self.generate_output_data)
 
     def generate(self, examples: List[dspy.Example], num_data: int) -> List[dspy.Example]:
         task_description = self.explain_task(examples=examples).explanation
@@ -136,8 +144,8 @@ class Synthesizer:
         data = []
 
         for idx in trange(num_data, desc="Generating Synthetic Data"):
-            inputs = self.input_predictor(task_description=task_description, config=dict(temperature=0.7+0.01*idx))
-            
+            inputs = self.input_predictor(task_description=task_description, knowledge_seed=random.randint(0, 1000000), config=dict(temperature=0.7+0.01*idx))
+
             input_kwargs = {
                 key: getattr(inputs, key)
                 for key in input_keys
@@ -153,15 +161,20 @@ class Synthesizer:
             data.append(dspy.Example(**input_kwargs, **output_kwargs).with_inputs(*input_keys))
 
         return data
-            
 
-    def export(self, data: List[dspy.Example], path: str, mode: str = None):
+
+    def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
         extention = mode or path.split(".")[-1]
-        dataset_dict = DatasetDict(
+
+        dataset = Dataset.from_list(
             [example.toDict() for example in data]
         )
 
-        dataset_dict.save_to_disk(
-            path=path,
-            extention=extention,
-        )
+        if extention == "csv":
+            dataset.to_csv(path_or_buf=path, **kwargs)
+
+        elif extention == "json":
+            dataset.to_json(path_or_buf=path, **kwargs)
+
+        elif extention == "arrow" or extention == "hf":
+            dataset.save_to_disk(path)
