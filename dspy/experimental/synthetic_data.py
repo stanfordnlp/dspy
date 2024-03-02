@@ -41,7 +41,7 @@ class SyntheticDataGenerator:
     def _generate_additional_examples(self, additional_samples_needed: int) -> List[dspy.Example]:
         properties = self._define_or_infer_fields()
         class_name = f"{self.schema_class.__name__ if self.schema_class else 'Inferred'}Signature"
-        fields = self._prepare_fields(properties, class_name)
+        fields = self._prepare_fields(properties)
 
         signature_class = type(class_name, (dspy.Signature,), fields)
         generator = dspy.Predict(signature_class, n=additional_samples_needed)
@@ -50,7 +50,7 @@ class SyntheticDataGenerator:
         return [dspy.Example({field_name: getattr(completion, field_name) for field_name in properties.keys()})
                 for completion in response.completions]
 
-    def _prepare_fields(self, properties, class_name) -> dict:
+    def _prepare_fields(self, properties) -> dict:
         return {
             '__doc__': f"Generates the following outputs: {{{', '.join(properties.keys())}}}.",
             'sindex': dspy.InputField(desc="a random string"),
