@@ -58,7 +58,7 @@ class GenerateInputFieldsData(dspy.Signature):
     
     knowledge_seed = dspy.InputField(
         prefix="Knowledge Seed:",
-        desc="Seed for the knowledge base search.",
+        desc="Seed for the knowledge base search to base the inputs around.",
         format=lambda x: str(x),
     )
     task_description = dspy.InputField(
