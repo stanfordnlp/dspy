@@ -128,12 +128,12 @@ class Synthesizer:
 
         return dspy.ChainOfThought(self.generate_input_data), dspy.Predict(self.generate_output_data)
 
-    def generate(self, examples: List[dspy.Example], num_data: int) -> List[dspy.Example]:
-        task_description = self.explain_task(examples=examples).explanation
+    def generate(self, examples: List[dspy.Example], num_data: int, task_description: str = None, input_keys: str = None, output_keys: str = None) -> List[dspy.Example]:
+        task_description = task_description or self.explain_task(examples=examples).explanation
         self.generate_output_data.__doc__ = task_description
 
-        input_keys = [key for key in examples[0].inputs()]
-        output_keys = [key for key in examples[0].labels()]
+        input_keys = input_keys or [key for key in examples[0].inputs()]
+        output_keys = output_keys or [key for key in examples[0].labels()]
 
         self.input_predictor, self.output_predictor = self._prepare_synthetic_data_predictors(
             input_keys=input_keys,
