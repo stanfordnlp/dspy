@@ -1,10 +1,10 @@
 from dsp.modules.lm import LM
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
-import os, multiprocessing, datetime, hashlib
+import datetime
+import hashlib
 import requests
 
-import json
 
 
 def post_request_metadata(model_name, prompt):
@@ -116,7 +116,7 @@ class OllamaLocal(LM):
                         "content": "".join(text),
                     },
                     "finish_reason": "stop",
-                }
+                },
             )
             tot_eval_tokens += response_json.get("eval_count")
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}

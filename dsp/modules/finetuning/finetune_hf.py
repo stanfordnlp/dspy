@@ -5,7 +5,6 @@ import json
 import copy
 import glob
 import torch
-import random
 import warnings
 import evaluate
 import numpy as np
@@ -247,7 +246,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 @dataclass
-class DataCollatorForSupervisedDataset(object):
+class DataCollatorForSupervisedDataset:
     """
     Collate examples for supervised fine-tuning.
     """
@@ -316,7 +315,7 @@ def finetune_hf(data_path, target, config):
         # training completed, load best model
         ckpts = glob.glob(f'{output_dir}/checkpoint*')
         final_ckpt = sorted(ckpts, key=lambda x: int(x.split('-')[-1]))[-1]
-        with open(os.path.join(final_ckpt, 'trainer_state.json'), 'r') as f:
+        with open(os.path.join(final_ckpt, 'trainer_state.json')) as f:
             state = json.load(f)
         best_model_checkpoint = state['best_model_checkpoint']
 
@@ -331,8 +330,8 @@ def finetune_hf(data_path, target, config):
         encoder_decoder_model = ("ConditionalGeneration" in architecture) or ("T5WithLMHeadModel" in architecture)
         decoder_only_model = ("CausalLM" in architecture) or ("GPT2LMHeadModel" in architecture)
         assert encoder_decoder_model or decoder_only_model, f"Unknown HuggingFace model class: {target}"
-        assert not config['fid'] or encoder_decoder_model, f"Model must be encoder-decoder for Fusion in Decoder"
-        assert not config['fid'] or not config['peft'], f"FiD and PEFT can't be trained together"
+        assert not config['fid'] or encoder_decoder_model, "Model must be encoder-decoder for Fusion in Decoder"
+        assert not config['fid'] or not config['peft'], "FiD and PEFT can't be trained together"
 
         # load model
         AutoModelClass = AutoModelForSeq2SeqLM if encoder_decoder_model else AutoModelForCausalLM

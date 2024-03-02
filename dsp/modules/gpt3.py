@@ -1,5 +1,4 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 # Configure logging
 logging.basicConfig(
@@ -43,7 +42,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 

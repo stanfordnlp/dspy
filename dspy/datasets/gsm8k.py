@@ -2,7 +2,6 @@ import tqdm
 import random
 
 from datasets import load_dataset
-from dspy.datasets.dataset import Dataset
 
 class GSM8K:
     def __init__(self) -> None:

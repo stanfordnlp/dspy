@@ -1,4 +1,3 @@
-import dsp
 import dspy
 from dspy.signatures.signature import ensure_signature
 from ..primitives.program import Module
@@ -16,23 +15,23 @@ class ProgramOfThought(Module):
         self.output_fields = signature.output_fields
 
         inputs_ = ", ".join(
-            [f"`{field_name}`" for field_name in self.input_fields.keys()]
+            [f"`{field_name}`" for field_name in self.input_fields.keys()],
         )
         outputs_ = ", ".join(
-            [f"`{field_name}`" for field_name in self.output_fields.keys()]
+            [f"`{field_name}`" for field_name in self.output_fields.keys()],
         )
 
         assert len(self.output_fields) == 1, "PoT only supports one output field."
 
         instr = []
         instr.append(
-            f"You will be given {inputs_} and you will respond with {outputs_}."
+            f"You will be given {inputs_} and you will respond with {outputs_}.",
         )
         instr.append(
-            f"Generating executable Python code that programmatically computes the correct {outputs_}."
+            f"Generating executable Python code that programmatically computes the correct {outputs_}.",
         )
         instr.append(
-            f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {outputs_}."
+            f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {outputs_}.",
         )
         instr = "\n".join(instr)
 
@@ -40,19 +39,19 @@ class ProgramOfThought(Module):
             dspy.Signature(
                 self._generate_signature("generate").fields,
                 self._generate_instruction("generate"),
-            )
+            ),
         )
         self.code_regenerate = dspy.ChainOfThought(
             dspy.Signature(
                 self._generate_signature("regenerate").fields,
                 self._generate_instruction("regenerate"),
-            )
+            ),
         )
         self.generate_answer = dspy.ChainOfThought(
             dspy.Signature(
                 self._generate_signature("answer").fields,
                 self._generate_instruction("answer"),
-            )
+            ),
         )
 
     def _generate_signature(self, mode):
@@ -63,7 +62,7 @@ class ProgramOfThought(Module):
                     prefix="Code:",
                     desc="python code that answers the question",
                     format=str,
-                )
+                ),
             },
             "regenerate": {
                 "previous_code": dspy.InputField(
@@ -102,13 +101,13 @@ class ProgramOfThought(Module):
             [
                 f"`{field_name}`"
                 for field_name in self._generate_signature(mode).input_fields
-            ]
+            ],
         )
         mode_outputs = ", ".join(
             [
                 f"`{field_name}`"
                 for field_name in self._generate_signature(mode).output_fields
-            ]
+            ],
         )
         if mode == "generate":
             instr = [
@@ -123,7 +122,7 @@ class ProgramOfThought(Module):
             ]
         else:  # mode == 'answer'
             instr = [
-                f"Given the final code {mode_inputs}, provide the final {mode_outputs}."
+                f"Given the final code {mode_inputs}, provide the final {mode_outputs}.",
             ]
 
         return "\n".join(instr)
@@ -144,10 +143,10 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         else:
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)", r"\1\n", code_block
+                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)", r"\1\n", code_block,
             )
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$", r"\1\n\2", code_block
+                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$", r"\1\n\2", code_block,
             )
         return code_block, None
 
@@ -171,7 +170,7 @@ class ProgramOfThought(Module):
         while hop < self.max_iters and error:
             print("Error in code execution")
             code_data = self.code_regenerate(
-                question=kwargs["question"], previous_code=code, error=error
+                question=kwargs["question"], previous_code=code, error=error,
             )
             parsed_code, error = self.parse_code(code_data)
             # FIXME: Don't try to execute the code if it didn't parse
@@ -181,6 +180,6 @@ class ProgramOfThought(Module):
                 print("Max hops reached. Error persists.")
                 return None
         answer_gen_result = self.generate_answer(
-            question=kwargs["question"], final_generated_code=code, code_output=output
+            question=kwargs["question"], final_generated_code=code, code_output=output,
         )
         return answer_gen_result

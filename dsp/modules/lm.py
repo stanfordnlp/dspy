@@ -50,8 +50,8 @@ class LM(ABC):
                     printed.append(
                         (
                             prompt,
-                            x['response']
-                        )
+                            x['response'],
+                        ),
                     )
                 else:
                     printed.append(
@@ -60,7 +60,7 @@ class LM(ABC):
                             x["response"].generations
                             if provider == "cohere"
                             else x["response"]["choices"],
-                        )
+                        ),
                     )
 
             last_prompt = prompt

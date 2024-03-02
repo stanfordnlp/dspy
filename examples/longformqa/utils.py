@@ -1,5 +1,4 @@
 import regex as re
-import os
 import nltk
 nltk.download('punkt')
 from nltk.tokenize import sent_tokenize

@@ -16,19 +16,15 @@ import difflib
 import importlib
 import re
 import typing
-import inspect
 from typing import (
     Any,
-    Callable,
     Dict,
-    Mapping,
     List,
     Optional,
     Set,
     Tuple,
-    TypeVar,
-    Union,
 )
+from collections.abc import Mapping
 import builtins
 
 
@@ -40,7 +36,7 @@ class InterpreterError(ValueError):
     pass
 
 
-class PythonInterpreter():
+class PythonInterpreter:
     r"""A customized python interpreter to control the execution of
     LLM-generated codes. The interpreter makes sure the code can only execute
     functions given in action space and import white list. It also supports
@@ -572,7 +568,7 @@ class CodePrompt(TextPrompt):
 
     def execute(
         self, interpreter: Optional[PythonInterpreter] = None,
-        user_variable: Optional[Dict[str, Any]] = None
+        user_variable: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, PythonInterpreter]:
         r"""Executes the code string by a given python interpreter.
 

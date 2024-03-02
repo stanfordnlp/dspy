@@ -44,7 +44,7 @@ class TemplateV2:
                     variable = match.group(3)
                     description = None
                 else:
-                    raise ValueError(f"Could not parse template")
+                    raise ValueError("Could not parse template")
 
             var_match = re.match("(.*) -> (.*)", variable)
             if var_match is not None:
@@ -61,7 +61,7 @@ class TemplateV2:
                     input_variable=input_variable,
                     output_variable=output_variable,
                     description=description,
-                )
+                ),
             )
 
             template = template[len(match.group(0)) :].strip()
@@ -99,7 +99,7 @@ class TemplateV2:
                 separator = '\n' if field.separator == ' ' and '\n' in formatted_value else field.separator
 
                 result.append(
-                    f"{field.name}{separator}{formatted_value}"
+                    f"{field.name}{separator}{formatted_value}",
                 )
 
         if self._has_augmented_guidelines() and (example.get('augmented', False)):
@@ -130,7 +130,7 @@ class TemplateV2:
         )
 
     def extract(
-        self, example: Union[Example, dict[str, Any]], raw_pred: str
+        self, example: Union[Example, dict[str, Any]], raw_pred: str,
     ) -> Example:
         """Extracts the answer from the LM raw prediction using the template structure
 

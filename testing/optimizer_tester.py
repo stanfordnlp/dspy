@@ -142,7 +142,7 @@ class OptimizerTester:
                 'view_data': False,
                 'optimizer_log_dir': 'NA',
                 'additional_notes': '',
-                'misc': ''
+                'misc': '',
             })
 
     def test_optimizer_default(self, optimizer_function, datasets=datasets, test_name="default"):
@@ -195,7 +195,7 @@ class OptimizerTester:
                 'view_data': False,
                 'optimizer_log_dir': log_dir,
                 'additional_notes': '',
-                'misc': ''
+                'misc': '',
             }
 
             output.update(output_dict)

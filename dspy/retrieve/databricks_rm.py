@@ -1,7 +1,7 @@
 import dspy
 import os
 import requests
-from typing import Union, List, Optional
+from typing import Union, List
 from collections import defaultdict
 from dspy.primitives.prediction import Prediction
 
@@ -91,11 +91,11 @@ class DatabricksRM(dspy.Retrieve):
         """
         headers = {
             "Authorization": f"Bearer {self.databricks_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         payload = {
             "columns": self.columns,
-            "num_results": self.k
+            "num_results": self.k,
         }
         if query_type == 'vector':
             if not isinstance(query, list):
@@ -112,7 +112,7 @@ class DatabricksRM(dspy.Retrieve):
         response = requests.post(
             f"{self.databricks_endpoint}/api/2.0/vector-search/indexes/{self.databricks_index_name}/query",
             json=payload,
-            headers=headers
+            headers=headers,
         )
         results = response.json()
 
