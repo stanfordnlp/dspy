@@ -94,7 +94,7 @@ class TemplateV2:
                     def format_handler(x):
                         assert type(x) == str, f"Need format_handler for {field.input_variable} of type {type(x)}"
                         return " ".join(x.split())
-                
+
                 formatted_value = format_handler(example[field.input_variable])
                 separator = '\n' if field.separator == ' ' and '\n' in formatted_value else field.separator
 
@@ -102,7 +102,7 @@ class TemplateV2:
                     f"{field.name}{separator}{formatted_value}"
                 )
 
-        if self._has_augmented_guidelines() and ("augmented" in example and example.augmented):
+        if self._has_augmented_guidelines() and (example.get('augmented', False)):
             return "\n\n".join([r for r in result if r])
         return "\n".join([r for r in result if r])
 
@@ -207,7 +207,7 @@ class TemplateV2:
             self.query(demo, is_demo=True)
             for demo in example.demos
             if (
-                ("augmented" not in demo or not demo.augmented)
+                (not demo.get('augmented', False))
                 and (  # validate that the training example has the same primitive input var as the template
                     self.fields[-1].input_variable in demo
                     and demo[self.fields[-1].input_variable] is not None
@@ -218,7 +218,7 @@ class TemplateV2:
         ademos = [
             self.query(demo, is_demo=True)
             for demo in example.demos
-            if "augmented" in demo and demo.augmented
+            if demo.get('augmented', False)
         ]
 
         # Move the rdemos to ademos if rdemo has all the fields filled in
@@ -238,7 +238,7 @@ class TemplateV2:
                     ademos.append(rdemo)
             else:
                 rdemos_.append(rdemo)
-        
+
         ademos = new_ademos + ademos
         rdemos = rdemos_
 
@@ -254,12 +254,12 @@ class TemplateV2:
         if len(query.split('\n')) > len(self.fields):
             long_query = True
 
-            if "augmented" not in example or not example.augmented:
+            if not example.get('augmented', False):
                 example["augmented"] = True
                 query = self.query(example)
 
         rdemos = "\n\n".join(rdemos)
-        
+
         if len(rdemos) >= 1 and len(ademos) == 0 and not long_query:
             rdemos_and_query = "\n\n".join([rdemos, query])
             parts = [

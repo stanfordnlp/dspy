@@ -7,6 +7,7 @@ def test_cot_with_no_hint():
     lm = DummyLM(["find the number after 1", "2"])
     dspy.settings.configure(lm=lm)
     predict = ChainOfThoughtWithHint("question -> answer")
+    # Check output fields have the right order
     assert list(predict.extended_signature2.output_fields.keys()) == [
         "rationale",
         "hint",
