@@ -11,7 +11,6 @@ except ImportError:
     HTML = lambda x: x
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from dsp.utils import EM
 from dsp.evaluation.utils import *
 
 """
@@ -219,12 +218,12 @@ def configure_dataframe_display(df, metric_name):
     # Return styled DataFrame
     return df.style.set_table_styles([
         {'selector': 'th', 'props': [('text-align', 'left')]},
-        {'selector': 'td', 'props': [('text-align', 'left')]}
+        {'selector': 'td', 'props': [('text-align', 'left')]},
     ]).set_properties(**{
         'text-align': 'left',
         'white-space': 'pre-wrap',
         'word-wrap': 'break-word',
-        'max-width': '400px'
+        'max-width': '400px',
     })
 
 # FIXME: TODO: The merge_dicts stuff above is way too quick and dirty.

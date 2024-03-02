@@ -2,7 +2,7 @@
 Retriever model for deeplake
 """
 
-from typing import Optional, List, Union, Type
+from typing import Optional, List, Union
 import openai
 import dspy
 from collections import defaultdict
@@ -59,7 +59,7 @@ class DeeplakeRM(dspy.Retrieve):
           from deeplake import VectorStore
         except ImportError:
           raise ImportError(
-              "The 'deeplake' extra is required to use DeepLakeRM. Install it with `pip install dspy-ai[deeplake]`"
+              "The 'deeplake' extra is required to use DeepLakeRM. Install it with `pip install dspy-ai[deeplake]`",
           )
         self._deeplake_vectorstore_name = deeplake_vectorstore_name
         self._deeplake_client = deeplake_client
@@ -77,7 +77,7 @@ class DeeplakeRM(dspy.Retrieve):
         ]
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int]
+        self, query_or_queries: Union[str, List[str]], k: Optional[int],
     ) -> dspy.Prediction:
         
         """Search with DeepLake for self.k top passages for query
@@ -103,7 +103,7 @@ class DeeplakeRM(dspy.Retrieve):
         for query in queries:
             results = self._deeplake_client(
             path=self._deeplake_vectorstore_name,
-            embedding_function=self.embedding_function
+            embedding_function=self.embedding_function,
             ).search(query, k=k)
 
             for score,text in zip(results.get('score',0.0),results.get('text',"")):

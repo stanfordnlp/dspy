@@ -259,7 +259,7 @@ def test_bootstrap_effectiveness():
         Follow the following format.
 
         Input: ${input}
-        Output: ${output}. Respond with a single str value
+        Output: ${output}
 
         ---
 

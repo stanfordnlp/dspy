@@ -1,7 +1,6 @@
 import dspy
 from dspy.datasets import HotPotQA
 from .base_task import BaseTask
-from dspy.evaluate import Evaluate
 from functools import lru_cache
 import openai
 from dotenv import load_dotenv
@@ -45,7 +44,7 @@ class Assess(dspy.Signature):
     assessment_question = dspy.InputField()
     assessment_answer = dspy.OutputField(desc="Yes or No")
 
-@lru_cache()
+@lru_cache
 def load_models():
     load_dotenv()  # This will load the .env file's variables
 
@@ -74,7 +73,7 @@ def metric(gold, pred, trace=None):
         correct =  dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=correct)
         engaging = dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=engaging)
 
-    correct, engaging, faithful = [m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful]]
+    correct, engaging, faithful = (m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful])
     score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
     if METRIC is not None:

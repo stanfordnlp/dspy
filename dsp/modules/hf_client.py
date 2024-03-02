@@ -1,14 +1,11 @@
-import functools
 import os
 import random
 import requests
 from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-import os
+from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 import subprocess
 import re
 import shutil
-import time
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 
@@ -21,7 +18,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 class HFClientTGI(HFModel):
@@ -57,13 +54,13 @@ class HFClientTGI(HFModel):
             # "max_new_tokens": kwargs.get('max_tokens', kwargs.get('max_new_tokens', 75)),
             # "stop": ["\n", "\n\n"],
             **kwargs,
-            }
+            },
         }
 
         payload["parameters"] = openai_to_hf(**payload["parameters"])
 
         payload["parameters"]["temperature"] = max(
-            0.1, payload["parameters"]["temperature"]
+            0.1, payload["parameters"]["temperature"],
         )
 
         # print(payload['parameters'])
@@ -96,7 +93,7 @@ class HFClientTGI(HFModel):
 
             response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
             return response
-        except Exception as e:
+        except Exception:
             print("Failed to parse JSON response:", response.text)
             raise Exception("Received invalid JSON response from server")
 
@@ -147,7 +144,7 @@ class HFClientVLLM(HFModel):
             }
             return response
 
-        except Exception as e:
+        except Exception:
             print("Failed to parse JSON response:", response.text)
             raise Exception("Received invalid JSON response from server")
 
@@ -227,7 +224,7 @@ class Together(HFModel):
             "repetition_penalty": 1,
             "n": 1,
             "stop": stop_default if "stop" not in kwargs else kwargs["stop"],
-            **kwargs
+            **kwargs,
         }
 
     @backoff.on_exception(
@@ -253,7 +250,7 @@ class Together(HFModel):
             url = f"{self.api_base}/chat/completions"
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ]
             body = {
                 "model": self.model,
@@ -305,7 +302,7 @@ class Anyscale(HFModel):
         self.kwargs = {
             "temperature": 0.0,
             "n": 1,
-            **kwargs
+            **kwargs,
         }
 
     def _generate(self, prompt, use_chat_api=False, **kwargs):
@@ -320,20 +317,20 @@ class Anyscale(HFModel):
             url = f"{self.api_base}/chat/completions"
             messages = [
                 {"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ]
             body = {
                 "model": self.model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens
+                "max_tokens": max_tokens,
             }
         else:
             body = {
                 "model": self.model,
                 "prompt": f"[INST]{prompt}[/INST]",
                 "temperature": temperature,
-                "max_tokens": max_tokens
+                "max_tokens": max_tokens,
             }
 
         headers = {"Authorization": f"Bearer {self.token}"}
@@ -362,7 +359,7 @@ class ChatModuleClient(HFModel):
         from mlc_chat import ChatConfig
 
         self.cm = ChatModule(
-            model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM")
+            model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM"),
         )
 
     def _generate(self, prompt, **kwargs):
@@ -373,7 +370,7 @@ class ChatModuleClient(HFModel):
             completions = [{"text": output}]
             response = {"prompt": prompt, "choices": completions}
             return response
-        except Exception as e:
+        except Exception:
             print("Failed to parse output:", response.text)
             raise Exception("Received invalid output")
 
@@ -417,7 +414,7 @@ class HFClientSGLang(HFModel):
             }
             return response
 
-        except Exception as e:
+        except Exception:
             print("Failed to parse JSON response:", response.text)
             raise Exception("Received invalid JSON response from server")
 

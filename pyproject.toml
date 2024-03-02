@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspy-ai"
-version = "2.3.5"
+version = "2.3.6"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -254,6 +254,15 @@ ignore = [
     "RET505",
     # Within an `except` clause, raise exceptions with `raise
     "B904",
+    # We don't need docstrings for every method
+    "ANN202",
+    "D107",
+    "D102",
+    "D103",
+    # Inline lambdas
+    "E731",
+    # Sometimes we need List and Tuple
+    "UP006",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -274,4 +283,5 @@ line-ending = "auto"
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**/{test,docs}/*" = ["ALL"]
+"**/{tests,docs}/*" = ["ALL"]
+"**__init__.py" = ["F401"]

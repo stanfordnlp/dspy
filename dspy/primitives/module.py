@@ -67,5 +67,5 @@ class BaseModule:
             f.write(ujson.dumps(self.dump_state(), indent=2))
     
     def load(self, path):
-        with open(path, "r") as f:
+        with open(path) as f:
             self.load_state(ujson.loads(f.read()))

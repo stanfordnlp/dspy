@@ -7,7 +7,7 @@ try:
     import marqo
 except ImportError:
     raise ImportError(
-        "The 'marqo' extra is required to use MarqoRM. Install it with `pip install dspy-ai[marqo]`"
+        "The 'marqo' extra is required to use MarqoRM. Install it with `pip install dspy-ai[marqo]`",
     )
 
 class MarqoRM(dspy.Retrieve):
@@ -48,7 +48,7 @@ class MarqoRM(dspy.Retrieve):
         marqo_client: marqo.client.Client,
         k: int = 3,
         page_content: str = 'document',
-        filter_string: str = None
+        filter_string: str = None,
     ):
         self._marqo_index_name = marqo_index_name
         self._marqo_client = marqo_client
@@ -80,7 +80,7 @@ class MarqoRM(dspy.Retrieve):
                 q=query,
                 limit=limit,
                 filter_string=self.filter_string,
-                **kwargs
+                **kwargs,
             )
             all_query_results.append(_result)
 

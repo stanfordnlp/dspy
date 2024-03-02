@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import List, Union
 import dspy
 from dsp.utils import dotdict
@@ -8,7 +7,7 @@ try:
     import weaviate
 except ImportError:
     raise ImportError(
-        "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`"
+        "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`",
     )
 
 
@@ -47,7 +46,7 @@ class WeaviateRM(dspy.Retrieve):
                  weaviate_collection_name: str, 
                  weaviate_client: weaviate.Client, 
                  k: int = 3,
-                 weaviate_collection_text_key: Optional[str] = "content"
+                 weaviate_collection_text_key: Optional[str] = "content",
         ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client

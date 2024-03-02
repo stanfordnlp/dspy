@@ -3,7 +3,7 @@ from dsp.utils.utils import dotdict
 import threading
 
 
-class Settings(object):
+class Settings:
     """DSP configuration settings."""
 
     _instance = None
@@ -42,7 +42,7 @@ class Settings(object):
                 bypass_suggest=False,
                 assert_failures=0,
                 suggest_failures=0,
-                langchain_history=[]
+                langchain_history=[],
             )
             cls._instance.__append(config)
 

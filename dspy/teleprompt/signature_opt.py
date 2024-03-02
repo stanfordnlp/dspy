@@ -60,11 +60,11 @@ class SignatureOptimizer(Teleprompter):
 
     def _check_candidates_equal(self, candidate1, candidate2):
         for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
-            if not p1.extended_signature.instructions == p2.extended_signature.instructions:
+            if p1.extended_signature.instructions != p2.extended_signature.instructions:
                 return False
             *_, p1_last_field = p1.extended_signature.fields.values()
             *_, p2_last_field = p2.extended_signature.fields.values()
-            if not p1_last_field == p2_last_field:
+            if p1_last_field != p2_last_field:
                 return False
         return True
 
@@ -177,7 +177,7 @@ class SignatureOptimizer(Teleprompter):
                             .with_updated_fields(last_key, prefix=prefix)
 
                     # Score the instruction / prefix 
-                    if self.verbose: print(f"----------------")
+                    if self.verbose: print("----------------")
                     for i,predictor in enumerate(module_clone.predictors()):
                         if self.verbose: print(f"Predictor {i}")
                         self._print_signature(predictor)
@@ -185,7 +185,7 @@ class SignatureOptimizer(Teleprompter):
                     score = evaluate(module_clone, devset=devset, **eval_kwargs)
                     if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
-                    if self.verbose: print(f"----------------")
+                    if self.verbose: print("----------------")
 
                     replace_entry = True
                     if self.verbose: print(f"(instruction, prefix) {(instruction, prefix)}")
@@ -202,7 +202,7 @@ class SignatureOptimizer(Teleprompter):
                             "program": module_clone.deepcopy(),
                             "instruction": instruction,
                             "prefix": prefix,
-                            "depth": d
+                            "depth": d,
                         }
                     
                     if (len(candidates_)-self.breadth <= c_i):
@@ -233,7 +233,7 @@ class SignatureOptimizer(Teleprompter):
                         .with_instructions(best_candidate["instruction"]) \
                         .with_updated_fields(last_key2, prefix=best_candidate["prefix"])
                 if self.verbose: print(f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}")
-                if self.verbose: print(f"Full predictor with update: ")
+                if self.verbose: print("Full predictor with update: ")
                 for i,predictor in enumerate(module_clone.predictors()):
                     if self.verbose: print(f"Predictor {i}")
                     self._print_signature(predictor)

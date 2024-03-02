@@ -7,7 +7,6 @@ from dspy.evaluate.evaluate import Evaluate
 from collections import defaultdict
 import random
 from dspy.teleprompt import BootstrapFewShot
-import numpy as np
 import optuna
 import math
 
@@ -221,11 +220,11 @@ class BayesianSignatureOptimizer(Teleprompter):
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamplesAndDataObservations,
                             n=1,
-                            temperature=self.init_temperature
+                            temperature=self.init_temperature,
                         )(
                             basic_instruction=basic_instruction,
                             observations=self.observations,
-                            examples=example_sets[id(predictor)][i]
+                            examples=example_sets[id(predictor)][i],
                         )
                         if not instruct:
                             instruct = new_instruct
@@ -242,10 +241,10 @@ class BayesianSignatureOptimizer(Teleprompter):
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamples,
                             n=1,
-                            temperature=self.init_temperature
+                            temperature=self.init_temperature,
                         )(
                             basic_instruction=basic_instruction,
-                            examples=example_sets[id(predictor)][i]
+                            examples=example_sets[id(predictor)][i],
                         )
                         if not instruct:
                             instruct = new_instruct
@@ -279,7 +278,7 @@ class BayesianSignatureOptimizer(Teleprompter):
         for i in range(self.n):
             if i == 0: # Story empty set of demos as default for index 0
                 for module_p in module.predictors():
-                    if id(module_p) not in demo_candidates.keys():
+                    if id(module_p) not in demo_candidates:
                         demo_candidates[id(module_p)] = []
                     demo_candidates[id(module_p)].append([])
             else:
@@ -294,7 +293,7 @@ class BayesianSignatureOptimizer(Teleprompter):
 
                 # Store the candidate demos
                 for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
-                    if id(module_p) not in demo_candidates.keys():
+                    if id(module_p) not in demo_candidates:
                         demo_candidates[id(module_p)] = []
                     demo_candidates[id(module_p)].append(candidate_p.demos)
 
@@ -374,7 +373,7 @@ class BayesianSignatureOptimizer(Teleprompter):
 
                     # Handle pruning based on the intermediate value.
                     if trial.should_prune():
-                        if self.verbose: print(f"Optuna decided to prune!")
+                        if self.verbose: print("Optuna decided to prune!")
                         trial_logs[trial_num]["score"] = curr_weighted_avg_score
                         trial_logs[trial_num]["pruned"] = True
                         trial_num += 1 

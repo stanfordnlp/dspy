@@ -8,7 +8,7 @@ try:
     import fastembed
 except ImportError:
     raise ImportError(
-        "The 'qdrant' extra is required to use QdrantRM. Install it with `pip install dspy-ai[qdrant]`"
+        "The 'qdrant' extra is required to use QdrantRM. Install it with `pip install dspy-ai[qdrant]`",
     )
 
 

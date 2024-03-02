@@ -1,14 +1,14 @@
-from typing import Optional, Union, Any
+from typing import Union, Any
 
 from dsp.utils import dotdict
 try:
     from azure.core.credentials import AzureKeyCredential
     from azure.search.documents import SearchClient
     from azure.search.documents._paging import SearchItemPaged
-except ImportError as e:
+except ImportError:
     raise ImportError(
         "You need to install azure-search-documents library"
-        "Please use the command: pip install azure-search-documents"
+        "Please use the command: pip install azure-search-documents",
     )
 
 class AzureCognitiveSearch:
