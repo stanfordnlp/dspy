@@ -30,11 +30,9 @@ try:
 
     ERRORS = (
         openai.error.RateLimitError,
-        openai.error.ServiceUnavailableError,
-        openai.error.APIError,
     )
 except Exception:
-    ERRORS = (openai.RateLimitError, openai.APIError)
+    ERRORS = (openai.RateLimitError,)
     OpenAIObject = dict
 
 
