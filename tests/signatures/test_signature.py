@@ -82,6 +82,8 @@ def test_instructions_signature():
 def test_signature_instructions():
     sig1 = Signature("input1 -> output1", instructions="This is a test")
     assert sig1.instructions == "This is a test"
+    sig2 = Signature("input1 -> output1", "This is a test")
+    assert sig2.instructions == "This is a test"
 
 
 def test_signature_instructions_none():

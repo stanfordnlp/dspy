@@ -11,6 +11,7 @@ import dspy
 from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
+from dspy.teleprompt.vanilla import LabeledFewShot
 from dspy.utils.dummies import DummyLM
 
 
@@ -491,3 +492,43 @@ def test_fields_on_base_signature():
     predictor = TypedPredictor(SimpleOutput)
 
     assert predictor().output == 0.5
+
+
+def test_synthetic_data_gen():
+    class SyntheticFact(BaseModel):
+        fact: str = Field(..., description="a statement")
+        varacity: bool = Field(..., description="is the statement true or false")
+
+    class ExampleSignature(dspy.Signature):
+        """Generate an example of a synthetic fact."""
+
+        fact: SyntheticFact = dspy.OutputField()
+
+    lm = DummyLM(
+        [
+            '{"fact": "The sky is blue", "varacity": true}',
+            '{"fact": "The sky is green", "varacity": false}',
+            '{"fact": "The sky is red", "varacity": true}',
+            '{"fact": "The earth is flat", "varacity": false}',
+            '{"fact": "The earth is round", "varacity": true}',
+            '{"fact": "The earth is a cube", "varacity": false}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    generator = TypedPredictor(ExampleSignature)
+    examples = generator(config=dict(n=3))
+    for ex in examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)
+    assert examples.completions.fact[0] == SyntheticFact(fact="The sky is blue", varacity=True)
+
+    # If you have examples and want more
+    existing_examples = [
+        dspy.Example(fact="The sky is blue", varacity=True),
+        dspy.Example(fact="The sky is green", varacity=False),
+    ]
+    trained = LabeledFewShot().compile(student=generator, trainset=existing_examples)
+
+    augmented_examples = trained(config=dict(n=3))
+    for ex in augmented_examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)

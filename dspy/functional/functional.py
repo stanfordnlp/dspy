@@ -10,7 +10,7 @@ from dsp.templates import passages2text
 import json
 from dspy.primitives.prediction import Prediction
 
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import ensure_signature, make_signature
 
 
 MAX_RETRIES = 3
@@ -83,7 +83,7 @@ class TypedPredictor(dspy.Module):
     def _make_example(type_) -> str:
         # Note: DSPy will cache this call so we only pay the first time TypedPredictor is called.
         json_object = dspy.Predict(
-            dspy.Signature(
+            make_signature(
                 "json_schema -> json_object",
                 "Make a very succinct json object that validates with the following schema",
             ),
@@ -153,21 +153,20 @@ class TypedPredictor(dspy.Module):
         for try_i in range(MAX_RETRIES):
             result = self.predictor(**modified_kwargs, new_signature=signature)
             errors = {}
-            parsed_results = defaultdict(list)
+            parsed_results = []
             # Parse the outputs
             for i, completion in enumerate(result.completions):
                 try:
+                    parsed = {}
                     for name, field in signature.output_fields.items():
                         value = completion[name]
                         parser = field.json_schema_extra.get("parser", lambda x: x)
                         completion[name] = parser(value)
-                        parsed_results[name].append(parser(value))
+                        parsed[name] = parser(value)
                     # Instantiate the actual signature with the parsed values.
                     # This allow pydantic to validate the fields defined in the signature.
-                    _dummy = self.signature(
-                        **kwargs,
-                        **{key: value[i] for key, value in parsed_results.items()},
-                    )
+                    _dummy = self.signature(**kwargs, **parsed)
+                    parsed_results.append(parsed)
                 except (pydantic.ValidationError, ValueError) as e:
                     errors[name] = _format_error(e)
                     # If we can, we add an example to the error message
@@ -199,9 +198,9 @@ class TypedPredictor(dspy.Module):
                     )
             else:
                 # If there are no errors, we return the parsed results
-                # for name, value in parsed_results.items():
-                #    setattr(result, name, value)
-                return Prediction.from_completions(parsed_results)
+                return Prediction.from_completions(
+                    {key: [r[key] for r in parsed_results] for key in signature.output_fields}
+                )
         raise ValueError(
             "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",
             errors,
