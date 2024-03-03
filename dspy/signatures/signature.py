@@ -1,9 +1,10 @@
+import ast
 from copy import deepcopy
 import typing
 import dsp
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
-from typing import Type, Union, Dict, Tuple  # noqa: UP035
+from typing import Any, Type, Union, Dict, Tuple  # noqa: UP035
 import re
 
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
@@ -254,7 +255,7 @@ def make_signature(
 
 
 def _parse_signature(signature: str) -> Tuple[Type, Field]:
-    pattern = r"^\s*[\w\s,]+\s*->\s*[\w\s,]+\s*$"
+    pattern = r"^\s*[\w\s,:]+\s*->\s*[\w\s,:]+\s*$"
     if not re.match(pattern, signature):
         raise ValueError(f"Invalid signature format: '{signature}'")
 
@@ -262,12 +263,52 @@ def _parse_signature(signature: str) -> Tuple[Type, Field]:
     inputs_str, outputs_str = map(str.strip, signature.split("->"))
     inputs = [v.strip() for v in inputs_str.split(",") if v.strip()]
     outputs = [v.strip() for v in outputs_str.split(",") if v.strip()]
-    for name in inputs:
-        fields[name] = (str, InputField())
-    for name in outputs:
-        fields[name] = (str, OutputField())
+    for name_type in inputs:
+        name, type_ = _parse_named_type_node(name_type)
+        fields[name] = (type_, InputField())
+    for name_type in outputs:
+        name, type_ = _parse_named_type_node(name_type)
+        fields[name] = (type_, OutputField())
 
     return fields
+
+
+def _parse_named_type_node(node, names=None) -> Any:
+    parts = node.split(":")
+    if len(parts) == 1:
+        return parts[0], str
+    name, type_str = parts
+    type_ = _parse_type_node(ast.parse(type_str), names)
+    return name, type_
+
+
+def _parse_type_node(node, names=None) -> Any:
+    """Recursively parse an AST node representing a type annotation.
+
+    using structural pattern matching introduced in Python 3.10.
+    """
+    if names is None:
+        names = {}
+    match node:
+        case ast.Module(body=body):
+            if len(body) != 1:
+                raise ValueError(f"Code is not syntactically valid: {node}")
+            return _parse_type_node(body[0], names)
+        case ast.Expr(value=value):
+            return _parse_type_node(value, names)
+        case ast.Name(id=id):
+            if id in names:
+                return names[id]
+            for type_ in [int, str, float, bool, list, tuple, dict]:
+                if type_.__name__ == id:
+                    return type_
+        case ast.Subscript(value=value, slice=slice):
+            base_type = _parse_type_node(value, names)
+            arg_type = _parse_type_node(slice, names)
+            return base_type[arg_type]
+        case ast.Tuple(elts=elts):
+            return tuple(_parse_type_node(elt, names) for elt in elts)
+    raise ValueError(f"Code is not syntactically valid: {node}")
 
 
 def infer_prefix(attribute_name: str) -> str:

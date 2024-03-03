@@ -35,9 +35,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(
-        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
-    )
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -88,9 +86,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: List[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -229,9 +225,7 @@ def test_bootstrap_effectiveness():
     lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
@@ -295,7 +289,7 @@ def test_regex():
             # Example with a bad origin code.
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
             # Example to help the model understand
-            '{...}',
+            "{...}",
             # Fixed
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
@@ -344,9 +338,9 @@ def test_multi_errors():
         [
             # First origin is wrong, then destination, then all is good
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            '{...}', # Example to help the model understand
+            "{...}",  # Example to help the model understand
             '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
-            '{...}', # Example to help the model understand
+            "{...}",  # Example to help the model understand
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
     )
@@ -447,3 +441,36 @@ def test_annotated_field():
     output = test(input="input")
 
     assert output == 0.5
+
+
+def test_multiple_outputs():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input -> output")
+    output = test(input="input", config=dict(n=3)).completions.output
+    assert output == ["0", "1", "2"]
+
+
+def test_multiple_outputs_int():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    class TestSignature(dspy.Signature):
+        input: int = dspy.InputField()
+        output: int = dspy.OutputField()
+
+    test = TypedPredictor(TestSignature)
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_parse_type_string():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input:int -> output:int")
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]

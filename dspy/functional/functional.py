@@ -1,3 +1,4 @@
+from collections import defaultdict
 import inspect
 import os
 import openai
@@ -7,6 +8,7 @@ import pydantic
 from typing import Annotated, List, Tuple  # noqa: UP035
 from dsp.templates import passages2text
 import json
+from dspy.primitives.prediction import Prediction
 
 from dspy.signatures.signature import ensure_signature
 
@@ -71,7 +73,7 @@ def TypedChainOfThought(signature) -> dspy.Module:  # noqa: N802
 class TypedPredictor(dspy.Module):
     def __init__(self, signature):
         super().__init__()
-        self.signature = signature
+        self.signature = ensure_signature(signature)
         self.predictor = dspy.Predict(signature)
 
     def copy(self) -> "TypedPredictor":
@@ -127,8 +129,7 @@ class TypedPredictor(dspy.Module):
                         name,
                         desc=field.json_schema_extra.get("desc", "")
                         + (
-                            ". Respond with a single JSON object. JSON Schema: "
-                            + json.dumps(type_.model_json_schema())
+                            ". Respond with a single JSON object. JSON Schema: " + json.dumps(type_.model_json_schema())
                         ),
                         format=lambda x, to_json=to_json: (x if isinstance(x, str) else to_json(x)),
                         parser=lambda x, from_json=from_json: from_json(_unwrap_json(x)),
@@ -152,28 +153,33 @@ class TypedPredictor(dspy.Module):
         for try_i in range(MAX_RETRIES):
             result = self.predictor(**modified_kwargs, new_signature=signature)
             errors = {}
-            parsed_results = {}
+            parsed_results = defaultdict(list)
             # Parse the outputs
             for name, field in signature.output_fields.items():
-                try:
-                    value = getattr(result, name)
-                    parser = field.json_schema_extra.get("parser", lambda x: x)
-                    parsed_results[name] = parser(value)
-                except (pydantic.ValidationError, ValueError) as e:
-                    errors[name] = _format_error(e)
-                    # If we can, we add an example to the error message
-                    current_desc = field.json_schema_extra.get("desc", "")
-                    i = current_desc.find("JSON Schema: ")
-                    if i == -1:
-                        continue  # Only add examples to JSON objects
-                    suffix, current_desc = current_desc[i:], current_desc[:i]
-                    prefix = "You MUST use this format: "
-                    if try_i + 1 < MAX_RETRIES \
-                            and prefix not in current_desc \
-                            and (example := self._make_example(field.annotation)):
-                        signature = signature.with_updated_fields(
-                            name, desc=current_desc + "\n" + prefix + example + "\n" + suffix,
-                        )
+                for i, completion in enumerate(result.completions):
+                    try:
+                        value = completion[name]
+                        parser = field.json_schema_extra.get("parser", lambda x: x)
+                        completion[name] = parser(value)
+                        parsed_results[name].append(parser(value))
+                    except (pydantic.ValidationError, ValueError) as e:
+                        errors[name] = _format_error(e)
+                        # If we can, we add an example to the error message
+                        current_desc = field.json_schema_extra.get("desc", "")
+                        i = current_desc.find("JSON Schema: ")
+                        if i == -1:
+                            continue  # Only add examples to JSON objects
+                        suffix, current_desc = current_desc[i:], current_desc[:i]
+                        prefix = "You MUST use this format: "
+                        if (
+                            try_i + 1 < MAX_RETRIES
+                            and prefix not in current_desc
+                            and (example := self._make_example(field.annotation))
+                        ):
+                            signature = signature.with_updated_fields(
+                                name,
+                                desc=current_desc + "\n" + prefix + example + "\n" + suffix,
+                            )
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():
@@ -187,11 +193,12 @@ class TypedPredictor(dspy.Module):
                     )
             else:
                 # If there are no errors, we return the parsed results
-                for name, value in parsed_results.items():
-                    setattr(result, name, value)
-                return result
+                # for name, value in parsed_results.items():
+                #    setattr(result, name, value)
+                return Prediction.from_completions(parsed_results)
         raise ValueError(
-            "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.", errors,
+            "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",
+            errors,
         )
 
 
