@@ -14,7 +14,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 
 
 def predictor(func) -> dspy.Module:
