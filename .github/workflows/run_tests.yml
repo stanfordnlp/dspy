@@ -1,4 +1,4 @@
-name: Build and Run Tests
+name: Lint, Commit, and Test
 
 on:
   push:
@@ -10,8 +10,23 @@ env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+      - uses: chartboost/ruff-action@v1
+        with:
+          args: --fix-only
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Automatic Style fixes"
   test:
     name: Run Tests
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,6 +45,7 @@ jobs:
         run: poetry run pytest tests/
   build_poetry:
     name: Build Poetry
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -52,6 +68,7 @@ jobs:
         run: python -c "import dsp"
   build_setup:
     name: Build Setup
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
