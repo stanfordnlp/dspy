@@ -1,0 +1,24 @@
+name: Lint and Commit
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  POETRY_VERSION: "1.6.1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v2
+      - run: pip install ruff
+      - run: | 
+       ruff check .
+       ruff fix .
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: 'Style fixes by Ruff'
