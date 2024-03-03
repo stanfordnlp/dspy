@@ -27,7 +27,6 @@ jobs:
 
   test:
     name: Run Tests
-    needs: lint
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -61,7 +60,6 @@ jobs:
 
   build_poetry:
     name: Build Poetry
-    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -95,7 +93,6 @@ jobs:
 
   build_setup:
     name: Build Setup
-    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
