@@ -5,7 +5,7 @@ from typing import List, Tuple, Union
 from datasets import load_dataset
 
 import dspy
-from dspy.datasets import Dataset
+from dspy.datasets.dataset import Dataset
 
 
 class DataLoader(Dataset):
