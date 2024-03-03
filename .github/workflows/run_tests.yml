@@ -24,6 +24,7 @@ jobs:
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Automatic Style fixes"
+
   test:
     name: Run Tests
     needs: lint
@@ -37,12 +38,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Cache Poetry virtual environment
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
       - name: Install Poetry
         uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
       - name: Install dependencies
         run: poetry install
       - name: Run tests with pytest
         run: poetry run pytest tests/
+
   build_poetry:
     name: Build Poetry
     needs: test
@@ -56,6 +67,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
       - name: Install Poetry
         uses: snok/install-poetry@v1
       - name: Build
@@ -66,6 +83,7 @@ jobs:
         run: python -c "import dspy"
       - name: Test import dsp
         run: python -c "import dsp"
+
   build_setup:
     name: Build Setup
     needs: test
@@ -79,5 +97,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
       - name: Run setup.py build
         run: python setup.py build
