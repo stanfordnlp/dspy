@@ -34,23 +34,25 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+
       - name: Cache Poetry virtual environment
         uses: actions/cache@v3
+        id: cached-poetry-dependencies
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-poetry-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          version: ${{ env.POETRY_VERSION }}
+          python-version: ${{ matrix.python-version }}
+          cache: "poetry"
       - name: Install dependencies
-        run: poetry install
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
       - name: Run tests with pytest
         run: poetry run pytest tests/
 
@@ -63,18 +65,19 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "poetry"
       - uses: actions/cache@v3
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-poetry-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
       - name: Build
         run: poetry build
       - name: Install built package
@@ -93,17 +96,18 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "poetry"
       - uses: actions/cache@v3
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-poetry-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
       - name: Run setup.py build
         run: python setup.py build
