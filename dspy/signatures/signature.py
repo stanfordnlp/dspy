@@ -285,29 +285,38 @@ def _parse_named_type_node(node, names=None) -> Any:
 def _parse_type_node(node, names=None) -> Any:
     """Recursively parse an AST node representing a type annotation.
 
-    using structural pattern matching introduced in Python 3.10.
+    without using structural pattern matching introduced in Python 3.10.
     """
     if names is None:
         names = {}
-    match node:
-        case ast.Module(body=body):
-            if len(body) != 1:
-                raise ValueError(f"Code is not syntactically valid: {node}")
-            return _parse_type_node(body[0], names)
-        case ast.Expr(value=value):
-            return _parse_type_node(value, names)
-        case ast.Name(id=id):
-            if id in names:
-                return names[id]
-            for type_ in [int, str, float, bool, list, tuple, dict]:
-                if type_.__name__ == id:
-                    return type_
-        case ast.Subscript(value=value, slice=slice):
-            base_type = _parse_type_node(value, names)
-            arg_type = _parse_type_node(slice, names)
-            return base_type[arg_type]
-        case ast.Tuple(elts=elts):
-            return tuple(_parse_type_node(elt, names) for elt in elts)
+
+    if isinstance(node, ast.Module):
+        body = node.body
+        if len(body) != 1:
+            raise ValueError(f"Code is not syntactically valid: {node}")
+        return _parse_type_node(body[0], names)
+
+    if isinstance(node, ast.Expr):
+        value = node.value
+        return _parse_type_node(value, names)
+
+    if isinstance(node, ast.Name):
+        id_ = node.id
+        if id_ in names:
+            return names[id_]
+        for type_ in [int, str, float, bool, list, tuple, dict]:
+            if type_.__name__ == id_:
+                return type_
+
+    elif isinstance(node, ast.Subscript):
+        base_type = _parse_type_node(node.value, names)
+        arg_type = _parse_type_node(node.slice, names)
+        return base_type[arg_type]
+
+    elif isinstance(node, ast.Tuple):
+        elts = node.elts
+        return tuple(_parse_type_node(elt, names) for elt in elts)
+
     raise ValueError(f"Code is not syntactically valid: {node}")
 
 
