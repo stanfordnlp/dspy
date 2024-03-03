@@ -188,7 +188,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     pass
 
 
-def ensure_signature(signature: str | Type[Signature]) -> Signature:
+def ensure_signature(signature: Union[str, Type[Signature]]) -> Signature:
     if signature is None:
         return None
     if isinstance(signature, str):
