@@ -1,15 +1,15 @@
 import os
 import random
-import requests
-from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
-import subprocess
 import re
 import shutil
+import subprocess
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
-
 import backoff
+import requests
+
+from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
+from dsp.modules.hf import HFModel, openai_to_hf
 
 ERRORS = (Exception)
 
@@ -355,8 +355,7 @@ class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
         super().__init__(model=model, is_client=True)
 
-        from mlc_chat import ChatModule
-        from mlc_chat import ChatConfig
+        from mlc_chat import ChatConfig, ChatModule
 
         self.cm = ChatModule(
             model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM"),

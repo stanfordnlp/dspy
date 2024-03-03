@@ -1,17 +1,18 @@
 import os
-import time
-import dsp
 import random
+import time
 
 import ujson
 from datasets.fingerprint import Hasher
 
+import dsp
 from dspy.signatures.signature import signature_to_template
 
-# from dspy.primitives import Example
-
-from .teleprompt import Teleprompter
 from .bootstrap import BootstrapFewShot
+
+# from dspy.primitives import Example
+from .teleprompt import Teleprompter
+
 # from .vanilla import LabeledFewShot
 
 # from dspy.evaluate.evaluate import Evaluate

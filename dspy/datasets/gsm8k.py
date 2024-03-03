@@ -1,7 +1,8 @@
-import tqdm
 import random
 
+import tqdm
 from datasets import load_dataset
+
 
 class GSM8K:
     def __init__(self) -> None:

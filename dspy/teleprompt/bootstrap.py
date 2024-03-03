@@ -1,15 +1,14 @@
-import dsp
-import tqdm
 import random
 import threading
 
-import dspy
+import tqdm
 
+import dsp
+import dspy
 from dspy.primitives import Example
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
-
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.

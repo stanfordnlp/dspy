@@ -1,5 +1,7 @@
-import dsp
 from functools import wraps
+
+import dsp
+
 
 # applied right to left (innermost first, like function calls)
 def compose_decorators(*decorators):

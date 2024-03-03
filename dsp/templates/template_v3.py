@@ -1,5 +1,6 @@
 from typing import Callable
-from dsp.templates import TemplateV2, passages2text, format_answers, Field
+
+from dsp.templates import Field, TemplateV2, format_answers, passages2text
 
 
 class Type:

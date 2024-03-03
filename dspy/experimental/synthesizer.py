@@ -1,8 +1,11 @@
-import dspy
 import random
 from typing import List
-from tqdm import tqdm, trange
+
 from datasets import Dataset
+from tqdm import tqdm, trange
+
+import dspy
+
 
 def format_examples(examples: List[dspy.Example]):
     if isinstance(examples, str):

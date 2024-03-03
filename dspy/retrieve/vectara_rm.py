@@ -1,11 +1,11 @@
-from collections import defaultdict
-from typing import List, Union
-import dspy
-from typing import Optional
 import json
 import os
+from collections import defaultdict
+from typing import List, Optional, Union
+
 import requests
 
+import dspy
 from dsp.utils import dotdict
 
 START_SNIPPET = "<%START%>"

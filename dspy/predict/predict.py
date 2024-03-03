@@ -1,10 +1,10 @@
-import dsp
 import random
 
+import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-
 from dspy.signatures.signature import ensure_signature, signature_to_template
+
 
 class Predict(Parameter):
     def __init__(self, signature, **config):

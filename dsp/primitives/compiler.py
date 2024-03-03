@@ -1,12 +1,13 @@
 import os
-import time
-import tqdm
-import ujson
 import random
 import subprocess
+import time
+
+import tqdm
+import ujson
+from datasets.fingerprint import Hasher
 
 import dsp
-from datasets.fingerprint import Hasher
 
 if os.environ.get('DSP_NOTEBOOK_CACHEDIR'):
     training_data_directory = os.path.join(os.environ.get('DSP_NOTEBOOK_CACHEDIR'), 'compiler')

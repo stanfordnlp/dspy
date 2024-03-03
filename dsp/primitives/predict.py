@@ -1,11 +1,11 @@
 from collections import Counter
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
 
 import dsp
-from dsp.utils import zipstar, normalize_text
-from dsp.utils.utils import dotdict
-from dsp.templates.template_v3 import Template
 from dsp.primitives.demonstrate import Example
+from dsp.templates.template_v3 import Template
+from dsp.utils import normalize_text, zipstar
+from dsp.utils.utils import dotdict
 
 
 class Completions:
