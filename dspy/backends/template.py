@@ -1,5 +1,6 @@
 from dspy.signatures.signature import Signature, signature_to_template
 from dspy.primitives.example import Example
+from dspy.primitives.template import Template
 
 import typing as t
 from .base import BaseBackend, GeneratedOutput
@@ -30,7 +31,7 @@ class TemplateBackend(BaseBackend):
         example = Example(demos=demos, **kwargs)
 
         # Generate Template
-        template = signature_to_template(signature)
+        template = Template(signature)
 
         # Clean Up Kwargs Before Sending Through Language Model
         for input in signature.input_fields:
@@ -39,6 +40,9 @@ class TemplateBackend(BaseBackend):
         pred = self.lm(template(example), **kwargs)
 
         # This returns a list of Examples
+        for prediction in pred:
+            print(prediction.message.content)
+
         extracted = [
             template.extract(example, prediction.message.content) for prediction in pred
         ]
