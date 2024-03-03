@@ -1,4 +1,5 @@
 import dspy
+from typing import Optional
 
 class elastic_rm(dspy.Retrieve):
     def __init__(self, es_client, es_index, es_field, k=3):
@@ -23,7 +24,7 @@ class elastic_rm(dspy.Retrieve):
         self.field=es_field
         
 
-    def forward(self, query) -> dspy.Prediction:
+    def forward(self, query,k: Optional[int] = None) -> dspy.Prediction:
         """Search with Elastic Search - local or cloud for top k passages for query or queries
    
 
@@ -34,6 +35,8 @@ class elastic_rm(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
+
+        k = k if k is not None else self.k
 
         passages = []
 
