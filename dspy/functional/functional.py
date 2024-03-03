@@ -8,12 +8,13 @@ import pydantic
 from typing import Annotated, List, Tuple  # noqa: UP035
 from dsp.templates import passages2text
 import json
+import ujson
 from dspy.primitives.prediction import Prediction
 
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 
 
 def predictor(func) -> dspy.Module:
@@ -101,9 +102,7 @@ class TypedPredictor(dspy.Module):
         # library like https://pypi.org/project/polyfactory/ that's made exactly to do this.
 
     def _prepare_signature(self) -> dspy.Signature:
-        """Add formats and parsers to the signature fields, based on the type
-        annotations of the fields.
-        """
+        """Add formats and parsers to the signature fields, based on the type annotations of the fields."""
         signature = self.signature
         for name, field in self.signature.fields.items():
             is_output = field.json_schema_extra["__dspy_field_type"] == "output"
@@ -161,7 +160,6 @@ class TypedPredictor(dspy.Module):
                     for name, field in signature.output_fields.items():
                         value = completion[name]
                         parser = field.json_schema_extra.get("parser", lambda x: x)
-                        completion[name] = parser(value)
                         parsed[name] = parser(value)
                     # Instantiate the actual signature with the parsed values.
                     # This allow pydantic to validate the fields defined in the signature.
@@ -257,7 +255,7 @@ def _unwrap_json(output):
         output = output[7:-3].strip()
     if not output.startswith("{") or not output.endswith("}"):
         raise ValueError("json output should start and end with { and }")
-    return output
+    return ujson.dumps(ujson.loads(output))  # ujson is a bit more robust than the standard json
 
 
 ################################################################################
