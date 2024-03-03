@@ -34,15 +34,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
-
-      - name: Cache Poetry virtual environment
-        uses: actions/cache@v3
-        id: cached-poetry-dependencies
-        with:
-          path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
       - name: Install poetry
         run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
@@ -51,7 +42,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
       - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
       - name: Run tests with pytest
         run: poetry run pytest tests/
@@ -72,12 +62,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
-      - uses: actions/cache@v3
-        with:
-          path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
       - name: Build
         run: poetry build
       - name: Install built package
@@ -103,11 +87,5 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
-      - uses: actions/cache@v3
-        with:
-          path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
       - name: Run setup.py build
         run: python setup.py build
