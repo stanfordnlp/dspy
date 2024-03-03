@@ -55,7 +55,7 @@ class SyntheticDataGenerator:
             '__doc__': f"Generates the following outputs: {{{', '.join(properties.keys())}}}.",
             'sindex': dspy.InputField(desc="a random string"),
             **{field_name: dspy.OutputField(desc=properties[field_name].get('description', 'No description'))
-               for field_name in properties.keys()}
+               for field_name in properties.keys()},
         }
 
 # # Usage example
