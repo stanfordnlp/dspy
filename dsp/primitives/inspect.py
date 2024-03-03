@@ -1,8 +1,9 @@
 import inspect
-import string
-import random
-import requests
 import json
+import random
+import string
+
+import requests
 
 
 class FuncInspector:

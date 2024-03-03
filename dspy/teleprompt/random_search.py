@@ -1,12 +1,10 @@
 import random
 
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
-
 
 # TODO: Don't forget dealing with the raw demos.
 # TODO: Deal with the (pretty common) case of having a metric for filtering and a separate metric for eval.

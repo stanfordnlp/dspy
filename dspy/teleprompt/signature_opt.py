@@ -1,9 +1,10 @@
+from collections import defaultdict
+
 import dsp
 import dspy
-from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.signatures import Signature
 from dspy.evaluate.evaluate import Evaluate
-from collections import defaultdict
+from dspy.signatures import Signature
+from dspy.teleprompt.teleprompt import Teleprompter
 
 """
 USAGE SUGGESTIONS:

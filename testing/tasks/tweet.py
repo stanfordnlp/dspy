@@ -1,10 +1,14 @@
-import dspy
-from dspy.datasets import HotPotQA
-from .base_task import BaseTask
+import os
 from functools import lru_cache
+
 import openai
 from dotenv import load_dotenv
-import os
+
+import dspy
+from dspy.datasets import HotPotQA
+
+from .base_task import BaseTask
+
 
 class TweetSignature(dspy.Signature):
     ("""Given context and a question, answer with a tweet""")

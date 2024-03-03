@@ -1,11 +1,12 @@
 from collections import defaultdict
-from typing import List, Union, Optional
+from typing import List, Optional, Union
+
 import dspy
 from dsp.utils import dotdict
 
 try:
-    from qdrant_client import QdrantClient
     import fastembed
+    from qdrant_client import QdrantClient
 except ImportError:
     raise ImportError(
         "The 'qdrant' extra is required to use QdrantRM. Install it with `pip install dspy-ai[qdrant]`",

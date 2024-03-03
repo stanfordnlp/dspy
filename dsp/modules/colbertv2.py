@@ -1,10 +1,10 @@
 import functools
-from typing import Optional, Union, Any
+from typing import Any, Optional, Union
+
 import requests
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
-
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 

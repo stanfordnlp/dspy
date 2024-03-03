@@ -1,7 +1,8 @@
 
-import dsp
-import tqdm
 import pandas as pd
+import tqdm
+
+import dsp
 
 try:
     from IPython.display import display as ipython_display

@@ -1,7 +1,10 @@
-from pydantic import BaseModel
-import dspy
 import random
 from typing import List, Optional
+
+from pydantic import BaseModel
+
+import dspy
+
 
 class descriptionSignature(dspy.Signature):
   field_name = dspy.InputField(desc="name of a field")

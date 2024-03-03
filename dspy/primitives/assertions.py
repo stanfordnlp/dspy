@@ -1,9 +1,10 @@
 import inspect
-from typing import Any
-import dsp
-import dspy
 import logging
 import uuid
+from typing import Any
+
+import dsp
+import dspy
 
 #################### Assertion Helpers ####################
 

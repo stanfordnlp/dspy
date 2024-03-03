@@ -1,4 +1,5 @@
 import random
+
 from dspy.datasets.dataset import Dataset
 
 ### A bunch of colors, originally from matplotlib

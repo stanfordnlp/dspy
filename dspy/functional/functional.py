@@ -1,15 +1,15 @@
 import inspect
-import os
-import openai
-import dspy
-import typing
-import pydantic
-from typing import Annotated, List, Tuple  # noqa: UP035
-from dsp.templates import passages2text
 import json
+import os
+import typing
+from typing import Annotated, List, Tuple  # noqa: UP035
 
+import openai
+import pydantic
+
+import dspy
+from dsp.templates import passages2text
 from dspy.signatures.signature import ensure_signature
-
 
 MAX_RETRIES = 3
 
@@ -314,8 +314,8 @@ def gold_passages_retrieved(example, pred, _trace=None) -> bool:
 
 
 def hotpot() -> None:
-    from dsp.utils import deduplicate
     import dspy.evaluate
+    from dsp.utils import deduplicate
     from dspy.datasets import HotPotQA
     from dspy.evaluate.evaluate import Evaluate
     from dspy.teleprompt.bootstrap import BootstrapFewShot
