@@ -155,31 +155,37 @@ class TypedPredictor(dspy.Module):
             errors = {}
             parsed_results = defaultdict(list)
             # Parse the outputs
-            for name, field in signature.output_fields.items():
-                for i, completion in enumerate(result.completions):
-                    try:
+            for i, completion in enumerate(result.completions):
+                try:
+                    for name, field in signature.output_fields.items():
                         value = completion[name]
                         parser = field.json_schema_extra.get("parser", lambda x: x)
                         completion[name] = parser(value)
                         parsed_results[name].append(parser(value))
-                    except (pydantic.ValidationError, ValueError) as e:
-                        errors[name] = _format_error(e)
-                        # If we can, we add an example to the error message
-                        current_desc = field.json_schema_extra.get("desc", "")
-                        i = current_desc.find("JSON Schema: ")
-                        if i == -1:
-                            continue  # Only add examples to JSON objects
-                        suffix, current_desc = current_desc[i:], current_desc[:i]
-                        prefix = "You MUST use this format: "
-                        if (
-                            try_i + 1 < MAX_RETRIES
-                            and prefix not in current_desc
-                            and (example := self._make_example(field.annotation))
-                        ):
-                            signature = signature.with_updated_fields(
-                                name,
-                                desc=current_desc + "\n" + prefix + example + "\n" + suffix,
-                            )
+                    # Instantiate the actual signature with the parsed values.
+                    # This allow pydantic to validate the fields defined in the signature.
+                    _dummy = self.signature(
+                        **kwargs,
+                        **{key: value[i] for key, value in parsed_results.items()},
+                    )
+                except (pydantic.ValidationError, ValueError) as e:
+                    errors[name] = _format_error(e)
+                    # If we can, we add an example to the error message
+                    current_desc = field.json_schema_extra.get("desc", "")
+                    i = current_desc.find("JSON Schema: ")
+                    if i == -1:
+                        continue  # Only add examples to JSON objects
+                    suffix, current_desc = current_desc[i:], current_desc[:i]
+                    prefix = "You MUST use this format: "
+                    if (
+                        try_i + 1 < MAX_RETRIES
+                        and prefix not in current_desc
+                        and (example := self._make_example(field.annotation))
+                    ):
+                        signature = signature.with_updated_fields(
+                            name,
+                            desc=current_desc + "\n" + prefix + example + "\n" + suffix,
+                        )
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():

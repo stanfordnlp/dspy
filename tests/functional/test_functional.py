@@ -474,3 +474,20 @@ def test_parse_type_string():
 
     output = test(input=8, config=dict(n=3)).completions.output
     assert output == [0, 1, 2]
+
+
+def test_fields_on_base_signature():
+    class SimpleOutput(dspy.Signature):
+        output: float = dspy.OutputField(gt=0, lt=1)
+
+    lm = DummyLM(
+        [
+            "2.1",  # Bad output
+            "0.5",  # Good output
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    predictor = TypedPredictor(SimpleOutput)
+
+    assert predictor().output == 0.5
