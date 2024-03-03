@@ -33,7 +33,9 @@ jobs:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - name: Install poetry
         run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
@@ -54,7 +56,9 @@ jobs:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - name: Install poetry
         run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
@@ -79,7 +83,9 @@ jobs:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - name: Install poetry
         run: pipx install poetry
       - name: Set up python ${{ matrix.python-version }}
