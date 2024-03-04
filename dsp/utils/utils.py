@@ -2,6 +2,7 @@ import os
 import tqdm
 import datetime
 import itertools
+import tiktoken
 
 from collections import defaultdict
 
@@ -243,3 +244,17 @@ def load_batch_backgrounds(args, qids):
         qbackgrounds.append(x)
 
     return qbackgrounds
+
+
+def load_encoder_for_lm(lm):
+    """
+    Load and cache the tiktoken encoder based on the LM configuration.
+    
+    Args:
+        lm: The language model configuration.
+    """
+
+    # Load the encoder. This is a placeholder; adjust based on how you actually load the encoder.
+    encoder = tiktoken.encoding_for_model(lm)
+    # Cache the encoder
+    return encoder

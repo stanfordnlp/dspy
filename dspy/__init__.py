@@ -1,3 +1,4 @@
+from dsp.primitives.predict import dry_run
 from dsp.modules.hf_client import ChatModuleClient
 from dsp.modules.hf_client import HFServerTGI, HFClientVLLM, HFClientSGLang
 from .signatures import *
@@ -36,3 +37,4 @@ Bedrock = dsp.Bedrock
 
 configure = settings.configure
 context = settings.context
+

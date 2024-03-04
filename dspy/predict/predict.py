@@ -1,5 +1,6 @@
 import dsp
 import random
+import textwrap
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
