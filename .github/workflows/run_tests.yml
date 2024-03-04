@@ -1,4 +1,4 @@
-name: Lint, Commit, and Test
+name: Fix, Test, and Build
 
 on:
   push:
