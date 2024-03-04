@@ -1,9 +1,12 @@
-import dspy
 import random
+from collections.abc import Mapping
+from typing import List, Union
 
 from datasets import Dataset
 from tqdm import tqdm, trange
-from typing import List, Union, Mapping
+
+import dspy
+
 
 def format_examples(examples: List[dspy.Example]) -> str:
     if isinstance(examples, str):
