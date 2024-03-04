@@ -173,7 +173,7 @@ class HFServerTGI:
                     container_id = match.group(1)
                     port_mapping = subprocess.check_output(['docker', 'port', container_id]).decode().strip()
                     if f'0.0.0.0:{port}' in port_mapping:
-                        subprocess.run(['docker', 'stop', container_id])
+                        subprocess.run(['docker', 'stop', container_id], check=False)
 
     def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):        
         self.close_server(port)

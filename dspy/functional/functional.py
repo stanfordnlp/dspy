@@ -1,8 +1,7 @@
-from collections import defaultdict
 import inspect
 import json
-from dspy.primitives.prediction import Prediction
 
+from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 MAX_RETRIES = 3
@@ -191,7 +190,7 @@ class TypedPredictor(dspy.Module):
             else:
                 # If there are no errors, we return the parsed results
                 return Prediction.from_completions(
-                    {key: [r[key] for r in parsed_results] for key in signature.output_fields}
+                    {key: [r[key] for r in parsed_results] for key in signature.output_fields},
                 )
         raise ValueError(
             "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",

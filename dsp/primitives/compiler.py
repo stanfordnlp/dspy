@@ -25,7 +25,7 @@ def openai_check_finetune(jobname):
     command = f"""openai api fine_tunes.get -i {jobname}"""
     print(command)
 
-    result = subprocess.run(command.split(), stdout=subprocess.PIPE)
+    result = subprocess.run(command.split(), stdout=subprocess.PIPE, check=False)
     output = result.stdout.decode("utf-8").strip()
 
     try:
