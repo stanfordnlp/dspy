@@ -283,6 +283,7 @@ Assume, for example, you need to find
 
 ```python
 from pydantic import BaseModel, Field
+from dspy.functional import TypedPredictor
 
 class TravelInformation(BaseModel):
     origin: str = Field(pattern=r"^[A-Z]{3}$")
@@ -295,11 +296,39 @@ class TravelSignature(Signature):
     email: str = InputField()
     flight_information: list[TravelInformation] = OutputField()
 
-predictor = dspy.TypedPredictor(TravelSignature)
+predictor = TypedPredictor(TravelSignature)
 predictor(email='...')
 ```
 
 Which will output a list of `TravelInformation` objects.
+
+There are other ways to create typed signatures too. Such as
+```python
+predictor = TypedChainOfThought("question:str -> answer:int")
+```
+which applies chain of thought, and is guaranteed to return an int.
+
+There's even an approach inspired by [tanuki.py](https://github.com/Tanuki/tanuki.py), which can be convenient when defining modules:
+```python
+from dspy.functional import FunctionalModule, predictor, cot
+
+class MyModule(FunctionalModule):
+    @predictor
+    def hard_question(possible_topics: list[str]) -> str:
+        """Write a hard question based on one of the topics. It should be answerable by a number."""
+
+    @cot
+    def answer(question: str) -> float:
+        pass
+
+    def forward(possible_topics: list[str]):
+        q = hard_question(possible_topics=possible_topics)
+        a = answer(question=q)
+        return (q, a)
+```
+
+For more examples, see [the list above](https://github.com/stanfordnlp/dspy#:~:text=Typed%20DSPy),
+as well as [the unit tests](https://github.com/stanfordnlp/dspy/blob/main/tests/functional/test_functional.py) for the module.
 
 ## 6) FAQ: Is DSPy right for me?
 
