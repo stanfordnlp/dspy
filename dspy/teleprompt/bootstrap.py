@@ -2,6 +2,7 @@ import random
 import threading
 
 import tqdm
+import wandb
 
 import dsp
 import dspy
@@ -29,7 +30,6 @@ from .vanilla import LabeledFewShot
 
 # TODO: Add baselines=[...]
 
-
 class BootstrapFewShot(Teleprompter):
     def __init__(self, metric=None, metric_threshold=None, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5):
         self.metric = metric
@@ -43,13 +43,13 @@ class BootstrapFewShot(Teleprompter):
         self.error_count = 0
         self.error_lock = threading.Lock()
 
-    def compile(self, student, *, teacher=None, trainset, valset=None):
+    def compile(self, student, *, teacher=None, trainset, valset=None, wandb_enabled=False):
         self.trainset = trainset
         self.valset = valset
 
         self._prepare_student_and_teacher(student, teacher)
         self._prepare_predictor_mappings()
-        self._bootstrap()
+        self._bootstrap(wandb_enabled)
 
         self.student = self._train()
         self.student._compiled = True
@@ -94,7 +94,8 @@ class BootstrapFewShot(Teleprompter):
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
 
-    def _bootstrap(self, *, max_bootstraps=None):
+    def _bootstrap(self, *, max_bootstraps=None, wandb_config=None):
+        wandb_enabled = True if wandb_config is not None else False
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
 
         bootstrapped = {}
@@ -106,7 +107,7 @@ class BootstrapFewShot(Teleprompter):
                     break
 
                 if example_idx not in bootstrapped:
-                    success = self._bootstrap_one_example(example, round_idx)
+                    success = self._bootstrap_one_example(example, round_idx, wandb_enabled)
 
                     if success:
                         bootstrapped[example_idx] = True
@@ -124,7 +125,7 @@ class BootstrapFewShot(Teleprompter):
         # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
         # score = evaluate(self.metric, display_table=False, display_progress=True)
     
-    def _bootstrap_one_example(self, example, round_idx=0):
+    def _bootstrap_one_example(self, example, round_idx=0, wandb_enabled=False):
         name2traces = self.name2traces
         teacher = self.teacher #.deepcopy()
         predictor_cache = {}
@@ -148,6 +149,10 @@ class BootstrapFewShot(Teleprompter):
                 
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)
+                    if wandb_enabled:
+                        wandb.log({
+                            "metric_val": metric_val
+                        })
                     if self.metric_threshold:
                         success = metric_val >= self.metric_threshold
                     else:
