@@ -94,11 +94,11 @@ class Neo4jRM(dspy.Retrieve):
             query_or_queries = [query_or_queries]
         query_vectors = self.embedder(query_or_queries)
         contents = []
-        retrieval_query = self.retrieval_query or f"RETURN node.{self.text_node_property} AS output"
+        retrieval_query = self.retrieval_query or f"RETURN node.{self.text_node_property} AS text"
         for vector in query_vectors:
             records, _, _ = self.driver.execute_query(
                 DEFAULT_INDEX_QUERY + retrieval_query,
                 {"embedding": vector, "index": self.index_name, "k": k or self.k},
             )
-            contents.extend([dotdict({"long_text": r["output"]}) for r in records])
+            contents.extend([dotdict({"long_text": r["text"]}) for r in records])
         return contents
