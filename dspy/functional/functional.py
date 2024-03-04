@@ -1,6 +1,12 @@
 import inspect
 import json
+import typing
+from typing import Annotated, List, Tuple
 
+import pydantic
+
+import dspy
+from dsp.templates.utils import passages2text
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
