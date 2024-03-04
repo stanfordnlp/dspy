@@ -1,12 +1,13 @@
 import ast
-from copy import deepcopy
+import re
 import typing
-import dsp
+from copy import deepcopy
+from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
+
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
-from typing import Any, Type, Union, Dict, Tuple  # noqa: UP035
-import re
 
+import dsp
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
 

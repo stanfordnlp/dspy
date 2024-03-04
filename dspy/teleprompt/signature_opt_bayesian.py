@@ -1,14 +1,16 @@
+import math
+import random
+from collections import defaultdict
+
+import optuna
+
 import dsp
 import dspy
-from dspy.signatures.signature import signature_to_template
-from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.signatures import Signature
 from dspy.evaluate.evaluate import Evaluate
-from collections import defaultdict
-import random
+from dspy.signatures import Signature
+from dspy.signatures.signature import signature_to_template
 from dspy.teleprompt import BootstrapFewShot
-import optuna
-import math
+from dspy.teleprompt.teleprompt import Teleprompter
 
 """
 USAGE SUGGESTIONS:

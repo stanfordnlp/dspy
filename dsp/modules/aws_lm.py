@@ -4,10 +4,11 @@ A generalized AWS LLM.
 
 from __future__ import annotations
 
-from abc import abstractmethod
-import logging
-from typing import Any, Literal
 import json
+import logging
+from abc import abstractmethod
+from typing import Any, Literal
+
 from dsp.modules.lm import LM
 
 # Heuristic translating number of chars to tokens

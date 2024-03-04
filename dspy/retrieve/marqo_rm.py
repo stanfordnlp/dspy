@@ -1,5 +1,6 @@
 from collections import defaultdict
 from typing import List, Union
+
 import dspy
 from dspy import dotdict
 

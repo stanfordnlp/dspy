@@ -1,15 +1,15 @@
 import os
 import random
-import requests
-from dsp.modules.hf import HFModel, openai_to_hf
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
-import subprocess
 import re
 import shutil
+import subprocess
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
-
 import backoff
+import requests
+
+from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
+from dsp.modules.hf import HFModel, openai_to_hf
 
 ERRORS = (Exception)
 
@@ -173,7 +173,7 @@ class HFServerTGI:
                     container_id = match.group(1)
                     port_mapping = subprocess.check_output(['docker', 'port', container_id]).decode().strip()
                     if f'0.0.0.0:{port}' in port_mapping:
-                        subprocess.run(['docker', 'stop', container_id])
+                        subprocess.run(['docker', 'stop', container_id], check=False)
 
     def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):        
         self.close_server(port)
@@ -355,8 +355,7 @@ class ChatModuleClient(HFModel):
     def __init__(self, model, model_path):
         super().__init__(model=model, is_client=True)
 
-        from mlc_chat import ChatModule
-        from mlc_chat import ChatConfig
+        from mlc_chat import ChatConfig, ChatModule
 
         self.cm = ChatModule(
             model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM"),

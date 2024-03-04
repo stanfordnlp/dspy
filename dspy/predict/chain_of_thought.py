@@ -4,7 +4,6 @@ from dspy.signatures.signature import ensure_signature
 
 from .predict import Predict
 
-
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
 
 # TODO: This shouldn't inherit from Predict. It should be a module that has one or two predictors.

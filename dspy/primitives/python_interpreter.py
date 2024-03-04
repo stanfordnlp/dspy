@@ -12,10 +12,12 @@
 # limitations under the License.
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 import ast
+import builtins
 import difflib
 import importlib
 import re
 import typing
+from collections.abc import Mapping
 from typing import (
     Any,
     Dict,
@@ -24,8 +26,6 @@ from typing import (
     Set,
     Tuple,
 )
-from collections.abc import Mapping
-import builtins
 
 
 class InterpreterError(ValueError):
