@@ -1,10 +1,12 @@
-import dspy
 import random
-from dspy.datasets import Dataset
+from collections.abc import Mapping
+from typing import List, Tuple, Union
 
 from datasets import load_dataset
-from typing import Union, List, Tuple
-from collections.abc import Mapping
+
+import dspy
+from dspy.datasets.dataset import Dataset
+
 
 class DataLoader(Dataset):
     def __init__(self,):

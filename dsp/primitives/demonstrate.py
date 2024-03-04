@@ -1,5 +1,5 @@
 import random
-from typing import Callable, Any
+from typing import Any, Callable
 
 import numpy as np
 

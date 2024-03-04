@@ -1,11 +1,14 @@
-import dsp
-import tqdm
-import types
 import threading
+import types
+
 import pandas as pd
+import tqdm
+
+import dsp
 
 try:
-    from IPython.display import display as ipython_display, HTML
+    from IPython.display import HTML
+    from IPython.display import display as ipython_display
 except ImportError:
     ipython_display = print
     HTML = lambda x: x

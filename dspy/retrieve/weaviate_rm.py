@@ -1,7 +1,7 @@
-from typing import List, Union
+from typing import List, Optional, Union
+
 import dspy
 from dsp.utils import dotdict
-from typing import Optional
 
 try:
     import weaviate

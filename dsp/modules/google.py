@@ -1,6 +1,7 @@
 import os
-from typing import Any, Optional
 from collections.abc import Iterable
+from typing import Any, Optional
+
 import backoff
 
 from dsp.modules.lm import LM

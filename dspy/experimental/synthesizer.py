@@ -3,7 +3,7 @@ import random
 
 from datasets import Dataset
 from tqdm import tqdm, trange
-from typing import List, Union, Tuple, Mapping
+from typing import List, Union, Mapping
 
 def format_examples(examples: List[dspy.Example]) -> str:
     if isinstance(examples, str):
@@ -15,11 +15,11 @@ def format_examples(examples: List[dspy.Example]) -> str:
         input_keys = example.inputs().keys()
         label_keys = example.labels().keys()
 
-        formatted_example += f"Inputs:\n"
+        formatted_example += "Inputs:\n"
         for key in input_keys:
             formatted_example += f"{key}: {example[key]}\n"
 
-        formatted_example += f"Outputs:\n"
+        formatted_example += "Outputs:\n"
         for key in label_keys:
             formatted_example += f"{key}: {example[key]}\n"
 
@@ -119,7 +119,7 @@ class Synthesizer:
             self.generate_input_data = self.generate_input_data.insert(
                 -1,
                 field_name,
-                output_field
+                output_field,
             )
 
             input_field = dspy.InputField(
@@ -129,7 +129,7 @@ class Synthesizer:
             self.generate_output_data = self.generate_output_data.insert(
                 -1,
                 field_name,
-                input_field
+                input_field,
             )
 
         for key in tqdm(output_keys, desc="Preparing Output Fields"):
@@ -142,7 +142,7 @@ class Synthesizer:
             self.generate_output_data = self.generate_output_data.insert(
                 -1,
                 field_name,
-                output_field
+                output_field,
             )
 
         return dspy.ChainOfThought(self.generate_input_data), dspy.Predict(self.generate_output_data)
@@ -212,7 +212,7 @@ class Synthesizer:
         extention = mode or path.split(".")[-1]
 
         dataset = Dataset.from_list(
-            [example.toDict() for example in data]
+            [example.toDict() for example in data],
         )
 
         if extention == "csv":

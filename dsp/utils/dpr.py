@@ -4,8 +4,9 @@
     Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
 """
 
-import regex
 import unicodedata
+
+import regex
 
 
 class Tokens:

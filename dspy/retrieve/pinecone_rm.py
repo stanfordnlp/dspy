@@ -3,10 +3,12 @@ Retriever model for Pinecone
 Author: Dhar Rawal (@drawal1)
 """
 
-from dsp.utils import dotdict
-from typing import Optional, List, Union
-import dspy
+from typing import List, Optional, Union
+
 import backoff
+
+import dspy
+from dsp.utils import dotdict
 
 try:
     import pinecone
@@ -19,6 +21,7 @@ if pinecone is None:
     )
 
 import openai
+
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
 except Exception:
