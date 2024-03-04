@@ -1,4 +1,5 @@
 from .bootstrap import *
+from .ensemble import *
 from .finetune import *
 from .knn_fewshot import *
 from .random_search import *
