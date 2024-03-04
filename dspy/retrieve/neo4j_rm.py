@@ -56,7 +56,7 @@ class Neo4jRM(dspy.Retrieve):
     def __init__(
         self,
         index_name: str,
-        text_node_property: str,
+        text_node_property: str = None,
         k: int = 5,
         retrieval_query: str = None,
         embedding_provider: str = "openai",
@@ -67,7 +67,7 @@ class Neo4jRM(dspy.Retrieve):
         self.username = os.getenv("NEO4J_USERNAME")
         self.password = os.getenv("NEO4J_PASSWORD")
         self.uri = os.getenv("NEO4J_URI")
-        self.database = os.getenv("NEO4J_DATABASE")
+        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
         self.k = k
         self.retrieval_query = retrieval_query
         self.text_node_property = text_node_property
@@ -77,6 +77,8 @@ class Neo4jRM(dspy.Retrieve):
             raise ValueError("Environment variable NEO4J_PASSWORD must be set")
         if not self.uri:
             raise ValueError("Environment variable NEO4J_URI must be set")
+        if not self.text_node_property and not self.retrieval_query:
+            raise ValueError("Either `text_node_property` or `retrieval_query` parameters must be defined")
         try:
             self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
             self.driver.verify_connectivity()
@@ -99,6 +101,7 @@ class Neo4jRM(dspy.Retrieve):
             records, _, _ = self.driver.execute_query(
                 DEFAULT_INDEX_QUERY + retrieval_query,
                 {"embedding": vector, "index": self.index_name, "k": k or self.k},
+                database_=self.database,
             )
             contents.extend([dotdict({"long_text": r["text"]}) for r in records])
         return contents
