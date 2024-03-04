@@ -26,7 +26,7 @@ class COTCheckCitationFaithfulness(Signature):
     context = InputField(desc="facts here are assumed to be true")
     text = InputField()
     rationale = OutputField(
-        desc="${produce the faithfulness}. We ...",
+        desc="Think step by step in order to generate the faithfulness.",
     )
     faithfulness = OutputField(
         desc="True/False indicating if text is faithful to context"
@@ -34,29 +34,29 @@ class COTCheckCitationFaithfulness(Signature):
 
 
 TEMPLATE_SCENARIOS = [
-    # {
-    #     "signature": Emotion,
-    #     "output": "Joy",
-    #     "input_kwargs": {
-    #         "sentence": "This is a positive test sentence.",
-    #     },
-    #     "output_kwargs": {"sentiment": "Joy"},
-    #     "prompt": "Classify emotion among sadness, joy, love, anger, fear, surprise.\n\n---\n\nFollow the following format.\n\nSentence: ${sentence}\nSentiment: ${sentiment}\n\n---\n\nSentence: This is a positive test sentence.\nSentiment:",
-    # },
-    # {
-    #     "signature": CheckCitationFaithfulness,
-    #     "output": "False",
-    #     "input_kwargs": {
-    #         "context": [
-    #             "The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."
-    #         ],
-    #         "text": "Lee scored 3 goals for Colchester United.",
-    #     },
-    #     "output_kwargs": {
-    #         "faithfulness": "False",
-    #     },
-    #     "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\nText: ${text}\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\nText: Lee scored 3 goals for Colchester United.\nFaithfulness:",
-    # },
+    {
+        "signature": Emotion,
+        "output": "Joy",
+        "input_kwargs": {
+            "sentence": "This is a positive test sentence.",
+        },
+        "output_kwargs": {"sentiment": "Joy"},
+        "prompt": "Classify emotion among sadness, joy, love, anger, fear, surprise.\n\n---\n\nFollow the following format.\n\nSentence: ${sentence}\n\nSentiment: ${sentiment}\n\n---\n\nSentence: This is a positive test sentence.\n\nSentiment:",
+    },
+    {
+        "signature": CheckCitationFaithfulness,
+        "output": "False",
+        "input_kwargs": {
+            "context": [
+                "The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."
+            ],
+            "text": "Lee scored 3 goals for Colchester United.",
+        },
+        "output_kwargs": {
+            "faithfulness": "False",
+        },
+        "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\n\nText: Lee scored 3 goals for Colchester United.\n\nFaithfulness:",
+    },
     {
         "signature": COTCheckCitationFaithfulness,
         "output": "Faithfulness: False",
@@ -71,7 +71,7 @@ TEMPLATE_SCENARIOS = [
             "rationale": "produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.",
             "faithfulness": "False",
         },
-        "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nRationale: Let's think step by step in order to ${produce the faithfulness}. We ...\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\n\nText: Lee scored 3 goals for Colchester United.\n\nRationale: Let's think step by step in order to",
+        "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nRationale: Think step by step in order to generate the faithfulness.\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\n\nText: Lee scored 3 goals for Colchester United.\n\nRationale:",
     },
 ]
 

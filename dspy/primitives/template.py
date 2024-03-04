@@ -120,7 +120,7 @@ class Template:
             if len(search_strings) > 0:
                 search_strings[-1] += f"{field.json_schema_extra['prefix']}"
 
-            target_str = f"(?s){field.json_schema_extra['prefix']}\\s(.+?)"
+            target_str = f"(?s){field.json_schema_extra['prefix']}\\s?(.+?)"
             if idx != len(self.signature.output_fields) - 1:
                 target_str += "\\n\\n"
             else:
@@ -139,18 +139,10 @@ class Template:
                 example[output_fields[0]] = matches[-1]
 
         else:
-            count = None
             for idx, field in enumerate(output_fields):
-                matches = regex.findall(search_strings[idx], raw_pred)
-                if count is not None and len(matches) != count:
-                    break
-
-                count = len(matches)
-
-                print(matches)
+                matches = regex.findall(search_strings[idx], full_text)
 
                 if len(matches) > 0:
-                    print(matches[-1])
                     example[field] = matches[-1]
 
         return example
