@@ -1,3 +1,4 @@
+import regex
 import typing as t
 from dspy.signatures.signature import Signature
 from dspy.primitives.example import Example
@@ -5,8 +6,12 @@ from dspy.primitives.example import Example
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
     assert len(passages) > 0
-
-    return "\n".join([f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)])
+    if len(passages) > 1:
+        return "\n".join(
+            [f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)]
+        )
+    else:
+        return passages[0]
 
 
 def format_answers(answers: t.Iterable[str]) -> str:
@@ -35,41 +40,61 @@ class Template:
             if format:
                 self.format_handlers[key] = format
 
-    def query(self, example: Example, is_demo: bool = False) -> str:
+    def _get_format_handler(self, name: str) -> t.Callable[[str], str]:
+        if name in self.format_handlers:
+            return self.format_handlers[name]
+
+        return default_format_handler
+
+    def _example_has_input_fields(self, example: Example):
+        for name in self.signature.input_fields:
+            if name not in example:
+                raise Exception(f"Example missing necessary input field: {name}")
+
+    def _example_has_output_fields(self, example: Example):
+        for name in self.signature.output_fields:
+            if name not in example:
+                raise Exception(f"Example missing necessary output field: {name}")
+
+    def query(self, example: Example, is_demo: bool) -> str:
+        if is_demo:
+            self._example_has_input_fields(example)
+            self._example_has_output_fields(example)
+
         result = []
 
-        # Fill in Output Variable Values in Example and ensure all params are provided
-        if not is_demo:
-            for field in self.signature.fields:
-                if field not in example:
-                    example[field] = ""
-                    break
+        # Append all Input Values, Regardless of Demo or not
+        for name, field in self.signature.input_fields.items():
+            format_handler = self._get_format_handler(name)
 
-        # Iterate through Fields
-        for name, field in self.signature.fields.items():
-            if name in self.format_handlers:
-                format_handler = self.format_handlers[name]
+            result.append(
+                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+            )
+
+        for name, field in self.signature.output_fields.items():
+            format_handler = self._get_format_handler(name)
+
+            if name not in example:
+                result.append(f"{field.json_schema_extra['prefix']} ")
+                break
             else:
-                format_handler = default_format_handler
+                result.append(
+                    f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+                )
 
-            formatted_value = format_handler(example[name])
-
-            result.append(f"{name.capitalize()}: {formatted_value}")
-
-        return "\n".join(result)
+        return "\n\n".join(result)
 
     def guidelines(self) -> str:
         """Returns the task guidelines as described in the lm prompt"""
         result = "Follow the following format.\n\n"
 
-        example = Example()
         field_strings = []
-        for name, field in self.signature.fields.items():
+        for field in self.signature.fields.values():
             field_strings.append(
-                f"{name.capitalize()}: {field.json_schema_extra['desc']}"
+                f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
             )
 
-        return result + "\n".join(field_strings)
+        return result + "\n\n".join(field_strings)
 
     def extract(self, example: Example, raw_pred: str) -> Example:
         """Extracts the answer from the LM raw prediction using the template structure
@@ -83,13 +108,50 @@ class Template:
 
         """
 
-        output_fields = [
-            (name, field)
-            for name, field in self.signature.fields.items()
-            if field.json_schema_extra["__dspy_field_type"] == "output"
-        ]
+        full_text = self.__call__(example) + raw_pred
 
-        example[output_fields[0][0]] = raw_pred
+        if not full_text.endswith("\n\n---"):
+            full_text = full_text + "\n\n---"
+
+        # Generate Search Strings
+        search_strings = []
+        output_fields = list(self.signature.output_fields.keys())
+        for idx, (key, field) in enumerate(self.signature.output_fields.items()):
+            if len(search_strings) > 0:
+                search_strings[-1] += f"{field.json_schema_extra['prefix']}"
+
+            target_str = f"(?s){field.json_schema_extra['prefix']}\\s(.+?)"
+            if idx != len(self.signature.output_fields) - 1:
+                target_str += "\\n\\n"
+            else:
+                target_str += "\\n\\n\\-\\-\\-"
+
+            search_strings.append(target_str)
+
+        # Generate Results
+        if len(self.signature.output_fields) == 1:
+            matches = regex.findall(search_strings[0], full_text)
+
+            # If no matches are found, and there are is only one prediction, return entire prediction
+            if matches is None:
+                example[output_fields[0]] = full_text
+            else:
+                example[output_fields[0]] = matches[-1]
+
+        else:
+            count = None
+            for idx, field in enumerate(output_fields):
+                matches = regex.findall(search_strings[idx], raw_pred)
+                if count is not None and len(matches) != count:
+                    break
+
+                count = len(matches)
+
+                print(matches)
+
+                if len(matches) > 0:
+                    print(matches[-1])
+                    example[field] = matches[-1]
 
         return example
 
@@ -103,17 +165,10 @@ class Template:
         prompt_spans.append(self.guidelines())
 
         # Generate Spans for Each Demo
-        field_names = list(self.signature.fields.keys())
-        for demo in example.demos:
-            demo_example = Example()
-            for idx, variable in enumerate(demo):
-                print(idx, variable, field_names)
-                name = field_names[idx]
-                demo_example[name] = variable
-
-            prompt_spans.append(self.query(demo_example))
+        for demo in example.get("demos", []):
+            prompt_spans.append(self.query(demo, is_demo=True))
 
         # Generate Empty Demo for Generation
-        prompt_spans.append(self.query(example))
+        prompt_spans.append(self.query(example, is_demo=False))
 
         return "\n\n---\n\n".join([span.strip() for span in prompt_spans])

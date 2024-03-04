@@ -10,36 +10,86 @@ class Emotion(Signature):
     sentiment = OutputField()
 
 
-EXAMPLE_TEMPLATE_PROMPTS = [
-    (
-        Emotion,
-        [],
-        "This is a positive test sentence.",
-        "Joy",
-        "Joy",
-        "Classify emotion among sadness, joy, love, anger, fear, surprise.\n\n---\n\nFollow the following format.\n\nSentence: ${sentence}\nSentiment: ${sentiment}\n\n---\n\nSentence: This is a positive test sentence.\nSentiment:",
+class CheckCitationFaithfulness(Signature):
+    """Verify that the text is based on the provided context."""
+
+    context = InputField(desc="facts here are assumed to be true")
+    text = InputField()
+    faithfulness = OutputField(
+        desc="True/False indicating if text is faithful to context"
     )
+
+
+class COTCheckCitationFaithfulness(Signature):
+    """Verify that the text is based on the provided context."""
+
+    context = InputField(desc="facts here are assumed to be true")
+    text = InputField()
+    rationale = OutputField(
+        desc="${produce the faithfulness}. We ...",
+    )
+    faithfulness = OutputField(
+        desc="True/False indicating if text is faithful to context"
+    )
+
+
+TEMPLATE_SCENARIOS = [
+    # {
+    #     "signature": Emotion,
+    #     "output": "Joy",
+    #     "input_kwargs": {
+    #         "sentence": "This is a positive test sentence.",
+    #     },
+    #     "output_kwargs": {"sentiment": "Joy"},
+    #     "prompt": "Classify emotion among sadness, joy, love, anger, fear, surprise.\n\n---\n\nFollow the following format.\n\nSentence: ${sentence}\nSentiment: ${sentiment}\n\n---\n\nSentence: This is a positive test sentence.\nSentiment:",
+    # },
+    # {
+    #     "signature": CheckCitationFaithfulness,
+    #     "output": "False",
+    #     "input_kwargs": {
+    #         "context": [
+    #             "The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."
+    #         ],
+    #         "text": "Lee scored 3 goals for Colchester United.",
+    #     },
+    #     "output_kwargs": {
+    #         "faithfulness": "False",
+    #     },
+    #     "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\nText: ${text}\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\nText: Lee scored 3 goals for Colchester United.\nFaithfulness:",
+    # },
+    {
+        "signature": COTCheckCitationFaithfulness,
+        "output": "Faithfulness: False",
+        "output": "produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.\n\nFaithfulness: False",
+        "input_kwargs": {
+            "context": [
+                "The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."
+            ],
+            "text": "Lee scored 3 goals for Colchester United.",
+        },
+        "output_kwargs": {
+            "rationale": "produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.",
+            "faithfulness": "False",
+        },
+        "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nRationale: Let's think step by step in order to ${produce the faithfulness}. We ...\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\n\nText: Lee scored 3 goals for Colchester United.\n\nRationale: Let's think step by step in order to",
+    },
 ]
 
 
 def test_example_initialization():
-    for signature, demos, sentence, _, _, prompt in EXAMPLE_TEMPLATE_PROMPTS:
-        template = Template(signature)
-        example = Example(sentence=sentence, demos=demos)
-        assert template(example) == prompt
+    for scenario in TEMPLATE_SCENARIOS:
+        template = Template(scenario["signature"])
+        example = Example(**scenario["input_kwargs"])
+        assert template(example) == scenario["prompt"], print(template(example))
 
 
 def test_template_extraction():
-    for (
-        signature,
-        demos,
-        sentence,
-        sentiment,
-        output,
-        _,
-    ) in EXAMPLE_TEMPLATE_PROMPTS:
-        template = Template(signature)
-        example = Example(sentence=sentence, demos=demos)
-        assert template.extract(example, output) == Example(
-            sentence=sentence, demos=demos, sentiment=sentiment
+    for scenario in TEMPLATE_SCENARIOS:
+        template = Template(scenario["signature"])
+        example = Example(**scenario["input_kwargs"])
+        extracted = template.extract(example, scenario["output"])
+        correct_example = Example(
+            **scenario["input_kwargs"], **scenario["output_kwargs"]
         )
+
+        assert extracted == correct_example
