@@ -49,7 +49,7 @@ class BootstrapFewShot(Teleprompter):
 
         self._prepare_student_and_teacher(student, teacher)
         self._prepare_predictor_mappings()
-        self._bootstrap(wandb_enabled)
+        self._bootstrap(wandb_enabled=wandb_enabled)
 
         self.student = self._train()
         self.student._compiled = True
@@ -94,8 +94,7 @@ class BootstrapFewShot(Teleprompter):
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
 
-    def _bootstrap(self, *, max_bootstraps=None, wandb_config=None):
-        wandb_enabled = True if wandb_config is not None else False
+    def _bootstrap(self, *, max_bootstraps=None, wandb_enabled=False):
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
 
         bootstrapped = {}
