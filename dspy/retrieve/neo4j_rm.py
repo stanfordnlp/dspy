@@ -53,6 +53,52 @@ DEFAULT_INDEX_QUERY = "CALL db.index.vector.queryNodes($index, $k, $embedding) Y
 
 
 class Neo4jRM(dspy.Retrieve):
+    """
+    Implements a retriever that utilizes Neo4j for retrieving passages.
+    This class manages a connection to a Neo4j database using official Neo4j Python drivers and requires
+    the database credentials (username, password, URI, and optionally the database name) to be set as environment variables.
+    Additionally, it utilizes an embedding provider (defaulting to OpenAI's services) to compute query embeddings,
+    which are then used to find the most relevant nodes in the Neo4j graph based on the specified node property or custom retrieval query.
+
+    Returns a list of passages in the form of `dspy.Prediction` objects.
+
+    Args:
+        index_name (str): The name of the vector index in the Neo4j database to query against.
+        text_node_property (Optional[str]): The property of the node containing the text. Required if `retrieval_query` is not set.
+        k (Optional[int]): The default number of top passages to retrieve. Defaults to 5.
+        retrieval_query (Optional[str]): Custom Cypher query for retrieving passages. Required if `text_node_property` is not set.
+        embedding_provider (str): The provider of the embedding service. Defaults to "openai".
+        embedding_model (str): The model identifier for generating embeddings. Defaults to "text-embedding-ada-002".
+
+    Examples:
+        Below is a code snippet showcasing how to initialize Neo4jRM with environment variables for the database connection and OpenAI as the embedding provider:
+
+        ```python
+        import os
+
+        import dspy
+        import openai
+
+        os.environ["NEO4J_URI"] = "bolt://localhost:7687"
+        os.environ["NEO4J_USERNAME"] = "neo4j"
+        os.environ["NEO4J_PASSWORD"] = "password"
+        os.environ["OPENAI_API_KEY"] = "sk-"
+
+        neo4j_retriever = Neo4jRM(
+            index_name="myIndex",
+            text_node_property="text",
+            k=10,
+            embedding_provider="openai",
+            embedding_model="text-embedding-ada-002",
+        )
+
+        dspy.settings.configure(rm=neo4j_retriever)
+        ```
+
+        In this example, `Neo4jRM` is configured to retrieve nodes based on the "text" property from an index named "myIndex",
+        using embeddings computed by OpenAI's "text-embedding-ada-002" model.
+    """
+
     def __init__(
         self,
         index_name: str,
@@ -96,12 +142,17 @@ class Neo4jRM(dspy.Retrieve):
             query_or_queries = [query_or_queries]
         query_vectors = self.embedder(query_or_queries)
         contents = []
-        retrieval_query = self.retrieval_query or f"RETURN node.{self.text_node_property} AS text"
+        retrieval_query = self.retrieval_query or f"RETURN node.{self.text_node_property} AS text, score"
         for vector in query_vectors:
             records, _, _ = self.driver.execute_query(
                 DEFAULT_INDEX_QUERY + retrieval_query,
                 {"embedding": vector, "index": self.index_name, "k": k or self.k},
                 database_=self.database,
             )
-            contents.extend([dotdict({"long_text": r["text"]}) for r in records])
-        return contents
+            contents.extend([{"passage": dotdict({"long_text": r["text"]}), "score": r["score"]} for r in records])
+        sorted_passages = sorted(
+            contents,
+            key=lambda x: x["score"],
+            reverse=True,
+        )[: k or self.k]
+        return [el["passage"] for el in sorted_passages]
