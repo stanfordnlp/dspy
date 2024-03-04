@@ -150,7 +150,7 @@ class BootstrapFewShot(Teleprompter):
                     metric_val = self.metric(example, prediction, trace)
                     if wandb_enabled:
                         wandb.log({
-                            "metric_val": metric_val
+                            "metric_val": metric_val,
                         })
                     if self.metric_threshold:
                         success = metric_val >= self.metric_threshold
