@@ -108,6 +108,9 @@ class Template:
 
         """
 
+        # We have to deepcopy, so that the values dont continously overwrite each other.
+        example = example.copy()
+
         full_text = self.__call__(example) + raw_pred
 
         if not full_text.endswith("\n\n---"):

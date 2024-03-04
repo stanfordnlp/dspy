@@ -40,9 +40,6 @@ class TemplateBackend(BaseBackend):
         pred = self.lm(template(example), **kwargs)
 
         # This returns a list of Examples
-        for prediction in pred:
-            print(prediction.message.content)
-
         extracted = [
             template.extract(example, prediction.message.content) for prediction in pred
         ]
