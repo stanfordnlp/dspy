@@ -28,6 +28,8 @@ You need to define the credentials as environment variables:
 
 - `NEO4J_DATABASE` (_str_, optional): Specifies the name of the database to connect to within the Neo4j instance. If not set, the system defaults to using `"neo4j"` as the database name. This allows for flexibility in connecting to different databases within a single Neo4j server.
 
+- `OPENAI_API_KEY` (_str_): Specifies the API key required for authenticiating with OpenAI's services.
+
 **Parameters:**
 - `index_name` (_str_): Specifies the name of the vector index to be used within Neo4j for organizing and querying data.
 - `text_node_property` (_str_, _optional_): Defines the specific property of nodes that will be returned.
@@ -67,6 +69,7 @@ import os
 os.environ["NEO4J_URI"] = 'bolt://localhost:7687'
 os.environ["NEO4J_USERNAME"] = 'neo4j'
 os.environ["NEO4J_PASSWORD"] = 'password'
+os.environ["OPENAI_API_KEY"] = 'sk-'
 
 retriever_model = Neo4jRM(
     index_name="vector",
