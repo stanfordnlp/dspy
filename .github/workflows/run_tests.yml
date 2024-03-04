@@ -10,8 +10,8 @@ env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
-  lint:
-    name: Lint
+  fix:
+    name: Apply Ruff Fix
     runs-on: ubuntu-latest
     permissions:
       contents: write
