@@ -8,7 +8,7 @@ from typing import List
 import pytest
 
 import dspy
-from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, TypedChainOfThought
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.vanilla import LabeledFewShot
@@ -122,7 +122,7 @@ def test_simple_class():
 
     qa = QA()
     assert isinstance(qa, FunctionalModule)
-    assert isinstance(qa.answer, functional._StripOutput)
+    assert isinstance(qa.answer, dspy.Module)
 
     question, answer = qa(topic="Physics")
 
@@ -407,6 +407,7 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
+    print(lm.get_convo(-1))
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
@@ -464,6 +465,23 @@ def test_multiple_outputs_int():
     test = TypedPredictor(TestSignature)
 
     output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_multiple_outputs_int_cot():
+    # Note: Multiple outputs only work when the language model "speculatively" generates all the outputs in one go.
+    lm = DummyLM(
+        [
+            "thoughts 0\nOutput: 0\n",
+            "thoughts 1\nOutput: 1\n",
+            "thoughts 2\nOutput: 2\n",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    test = TypedChainOfThought("input:str -> output:int")
+
+    output = test(input="8", config=dict(n=3)).completions.output
     assert output == [0, 1, 2]
 
 
@@ -532,3 +550,49 @@ def test_synthetic_data_gen():
     augmented_examples = trained(config=dict(n=3))
     for ex in augmented_examples.completions.fact:
         assert isinstance(ex, SyntheticFact)
+
+
+def test_list_input2():
+    # Inspired by the Signature Optimizer
+
+    class ScoredString(pydantic.BaseModel):
+        string: str
+        score: float
+
+    class ScoredSignature(dspy.Signature):
+        attempted_signatures: list[ScoredString] = dspy.InputField()
+        proposed_signature: str = dspy.OutputField()
+
+    program = TypedChainOfThought(ScoredSignature)
+
+    lm = DummyLM(["Thoughts", "Output"])
+    dspy.settings.configure(lm=lm)
+
+    output = program(
+        attempted_signatures=[
+            ScoredString(string="string 1", score=0.5),
+            ScoredString(string="string 2", score=0.4),
+            ScoredString(string="string 3", score=0.3),
+        ]
+    ).proposed_signature
+
+    print(lm.get_convo(-1))
+
+    assert output == "Output"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `attempted_signatures`, produce the fields `proposed_signature`.
+
+        ---
+
+        Follow the following format.
+
+        Attempted Signatures: ${attempted_signatures}
+        Reasoning: Let's think step by step in order to ${produce the proposed_signature}. We ...
+        Proposed Signature: ${proposed_signature}
+
+        ---
+
+        Attempted Signatures: [{"string":"string 1","score":0.5},{"string":"string 2","score":0.4},{"string":"string 3","score":0.3}]
+        Reasoning: Let's think step by step in order to Thoughts
+        Proposed Signature: Output""")

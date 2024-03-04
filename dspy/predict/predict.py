@@ -6,6 +6,7 @@ from dspy.primitives.prediction import Prediction
 
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
+
 class Predict(Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
@@ -27,7 +28,7 @@ class Predict(Parameter):
         state["signature_instructions"] = self.signature.instructions
 
         *_, last_key = self.signature.fields.keys()
-        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra['prefix']
+        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
 
         return state
 
@@ -85,6 +86,8 @@ class Predict(Parameter):
 
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
+        # print("Created template", template)
+        # print("From Signature", signature)
 
         if self.lm is None:
             x, C = dsp.generate(template, **config)(x, stage=self.stage)
@@ -103,7 +106,8 @@ class Predict(Parameter):
             for field in template.fields:
                 if field.output_variable not in kwargs.keys():
                     completions[-1][field.output_variable] = getattr(
-                        c, field.output_variable,
+                        c,
+                        field.output_variable,
                     )
 
         pred = Prediction.from_completions(completions, signature=signature)
