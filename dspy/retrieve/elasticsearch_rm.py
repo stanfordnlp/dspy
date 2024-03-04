@@ -40,30 +40,22 @@ class elastic_rm(dspy.Retrieve):
 
         passages = []
 
-        # Define the index to search
+
         index_name = self.es_index #the name of the index of your elastic-search-dump
 
-        # Define the search query
         search_query = {
             "query": {
                 "match": {
-                    self.field: query  #took for granted that your index has : title, text as document format
+                    self.field: query  
                 }
             }
         }
 
-        # Perform the search
         response = self.es_client.search(index=index_name, body=search_query)
 
         for hit in response['hits']['hits']:
 
-            #Uncomment for debug...
-            # Retrieve the score
-            #score = hit["_score"]
-            # Retrieve other fields from the source
-            #title = hit["_source"]["title"]
             text = hit["_source"]["text"]
-            #print("Score: %.2f | Tile: %s | Text: %s" % (score,title, text))
             passages.append(text)
             if len(passages) == self.k:  # Break the loop once k documents are retrieved
                 break
