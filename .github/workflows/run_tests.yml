@@ -22,7 +22,6 @@ jobs:
       - uses: chartboost/ruff-action@v1
         with:
           args: --fix-only --exit-non-zero-on-fix
-        continue-on-error: true # Continue to next step if this step fails
 
   comment_if_ruff_fail:
     name: Comment on Ruff Failure
