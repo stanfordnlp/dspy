@@ -32,7 +32,7 @@ jobs:
     needs: fix
     if: ${{ failure() && needs.fix.result == 'failure' }}
     steps:
-      - run: echo ''It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.'
+      - run: echo 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.'
       # - name: Comment on Ruff Failure
       #   uses: actions/github-script@v6
       #   with:
