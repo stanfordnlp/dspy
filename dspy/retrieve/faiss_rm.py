@@ -3,7 +3,7 @@ Author: Jagane Sundar: https://github.com/jagane.
 """
 
 import logging
-from typing import Union, Optional
+from typing import Optional, Union
 
 import numpy as np
 
