@@ -16,6 +16,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    # Note that 'pull_request_target' has higher permissions than 'pull_request'\
+    # Do not change any events that run arbitrary code to use 'pull_request_target'
     if: github.event_name == 'pull_request_target'
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +33,8 @@ jobs:
       contents: read
       pull-requests: write
     needs: fix
+    # Note that 'pull_request_target' has higher permissions than 'pull_request'\
+    # Do not change any events that run arbitrary code to use 'pull_request_target'
     if: ${{ failure() && needs.fix.result == 'failure' && github.event_name == 'pull_request_target' }}
     steps:
       # - run: echo 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.'
@@ -46,7 +50,7 @@ jobs:
               issue_number: issue_number,
               body: message
             });
-            core.setFailed("Automated Ruff fixes failed. A comment has been posted on the PR.");
+            console.log('Commented on the issue.');
   test:
     name: Run Tests
     runs-on: ubuntu-latest
