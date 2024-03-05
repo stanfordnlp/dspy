@@ -1,0 +1,51 @@
+name: Lint
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+env:
+  POETRY_VERSION: "1.6.1"
+
+jobs:
+  fix:
+    name: Apply Ruff Fix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    # Note that 'pull_request_target' has higher permissions than 'pull_request'\
+    # Do not change any events that run arbitrary code to use 'pull_request_target'
+    if: github.event_name == 'pull_request_target'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - uses: chartboost/ruff-action@v1
+        with:
+          args: --fix-only --exit-non-zero-on-fix
+
+  comment_if_ruff_fail:
+    name: Comment on Ruff Failure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    needs: fix
+    # Note that 'pull_request_target' has higher permissions than 'pull_request'\
+    # Do not change any events that run arbitrary code to use 'pull_request_target'
+    if: ${{ failure() && needs.fix.result == 'failure' && github.event_name == 'pull_request_target' }}
+    steps:
+      # - run: echo 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.'
+      - name: Comment on Ruff Failure
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue_number = context.issue.number;
+            const message = 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue_number,
+              body: message
+            });
+            console.log('Commented on the issue.');
