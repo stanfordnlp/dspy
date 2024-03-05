@@ -140,7 +140,7 @@ class Evaluate:
         df = pd.DataFrame(data)
 
         # Truncate every cell in the DataFrame
-        df = df.applymap(truncate_cell)
+        df = df.map(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
         assert(callable(metric))
