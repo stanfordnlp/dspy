@@ -21,6 +21,16 @@ jobs:
       - uses: chartboost/ruff-action@v1
         with:
           args: --fix-only --exit-non-zero-on-fix
+        continue-on-error: true # Continue to next step if this step fails
+      - name: Check outcome
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue_number = context.issue.number;
+            const message = 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.';
+            const comment = { owner: context.repo.owner, repo: context.repo.repo, issue_number: issue_number, body: message };
+            github.rest.issues.createComment(comment);
 
   test:
     name: Run Tests
