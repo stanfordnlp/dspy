@@ -20,10 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
       - uses: chartboost/ruff-action@v1
         with:
-          args: --fix-only
-      - uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Automatic Style fixes"
+          args: --fix-only --exit-non-zero-on-fix
 
   test:
     name: Run Tests

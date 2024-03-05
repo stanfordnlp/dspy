@@ -1,17 +1,17 @@
 import threading
 import types
-
-import pandas as pd
-import tqdm
-
 import dsp
+
+import tqdm
+import pandas as pd
+
 
 try:
     from IPython.display import HTML
     from IPython.display import display as ipython_display
 except ImportError:
     ipython_display = print
-    HTML = lambda x: x
+    def HTML(x): return x
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dsp.evaluation.utils import *
@@ -51,7 +51,8 @@ class Evaluate:
         ntotal = 0
         reordered_devset = []
 
-        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
+        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True,
+                         disable=not display_progress)
         for idx, arg in devset:
             example_idx, example, prediction, score = wrapped_program(idx, arg)
             reordered_devset.append((example_idx, example, prediction, score))
@@ -68,12 +69,15 @@ class Evaluate:
         reordered_devset = []
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {executor.submit(wrapped_program, idx, arg) for idx, arg in devset}
-            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
+            futures = {executor.submit(wrapped_program, idx, arg)
+                       for idx, arg in devset}
+            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True,
+                             disable=not display_progress)
 
             for future in as_completed(futures):
                 example_idx, example, prediction, score = future.result()
-                reordered_devset.append((example_idx, example, prediction, score))
+                reordered_devset.append(
+                    (example_idx, example, prediction, score))
                 ncorrect += score
                 ntotal += 1
                 self._update_progress(pbar, ncorrect, ntotal)
@@ -82,7 +86,8 @@ class Evaluate:
         return reordered_devset, ncorrect, ntotal
 
     def _update_progress(self, pbar, ncorrect, ntotal):
-        pbar.set_description(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
+        pbar.set_description(
+            f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
         pbar.update()
 
     def __call__(
@@ -113,7 +118,8 @@ class Evaluate:
             # NOTE: TODO: Won't work if threads create threads!
             creating_new_thread = threading.get_ident() not in dsp.settings.stack_by_thread
             if creating_new_thread:
-                dsp.settings.stack_by_thread[threading.get_ident()] = list(dsp.settings.main_stack)
+                dsp.settings.stack_by_thread[threading.get_ident()] = list(
+                    dsp.settings.main_stack)
                 # print(threading.get_ident(), dsp.settings.stack_by_thread[threading.get_ident()])
 
             # print(type(example), example)
@@ -146,16 +152,19 @@ class Evaluate:
         devset = list(enumerate(devset))
 
         if num_threads == 1:
-            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
+            reordered_devset, ncorrect, ntotal = self._execute_single_thread(
+                wrapped_program, devset, display_progress)
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
                 wrapped_program, devset, num_threads, display_progress
             )
         if return_outputs:  # Handle the return_outputs logic
-            results = [(example, prediction, score) for _, example, prediction, score in reordered_devset]
+            results = [(example, prediction, score)
+                       for _, example, prediction, score in reordered_devset]
 
         if display:
-            print(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)}%)")
+            print(
+                f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 
@@ -171,7 +180,8 @@ class Evaluate:
 
         # Rename the 'correct' column to the name of the metric object
         assert callable(metric)
-        metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+        metric_name = metric.__name__ if isinstance(
+            metric, types.FunctionType) else metric.__class__.__name__
         df.rename(columns={"correct": metric_name}, inplace=True)
 
         if display_table:
@@ -242,7 +252,8 @@ def configure_dataframe_display(df, metric_name):
     pd.set_option("display.width", 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
+    df.loc[:, metric_name] = df[metric_name].apply(
+        lambda x: f"✔️ [{x}]" if x is True else f"{x}")
 
     # Return styled DataFrame
     return df.style.set_table_styles(
