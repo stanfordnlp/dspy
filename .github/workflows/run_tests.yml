@@ -23,8 +23,14 @@ jobs:
         with:
           args: --fix-only --exit-non-zero-on-fix
         continue-on-error: true # Continue to next step if this step fails
-      - name: Check outcome
-        if: ${{ failure() }}
+
+  comment_if_ruff_fail:
+    name: Comment on Ruff Failure
+    runs-on: ubuntu-latest
+    needs: fix
+    if: ${{ failure() && needs.fix.result == 'failure' }}
+    steps:
+      - name: Comment on Ruff Failure
         uses: actions/github-script@v6
         with:
           script: |
@@ -37,7 +43,6 @@ jobs:
               body: message
             });
             core.setFailed("Automated Ruff fixes failed. A comment has been posted on the PR.");
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
