@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
       - uses: chartboost/ruff-action@v1
         with:
@@ -33,8 +33,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
@@ -66,8 +64,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
@@ -99,8 +95,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
