@@ -11,7 +11,7 @@ env:
 
 jobs:
   fix:
-    name: Apply Ruff Fix - TESTING DEMO DEMO DEMO
+    name: Apply Ruff Fix
     runs-on: ubuntu-latest
     permissions:
       contents: write
