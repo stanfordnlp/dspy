@@ -174,7 +174,7 @@ class Evaluate:
                 ipython_display(HTML(message))
                 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results
+            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in reordered_devset]
         elif return_all_scores:
             return round(100 * ncorrect / ntotal, 2), [score for *_, score in reordered_devset]
         elif return_outputs:
