@@ -10,42 +10,6 @@ env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
-  fix:
-    name: Apply Ruff Fix
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-      - uses: chartboost/ruff-action@v1
-        with:
-          args: --fix-only --exit-non-zero-on-fix
-
-  comment_if_ruff_fail:
-    name: Comment on Ruff Failure
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    needs: fix
-    if: ${{ failure() && needs.fix.result == 'failure' }}
-    steps:
-      - run: echo 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.'
-      # - name: Comment on Ruff Failure
-      #   uses: actions/github-script@v6
-      #   with:
-      #     script: |
-      #       const issue_number = context.issue.number;
-      #       const message = 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.';
-      #       await github.rest.issues.createComment({
-      #         owner: context.repo.owner,
-      #         repo: context.repo.repo,
-      #         issue_number: issue_number,
-      #         body: message
-      #       });
-      #       core.setFailed("Automated Ruff fixes failed. A comment has been posted on the PR.");
   test:
     name: Run Tests
     runs-on: ubuntu-latest
