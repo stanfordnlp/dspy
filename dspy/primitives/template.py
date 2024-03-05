@@ -121,7 +121,7 @@ class Template:
         output_fields = list(self.signature.output_fields.keys())
         for idx, (key, field) in enumerate(self.signature.output_fields.items()):
             if len(search_strings) > 0:
-                search_strings[-1] += f"{field.json_schema_extra['prefix']}"
+                search_strings[-1] += f"(?:{field.json_schema_extra['prefix']})?"
 
             target_str = f"(?s){field.json_schema_extra['prefix']}\\s?(.+?)"
             if idx != len(self.signature.output_fields) - 1:
@@ -135,8 +135,14 @@ class Template:
         if len(self.signature.output_fields) == 1:
             matches = regex.findall(search_strings[0], full_text)
 
+            # Skip the first match, as this is likely the demo.
+            if len(matches) == 1:
+                matches = []
+            elif len(matches) > 1:
+                matches = matches[1 + len(example.get("demos", [])) :]
+
             # If no matches are found, and there are is only one prediction, return entire prediction
-            if matches is None:
+            if matches == []:
                 example[output_fields[0]] = full_text
             else:
                 example[output_fields[0]] = matches[-1]
@@ -144,6 +150,11 @@ class Template:
         else:
             for idx, field in enumerate(output_fields):
                 matches = regex.findall(search_strings[idx], full_text)
+
+                if len(matches) == 1:
+                    matches = []
+                elif len(matches) > 1:
+                    matches = matches[1 + len(example.get("demos", [])) :]
 
                 if len(matches) > 0:
                     example[field] = matches[-1]
