@@ -1,4 +1,4 @@
-name: Fix, Test, and Build
+name: Test and Build
 
 on:
   push:

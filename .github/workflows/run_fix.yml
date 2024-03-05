@@ -1,3 +1,5 @@
+name: Fix and comment on Ruff failure
+
 on: pull_request_target
 
 jobs:
