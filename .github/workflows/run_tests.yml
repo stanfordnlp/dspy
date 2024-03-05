@@ -24,7 +24,7 @@ jobs:
           args: --fix-only --exit-non-zero-on-fix
         continue-on-error: true # Continue to next step if this step fails
       - name: Check outcome
-        if: ${{ failure() && github.event_name == 'pull_request' }}
+        if: ${{ failure() }}
         uses: actions/github-script@v6
         with:
           script: |
