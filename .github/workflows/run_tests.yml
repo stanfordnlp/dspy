@@ -26,6 +26,9 @@ jobs:
   comment_if_ruff_fail:
     name: Comment on Ruff Failure
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     needs: fix
     if: ${{ failure() && needs.fix.result == 'failure' }}
     steps:
