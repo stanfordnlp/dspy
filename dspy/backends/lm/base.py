@@ -11,10 +11,7 @@ from joblib import Memory
 _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
-Completion = t.TypeVar("Completion", bound=dict)
-
-
-MinimalLM = t.Callable[[str, float, int, int], list[Completion]]
+GeneratedOutput = t.TypeVar("GeneratedOutput", bound=dict[str, t.Any])
 
 
 class BaseLM(BaseModel, ABC):
@@ -22,7 +19,7 @@ class BaseLM(BaseModel, ABC):
         super().__init__(*args, **kwargs)
         self._generate_with_cache = _cache_memory.cache(self.generate)
 
-    def __call__(self, prompt: str, **kwargs) -> list[str]:
+    def __call__(self, prompt: str, **kwargs) -> list[GeneratedOutput]:
         """Generates `n` predictions for the signature output."""
         generator = self._generate_with_cache if dspy.settings.cache else self.generate
         return generator(prompt, **kwargs)
@@ -32,7 +29,7 @@ class BaseLM(BaseModel, ABC):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[Completion]:
+    ) -> list[GeneratedOutput]:
         """Generates `n` predictions for the signature output."""
         ...
 

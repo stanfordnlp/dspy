@@ -4,10 +4,7 @@ from litellm import completion, token_counter
 from pydantic import Field
 
 
-from .base import BaseLM
-
-
-Choice = t.TypeVar("Choice", bound=dict[str, t.Any])
+from .base import BaseLM, GeneratedOutput
 
 
 class LiteLM(BaseLM):
@@ -26,7 +23,7 @@ class LiteLM(BaseLM):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[Choice]:
+    ) -> list[GeneratedOutput]:
         """Generates `n` predictions for the signature output."""
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         response = completion(
