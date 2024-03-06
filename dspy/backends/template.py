@@ -13,6 +13,10 @@ class TemplateBackend(BaseBackend):
 
     lm: BaseLM
 
+    @property
+    def lm_history(self):
+        return self.lm.history
+
     def generate(
         self,
         signature: Signature,

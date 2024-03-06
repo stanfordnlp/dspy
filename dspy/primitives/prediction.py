@@ -1,40 +1,6 @@
 from dspy.primitives.example import Example
 
 
-class Prediction(Example):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        del self._demos
-        del self._input_keys
-
-        self._completions = None
-
-    @classmethod
-    def from_completions(cls, list_or_dict, signature=None):
-        obj = cls()
-        obj._completions = Completions(list_or_dict, signature=signature)
-        obj._store = {k: v[0] for k, v in obj._completions.items()}
-
-        return obj
-
-    def __repr__(self):
-        store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
-
-        if self._completions is None or len(self._completions) == 1:
-            return f"Prediction(\n    {store_repr}\n)"
-
-        num_completions = len(self._completions)
-        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
-
-    def __str__(self):
-        return self.__repr__()
-
-    @property
-    def completions(self):
-        return self._completions
-
-
 class Completions:
     def __init__(self, list_or_dict, signature=None):
         self.signature = signature
@@ -96,3 +62,45 @@ class Completions:
     def __str__(self):
         # return str(self._completions)
         return self.__repr__()
+
+
+class Prediction(Example):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        del self._demos
+        del self._input_keys
+
+        self._completions = None
+
+    @classmethod
+    def from_list_or_dict(cls, list_or_dict, signature=None):
+        obj = cls()
+        obj._completions = Completions(list_or_dict, signature=signature)
+        obj._store = {k: v[0] for k, v in obj._completions.items()}
+
+        return obj
+
+    @classmethod
+    def from_completions(cls, completions: Completions):
+        obj = cls()
+        obj._completions = completions
+        obj._store = {k: v[0] for k, v in obj._completions.items()}
+
+        return obj
+
+    def __repr__(self):
+        store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
+
+        if self._completions is None or len(self._completions) == 1:
+            return f"Prediction(\n    {store_repr}\n)"
+
+        num_completions = len(self._completions)
+        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
+
+    def __str__(self):
+        return self.__repr__()
+
+    @property
+    def completions(self):
+        return self._completions
