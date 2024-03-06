@@ -1,17 +1,21 @@
-import types
-import dsp
-
-import tqdm
-import pandas as pd
-
 import threading
+import types
+
+import pandas as pd
+import tqdm
+
+import dsp
 
 try:
     from IPython.display import HTML
     from IPython.display import display as ipython_display
 except ImportError:
     ipython_display = print
-    def HTML(x): return x
+
+    def HTML(x):
+        return x
+
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dsp.evaluation.utils import *
@@ -127,7 +131,8 @@ class Evaluate:
             try:
                 prediction = program(**example.inputs())
                 score = metric(
-                    example, prediction
+                    example,
+                    prediction,
                 )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
 
                 # increment assert and suggest failures to program's attributes
@@ -156,7 +161,10 @@ class Evaluate:
                 wrapped_program, devset, display_progress)
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
-                wrapped_program, devset, num_threads, display_progress
+                wrapped_program,
+                devset,
+                num_threads,
+                display_progress,
             )
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score)
@@ -260,14 +268,14 @@ def configure_dataframe_display(df, metric_name):
         [
             {"selector": "th", "props": [("text-align", "left")]},
             {"selector": "td", "props": [("text-align", "left")]},
-        ]
+        ],
     ).set_properties(
         **{
             "text-align": "left",
             "white-space": "pre-wrap",
             "word-wrap": "break-word",
             "max-width": "400px",
-        }
+        },
     )
 
 
