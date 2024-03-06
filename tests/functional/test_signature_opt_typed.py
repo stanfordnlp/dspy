@@ -154,7 +154,7 @@ def test_opt():
     )
     dspy.settings.configure(lm=qa_model)
 
-    program = optimize_signature(
+    result = optimize_signature(
         student=TypedPredictor(BasicQA),
         evaluator=Evaluate(devset=hotpotqa, metric=answer_exact_match, num_threads=1),
         initial_prompts=1,
@@ -172,4 +172,6 @@ def test_opt():
         question: str = dspy.InputField(desc="$q", prefix="Q:")
         answer: str = dspy.OutputField(desc="$a", prefix="A:")
 
-    assert program.signature.equals(ExpectedSignature)
+    assert result.program.signature.equals(ExpectedSignature)
+
+    assert result.scores == [0, 0]
