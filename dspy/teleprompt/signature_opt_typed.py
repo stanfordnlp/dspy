@@ -100,20 +100,32 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
     return GenerateInstructionInitial
 
 
-class GenerateSignature(dspy.Signature, Generic[T]):
-    __doc__ = textwrap.dedent("""\
-    You are an instruction optimizer for large language models.
+def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signature]:
+    class GenerateSignature(dspy.Signature, Generic[T]):
+        __doc__ = textwrap.dedent("""\
+        You are an instruction optimizer for large language models.
 
-    I will give some task instructions I've tried, along with their corresponding validation scores.
-    - The instructions are arranged in order based on their scores, where higher scores indicate better quality.
-    - Your task is to propose a new instruction that will lead a good language model to perform the task even better.
-    - Be creative, and think out of the box.
-    - Don't repeat instructions, descriptions and prefixes that have already been attempted.
-    """)
+        I will give some task instructions I've tried, along with their corresponding validation scores.
+        - The instructions are arranged in order based on their scores, where higher scores indicate better quality.
+        - Your task is to propose a new instruction that will lead a good language model to perform the task even better.
+        - Be creative, and think out of the box.
+        - Don't repeat instructions, descriptions and prefixes that have already been attempted.
+        """)
 
-    analysis: str = OutputField(desc="Consider what made the previous instructions good or bad.")
-    proposed_signature: T = OutputField(desc="A signature that will likely lead to a high score.")
-    score: float = OutputField(desc="The expected score for the new signature. Don't write anything after this number.")
+        analysis: str = OutputField(desc="Consider what made the previous instructions good or bad.")
+        proposed_signature: T = OutputField(desc="A signature that will likely lead to a high score.")
+        score: float = OutputField(
+            desc="The expected score for the new signature. Don't write anything after this number."
+        )
+
+        @pydantic.field_validator("proposed_signature")
+        @classmethod
+        def check_signature_not_attempted(cls, s: T) -> T:
+            if s in signatures_to_avoid:
+                raise ValueError("Never propose a signature already in the list above.")
+            return s
+
+    return GenerateSignature
 
 
 @dataclass
@@ -233,7 +245,6 @@ def optimize_signature(
             # TODO: Parallelize this
             for name, _p in named_predictors:
                 SignatureInfo = type(candidates[name][0])  # noqa: N806
-                generator = TypedPredictor(GenerateSignature[SignatureInfo])
 
                 demos = [dspy.Example(proposed_signature=info, score=sc) for info, sc in zip(candidates[name], scores)]
                 if sorted_order == "chronological":
@@ -246,6 +257,10 @@ def optimize_signature(
                     demos = demos[:max_examples]
                 else:
                     raise ValueError(f"Invalid sorted_order: {sorted_order}")
+
+                # We can only tell the LM to avoid the signatures we are actually giving it as demos.
+                avoid = [ex.proposed_signature for ex in demos]
+                generator = TypedPredictor(generate_with_avoidance(avoid)[SignatureInfo])
                 generator.predictor.demos = demos
 
                 if verbose:
