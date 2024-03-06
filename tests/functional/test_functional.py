@@ -2,7 +2,7 @@ import datetime
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
-from typing import Annotated
+from typing import Annotated, Literal
 from typing import List
 
 import pytest
@@ -493,6 +493,28 @@ def test_parse_type_string():
 
     output = test(input=8, config=dict(n=3)).completions.output
     assert output == [0, 1, 2]
+
+
+def test_literal():
+    lm = DummyLM([f'{{"value": "{i}"}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal["2", "3"]:
+        pass
+
+    assert f() == "2"
+
+
+def test_literal_int():
+    lm = DummyLM([f'{{"value": {i}}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal[2, 3]:
+        pass
+
+    assert f() == 2
 
 
 def test_fields_on_base_signature():

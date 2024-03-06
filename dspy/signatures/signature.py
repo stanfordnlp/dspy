@@ -1,9 +1,10 @@
 import ast
 from copy import deepcopy
-import typing
 import dsp
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
+import typing
+import types
 from typing import Any, Type, Union, Dict, Tuple  # noqa: UP035
 import re
 
@@ -62,7 +63,7 @@ class SignatureMeta(type(BaseModel)):
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField.",
+                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField. {field.json_schema_extra=}",
                 )
 
     @property
@@ -232,7 +233,8 @@ def make_signature(
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
+        # if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
+        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias)):
             raise ValueError(f"Field types must be types, not {type(type_)}")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, not {type(field)}")
