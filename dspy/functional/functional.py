@@ -131,7 +131,11 @@ class TypedPredictor(dspy.Module):
                         schema = json.dumps(type_.model_json_schema())
                 else:
                     # Anything else we wrap in a pydantic object
-                    if not (inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)):
+                    if not (
+                        inspect.isclass(type_)
+                        and typing.get_origin(type_) not in (list, tuple)  # To support Python 3.9
+                        and issubclass(type_, pydantic.BaseModel)
+                    ):
                         type_ = pydantic.create_model("Output", value=(type_, ...), __base__=pydantic.BaseModel)
                         to_json = lambda x, type_=type_: type_(value=x).model_dump_json()
                         from_json = lambda x, type_=type_: type_.model_validate_json(x).value
@@ -152,8 +156,6 @@ class TypedPredictor(dspy.Module):
                 format_ = lambda x: x if isinstance(x, str) else str(x)
                 if type_ in (List[str], list[str], Tuple[str], tuple[str]):
                     format_ = passages2text
-                elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
-                    format_ = lambda x: x if isinstance(x, str) else x.model_dump_json()
                 # Special formatting for lists of known types. Maybe the output fields sohuld have this too?
                 elif typing.get_origin(type_) in (List, list, Tuple, tuple):
                     (inner_type,) = typing.get_args(type_)
@@ -163,6 +165,8 @@ class TypedPredictor(dspy.Module):
                         )
                     else:
                         format_ = lambda x: x if isinstance(x, str) else json.dumps(x)
+                elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
+                    format_ = lambda x: x if isinstance(x, str) else x.model_dump_json()
                 signature = signature.with_updated_fields(name, format=format_)
 
         return signature
