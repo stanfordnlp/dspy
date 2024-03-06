@@ -1,9 +1,9 @@
-import os
-import tqdm
 import datetime
 import itertools
-
+import os
 from collections import defaultdict
+
+import tqdm
 
 
 def print_message(*s, condition=True, pad=False, sep=None):
@@ -76,6 +76,7 @@ def batch(group, bsize, provide_offset=False):
 
 
 import copy
+
 
 class dotdict(dict):
     def __getattr__(self, key):

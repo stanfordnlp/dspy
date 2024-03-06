@@ -1,9 +1,13 @@
 import glob
 import os
-import pandas as pd
-import dspy
-from .base_task import BaseTask
 import random
+
+import pandas as pd
+
+import dspy
+
+from .base_task import BaseTask
+
 
 def load_scone(dirname):
     dfs = []

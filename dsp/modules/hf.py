@@ -1,8 +1,9 @@
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 from dsp.modules.lm import LM
+
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
 
 def openai_to_hf(**kwargs):
@@ -43,8 +44,8 @@ class HFModel(LM):
         self.device_map = hf_device_map
         if not self.is_client:
             try:
-                from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
                 import torch
+                from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
                     "You need to install Hugging Face transformers library to use HF models.",

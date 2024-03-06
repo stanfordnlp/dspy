@@ -1,17 +1,17 @@
 import inspect
-import os
-import openai
-import dspy
-import typing
-import pydantic
-from typing import Annotated, List, Tuple  # noqa: UP035
-from dsp.templates import passages2text
 import json
+import os
+import typing
+from typing import Annotated, List, Tuple  # noqa: UP035
+
+import openai
+import pydantic
 import ujson
+
+import dspy
+from dsp.templates import passages2text
 from dspy.primitives.prediction import Prediction
-
 from dspy.signatures.signature import ensure_signature, make_signature
-
 
 # Some improvement ideas:
 # - Increase the temperature on error

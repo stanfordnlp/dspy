@@ -1,10 +1,12 @@
-import dspy
-import openai
 from typing import List, Optional
 
+import openai
+
+import dspy
+
 try:
-    from pgvector.psycopg2 import register_vector
     import psycopg2
+    from pgvector.psycopg2 import register_vector
     from psycopg2 import sql
 except ImportError:
     raise ImportError(

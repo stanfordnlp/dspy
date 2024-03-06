@@ -1,7 +1,9 @@
-import regex as re
 import nltk
+import regex as re
+
 nltk.download('punkt')
 from nltk.tokenize import sent_tokenize
+
 
 def extract_text_by_citation(paragraph):
     citation_regex = re.compile(r'(.*?)(\[\d+\]\.)', re.DOTALL)

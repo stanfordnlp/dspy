@@ -1,9 +1,11 @@
-from collections import namedtuple
 import re
-from typing import Union, Any
+from collections import namedtuple
+from typing import Any, Union
+
 import dsp
 from dsp.primitives.demonstrate import Example
-from .utils import passages2text, format_answers
+
+from .utils import format_answers, passages2text
 
 Field = namedtuple("Field", "name separator input_variable output_variable description")
 

@@ -1,7 +1,10 @@
-from pydantic import BaseModel
-import dspy
 import random
 from typing import List, Optional
+
+from pydantic import BaseModel
+
+import dspy
+
 
 class descriptionSignature(dspy.Signature):
   field_name = dspy.InputField(desc="name of a field")
@@ -55,7 +58,7 @@ class SyntheticDataGenerator:
             '__doc__': f"Generates the following outputs: {{{', '.join(properties.keys())}}}.",
             'sindex': dspy.InputField(desc="a random string"),
             **{field_name: dspy.OutputField(desc=properties[field_name].get('description', 'No description'))
-               for field_name in properties.keys()}
+               for field_name in properties.keys()},
         }
 
 # # Usage example

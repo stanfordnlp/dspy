@@ -2,10 +2,12 @@
 Retriever model for deeplake
 """
 
-from typing import Optional, List, Union
-import openai
-import dspy
 from collections import defaultdict
+from typing import List, Optional, Union
+
+import openai
+
+import dspy
 from dsp.utils import dotdict
 
 try:

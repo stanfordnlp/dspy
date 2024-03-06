@@ -1,9 +1,11 @@
 import random
-from typing import Union
-from dsp.modules import LM
-import numpy as np
-from dsp.utils.utils import dotdict
 import re
+from typing import Union
+
+import numpy as np
+
+from dsp.modules import LM
+from dsp.utils.utils import dotdict
 
 
 class DummyLM(LM):

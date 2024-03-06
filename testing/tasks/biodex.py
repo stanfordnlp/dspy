@@ -1,20 +1,24 @@
 from __future__ import annotations
-from .base_task import BaseTask
-import dspy
-from dspy.evaluate import Evaluate
-from dsp.utils import deduplicate
-import tqdm
-import datasets
+
 import math
-from functools import lru_cache
 import os
-import re
 import pickle
+import re
+from collections import defaultdict
+from enum import Enum
+from functools import lru_cache
+from typing import DefaultDict, Dict, List, Optional, Union
+
+import datasets
+import tqdm
 from pydantic import BaseModel
 from rapidfuzz import process
-from typing import Union, Optional, Dict, DefaultDict, List
-from enum import Enum
-from collections import defaultdict
+
+import dspy
+from dsp.utils import deduplicate
+from dspy.evaluate import Evaluate
+
+from .base_task import BaseTask
 
 # Must point to a MedDra download with mdhier.asc
 data_dir = '/future/u/okhattab/data/2023/MedDraV2/meddra_23_0_english/MedAscii' # NOTE: EDIT THIS LINE 
@@ -528,6 +532,7 @@ class CompilationMetric:
 
 metricR = CompilationMetric(field='reactions', metric='recall')
 from collections import Counter
+
 
 def reduce_grounded_reactions(grounded_reactions):
     scores = {}

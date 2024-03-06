@@ -1,5 +1,6 @@
-from typing import Union
 import json
+from typing import Union
+
 from datasets import Dataset
 
 from dsp.utils import dotdict
@@ -30,8 +31,8 @@ class PyseriniRetriever:
         """
         
         # Keep pyserini as an optional dependency
+        from pyserini.prebuilt_index_info import FAISS_INDEX_INFO, IMPACT_INDEX_INFO, TF_INDEX_INFO
         from pyserini.search import FaissSearcher
-        from pyserini.prebuilt_index_info import TF_INDEX_INFO, FAISS_INDEX_INFO, IMPACT_INDEX_INFO
         
         self.encoder = FaissSearcher._init_encoder_from_str(query_encoder)
         self.dataset = dataset

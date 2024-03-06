@@ -1,2 +1,2 @@
-from .synthetic_data import *
 from .synthesizer import *
+from .synthetic_data import *
