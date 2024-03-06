@@ -1,11 +1,11 @@
 import dsp
 from dsp.modules.hf_client import ChatModuleClient, HFClientSGLang, HFClientVLLM, HFServerTGI
 
+from .functional import *
 from .predict import *
 from .primitives import *
 from .retrieve import *
 from .signatures import *
-from .functional import *
 
 settings = dsp.settings
 
