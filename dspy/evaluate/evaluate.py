@@ -1,11 +1,10 @@
 import threading
 import types
 
-import dsp
-
 import pandas as pd
 import tqdm
 
+import dsp
 
 try:
     from IPython.display import HTML
