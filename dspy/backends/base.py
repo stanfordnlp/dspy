@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from dspy.primitives.prediction import Completions
 from dspy.primitives.example import Example
 
-from dspy.signatures.signature import Signature
+from dspy.signatures.signature import Signature, ensure_signature
 
 
 class Completion:
@@ -26,8 +26,13 @@ def convert_to_completion(signature: Signature, example: Example) -> Completion:
     return Completion(example=example, complete=complete)
 
 
+BackendEvent = t.TypeVar("BackendEvent", bound=dict[str, t.Any])
+
+
 class BaseBackend(BaseModel, ABC):
     """A backend takes a signature, its params, and returns a list of structured predictions."""
+
+    _history: t.List[BackendEvent] = []
 
     def __call__(
         self,
@@ -37,7 +42,14 @@ class BaseBackend(BaseModel, ABC):
         **kwargs,
     ) -> Completions:
         # Recursively complete generation, until at least one complete completion is available.
+        signature = ensure_signature(signature)
 
+        event = {
+            "signature": signature,
+            "recover": recover,
+            "max_generations": max_generations,
+            "kwargs": kwargs,
+        }
         complete_examples = None
         i = 0
 
@@ -90,7 +102,15 @@ class BaseBackend(BaseModel, ABC):
                 "Generation failed, recursively attempts to complete did not succeed."
             )
 
-        return Completions(complete_examples)
+        completions = Completions(complete_examples)
+        event["completions"] = completions
+        self._history.append(event)
+
+        return completions
+
+    @property
+    def history(self) -> t.List[BackendEvent]:
+        return self._history
 
     @abstractmethod
     def generate(
