@@ -115,7 +115,7 @@ def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signat
         analysis: str = OutputField(desc="Consider what made the previous instructions good or bad.")
         proposed_signature: T = OutputField(desc="A signature that will likely lead to a high score.")
         score: float = OutputField(
-            desc="The expected score for the new signature. Don't write anything after this number."
+            desc="The expected score for the new signature. Don't write anything after this number.",
         )
 
         @pydantic.field_validator("proposed_signature")
