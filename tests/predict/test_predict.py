@@ -2,6 +2,7 @@ import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
 import copy
+import textwrap
 
 
 def test_initialization_with_string_signature():
@@ -119,3 +120,27 @@ def test_named_predictors():
     # Check that it also works the second time.
     program2 = copy.deepcopy(program)
     assert program2.named_predictors() == [("inner", program2.inner)]
+
+
+def test_output_only():
+    class OutputOnlySignature(dspy.Signature):
+        output = dspy.OutputField()
+
+    predictor = Predict(OutputOnlySignature)
+
+    lm = DummyLM(["short answer"])
+    dspy.settings.configure(lm=lm)
+    assert predictor().output == "short answer"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields , produce the fields `output`.
+        
+        ---
+        
+        Follow the following format.
+        
+        Output: ${output}
+        
+        ---
+        
+        Output: short answer""")

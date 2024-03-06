@@ -73,7 +73,8 @@ class Predict(Parameter):
             # print(f"#> Setting temperature to 0.7 since n={num_generations} and prior temperature={temperature}.")
 
         # All of the other kwargs are presumed to fit a prefix of the signature.
-
+        # That is, they are input variables for the bottom most generation, so
+        # we place them inside the input - x - together with the demos.
         x = dsp.Example(demos=demos, **kwargs)
 
         if new_signature is not None:
@@ -86,8 +87,6 @@ class Predict(Parameter):
 
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
-        # print("Created template", template)
-        # print("From Signature", signature)
 
         if self.lm is None:
             x, C = dsp.generate(template, **config)(x, stage=self.stage)
