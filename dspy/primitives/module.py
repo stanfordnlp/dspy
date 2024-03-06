@@ -1,4 +1,5 @@
 import copy
+from typing import Generator
 import ujson
 
 
@@ -40,6 +41,13 @@ class BaseModule:
                     add_parameter(f"{name}['{key}']", item)
 
         return named_parameters
+
+    def named_sub_modules(self) -> Generator[tuple[str, "BaseModule"], None, None]:
+        yield "", self
+        for name, value in self.__dict__.items():
+            if isinstance(value, BaseModule):
+                for sub_name, sub_value in value.named_sub_modules():
+                    yield f"{name}.{sub_name}", sub_value
 
     def parameters(self):
         return [param for _, param in self.named_parameters()]
