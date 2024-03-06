@@ -1,4 +1,4 @@
-name: Check for Ruff Fix, Test, and Build
+name: Lint, Test, and Build
 
 on:
   pull_request:
@@ -40,9 +40,10 @@ jobs:
           path: ruff_fix_outcome.txt
 
       - name: Fail Workflow if Ruff Fix Failed
-        if: env.RUFF_FAILED == 'true'
+        if: steps.ruff_fix.outcome == 'failure'
         run: |
           echo "Ruff fix failed, failing the workflow."
+          echo "Please run 'ruff check . --fix-only' locally and push the changes."
           exit 1
 
   test:
