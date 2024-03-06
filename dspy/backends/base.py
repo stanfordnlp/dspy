@@ -30,12 +30,15 @@ class BaseBackend(BaseModel, ABC):
     """A backend takes a signature, its params, and returns a list of structured predictions."""
 
     def __call__(
-        self, signature: Signature, recover: bool = False, **kwargs
+        self,
+        signature: Signature,
+        recover: bool = False,
+        max_generations: int = 5,
+        **kwargs,
     ) -> Completions:
         # Recursively complete generation, until at least one complete completion is available.
 
         complete_examples = None
-        max_generations = 5
         i = 0
 
         while i < max_generations:
@@ -68,6 +71,15 @@ class BaseBackend(BaseModel, ABC):
                 for field in signature.fields:
                     if field in max_example:
                         kwargs[field] = max_example.get(field)
+
+                # Update lm arguments
+                # Setting temperature to 0.0, leads to greedy decoding
+                kwargs["temperature"] = 0.0
+
+                # Cut the max_tokens in half each time if it has been set
+                if "max_tokens" in kwargs:
+                    kwargs["max_tokens"] = int(kwargs["max_tokens"] / 2)
+
             else:
                 break
 
