@@ -1,4 +1,4 @@
-name: Fix, Test, and Build
+name: Check for Ruff Fix, Test, and Build
 
 on:
   pull_request:
@@ -8,6 +8,43 @@ env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
+  fix:
+    name: Check Ruff Fix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - name: Ruff Fix Attempt
+        id: ruff_fix
+        uses: chartboost/ruff-action@v1
+        with:
+          args: --fix-only --exit-non-zero-on-fix
+        continue-on-error: true
+
+      - name: Determine Ruff Fix Outcome
+        run: |
+          if [ ${{ steps.ruff_fix.outcome }} == 'failure' ]; then
+            echo "RUFF_FAILED=true" >> $GITHUB_ENV
+            echo ${{ steps.ruff_fix.outcome }} > ruff_fix_outcome.txt
+          else
+            echo "RUFF_FAILED=false" >> $GITHUB_ENV
+            echo ${{ steps.ruff_fix.outcome }} > ruff_fix_outcome.txt
+          fi
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ruff-fix-outcome
+          path: ruff_fix_outcome.txt
+
+      - name: Fail Workflow if Ruff Fix Failed
+        if: env.RUFF_FAILED == 'true'
+        run: |
+          echo "Ruff fix failed, failing the workflow."
+          exit 1
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
