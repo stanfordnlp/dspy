@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
       - uses: chartboost/ruff-action@v1
         with:
-          args: --fix-only --exit-non-zero-on-fix
+          args: check . --fix-only --exit-non-zero-on-fix -v
 
   comment_if_ruff_fail:
     name: Comment on Ruff Failure
