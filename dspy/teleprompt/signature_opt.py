@@ -96,7 +96,7 @@ class SignatureOptimizer(Teleprompter):
             else:
                 signature = predictor.extended_signature1
             print(f"i: {signature.instructions}")
-            print(f"p: {list(signature.fields().values())[-1].json_schema_extra['prefix']}")
+            print(f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}")
             print()
 
     
