@@ -635,3 +635,20 @@ def test_generic_signature():
     dspy.settings.configure(lm=lm)
 
     assert predictor().output == 23
+
+
+def test_field_validator_in_signature():
+    class ValidatedSignature(dspy.Signature):
+        a: str = dspy.OutputField()
+
+        @pydantic.field_validator("a")
+        @classmethod
+        def space_in_a(cls, a: str) -> str:
+            if not " " in a:
+                raise ValueError("a must contain a space")
+            return a
+
+    with pytest.raises(pydantic.ValidationError):
+        _ = ValidatedSignature(a="no-space")
+
+    _ = ValidatedSignature(a="with space")

@@ -1,22 +1,15 @@
-import json
+from typing import Generic, TypeVar
+
+import pydantic
 import dspy
 from dspy.evaluate import Evaluate
 from dspy.functional import TypedPredictor
-from dspy.teleprompt.signature_opt_typed import (
-    GenerateSignature,
-    make_info,
-    optimize_signature,
-)
+from dspy.teleprompt.signature_opt_typed import optimize_signature, make_info
 from dspy.utils import DummyLM
 
 from dspy.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.functional import TypedPredictor
-
-
-class BasicQA(dspy.Signature):
-    question: str = dspy.InputField()
-    answer: str = dspy.OutputField()
 
 
 hotpotqa = [
@@ -106,44 +99,11 @@ hotpotqa = [
 ]
 
 
-def old_test_signature_info():
-    info = make_info(BasicQA)
-    SignatureInfo = type(info)
-
-    devset = [
-        dspy.Example(
-            instructions="Answer the following questions",
-            question_desc="Some question to answer",
-            question_prefix="Q: ",
-            answer_desc="A short answer to the question",
-            answer_prefix="A: ",
-        ),
-    ]
-
-    lm = DummyLM(
-        [
-            json.dumps(dict(devset[0])),  # Proposed signature
-        ]
-    )
-    dspy.settings.configure(lm=lm)
-
-    generator = TypedPredictor(GenerateInstructionGivenAttempts[SignatureInfo])
-
-    res = generator(attempted_signatures=[ScoredSignature[SignatureInfo](signature=info, score=50)])
-    assert res.proposed_signature == SignatureInfo(**devset[0])
-
-    # Test the "to_signature" method
-
-    class OutputSignature(dspy.Signature):
-        """Answer the following questions"""
-
-        question: str = dspy.InputField(desc="Some question to answer", prefix="Q: ")
-        answer: str = dspy.OutputField(desc="A short answer to the question", prefix="A: ")
-
-    assert res.proposed_signature.to_signature().equals(OutputSignature)
-
-
 def test_opt():
+    class BasicQA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
     qa_model = DummyLM([])
     prompt_model = DummyLM(
         [
@@ -154,7 +114,7 @@ def test_opt():
     )
     dspy.settings.configure(lm=qa_model)
 
-    program = optimize_signature(
+    result = optimize_signature(
         student=TypedPredictor(BasicQA),
         evaluator=Evaluate(devset=hotpotqa, metric=answer_exact_match, num_threads=1),
         initial_prompts=1,
@@ -172,4 +132,62 @@ def test_opt():
         question: str = dspy.InputField(desc="$q", prefix="Q:")
         answer: str = dspy.OutputField(desc="$a", prefix="A:")
 
-    assert program.signature.equals(ExpectedSignature)
+    assert result.program.signature.equals(ExpectedSignature)
+
+    assert result.scores == [0, 0]
+
+
+def test_opt_composed():
+    class MyModule(dspy.Module):
+        def __init__(self):
+            self.p1 = TypedPredictor("question:str -> considerations:list[str]", max_retries=1)
+            self.p2 = TypedPredictor("considerations:list[str] -> answer:str", max_retries=1)
+
+        def forward(self, question):
+            considerations = self.p1(question=question).considerations
+            return self.p2(considerations=considerations)
+
+    class ExpectedSignature1(dspy.Signature):
+        "I1"
+
+        question: str = dspy.InputField(desc="$q", prefix="Q:")
+        considerations: list[str] = dspy.OutputField(desc="$c", prefix="C:")
+
+    info1 = make_info(ExpectedSignature1)
+
+    class ExpectedSignature2(dspy.Signature):
+        "I2"
+
+        considerations: list[str] = dspy.InputField(desc="$c", prefix="C:")
+        answer: str = dspy.OutputField(desc="$a", prefix="A:")
+
+    info2 = make_info(ExpectedSignature2)
+
+    T = TypeVar("T")
+
+    class OutputWrapper(pydantic.BaseModel, Generic[T]):
+        value: list[T]
+
+    qa_model = DummyLM([])
+    prompt_model = DummyLM(
+        [
+            "some thoughts",
+            OutputWrapper[type(info1)](value=[info1]).model_dump_json(),
+            "some thoughts",
+            OutputWrapper[type(info2)](value=[info2]).model_dump_json(),
+        ]
+    )
+    dspy.settings.configure(lm=qa_model)
+
+    result = optimize_signature(
+        student=MyModule(),
+        evaluator=lambda x: 0,  # We don't care about the evaluator here
+        initial_prompts=1,
+        n_iterations=2,
+        verbose=True,
+        prompt_model=prompt_model,
+        strategy="last",
+    )
+
+    assert result.program.p1.signature.equals(ExpectedSignature1)
+    assert result.program.p2.signature.equals(ExpectedSignature2)
