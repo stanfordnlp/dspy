@@ -2,10 +2,11 @@ import textwrap
 from typing import Generic, Literal, TypeVar
 
 import pydantic
+
 import dspy
+from dspy import BaseModel
 from dspy.functional.functional import TypedChainOfThought, TypedPredictor
 from dspy.signatures import Signature
-from dspy import BaseModel
 from dspy.signatures.field import InputField, OutputField
 
 # TODO:

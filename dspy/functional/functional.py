@@ -226,7 +226,7 @@ class TypedPredictor(dspy.Module):
             else:
                 # If there are no errors, we return the parsed results
                 return Prediction.from_completions(
-                    {key: [r[key] for r in parsed_results] for key in signature.output_fields}
+                    {key: [r[key] for r in parsed_results] for key in signature.output_fields},
                 )
         raise ValueError(
             "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",
@@ -353,8 +353,8 @@ def gold_passages_retrieved(example, pred, _trace=None) -> bool:
 
 
 def hotpot() -> None:
-    from dsp.utils import deduplicate
     import dspy.evaluate
+    from dsp.utils import deduplicate
     from dspy.datasets import HotPotQA
     from dspy.evaluate.evaluate import Evaluate
     from dspy.teleprompt.bootstrap import BootstrapFewShot
