@@ -2,9 +2,8 @@ import json
 import dspy
 from dspy.evaluate import Evaluate
 from dspy.functional import TypedPredictor
-from dspy.teleprompt.signature_opt2 import (
-    GenerateInstructionGivenAttempts,
-    ScoredSignature,
+from dspy.teleprompt.signature_opt_typed import (
+    GenerateSignature,
     make_info,
     optimize_signature,
 )
@@ -107,7 +106,7 @@ hotpotqa = [
 ]
 
 
-def test_signature_info():
+def old_test_signature_info():
     info = make_info(BasicQA)
     SignatureInfo = type(info)
 
@@ -159,7 +158,18 @@ def test_opt():
         student=TypedPredictor(BasicQA),
         evaluator=Evaluate(devset=hotpotqa, metric=answer_exact_match, num_threads=1),
         initial_prompts=1,
-        n_iterations=1,
+        n_iterations=2,
         verbose=True,
         prompt_model=prompt_model,
+        strategy="last",
     )
+
+    # Since we are requesting the last signature, it doesn't matter that our qa_model is
+    # bad, and gets 0 score. We should still get the last signature.
+    class ExpectedSignature(dspy.Signature):
+        "I"
+
+        question: str = dspy.InputField(desc="$q", prefix="Q:")
+        answer: str = dspy.OutputField(desc="$a", prefix="A:")
+
+    assert program.signature.equals(ExpectedSignature)

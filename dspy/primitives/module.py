@@ -42,12 +42,11 @@ class BaseModule:
 
         return named_parameters
 
-    def named_sub_modules(self) -> Generator[tuple[str, "BaseModule"], None, None]:
-        yield "", self
+    def named_sub_modules(self, root_name="base") -> Generator[tuple[str, "BaseModule"], None, None]:
+        yield root_name, self
         for name, value in self.__dict__.items():
             if isinstance(value, BaseModule):
-                for sub_name, sub_value in value.named_sub_modules():
-                    yield f"{name}.{sub_name}", sub_value
+                yield from value.named_sub_modules(root_name=f"{root_name}.{name}")
 
     def parameters(self):
         return [param for _, param in self.named_parameters()]

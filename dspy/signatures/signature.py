@@ -42,6 +42,17 @@ class SignatureMeta(type(BaseModel)):
         # Let Pydantic do its thing
         cls = super().__new__(mcs, signature_name, bases, namespace, **kwargs)
 
+        # If we don't have instructions, it might be because we are a derived generic type.
+        # In that case, we should inherit the instructions from the base class.
+        if cls.__doc__ is None:
+            for base in bases:
+                if isinstance(base, SignatureMeta):
+                    doc = getattr(base, "__doc__", "")
+                    if doc != "":
+                        cls.__doc__ = doc
+
+        # The more likely case is that the user has just not given us a type.
+        # In that case, we should default to the input/output format.
         if cls.__doc__ is None:
             cls.__doc__ = _default_instructions(cls)
 
@@ -168,24 +179,27 @@ class SignatureMeta(type(BaseModel)):
         return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
 
 
+# A signature for a predictor.
+#
+# You typically subclass it, like this:
+# class MySignature(Signature):
+#     input: str = InputField(desc="...")  # noqa: ERA001
+#     output: int = OutputField(desc="...")  # noqa: ERA001
+#
+# You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
+# You can also include instructions, Signature("input -> output", "This is a test").
+# But it's generally better to use the make_signature function.
+#
+# If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
+# or a signature, you can use the ensure_signature function.
+#
+# For compatibility with the legacy dsp format, you can use the signature_to_template function.
+#
 class Signature(BaseModel, metaclass=SignatureMeta):
-    """A signature for a predictor.
+    ""  # noqa: D419
 
-    You typically subclass it, like this:
-    class MySignature(Signature):
-        input: str = InputField(desc="...")
-        output: int = OutputField(desc="...")
-
-    You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
-    You can also include instructions, Signature("input -> output", "This is a test").
-    But it's generally better to use the make_signature function.
-
-    If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
-    or a signature, you can use the ensure_signature function.
-
-    For compatibility with the legacy dsp format, you can use the signature_to_template function.
-    """
-
+    # Note: Don't put a docstring here, as it will become the default instructions
+    # for any signature that doesn't define it's own instructions.
     pass
 
 

@@ -118,20 +118,32 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=type_,
                     )
+                elif False:
+                    # TODO: I don't like forcing the model to write "value" in the output.
+                    if not (inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)):
+                        type_ = pydantic.create_model("Output", value=(type_, ...), __base__=pydantic.BaseModel)
+                        to_json = lambda x, type_=type_: type_(value=x).model_dump_json()[9:-1]  # {"value":"123"}
+                        from_json = lambda x, type_=type_: type_.model_validate_json('{"value":' + x + "}").value
+                        schema = json.dumps(type_.model_json_schema()["properties"]["value"])
+                    else:
+                        to_json = lambda x: x.model_dump_json()
+                        from_json = lambda x, type_=type_: type_.model_validate_json(x)
+                        schema = json.dumps(type_.model_json_schema())
                 else:
                     # Anything else we wrap in a pydantic object
-                    to_json = lambda x: x.model_dump_json()
-                    from_json = lambda x, type_=type_: type_.model_validate_json(x)
                     if not (inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)):
                         type_ = pydantic.create_model("Output", value=(type_, ...), __base__=pydantic.BaseModel)
                         to_json = lambda x, type_=type_: type_(value=x).model_dump_json()
                         from_json = lambda x, type_=type_: type_.model_validate_json(x).value
+                        schema = json.dumps(type_.model_json_schema())
+                    else:
+                        to_json = lambda x: x.model_dump_json()
+                        from_json = lambda x, type_=type_: type_.model_validate_json(x)
+                        schema = json.dumps(type_.model_json_schema())
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
-                        + (
-                            ". Respond with a single JSON object. JSON Schema: " + json.dumps(type_.model_json_schema())
-                        ),
+                        + (". Respond with a single JSON object. JSON Schema: " + schema),
                         format=lambda x, to_json=to_json: (x if isinstance(x, str) else to_json(x)),
                         parser=lambda x, from_json=from_json: from_json(_unwrap_json(x)),
                         type_=type_,

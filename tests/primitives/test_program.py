@@ -69,13 +69,13 @@ class AnotherSubModule(BaseModule):
 
 def test_empty_module():
     module = BaseModule()
-    assert list(module.named_sub_modules()) == []
+    assert list(module.named_sub_modules()) == [("base", module)]
 
 
 def test_single_level():
     module = BaseModule()
     module.sub = SubModule()
-    expected = [("sub", module.sub)]
+    expected = [("base", module), ("base.sub", module.sub)]
     assert list(module.named_sub_modules()) == expected
 
 
@@ -83,7 +83,7 @@ def test_multiple_levels():
     module = BaseModule()
     module.sub = SubModule()
     module.sub.subsub = SubModule()
-    expected = [("sub", module.sub), ("sub.subsub", module.sub.subsub)]
+    expected = [("base", module), ("base.sub", module.sub), ("base.sub.subsub", module.sub.subsub)]
     assert list(module.named_sub_modules()) == expected
 
 
@@ -91,7 +91,7 @@ def test_multiple_sub_modules():
     module = BaseModule()
     module.sub1 = SubModule()
     module.sub2 = SubModule()
-    expected = [("sub1", module.sub1), ("sub2", module.sub2)]
+    expected = [("base", module), ("base.sub1", module.sub1), ("base.sub2", module.sub2)]
     assert sorted(list(module.named_sub_modules())) == sorted(expected)
 
 
@@ -99,5 +99,5 @@ def test_non_base_module_attributes():
     module = BaseModule()
     module.sub = SubModule()
     module.not_a_sub = "Not a BaseModule"
-    expected = [("sub", module.sub)]
+    expected = [("base", module), ("base.sub", module.sub)]
     assert list(module.named_sub_modules()) == expected

@@ -2,7 +2,7 @@ import datetime
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 from typing import List
 
 import pytest
@@ -618,3 +618,20 @@ def test_list_input2():
         Attempted Signatures: [{"string":"string 1","score":0.5},{"string":"string 2","score":0.4},{"string":"string 3","score":0.3}]
         Reasoning: Let's think step by step in order to Thoughts
         Proposed Signature: Output""")
+
+
+def test_generic_signature():
+    T = TypeVar("T")
+
+    class GenericSignature(dspy.Signature, Generic[T]):
+        """My signature"""
+
+        output: T = dspy.OutputField()
+
+    predictor = TypedPredictor(GenericSignature[int])
+    assert predictor.signature.instructions == "My signature"
+
+    lm = DummyLM(["23"])
+    dspy.settings.configure(lm=lm)
+
+    assert predictor().output == 23

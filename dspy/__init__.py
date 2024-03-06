@@ -5,6 +5,7 @@ from .signatures import *
 from .retrieve import *
 from .predict import *
 from .primitives import *
+from .functional import *
 
 # from .evaluation import *
 
