@@ -68,4 +68,4 @@ class BayesianSignatureOptimizer(MIPRO):
             # Use trials_num as a fallback if trials_num is not provided
             if trials_num is None:
                 trials_num = optuna_trials_num
-        super().compile(student, trainset=devset, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, eval_kwargs=eval_kwargs, seed=seed, view_data=view_data, view_examples=view_examples, requires_permission_to_run=requires_permission_to_run, num_trials=trials_num)
+        return super().compile(student, trainset=devset, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, eval_kwargs=eval_kwargs, seed=seed, view_data=view_data, view_examples=view_examples, requires_permission_to_run=requires_permission_to_run, num_trials=trials_num)
