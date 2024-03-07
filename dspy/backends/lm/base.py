@@ -12,7 +12,6 @@ _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
 GeneratedOutput = t.TypeVar("GeneratedOutput", bound=dict[str, t.Any])
-LMEvent = t.TypeVar("LMEvent", bound=dict[str, t.Any])
 
 
 class BaseLM(BaseModel, ABC):
