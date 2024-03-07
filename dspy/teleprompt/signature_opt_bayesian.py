@@ -1,5 +1,6 @@
-from dspy.teleprompt.mipro_optimizer import MIPRO
 import warnings
+
+from dspy.teleprompt.mipro_optimizer import MIPRO
 
 """
 ===============================================================
@@ -42,7 +43,7 @@ class BayesianSignatureOptimizer(MIPRO):
         #         "Use `MIPRO` instead.", 
         #         DeprecationWarning
         #     )
-        print(u"\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m")
+        print("\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m")
 
         super().__init__(prompt_model, task_model, teacher_settings,n,metric,init_temperature,verbose,track_stats,view_data_batch_size)
 
@@ -63,7 +64,7 @@ class BayesianSignatureOptimizer(MIPRO):
             warnings.warn(
                 "`optuna_trials_num` is deprecated and will be removed in a future version. "
                 "Use `trials_num` instead.", 
-                DeprecationWarning
+                DeprecationWarning,
             )
             # Use trials_num as a fallback if trials_num is not provided
             if trials_num is None:

@@ -1,7 +1,8 @@
 import math
 import random
-from collections import defaultdict
+import sys
 import textwrap
+from collections import defaultdict
 
 import optuna
 
@@ -12,9 +13,6 @@ from dspy.signatures import Signature
 from dspy.signatures.signature import signature_to_template
 from dspy.teleprompt import BootstrapFewShot
 from dspy.teleprompt.teleprompt import Teleprompter
-import sys
-import warnings
-
 
 """
 USAGE SUGGESTIONS:
@@ -344,7 +342,7 @@ class MIPRO(Teleprompter):
                 for i in range(self.n):
                     if i == 0: # Story empty set of demos as default for index 0
                         for module_p in module.predictors():
-                            if id(module_p) not in demo_candidates.keys():
+                            if id(module_p) not in demo_candidates:
                                 demo_candidates[id(module_p)] = []
                             demo_candidates[id(module_p)].append([])
                     else:
@@ -359,7 +357,7 @@ class MIPRO(Teleprompter):
 
                         # Store the candidate demos
                         for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
-                            if id(module_p) not in demo_candidates.keys():
+                            if id(module_p) not in demo_candidates:
                                 demo_candidates[id(module_p)] = []
                             demo_candidates[id(module_p)].append(candidate_p.demos)
                     
@@ -442,7 +440,7 @@ class MIPRO(Teleprompter):
 
                             # Handle pruning based on the intermediate value.
                             if trial.should_prune():
-                                print(f"Trial pruned.")
+                                print("Trial pruned.")
                                 trial_logs[trial_num]["score"] = curr_weighted_avg_score
                                 trial_logs[trial_num]["pruned"] = True
                                 trial_num += 1 

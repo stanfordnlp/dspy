@@ -1,5 +1,6 @@
+
 from .copro_optimizer import COPRO
-import warnings
+
 """
 ===============================================================
 DEPRECATED!!!
@@ -38,7 +39,7 @@ class SignatureOptimizer(COPRO):
         #         "Use `COPRO` instead.", 
         #         DeprecationWarning
         #     )
-        print(u"\u001b[31m[WARNING] SignatureOptimizer has been deprecated and replaced with COPRO.  SignatureOptimizer will be removed in a future release. \u001b[31m")
+        print("\u001b[31m[WARNING] SignatureOptimizer has been deprecated and replaced with COPRO.  SignatureOptimizer will be removed in a future release. \u001b[31m")
         super().__init__(prompt_model, metric, breadth, depth, init_temperature, verbose, track_stats)
 
     def compile(self, student, *, devset, eval_kwargs):
