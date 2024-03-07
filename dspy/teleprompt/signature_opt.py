@@ -33,11 +33,6 @@ Note that this teleprompter takes in the following parameters:
 
 class SignatureOptimizer(COPRO):
     def __init__(self, prompt_model=None, metric=None, breadth=10, depth=3, init_temperature=1.4, verbose=False, track_stats=False):
-        # warnings.warn(
-        #         "`SignatureOptimizer` is deprecated and will be removed in a future version. "
-        #         "Use `COPRO` instead.", 
-        #         DeprecationWarning
-        #     )
         print(u"\u001b[31m[WARNING] SignatureOptimizer has been deprecated and replaced with COPRO.  SignatureOptimizer will be removed in a future release. \u001b[31m")
         super().__init__(prompt_model, metric, breadth, depth, init_temperature, verbose, track_stats)
 

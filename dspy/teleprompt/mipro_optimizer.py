@@ -19,13 +19,13 @@ import warnings
 """
 USAGE SUGGESTIONS:
 
-The following code can be used to compile a optimized signature teleprompter using the MIPROOptimizer, and evaluate it on an end task:
+The following code can be used to compile a optimized signature teleprompter using the MIPRO, and evaluate it on an end task:
 
-from dspy.teleprompt import MIPROOptimizer
+from dspy.teleprompt import MIPRO
 
-teleprompter = MIPROOptimizer(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
+teleprompter = MIPRO(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
 Note that this teleprompter takes in the following parameters:
@@ -279,7 +279,7 @@ class MIPRO(Teleprompter):
         
         return candidates, evaluated_candidates
 
-    def compile(self, student, *, trainset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True, trials_num=None):
+    def compile(self, student, *, trainset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True, num_trials=None):
         # Define ANSI escape codes for colors
         YELLOW = '\033[93m'
         BLUE = '\033[94m'
@@ -288,7 +288,7 @@ class MIPRO(Teleprompter):
 
         random.seed(seed)
         
-        estimated_task_model_calls_wo_module_calls = len(trainset) * trials_num  # M * T * P
+        estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
         estimated_prompt_model_calls = 10 + self.n * len(student.predictors()) # num data summary calls + N * P
 
         user_message = textwrap.dedent(f"""\
@@ -296,7 +296,7 @@ class MIPRO(Teleprompter):
 
             Please be advised that based on the parameters you have set, the maximum number of LM calls is projected as follows:
 
-            {YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in dev set * {BLUE}{BOLD}{trials_num}{ENDC}{YELLOW} trials * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}
+            {YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in dev set * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} trials * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}
             {YELLOW}- Prompt Model: # data summarizer calls (max {BLUE}{BOLD}10{ENDC}{YELLOW}) + {BLUE}{BOLD}{self.n}{ENDC}{YELLOW} * {BLUE}{BOLD}{len(student.predictors())}{ENDC}{YELLOW} lm calls in program = {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
@@ -307,7 +307,7 @@ class MIPRO(Teleprompter):
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
             and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
 
-            {YELLOW}- Reducing the number of trials (`trials_num`), the size of the trainset, or the number of LM calls in your program.{ENDC}
+            {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
             {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}
 
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
@@ -471,7 +471,7 @@ class MIPRO(Teleprompter):
                 objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, trainset)
                 sampler = optuna.samplers.TPESampler(seed=seed)
                 study = optuna.create_study(direction="maximize", sampler=sampler)
-                score = study.optimize(objective_function, n_trials=trials_num)
+                score = study.optimize(objective_function, n_trials=num_trials)
 
                 if best_program is not None and self.track_stats:
                     best_program.trial_logs = trial_logs
