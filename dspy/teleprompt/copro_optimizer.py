@@ -151,7 +151,7 @@ class COPRO(Teleprompter):
 
         # For each iteration in depth...
         for d in range(self.depth): # TODO: fix this so that we eval the new batch of predictors with the new best followoing predictors
-            if self.verbose: print(f"Starting iteration {d}/{self.depth}.")
+            print(f"Iteration Depth: {d+1}/{self.depth}.")
 
             latest_scores = []
         
@@ -176,9 +176,9 @@ class COPRO(Teleprompter):
                     # Score the instruction / prefix 
                     if self.verbose: print("----------------")
                     for i,predictor in enumerate(module_clone.predictors()):
-                        if self.verbose: print(f"Predictor {i}")
+                        if self.verbose: print(f"Predictor {i+1}")
                         self._print_signature(predictor)
-                    if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
+                    print(f"At Depth {d+1}/{self.depth}, Evaluating Prompt Candidate #{c_i+1}/{len(candidates_)} for Predictor {p_i+1} of {len(module.predictors())}.")
                     score = evaluate(module_clone, devset=trainset, **eval_kwargs)
                     if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
