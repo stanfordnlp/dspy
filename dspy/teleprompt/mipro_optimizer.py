@@ -117,8 +117,6 @@ class MIPRO(Teleprompter):
     def _print_full_program(self, program):
         for i,predictor in enumerate(program.predictors()):
             if self.verbose: print(f"Predictor {i}")
-            # if self.verbose: print(f"i: {self._get_signature(predictor).instructions}")
-            # if self.verbose: print(f"p: {self._get_signature(predictor).fields[-1].name}")
             if self.verbose: print(f"i: {self._get_signature(predictor).instructions}")
             *_, last_field = self._get_signature(predictor).fields.values()
             if self.verbose: print(f"p: {last_field.json_schema_extra['prefix']}")
@@ -321,160 +319,163 @@ class MIPRO(Teleprompter):
         sys.stdout.flush()  # Flush the output buffer to force the message to print
 
 
+        run=True
         if requires_permission_to_run:
             print(user_confirmation_message)
             user_input = input("Do you wish to continue? (y/n): ").strip().lower()
             if user_input != 'y':
                 print("Compilation aborted by the user.")
+                run=False
+
+        if run:
+            # Set up program and evaluation function
+            module = student.deepcopy()
+            evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
+            
+            # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
+            if max_bootstrapped_demos==0 and max_labeled_demos==0: #TODO: address case when max_bootstrapped alone is 0
+                max_bootstrapped_demos_for_candidate_gen = 1 
+                max_labeled_demos_for_candidate_gen = 1 #TODO: this might only need to be 0
             else:
-                # Set up program and evaluation function
-                module = student.deepcopy()
-                evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
-                
-                # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
-                if max_bootstrapped_demos==0 and max_labeled_demos==0: #TODO: address case when max_bootstrapped alone is 0
-                    max_bootstrapped_demos_for_candidate_gen = 1 
-                    max_labeled_demos_for_candidate_gen = 1 #TODO: this might only need to be 0
+                max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos 
+                max_labeled_demos_for_candidate_gen = max_labeled_demos
+
+            # Generate N few shot example sets
+            demo_candidates = {}
+            for i in range(self.n):
+                if i == 0: # Story empty set of demos as default for index 0
+                    for module_p in module.predictors():
+                        if id(module_p) not in demo_candidates:
+                            demo_candidates[id(module_p)] = []
+                        demo_candidates[id(module_p)].append([])
                 else:
-                    max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos 
-                    max_labeled_demos_for_candidate_gen = max_labeled_demos
+                    if self.verbose: print(f"Creating basic bootstrap: {i}/{self.n-1}")
 
-                # Generate N few shot example sets
-                demo_candidates = {}
-                for i in range(self.n):
-                    if i == 0: # Story empty set of demos as default for index 0
-                        for module_p in module.predictors():
-                            if id(module_p) not in demo_candidates:
-                                demo_candidates[id(module_p)] = []
-                            demo_candidates[id(module_p)].append([])
-                    else:
-                        if self.verbose: print(f"Creating basic bootstrap: {i}/{self.n-1}")
+                    # Create a new basic bootstrap few - shot program .
+                    rng = random.Random(i)
+                    shuffled_trainset = trainset[:]  # Create a copy of devset
+                    rng.shuffle(shuffled_trainset)  # Shuffle the copy
+                    tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen, max_labeled_demos=max_labeled_demos_for_candidate_gen, teacher_settings=self.teacher_settings)
+                    candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_trainset)
 
-                        # Create a new basic bootstrap few - shot program .
-                        rng = random.Random(i)
-                        shuffled_trainset = trainset[:]  # Create a copy of devset
-                        rng.shuffle(shuffled_trainset)  # Shuffle the copy
-                        tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen, max_labeled_demos=max_labeled_demos_for_candidate_gen, teacher_settings=self.teacher_settings)
-                        candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_trainset)
+                    # Store the candidate demos
+                    for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
+                        if id(module_p) not in demo_candidates:
+                            demo_candidates[id(module_p)] = []
+                        demo_candidates[id(module_p)].append(candidate_p.demos)
+                
+            # Generate N candidate prompts
+            instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, trainset)
 
-                        # Store the candidate demos
-                        for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
-                            if id(module_p) not in demo_candidates:
-                                demo_candidates[id(module_p)] = []
-                            demo_candidates[id(module_p)].append(candidate_p.demos)
+            # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
+            if max_bootstrapped_demos==0 and max_labeled_demos==0:
+                demo_candidates = None
+
+            # Initialize variables to store the best program and its score
+            best_score = float('-inf')
+            best_program = None
+            trial_num = 0
+
+            trial_logs = {}
+
+            # Define our trial objective
+            def create_objective(baseline_program, instruction_candidates, demo_candidates, evaluate, trainset):
+                def objective(trial):
+                    nonlocal best_program, best_score, trial_num, trial_logs  # Allow access to the outer variables
+                    candidate_program = baseline_program.deepcopy()
+
+                    # Suggest the instruction to use for our predictor 
+                    print(f"Starting trial #{trial_num}")
+                    trial_logs[trial_num] = {}
+
+                    for p_old, p_new in zip(baseline_program.predictors(), candidate_program.predictors()):
+
+                        # Get instruction candidates for our given predictor
+                        p_instruction_candidates = instruction_candidates[id(p_old)]
+                        if demo_candidates: p_demo_candidates = demo_candidates[id(p_old)]
+
+                        # Suggest the index of the instruction candidate to use in our trial
+                        instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
+                        if demo_candidates: demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                        trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
+                        if demo_candidates: trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
+
+                        # Get the selected instruction candidate 
+                        selected_candidate = p_instruction_candidates[instruction_idx]
+                        selected_instruction = selected_candidate.proposed_instruction.strip('"').strip()
+                        selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip('"').strip()
+
+                        # Use this candidates in our program
+                        *_, last_field = self._get_signature(p_new).fields.keys()
+                        updated_signature = self._get_signature(p_new).with_instructions(selected_instruction).with_updated_fields(last_field, prefix=selected_prefix)
+                        self._set_signature(p_new, updated_signature)
+
+                        # Get the selected demos
+                        if demo_candidates: selected_demos = p_demo_candidates[demos_idx]
+
+                        # Use these demos in our program
+                        if demo_candidates: p_new.demos = selected_demos
+
+                        # breakpoint()
+                        
+                    if self.verbose: print("Evaling the following program:")
+                    # breakpoint()
+                    if self.verbose: self._print_full_program(candidate_program)
+                    trial_logs[trial_num]["program"] = candidate_program
+
+                    # Evaluate with the new prompts
+                    total_score = 0
+                    batch_size = 100
+                    num_batches = math.ceil(len(trainset) / batch_size)
+
+                    for i in range(num_batches):
+                        start_index = i * batch_size
+                        end_index = min((i + 1) * batch_size, len(trainset))
+                        split_trainset = trainset[start_index:end_index]
+                        split_score = evaluate(candidate_program, devset=split_trainset, display_table=0)
+                        if self.verbose: print(f"{i}st split score: {split_score}")
+
+                        total_score += split_score * len(split_trainset)
+                        curr_weighted_avg_score = total_score / min((i+1)*100,len(trainset))
+                        if self.verbose: print(f"curr average score: {curr_weighted_avg_score}")
+
+                        trial.report(curr_weighted_avg_score, i)
+
+                        # Handle pruning based on the intermediate value.
+                        if trial.should_prune():
+                            print("Trial pruned.")
+                            trial_logs[trial_num]["score"] = curr_weighted_avg_score
+                            trial_logs[trial_num]["pruned"] = True
+                            trial_num += 1 
+                            raise optuna.TrialPruned()
                     
-                # Generate N candidate prompts
-                instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, trainset)
+                    if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
+                    if self.verbose: self._print_model_history(self.task_model, n=1)
+                    # breakpoint()
+                    score = curr_weighted_avg_score
+                    
+                    trial_logs[trial_num]["score"] = curr_weighted_avg_score
+                    trial_logs[trial_num]["pruned"] = False
+                    
+                    # Update the best program if the current score is better
+                    if score > best_score:
+                        best_score = score
+                        best_program = candidate_program.deepcopy()
+                    
+                    trial_num += 1 
 
-                # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
-                if max_bootstrapped_demos==0 and max_labeled_demos==0:
-                    demo_candidates = None
+                    return score
 
-                # Initialize variables to store the best program and its score
-                best_score = float('-inf')
-                best_program = None
-                trial_num = 0
+                return objective
 
-                trial_logs = {}
+            # Run the trial 
+            objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, trainset)
+            sampler = optuna.samplers.TPESampler(seed=seed)
+            study = optuna.create_study(direction="maximize", sampler=sampler)
+            score = study.optimize(objective_function, n_trials=num_trials)
 
-                # Define our trial objective
-                def create_objective(baseline_program, instruction_candidates, demo_candidates, evaluate, trainset):
-                    def objective(trial):
-                        nonlocal best_program, best_score, trial_num, trial_logs  # Allow access to the outer variables
-                        candidate_program = baseline_program.deepcopy()
+            if best_program is not None and self.track_stats:
+                best_program.trial_logs = trial_logs
 
-                        # Suggest the instruction to use for our predictor 
-                        print(f"Starting trial #{trial_num}")
-                        trial_logs[trial_num] = {}
-
-                        for p_old, p_new in zip(baseline_program.predictors(), candidate_program.predictors()):
-
-                            # Get instruction candidates for our given predictor
-                            p_instruction_candidates = instruction_candidates[id(p_old)]
-                            if demo_candidates: p_demo_candidates = demo_candidates[id(p_old)]
-
-                            # Suggest the index of the instruction candidate to use in our trial
-                            instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
-                            if demo_candidates: demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
-                            trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
-                            if demo_candidates: trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
-
-                            # Get the selected instruction candidate 
-                            selected_candidate = p_instruction_candidates[instruction_idx]
-                            selected_instruction = selected_candidate.proposed_instruction.strip('"').strip()
-                            selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip('"').strip()
-
-                            # Use this candidates in our program
-                            *_, last_field = self._get_signature(p_new).fields.keys()
-                            updated_signature = self._get_signature(p_new).with_instructions(selected_instruction).with_updated_fields(last_field, prefix=selected_prefix)
-                            self._set_signature(p_new, updated_signature)
-
-                            # Get the selected demos
-                            if demo_candidates: selected_demos = p_demo_candidates[demos_idx]
-
-                            # Use these demos in our program
-                            if demo_candidates: p_new.demos = selected_demos
-
-                            # breakpoint()
-                            
-                        if self.verbose: print("Evaling the following program:")
-                        # breakpoint()
-                        if self.verbose: self._print_full_program(candidate_program)
-                        trial_logs[trial_num]["program"] = candidate_program
-
-                        # Evaluate with the new prompts
-                        total_score = 0
-                        batch_size = 100
-                        num_batches = math.ceil(len(trainset) / batch_size)
-
-                        for i in range(num_batches):
-                            start_index = i * batch_size
-                            end_index = min((i + 1) * batch_size, len(trainset))
-                            split_trainset = trainset[start_index:end_index]
-                            split_score = evaluate(candidate_program, devset=split_trainset, display_table=0)
-                            if self.verbose: print(f"{i}st split score: {split_score}")
-
-                            total_score += split_score * len(split_trainset)
-                            curr_weighted_avg_score = total_score / min((i+1)*100,len(trainset))
-                            if self.verbose: print(f"curr average score: {curr_weighted_avg_score}")
-
-                            trial.report(curr_weighted_avg_score, i)
-
-                            # Handle pruning based on the intermediate value.
-                            if trial.should_prune():
-                                print("Trial pruned.")
-                                trial_logs[trial_num]["score"] = curr_weighted_avg_score
-                                trial_logs[trial_num]["pruned"] = True
-                                trial_num += 1 
-                                raise optuna.TrialPruned()
-                        
-                        if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
-                        if self.verbose: self._print_model_history(self.task_model, n=1)
-                        # breakpoint()
-                        score = curr_weighted_avg_score
-                        
-                        trial_logs[trial_num]["score"] = curr_weighted_avg_score
-                        trial_logs[trial_num]["pruned"] = False
-                        
-                        # Update the best program if the current score is better
-                        if score > best_score:
-                            best_score = score
-                            best_program = candidate_program.deepcopy()
-                        
-                        trial_num += 1 
-
-                        return score
-
-                    return objective
-
-                # Run the trial 
-                objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, trainset)
-                sampler = optuna.samplers.TPESampler(seed=seed)
-                study = optuna.create_study(direction="maximize", sampler=sampler)
-                score = study.optimize(objective_function, n_trials=num_trials)
-
-                if best_program is not None and self.track_stats:
-                    best_program.trial_logs = trial_logs
-
-                print(f"Returning {best_program} from continue_program")
-                return best_program
+            print(f"Returning {best_program} from continue_program")
+            return best_program

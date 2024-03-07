@@ -1,4 +1,3 @@
-import warnings
 
 from dspy.teleprompt.mipro_optimizer import MIPRO
 
@@ -38,7 +37,7 @@ Note that this teleprompter takes in the following parameters:
 
 class BayesianSignatureOptimizer(MIPRO):
     def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, n=10, metric=None, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
-        print(u"\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m")
+        print("\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m")
 
         super().__init__(prompt_model, task_model, teacher_settings,n,metric,init_temperature,verbose,track_stats,view_data_batch_size)
 
