@@ -84,15 +84,21 @@ class Template:
 
         return "\n\n".join(result)
 
-    def guidelines(self) -> str:
+    def guidelines(self, is_json: bool = False) -> str:
         """Returns the task guidelines as described in the lm prompt"""
-        result = "Follow the following format.\n\n"
+        if is_json:
+            result = "Return the following fields in JSON format.\n\n"
+        else:
+            result = "Follow the following format.\n\n"
 
         field_strings = []
-        for field in self.signature.fields.values():
-            field_strings.append(
-                f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
-            )
+        for name, field in self.signature.fields.items():
+            if is_json:
+                field_strings.append(f"{name}: {field.json_schema_extra['desc']}")
+            else:
+                field_strings.append(
+                    f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
+                )
 
         return result + "\n\n".join(field_strings)
 
@@ -161,14 +167,17 @@ class Template:
 
         return example
 
-    def __call__(self, example: Example, show_guidelines: bool = True) -> str:
+    def __call__(
+        self, example: Example, show_guidelines: bool = True, is_json: bool = False
+    ) -> str:
         prompt_spans = []
 
         # Start by getting the instructions
         prompt_spans.append(self.signature.instructions)
 
         # Generate the Guidelines
-        prompt_spans.append(self.guidelines())
+        if show_guidelines:
+            prompt_spans.append(self.guidelines(is_json=is_json))
 
         # Generate Spans for Each Demo
         for demo in example.get("demos", []):

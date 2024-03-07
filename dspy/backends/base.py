@@ -65,9 +65,6 @@ class BaseBackend(BaseModel, ABC):
 
             # If 1 or more complete generations exist, simply return all
             if len(complete_examples) > 0:
-                print(
-                    "BREAKING DURING RECOVERY AS AT LEAST ONE COMPLETE EXAMPLE EXISTS"
-                )
                 break
             # if not, recursively generation with the furthest generation as the example
             elif recover:
