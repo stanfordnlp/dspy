@@ -23,9 +23,9 @@ The following code can be used to compile a optimized signature teleprompter usi
 
 from dspy.teleprompt import MIPROOptimizer
 
-teleprompter = MIPROOptimizer(prompt_model=prompt_model, task_model=task_model, metric=metric, n=10, init_temperature=1.0)
+teleprompter = MIPROOptimizer(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_prompt_opt = teleprompter.compile(program, devset=devset[:DEV_NUM], trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
 Note that this teleprompter takes in the following parameters:
@@ -33,7 +33,7 @@ Note that this teleprompter takes in the following parameters:
 * prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
 * task_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
 * metric: The task metric used for optimization.
-* n: The number of new prompts and sets of fewshot examples to generate and evaluate. Default=10.
+* num_candidates: The number of new prompts and sets of fewshot examples to generate and evaluate. Default=10.
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
@@ -105,8 +105,8 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
 
 class MIPRO(Teleprompter):
-    def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, n=10, metric=None, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
-        self.n = n
+    def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, num_candidates=10, metric=None, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
+        self.n = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
         self.prompt_model = prompt_model if prompt_model is not None else dspy.settings.lm
@@ -279,43 +279,24 @@ class MIPRO(Teleprompter):
         
         return candidates, evaluated_candidates
 
-    def compile(self, student, *, devset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True, trials_num=None, optuna_trials_num=None):
+    def compile(self, student, *, trainset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True, num_trials=None):
         # Define ANSI escape codes for colors
         YELLOW = '\033[93m'
         BLUE = '\033[94m'
         BOLD = '\033[1m'
         ENDC = '\033[0m'  # Resets the color to default
 
-        # Check if both trials_num and optuna_trials_num are None
-        if trials_num is None and optuna_trials_num is None:
-            raise ValueError(f"{YELLOW}{BOLD}You must specify the number of trials using the 'trials_num' parameter.{ENDC}")
-
-        # Check if the deprecated parameter is used
-        if optuna_trials_num is not None:
-            print("in it!")
-            # Issue a deprecation warning
-            warnings.warn(
-                "`trials_num` is deprecated and will be removed in a future version. "
-                "Use `trials_num` instead.", 
-                DeprecationWarning
-            )
-            # Use trials_num as a fallback if trials_num is not provided
-            if trials_num is None:
-                trials_num = optuna_trials_num
-
         random.seed(seed)
         
-        estimated_task_model_calls_wo_module_calls = len(devset) * trials_num  # M * T * P
+        estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
         estimated_prompt_model_calls = 10 + self.n * len(student.predictors()) # num data summary calls + N * P
-
-
 
         user_message = textwrap.dedent(f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
 
             Please be advised that based on the parameters you have set, the maximum number of LM calls is projected as follows:
 
-            {YELLOW}- Task Model: {BLUE}{BOLD}{len(devset)}{ENDC}{YELLOW} examples in dev set * {BLUE}{BOLD}{trials_num}{ENDC}{YELLOW} trials * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}
+            {YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in dev set * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} trials * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}
             {YELLOW}- Prompt Model: # data summarizer calls (max {BLUE}{BOLD}10{ENDC}{YELLOW}) + {BLUE}{BOLD}{self.n}{ENDC}{YELLOW} * {BLUE}{BOLD}{len(student.predictors())}{ENDC}{YELLOW} lm calls in program = {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
@@ -326,7 +307,7 @@ class MIPRO(Teleprompter):
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
             and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
 
-            {YELLOW}- Reducing the number of trials (`trials_num`), the size of the trainset, or the number of LM calls in your program.{ENDC}
+            {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
             {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}
 
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
@@ -348,7 +329,7 @@ class MIPRO(Teleprompter):
             else:
                 # Set up program and evaluation function
                 module = student.deepcopy()
-                evaluate = Evaluate(devset=devset, metric=self.metric, **eval_kwargs)
+                evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
                 
                 # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
                 if max_bootstrapped_demos==0 and max_labeled_demos==0: #TODO: address case when max_bootstrapped alone is 0
@@ -371,10 +352,10 @@ class MIPRO(Teleprompter):
 
                         # Create a new basic bootstrap few - shot program .
                         rng = random.Random(i)
-                        shuffled_devset = devset[:]  # Create a copy of devset
-                        rng.shuffle(shuffled_devset)  # Shuffle the copy
+                        shuffled_trainset = trainset[:]  # Create a copy of devset
+                        rng.shuffle(shuffled_trainset)  # Shuffle the copy
                         tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen, max_labeled_demos=max_labeled_demos_for_candidate_gen, teacher_settings=self.teacher_settings)
-                        candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_devset)
+                        candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_trainset)
 
                         # Store the candidate demos
                         for module_p, candidate_p in zip(module.predictors(), candidate_program.predictors()):
@@ -383,7 +364,7 @@ class MIPRO(Teleprompter):
                             demo_candidates[id(module_p)].append(candidate_p.demos)
                     
                 # Generate N candidate prompts
-                instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, devset)
+                instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, trainset)
 
                 # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
                 if max_bootstrapped_demos==0 and max_labeled_demos==0:
@@ -397,7 +378,7 @@ class MIPRO(Teleprompter):
                 trial_logs = {}
 
                 # Define our trial objective
-                def create_objective(baseline_program, instruction_candidates, demo_candidates, evaluate, devset):
+                def create_objective(baseline_program, instruction_candidates, demo_candidates, evaluate, trainset):
                     def objective(trial):
                         nonlocal best_program, best_score, trial_num, trial_logs  # Allow access to the outer variables
                         candidate_program = baseline_program.deepcopy()
@@ -444,17 +425,17 @@ class MIPRO(Teleprompter):
                         # Evaluate with the new prompts
                         total_score = 0
                         batch_size = 100
-                        num_batches = math.ceil(len(devset) / batch_size)
+                        num_batches = math.ceil(len(trainset) / batch_size)
 
                         for i in range(num_batches):
                             start_index = i * batch_size
-                            end_index = min((i + 1) * batch_size, len(devset))
-                            split_dev = devset[start_index:end_index]
-                            split_score = evaluate(candidate_program, devset=split_dev, display_table=0)
+                            end_index = min((i + 1) * batch_size, len(trainset))
+                            split_trainset = trainset[start_index:end_index]
+                            split_score = evaluate(candidate_program, devset=split_trainset, display_table=0)
                             if self.verbose: print(f"{i}st split score: {split_score}")
 
-                            total_score += split_score * len(split_dev)
-                            curr_weighted_avg_score = total_score / min((i+1)*100,len(devset))
+                            total_score += split_score * len(split_trainset)
+                            curr_weighted_avg_score = total_score / min((i+1)*100,len(trainset))
                             if self.verbose: print(f"curr average score: {curr_weighted_avg_score}")
 
                             trial.report(curr_weighted_avg_score, i)
@@ -487,10 +468,10 @@ class MIPRO(Teleprompter):
                     return objective
 
                 # Run the trial 
-                objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, devset)
+                objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, trainset)
                 sampler = optuna.samplers.TPESampler(seed=seed)
                 study = optuna.create_study(direction="maximize", sampler=sampler)
-                score = study.optimize(objective_function, n_trials=trials_num)
+                score = study.optimize(objective_function, n_trials=num_trials)
 
                 if best_program is not None and self.track_stats:
                     best_program.trial_logs = trial_logs

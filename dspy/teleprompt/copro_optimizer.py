@@ -13,7 +13,7 @@ The following code can be used to compile a optimized signature teleprompter, an
 
 teleprompter = COPRO(prompt_model=prompt_model, metric=metric, breadth=BREADTH, depth=DEPTH, init_temperature=INIT_TEMPERATURE)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_prompt_opt = teleprompter.compile(program.deepcopy(), devset=devset[:DEV_NUM], eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(program.deepcopy(), trainset=trainset[:DEV_NUM], eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
 Note that this teleprompter takes in the following parameters:
@@ -109,10 +109,10 @@ class COPRO(Teleprompter):
             predictor.signature = updated_signature
 
     
-    def compile(self, student, *, devset, eval_kwargs):
+    def compile(self, student, *, trainset, eval_kwargs):
         """student is a program that needs to be optimized, note that it may be zero-shot or already pre-optimized for demos != []"""
         module = student.deepcopy()
-        evaluate = Evaluate(devset=devset, metric=self.metric, **eval_kwargs)
+        evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0
         results_best = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors()}
         results_latest = {id(p):{"depth": [], "max": [], "average": [], "min":[], "std": []} for p in module.predictors()}
@@ -179,7 +179,7 @@ class COPRO(Teleprompter):
                         if self.verbose: print(f"Predictor {i}")
                         self._print_signature(predictor)
                     if self.verbose: print(f"At Depth {d}/{self.depth}, Evaluating Prompt Candidate #{c_i}/{len(candidates_)} for Predictor {p_i} of {len(module.predictors())}.")
-                    score = evaluate(module_clone, devset=devset, **eval_kwargs)
+                    score = evaluate(module_clone, devset=trainset, **eval_kwargs)
                     if self.verbose and self.prompt_model: print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
                     total_calls += 1
                     if self.verbose: print("----------------")
