@@ -282,8 +282,13 @@ your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_progr
 
 #### Compiling a compiled program - bootstrapping a bootstraped program
 
-your_dspy_program_compiledx2 = teleprompter.compile(your_dspy_program, teacher=your_dspy_program_compiled, trainset=trainset)
-
+```python
+your_dspy_program_compiledx2 = teleprompter.compile(
+    your_dspy_program,
+    teacher=your_dspy_program_compiled,
+    trainset=trainset,
+)
+```
 
 ### dspy.BootstrapFewShotWithRandomSearch
 
@@ -362,6 +367,20 @@ teleprompter = BayesianSignatureOptimizer(prompt_model=model_to_generate_prompts
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 
 compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+```
+
+### Signature Optimizer with Types
+
+```python
+from dspy.teleprompt.signature_opt_typed import optimize_signature
+from dspy.evaluate.metrics import answer_exact_match
+from dspy.functional import TypedChainOfThought
+
+compiled_program = optimize_signature(
+    student=TypedChainOfThought("question -> answer"),
+    evaluator=Evaluate(devset=devset, metric=answer_exact_match, num_threads=10, display_progress=True),
+    n_iterations=50,
+).program
 ```
 
 ### dspy.KNNFewShot
