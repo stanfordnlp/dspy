@@ -107,6 +107,9 @@ class AzureOpenAI(LM):
             kwargs["model"] = model
 
         self.kwargs = {
+            "api_base": api_base,
+            "api_version": api_version,
+            "api_key": api_key,
             "temperature": 0.0,
             "max_tokens": 150,
             "top_p": 1,

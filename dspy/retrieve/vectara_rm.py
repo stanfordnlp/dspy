@@ -1,11 +1,11 @@
-from collections import defaultdict
-from typing import List, Union
-import dspy
-from typing import Optional
 import json
 import os
+from collections import defaultdict
+from typing import List, Optional, Union
+
 import requests
 
+import dspy
 from dsp.utils import dotdict
 
 START_SNIPPET = "<%START%>"
@@ -76,7 +76,7 @@ class VectaraRM(dspy.Retrieve):
         corpus_key = {
             "customerId": self._vectara_customer_id,
             "corpusId": self._vectara_corpus_id,
-            "lexicalInterpolationConfig": {"lambda": 0.025 }
+            "lexicalInterpolationConfig": {"lambda": 0.025 },
         }
 
         data = {
@@ -92,8 +92,8 @@ class VectaraRM(dspy.Retrieve):
                         "endTag": END_SNIPPET,
                     },
                     "corpusKey": [corpus_key],
-                }
-            ]
+                },
+            ],
         }
 
         headers = {
@@ -124,7 +124,7 @@ class VectaraRM(dspy.Retrieve):
         res = [
             {
                 "text": remove_snippet(x["text"]),
-                "score": x["score"]
+                "score": x["score"],
             } for x in responses
         ]
         return res

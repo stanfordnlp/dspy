@@ -14,7 +14,7 @@ class PythonREPL:
     def run(self, command: str, timeout=5, globals={}, locals=None) -> Optional[str]:
         queue: multiprocessing.Queue = multiprocessing.Queue()
         p = multiprocessing.Process(
-            target=self.worker, args=(command, globals, locals, queue)
+            target=self.worker, args=(command, globals, locals, queue),
         )
         p.start()
         p.join(timeout)

@@ -1,10 +1,10 @@
 import functools
-from typing import Optional, Union, Any
+from typing import Any, Optional, Union
+
 import requests
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
-
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 
@@ -22,7 +22,7 @@ class ColBERTv2:
         self.url = f"{url}:{port}" if port else url
 
     def __call__(
-        self, query: str, k: int = 10, simplify: bool = False
+        self, query: str, k: int = 10, simplify: bool = False,
     ) -> Union[list[str], list[dotdict]]:
         if self.post_requests:
             topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
@@ -49,7 +49,7 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
     return topk[:k]
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 @NotebookCacheMemory.cache
 def colbertv2_get_request_v2_wrapped(*args, **kwargs):
     return colbertv2_get_request_v2(*args, **kwargs)
@@ -67,7 +67,7 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     return res.json()["topk"][:k]
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 @NotebookCacheMemory.cache
 def colbertv2_post_request_v2_wrapped(*args, **kwargs):
     return colbertv2_post_request_v2(*args, **kwargs)

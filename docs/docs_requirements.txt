@@ -1,5 +1,0 @@
-mkdocs
-mkdocs-gen-files
-mkdocs-material
-mkdocs-material-extensions
-mkdocstrings-python

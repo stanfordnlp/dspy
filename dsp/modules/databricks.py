@@ -1,29 +1,26 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
     handlers=[
-        logging.FileHandler('openai_usage.log')
-    ]
+        logging.FileHandler('openai_usage.log'),
+    ],
 )
 
 import functools
 import json
-from typing import Any, Literal, Optional, cast
+from typing import Literal, Optional
 
-import dsp
-import backoff
 import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.gpt3 import GPT3
 
 try:
-    from openai.openai_object import OpenAIObject
     import openai.error
+    from openai.openai_object import OpenAIObject
     ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
@@ -35,7 +32,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 class Databricks(GPT3):

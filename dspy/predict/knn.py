@@ -1,6 +1,9 @@
 from typing import List
+
 import numpy as np
+
 import dsp
+
 
 class KNN:
     def __init__(self, k: int, trainset: List[dsp.Example]):

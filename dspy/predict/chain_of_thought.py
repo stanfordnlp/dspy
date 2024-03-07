@@ -1,8 +1,8 @@
-import dsp, dspy
+import dsp
+import dspy
 from dspy.signatures.signature import ensure_signature
 
-from .predict import Predict, signature_to_template
-
+from .predict import Predict
 
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
 

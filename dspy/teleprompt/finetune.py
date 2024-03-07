@@ -1,18 +1,18 @@
 import os
-import time
-import dsp
-import tqdm
 import random
+import time
 
 import ujson
 from datasets.fingerprint import Hasher
 
+import dsp
 from dspy.signatures.signature import signature_to_template
 
-# from dspy.primitives import Example
-
-from .teleprompt import Teleprompter
 from .bootstrap import BootstrapFewShot
+
+# from dspy.primitives import Example
+from .teleprompt import Teleprompter
+
 # from .vanilla import LabeledFewShot
 
 # from dspy.evaluate.evaluate import Evaluate
@@ -130,7 +130,7 @@ class BootstrapFinetune(Teleprompter):
             'batch_size': bsize,
             'epochs': epochs,
             'gradient_accumulation_steps': accumsteps, # 2,
-            'lr': lr
+            'lr': lr,
         }
 
         compiler_config['save'] = os.path.join(path_prefix, compiler_config['save']) if path_prefix else compiler_config['save']

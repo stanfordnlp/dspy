@@ -1,13 +1,10 @@
-import os
-import json
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 from dsp.modules.lm import LM
+
 # from dsp.modules.finetuning.finetune_hf import preprocess_prompt
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-import functools
 
 def openai_to_hf(**kwargs):
     hf_kwargs = {}
@@ -47,11 +44,11 @@ class HFModel(LM):
         self.device_map = hf_device_map
         if not self.is_client:
             try:
-                from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
                 import torch
+                from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
-                    "You need to install Hugging Face transformers library to use HF models."
+                    "You need to install Hugging Face transformers library to use HF models.",
                 ) from exc
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             try:
@@ -85,7 +82,7 @@ class HFModel(LM):
             except ValueError:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model if checkpoint is None else checkpoint,
-                    device_map=self.device_map
+                    device_map=self.device_map,
                 )
                 self.drop_prompt_from_output = True
                 self.tokenizer = AutoTokenizer.from_pretrained(model)

@@ -12,7 +12,7 @@ try:
     from clarifai.client.search import Search
 except ImportError as err:
     raise ImportError(
-        "Clarifai is not installed. Install it using `pip install clarifai`"
+        "Clarifai is not installed. Install it using `pip install clarifai`",
     ) from err
 
 
@@ -45,7 +45,7 @@ class ClarifaiRM(dspy.Retrieve):
         )
         self.k = k
         self.clarifai_search = Search(
-            user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat
+            user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat,
         )
         super().__init__(k=k)
 
@@ -57,7 +57,7 @@ class ClarifaiRM(dspy.Retrieve):
         return requested_text
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None
+        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,
     ) -> dspy.Prediction:
         """Uses clarifai-python SDK search function and retrieves top_k similar passages for given query,
         Args:

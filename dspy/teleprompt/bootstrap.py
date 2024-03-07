@@ -1,17 +1,14 @@
-import dsp
-import tqdm
 import random
 import threading
 
-import dspy
-from dspy.predict.retry import Retry
+import tqdm
 
+import dsp
+import dspy
 from dspy.primitives import Example
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -58,8 +55,8 @@ class BootstrapFewShot(Teleprompter):
         self.student._compiled = True
 
         # set assert_failures and suggest_failures as attributes of student w/ value 0
-        setattr(self.student, '_assert_failures', 0)
-        setattr(self.student, '_suggest_failures', 0)
+        self.student._assert_failures = 0
+        self.student._suggest_failures = 0
 
         return self.student
     
@@ -204,7 +201,6 @@ class BootstrapFewShot(Teleprompter):
 
             raw_demos = rng.sample(raw_demos, sample_size)
             
-            import dspy
             if dspy.settings.release >= 20230928:
                 predictor.demos = raw_demos + augmented_demos
             else:

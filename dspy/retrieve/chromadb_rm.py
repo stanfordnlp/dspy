@@ -2,10 +2,12 @@
 Retriever model for chromadb
 """
 
-from typing import Optional, List, Union
-import openai
-import dspy
+from typing import List, Optional, Union
+
 import backoff
+import openai
+
+import dspy
 from dsp.utils import dotdict
 
 try:
@@ -16,19 +18,19 @@ except Exception:
 
 try:
     import chromadb
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
+    import chromadb.utils.embedding_functions as ef
     from chromadb.api.types import (
         Embeddable,
-        EmbeddingFunction
+        EmbeddingFunction,
     )
-    import chromadb.utils.embedding_functions as ef
+    from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
 except ImportError:
     chromadb = None
 
 if chromadb is None:
     raise ImportError(
-        "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`"
+        "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
     )
 
 
@@ -97,7 +99,7 @@ class ChromadbRM(dspy.Retrieve):
             Settings(
                 persist_directory=persist_directory,
                 is_persistent=True,
-            )
+            ),
         )
         self._chromadb_collection = self._chromadb_client.get_or_create_collection(
             name=collection_name,
@@ -120,7 +122,7 @@ class ChromadbRM(dspy.Retrieve):
         return self.ef(queries)
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None
+        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,
     ) -> dspy.Prediction:
         """Search with db for self.k top passages for query
 
@@ -140,7 +142,7 @@ class ChromadbRM(dspy.Retrieve):
 
         k = self.k if k is None else k
         results = self._chromadb_collection.query(
-            query_embeddings=embeddings, n_results=k
+            query_embeddings=embeddings, n_results=k,
         )
 
         passages = [dotdict({"long_text": x}) for x in results["documents"][0]]
