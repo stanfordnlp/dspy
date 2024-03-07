@@ -104,7 +104,7 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
 
 class MIPRO(Teleprompter):
     def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, num_candidates=10, metric=None, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
-        self.n = num_candidates
+        self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
         self.prompt_model = prompt_model if prompt_model is not None else dspy.settings.lm
@@ -226,7 +226,7 @@ class MIPRO(Teleprompter):
                     if 1 not in example_sets[id(predictor)].keys():
                         raise ValueError("No examples found for the given predictor")
                     instruct = None
-                    for i in range(1, self.n):
+                    for i in range(1, self.num_candidates):
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamplesAndDataObservations,
                             n=1,
@@ -247,7 +247,7 @@ class MIPRO(Teleprompter):
                 # Just examples
                 elif view_examples: 
                     instruct = None
-                    for i in range(1,self.n): # Note: skip over the first example set which is empty
+                    for i in range(1,self.num_candidates): # Note: skip over the first example set which is empty
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamples,
                             n=1,
@@ -285,7 +285,7 @@ class MIPRO(Teleprompter):
         random.seed(seed)
         
         estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
-        estimated_prompt_model_calls = 10 + self.n * len(student.predictors()) # num data summary calls + N * P
+        estimated_prompt_model_calls = 10 + self.num_candidates * len(student.predictors()) # num data summary calls + N * P
 
         user_message = textwrap.dedent(f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
@@ -293,7 +293,7 @@ class MIPRO(Teleprompter):
             Please be advised that based on the parameters you have set, the maximum number of LM calls is projected as follows:
 
             {YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in dev set * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} trials * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}
-            {YELLOW}- Prompt Model: # data summarizer calls (max {BLUE}{BOLD}10{ENDC}{YELLOW}) + {BLUE}{BOLD}{self.n}{ENDC}{YELLOW} * {BLUE}{BOLD}{len(student.predictors())}{ENDC}{YELLOW} lm calls in program = {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}
+            {YELLOW}- Prompt Model: # data summarizer calls (max {BLUE}{BOLD}10{ENDC}{YELLOW}) + {BLUE}{BOLD}{self.num_candidates}{ENDC}{YELLOW} * {BLUE}{BOLD}{len(student.predictors())}{ENDC}{YELLOW} lm calls in program = {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
@@ -342,14 +342,14 @@ class MIPRO(Teleprompter):
 
             # Generate N few shot example sets
             demo_candidates = {}
-            for i in range(self.n):
+            for i in range(self.num_candidates):
                 if i == 0: # Story empty set of demos as default for index 0
                     for module_p in module.predictors():
                         if id(module_p) not in demo_candidates:
                             demo_candidates[id(module_p)] = []
                         demo_candidates[id(module_p)].append([])
                 else:
-                    if self.verbose: print(f"Creating basic bootstrap: {i}/{self.n-1}")
+                    if self.verbose: print(f"Creating basic bootstrap: {i}/{self.num_candidates-1}")
 
                     # Create a new basic bootstrap few - shot program .
                     rng = random.Random(i)
@@ -365,7 +365,7 @@ class MIPRO(Teleprompter):
                         demo_candidates[id(module_p)].append(candidate_p.demos)
                 
             # Generate N candidate prompts
-            instruction_candidates, _ = self._generate_first_N_candidates(module, self.n, view_data, view_examples, demo_candidates, trainset)
+            instruction_candidates, _ = self._generate_first_N_candidates(module, self.num_candidates, view_data, view_examples, demo_candidates, trainset)
 
             # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
             if max_bootstrapped_demos==0 and max_labeled_demos==0:
