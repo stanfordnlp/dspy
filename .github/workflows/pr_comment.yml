@@ -1,0 +1,37 @@
+name: Comment for PR
+
+on:
+  workflow_run:
+    workflows: ["Check for Ruff Fix, Test, and Build"]
+    types:
+      - completed
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Download Ruff Fix Outcome Artifact"
+        uses: actions/download-artifact@v2
+        with:
+          name: ruff-fix-outcome
+          path: artifacts
+
+      - name: "Read Ruff Fix Outcome"
+        id: ruff_outcome
+        run: |
+          outcome=$(cat artifacts/ruff_fix_outcome.txt)
+          echo "RUFF_FIX_OUTCOME=$outcome" >> $GITHUB_ENV
+
+      - name: "Comment on PR if Ruff Fix Failed"
+        if: env.RUFF_FIX_OUTCOME == 'true'
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const pr_number = ${{ github.event.workflow_run.pull_requests[0].number }};
+            const message = 'It seems like there are issues with the formatting. Please run `ruff check . --fix-only` and commit to address these issues.';
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr_number,
+              body: message
+            });
