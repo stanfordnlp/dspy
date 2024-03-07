@@ -9,6 +9,7 @@ import pytest
 
 import dspy
 from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, TypedChainOfThought
+from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.vanilla import LabeledFewShot
@@ -232,7 +233,8 @@ def test_bootstrap_effectiveness():
     lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    demos = compiled_student.predictors()[0].demos
+    _, predict = next(compiled_student.named_sub_modules(Predict, skip_compiled=False))
+    demos = predict.demos
     assert len(demos) == 1
     assert demos[0].input == trainset[0].input
     assert demos[0].output == trainset[0].output

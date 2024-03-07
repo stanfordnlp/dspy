@@ -82,6 +82,9 @@ class TypedPredictor(dspy.Module):
     def copy(self) -> "TypedPredictor":
         return TypedPredictor(self.signature, self.max_retries)
 
+    def __repr__(self):
+        return f"TypedPredictor({self.signature})"
+
     @staticmethod
     def _make_example(type_) -> str:
         # Note: DSPy will cache this call so we only pay the first time TypedPredictor is called.
