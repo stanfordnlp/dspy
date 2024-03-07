@@ -1,5 +1,6 @@
 from .bootstrap import *
 from .copro_optimizer import COPRO
+from .ensemble import *
 from .finetune import *
 from .knn_fewshot import *
 from .mipro_optimizer import MIPRO
