@@ -1,5 +1,6 @@
-from dspy.teleprompt.mipro_optimizer import MIPRO
 import warnings
+
+from dspy.teleprompt.mipro_optimizer import MIPRO
 
 """
 ===============================================================

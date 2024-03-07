@@ -1,5 +1,6 @@
+
 from .copro_optimizer import COPRO
-import warnings
+
 """
 ===============================================================
 DEPRECATED!!!
