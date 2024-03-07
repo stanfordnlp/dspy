@@ -107,6 +107,13 @@ sphinx-automodapi = { version = "0.16.0", optional = true }
 pytest = "^6.2.5"
 
 
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.6.2"
+mypy = "^1.8.0"
+types-tqdm = "^4.66.0.20240106"
+ruff = "^0.3.1"
+
 [tool.poetry.extras]
 chromadb = ["chromadb"]
 qdrant = ["qdrant-client", "fastembed"]
@@ -253,6 +260,14 @@ ignore = [
     "E731",
     # Sometimes we need List and Tuple
     "UP006",
+    # Asserts sometimes needed (e.g. assert X is not None)
+    "S101",
+    # Prints are currently being used for logging
+    "T201",
+    # .compile shadows a python builtin, and this is fine
+    "A003",
+    # Commented out code allowable for the time being
+    "ERA001",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -275,3 +290,4 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**/{tests,docs}/*" = ["ALL"]
 "**__init__.py" = ["F401"]
+"dspy/teleprompt/bootstrap.py" = ["SIM108"]
