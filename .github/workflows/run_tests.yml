@@ -1,6 +1,9 @@
 name: Lint, Test, and Build
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -52,7 +55,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
@@ -84,7 +86,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
@@ -116,7 +117,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation

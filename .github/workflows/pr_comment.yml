@@ -2,13 +2,14 @@ name: Comment for PR
 
 on:
   workflow_run:
-    workflows: ["Check for Ruff Fix, Test, and Build"]
+    workflows: ["Lint, Test, and Build"]
     types:
       - completed
 
 jobs:
   comment:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
     steps:
       - name: "Download Ruff Fix Outcome Artifact"
         uses: actions/download-artifact@v2
