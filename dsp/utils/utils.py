@@ -1,8 +1,8 @@
 import datetime
 import itertools
-import os
 from collections import defaultdict
 
+import os
 import tqdm
 
 
