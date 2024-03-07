@@ -82,7 +82,7 @@ class ConditionalLM(LM):
         print("===")
 
         dummy_response = {"choices": []}
-        for _ in range(n):
+        for _ in range(num_candidates):
             dummy_response["choices"].append(
                 {
                     "text": answer,
@@ -117,7 +117,7 @@ def test_bayesian_signature_optimizer_initialization():
         metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
-    assert optimizer.n == 10, "Incorrect 'n' parameter initialization"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
     assert (
         optimizer.init_temperature == 1.4
     ), "Initial temperature not correctly initialized"
