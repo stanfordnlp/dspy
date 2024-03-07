@@ -3,8 +3,7 @@ name: Comment for PR
 on:
   workflow_run:
     workflows: ["Lint, Test, and Build"]
-    types:
-      - completed
+    types: [completed]
 
 jobs:
   comment:
