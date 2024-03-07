@@ -52,7 +52,7 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-test = ["pytest>=6.2.5"]
+dev = ["pytest>=6.2.5"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -103,8 +103,9 @@ sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
 
 
-[tool.poetry.group.test.dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
+ruff = "^0.3.0"
 
 
 [tool.poetry.extras]
