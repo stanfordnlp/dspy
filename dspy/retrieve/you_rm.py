@@ -41,9 +41,9 @@ class YouRM(dspy.Retrieve):
             headers = {"X-API-Key": self.ydc_api_key}
             params = {"query": query}
             results = requests.get(
-                f"https://api.ydc-index.io/search",
+                "https://api.ydc-index.io/search",
                 headers=headers,
-                params=params
+                params=params,
             ).json()
             for hit in results["hits"]:
                 for snippet in hit["snippets"]:
