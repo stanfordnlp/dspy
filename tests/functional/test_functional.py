@@ -2,13 +2,13 @@ import datetime
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
-from typing import Annotated
+from typing import Annotated, Generic, Literal, TypeVar
 from typing import List
 
 import pytest
 
 import dspy
-from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, TypedChainOfThought
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.vanilla import LabeledFewShot
@@ -122,7 +122,7 @@ def test_simple_class():
 
     qa = QA()
     assert isinstance(qa, FunctionalModule)
-    assert isinstance(qa.answer, functional._StripOutput)
+    assert isinstance(qa.answer, dspy.Module)
 
     question, answer = qa(topic="Physics")
 
@@ -407,6 +407,7 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
+    print(lm.get_convo(-1))
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
@@ -467,6 +468,23 @@ def test_multiple_outputs_int():
     assert output == [0, 1, 2]
 
 
+def test_multiple_outputs_int_cot():
+    # Note: Multiple outputs only work when the language model "speculatively" generates all the outputs in one go.
+    lm = DummyLM(
+        [
+            "thoughts 0\nOutput: 0\n",
+            "thoughts 1\nOutput: 1\n",
+            "thoughts 2\nOutput: 2\n",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    test = TypedChainOfThought("input:str -> output:int")
+
+    output = test(input="8", config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
 def test_parse_type_string():
     lm = DummyLM([str(i) for i in range(100)])
     dspy.settings.configure(lm=lm)
@@ -475,6 +493,28 @@ def test_parse_type_string():
 
     output = test(input=8, config=dict(n=3)).completions.output
     assert output == [0, 1, 2]
+
+
+def test_literal():
+    lm = DummyLM([f'{{"value": "{i}"}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal["2", "3"]:
+        pass
+
+    assert f() == "2"
+
+
+def test_literal_int():
+    lm = DummyLM([f'{{"value": {i}}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal[2, 3]:
+        pass
+
+    assert f() == 2
 
 
 def test_fields_on_base_signature():
@@ -532,3 +572,83 @@ def test_synthetic_data_gen():
     augmented_examples = trained(config=dict(n=3))
     for ex in augmented_examples.completions.fact:
         assert isinstance(ex, SyntheticFact)
+
+
+def test_list_input2():
+    # Inspired by the Signature Optimizer
+
+    class ScoredString(pydantic.BaseModel):
+        string: str
+        score: float
+
+    class ScoredSignature(dspy.Signature):
+        attempted_signatures: list[ScoredString] = dspy.InputField()
+        proposed_signature: str = dspy.OutputField()
+
+    program = TypedChainOfThought(ScoredSignature)
+
+    lm = DummyLM(["Thoughts", "Output"])
+    dspy.settings.configure(lm=lm)
+
+    output = program(
+        attempted_signatures=[
+            ScoredString(string="string 1", score=0.5),
+            ScoredString(string="string 2", score=0.4),
+            ScoredString(string="string 3", score=0.3),
+        ]
+    ).proposed_signature
+
+    print(lm.get_convo(-1))
+
+    assert output == "Output"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `attempted_signatures`, produce the fields `proposed_signature`.
+
+        ---
+
+        Follow the following format.
+
+        Attempted Signatures: ${attempted_signatures}
+        Reasoning: Let's think step by step in order to ${produce the proposed_signature}. We ...
+        Proposed Signature: ${proposed_signature}
+
+        ---
+
+        Attempted Signatures: [{"string":"string 1","score":0.5},{"string":"string 2","score":0.4},{"string":"string 3","score":0.3}]
+        Reasoning: Let's think step by step in order to Thoughts
+        Proposed Signature: Output""")
+
+
+def test_generic_signature():
+    T = TypeVar("T")
+
+    class GenericSignature(dspy.Signature, Generic[T]):
+        """My signature"""
+
+        output: T = dspy.OutputField()
+
+    predictor = TypedPredictor(GenericSignature[int])
+    assert predictor.signature.instructions == "My signature"
+
+    lm = DummyLM(["23"])
+    dspy.settings.configure(lm=lm)
+
+    assert predictor().output == 23
+
+
+def test_field_validator_in_signature():
+    class ValidatedSignature(dspy.Signature):
+        a: str = dspy.OutputField()
+
+        @pydantic.field_validator("a")
+        @classmethod
+        def space_in_a(cls, a: str) -> str:
+            if not " " in a:
+                raise ValueError("a must contain a space")
+            return a
+
+    with pytest.raises(pydantic.ValidationError):
+        _ = ValidatedSignature(a="no-space")
+
+    _ = ValidatedSignature(a="with space")
