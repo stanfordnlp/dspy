@@ -31,6 +31,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         self.num_threads = num_threads
         self.stop_at_score = stop_at_score
+        self.metric_threshold = metric_threshold
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
         self.max_errors = max_errors
