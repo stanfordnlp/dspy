@@ -3,6 +3,7 @@ import typing as t
 from dspy.signatures.signature import Signature, InputField, OutputField
 from dspy.backends.lm.base import BaseLM, GeneratedOutput
 from dspy.backends.template import TemplateBackend
+from dspy.utils.dummies import DummyLanguageModel
 
 
 class Emotion(Signature):
@@ -23,35 +24,6 @@ class COTCheckCitationFaithfulness(Signature):
     faithfulness = OutputField(
         desc="True/False indicating if text is faithful to context"
     )
-
-
-class DummyMessage:
-    def __init__(self, content: str):
-        self.content = content
-
-
-class DummyChoice:
-    def __init__(self, message: str):
-        self.message = message
-
-
-class DummyLanguageModel(BaseLM):
-    answers: dict[int, list[str]]
-    step: int = 1
-
-    def generate(
-        self,
-        prompt: str,
-        **kwargs,
-    ) -> t.List[GeneratedOutput]:
-        if len(self.answers) > 1:
-            self.step += 1
-        return [
-            (DummyChoice(DummyMessage(content))) for content in self.answers[self.step]
-        ]
-
-    def count_tokens(self, prompt: str) -> int:
-        return len(prompt)
 
 
 def test_backend_complete_generation():
