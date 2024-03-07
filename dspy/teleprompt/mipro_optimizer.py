@@ -306,8 +306,9 @@ class MIPRO(Teleprompter):
             and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
 
             {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
-            {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}
-
+            {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}""")
+        
+        user_confirmation_message = textwrap.dedent(f"""\
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
 
             If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False`.{ENDC}
@@ -321,6 +322,7 @@ class MIPRO(Teleprompter):
 
 
         if requires_permission_to_run:
+            print(user_confirmation_message)
             user_input = input("Do you wish to continue? (y/n): ").strip().lower()
             if user_input != 'y':
                 print("Compilation aborted by the user.")
