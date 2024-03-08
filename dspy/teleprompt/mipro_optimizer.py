@@ -415,11 +415,8 @@ class MIPRO(Teleprompter):
 
                         # Use these demos in our program
                         if demo_candidates: p_new.demos = selected_demos
-
-                        # breakpoint()
                         
                     if self.verbose: print("Evaling the following program:")
-                    # breakpoint()
                     if self.verbose: self._print_full_program(candidate_program)
                     trial_logs[trial_num]["program"] = candidate_program
 
@@ -451,7 +448,6 @@ class MIPRO(Teleprompter):
                     
                     if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
                     if self.verbose: self._print_model_history(self.task_model, n=1)
-                    # breakpoint()
                     score = curr_weighted_avg_score
                     
                     trial_logs[trial_num]["score"] = curr_weighted_avg_score
