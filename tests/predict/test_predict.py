@@ -1,5 +1,6 @@
 import dspy
 from dspy import Predict, Signature
+from dspy.backends.json import JSONBackend
 from dspy.utils.dummies import DummyLM
 from dspy.backends import TemplateBackend
 from tests.backends.test_template_backend import DummyLanguageModel
@@ -94,6 +95,23 @@ def test_multi_output():
     dspy.settings.configure(backend=backend)
 
     results = program(question="What is 1+1?")
-    print(results)
-    assert results.completions.answer[0] == "my first answer"
-    assert results.completions.answer[1] == "my second answer"
+    assert results.completions[0].answer == "my first answer"
+    assert results.completions[1].answer == "my second answer"
+
+
+def test_multi_output_json():
+    program = Predict("question -> answer", n=2)
+
+    lm = DummyLanguageModel(
+        answers={
+            1: [
+                """{"answer": "my first answer"}""",
+                """{"answer": "my second answer"}""",
+            ]
+        }
+    )
+    backend = JSONBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
+    results = program(question="What is 1+1?")
+    assert results.completions[1].answer == "my second answer"

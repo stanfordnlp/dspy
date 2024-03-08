@@ -1,7 +1,8 @@
+import pytest
 import dspy
 import typing as t
 from dspy.signatures.signature import Signature, InputField, OutputField
-from dspy.backends.lm.base import BaseLM, GeneratedOutput
+from dspy.backends.lm.base import BaseLM, GeneratedContent
 from dspy.backends.template import TemplateBackend
 from dspy.utils.dummies import DummyLanguageModel
 
@@ -35,8 +36,9 @@ def test_backend_complete_generation():
     # Generate Sample Signature
     n = 5
     x = backend(Emotion, sentence="This is a positive sentence", n=n)
-    assert len(x.sentence) == n
-    assert len(x.sentiment) == n
+    assert len(x.completions) == n
+    assert x.completions[0].example.sentence == "This is a positive sentence"
+    assert x.completions[0].example.sentiment == "Joy"
 
 
 def test_backend_with_recover():
@@ -55,14 +57,13 @@ def test_backend_with_recover():
     # Generate Incomplete on the first try
     # Nothing should be returned from the generation as no results were complete
     n = 1
-    x = backend(
-        COTCheckCitationFaithfulness,
-        context=["The 21-year-old made seven appearances for the Hammers."],
-        text="Lee scored 3 goals for Colchester United.",
-        recover=False,
-    )
-
-    assert len(x) == 0
+    with pytest.raises(Exception):
+        backend(
+            COTCheckCitationFaithfulness,
+            context=["The 21-year-old made seven appearances for the Hammers."],
+            text="Lee scored 3 goals for Colchester United.",
+            recover=False,
+        )
 
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
@@ -86,5 +87,8 @@ def test_backend_with_recover():
         n=n,
     )
 
-    assert "rationale" in x
-    assert "faithfulness" in x
+    assert x.completions[0].complete
+    assert x.completions[0].rationale is not None
+
+    assert x.rationale
+    assert x.faithfulness

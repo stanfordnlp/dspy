@@ -30,7 +30,5 @@ def test_backend_complete_generation():
     # Generate Sample Signature
     n = 5
     x = backend(Emotion, sentence="This is a positive sentence", n=n)
-    assert len(x.sentence) == n
-    assert len(x.sentiment) == n
-
-    assert x.sentiment[0] == "Joy"
+    assert len(x) == n
+    assert x.sentiment == "Joy"

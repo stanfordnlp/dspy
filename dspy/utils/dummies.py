@@ -6,7 +6,7 @@ from dsp.utils.utils import dotdict
 import re
 
 import typing as t
-from dspy.backends.lm.base import BaseLM, GeneratedOutput
+from dspy.backends.lm.base import BaseLM, GeneratedContent
 
 
 class DummyLM(LM):
@@ -166,29 +166,17 @@ class DummyVectorizer:
         return vecs
 
 
-class DummyMessage:
-    def __init__(self, content: str):
-        self.content = content
-
-
-class DummyChoice:
-    def __init__(self, message: str):
-        self.message = message
-
-
 class DummyLanguageModel(BaseLM):
     answers: dict[int, list[str]]
     step: int = 0
 
-    def generate(self, prompt: str, **kwargs) -> t.List[GeneratedOutput]:
+    def generate(self, prompt: str, **kwargs) -> t.List[GeneratedContent]:
         if len(self.answers) == 1:
-            return [(DummyChoice(DummyMessage(content))) for content in self.answers[1]]
+            return [{"message": {"content": content}} for content in self.answers[1]]
         else:
             self.step += 1
 
-        return [
-            (DummyChoice(DummyMessage(content))) for content in self.answers[self.step]
-        ]
+        return [{"message": {"content": content}} for content in self.answers[1]]
 
     def count_tokens(self, prompt: str) -> int:
         return len(prompt)

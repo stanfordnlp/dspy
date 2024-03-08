@@ -1,10 +1,14 @@
-from dspy.primitives.prediction import Completions
-from dspy.signatures.signature import Signature, signature_to_template
+from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.primitives.example import Example
 from dspy.primitives.template import Template
+from dspy.primitives.prediction import (
+    Completions,
+    convert_to_completion,
+    get_completion_data,
+)
 
 import typing as t
-from .base import BaseBackend, Completion, convert_to_completion
+from .base import BaseBackend
 from .lm.litellm import BaseLM
 
 
@@ -18,7 +22,7 @@ class TemplateBackend(BaseBackend):
         signature: Signature,
         demos: t.List[str] = [],
         **kwargs,
-    ) -> t.List[Completion]:
+    ) -> Completions:
         """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output"""
 
         if not all(k in kwargs for k in signature.input_fields):
@@ -42,7 +46,20 @@ class TemplateBackend(BaseBackend):
 
         # This returns a list of Examples
         extracted = [
-            template.extract(example, prediction.message.content) for prediction in pred
+            template.extract(example, prediction["message"]["content"])
+            for prediction in pred.generations
         ]
 
-        return [convert_to_completion(signature, example) for example in extracted]
+        assert type(signature) == SignatureMeta, type(signature)
+        completion_data = [
+            convert_to_completion(signature, example) for example in extracted
+        ]
+        completions = Completions(
+            signature=signature,
+            completions=completion_data,
+            prompt=pred.prompt,
+            kwargs=pred.kwargs,
+            data=get_completion_data(completion_data),
+        )
+
+        return completions

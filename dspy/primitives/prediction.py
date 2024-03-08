@@ -1,66 +1,109 @@
+import typing as t
+from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict, Field
 from dspy.primitives.example import Example
+from dspy.signatures.signature import SignatureMeta, Signature
 
 
-class Completions:
-    def __init__(self, list_or_dict, signature=None):
-        self.signature = signature
+class Completion(BaseModel):
+    # At some point in the future we should make the Example class pydantic
+    # in the meantime this is needed to allow Completion/Completions to be Pydantic
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    example: Example
+    complete: bool
 
-        if isinstance(list_or_dict, list):
-            kwargs = {}
-            for arg in list_or_dict:
-                for k, v in arg.items():
-                    kwargs.setdefault(k, []).append(v)
-        else:
-            kwargs = list_or_dict
-
-        assert all(
-            isinstance(v, list) for v in kwargs.values()
-        ), "All values must be lists"
-
-        if kwargs:
-            length = len(next(iter(kwargs.values())))
-            assert all(
-                len(v) == length for v in kwargs.values()
-            ), "All lists must have the same length"
-
-        self._completions = kwargs
-
-    def items(self):
-        return self._completions.items()
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            if key < 0 or key >= len(self):
-                raise IndexError("Index out of range")
-
-            return Prediction(**{k: v[key] for k, v in self._completions.items()})
-
-        return self._completions[key]
+    def __len__(self) -> int:
+        return len(self.example.keys())
 
     def __getattr__(self, name):
-        if name in self._completions:
-            return self._completions[name]
+        if name in self:
+            return self.__getattribute__(name)
+
+        if name in self.example:
+            return self.example[name]
 
         raise AttributeError(
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
 
-    def __len__(self):
-        # Return the length of the list for one of the keys
-        # It assumes all lists have the same length
-        return len(self._completions.values())
+    def items(self):
+        return self.example.items()
 
-    def __contains__(self, key):
-        return key in self._completions
+
+def convert_to_completion(signature: Signature, example: Example) -> Completion:
+    complete = True
+    for field in signature.output_fields:
+        if field not in example:
+            complete = False
+
+    return Completion(example=example, complete=complete)
+
+
+def get_completion_data(completions: list[Completion]) -> dict[str, list[t.Any]]:
+    data = {}
+    for completion in completions:
+        if completion.complete:
+            for k, v in completion.example.items():
+                if k in data:
+                    data[k].append(v)
+                else:
+                    data[k] = [v]
+
+    return data
+
+
+class Completions(BaseModel):
+    # For some reason Signature is leading to an error here
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    signature: SignatureMeta
+    completions: list[Completion]
+    prompt: str
+    kwargs: dict[str, t.Any]
+    data: dict[str, list[t.Any]]
+
+    def filter_complete(self) -> t.Self:
+        cls = self.model_copy()
+
+        i = 0
+        while i < len(cls.completions):
+            if cls.completions[i].complete:
+                i += 1
+            else:
+                del cls.completions[i]
+
+        return cls
+
+    def __len__(self) -> int:
+        i = 0
+        for completion in self.completions:
+            if completion.complete:
+                i += 1
+
+        return i
+
+    def __getitem__(self, key) -> Completion:
+        return self.completions[key]
+
+    def __getattr__(self, name):
+        if name in self.data:
+            return self.data[name][0]
+
+        if name in self:
+            return self.__getattribute__(name)
+
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
+    def items(self):
+        return self.data.items()
 
     def __repr__(self):
-        items_repr = ",\n    ".join(
-            f"{k}={repr(v)}" for k, v in self._completions.items()
-        )
+        items_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self.data.items())
         return f"Completions(\n    {items_repr}\n)"
 
     def __str__(self):
-        # return str(self._completions)
         return self.__repr__()
 
 
