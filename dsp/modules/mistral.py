@@ -1,13 +1,13 @@
 from typing import Any, Optional
+
 import backoff
 
 from dsp.modules.lm import LM
 
 try:
     from mistralai.client import MistralClient
-    from mistralai.models.chat_completion import ChatMessage
-    from mistralai.models.chat_completion import ChatCompletionResponse
     from mistralai.exceptions import MistralAPIException
+    from mistralai.models.chat_completion import ChatCompletionResponse, ChatMessage
     mistralai_api_error = MistralAPIException
 except ImportError:
     mistralai_api_error = Exception
@@ -19,7 +19,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 
@@ -40,7 +40,7 @@ class Mistral(LM):
         self,
         model: str = "mistral-medium-latest",
         api_key: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Parameters
@@ -60,7 +60,7 @@ class Mistral(LM):
             "model": model,
             "temperature": 0.17,
             "max_tokens": 150,
-            **kwargs
+            **kwargs,
         }
 
         self.history: list[dict[str, Any]] = []
@@ -108,7 +108,7 @@ class Mistral(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs
+        **kwargs,
     ):
 
         assert only_completed, "for now"

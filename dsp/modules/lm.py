@@ -57,8 +57,8 @@ class LM(ABC):
                     printed.append(
                         (
                             prompt,
-                            x['response'].choices
-                        )
+                            x['response'].choices,
+                        ),
                     )
                 else:
                     printed.append(
