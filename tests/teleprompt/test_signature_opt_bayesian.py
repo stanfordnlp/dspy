@@ -53,9 +53,17 @@ class ConditionalLM(LM):
             answer = " summarizing..."
         else:
             pairs = re.findall(r"Input: (.*)\nOutput: (.*)", prompt)
+            # pairs = re.findall(r"(?<=\n|^)---\n\nInput: (.*?)\nOutput: (.*?)(?=\n\n---|\n*$)", prompt, re.DOTALL)
 
+            # pairs = re.findall(r"Input: (.*?)\n(?:Reasoning: .*?\n)?Output: (.*)", prompt, re.DOTALL)
+            pairs = re.findall(r"Input: (.*?)\n(?:Reasoning:.*?\n)?Output: (.*?)\n", prompt, re.DOTALL)
+
+            # breakpoint()
             print("PROMPT:", prompt)
             print("PAIRS:", pairs)
+
+            # if "What is the capital of Spain?" in prompt:
+            #     breakpoint()
 
             last = re.search(r"Input: (.*)\nReasoning: (.*)$", prompt)
             current_question = last.group(1)
@@ -227,17 +235,23 @@ def test_optimization_and_output_verification():
 
     assert prediction.output == "Madrid"
 
-    assert lm.get_convo(-1) == textwrap.dedent(
+    expected_lm_output = textwrap.dedent(
         """\
         Input:
 
         ---
-
+        
         Follow the following format.
-
+        
         Input: ${input}
         Reasoning: Let's think step by step in order to ${produce the output}. We ...
         Output: ${output}
+
+        ---
+
+        Input: What is the capital of France?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Paris
 
         ---
 
@@ -247,14 +261,8 @@ def test_optimization_and_output_verification():
 
         ---
 
-        Input: What is the capital of Sweden?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Stockholm
-
-        ---
-
-        Input: What is the capital of France?
-        Output: Paris
+        Input: What does the fox say?
+        Output: Ring-ding-ding-ding-dingeringeding!
 
         ---
 
@@ -262,3 +270,5 @@ def test_optimization_and_output_verification():
         Reasoning: Let's think step by step in order to think deeply.
         Output: Madrid"""
     )
+
+    assert lm.get_convo(-1) == expected_lm_output
