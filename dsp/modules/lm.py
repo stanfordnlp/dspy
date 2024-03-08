@@ -53,6 +53,13 @@ class LM(ABC):
                             x['response'],
                         ),
                     )
+                elif provider == "mistral":
+                    printed.append(
+                        (
+                            prompt,
+                            x['response'].choices
+                        )
+                    )
                 else:
                     printed.append(
                         (
@@ -69,6 +76,7 @@ class LM(ABC):
                 break
 
         for idx, (prompt, choices) in enumerate(reversed(printed)):
+            print(printed)
             # skip the first `skip` prompts
             if (n - idx - 1) < skip:
                 continue
@@ -84,6 +92,8 @@ class LM(ABC):
                 text=choices
             elif provider == "google":
                 text = choices[0].parts[0].text
+            elif provider == "mistral":
+                text = choices[0].message.content
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
