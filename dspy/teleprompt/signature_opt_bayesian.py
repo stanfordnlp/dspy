@@ -41,5 +41,5 @@ class BayesianSignatureOptimizer(MIPRO):
 
         super().__init__(prompt_model, task_model, teacher_settings,n,metric,init_temperature,verbose,track_stats,view_data_batch_size)
 
-    def compile(self, student, *, devset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, optuna_trials_num, view_data=True, view_examples=True, requires_permission_to_run=True, num_trials=None):
+    def compile(self, student, *, devset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, optuna_trials_num, view_data=True, view_examples=True, requires_permission_to_run=False, num_trials=None):
         return super().compile(student, trainset=devset, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, eval_kwargs=eval_kwargs, seed=seed, view_data=view_data, view_examples=view_examples, requires_permission_to_run=requires_permission_to_run, num_trials=optuna_trials_num)
