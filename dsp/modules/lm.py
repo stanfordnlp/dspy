@@ -76,7 +76,6 @@ class LM(ABC):
                 break
 
         for idx, (prompt, choices) in enumerate(reversed(printed)):
-            print(printed)
             # skip the first `skip` prompts
             if (n - idx - 1) < skip:
                 continue
