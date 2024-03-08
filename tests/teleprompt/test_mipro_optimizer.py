@@ -52,18 +52,11 @@ class ConditionalLM(LM):
         elif prompt.endswith("Summary:"):
             answer = " summarizing..."
         else:
-            pairs = re.findall(r"Input: (.*)\nOutput: (.*)", prompt)
-            # pairs = re.findall(r"(?<=\n|^)---\n\nInput: (.*?)\nOutput: (.*?)(?=\n\n---|\n*$)", prompt, re.DOTALL)
-
-            # pairs = re.findall(r"Input: (.*?)\n(?:Reasoning: .*?\n)?Output: (.*)", prompt, re.DOTALL)
             pairs = re.findall(r"Input: (.*?)\n(?:Reasoning:.*?\n)?Output: (.*?)\n", prompt, re.DOTALL)
 
             # breakpoint()
             print("PROMPT:", prompt)
             print("PAIRS:", pairs)
-
-            # if "What is the capital of Spain?" in prompt:
-            #     breakpoint()
 
             last = re.search(r"Input: (.*)\nReasoning: (.*)$", prompt)
             current_question = last.group(1)
