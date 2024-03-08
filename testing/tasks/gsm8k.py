@@ -1,10 +1,13 @@
-import dspy
-from .base_task import BaseTask
-from dspy.datasets.gsm8k import gsm8k_metric
 import random
-import tqdm
 
+import tqdm
 from datasets import load_dataset
+
+import dspy
+from dspy.datasets.gsm8k import gsm8k_metric
+
+from .base_task import BaseTask
+
 
 class CoT(dspy.Module):
     def __init__(self):

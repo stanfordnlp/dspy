@@ -1,4 +1,6 @@
 import copy
+from collections.abc import Generator
+
 import ujson
 
 
@@ -8,7 +10,7 @@ class BaseModule:
 
     def named_parameters(self):
         """
-            Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        Unlike PyTorch, handles (non-recursive) lists of parameters too.
         """
 
         from dspy.predict.parameter import Parameter
@@ -27,10 +29,10 @@ class BaseModule:
 
             elif isinstance(value, BaseModule):
                 # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, '_compiled', False):
+                if not getattr(value, "_compiled", False):
                     for sub_name, param in value.named_parameters():
                         add_parameter(f"{name}.{sub_name}", param)
-            
+
             elif isinstance(value, (list, tuple)):
                 for idx, item in enumerate(value):
                     add_parameter(f"{name}[{idx}]", item)
@@ -41,6 +43,12 @@ class BaseModule:
 
         return named_parameters
 
+    def named_sub_modules(self, root_name="base") -> Generator[tuple[str, "BaseModule"], None, None]:
+        yield root_name, self
+        for name, value in self.__dict__.items():
+            if isinstance(value, BaseModule):
+                yield from value.named_sub_modules(root_name=f"{root_name}.{name}")
+
     def parameters(self):
         return [param for _, param in self.named_parameters()]
 
@@ -49,23 +57,23 @@ class BaseModule:
 
     def reset_copy(self):
         obj = copy.deepcopy(self)
-        
+
         for param in obj.parameters():
             param.reset()
-        
+
         return obj
-    
+
     def dump_state(self):
         return {name: param.dump_state() for name, param in self.named_parameters()}
-    
+
     def load_state(self, state):
         for name, param in self.named_parameters():
             param.load_state(state[name])
-    
+
     def save(self, path):
         with open(path, "w") as f:
             f.write(ujson.dumps(self.dump_state(), indent=2))
-    
+
     def load(self, path):
         with open(path) as f:
             self.load_state(ujson.loads(f.read()))

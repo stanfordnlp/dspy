@@ -2,10 +2,12 @@
 Retriever model for chromadb
 """
 
-from typing import Optional, List, Union
-import openai
-import dspy
+from typing import List, Optional, Union
+
 import backoff
+import openai
+
+import dspy
 from dsp.utils import dotdict
 
 try:
@@ -16,13 +18,13 @@ except Exception:
 
 try:
     import chromadb
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
+    import chromadb.utils.embedding_functions as ef
     from chromadb.api.types import (
         Embeddable,
         EmbeddingFunction,
     )
-    import chromadb.utils.embedding_functions as ef
+    from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
 except ImportError:
     chromadb = None
 

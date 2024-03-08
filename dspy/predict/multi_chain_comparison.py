@@ -1,8 +1,8 @@
 import dspy
 from dspy.signatures.signature import ensure_signature
-from .predict import Predict
-from ..primitives.program import Module
 
+from ..primitives.program import Module
+from .predict import Predict
 
 
 class MultiChainComparison(Module):

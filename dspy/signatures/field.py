@@ -1,5 +1,10 @@
 import pydantic
 
+# The following arguments can be used in DSPy InputField and OutputField in addition
+# to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
+# as it would give a name clash.
+DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
+
 
 def move_kwargs(**kwargs):
     # Pydantic doesn't allow arbitrary arguments to be given to fields,
@@ -10,7 +15,7 @@ def move_kwargs(**kwargs):
     pydantic_kwargs = {}
     json_schema_extra = {}
     for k, v in kwargs.items():
-        if k in ["desc", "prefix", "format", "parser", "__dspy_field_type"]:
+        if k in DSPY_FIELD_ARG_NAMES:
             json_schema_extra[k] = v
         else:
             pydantic_kwargs[k] = v
@@ -27,11 +32,7 @@ def OutputField(**kwargs):
 
 
 def new_to_old_field(field):
-    return (
-        OldInputField
-        if field.json_schema_extra["__dspy_field_type"] == "input"
-        else OldOutputField
-    )(
+    return (OldInputField if field.json_schema_extra["__dspy_field_type"] == "input" else OldOutputField)(
         prefix=field.json_schema_extra["prefix"],
         desc=field.json_schema_extra["desc"],
         format=field.json_schema_extra.get("format"),

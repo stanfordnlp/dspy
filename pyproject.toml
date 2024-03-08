@@ -52,7 +52,7 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-test = ["pytest>=6.2.5"]
+dev = ["pytest>=6.2.5"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -103,8 +103,9 @@ sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
 
 
-[tool.poetry.group.test.dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
+ruff = "^0.3.0"
 
 
 [tool.poetry.extras]
@@ -218,6 +219,10 @@ select = [
     "ERA",
     # pandas-vet
     "PD",
+    # Import sort
+    "I",
+    # avoid shadowing
+    "PLW",
 ]
 ignore = [
     "D100",
@@ -232,28 +237,14 @@ ignore = [
     "ANN003",
     # utf-8 encoding skip
     "UP009",
-    # First argument of a method should be named `self`
-    "N805",
-    # 1 blank line required between summary line and description
-    "D205",
     # Missing return type annotation for special method `__init__`
     "ANN204",
-    # Avoid using the generic variable name `df` for DataFrames
-    "PD901",
-    # Unnecessary assignment to `df` before `return` statement
-    "RET504",
-    # commented code
-    "ERA001",
     # Star-arg unpacking after a keyword argument is strongly discouraged
     "B026",
     # Missing type annotation for function argument `self`
     "ANN001",
     # Dynamically typed expressions (typing.Any) are disallowed in `wrapper`
     "ANN401",
-    # Unnecessary `elif` after `return` statement
-    "RET505",
-    # Within an `except` clause, raise exceptions with `raise
-    "B904",
     # We don't need docstrings for every method
     "ANN202",
     "D107",

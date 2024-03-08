@@ -1,12 +1,10 @@
 import random
 
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
-
 
 # TODO: Don't forget dealing with the raw demos.
 # TODO: Deal with the (pretty common) case of having a metric for filtering and a separate metric for eval.
@@ -26,13 +24,14 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, max_errors=10, stop_at_score=None):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, max_errors=10, stop_at_score=None, metric_threshold=None):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
         self.stop_at_score = stop_at_score
+        self.metric_threshold = metric_threshold
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
         self.max_errors = max_errors
@@ -73,7 +72,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             
             elif seed == -1:
                 # unshuffled few-shot
-                program = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=self.max_num_samples,
+                program = BootstrapFewShot(metric=self.metric, metric_threshold=self.metric_threshold, max_bootstrapped_demos=self.max_num_samples,
                                            max_labeled_demos=self.max_labeled_demos,
                                            teacher_settings=self.teacher_settings, max_rounds=self.max_rounds)
                 program2 = program.compile(student, teacher=teacher, trainset=trainset2)
@@ -84,7 +83,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 random.Random(seed).shuffle(trainset2)
                 size = random.Random(seed).randint(self.min_num_samples, self.max_num_samples)
 
-                teleprompter = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=size,
+                teleprompter = BootstrapFewShot(metric=self.metric, metric_threshold=self.metric_threshold, max_bootstrapped_demos=size,
                                                 max_labeled_demos=self.max_labeled_demos,
                                                 teacher_settings=self.teacher_settings,
                                                 max_rounds=self.max_rounds)

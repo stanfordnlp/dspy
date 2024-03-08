@@ -1,23 +1,25 @@
-from typing import List, Any
-import dspy
 import os
+from typing import Any, List
+
+import backoff
 from openai import (
-    OpenAI,
     APITimeoutError,
     InternalServerError,
+    OpenAI,
     RateLimitError,
     UnprocessableEntityError,
 )
-import backoff
+
+import dspy
 
 try:
     from pymongo import MongoClient
     from pymongo.errors import (
-        ConnectionFailure,
         ConfigurationError,
-        ServerSelectionTimeoutError,
+        ConnectionFailure,
         InvalidURI,
         OperationFailure,
+        ServerSelectionTimeoutError,
     )
 except ImportError:
     raise ImportError(

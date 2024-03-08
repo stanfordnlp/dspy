@@ -11,10 +11,10 @@ import functools
 import json
 from typing import Any, Literal, Optional, cast
 
-import dsp
 import backoff
 import openai
 
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -24,8 +24,8 @@ except Exception:
     OPENAI_LEGACY = True
 
 try:
-    from openai.openai_object import OpenAIObject
     import openai.error
+    from openai.openai_object import OpenAIObject
 
     ERRORS = (
         openai.error.RateLimitError,

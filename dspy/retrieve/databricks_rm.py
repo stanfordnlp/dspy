@@ -1,9 +1,12 @@
-import dspy
 import os
-import requests
-from typing import Union, List
 from collections import defaultdict
+from typing import List, Union
+
+import requests
+
+import dspy
 from dspy.primitives.prediction import Prediction
+
 
 class DatabricksRM(dspy.Retrieve):
     """

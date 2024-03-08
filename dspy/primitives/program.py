@@ -1,7 +1,7 @@
-
-from dspy.primitives.module import BaseModule
-from dspy.primitives.assertions import *
 import re
+
+from dspy.primitives.assertions import *
+from dspy.primitives.module import BaseModule
 
 
 class ProgramMeta(type):
@@ -16,7 +16,6 @@ class ProgramMeta(type):
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
-
     def _base_init(self):
         self._compiled = False
 
@@ -29,12 +28,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def named_predictors(self):
         from dspy.predict.predict import Predict
 
-        named_parameters = self.named_parameters()
-        return [
-            (name, param)
-            for name, param in named_parameters
-            if isinstance(param, Predict)
-        ]
+        return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]
@@ -52,7 +46,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         for name, predictor in self.named_predictors():
             set_attribute_by_name(self, name, func(predictor))
         return self
-    
+
     def activate_assertions(self, handler=backtrack_handler, **handler_args):
         """
         Activates assertions for the module.
