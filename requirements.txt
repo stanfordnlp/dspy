@@ -9,4 +9,5 @@ datasets
 requests
 optuna
 pydantic==2.5.0
+mistralai
 # To be deleted
