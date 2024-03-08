@@ -27,7 +27,8 @@ def noop_decorator(arg=None, *noop_args, **noop_kwargs):
 cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), 'cachedir_joblib')
 CacheMemory = Memory(location=cachedir, verbose=0)
 
-cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR')
+project_home = Path(__file__).resolve().parent.parent.parent
+cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR') or os.path.join(project_home, 'cache')
 NotebookCacheMemory = dotdict()
 NotebookCacheMemory.cache = noop_decorator
 
