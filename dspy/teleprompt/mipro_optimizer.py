@@ -103,7 +103,7 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
 
 class MIPRO(Teleprompter):
-    def __init__(self, prompt_model=None, task_model=None, teacher_settings={}, num_candidates=10, metric=None, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
+    def __init__(self, metric, prompt_model=None, task_model=None, teacher_settings={}, num_candidates=10, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
         self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
@@ -275,7 +275,7 @@ class MIPRO(Teleprompter):
         
         return candidates, evaluated_candidates
 
-    def compile(self, student, *, trainset, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True, num_trials=None):
+    def compile(self, student, *, trainset, num_trials, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True):
         # Define ANSI escape codes for colors
         YELLOW = '\033[93m'
         BLUE = '\033[94m'
