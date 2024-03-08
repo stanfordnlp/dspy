@@ -1,16 +1,16 @@
-from setuptools import setup, find_packages	
+from setuptools import find_packages, setup
 
 # Read the content of the README file	
-with open('README.md', 'r', encoding='utf-8') as f:	
+with open('README.md', encoding='utf-8') as f:	
     long_description = f.read()	
 
 # Read the content of the requirements.txt file	
-with open('requirements.txt', 'r', encoding='utf-8') as f:	
+with open('requirements.txt', encoding='utf-8') as f:	
     requirements = f.read().splitlines()	
 
 setup(	
     name="dspy-ai",	
-    version="2.3.4",	
+    version="2.3.6",	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	

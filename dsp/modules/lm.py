@@ -50,8 +50,8 @@ class LM(ABC):
                     printed.append(
                         (
                             prompt,
-                            x['response']
-                        )
+                            x['response'],
+                        ),
                     )
                 else:
                     printed.append(
@@ -60,7 +60,7 @@ class LM(ABC):
                             x["response"].generations
                             if provider == "cohere"
                             else x["response"]["choices"],
-                        )
+                        ),
                     )
 
             last_prompt = prompt
@@ -101,4 +101,4 @@ class LM(ABC):
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop('model')
 
-        return self.__class__(model, **kwargs)
+        return self.__class__(model=model, **kwargs)

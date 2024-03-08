@@ -1,13 +1,14 @@
 
-import dsp
-import tqdm
 import pandas as pd
+import tqdm
+
+import dsp
 
 try:
     from IPython.display import display as ipython_display
 except ImportError:
     ipython_display = print
-from dsp.utils import EM, F1, HotPotF1
+from dsp.utils import EM
 
 
 def evaluateRetrieval(fn, dev, metric=None):

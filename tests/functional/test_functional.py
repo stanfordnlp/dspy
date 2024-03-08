@@ -11,6 +11,7 @@ import dspy
 from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
+from dspy.teleprompt.vanilla import LabeledFewShot
 from dspy.utils.dummies import DummyLM
 
 
@@ -35,9 +36,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(
-        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
-    )
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -88,9 +87,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: List[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -229,9 +226,7 @@ def test_bootstrap_effectiveness():
     lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
@@ -259,7 +254,7 @@ def test_bootstrap_effectiveness():
         Follow the following format.
 
         Input: ${input}
-        Output: ${output}. Respond with a single str value
+        Output: ${output}
 
         ---
 
@@ -295,7 +290,7 @@ def test_regex():
             # Example with a bad origin code.
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
             # Example to help the model understand
-            '{...}',
+            "{...}",
             # Fixed
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
@@ -344,9 +339,9 @@ def test_multi_errors():
         [
             # First origin is wrong, then destination, then all is good
             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            '{...}', # Example to help the model understand
+            "{...}",  # Example to help the model understand
             '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
-            '{...}', # Example to help the model understand
+            "{...}",  # Example to help the model understand
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
     )
@@ -447,3 +442,93 @@ def test_annotated_field():
     output = test(input="input")
 
     assert output == 0.5
+
+
+def test_multiple_outputs():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input -> output")
+    output = test(input="input", config=dict(n=3)).completions.output
+    assert output == ["0", "1", "2"]
+
+
+def test_multiple_outputs_int():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    class TestSignature(dspy.Signature):
+        input: int = dspy.InputField()
+        output: int = dspy.OutputField()
+
+    test = TypedPredictor(TestSignature)
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_parse_type_string():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input:int -> output:int")
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_fields_on_base_signature():
+    class SimpleOutput(dspy.Signature):
+        output: float = dspy.OutputField(gt=0, lt=1)
+
+    lm = DummyLM(
+        [
+            "2.1",  # Bad output
+            "0.5",  # Good output
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    predictor = TypedPredictor(SimpleOutput)
+
+    assert predictor().output == 0.5
+
+
+def test_synthetic_data_gen():
+    class SyntheticFact(BaseModel):
+        fact: str = Field(..., description="a statement")
+        varacity: bool = Field(..., description="is the statement true or false")
+
+    class ExampleSignature(dspy.Signature):
+        """Generate an example of a synthetic fact."""
+
+        fact: SyntheticFact = dspy.OutputField()
+
+    lm = DummyLM(
+        [
+            '{"fact": "The sky is blue", "varacity": true}',
+            '{"fact": "The sky is green", "varacity": false}',
+            '{"fact": "The sky is red", "varacity": true}',
+            '{"fact": "The earth is flat", "varacity": false}',
+            '{"fact": "The earth is round", "varacity": true}',
+            '{"fact": "The earth is a cube", "varacity": false}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    generator = TypedPredictor(ExampleSignature)
+    examples = generator(config=dict(n=3))
+    for ex in examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)
+    assert examples.completions.fact[0] == SyntheticFact(fact="The sky is blue", varacity=True)
+
+    # If you have examples and want more
+    existing_examples = [
+        dspy.Example(fact="The sky is blue", varacity=True),
+        dspy.Example(fact="The sky is green", varacity=False),
+    ]
+    trained = LabeledFewShot().compile(student=generator, trainset=existing_examples)
+
+    augmented_examples = trained(config=dict(n=3))
+    for ex in augmented_examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)

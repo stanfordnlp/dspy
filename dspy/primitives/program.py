@@ -1,9 +1,8 @@
-import copy
-import inspect
 
-from dspy.primitives.module import BaseModule
-from dspy.primitives.assertions import *
 import re
+
+from dspy.primitives.assertions import *
+from dspy.primitives.module import BaseModule
 
 
 class ProgramMeta(type):

@@ -1,7 +1,9 @@
 import dspy
-from dspy.evaluate import Evaluate
-from .base_task import BaseTask
 from dspy.datasets import HotPotQA
+from dspy.evaluate import Evaluate
+
+from .base_task import BaseTask
+
 
 class MultiHop(dspy.Module):
     def __init__(self,passages_per_hop):

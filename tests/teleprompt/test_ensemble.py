@@ -1,6 +1,6 @@
 import pytest
 import dspy
-from dspy.teleprompt.ensemble import Ensemble
+from dspy.teleprompt import Ensemble
 
 
 class MockProgram(dspy.Module):

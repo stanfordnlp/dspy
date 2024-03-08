@@ -139,6 +139,9 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 - [DSPy on BIG-Bench Hard Example, by Chris Levy](https://drchrislevy.github.io/posts/dspy/dspy.html)
 - [Using Ollama with DSPy for Mistral (quantized) by @jrknox1977](https://gist.github.com/jrknox1977/78c17e492b5a75ee5bbaf9673aee4641)
 - [Using DSPy, "The Unreasonable Effectiveness of Eccentric Automatic Prompts" (paper) by VMware's Rick Battle & Teja Gollapudi, and interview at TheRegister](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/)
+- Typed DSPy (contributed by [@normal-computing](https://github.com/normal-computing))
+  - [Using DSPy to train Gpt 3.5 on HumanEval by Thomas Ahle](https://github.com/stanfordnlp/dspy/blob/main/examples/functional/functional.ipynb)
+  - [Building a chess playing agent using DSPy by Franck SN](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e)
 
 There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
 
@@ -274,9 +277,61 @@ compiled_rag = teleprompter.compile(RAG(), trainset=my_rag_trainset)
 If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-shot demonstrations of chain-of-thought retrieval-augmented question answering on our data.
 
 
+## 5) Pydantic Types
 
+Sometimes you need more than just string inputs/outputs.
+Assume, for example, you need to find 
 
-## 5) FAQ: Is DSPy right for me?
+```python
+from pydantic import BaseModel, Field
+from dspy.functional import TypedPredictor
+
+class TravelInformation(BaseModel):
+    origin: str = Field(pattern=r"^[A-Z]{3}$")
+    destination: str = Field(pattern=r"^[A-Z]{3}$")
+    date: datetime.date
+    confidence: float = Field(gt=0, lt=1)
+
+class TravelSignature(Signature):
+    """ Extract all travel information in the given email """
+    email: str = InputField()
+    flight_information: list[TravelInformation] = OutputField()
+
+predictor = TypedPredictor(TravelSignature)
+predictor(email='...')
+```
+
+Which will output a list of `TravelInformation` objects.
+
+There are other ways to create typed signatures too. Such as
+```python
+predictor = TypedChainOfThought("question:str -> answer:int")
+```
+which applies chain of thought, and is guaranteed to return an int.
+
+There's even an approach inspired by [tanuki.py](https://github.com/Tanuki/tanuki.py), which can be convenient when defining modules:
+```python
+from dspy.functional import FunctionalModule, predictor, cot
+
+class MyModule(FunctionalModule):
+    @predictor
+    def hard_question(possible_topics: list[str]) -> str:
+        """Write a hard question based on one of the topics. It should be answerable by a number."""
+
+    @cot
+    def answer(question: str) -> float:
+        pass
+
+    def forward(possible_topics: list[str]):
+        q = hard_question(possible_topics=possible_topics)
+        a = answer(question=q)
+        return (q, a)
+```
+
+For more examples, see [the list above](https://github.com/stanfordnlp/dspy#:~:text=Typed%20DSPy),
+as well as [the unit tests](https://github.com/stanfordnlp/dspy/blob/main/tests/functional/test_functional.py) for the module.
+
+## 6) FAQ: Is DSPy right for me?
 
 The **DSPy** philosophy and abstraction differ significantly from other libraries and frameworks, so it's usually straightforward to decide when **DSPy** is (or isn't) the right framework for your usecase.
 

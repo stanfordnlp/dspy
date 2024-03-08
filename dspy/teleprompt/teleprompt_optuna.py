@@ -1,14 +1,10 @@
-import dsp
-import tqdm
-import random
 import optuna
 
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
-from .vanilla import LabeledFewShot
 
-from dspy.evaluate.evaluate import Evaluate
 
 class BootstrapFewShotWithOptuna(Teleprompter):
     def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6):

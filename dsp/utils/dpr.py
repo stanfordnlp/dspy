@@ -4,11 +4,12 @@
     Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
 """
 
-import regex
 import unicodedata
 
+import regex
 
-class Tokens(object):
+
+class Tokens:
     """A class to represent a list of tokenized text."""
     TEXT = 0
     TEXT_WS = 1
@@ -125,7 +126,7 @@ class Tokens(object):
         return groups
 
 
-class Tokenizer(object):
+class Tokenizer:
     """Base tokenizer class.
     Tokenizers implement tokenize, which should return a Tokens class.
     """
@@ -151,7 +152,7 @@ class SimpleTokenizer(Tokenizer):
         """
         self._regexp = regex.compile(
             '(%s)|(%s)' % (self.ALPHA_NUM, self.NON_WS),
-            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE
+            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE,
         )
         if len(kwargs.get('annotators', {})) > 0:
             logger.warning('%s only tokenizes! Skipping annotators: %s' %

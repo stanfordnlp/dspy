@@ -1,4 +1,3 @@
-import dsp
 import random
 
 from .teleprompt import Teleprompter

@@ -1,9 +1,11 @@
-from typing import List
 import types
+from typing import List
+
 import dsp
+from dspy.teleprompt import BootstrapFewShot
 
 from .teleprompt import Teleprompter
-from dspy.teleprompt import BootstrapFewShot
+
 
 class KNNFewShot(Teleprompter):
     def __init__(self, KNN, k: int, trainset: List[dsp.Example]):

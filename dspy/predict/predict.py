@@ -1,10 +1,10 @@
-import dsp
 import random
 
+import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-
 from dspy.signatures.signature import ensure_signature, signature_to_template
+
 
 class Predict(Parameter):
     def __init__(self, signature, **config):
@@ -60,10 +60,10 @@ class Predict(Parameter):
         assert lm is not None, "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
-        temperature = config.get("temperature", None)
+        temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
 
-        num_generations = config.get("n", None)
+        num_generations = config.get("n")
         if num_generations is None:
             num_generations = lm.kwargs.get("n", lm.kwargs.get("num_generations", None))
 
@@ -103,7 +103,7 @@ class Predict(Parameter):
             for field in template.fields:
                 if field.output_variable not in kwargs.keys():
                     completions[-1][field.output_variable] = getattr(
-                        c, field.output_variable
+                        c, field.output_variable,
                     )
 
         pred = Prediction.from_completions(completions, signature=signature)
