@@ -1,16 +1,16 @@
 # Typed Predictors
 
-In DSPy Signatures, we have `InputField` and `OutputField` that define the nature of inputs and outputs of the field. However the inputs and output to these fields is always string, you can seperately process these inputs and outputs in complicated scenarios but the inherent type is always `str`.
+In DSPy Signatures, we have `InputField` and `OutputField` that define the nature of inputs and outputs of the field. However, the inputs and output to these fields are always `str`-typed, which requires input and output string processing.
 
-Pydantic `BaseModel` is a great way to enforce type constraints on the fields, but it is not directly compatible with the `dspy.Signature`. This is where Typed Predictors come in. They are a way to enforce the type constraints on the inputs and outputs of the fields in a `dspy.Signature`.
+Pydantic `BaseModel` is a great way to enforce type constraints on the fields, but it is not directly compatible with the `dspy.Signature`. Typed Predictors resolves this as a way to enforce the type constraints on the inputs and outputs of the fields in a `dspy.Signature`.
 
 ## Executing Typed Predictors
 
-Using Typed Predictors is not too different than any other module, infact aside from adding type hints to signature attributes and using a special Predictor module instead of `dspy.Predict` there is nothing else to do. Let's take a look at a simple example to understand this.
+Using Typed Predictors is not too different than any other module with the minor additions of type hints to signature attributes and using a special Predictor module instead of `dspy.Predict`. Let's take a look at a simple example to understand this.
 
 ### Defining Input and Output Models
 
-Let's take an simple task as example i.e. given the `context` and `query` the LLM should give me an `answer` and `confidence_score`. The task could be modelled better but this is just for illustration purposes. Let's define our `Input` and `Output` models via pydantic.
+Let's take a simple task as an example i.e. given the `context` and `query`, the LLM should return an `answer` and `confidence_score`. Let's define our `Input` and `Output` models via pydantic.
 
 ```python
 from pydantic import BaseModel, Field
@@ -24,11 +24,11 @@ class Output(BaseModel):
     factual_: float = Field(..., description="The confidence score for the answer")
 ```
 
-As you can see this is where you can provide description to the attributes now. Now that we have the input and output models, let's define a simple Signature that takes in the input and returns the output.
+As you can see, we can describe the attributes by defining a simple Signature that takes in the input and returns the output.
 
 ### Creating Typed Predictor
 
-A Typed Predictor needs a Typed Signature which is not any different than a normal `dspy.Signature` everything is the same except here you provide type of each field as well.
+A Typed Predictor needs a Typed Signature, which extends a `dspy.Signature` with the addition of specifying "field type".
 
 ```python
 class QASignature(dspy.Signature):
@@ -38,17 +38,17 @@ class QASignature(dspy.Signature):
     output: Output = dspy.OutputField()
 ```
 
-Now that we have the `QASignature`, let's define a Typed Predictor that let's use execute this Signature while conforming to the type constraints.
+Now that we have the `QASignature`, let's define a Typed Predictor that executes this Signature while conforming to the type constraints.
 
 ```python
 predictor = dspy.TypedPredictor(QASignature)
 ```
 
-Just how we pass the Signature to other modules we pass the `QASignature` to `dspy.TypedPredictor`, where typed constraints are inforced.
+Similar to other modules, we pass the `QASignature` to `dspy.TypedPredictor` which enforces the typed constraints.
 
 ### I/O in Typed Predictors
 
-Now that we have the Typed Predictor let's test it out by providing some sample input to the predictor and see the output and it's type. We can create a `Input` instance and pass it to the predictor to get a dictionary of the output. 
+Now let's test out the Typed Predictor by providing some sample input to the predictor and verifying the output type. We can create an `Input` instance and pass it to the predictor to get a dictionary of the output. 
 
 ```python
 doc_query_pair = Input(
@@ -59,7 +59,7 @@ doc_query_pair = Input(
 prediction = predictor(input=doc_query_pair)
 ```
 
-Now that we have the prediction, we can see the output and it's type.
+Let's see the output and its type.
 
 ```python
 answer = prediction['answer']
@@ -72,7 +72,7 @@ print(f"Confidence Score: {confidence_score}, Confidence Score Type: {type(confi
 
 ## Typed Chain of Thoughts with `dspy.TypedChainOfThought`
 
-If `TypedPredictor` is the typed counterpart of `dspy.Predict` then `TypedChainOfThought` is the typed counterpart of `dspy.ChainOfThought`. It adds a Chain of Thoughts `dspy.OutputField` to the `dspy.TypedPredictor` module by prepending it to the Signature.
+Extending the analogous comparison of `TypedPredictor` to `dspy.Predict`, we create `TypedChainOfThought`, the typed counterpart of `dspy.ChainOfThought`:
 
 ```python
 cot_predictor = dspy.TypedChainOfThought(QASignature)
@@ -87,7 +87,7 @@ prediction = cot_predictor(input=doc_query_pair)
 
 ## Typed Predictors as Decorators
 
-While the `dspy.TypedPredictor` and `dspy.TypedChainOfThought` provide a convinient way to use typed predictors, you can also use their as decorators to enforce type constraints on the inputs and outputs of the function. Good thing is that you won't need to explicitly define a Signature class because it's created internally based on function arguments, outputs and docstring.
+While the `dspy.TypedPredictor` and `dspy.TypedChainOfThought` provide a convenient way to use typed predictors, you can also use them as decorators to enforce type constraints on the inputs and outputs of the function. This relies on the internal definitions of the Signature class and its function arguments, outputs, and docstrings.
 
 ```
 # Function name is output key
@@ -105,7 +105,7 @@ def qa_function(doc_query_pair: Input) -> Output:
 
 ## Composing Functional Typed Predictors in `dspy.Module`
 
-If you're creating DSPy pipelines via `dspy.Module` then you can simply use Functional Typed Predictors by creating these class methods and using them as decorators. Here is an example of using functional typed predictors to create a `SimplifiedBaleen` pipeline:
+If you're creating DSPy pipelines via `dspy.Module`, then you can simply use Functional Typed Predictors by creating these class methods and using them as decorators. Here is an example of using functional typed predictors to create a `SimplifiedBaleen` pipeline:
 
 ```python
 class SimplifiedBaleen(FunctionalModule):
@@ -138,7 +138,7 @@ class SimplifiedBaleen(FunctionalModule):
 
 ## Optimizing Typed Predictors
 
-Typed predictors can be optimized using `optimize_signature` optimizer which optimizes the instructions of the Signature. Here is an example of using `optimize_signature` to optimize the `QASignature`:
+Typed predictors can be optimized on the Signature instructions through the `optimize_signature` optimizer. Here is an example of this optimization on the `QASignature`:
 
 ```python
 import dspy
