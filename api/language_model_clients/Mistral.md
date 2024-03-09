@@ -31,4 +31,4 @@ class Mistral(LM):
 
 ### Methods
 
-Refer to [`dspy.Mistral`](https://dspy-docs.vercel.app/api/language_model_clients/Mistral) documentation.
+Refer to [`dspy.Mistral`](api/language_model_clients/Mistral) documentation.
