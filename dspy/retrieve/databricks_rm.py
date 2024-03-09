@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
-from typing import List, Union
-
+from typing import List, Union, Optional
+import json
 import requests
 
 import dspy
@@ -19,6 +19,8 @@ class DatabricksRM(dspy.Retrieve):
         columns (list[str]): Column names to include in response
         filters_json (str, optional): JSON string for query filters
         k (int, optional): Number of top embeddings to retrieve. Defaults to 3.
+        docs_id_column_name (str, optional): Column name for retrieved doc_ids to return.
+        text_column_name (str, optional): Column name for retrieved text to return.
 
     Examples:
         Below is a code snippet that shows how to configure Databricks Vector Search endpoints:
@@ -39,7 +41,7 @@ class DatabricksRM(dspy.Retrieve):
         )
 
         #Creating Vector Search Index using Python SDK 
-        #Example for Direct Vector Acces Index
+        #Example for Direct Vector Access Index
 
         index = client.create_direct_access_index(
             endpoint_name="your_databricks_host_url",
@@ -65,7 +67,7 @@ class DatabricksRM(dspy.Retrieve):
         self.retrieve = DatabricksRM(query=[1, 2, 3], query_type = 'vector')
         ```
     """
-    def __init__(self, databricks_index_name = None, databricks_endpoint = None, databricks_token = None, columns = None, filters_json = None, k = 3):
+    def __init__(self, databricks_index_name = None, databricks_endpoint = None, databricks_token = None, columns = None, filters_json = None, k = 3, docs_id_column_name = 'id', text_column_name = 'text'):
         super().__init__(k=k)
         if not databricks_token and not os.environ.get("DATABRICKS_TOKEN"):
             raise ValueError("You must supply databricks_token or set environment variable DATABRICKS_TOKEN")
@@ -81,6 +83,8 @@ class DatabricksRM(dspy.Retrieve):
         self.columns = columns
         self.filters_json = filters_json
         self.k = k
+        self.docs_id_column_name = docs_id_column_name
+        self.text_column_name = text_column_name
 
     def forward(self, query: Union[str, List[float]], query_type: str = 'vector') -> dspy.Prediction:
         """Search with Databricks Vector Search Client for self.k top results for query
@@ -120,14 +124,20 @@ class DatabricksRM(dspy.Retrieve):
         results = response.json()
 
         docs = defaultdict(float)
+        doc_ids = []
         text, score = None, None
         for data_row in results["result"]["data_array"]:
             for col, val in zip(results["manifest"]["columns"], data_row):
-                if col["name"] == 'text':
+                if col["name"] == self.docs_id_column_name:
+                    if self.docs_id_column_name == 'metadata':
+                        docs_dict = json.loads(val)
+                        doc_ids.append(str(docs_dict["document_id"]))
+                    else:
+                        doc_ids.append(str(val))
                     text = val
                 if col["name"] == 'score':
                     score = val
             docs[text] += score
 
         sorted_docs = sorted(docs.items(), key=lambda x: x[1], reverse=True)[:self.k]
-        return Prediction(docs=[doc for doc, _ in sorted_docs])
+        return Prediction(docs=[doc for doc, _ in sorted_docs], doc_ids = doc_ids)
