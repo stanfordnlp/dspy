@@ -1,16 +1,18 @@
 import os
-import time
-import dsp
-import tqdm
 import random
+import time
 
 import ujson
 from datasets.fingerprint import Hasher
 
-# from dspy.primitives import Example
+import dsp
+from dspy.signatures.signature import signature_to_template
 
-from .teleprompt import Teleprompter
 from .bootstrap import BootstrapFewShot
+
+# from dspy.primitives import Example
+from .teleprompt import Teleprompter
+
 # from .vanilla import LabeledFewShot
 
 # from dspy.evaluate.evaluate import Evaluate
@@ -84,8 +86,9 @@ class BootstrapFinetune(Teleprompter):
                     demo = dict(demo)
 
                     # TODO: FIXME: generalize.
-                    completion = demo.pop(predictor.signature.fields[-1].output_variable)
-                    prompt = predictor.signature.query(dsp.Example(demos=[], **demo)).strip()
+                    template = signature_to_template(predictor.signature)
+                    completion = demo.pop(template.fields[-1].output_variable)
+                    prompt = template.query(dsp.Example(demos=[], **demo)).strip()
 
                     finetune_data[name_].append(dict(prompt=prompt, completion=completion))
 
@@ -127,7 +130,7 @@ class BootstrapFinetune(Teleprompter):
             'batch_size': bsize,
             'epochs': epochs,
             'gradient_accumulation_steps': accumsteps, # 2,
-            'lr': lr
+            'lr': lr,
         }
 
         compiler_config['save'] = os.path.join(path_prefix, compiler_config['save']) if path_prefix else compiler_config['save']

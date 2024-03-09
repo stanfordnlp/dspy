@@ -1,14 +1,10 @@
-import dsp
-import tqdm
 import random
 
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
-
 
 # TODO: Don't forget dealing with the raw demos.
 # TODO: Deal with the (pretty common) case of having a metric for filtering and a separate metric for eval.
@@ -28,15 +24,17 @@ from dspy.evaluate.evaluate import Evaluate
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
-    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, stop_at_score=None):
+    def __init__(self, metric, teacher_settings={}, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, num_candidate_programs=16, num_threads=6, max_errors=10, stop_at_score=None, metric_threshold=None):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
         self.stop_at_score = stop_at_score
+        self.metric_threshold = metric_threshold
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
+        self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         # self.max_num_traces = 1 + int(max_bootstrapped_demos / 2.0 * self.num_candidate_sets)
 
@@ -48,7 +46,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # print("Going to sample", self.max_num_traces, "traces in total.")
         print("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 
-    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None):
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
@@ -70,11 +68,11 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             elif seed == -2:
                 # labels only
                 teleprompter = LabeledFewShot(k=self.max_labeled_demos)
-                program2 = teleprompter.compile(student, trainset=trainset2)
+                program2 = teleprompter.compile(student, trainset=trainset2, sample=labeled_sample)
             
             elif seed == -1:
                 # unshuffled few-shot
-                program = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=self.max_num_samples,
+                program = BootstrapFewShot(metric=self.metric, metric_threshold=self.metric_threshold, max_bootstrapped_demos=self.max_num_samples,
                                            max_labeled_demos=self.max_labeled_demos,
                                            teacher_settings=self.teacher_settings, max_rounds=self.max_rounds)
                 program2 = program.compile(student, teacher=teacher, trainset=trainset2)
@@ -85,7 +83,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 random.Random(seed).shuffle(trainset2)
                 size = random.Random(seed).randint(self.min_num_samples, self.max_num_samples)
 
-                teleprompter = BootstrapFewShot(metric=self.metric, max_bootstrapped_demos=size,
+                teleprompter = BootstrapFewShot(metric=self.metric, metric_threshold=self.metric_threshold, max_bootstrapped_demos=size,
                                                 max_labeled_demos=self.max_labeled_demos,
                                                 teacher_settings=self.teacher_settings,
                                                 max_rounds=self.max_rounds)
@@ -93,7 +91,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 program2 = teleprompter.compile(student, teacher=teacher, trainset=trainset2)
 
             evaluate = Evaluate(devset=self.valset, metric=self.metric, num_threads=self.num_threads,
-                                display_table=False, display_progress=True)
+                                max_errors=self.max_errors, display_table=False, display_progress=True)
 
             score, subscores = evaluate(program2, return_all_scores=True)
 

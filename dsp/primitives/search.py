@@ -1,4 +1,7 @@
+from collections.abc import Iterable
+
 import numpy as np
+
 import dsp
 
 
@@ -7,6 +10,10 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
     passages = dsp.settings.rm(query, k=k, **kwargs)
+    if not isinstance(passages, Iterable):
+        # it's not an iterable yet; make it one.
+        # TODO: we should unify the type signatures of dspy.Retriever
+        passages = [passages]
     passages = [psg.long_text for psg in passages]
     
     if dsp.settings.reranker:
@@ -28,7 +35,7 @@ def retrieveRerankEnsemble(queries: list[str], k: int) -> list[str]:
         for idx in np.argsort(passages_cs_scores)[::-1]:
             psg = retrieved_passages[idx]
             passages[psg.long_text] = passages.get(psg.long_text, []) + [
-                passages_cs_scores[idx]
+                passages_cs_scores[idx],
             ]
 
     passages = [(np.average(score), text) for text, score in passages.items()]

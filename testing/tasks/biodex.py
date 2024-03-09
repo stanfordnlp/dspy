@@ -1,22 +1,24 @@
 from __future__ import annotations
-from .base_task import BaseTask
-import sys
-import dspy
-from dspy.evaluate import Evaluate
-from dsp.utils import deduplicate
-import tqdm
-import datasets
-import sys
+
 import math
-from functools import lru_cache
 import os
-import re
 import pickle
+import re
+from collections import defaultdict
+from enum import Enum
+from functools import lru_cache
+from typing import DefaultDict, Dict, List, Optional, Union
+
+import datasets
+import tqdm
 from pydantic import BaseModel
 from rapidfuzz import process
-from typing import Union, Optional, Dict, DefaultDict, List
-from enum import Enum
-from collections import defaultdict
+
+import dspy
+from dsp.utils import deduplicate
+from dspy.evaluate import Evaluate
+
+from .base_task import BaseTask
 
 # Must point to a MedDra download with mdhier.asc
 data_dir = '/future/u/okhattab/data/2023/MedDraV2/meddra_23_0_english/MedAscii' # NOTE: EDIT THIS LINE 
@@ -80,19 +82,19 @@ class Node(BaseModel):
     level: Level
     count: int = 0
 
-    parent: 'Node' = None
-    children: Dict[str, 'Node'] = {}
+    parent: Node = None
+    children: Dict[str, Node] = {}
 
     # maps for efficient nested children lookups
     # typically only used for the root node
-    id_to_nodes: Optional[DefaultDict[str, List['Node']]] = None
-    term_to_nodes: Optional[DefaultDict[str, List['Node']]] = None
+    id_to_nodes: Optional[DefaultDict[str, List[Node]]] = None
+    term_to_nodes: Optional[DefaultDict[str, List[Node]]] = None
 
     # text normalizer to build lookup tables
     # typically only used for the root node
     normalizer: function = lambda x: x
 
-    def get_parent_at_level(self, target_level: Level) -> Union['Node', None]:
+    def get_parent_at_level(self, target_level: Level) -> Union[Node, None]:
         # check if current node is deeper than target_level
         level_diff = target_level - self.level
         if level_diff > 0:
@@ -103,10 +105,10 @@ class Node(BaseModel):
                 node = node.parent
             return node
 
-    def get_children_at_level(self, target_level: Level) -> List['Node']:
+    def get_children_at_level(self, target_level: Level) -> List[Node]:
         raise NotImplementedError
 
-    def lookup_id(self, id: str) -> Union[List['Node'], None]:
+    def lookup_id(self, id: str) -> Union[List[Node], None]:
         # create lookup tables if they do not exists
         if self.id_to_nodes == None:
             self.set_lookup_tables()
@@ -117,7 +119,7 @@ class Node(BaseModel):
         else:
             return None
 
-    def lookup_term(self, term: str) -> Union[List['Node'], None]:
+    def lookup_term(self, term: str) -> Union[List[Node], None]:
         # create lookup tables if they do not exists
         if self.term_to_nodes == None:
             raise RuntimeError("First set the lookup tables using 'set_lookup_tables'.")
@@ -198,9 +200,9 @@ class Node(BaseModel):
             # add candidate's children to candidate list
             if candidate.children:
                 candidates.extend(candidate.children.values())
-        return None
+        return
 
-    def is_equivalent_node(self, other: 'Node') -> bool:
+    def is_equivalent_node(self, other: Node) -> bool:
         # return true if two nodes are the same, siblings or in a parent-child relation
         return (
             (self == other)
@@ -229,7 +231,7 @@ class Node(BaseModel):
     def __hash__(self):
         return hash(self.__key())
 
-    def __eq__(self, other: 'Node') -> bool:
+    def __eq__(self, other: Node) -> bool:
         # undeep equals operator, does not check children
         return self.__key() == other.__key()
 
@@ -258,7 +260,7 @@ class Match(BaseModel):
     query: str
 
 def _create_child_if_not_exists(
-    parent: Node, child_id: str, child_term: str, term_to_count: dict
+    parent: Node, child_id: str, child_term: str, term_to_count: dict,
 ):
     parent_level = parent.level
     # get child level if still appropriate
@@ -276,7 +278,7 @@ def _create_child_if_not_exists(
         else:
             count = 0
         child = Node(
-            id=child_id, term=child_term, level=child_level, parent=parent, count=count
+            id=child_id, term=child_term, level=child_level, parent=parent, count=count,
         )
         parent.children.update({child_id: child})
     return child
@@ -297,7 +299,7 @@ def parse_mdhier(data_dir):
 
     # get data
     lines = []
-    with open(file, "r") as fp:
+    with open(file) as fp:
         lines = fp.readlines()
     text = "\n".join(lines)
 
@@ -306,7 +308,7 @@ def parse_mdhier(data_dir):
     print(f"Read {len(lines)} lines.")
     if len(lines) != len(matches):
         raise RuntimeError(
-            f"Error parsing mdhier.asc. Expected number of matches to match number of lines."
+            "Error parsing mdhier.asc. Expected number of matches to match number of lines.",
         )
 
     # load counts
@@ -531,6 +533,7 @@ class CompilationMetric:
 metricR = CompilationMetric(field='reactions', metric='recall')
 from collections import Counter
 
+
 def reduce_grounded_reactions(grounded_reactions):
     scores = {}
     for score, reaction in grounded_reactions:
@@ -562,7 +565,7 @@ def extract_reactions_from_strings(reactions):
     return reactions
 
 class PredictReactions(dspy.Signature):
-    __doc__ = f"""Given a snippet from a medical article, identify the adverse drug reactions affecting the patient. If none are mentioned in the snippet, say N/A."""
+    __doc__ = """Given a snippet from a medical article, identify the adverse drug reactions affecting the patient. If none are mentioned in the snippet, say N/A."""
 
     title = dspy.InputField()
     context = dspy.InputField()

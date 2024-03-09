@@ -1,9 +1,9 @@
-import os
-import tqdm
 import datetime
 import itertools
-
+import os
 from collections import defaultdict
+
+import tqdm
 
 
 def print_message(*s, condition=True, pad=False, sep=None):
@@ -27,7 +27,7 @@ def file_tqdm(file):
     print(f"#> Reading {file.name}")
 
     with tqdm.tqdm(
-        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB"
+        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB",
     ) as pbar:
         for line in file:
             yield line
@@ -76,6 +76,7 @@ def batch(group, bsize, provide_offset=False):
 
 
 import copy
+
 
 class dotdict(dict):
     def __getattr__(self, key):
@@ -214,7 +215,7 @@ def lengths2offsets(lengths):
 
 
 # see https://stackoverflow.com/a/45187287
-class NullContextManager(object):
+class NullContextManager:
     def __init__(self, dummy_resource=None):
         self.dummy_resource = dummy_resource
 

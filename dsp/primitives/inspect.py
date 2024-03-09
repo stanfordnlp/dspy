@@ -1,8 +1,9 @@
 import inspect
-import string
-import random
-import requests
 import json
+import random
+import string
+
+import requests
 
 
 class FuncInspector:
@@ -41,9 +42,7 @@ class FuncInspector:
     if isinstance(obj, dict):
       to_delete = []
       for key in obj:
-        if delete_empty and not obj[key]:
-          to_delete.append(key)
-        elif key == "completions":
+        if delete_empty and not obj[key] or key == "completions":
           to_delete.append(key)
         else:
           self.parse(obj[key], delete_empty)

@@ -1,7 +1,8 @@
-import threading
-from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+
 
 class Settings:
     def __init__(self):

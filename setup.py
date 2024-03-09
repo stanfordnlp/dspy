@@ -1,16 +1,16 @@
-from setuptools import setup, find_packages	
+from setuptools import find_packages, setup
 
 # Read the content of the README file	
-with open('README.md', 'r', encoding='utf-8') as f:	
+with open('README.md', encoding='utf-8') as f:	
     long_description = f.read()	
 
 # Read the content of the requirements.txt file	
-with open('requirements.txt', 'r', encoding='utf-8') as f:	
+with open('requirements.txt', encoding='utf-8') as f:	
     requirements = f.read().splitlines()	
 
 setup(	
     name="dspy-ai",	
-    version="2.1.10",	
+    version="2.4.1",	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	
@@ -21,13 +21,14 @@ setup(
     packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),	
     python_requires='>=3.9',	
     install_requires=requirements,	
-    extras_require={	
+    extras_require={
+        "chromadb": ["chromadb~=0.4.14"],
+        "qdrant": ["qdrant-client", "fastembed"],
+        "marqo": ["marqo~=3.1.0"],
+        "mongodb": ["pymongo~=3.12.0"],			
         "pinecone": ["pinecone-client~=2.2.4"],	
-        "qdrant": ["qdrant-client", "fastembed"],	
-        "chromadb": ["chromadb~=0.4.14"],	
-        "marqo": ["marqo"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
-        "mongodb": ["pymongo~=3.12.0"],	
+        "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
