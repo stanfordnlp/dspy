@@ -34,7 +34,7 @@ Search the chromadb collection for the top `k` passages matching the given query
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
-- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with a `long_text` attribute.
+- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"id": str, "score": float, "long_text": str, "metadatas": dict }]`
 
 ### Quickstart with OpenAI Embeddings
 
