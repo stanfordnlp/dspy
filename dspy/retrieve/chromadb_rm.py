@@ -145,6 +145,10 @@ class ChromadbRM(dspy.Retrieve):
             query_embeddings=embeddings, n_results=k,
         )
 
-        passages = [dotdict({"long_text": x}) for x in results["documents"][0]]
-
-        return passages
+        zipped_results = zip(
+            results["ids"][0], 
+            results["distances"][0], 
+            results["documents"][0], 
+            results["metadatas"][0])
+        results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
+        return results
