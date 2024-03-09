@@ -29,6 +29,7 @@ setup(
         "pinecone": ["pinecone-client~=2.2.4"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
+        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
