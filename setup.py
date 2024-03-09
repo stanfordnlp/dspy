@@ -29,7 +29,6 @@ setup(
         "pinecone": ["pinecone-client~=2.2.4"],
         "weaviate": ["weaviate-client~=3.26.1"],
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
-        "mistralai": ["mistralai~=0.1.3"],
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
