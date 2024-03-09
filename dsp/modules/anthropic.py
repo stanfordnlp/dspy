@@ -2,10 +2,15 @@ import os
 import backoff
 import json
 from typing import Optional, Any
-from anthropic import Anthropic, RateLimitError
 
 from dsp.modules.lm import LM
 import logging
+
+try:
+    import anthropic
+    anthropic_rate_limit = anthropic.RateLimitError
+except ImportError:
+    anthropic_rate_limit = Exception
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +44,12 @@ class Claude(LM):
             **kwargs
     ):
         super().__init__(model)
+
+        try:
+            from anthropic import Anthropic, RateLimitError
+        except ImportError as err:
+            raise ImportError("Claude requires `pip install anthropic`.") from err
+        
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
         self.api_base = BASE_URL if api_base is None else api_base
@@ -84,7 +95,7 @@ class Claude(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        (RateLimitError),
+        (anthropic_rate_limit),
         max_time=1000,
         max_tries=8,
         on_backoff=backoff_hdlr,
