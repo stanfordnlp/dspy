@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspy-ai"
-version = "2.3.6"
+version = "2.4.1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -34,6 +34,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+anthropic = ["anthropic~=0.18.0"]
 chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
 marqo = ["marqo"]
@@ -52,7 +53,7 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-test = ["pytest>=6.2.5"]
+dev = ["pytest>=6.2.5"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -84,6 +85,7 @@ tqdm = "^4.66.1"
 datasets = "^2.14.6"
 requests = "^2.31.0"
 optuna = "^3.4.0"
+anthropic = { version = "^0.18.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
 fastembed = { version = "^0.1.0", optional = true }
 marqo = { version = "*", optional = true }
@@ -103,9 +105,13 @@ sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
 
 
-[tool.poetry.group.test.dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
-
+transformers = "^4.38.2"
+torch = "^2.2.1"
+pytest-mock = "^3.12.0"
+ruff = "^0.3.0"
+black = "^24.2.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]

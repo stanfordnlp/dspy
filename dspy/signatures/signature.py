@@ -35,7 +35,9 @@ class SignatureMeta(type(BaseModel)):
     def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
         # Set `str` as the default type for all fields
         raw_annotations = namespace.get("__annotations__", {})
-        for name, _field in namespace.items():
+        for name, field in namespace.items():
+            if not isinstance(field, FieldInfo):
+                continue  # Don't add types to non-field attributes
             if not name.startswith("__") and name not in raw_annotations:
                 raw_annotations[name] = str
         namespace["__annotations__"] = raw_annotations
@@ -272,9 +274,8 @@ def make_signature(
 
 
 def _parse_signature(signature: str) -> Tuple[Type, Field]:
-    pattern = r"^\s*[\w\s,:]+\s*->\s*[\w\s,:]+\s*$"
-    if not re.match(pattern, signature):
-        raise ValueError(f"Invalid signature format: '{signature}'")
+    if signature.count("->") != 1:
+        raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
     fields = {}
     inputs_str, outputs_str = map(str.strip, signature.split("->"))
