@@ -5,13 +5,20 @@ import backoff
 from dsp.modules.lm import LM
 
 try:
+    import mistralai
     from mistralai.client import MistralClient
     from mistralai.exceptions import MistralAPIException
     from mistralai.models.chat_completion import ChatCompletionResponse, ChatMessage
     mistralai_api_error = MistralAPIException
 except ImportError:
     mistralai_api_error = Exception
-    print("Not loading Mistral AI because it is not installed.")
+    mistralai = None
+
+
+if mistralai is None:
+    raise ImportError(
+        "Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.",
+    )
 
 
 def backoff_hdlr(details):
