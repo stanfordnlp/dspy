@@ -1,10 +1,10 @@
+import logging
 import os
+from typing import Any, Optional
+
 import backoff
-import json
-from typing import Optional, Any
 
 from dsp.modules.lm import LM
-import logging
 
 try:
     import anthropic
@@ -41,7 +41,7 @@ class Claude(LM):
             model: str = "claude-instant-1.2",
             api_key: Optional[str] = None,
             api_base: Optional[str] = None,
-            **kwargs
+            **kwargs,
     ):
         super().__init__(model)
 
