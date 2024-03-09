@@ -53,19 +53,12 @@ class LM(ABC):
                             x['response'],
                         ),
                     )
-                elif provider == "mistral":
+                elif provider == "mistral" or provider == "mistral":
                     printed.append(
                         (
                             prompt,
                             x['response'].choices,
                         ),
-                    )
-                elif provider == "mistral":
-                    printed.append(
-                        (
-                            prompt,
-                            x['response'].choices
-                        )
                     )
                 else:
                     printed.append(
