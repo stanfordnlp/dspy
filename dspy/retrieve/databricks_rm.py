@@ -1,7 +1,8 @@
+import json
 import os
 from collections import defaultdict
-from typing import List, Union, Optional
-import json
+from typing import List, Union
+
 import requests
 
 import dspy
