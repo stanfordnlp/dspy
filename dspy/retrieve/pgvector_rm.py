@@ -30,6 +30,7 @@ class PgVectorRM(dspy.Retrieve):
         k (Optional[int]): Default number of top passages to retrieve. Defaults to 20
         embedding_field (str = "embedding"): Field containing passage embeddings. Defaults to "embedding"
         fields (List[str] = ['text']): Fields to retrieve from the table. Defaults to "text"
+        embedding_model (str = "text-embedding-ada-002"): Field containing the OpenAI embedding model to use. Defaults to "text-embedding-ada-002"
 
     Examples:
         Below is a code snippet that shows how to use PgVector as the default retriever
@@ -61,9 +62,10 @@ class PgVectorRM(dspy.Retrieve):
             db_url: str,
             pg_table_name: str,
             openai_client: openai.OpenAI,
-            k: Optional[int]=20,
+            k: Optional[int] = 20,
             embedding_field: str = "embedding",
             fields: List[str] = ['text'],
+            embedding_model: str = "text-embedding-ada-002",
     ):
         """
         k = 20 is the number of paragraphs to retrieve
@@ -75,10 +77,11 @@ class PgVectorRM(dspy.Retrieve):
         self.pg_table_name = pg_table_name
         self.fields = fields
         self.embedding_field = embedding_field
+        self.embedding_model = embedding_model
 
         super().__init__(k=k)
 
-    def forward(self, query: str, k: Optional[int]=20):
+    def forward(self, query: str, k: Optional[int] = 20):
         """Search with PgVector for self.k top passages for query
         
         Args:
@@ -89,7 +92,7 @@ class PgVectorRM(dspy.Retrieve):
         """
         # Embed query
         query_embedding = self.openai_client.embeddings.create(
-            model="text-embedding-ada-002",
+            model=self.embedding_model,
             input=query,
             encoding_format="float",
         ).data[0].embedding
@@ -112,7 +115,9 @@ class PgVectorRM(dspy.Retrieve):
                     sql_query,
                     (query_embedding, self.k))
                 rows = cur.fetchall()
+                columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
-                    related_paragraphs.append(dspy.Example(long_text=row[0], document_id=row[1]))
+                    data = dict(zip(columns, row))
+                    related_paragraphs.append(dspy.Example(**data))
         # Return Prediction
         return related_paragraphs
