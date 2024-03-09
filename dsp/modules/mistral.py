@@ -12,13 +12,8 @@ try:
     mistralai_api_error = MistralAPIException
 except ImportError:
     mistralai_api_error = Exception
-    mistralai = None
+    print("Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.")
 
-
-if mistralai is None:
-    raise ImportError(
-        "Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.",
-    )
 
 
 def backoff_hdlr(details):
