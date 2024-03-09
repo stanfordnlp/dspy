@@ -10,10 +10,8 @@ class Settings:
     _instance = None
 
     def __new__(cls):
+        """Singleton Pattern. See https://python-patterns.guide/gang-of-four/singleton/
         """
-        Singleton Pattern. See https://python-patterns.guide/gang-of-four/singleton/
-        """
-
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.lock = threading.Lock()

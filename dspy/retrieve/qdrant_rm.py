@@ -14,8 +14,7 @@ except ImportError:
 
 
 class QdrantRM(dspy.Retrieve):
-    """
-    A retrieval module that uses Qdrant to return the top passages for a given query.
+    """A retrieval module that uses Qdrant to return the top passages for a given query.
 
     Assumes that a Qdrant collection has been created and populated with the following payload:
         - document: The text of the passage
@@ -59,6 +58,7 @@ class QdrantRM(dspy.Retrieve):
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """

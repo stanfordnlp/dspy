@@ -47,10 +47,8 @@ def create_directory(path):
 
 
 def deduplicate(seq: list[str]) -> list[str]:
+    """Source: https://stackoverflow.com/a/480227/1493011
     """
-    Source: https://stackoverflow.com/a/480227/1493011
-    """
-
     seen = set()
     return [x for x in seq if not (x in seen or seen.add(x))]
 
@@ -121,11 +119,9 @@ def flatten(L):
 
 
 def zipstar(L, lazy=False):
-    """
-    A much faster A, B, C = zip(*[(a, b, c), (a, b, c), ...])
+    """A much faster A, B, C = zip(*[(a, b, c), (a, b, c), ...])
     May return lists or tuples.
     """
-
     if len(L) == 0:
         return L
 
@@ -167,10 +163,8 @@ def groupby_first_item(lst):
 
 
 def process_grouped_by_first_item(lst):
+    """Requires items in list to already be grouped by first item.
     """
-    Requires items in list to already be grouped by first item.
-    """
-
     groups = defaultdict(list)
 
     started = False
@@ -194,12 +188,10 @@ def process_grouped_by_first_item(lst):
 
 
 def grouper(iterable, n, fillvalue=None):
+    """Collect data into fixed-length chunks or blocks
+    Example: grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    Source: https://docs.python.org/3/library/itertools.html#itertools-recipes
     """
-    Collect data into fixed-length chunks or blocks
-        Example: grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
-        Source: https://docs.python.org/3/library/itertools.html#itertools-recipes
-    """
-
     args = [iter(iterable)] * n
     return itertools.zip_longest(*args, fillvalue=fillvalue)
 

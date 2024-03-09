@@ -9,8 +9,7 @@ from dspy.primitives.prediction import Prediction
 
 
 class DatabricksRM(dspy.Retrieve):
-    """
-    A retrieval module that uses Databricks Vector Search Endpoint to return the top-k embeddings for a given query.
+    """A retrieval module that uses Databricks Vector Search Endpoint to return the top-k embeddings for a given query.
 
     Args:
         databricks_index_name (str): Databricks vector search index to query

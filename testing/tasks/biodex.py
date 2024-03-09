@@ -365,10 +365,8 @@ def base_ground(reaction, K):
 
 @lru_cache(maxsize=100000)
 def ground_v1(reaction, K=3):
+    """Prefers exact matches over fuzzy matches, when available.
     """
-        Prefers exact matches over fuzzy matches, when available.
-    """
-
     exact_matches, fuzzy_matches = base_ground(reaction, K)
 
     matches = exact_matches[:1] or fuzzy_matches
@@ -379,10 +377,8 @@ def ground_v1(reaction, K=3):
 
 @lru_cache(maxsize=100000)
 def ground_v2(reaction, K=1):
+    """When K=1 (default), returns exact matches (if available) or the best fuzzy match.
     """
-        When K=1 (default), returns exact matches (if available) or the best fuzzy match.
-    """
-
     exact_matches, fuzzy_matches = base_ground(reaction, K)
 
     matches = [(match.score / 100.0, match.node.term) for match in (exact_matches[:1] + fuzzy_matches)]
@@ -395,8 +391,7 @@ ground_v3 = lambda reaction: ground_v2(reaction, K=3)
 
 @lru_cache(maxsize=100000)
 def ground_v4(reaction, K=3):
-    """
-        Returns the best three matches (including one exact match, if available) and applies a prior.
+    """Returns the best three matches (including one exact match, if available) and applies a prior.
     """
     exact_matches, fuzzy_matches = base_ground(reaction, K)
     
@@ -408,10 +403,8 @@ def ground_v4(reaction, K=3):
 
 @lru_cache(maxsize=100000)
 def ground_v4b(reaction, K=3):
+    """Returns the best three matches (including one exact match, if available) and applies a prior.
     """
-        Returns the best three matches (including one exact match, if available) and applies a prior.
-    """
-
     exact_matches, fuzzy_matches = base_ground(reaction, K)
     
     matches = [((match.score / 100.0) * math.log(match.node.count + 0.1), match.node.term)
@@ -422,10 +415,8 @@ def ground_v4b(reaction, K=3):
 
 @lru_cache(maxsize=100000)
 def ground_v4c(reaction, K=3):
+    """Returns the best three matches (including one exact match, if available) and applies a prior.
     """
-        Returns the best three matches (including one exact match, if available) and applies a prior.
-    """
-
     exact_matches, fuzzy_matches = base_ground(reaction, K)
     
     matches = [((match.score / 100.0) * (match.node.count + 0.1), match.node.term)

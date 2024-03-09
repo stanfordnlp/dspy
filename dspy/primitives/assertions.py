@@ -326,8 +326,7 @@ default_assertion_handler = backtrack_handler
 def assert_transform_module(
     module, assertion_handler=default_assertion_handler, **handler_args,
 ):
-    """
-    Transform a module to handle assertions.
+    """Transform a module to handle assertions.
     """
     if not getattr(module, "forward", False):
         raise ValueError(

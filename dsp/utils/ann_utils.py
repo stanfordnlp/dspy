@@ -11,8 +11,7 @@ except ImportError:
 
 
 def determine_devices(max_gpu_devices: int = 0) -> Tuple[int, bool]:
-    """
-    Determine which device we should use
+    """Determine which device we should use
     Args:
         max_gpu_devices: an integer value, define how many GPUs we'll use.
             -1 means all devices. 0 means there are no GPUs. Default is 0.
@@ -87,8 +86,7 @@ def create_faiss_index(
     in_list_dist_type: str = 'L2',
     centroid_dist_type: str = 'L2',
 ) -> Index:
-    """
-    Create IVF index (with IP or L2 dist), without adding data and training
+    """Create IVF index (with IP or L2 dist), without adding data and training
     Args:
         emb_dim: size of each embedding
         n_objects: size of a trainset for index. Used to determine optimal type

@@ -1,5 +1,4 @@
-"""
-Retriever model for Pinecone
+"""Retriever model for Pinecone
 Author: Dhar Rawal (@drawal1)
 """
 
@@ -34,8 +33,7 @@ except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
 class PineconeRM(dspy.Retrieve):
-    """
-    A retrieval module that uses Pinecone to return the top passages for a given query.
+    """A retrieval module that uses Pinecone to return the top passages for a given query.
 
     Assumes that the Pinecone index has been created and populated with the following metadata:
         - text: The text of the passage
@@ -135,7 +133,6 @@ class PineconeRM(dspy.Retrieve):
         Returns:
             pinecone.Index: The loaded index.
         """
-
         # Pinecone init overrides default if kwargs are present, so we need to exclude if None
         kwargs = {}
         if api_key:

@@ -23,7 +23,7 @@ def backoff_hdlr(details):
 
 
 def giveup_hdlr(details):
-    """wrapper function that decides when to give up on retry"""
+    """Wrapper function that decides when to give up on retry"""
     if "rate limits" in details.message:
         return False
     return True
@@ -42,8 +42,7 @@ class Cohere(LM):
         stop_sequences: list[str] = [],
         **kwargs,
     ):
-        """
-        Parameters
+        """Parameters
         ----------
         model : str
             Which pre-trained model from Cohere to use?

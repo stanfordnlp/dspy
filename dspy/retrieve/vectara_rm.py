@@ -15,8 +15,7 @@ def remove_snippet(s: str) -> str:
     return s.replace(START_SNIPPET, "").replace(END_SNIPPET, "")
 
 class VectaraRM(dspy.Retrieve):
-    """
-    A retrieval module that uses Vectara to return the top passages for a given query.
+    """A retrieval module that uses Vectara to return the top passages for a given query.
 
     Assumes that a Vectara corpus has been created and populated with the following payload:
         - document: The text of the passage
@@ -70,6 +69,7 @@ class VectaraRM(dspy.Retrieve):
         limit: int = 3,
     ) -> List[str]:
         """Query Vectara index to get for top k matching passages.
+
         Args:
             query: query string
         """
@@ -135,6 +135,7 @@ class VectaraRM(dspy.Retrieve):
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """

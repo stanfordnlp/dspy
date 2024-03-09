@@ -229,8 +229,7 @@ def _train_seq2seq(model, tokenizer, tokenized_dataset, metric, config):
 
 
 def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
-    """
-    Resize tokenizer and embedding.
+    """Resize tokenizer and embedding.
     Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
     """
     num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
@@ -249,8 +248,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 @dataclass
 class DataCollatorForSupervisedDataset:
-    """
-    Collate examples for supervised fine-tuning.
+    """Collate examples for supervised fine-tuning.
     """
     tokenizer: PreTrainedTokenizer
 

@@ -1,5 +1,4 @@
-"""
-A generalized AWS LLM.
+"""A generalized AWS LLM.
 """
 
 from __future__ import annotations
@@ -17,8 +16,7 @@ CHARS2TOKENS: int = 4
 
 
 class AWSLM(LM):
-    """
-    This class adds support for an AWS model
+    """This class adds support for an AWS model
     """
 
     def __init__(
@@ -34,7 +32,6 @@ class AWSLM(LM):
         """_summary_
 
         Args:
-
             service_name (str): Used in context of invoking the boto3 API.
             region_name (str, optional): The AWS region where this LM is hosted.
             model (str, optional): An LM name, e.g., a bedrock name or an AWS endpoint.
@@ -101,7 +98,6 @@ class AWSLM(LM):
 
     def basic_request(self, prompt, **kwargs) -> str | list[str]:
         """Query the endpoint."""
-
         # Remove any texts that are too long
         formatted_prompt: str
         if self._truncate_long_prompt_prompts:
@@ -166,8 +162,7 @@ class AWSLM(LM):
         return_sorted: bool = False,
         **kwargs,
     ) -> list[str]:
-        """
-        Query the AWS LLM.
+        """Query the AWS LLM.
 
         There is only support for only_completed=True and return_sorted=False
         right now.

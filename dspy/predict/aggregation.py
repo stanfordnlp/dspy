@@ -5,12 +5,10 @@ default_normalize = lambda s: normalize_text(s) or None
 
 
 def majority(prediction_or_completions, normalize=default_normalize, field=None):
+    """Returns the most common completion for the target field (or the last field) in the signature.
+    When normalize returns None, that completion is ignored.
+    In case of a tie, earlier completion are prioritized.
     """
-        Returns the most common completion for the target field (or the last field) in the signature.
-        When normalize returns None, that completion is ignored.
-        In case of a tie, earlier completion are prioritized.
-    """
-
     assert any(isinstance(prediction_or_completions, t) for t in [Prediction, Completions, list])
     input_type = type(prediction_or_completions)
 

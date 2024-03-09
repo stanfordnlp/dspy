@@ -7,8 +7,7 @@
 # Connect DSPy
 
 # Test this API
-"""
-from dspy.retrieve.weaviate_rm import WeaviateRM
+"""from dspy.retrieve.weaviate_rm import WeaviateRM
 retriever_model = WeaviateRM("WeaviateBlogChunk", weaviate_client=weaviate_client)
 dspy.settings.configure(rm=retriever_model)
 

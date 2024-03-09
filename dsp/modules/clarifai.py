@@ -11,6 +11,7 @@ class ClarifaiLLM(LM):
         model (str, optional): Clarifai URL of the model. Defaults to "Mistral-7B-Instruct".
         api_key (Optional[str], optional): CLARIFAI_PAT token. Defaults to None.
         **kwargs: Additional arguments to pass to the API provider.
+
     Example:
         import dspy
         dspy.configure(lm=dspy.Clarifai(model=MODEL_URL,

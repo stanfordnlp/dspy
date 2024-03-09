@@ -107,7 +107,7 @@ class PythonInterpreter:
     def execute(self, code: str, state: Optional[Dict[str, Any]] = None,
                 fuzz_state: Optional[Dict[str, Any]] = None,
                 keep_state: bool = True) -> Any:
-        r""" Execute the input python codes in a security environment.
+        r"""Execute the input python codes in a security environment.
 
         Args:
             code (str): Generated python code to be executed.
@@ -585,7 +585,7 @@ class CodePrompt(TextPrompt):
                 represents the value of the last statement (excluding "import")
                 in the code. This value could potentially be the desired result
                 of the LLM-generated code.
-    """
+        """
         # NOTE: Only supports Python code for now.
         if not interpreter:
             interpreter = PythonInterpreter(action_space=globals())

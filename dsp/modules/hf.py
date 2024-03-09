@@ -28,7 +28,7 @@ def openai_to_hf(**kwargs):
 class HFModel(LM):
     def __init__(self, model: str, checkpoint: Optional[str] = None, is_client: bool = False,
                  hf_device_map: Literal["auto", "balanced", "balanced_low_0", "sequential"] = "auto"):
-        """wrapper for Hugging Face models
+        """Wrapper for Hugging Face models
 
         Args:
             model (str): HF model identifier to load and use
@@ -37,7 +37,6 @@ class HFModel(LM):
             hf_device_map (str, optional): HF config strategy to load the model.
                 Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
         """
-
         super().__init__(model)
         self.provider = "hf"
         self.is_client = is_client

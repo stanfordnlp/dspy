@@ -55,8 +55,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return self
     
     def activate_assertions(self, handler=backtrack_handler, **handler_args):
-        """
-        Activates assertions for the module.
+        """Activates assertions for the module.
         The default handler is the backtrack_handler.
         """
         assert_transform_module(self, handler, **handler_args)
