@@ -26,7 +26,7 @@ from dspy.datasets import HotPotQA
 
 dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0)
 
-trainset, devset = gms8k.train, gms8k.dev
+trainset, devset = dataset.train, dataset.dev
 ```
 
 We'll now define a class based signature for QA task similar to `question->answer` and pass it to `ChainOfThought` module, that will give us the result via Chain Of Thought from the LM client for this signature.
@@ -49,7 +49,7 @@ class CoTPipeline(dspy.Module):
         result = self.predictor(question=question)
         return dspy.Prediction(
             answer=result.answer,
-            reasoning=result.reasoning,
+            reasoning=result.rationale,
         )
 ```
 
@@ -62,6 +62,7 @@ def validate_context_and_answer(example, pred, trace=None):
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
     return answer_EM
 
+NUM_THREADS = 5
 evaluate = Evaluate(devset=devset, metric=validate_context_and_answer, num_threads=NUM_THREADS, display_progress=True, display_table=False)
 ```
 
@@ -70,7 +71,8 @@ To evaluate the `CoTPipeline` we'll need to create an object of it and pass it a
 ```python
 cot_baseline = CoTPipeline()
 
-evaluate(cot_baseline, devset=devset[:])
+devset_with_input = [dspy.Example({"question": r["question"], "answer": r["answer"]}).with_inputs("question") for r in devset]
+evaluate(cot_baseline, devset=devset_with_input)
 ```
 
 Now we have the baseline pipeline ready to use, so let's try using the `SignatureOptimizer` teleprompter and optimizing our pipeline to make it even better!
