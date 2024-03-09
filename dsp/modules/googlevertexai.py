@@ -1,7 +1,8 @@
 """Module for interacting with Google Vertex AI."""
 from typing import Any, Dict
-from pydantic_core import PydanticCustomError
+
 import backoff
+from pydantic_core import PydanticCustomError
 
 from dsp.modules.lm import LM
 
@@ -33,7 +34,7 @@ class GoogleVertexAI(LM):
     """
 
     def __init__(
-        self, model_name: str = "text-bison@002", **kwargs
+        self, model_name: str = "text-bison@002", **kwargs,
     ):
         """
         Parameters
@@ -103,7 +104,7 @@ class GoogleVertexAI(LM):
             location=values.get("location"),
             credentials=values.get("credentials"),
         )
-        return None
+        return
 
     def _prepare_params(
         self,
