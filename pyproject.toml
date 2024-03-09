@@ -85,7 +85,6 @@ tqdm = "^4.66.1"
 datasets = "^2.14.6"
 requests = "^2.31.0"
 optuna = "^3.4.0"
-
 anthropic = { version = "^0.18.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
 fastembed = { version = "^0.1.0", optional = true }
