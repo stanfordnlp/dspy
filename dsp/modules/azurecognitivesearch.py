@@ -44,16 +44,18 @@ class AzureCognitiveSearch:
         return [dotdict(psg) for psg in topk]
 
 def azure_search_request(key_content: str, key_score: str,  client: SearchClient, query: str, top: int =1):
-    """Search in Azure Cognitive Search Index
-    """
+    '''
+    Search in Azure Cognitive Search Index
+    '''
     results = client.search(search_text=query,top=top)
     results = process_azure_result(results, key_content, key_content)
 
     return results
 
 def process_azure_result(results:SearchItemPaged, content_key:str, content_score: str):
-    """Process received result from Azure Cognitive Search as dictionary array and map content and score to correct format
-    """
+    '''
+    process received result from Azure Cognitive Search as dictionary array and map content and score to correct format
+    '''
     res = []
     for result in results:
         tmp = {}

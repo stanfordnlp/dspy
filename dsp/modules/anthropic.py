@@ -1,11 +1,12 @@
-import logging
 import os
-from typing import Any, Optional
-
 import backoff
+import json
+from typing import Optional, Any
 from anthropic import Anthropic, RateLimitError
 
 from dsp.modules.lm import LM
+import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ def backoff_hdlr(details):
 
 
 def giveup_hdlr(details):
-    """Wrapper function that decides when to give up on retry"""
+    """wrapper function that decides when to give up on retry"""
     if "rate limits" in details.message:
         return False
     return True
@@ -35,7 +36,7 @@ class Claude(LM):
             model: str = "claude-instant-1.2",
             api_key: Optional[str] = None,
             api_base: Optional[str] = None,
-            **kwargs,
+            **kwargs
     ):
         super().__init__(model)
         self.provider = "anthropic"
@@ -104,6 +105,7 @@ class Claude(LM):
         Returns:
             list[str]: list of completion choices
         """
+
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 

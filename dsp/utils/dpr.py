@@ -1,6 +1,7 @@
-"""Source: DPR Implementation from Facebook Research
-https://github.com/facebookresearch/DPR/tree/master/dpr
-Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
+"""
+    Source: DPR Implementation from Facebook Research
+    https://github.com/facebookresearch/DPR/tree/master/dpr
+    Original license: https://github.com/facebookresearch/DPR/blob/main/LICENSE
 """
 
 import unicodedata
@@ -145,8 +146,9 @@ class SimpleTokenizer(Tokenizer):
     NON_WS = r'[^\p{Z}\p{C}]'
 
     def __init__(self, **kwargs):
-        """Args:
-        annotators: None or empty set (only tokenizes).
+        """
+        Args:
+            annotators: None or empty set (only tokenizes).
         """
         self._regexp = regex.compile(
             '(%s)|(%s)' % (self.ALPHA_NUM, self.NON_WS),
@@ -193,7 +195,8 @@ def has_answer(tokenized_answers, text):
 
 
 def locate_answers(tokenized_answers, text):
-    """Returns each occurrence of an answer as (offset, endpos) in terms of *characters*.
+    """
+    Returns each occurrence of an answer as (offset, endpos) in terms of *characters*.
     """
     tokenized_text = DPR_tokenize(text)
     occurrences = []

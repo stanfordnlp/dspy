@@ -1,4 +1,5 @@
-"""Retriever model for deeplake
+"""
+Retriever model for deeplake
 """
 
 from collections import defaultdict
@@ -22,7 +23,9 @@ except Exception:
 
 
 class DeeplakeRM(dspy.Retrieve):
-    """A retriever module that uses deeplake to return the top passages for a given query.
+    
+    """
+    A retriever module that uses deeplake to return the top passages for a given query.
 
     Assumes that a Deep Lake Vector Store has been created and populated with the following payload:
         - text: The text of the passage
@@ -78,6 +81,7 @@ class DeeplakeRM(dspy.Retrieve):
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int],
     ) -> dspy.Prediction:
+        
         """Search with DeepLake for self.k top passages for query
 
         Args:

@@ -15,18 +15,21 @@ class PyseriniRetriever:
                  dataset: Dataset = None,
                  id_field: str = '_id',
                  text_fields: list[str] = ['text']) -> None:
-        """Args:
-        query_encoder (`str`):
-            Huggingface model to encode queries
-        index (`str`):
-            Either a prebuilt index from pyserini or a local path to a faiss index
-        dataset (`Dataset`):
-            Only required when using a local faiss index. The dataset should be the one that has been put into the faiss index.
-        id_field (`str`):
-            The name of the id field of the dataset used for retrieval.
-        text_fields (`list[str]`):
-            A list of the names of the text fields for the dataset used for retrieval.
         """
+        Args:
+        
+            query_encoder (`str`):
+                Huggingface model to encode queries
+            index (`str`):
+                Either a prebuilt index from pyserini or a local path to a faiss index
+            dataset (`Dataset`):
+                Only required when using a local faiss index. The dataset should be the one that has been put into the faiss index.
+            id_field (`str`):
+                The name of the id field of the dataset used for retrieval.
+            text_fields (`list[str]`):
+                A list of the names of the text fields for the dataset used for retrieval.
+        """
+        
         # Keep pyserini as an optional dependency
         from pyserini.prebuilt_index_info import FAISS_INDEX_INFO, IMPACT_INDEX_INFO, TF_INDEX_INFO
         from pyserini.search import FaissSearcher

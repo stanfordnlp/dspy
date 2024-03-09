@@ -8,8 +8,10 @@ class BaseModule:
         pass
 
     def named_parameters(self):
-        """Unlike PyTorch, handles (non-recursive) lists of parameters too.
         """
+            Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        """
+
         from dspy.predict.parameter import Parameter
 
         visited = set()

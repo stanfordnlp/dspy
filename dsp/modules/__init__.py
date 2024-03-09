@@ -1,4 +1,3 @@
-from .anthropic import Claude
 from .azure_openai import AzureOpenAI
 from .bedrock import *
 from .cache_utils import *
@@ -14,3 +13,4 @@ from .ollama import *
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
+from .anthropic import Claude

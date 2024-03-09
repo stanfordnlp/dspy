@@ -17,7 +17,8 @@ except ImportError as err:
 
 
 class ClarifaiRM(dspy.Retrieve):
-    """Retrieval module uses clarifai to return the Top K relevant pasages for the given query.
+    """
+    Retrieval module uses clarifai to return the Top K relevant pasages for the given query.
     Assuming that you have ingested the source documents into clarifai App, where it is indexed and stored.
 
     Args:
@@ -59,7 +60,6 @@ class ClarifaiRM(dspy.Retrieve):
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,
     ) -> dspy.Prediction:
         """Uses clarifai-python SDK search function and retrieves top_k similar passages for given query,
-
         Args:
              query_or_queries : single query or list of queries
              k : Top K relevant documents to return

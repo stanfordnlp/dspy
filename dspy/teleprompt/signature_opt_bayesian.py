@@ -58,8 +58,7 @@ class BasicGenerateInstructionWithDataObservations(Signature):
 class BasicGenerateInstructionWithExamples(dspy.Signature):
         ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will also provide you with the current ``basic instruction`` that is being used for this task. I will also provide you with some ``examples`` of the expected inputs and outputs.
 
-         Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative.
-         """)
+Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative.""")
         # attempted_instructions = dspy.InputField(format=str, desc="Previously attempted task instructions, along with their resulting validation score, and an example of the instruction in use on a sample from our dataset.")
         basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
         # examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
@@ -70,8 +69,7 @@ class BasicGenerateInstructionWithExamples(dspy.Signature):
 class BasicGenerateInstructionWithExamplesAndDataObservations(dspy.Signature):
         ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will also provide you with the current ``basic instruction`` that is being used for this task. I will also provide you with some ``observations`` I have made about the dataset and task, along with some ``examples`` of the expected inputs and outputs.
 
-         Your task is to propose a new improved instruction and prefix for the output field that will lead a good language model to perform the task well. Don't be afraid to be creative.
-         """)
+Your task is to propose a new improved instruction and prefix for the output field that will lead a good language model to perform the task well. Don't be afraid to be creative.""")
         basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
         observations = dspy.InputField(desc="Observations about the dataset and task")
         examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")

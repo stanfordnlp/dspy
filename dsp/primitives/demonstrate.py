@@ -90,6 +90,7 @@ def sample(train: list[Example], k: int):
 
 def all_but(train: list[Example], x: Example) -> list[Example]:
     """Removes the example x from the train set by comparing the question and history."""
+
     output = [
         y
         for y in train
@@ -126,13 +127,15 @@ def passage_has_answers(passage: str, answers: list[str]) -> bool:
 
 
 def cast_naive_get_only_question_text(inp_example: Example) -> Example:
-    """Extracts question as a field to vectorize with Vectorizer object. `question` field is used.
+    """
+    Extracts question as a field to vectorize with Vectorizer object. `question` field is used.
     """
     return inp_example.copy(text_to_vectorize=inp_example.question)
 
 
 def cast_naive_get_question_and_answer(inp_example: Example) -> Example:
-    """Extracts question and answer as fields to vectorize with Vectorizer object.
+    """
+    Extracts question and answer as fields to vectorize with Vectorizer object.
     `question` and `answer` fields are used. They will be concatenated with the word "Answer"
     between.
     """
@@ -147,7 +150,8 @@ def knn(
     cast: Callable[[Example], Example] = cast_naive_get_only_question_text,
     **knn_args,
 ) -> Callable[[Example, int], list[Example]]:
-    """A function that vectorizes train data using `dsm.settings.vectorizer`, then build an ANN/KNN
+    """
+    A function that vectorizes train data using `dsm.settings.vectorizer`, then build an ANN/KNN
     index to search similar questions among `train` samples.
 
     Args:

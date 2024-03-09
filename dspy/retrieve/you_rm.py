@@ -27,6 +27,7 @@ class YouRM(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
+
         k = k if k is not None else self.k
 
         queries = (

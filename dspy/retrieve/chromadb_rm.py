@@ -1,4 +1,5 @@
-"""Retriever model for chromadb
+"""
+Retriever model for chromadb
 """
 
 from typing import List, Optional, Union
@@ -34,7 +35,8 @@ if chromadb is None:
 
 
 class ChromadbRM(dspy.Retrieve):
-    """A retrieval module that uses chromadb to return the top passages for a given query.
+    """
+    A retrieval module that uses chromadb to return the top passages for a given query.
 
     Assumes that the chromadb index has been created and populated with the following metadata:
         - documents: The text of the passage
@@ -92,6 +94,7 @@ class ChromadbRM(dspy.Retrieve):
 
         Returns:
         """
+
         self._chromadb_client = chromadb.Client(
             Settings(
                 persist_directory=persist_directory,

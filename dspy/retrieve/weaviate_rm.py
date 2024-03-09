@@ -12,7 +12,8 @@ except ImportError:
 
 
 class WeaviateRM(dspy.Retrieve):
-    """A retrieval module that uses Weaviate to return the top passages for a given query.
+    """
+    A retrieval module that uses Weaviate to return the top passages for a given query.
 
     Assumes that a Weaviate collection has been created and populated with the following payload:
         - content: The text of the passage
@@ -58,10 +59,10 @@ class WeaviateRM(dspy.Retrieve):
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
-
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
+
         k = k if k is not None else self.k
         queries = (
             [query_or_queries]

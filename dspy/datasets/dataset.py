@@ -56,9 +56,11 @@ class Dataset:
         return self._test_
 
     def _shuffle_and_sample(self, split, data, size, seed=0):
-        """The setting (seed=s, size=N) is always a subset
-        of the setting (seed=s, size=M) for N < M.
-        """
+        '''
+            The setting (seed=s, size=N) is always a subset
+            of the setting (seed=s, size=M) for N < M.
+        '''
+
         data = list(data)
 
         # Shuffle the data irrespective of the requested size.

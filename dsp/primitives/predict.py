@@ -199,6 +199,7 @@ def majority(
 
 def majority_vote_(completions: Completions, normalize: bool, prediction_field: str):
     """Core logic for majority vote."""
+
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
 

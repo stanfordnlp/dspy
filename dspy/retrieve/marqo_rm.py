@@ -12,7 +12,8 @@ except ImportError:
     )
 
 class MarqoRM(dspy.Retrieve):
-    """A retrieval module that uses Marqo to return the top passages for a given query.
+    """
+    A retrieval module that uses Marqo to return the top passages for a given query.
 
     Assumes that a Marqo index has been created and populated with the following payload:
         - document: The text of the passage

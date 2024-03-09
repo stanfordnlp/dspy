@@ -15,7 +15,8 @@ except ImportError:
 
 
 class PgVectorRM(dspy.Retrieve):
-    """Implements a retriever that (as the name suggests) uses pgvector to retrieve passages,
+    """
+    Implements a retriever that (as the name suggests) uses pgvector to retrieve passages,
     using a raw SQL query and a postgresql connection managed by psycopg2.
 
     It needs to register the pgvector extension with the psycopg2 connection
@@ -64,7 +65,8 @@ class PgVectorRM(dspy.Retrieve):
             embedding_field: str = "embedding",
             fields: List[str] = ['text'],
     ):
-        """K = 20 is the number of paragraphs to retrieve
+        """
+        k = 20 is the number of paragraphs to retrieve
         """
         self.openai_client = openai_client
         

@@ -173,6 +173,7 @@ class GPT3(LM):
         Returns:
             list[dict[str, Any]]: list of completion choices
         """
+
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
