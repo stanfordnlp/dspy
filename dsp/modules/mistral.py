@@ -15,7 +15,6 @@ except ImportError:
     print("Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.")
 
 
-
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
     print(
@@ -67,7 +66,7 @@ class Mistral(LM):
 
         self.history: list[dict[str, Any]] = []
 
-    def basic_request(self, prompt: str, **kwargs) -> ChatCompletionResponse:
+    def basic_request(self, prompt: str, **kwargs):
         """Basic request to Mistral AI's API."""
         raw_kwargs = kwargs
         kwargs = {
@@ -100,7 +99,7 @@ class Mistral(LM):
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )
-    def request(self, prompt: str, **kwargs) -> ChatCompletionResponse:
+    def request(self, prompt: str, **kwargs):
         """Handles retrieval of completions from Mistral AI whilst handling API errors."""
         prompt = prompt + "Follow the format only once !"
         return self.basic_request(prompt, **kwargs)
