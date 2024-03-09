@@ -173,7 +173,6 @@ exclude_lines = [
 line-length = 120
 indent-width = 4
 target-version = "py39"
-extend-unsafe-fixes = ["D"]
 
 [tool.ruff.lint]
 # List of rules: https://docs.astral.sh/ruff/rules
