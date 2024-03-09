@@ -6,7 +6,11 @@ from .cohere import *
 from .colbertv2 import ColBERTv2
 from .databricks import *
 from .google import *
+from .gpt3 import *
+from .hf import HFModel
+from .hf_client import Anyscale, HFClientTGI, Together
+from .ollama import *
+from .pyserini import *
+from .sbert import *
+from .sentence_vectorizer import *
 from .mistral import *
-from .hf_client import HFClientTGI
-from .hf_client import Anyscale
-from .hf_client import Together
