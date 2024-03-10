@@ -21,7 +21,7 @@ class LMOutput(BaseModel):
 
 
 class BaseLM(BaseModel, ABC):
-    history: list[LMOutput] = Field(default=[])
+    history: list[LMOutput] = Field(default_factory=list)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

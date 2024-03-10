@@ -62,7 +62,6 @@ def test_backend_with_recover():
             COTCheckCitationFaithfulness,
             context=["The 21-year-old made seven appearances for the Hammers."],
             text="Lee scored 3 goals for Colchester United.",
-            recover=False,
         )
 
     # Initialize Backend
@@ -83,7 +82,7 @@ def test_backend_with_recover():
         COTCheckCitationFaithfulness,
         context=["The 21-year-old made seven appearances for the Hammers."],
         text="Lee scored 3 goals for Colchester United.",
-        recover=True,
+        attempts=2,
         n=n,
     )
 
