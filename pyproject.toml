@@ -35,7 +35,7 @@ dependencies = [
     "datasets~=2.14.6,<3.0.0",
     "requests",
     "optuna",
-    "pydantic~=2.6.3",
+    "pydantic>=2.5.0,<=2.7",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +79,7 @@ keywords = ["dspy", "ai", "language models", "llm", "openai"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-pydantic = "^2.6"
+pydantic = ">=2.5.0,<=2.7"
 backoff = "^2.2.1"
 joblib = "^1.3.2"
 openai = ">=0.28.1,<2.0.0"
