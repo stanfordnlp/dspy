@@ -1,6 +1,6 @@
-from typing import Optional, List, Union
-import dspy
+from typing import List, Optional, Union
 
+import dspy
 from dsp.utils.utils import dotdict
 
 try:
@@ -88,7 +88,7 @@ class AzureAISearchRM(dspy.Retrieve):
         search_service_name: str,
         search_api_key: str,
         search_index_name: str,
-        field_text: str, 
+        field_text: str,
         k: int = 3,
         semantic_ranker: bool = False,
         filter: str = None,
@@ -116,9 +116,9 @@ class AzureAISearchRM(dspy.Retrieve):
         self.use_semantic_captions = use_semantic_captions
         self.query_type = query_type
         self.semantic_configuration_name = semantic_configuration_name
-        
+
         super().__init__(k=k)
-    
+
     def azure_search_request(self,key_content: str,  client: SearchClient, query: str, top: int, semantic_ranker: bool, filter: str, query_language: str, query_speller: str, use_semantic_captions: bool, query_type: QueryType, semantic_configuration_name: str):
         """
         Search in Azure AI Search Index
@@ -141,13 +141,13 @@ class AzureAISearchRM(dspy.Retrieve):
                                 )
         else:
             results = client.search(search_text=query,top=top,filter=filter)
-        
+
         sorted_results = sorted(results, key=lambda x: x['@search.score'], reverse=True)
 
         sorted_results = self.process_azure_result(sorted_results, key_content, key_content)
 
         return sorted_results
-    
+
     def process_azure_result(self,results:SearchItemPaged, content_key:str, content_score: str):
         """
         process received result from Azure AI Search as dictionary array and map content and score to correct format
@@ -161,9 +161,9 @@ class AzureAISearchRM(dspy.Retrieve):
                 elif(key == content_score):
                     tmp["score"] = value
                 else:
-                    tmp[key] = value            
+                    tmp[key] = value
             res.append(tmp)
-        return res 
+        return res
 
     def forward(self, query_or_queries: Union[str, List[str]],  k: Optional[int]) -> dspy.Prediction:
         """
@@ -186,8 +186,16 @@ class AzureAISearchRM(dspy.Retrieve):
 
         passages = []
         for query in queries:
-            results = self.azure_search_request(self.field_text, self.client, query, k, self.semantic_ranker, self.filter, self.query_language, self.query_speller, self.use_semantic_captions, self.query_type, self.semantic_configuration_name)  
+            results = self.azure_search_request(self.field_text,
+                                                self.client, query,
+                                                k,
+                                                self.semantic_ranker,
+                                                self.filter,
+                                                self.query_language,
+                                                self.query_speller,
+                                                self.use_semantic_captions,
+                                                self.query_type,
+                                                self.semantic_configuration_name)
             passages.extend(dotdict({"long_text": d['text']}) for d in results)
 
         return passages
-        
