@@ -93,7 +93,9 @@ class LM(ABC):
                 printing_value += self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
 
             printing_value += "\n\n\n"
-            return printing_value
+
+        print(printing_value)
+        return printing_value
 
     @abstractmethod
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
