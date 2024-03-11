@@ -1,93 +1,31 @@
+import dspy
 import random
-from collections.abc import Mapping
-from typing import List, Union
 
 from datasets import Dataset
 from tqdm import tqdm, trange
+from typing import List, Union, Optional, Mapping
 
-import dspy
+from .signatures import (
+    ExplainTask,
+    GenerateFieldDescription,
+    GenerateInputFieldsData,
+    GenerateOutputFieldsData,
+    UnderstandTask,
+)
+from .config import SynthesizerArguments
+from .instructions import INPUT_GENERATION_TASK_WITH_EXAMPLES
+from .utils import format_examples
 
-
-def format_examples(examples: List[dspy.Example]) -> str:
-    if isinstance(examples, str):
-        return examples
-
-    formatted_example = ""
-
-    for example in examples:
-        input_keys = example.inputs().keys()
-        label_keys = example.labels().keys()
-
-        formatted_example += "Inputs:\n"
-        for key in input_keys:
-            formatted_example += f"{key}: {example[key]}\n"
-
-        formatted_example += "Outputs:\n"
-        for key in label_keys:
-            formatted_example += f"{key}: {example[key]}\n"
-
-    return formatted_example
-
-class UnderstandTask(dspy.Signature):
-    """I'll be providing you a task description, your task is to prepare a concise, comprehensible summary that captures the broad essence and purpose of the task this description aim to address. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances of individual datapoints, specifics about models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise, without touching on methodologies or solutions."""
-
-    task_description = dspy.InputField(
-        prefix="Task Description:",
-        desc="Description of the task.",
-    )
-    explanation = dspy.OutputField(
-        prefix="Task Description:",
-        desc="Explanation of the task.",
-    )
-
-class ExplainTask(dspy.Signature):
-    """Analyze the provided set of datapoints carefully, and prepare a concise, comprehensible summary that captures the broad essence and purpose of the task these datapoints aim to address. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances of individual datapoints, specifics about models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise, without touching on methodologies or solutions."""
-
-    examples = dspy.InputField(
-        prefix="Examples Datapoints:-",
-        desc="List of datapoints to analyze and explain the task.",
-        format=format_examples,
-    )
-    explanation = dspy.OutputField(
-        prefix="Task Description:",
-        desc="Explanation of the task.",
-    )
-
-class GenerateFieldDescription(dspy.Signature):
-    """Generate a concise and informative description for a given field based on the provided name and task description. This description should be no longer than 10 words and should be in simple english."""
-
-    task_description = dspy.InputField(
-        prefix="Task Description:",
-        desc="Description of the task the field is an input to.",
-    )
-    field_name = dspy.InputField(
-        prefix="Field Name:",
-        desc="Name of the field to generate synthetic data for.",
-    )
-    field_description = dspy.OutputField(
-        prefix="Field Description:",
-        desc="Description of the field.",
-    )
-
-class GenerateInputFieldsData(dspy.Signature):
-    """Create synthetic data using the task description and the provided knowledge seed. Your task is to generate diverse and imaginative data that aligns with the given task description and knowledge seed. You are encouraged to be creative and not limit yourself, allowing for a wide range of synthetic data that reflects the characteristics and details provided in the task description. The data should be unique and varied, showcasing originality and creativity while maintaining relevance to the task and knowledge seed."""
-
-    knowledge_seed = dspy.InputField(
-        prefix="Knowledge Seed:",
-        desc="Seed for the knowledge base search to base the inputs around.",
-        format=lambda x: str(x),
-    )
-    task_description = dspy.InputField(
-        prefix="Task Description:",
-        desc="Description of the task the field is an input to.",
-    )
-
-class GenerateOutputFieldsData(dspy.Signature):
-    pass
+__all__ = ["Synthesizer"]
 
 class Synthesizer:
-    def __init__(self):
+    def __init__(self, config: SynthesizerArguments):
+        self.config = config
+        self.input_lm = config.input_lm_model or dspy.settings.lm
+        self.output_lm = config.output_lm_model or dspy.settings.lm
+
         self.explain_task = dspy.Predict(ExplainTask)
+        self.understand_task = dspy.Predict(UnderstandTask)
         self.generate_field_description = dspy.Predict(GenerateFieldDescription)
 
         self.generate_input_data = GenerateInputFieldsData
@@ -111,7 +49,12 @@ class Synthesizer:
 
             return field_name, field_description
 
-    def _prepare_synthetic_data_predictors(self, input_keys: Mapping[str, str], output_keys: Mapping[str, str], task_description: str):
+    def _prepare_synthetic_data_predictors(
+        self,
+        input_keys: Mapping[str, str],
+        output_keys: Mapping[str, str],
+        ground_source: Optional[Union[List[dspy.Example], dspy.Signature]] = None,
+    ):
         for key in tqdm(input_keys, desc="Preparing Input Fields"):
             field_name, field_description = self._get_field_data(key, input_keys)
 
@@ -124,6 +67,17 @@ class Synthesizer:
                 field_name,
                 output_field,
             )
+
+            if ground_source:
+                self.generate_input_data = self.generate_input_data.insert(
+                    -1,
+                    "ground_source",
+                    dspy.InputField(
+                        prefix=f"Pre-Generated Examples:",
+                        desc="Pre-Generated Examples to differ the inputs around.",
+                        format=format_examples,
+                    ),
+                )
 
             input_field = dspy.InputField(
                 prefix=f"{field_name}:",
@@ -152,7 +106,10 @@ class Synthesizer:
 
     def _get_dataset_metadata(self, ground_source: Union[List[dspy.Example], dspy.Signature]):
         if isinstance(ground_source, dspy.SignatureMeta):
-            task_description = self.explain_task(examples=ground_source.__doc__).explanation
+            task_description = ground_source.__doc__
+            if task_description.startswith("Given the fields"):
+                task_description = self.understand_task(examples=ground_source.__doc__).explanation
+            
             input_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.input_fields.items()}
             output_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.output_fields.items()}
 
@@ -172,17 +129,19 @@ class Synthesizer:
         self,
         ground_source: Union[List[dspy.Example], dspy.Signature],
         num_data: int,
-        batch_size: int = None,
+        batch_size: int = 1,
     ):
         batch_size = batch_size or 1
         task_description, input_keys, output_keys = self._get_dataset_metadata(ground_source)
 
+        if self.config.num_example_for_optim:
+            self.generate_input_data.__doc__ = INPUT_GENERATION_TASK_WITH_EXAMPLES
         self.generate_output_data.__doc__ = task_description
 
         self.input_predictor, self.output_predictor = self._prepare_synthetic_data_predictors(
             input_keys=input_keys,
             output_keys=output_keys,
-            task_description=task_description,
+            ground_source=ground_source if self.config.num_example_for_optim else None,
         )
 
         data = []
@@ -191,7 +150,23 @@ class Synthesizer:
             iter_temperature = 0.7+0.01*idx
             iter_seed = random.randint(0, 1000000)
 
-            inputs = self.input_predictor(task_description=task_description, knowledge_seed=iter_seed, config=dict(temperature=iter_temperature, n=batch_size))
+            inputs = None
+
+            with dspy.context(lm=self.input_lm):
+                if self.config.num_example_for_optim:
+                    example_for_optimization = random.sample(ground_source, self.config.num_example_for_optim)
+                    inputs = self.input_predictor(
+                        task_description=task_description,
+                        knowledge_seed=iter_seed,
+                        ground_source=example_for_optimization,
+                        config=dict(temperature=iter_temperature, n=batch_size)
+                    )
+                else:
+                    inputs = self.input_predictor(
+                        task_description=task_description,
+                        knowledge_seed=iter_seed,
+                        config=dict(temperature=iter_temperature, n=batch_size)
+                    )
 
             input_kwargs = [{
                 key: getattr(completions, key)
@@ -199,7 +174,14 @@ class Synthesizer:
             } for completions in inputs.completions]
 
             for kwargs in input_kwargs:
-                outputs = self.output_predictor(**kwargs, config=dict(temperature=iter_temperature))
+                outputs = None
+
+                with dspy.context(lm=self.output_lm, temperature=iter_temperature):
+                    if self.config.output_teacher_module:
+                        outputs = self.config.output_teacher_module(**kwargs)
+
+                    else:
+                        outputs = self.output_predictor(**kwargs, config=dict(temperature=iter_temperature))
 
                 output_kwargs = {
                     key: getattr(outputs, key)
@@ -209,7 +191,6 @@ class Synthesizer:
                 data.append(dspy.Example(**kwargs, **output_kwargs).with_inputs(*input_keys))
 
         return data
-
 
     def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
         extention = mode or path.split(".")[-1]

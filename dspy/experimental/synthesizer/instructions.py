@@ -1,0 +1,5 @@
+INPUT_GENERATION_TASK_WITH_EXAMPLES = f"""Create synthetic data using the task description and the provided knowledge seed. Your task is to generate diverse and imaginative data that aligns with the given task description and knowledge seed. You are encouraged to be creative and not limit yourself, allowing for a wide range of synthetic data that reflects the characteristics and details provided in the task description. The data should be unique and varied, showcasing originality and creativity while maintaining relevance to the task and knowledge seed.
+
+Additionally I'll be providing you some data I generated before hand, make sure the data you generate if consistent with task I provided but different from the data I provided in every way possible."""
+
+INPUT_GENERATION_TASK_WITH_FEEDBACK = f""""""
