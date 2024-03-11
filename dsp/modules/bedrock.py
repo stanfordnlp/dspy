@@ -34,6 +34,7 @@ class Bedrock(AWSLM):
             batch_n=True,  # Bedrock does not support the `n` parameter
         )
         self._validate_model(model)
+        self.provider = "claude" if "claude" in model.lower() else "bedrock"
 
     def _validate_model(self, model: str) -> None:
         if "claude" not in model.lower():
