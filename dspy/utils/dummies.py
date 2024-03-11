@@ -7,6 +7,11 @@ import re
 
 import typing as t
 from dspy.backends.lm.base import BaseLM, GeneratedContent
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import (
+    Completions,
+)
+from dspy.signatures.signature import Signature, InputField, OutputField
 
 
 class DummyLM(LM):
@@ -183,3 +188,20 @@ class DummyLanguageModel(BaseLM):
 
     def count_tokens(self, prompt: str) -> int:
         return len(prompt)
+
+
+class DummySignature(Signature):
+    """Produce the answer given the question"""
+
+    question = InputField()
+    answer = OutputField()
+
+
+def make_dummy_completions(signature, list_of_dicts: list[dict[str, t.Any]]):
+    examples = [Example(**kwargs) for kwargs in list_of_dicts]
+    return Completions.new(
+        signature=DummySignature,
+        examples=examples,
+        prompt="DUMMY PROMPT",
+        kwargs={},
+    )

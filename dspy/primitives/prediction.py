@@ -5,7 +5,6 @@ from dspy.signatures.signature import SignatureMeta, Signature
 from dsp.utils import normalize_text
 from collections import Counter
 
-# TODO: Replace this with dspy equivalent
 default_normalize = lambda s: normalize_text(s) or None
 
 
@@ -69,6 +68,16 @@ class Completions(BaseModel):
                 max_example = example
 
         return max_example
+
+    def filter(self, field: str, value: str):
+        i = 0
+        while i < len(self.examples):
+            if field not in self.examples[i]:
+                del self.examples[i]
+            elif normalize_text(self.examples[i][field]) != value:
+                del self.examples[i]
+            else:
+                i += 1
 
     def remove_incomplete(self):
         i = 0
@@ -135,6 +144,27 @@ class Prediction(Example):
         del self._input_keys
 
         self._completions = None
+
+    def get_majority(
+        self,
+        field: t.Optional[str] = None,
+        normalize: t.Callable[[str], t.Optional[str]] = default_normalize,
+    ) -> t.Self:
+        if normalize is None:
+            normalize = lambda x: x
+
+        if field is None:
+            field = list(self._completions.signature.output_fields.keys())[-1]
+
+        predictions = [normalize(completion[field]) for completion in self._completions]
+        predictions = Counter([x for x in predictions if x is not None])
+
+        majority_class = list(predictions.keys())[0]
+
+        pred = Prediction.from_completions(self._completions)
+        pred._completions.filter(field, majority_class)
+
+        return pred
 
     @classmethod
     def from_completions(cls, completions: Completions):
