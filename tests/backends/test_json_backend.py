@@ -14,15 +14,15 @@ class Emotion(Signature):
 def test_backend_complete_generation():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
-        answers={
-            1: [
+        answers=[
+            [
                 """{"sentence": "This is a positive sentence", "sentiment": "Joy"}""",
                 """{"sentence": "This is a positive sentence", "sentiment": "Joy"}""",
                 """{"sentence": "This is a positive sentence", "sentiment": "Joy"}""",
                 """{"sentence": "This is a positive sentence", "sentiment": "Joy"}""",
                 """{"sentence": "This is a positive sentence", "sentiment": "Joy"}""",
             ]
-        }
+        ]
     )
     backend = JSONBackend(lm=dummy_lm)
     dspy.configure(backend=backend)

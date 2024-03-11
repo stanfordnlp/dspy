@@ -1,9 +1,8 @@
 import dspy
 from dspy import Predict, Signature
 from dspy.backends.json import JSONBackend
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLanguageModel
 from dspy.backends import TemplateBackend
-from tests.backends.test_template_backend import DummyLanguageModel
 
 
 def test_initialization_with_string_signature():
@@ -41,7 +40,7 @@ def test_dump_and_load_state():
 def test_call_method():
     predict_instance = Predict("input -> output")
 
-    lm = DummyLanguageModel(answers={1: ["test output"]})
+    lm = DummyLanguageModel(answers=[["test output"]])
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend)
 
@@ -58,7 +57,7 @@ def test_dump_load_state():
 
 
 def test_forward_method():
-    lm = DummyLanguageModel(answers={1: ["No more responses"]})
+    lm = DummyLanguageModel(answers=[["No more responses"]])
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend)
 
@@ -69,7 +68,7 @@ def test_forward_method():
 
 def test_forward_method2():
     lm = DummyLanguageModel(
-        answers={1: [" my first answer\n\nAnswer 2: my second answer"]}
+        answers=[[" my first answer\n\nAnswer 2: my second answer"]]
     )
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend)
@@ -90,7 +89,7 @@ def test_config_management():
 def test_multi_output():
     program = Predict("question -> answer", n=2)
 
-    lm = DummyLanguageModel(answers={1: ["my first answer", "my second answer"]})
+    lm = DummyLanguageModel(answers=[["my first answer", "my second answer"]])
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend)
 
@@ -103,12 +102,12 @@ def test_multi_output_json():
     program = Predict("question -> answer", n=2)
 
     lm = DummyLanguageModel(
-        answers={
-            1: [
+        answers=[
+            [
                 """{"answer": "my first answer"}""",
                 """{"answer": "my second answer"}""",
             ]
-        }
+        ]
     )
     backend = JSONBackend(lm=lm)
     dspy.settings.configure(backend=backend)

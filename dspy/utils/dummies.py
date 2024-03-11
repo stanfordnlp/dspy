@@ -167,16 +167,19 @@ class DummyVectorizer:
 
 
 class DummyLanguageModel(BaseLM):
-    answers: dict[int, list[str]]
+    answers: list[list[str]]
     step: int = 0
 
     def generate(self, prompt: str, **kwargs) -> t.List[GeneratedContent]:
         if len(self.answers) == 1:
-            return [{"message": {"content": content}} for content in self.answers[1]]
-        else:
-            self.step += 1
+            return [{"message": {"content": content}} for content in self.answers[0]]
 
-        return [{"message": {"content": content}} for content in self.answers[1]]
+        output = [
+            {"message": {"content": content}} for content in self.answers[self.step]
+        ]
+        self.step += 1
+
+        return output
 
     def count_tokens(self, prompt: str) -> int:
         return len(prompt)

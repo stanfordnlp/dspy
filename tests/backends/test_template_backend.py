@@ -29,7 +29,7 @@ class COTCheckCitationFaithfulness(Signature):
 
 def test_backend_complete_generation():
     # Initialize Backend
-    dummy_lm = DummyLanguageModel(answers={1: ["Joy", "Joy", "Joy", "Joy", "Joy"]})
+    dummy_lm = DummyLanguageModel(answers=[["Joy", "Joy", "Joy", "Joy", "Joy"]])
     backend = TemplateBackend(lm=dummy_lm)
     dspy.settings.configure(backend=backend)
 
@@ -44,12 +44,12 @@ def test_backend_complete_generation():
 def test_backend_with_recover():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
-        answers={
-            1: [
+        answers=[
+            [
                 "produce the faithfulness. We know that Lee has two loan spells in League One last term."
             ],
-            2: ["True"],
-        }
+            ["True"],
+        ],
     )
     backend = TemplateBackend(lm=dummy_lm)
     dspy.settings.configure(backend=backend)
@@ -66,12 +66,12 @@ def test_backend_with_recover():
 
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
-        answers={
-            1: [
+        answers=[
+            [
                 "produce the faithfulness. We know that Lee has two loan spells in League One last term."
             ],
-            2: ["True"],
-        }
+            ["True"],
+        ]
     )
     backend = TemplateBackend(lm=dummy_lm)
     dspy.settings.configure(backend=backend)
