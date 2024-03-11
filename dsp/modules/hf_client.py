@@ -234,7 +234,7 @@ class Together(HFModel):
         on_backoff=backoff_hdlr,
     )
     def _generate(self, prompt, use_chat_api=False, **kwargs):
-        url = f"{self.api_base}"
+        url = f"{self.api_base}/completions"
 
         kwargs = {**self.kwargs, **kwargs}
 
@@ -280,9 +280,9 @@ class Together(HFModel):
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
                 if use_chat_api:
-                    completions = [resp_json['output'].get('choices', [])[0].get('message', {}).get('content', "")]
+                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
                 else:
-                    completions = [resp_json['output'].get('choices', [])[0].get('text', "")]
+                    completions = [resp_json.get('choices', [])[0].get('text', "")]
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
         except Exception as e:
