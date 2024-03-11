@@ -3,7 +3,7 @@ import dspy
 from .utils import format_examples
 
 class UnderstandTask(dspy.Signature):
-    """I'll be providing you a task description, your task is to prepare a concise, comprehensible summary that captures the broad essence and purpose of the task this description aim to address. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances of individual datapoints, specifics about models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise, without touching on methodologies or solutions."""
+    """I'll be providing you a task description. Your task is to prepare a concise, comprehensible summary that captures the broad essence and purpose of this task description. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances or specifics of individual datapoints, models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise without touching on methodologies or solutions."""
 
     task_description = dspy.InputField(
         prefix="Task Description:",
@@ -18,7 +18,7 @@ class ExplainTask(dspy.Signature):
     """Analyze the provided set of datapoints carefully, and prepare a concise, comprehensible summary that captures the broad essence and purpose of the task these datapoints aim to address. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances of individual datapoints, specifics about models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise, without touching on methodologies or solutions."""
 
     examples = dspy.InputField(
-        prefix="Examples Datapoints:-",
+        prefix="Examples Datapoints:",
         desc="List of datapoints to analyze and explain the task.",
         format=format_examples,
     )
