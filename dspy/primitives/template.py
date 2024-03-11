@@ -122,8 +122,6 @@ class Template:
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"
 
-        print(f"FULL TEXT: {full_text}")
-
         # Generate Search Strings
         search_strings = []
         output_fields = list(self.signature.output_fields.keys())
