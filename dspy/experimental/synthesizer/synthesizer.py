@@ -1,10 +1,14 @@
-import dspy
 import random
+from collections.abc import Mapping
+from typing import List, Optional, Union
 
 from datasets import Dataset
 from tqdm import tqdm, trange
-from typing import List, Union, Optional, Mapping
 
+import dspy
+
+from .config import SynthesizerArguments
+from .instructions import INPUT_GENERATION_TASK_WITH_EXAMPLES
 from .signatures import (
     ExplainTask,
     GenerateFieldDescription,
@@ -12,8 +16,6 @@ from .signatures import (
     GenerateOutputFieldsData,
     UnderstandTask,
 )
-from .config import SynthesizerArguments
-from .instructions import INPUT_GENERATION_TASK_WITH_EXAMPLES
 from .utils import format_examples
 
 __all__ = ["Synthesizer"]
@@ -73,7 +75,7 @@ class Synthesizer:
                     -1,
                     "ground_source",
                     dspy.InputField(
-                        prefix=f"Pre-Generated Examples:",
+                        prefix="Pre-Generated Examples:",
                         desc="Pre-Generated Examples to differ the inputs around.",
                         format=format_examples,
                     ),
@@ -159,13 +161,13 @@ class Synthesizer:
                         task_description=task_description,
                         knowledge_seed=iter_seed,
                         ground_source=example_for_optimization,
-                        config=dict(temperature=iter_temperature, n=batch_size)
+                        config=dict(temperature=iter_temperature, n=batch_size),
                     )
                 else:
                     inputs = self.input_predictor(
                         task_description=task_description,
                         knowledge_seed=iter_seed,
-                        config=dict(temperature=iter_temperature, n=batch_size)
+                        config=dict(temperature=iter_temperature, n=batch_size),
                     )
 
             input_kwargs = [{

@@ -1,7 +1,9 @@
+from typing import Optional, Union
+
+from pydantic import BaseModel, field_validator
+
 import dspy
 
-from typing import Union, List, Optional
-from pydantic import BaseModel, field_validator
 
 class SynthesizerArguments(BaseModel):
     # [TODO]

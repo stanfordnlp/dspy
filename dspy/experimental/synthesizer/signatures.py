@@ -2,6 +2,7 @@ import dspy
 
 from .utils import format_examples
 
+
 class UnderstandTask(dspy.Signature):
     """I'll be providing you a task description. Your task is to prepare a concise, comprehensible summary that captures the broad essence and purpose of this task description. Your summary should illuminate the general objective and the type of problem being solved, offering a clear picture of what the task entails at a high level. Avoid getting into the nuances or specifics of individual datapoints, models, examples, algorithms, or any intricate technicalities. Your explanation should serve to clarify the task's overall goal and its basic premise without touching on methodologies or solutions."""
 
