@@ -29,14 +29,10 @@ class BaseBackend(BaseModel, ABC):
             completions = self.generate(signature, **kwargs)
 
             # If 1 or more complete generations exist, simple return all complete
-            if len(completions) > 0:
+            if completions.has_complete_example():
                 break
 
-            # Try again
-            max_example = completions[0].example
-            for completion in completions.completions:
-                if len(max_example) < len(completion.example):
-                    max_example = completion.example
+            max_example = completions.get_farthest_example()
 
             for field in signature.fields:
                 if field in max_example:
@@ -52,6 +48,7 @@ class BaseBackend(BaseModel, ABC):
             i += 1
 
         assert completions is not None
+        completions.remove_incomplete()
         if len(completions) == 0:
             raise Exception(
                 "Generation failed, recursively attempts to complete did not succeed."

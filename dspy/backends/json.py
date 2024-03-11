@@ -3,11 +3,7 @@ import typing as t
 from dspy.signatures.signature import Signature
 from dspy.primitives.example import Example
 from dspy.primitives.template import Template
-from dspy.primitives.prediction import (
-    Completions,
-    convert_to_completion,
-    get_completion_data,
-)
+from dspy.primitives.prediction import Completions
 
 
 from .base import BaseBackend
@@ -53,17 +49,13 @@ class JSONBackend(BaseBackend):
             for prediction in pred.generations
         ]
 
-        extracted = [patch_example(example, extract) for extract in extracted]
+        extracted_examples = [patch_example(example, extract) for extract in extracted]
 
-        completion_list = [
-            convert_to_completion(signature, example) for example in extracted
-        ]
-        completions = Completions(
+        completions = Completions.new(
             signature=signature,
-            completions=completion_list,
+            examples=extracted_examples,
             prompt=pred.prompt,
             kwargs=pred.kwargs,
-            data=get_completion_data(completion_list),
         )
 
         return completions

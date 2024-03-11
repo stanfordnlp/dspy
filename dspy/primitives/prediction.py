@@ -1,55 +1,12 @@
 import typing as t
-from dataclasses import dataclass
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from dspy.primitives.example import Example
 from dspy.signatures.signature import SignatureMeta, Signature
+from dsp.utils import normalize_text
+from collections import Counter
 
-
-class Completion(BaseModel):
-    # At some point in the future we should make the Example class pydantic
-    # in the meantime this is needed to allow Completion/Completions to be Pydantic
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    example: Example
-    complete: bool
-
-    def __len__(self) -> int:
-        return len(self.example.keys())
-
-    def __getattr__(self, name):
-        if name in self:
-            return self.__getattribute__(name)
-
-        if name in self.example:
-            return self.example[name]
-
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
-
-    def items(self):
-        return self.example.items()
-
-
-def convert_to_completion(signature: Signature, example: Example) -> Completion:
-    complete = True
-    for field in signature.output_fields:
-        if field not in example:
-            complete = False
-
-    return Completion(example=example, complete=complete)
-
-
-def get_completion_data(completions: list[Completion]) -> dict[str, list[t.Any]]:
-    data = {}
-    for completion in completions:
-        if completion.complete:
-            for k, v in completion.example.items():
-                if k in data:
-                    data[k].append(v)
-                else:
-                    data[k] = [v]
-
-    return data
+# TODO: Replace this with dspy equivalent
+default_normalize = lambda s: normalize_text(s) or None
 
 
 class Completions(BaseModel):
@@ -57,44 +14,107 @@ class Completions(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     signature: SignatureMeta
-    completions: list[Completion]
+    examples: list[Example]
     prompt: str
     kwargs: dict[str, t.Any]
     data: dict[str, list[t.Any]]
 
-    def filter_complete(self) -> t.Self:
-        cls = self.model_copy()
+    @classmethod
+    def new(
+        cls,
+        signature: Signature,
+        examples: list[Example],
+        prompt: str,
+        kwargs: dict[str, t.Any],
+    ):
+        data = {}
+        for example in examples:
+            for k, v in example.items():
+                if k in data:
+                    data[k].append(v)
+                else:
+                    data[k] = [v]
 
-        i = 0
-        while i < len(cls.completions):
-            if cls.completions[i].complete:
-                i += 1
-            else:
-                del cls.completions[i]
+        cls = Completions(
+            signature=signature,
+            examples=examples,
+            prompt=prompt,
+            kwargs=kwargs,
+            data=data,
+        )
 
         return cls
 
-    def __len__(self) -> int:
+    def has_complete_example(self) -> bool:
+        for example in self.examples:
+            complete = True
+            for field in self.signature.output_fields:
+                if field not in example:
+                    complete = False
+                    break
+
+            if complete:
+                return True
+
+        return False
+
+    def get_farthest_example(self) -> Example:
+        # This may likely can be cleaned up to return the first complete example
+        if len(self.examples) == 0:
+            raise Exception("No examples available")
+
+        max_example = self.examples[0]
+        for example in self.examples:
+            if len(example) > len(max_example):
+                max_example = example
+
+        return max_example
+
+    def remove_incomplete(self):
         i = 0
-        for completion in self.completions:
-            if completion.complete:
+        while i < len(self.examples):
+            if self.is_complete_example(self.examples[i]):
                 i += 1
+            else:
+                del self.examples[i]
 
-        return i
+        # Reset Data object for correct number of completions
+        data = {}
+        for example in self.examples:
+            for k, v in example.items():
+                if k not in data:
+                    data[k] = [v]
+                else:
+                    data[k].append(v)
 
-    def __getitem__(self, key) -> Completion:
-        return self.completions[key]
+        self.data = data
+
+    def is_complete_example(self, example: Example) -> bool:
+        complete = True
+        for field in self.signature.output_fields:
+            if field not in example:
+                complete = False
+                break
+
+        return complete
+
+    def __len__(self) -> int:
+        return len(self.examples)
+
+    def __iter__(self):
+        return iter(self.examples)
+
+    def __getitem__(self, key) -> Example:
+        if isinstance(key, str):
+            return self.__getattr__(key)
+
+        return self.examples[key]
 
     def __getattr__(self, name):
         if name in self.data:
             return self.data[name][0]
 
-        if name in self:
-            return self.__getattribute__(name)
-
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
+        return self.__getattribute__(name)
 
     def items(self):
         return self.data.items()
@@ -115,14 +135,6 @@ class Prediction(Example):
         del self._input_keys
 
         self._completions = None
-
-    @classmethod
-    def from_list_or_dict(cls, list_or_dict, signature=None):
-        obj = cls()
-        obj._completions = Completions(list_or_dict, signature=signature)
-        obj._store = {k: v[0] for k, v in obj._completions.items()}
-
-        return obj
 
     @classmethod
     def from_completions(cls, completions: Completions):

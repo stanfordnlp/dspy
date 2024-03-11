@@ -36,9 +36,9 @@ def test_backend_complete_generation():
     # Generate Sample Signature
     n = 5
     x = backend(Emotion, sentence="This is a positive sentence", n=n)
-    assert len(x.completions) == n
-    assert x.completions[0].example.sentence == "This is a positive sentence"
-    assert x.completions[0].example.sentiment == "Joy"
+    assert len(x) == n
+    assert x.examples[0].sentence == "This is a positive sentence"
+    assert x.examples[0].sentiment == "Joy"
 
 
 def test_backend_with_recover():
@@ -86,8 +86,7 @@ def test_backend_with_recover():
         n=n,
     )
 
-    assert x.completions[0].complete
-    assert x.completions[0].rationale is not None
+    assert x.examples[0].rationale is not None
 
     assert x.rationale
     assert x.faithfulness

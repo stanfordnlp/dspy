@@ -1,11 +1,8 @@
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.primitives.example import Example
 from dspy.primitives.template import Template
-from dspy.primitives.prediction import (
-    Completions,
-    convert_to_completion,
-    get_completion_data,
-)
+from dspy.primitives.prediction import Completions
+
 
 import typing as t
 from .base import BaseBackend
@@ -45,21 +42,18 @@ class TemplateBackend(BaseBackend):
         pred = self.lm(template(example), **kwargs)
 
         # This returns a list of Examples
-        extracted = [
+        extracted_examples = [
             template.extract(example, prediction["message"]["content"])
             for prediction in pred.generations
         ]
 
         assert type(signature) == SignatureMeta, type(signature)
-        completion_data = [
-            convert_to_completion(signature, example) for example in extracted
-        ]
-        completions = Completions(
+
+        completions = Completions.new(
             signature=signature,
-            completions=completion_data,
+            examples=extracted_examples,
             prompt=pred.prompt,
             kwargs=pred.kwargs,
-            data=get_completion_data(completion_data),
         )
 
         return completions
