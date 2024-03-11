@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Optional
 import json
+from typing import Any, Optional
 
 from dsp.modules.aws_lm import AWSLM
 

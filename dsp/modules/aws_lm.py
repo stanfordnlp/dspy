@@ -60,7 +60,7 @@ class AWSLM(LM):
             self.predictor = boto3.client(service_name, region_name=region_name)
         else:
             self.predictor = boto3.Session(profile_name=profile_name).client(
-                service_name, region_name=region_name
+                service_name, region_name=region_name,
             )
 
     @abstractmethod
