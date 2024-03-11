@@ -122,6 +122,8 @@ class Template:
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"
 
+        print(f"FULL TEXT: {full_text}")
+
         # Generate Search Strings
         search_strings = []
         output_fields = list(self.signature.output_fields.keys())
@@ -129,7 +131,7 @@ class Template:
             if len(search_strings) > 0:
                 search_strings[-1] += f"(?:{field.json_schema_extra['prefix']})?"
 
-            target_str = f"(?s){field.json_schema_extra['prefix']}\\s?(.+?)"
+            target_str = f"(?s)\n\n{field.json_schema_extra['prefix']}\\s?(.+?)"
             if idx != len(self.signature.output_fields) - 1:
                 target_str += "\\n\\n"
             else:
