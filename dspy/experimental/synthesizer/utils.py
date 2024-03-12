@@ -1,7 +1,5 @@
-from typing import List
-
 import dspy
-
+from typing import List
 
 def format_examples(examples: List[dspy.Example]) -> str:
     if isinstance(examples, str):

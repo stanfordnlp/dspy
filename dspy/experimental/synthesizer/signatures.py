@@ -28,6 +28,22 @@ class ExplainTask(dspy.Signature):
         desc="Explanation of the task.",
     )
 
+class UpdateTaskDescriptionBasedOnFeedback(dspy.Signature):
+    """Update the task description based on the feedback provided. Ensure that the revised task description incorporates the feedback to improve its overall clarity and effectiveness. Focus on enhancing the task's goal and basic premise, without delving into specific data points, models, examples, algorithms, or technical intricacies. Your explanation should aim to clarify the task's fundamental objective and purpose."""
+
+    task_description = dspy.InputField(
+        prefix="Task Description:",
+        desc="Description of the task.",
+    )
+    feedback = dspy.InputField(
+        prefix="Feedback:",
+        desc="Feedback on the task description.",
+    )
+    updated_task_description = dspy.OutputField(
+        prefix="Task Description:",
+        desc="Updated description of the task.",
+    )
+
 class GenerateFieldDescription(dspy.Signature):
     """Generate a concise and informative description for a given field based on the provided name and task description. This description should be no longer than 10 words and should be in simple english."""
 
