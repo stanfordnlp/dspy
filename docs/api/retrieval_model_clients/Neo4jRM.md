@@ -78,6 +78,6 @@ retriever_model = Neo4jRM(
 
 results = retriever_model("Explore the significance of quantum computing", k=3)
 
-for passage in results.passages:
-    print("Document:", result, "\n")
+for passage in results:
+    print("Document:", passage, "\n")
 ```
