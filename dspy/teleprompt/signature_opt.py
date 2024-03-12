@@ -4,6 +4,7 @@ from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.signatures import Signature
 from dspy.evaluate.evaluate import Evaluate
 from collections import defaultdict
+from dspy.primitives.example import Example
 
 """
 USAGE SUGGESTIONS:
@@ -184,8 +185,6 @@ class SignatureOptimizer(Teleprompter):
                     proposed_prefix_for_output_field=basic_prefix,
                 )
             )
-            instruct.completions.proposed_instruction.append(basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.append(basic_prefix)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
 
