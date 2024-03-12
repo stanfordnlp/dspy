@@ -1,5 +1,6 @@
-from typing import List, Optional, Callable
 import warnings
+from typing import Callable, Optional
+
 import dspy
 
 try:
@@ -68,7 +69,7 @@ class PgVectorRM(dspy.Retrieve):
             embedding_func: Optional[Callable] = None,
             k: Optional[int] = 20,
             embedding_field: str = "embedding",
-            fields: List[str] = ['text'],
+            fields: list[str] = ['text'],
     ):
         """
         k = 20 is the number of paragraphs to retrieve
@@ -120,7 +121,7 @@ class PgVectorRM(dspy.Retrieve):
         # Return Prediction
         return related_paragraphs
 
-    def _get_embeddings(self, query: str) -> List[float]:
+    def _get_embeddings(self, query: str) -> list[float]:
         if self.openai_client is not None:
             return self.openai_client.embeddings.create(
                 model="text-embedding-ada-002",
