@@ -63,8 +63,6 @@ class Predict(Parameter):
         )
         assert backend is not None, "No Backend is configured."
 
-        x = dspy.Example(demos=demos, **kwargs)
-
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
@@ -72,7 +70,7 @@ class Predict(Parameter):
                 f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
             )
 
-        completions = backend(signature, **config)
+        completions = backend(signature, demos=demos, **config)
 
         # TODO: What purpose does stage play here?
         # assert self.stage in x, "The generated (input, output) example was not stored"

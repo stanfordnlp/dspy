@@ -176,7 +176,6 @@ class DummyLanguageModel(BaseLM):
     step: int = 0
 
     def generate(self, prompt: str, **kwargs) -> t.List[GeneratedContent]:
-        print(f"LEN of Answers: {len(self.answers)}")
         if len(self.answers) == 1:
             return [{"message": {"content": content}} for content in self.answers[0]]
 
@@ -184,8 +183,6 @@ class DummyLanguageModel(BaseLM):
             {"message": {"content": content}} for content in self.answers[self.step]
         ]
         self.step += 1
-
-        print(f"STEP: {self.step}")
 
         return output
 

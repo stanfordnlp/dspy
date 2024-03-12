@@ -123,47 +123,46 @@ class Template:
             full_text = full_text + "\n\n---"
 
         # Generate Search Strings
-        search_strings = []
-        output_fields = list(self.signature.output_fields.keys())
-        for idx, (key, field) in enumerate(self.signature.output_fields.items()):
-            if len(search_strings) > 0:
-                search_strings[-1] += f"(?:{field.json_schema_extra['prefix']})?"
+        prefixes = (
+            [
+                field.json_schema_extra["prefix"]
+                for _, field in self.signature.output_fields.items()
+            ]
+            + ["---"]
+            + [
+                field.json_schema_extra["prefix"]
+                for _, field in self.signature.input_fields.items()
+            ]
+        )
 
-            target_str = f"(?s)\n\n{field.json_schema_extra['prefix']}\\s?(.+?)"
-            if idx != len(self.signature.output_fields) - 1:
-                target_str += "\\n\\n"
-            else:
-                target_str += "\\n\\n\\-\\-\\-"
+        prefixes = [
+            prefix.replace(" ", "\\s").replace("(", "\\(").replace(")", "\\)")
+            for prefix in prefixes
+        ]
+        for idx, (name, field) in enumerate(self.signature.output_fields.items()):
+            stop_prefixes = "|".join(prefixes[idx:])
 
-            search_strings.append(target_str)
+            target_prefix = (
+                field.json_schema_extra["prefix"]
+                .replace(" ", "\\s")
+                .replace("(", "\\(")
+                .replace(")", "\\)")
+            )
 
-        # Generate Results
-        if len(self.signature.output_fields) == 1:
-            matches = regex.findall(search_strings[0], full_text)
+            search_string = f"(?s)\n\n{target_prefix}?(.+?)\n\n(?:{stop_prefixes})"
+            matches = regex.findall(search_string, full_text)
 
-            # Skip the first match, as this is likely the demo.
-            if len(matches) == 1:
+            # Skip the first match as this is likely the guidelines
+            non_generated_count = 1 + len(example.get("demos", []))
+            if non_generated_count >= len(matches):
                 matches = []
-            elif len(matches) > 1:
-                matches = matches[1 + len(example.get("demos", [])) :]
-
-            # If no matches are found, and there are is only one prediction, return entire prediction
-            if matches == []:
-                example[output_fields[0]] = full_text
             else:
-                example[output_fields[0]] = matches[-1]
+                matches = matches[non_generated_count:]
 
-        else:
-            for idx, field in enumerate(output_fields):
-                matches = regex.findall(search_strings[idx], full_text)
-
-                if len(matches) == 1:
-                    matches = []
-                elif len(matches) > 1:
-                    matches = matches[1 + len(example.get("demos", [])) :]
-
-                if len(matches) > 0:
-                    example[field] = matches[-1]
+            if matches == [] and len(self.signature.output_fields) == 0:
+                example[name] = full_text
+            elif matches != []:
+                example[name] = matches[-1].strip()
 
         return example
 

@@ -1,5 +1,4 @@
 import datetime
-import json
 import textwrap
 import pydantic
 from pydantic import Field, BaseModel, field_validator
@@ -9,10 +8,11 @@ import warnings
 import pytest
 
 import dspy
+from dspy.backends.template import TemplateBackend
 from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLanguageModel
 
 
 def test_simple():
@@ -20,12 +20,13 @@ def test_simple():
     def hard_question(topic: str) -> str:
         """Think of a hard factual question about a topic."""
 
+    lm = DummyLanguageModel(answers=[["What is the speed of light?"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
+
     expected = "What is the speed of light?"
-    lm = DummyLM([expected])
-    dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
-    lm.inspect_history(n=2)
 
     assert question == expected
 
@@ -39,8 +40,9 @@ def test_simple_type():
         """Think of a hard factual question about a topic."""
 
     expected = "What is the speed of light?"
-    lm = DummyLM([f'{{"value": "{expected}"}}'])
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[[f'{{"value": "{expected}"}}']])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     question = hard_question(topic="Physics")
 
@@ -60,8 +62,10 @@ def test_simple_type_input():
         pass
 
     question = Question(value="What is the speed of light?")
-    lm = DummyLM([f'{{"value": "3e8"}}'])
-    dspy.settings.configure(lm=lm)
+
+    lm = DummyLanguageModel(answers=[[f'{{"value": "3e8"}}']])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     result = answer(question=question)
 
@@ -95,24 +99,21 @@ def test_simple_class():
         comments=["It is the speed of light", "It is a constant"],
     )
 
-    lm = DummyLM(
-        [
-            "What is the speed of light?",
-            "Some bad reasoning, 3e8 m/s.",
-            "3e8",  # Bad answer 1
-            "Some good reasoning...",
-            expected.model_dump_json(),  # Good answer
+    lm = DummyLanguageModel(
+        answers=[
+            ["What is the speed of light?"],
+            ["Some bad reasoning, 3e8 m/s\n\nAnswer: 3e8"],
+            [f"Some good reasoning...\n\nAnswer: {expected.model_dump_json()}"],
         ]
     )
-    dspy.settings.configure(lm=lm)
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     qa = QA()
     assert isinstance(qa, FunctionalModule)
     assert isinstance(qa.answer, functional._StripOutput)
 
     question, answer = qa(topic="Physics")
-
-    print(qa.answer)
 
     assert question == "What is the speed of light?"
     assert answer == expected
@@ -129,12 +130,9 @@ def test_simple_oop():
     # Run the signature
     program = TypedPredictor(MySignature)
     expected = "What is the speed of light?"
-    lm = DummyLM(
-        [
-            Question(value=expected).model_dump_json(),
-        ]
-    )
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[[Question(value=expected).model_dump_json()]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     question = program(topic="Physics").output
 
@@ -173,7 +171,10 @@ def test_named_params():
     named_predictors = list(qa.named_predictors())
     assert len(named_predictors) == 2
     names, _ = zip(*qa.named_predictors())
-    assert set(names) == {"hard_question.predictor.predictor", "answer.predictor.predictor"}
+    assert set(names) == {
+        "hard_question.predictor.predictor",
+        "answer.predictor.predictor",
+    }
 
 
 def test_bootstrap_effectiveness():
@@ -204,20 +205,20 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule()
     teacher = SimpleModule()
-    assert student.output.predictor.signature.equals(
-        teacher.output.predictor.signature)
+    assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"],
-                 follow_examples=True)
-    dspy.settings.configure(lm=lm, trace=[])
+    lm = DummyLanguageModel(
+        answers=[["blue"], ["blue"], ["Ring-ding-ding-ding-dingeringeding!"]]
+    )
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
-    lm.inspect_history(n=2)
+    # lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
     demos = compiled_student.predictors()[0].demos
@@ -226,14 +227,10 @@ def test_bootstrap_effectiveness():
     assert demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
-    # We are using a DummyLM with follow_examples=True, which means that
-    # even though it would normally reply with "Ring-ding-ding-ding-dingeringeding!"
-    # on the second output, if it seems an example that perfectly matches the
-    # prompt, it will use that instead. That is why we expect "blue" here.
     prediction = compiled_student(input=trainset[0].input)
     assert prediction == trainset[0].output
 
-    assert lm.get_convo(-1) == textwrap.dedent(
+    assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Given the fields `input`, produce the fields `output`.
 
@@ -242,17 +239,20 @@ def test_bootstrap_effectiveness():
         Follow the following format.
 
         Input: ${input}
+        
         Output: ${output}. Respond with a single str value
 
         ---
 
         Input: What is the color of the sky?
+
         Output: blue
 
         ---
 
         Input: What is the color of the sky?
-        Output: blue"""
+
+        Output:"""
     )
 
 
@@ -273,17 +273,18 @@ def test_regex():
         on December 25, 2022. Here's everything you need to know before you take off: ...
     """
     )
-    lm = DummyLM(
-        [
-            # Example with a bad origin code.
-            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            # Fixed
-            '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+
+    lm = DummyLanguageModel(
+        answers=[
+            ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
+            ['{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'],
         ]
     )
-    dspy.settings.configure(lm=lm)
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
-    assert flight_information(email=email) == TravelInformation(
+    predict = flight_information(email=email)
+    assert predict == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
 
@@ -298,14 +299,15 @@ def test_raises():
     def flight_information(email: str) -> TravelInformation:
         pass
 
-    lm = DummyLM(
-        [
-            "A list of bad inputs",
-            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
+    lm = DummyLanguageModel(
+        answers=[
+            ["A list of bad inputs"],
+            ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
+            ['{"origin": "JFK", "destination": "LAX", "date": "bad date"}'],
         ]
     )
-    dspy.settings.configure(lm=lm)
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     with pytest.raises(ValueError):
         flight_information(email="Some email")
@@ -321,21 +323,23 @@ def test_multi_errors():
     def flight_information(email: str) -> TravelInformation:
         pass
 
-    lm = DummyLM(
-        [
-            # First origin is wrong, then destination, then all is good
-            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
-            '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+    lm = DummyLanguageModel(
+        answers=[
+            ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
+            ['{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}'],
+            ['{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'],
         ]
     )
-    dspy.settings.configure(lm=lm)
+
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
     warnings.warn("This test is dependent on the version of pydantic used.")
-    assert lm.get_convo(-1) == textwrap.dedent(
+
+    assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Given the fields `email`, produce the fields `flight_information`.
 
@@ -359,7 +363,7 @@ def test_multi_errors():
 
         Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
 
-        Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
+        Flight Information:"""
         # Note: Pydantic version is hardcoded in the url here
     )
 
@@ -382,19 +386,15 @@ def test_field_validator():
 
     # Keep making the mistake (lower case name) until we run
     # out of retries.
-    lm = DummyLM(
-        [
-            '{"name": "lower case name", "age": 25}',
-        ]
-        * 10
-    )
-    dspy.settings.configure(lm=lm) 
+    lm = DummyLanguageModel(answers=[['{"name": "lower case name", "age": 25}']])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=True)
 
     with pytest.raises(ValueError):
         get_user_details()
 
     warnings.warn("This test is dependent on the version of pydantic used.")
-    assert lm.get_convo(-1) == textwrap.dedent(
+    assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
 
@@ -403,12 +403,16 @@ def test_field_validator():
         Follow the following format.
 
         Past Error (get_user_details): An error to avoid in the future
+
         Past Error (get_user_details, 2): An error to avoid in the future
+
         Get User Details: ${get_user_details}. Respond with a single JSON object using the schema {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
         ---
 
         Past Error (get_user_details): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+
         Past Error (get_user_details, 2): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
-        Get User Details: {"name": "lower case name", "age": 25}"""
+
+        Get User Details:"""
     )
