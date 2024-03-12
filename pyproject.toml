@@ -108,6 +108,8 @@ sphinx_rtd_theme = { version = "*", optional = true }
 autodoc_pydantic = { version = "*", optional = true }
 sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
+cffi = "^1.16.0"
+groq = "^0.4.2"
 
 
 [tool.poetry.group.dev.dependencies]
