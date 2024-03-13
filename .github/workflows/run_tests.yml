@@ -1,6 +1,9 @@
 name: Lint, Test, and Build
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -24,21 +27,6 @@ jobs:
           args: --fix-only --exit-non-zero-on-fix
         continue-on-error: true
 
-      - name: Determine Ruff Fix Outcome
-        run: |
-          if [ ${{ steps.ruff_fix.outcome }} == 'failure' ]; then
-            echo "RUFF_FAILED=true" >> $GITHUB_ENV
-            echo ${{ steps.ruff_fix.outcome }} > ruff_fix_outcome.txt
-          else
-            echo "RUFF_FAILED=false" >> $GITHUB_ENV
-            echo ${{ steps.ruff_fix.outcome }} > ruff_fix_outcome.txt
-          fi
-
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ruff-fix-outcome
-          path: ruff_fix_outcome.txt
-
       - name: Fail Workflow if Ruff Fix Failed
         if: steps.ruff_fix.outcome == 'failure'
         run: |
@@ -52,7 +40,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
@@ -84,7 +71,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
@@ -116,7 +102,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9"]
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
