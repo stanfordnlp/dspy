@@ -4,6 +4,7 @@ import os
 from collections.abc import Iterable
 from typing import Any, Optional
 import backoff
+import vertexai
 
 
 class VertexAI(LM):
@@ -15,6 +16,8 @@ class VertexAI(LM):
     def __init__(
         self,
         model: str = "gemini-1.0-pro",
+        project: str = None,
+        location: Optional[str] = "us-central1",
         **kwargs,
     ):
         """
@@ -30,8 +33,12 @@ class VertexAI(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        # api_key = os.environ.get("GOOGLE_API_KEY") if api_key is None else api_key
-        # genai.configure(api_key=api_key)
+
+        # if no project is provided, raise an error
+        if project is None:
+            raise ValueError("A project must be provided")
+
+        vertexai.init(project=project, location=location)
 
         # Google API uses "candidate_count" instead of "n" or "num_generations"
         # For now, google API only supports 1 generation at a time. Raises an error if candidate_count > 1
