@@ -59,7 +59,6 @@ TEMPLATE_SCENARIOS = [
     },
     {
         "signature": COTCheckCitationFaithfulness,
-        "output": "Faithfulness: False",
         "output": "produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.\n\nFaithfulness: False",
         "input_kwargs": {
             "context": [
@@ -72,6 +71,18 @@ TEMPLATE_SCENARIOS = [
             "faithfulness": "False",
         },
         "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nRationale: Think step by step in order to generate the faithfulness.\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page.\n\nText: Lee scored 3 goals for Colchester United.\n\nRationale:",
+    },
+    {
+        "signature": COTCheckCitationFaithfulness,
+        "output": "produce the faithfulness. We know that Lee had two loan spells in League One last term.",
+        "input_kwargs": {
+            "context": ["The 21-year-old made seven appearances for the Hammers."],
+            "text": "Lee scored 3 goals for Colchester United.",
+        },
+        "output_kwargs": {
+            "rationale": "produce the faithfulness. We know that Lee had two loan spells in League One last term.",
+        },
+        "prompt": "Verify that the text is based on the provided context.\n\n---\n\nFollow the following format.\n\nContext: facts here are assumed to be true\n\nText: ${text}\n\nRationale: Think step by step in order to generate the faithfulness.\n\nFaithfulness: True/False indicating if text is faithful to context\n\n---\n\nContext: The 21-year-old made seven appearances for the Hammers.\n\nText: Lee scored 3 goals for Colchester United.\n\nRationale:",
     },
 ]
 

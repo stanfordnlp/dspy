@@ -3,7 +3,8 @@ from dspy.primitives.program import (
     Module,
     set_attribute_by_name,
 )  # Adjust the import based on your file structure
-from dspy.utils import DummyLM
+from dspy.utils import DummyLanguageModel
+from dspy.backends import TemplateBackend
 
 
 class HopModule(dspy.Module):
@@ -45,9 +46,9 @@ def test_predictors():
 
 def test_forward():
     program = HopModule()
-    dspy.settings.configure(
-        lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
-    )
+    lm = DummyLanguageModel(answers=[["let me check"], ["2"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
     result = program(question="What is 1+1?").answer
     assert result == "2"
 

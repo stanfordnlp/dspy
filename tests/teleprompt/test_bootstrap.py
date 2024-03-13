@@ -1,9 +1,10 @@
 import pytest
 import dspy
 from dspy.predict import Predict
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLanguageModel
 from dspy import Example
 from dspy.teleprompt import BootstrapFewShot
+from dspy.backends import TemplateBackend
 import textwrap
 
 
@@ -46,8 +47,9 @@ def test_compile_with_predict_instances():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(["Initial thoughts", "Finish[blue]"])
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[["Initial thoughts", "Finish[blue]"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     # Initialize BootstrapFewShot and compile the student
     bootstrap = BootstrapFewShot(
@@ -67,8 +69,15 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
-    dspy.settings.configure(lm=lm, trace=[])
+
+    lm = DummyLanguageModel(
+        answers=[["blue"], ["blue"], ["Ring-dint-ding-ding-dingeringeding!"]]
+    )
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False, trace=[])
+    #
+    # lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
+    # dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
@@ -91,10 +100,7 @@ def test_bootstrap_effectiveness():
     assert prediction.output == trainset[0].output
 
     # For debugging
-    print("Convo")
-    print(lm.get_convo(-1))
-
-    assert lm.get_convo(-1) == textwrap.dedent(
+    assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Given the fields `input`, produce the fields `output`.
 
@@ -103,17 +109,20 @@ def test_bootstrap_effectiveness():
         Follow the following format.
 
         Input: ${input}
+
         Output: ${output}
 
         ---
 
         Input: What is the color of the sky?
+
         Output: blue
 
         ---
 
         Input: What is the color of the sky?
-        Output: blue"""
+
+        Output:"""
     )
 
 
@@ -134,11 +143,8 @@ def test_error_handling_during_bootstrap():
     teacher = BuggyModule("input -> output")
 
     # Setup DummyLM to simulate an error scenario
-    lm = DummyLM(
-        [
-            "Initial thoughts",  # Simulate initial teacher's prediction
-        ]
-    )
+    lm = DummyLanguageModel(answers=[["Initial thoughts"]])
+    backend = TemplateBackend(lm=lm, attempts=1)
     dspy.settings.configure(lm=lm)
 
     bootstrap = BootstrapFewShot(
@@ -159,13 +165,9 @@ def test_validation_set_usage():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(
-        [
-            "Initial thoughts",
-            "Finish[blue]",  # Expected output for both training and validation
-        ]
-    )
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[["Initial thoughts"], ["Finish[blue]"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1

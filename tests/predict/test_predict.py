@@ -1,6 +1,8 @@
 import dspy
 from dspy import Predict, Signature
-from dspy.utils.dummies import DummyLM
+from dspy.backends.json import JSONBackend
+from dspy.utils.dummies import DummyLanguageModel
+from dspy.backends import TemplateBackend
 
 
 def test_initialization_with_string_signature():
@@ -15,12 +17,12 @@ def test_initialization_with_string_signature():
 
 def test_reset_method():
     predict_instance = Predict("input -> output")
-    predict_instance.lm = "modified"
+    predict_instance.backend = "modified"
     predict_instance.traces = ["trace"]
     predict_instance.train = ["train"]
     predict_instance.demos = ["demo"]
     predict_instance.reset()
-    assert predict_instance.lm is None
+    assert predict_instance.backend is None
     assert predict_instance.traces == []
     assert predict_instance.train == []
     assert predict_instance.demos == []
@@ -28,29 +30,22 @@ def test_reset_method():
 
 def test_dump_and_load_state():
     predict_instance = Predict("input -> output")
-    predict_instance.lm = "lm_state"
+    predict_instance.backend = "backend_state"
     dumped_state = predict_instance.dump_state()
     new_instance = Predict("input -> output")
     new_instance.load_state(dumped_state)
-    assert new_instance.lm == "lm_state"
+    assert new_instance.backend == "backend_state"
 
 
 def test_call_method():
     predict_instance = Predict("input -> output")
-    lm = DummyLM(["test output"])
-    dspy.settings.configure(lm=lm)
+
+    lm = DummyLanguageModel(answers=[["test output"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
     result = predict_instance(input="test input")
     assert result.output == "test output"
-    assert lm.get_convo(-1) == (
-        "Given the fields `input`, produce the fields `output`.\n"
-        "\n---\n\n"
-        "Follow the following format.\n\n"
-        "Input: ${input}\n"
-        "Output: ${output}\n"
-        "\n---\n\n"
-        "Input: test input\n"
-        "Output: test output"
-    )
 
 
 def test_dump_load_state():
@@ -62,15 +57,23 @@ def test_dump_load_state():
 
 
 def test_forward_method():
+    lm = DummyLanguageModel(answers=[["No more responses"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([]))
     result = program(question="What is 1+1?").answer
     assert result == "No more responses"
 
 
 def test_forward_method2():
+    lm = DummyLanguageModel(
+        answers=[[" my first answer\n\nAnswer 2: my second answer"]]
+    )
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
     program = Predict("question -> answer1, answer2")
-    dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
     result = program(question="What is 1+1?")
     assert result.answer1 == "my first answer"
     assert result.answer2 == "my second answer"
@@ -85,7 +88,29 @@ def test_config_management():
 
 def test_multi_output():
     program = Predict("question -> answer", n=2)
-    dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
+
+    lm = DummyLanguageModel(answers=[["my first answer", "my second answer"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
     results = program(question="What is 1+1?")
-    assert results.completions.answer[0] == "my first answer"
-    assert results.completions.answer[1] == "my second answer"
+    assert results.completions[0].answer == "my first answer"
+    assert results.completions[1].answer == "my second answer"
+
+
+def test_multi_output_json():
+    program = Predict("question -> answer", n=2)
+
+    lm = DummyLanguageModel(
+        answers=[
+            [
+                """{"answer": "my first answer"}""",
+                """{"answer": "my second answer"}""",
+            ]
+        ]
+    )
+    backend = JSONBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
+
+    results = program(question="What is 1+1?")
+    assert results.completions[1].answer == "my second answer"

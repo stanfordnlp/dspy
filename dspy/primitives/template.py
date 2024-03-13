@@ -59,7 +59,7 @@ class Template:
     def query(self, example: Example, is_demo: bool) -> str:
         if is_demo:
             self._example_has_input_fields(example)
-            self._example_has_output_fields(example)
+            # self._example_has_output_fields(example)
 
         result = []
 
@@ -74,25 +74,31 @@ class Template:
         for name, field in self.signature.output_fields.items():
             format_handler = self._get_format_handler(name)
 
-            if name not in example:
+            if name not in example and not is_demo:
                 result.append(f"{field.json_schema_extra['prefix']} ")
                 break
-            else:
+            elif name in example:
                 result.append(
                     f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
                 )
 
         return "\n\n".join(result)
 
-    def guidelines(self) -> str:
+    def guidelines(self, is_json: bool = False) -> str:
         """Returns the task guidelines as described in the lm prompt"""
-        result = "Follow the following format.\n\n"
+        if is_json:
+            result = "Return the following fields in JSON format.\n\n"
+        else:
+            result = "Follow the following format.\n\n"
 
         field_strings = []
-        for field in self.signature.fields.values():
-            field_strings.append(
-                f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
-            )
+        for name, field in self.signature.fields.items():
+            if is_json:
+                field_strings.append(f"{name}: {field.json_schema_extra['desc']}")
+            else:
+                field_strings.append(
+                    f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
+                )
 
         return result + "\n\n".join(field_strings)
 
@@ -117,47 +123,63 @@ class Template:
             full_text = full_text + "\n\n---"
 
         # Generate Search Strings
-        search_strings = []
-        output_fields = list(self.signature.output_fields.keys())
-        for idx, (key, field) in enumerate(self.signature.output_fields.items()):
-            if len(search_strings) > 0:
-                search_strings[-1] += f"{field.json_schema_extra['prefix']}"
+        prefixes = (
+            [
+                field.json_schema_extra["prefix"]
+                for _, field in self.signature.output_fields.items()
+            ]
+            + ["---"]
+            + [
+                field.json_schema_extra["prefix"]
+                for _, field in self.signature.input_fields.items()
+            ]
+        )
 
-            target_str = f"(?s){field.json_schema_extra['prefix']}\\s?(.+?)"
-            if idx != len(self.signature.output_fields) - 1:
-                target_str += "\\n\\n"
+        demos = example.get("demos", [])
+        prefixes = [
+            prefix.replace(" ", "\\s").replace("(", "\\(").replace(")", "\\)")
+            for prefix in prefixes
+        ]
+        for idx, (name, field) in enumerate(self.signature.output_fields.items()):
+            stop_prefixes = "|".join(prefixes[idx:])
+
+            target_prefix = (
+                field.json_schema_extra["prefix"]
+                .replace(" ", "\\s")
+                .replace("(", "\\(")
+                .replace(")", "\\)")
+            )
+
+            search_string = f"(?s)\n\n{target_prefix}?(.+?)\n\n(?:{stop_prefixes})"
+            matches = regex.findall(search_string, full_text)
+
+            # Skip the first match as this is likely the guidelines
+            non_generated_count = 1 + sum([name in demo for demo in demos])
+            if non_generated_count >= len(matches):
+                matches = []
             else:
-                target_str += "\\n\\n\\-\\-\\-"
+                matches = matches[non_generated_count:]
 
-            search_strings.append(target_str)
+            if matches == [] and len(self.signature.output_fields) == 0:
+                example[name] = full_text
+            elif matches != []:
+                example[name] = matches[-1].strip()
 
-        # Generate Results
-        if len(self.signature.output_fields) == 1:
-            matches = regex.findall(search_strings[0], full_text)
-
-            # If no matches are found, and there are is only one prediction, return entire prediction
-            if matches is None:
-                example[output_fields[0]] = full_text
-            else:
-                example[output_fields[0]] = matches[-1]
-
-        else:
-            for idx, field in enumerate(output_fields):
-                matches = regex.findall(search_strings[idx], full_text)
-
-                if len(matches) > 0:
-                    example[field] = matches[-1]
+        print(example)
 
         return example
 
-    def __call__(self, example: Example, show_guidelines: bool = True) -> str:
+    def __call__(
+        self, example: Example, show_guidelines: bool = True, is_json: bool = False
+    ) -> str:
         prompt_spans = []
 
         # Start by getting the instructions
         prompt_spans.append(self.signature.instructions)
 
         # Generate the Guidelines
-        prompt_spans.append(self.guidelines())
+        if show_guidelines:
+            prompt_spans.append(self.guidelines(is_json=is_json))
 
         # Generate Spans for Each Demo
         for demo in example.get("demos", []):
