@@ -215,7 +215,10 @@ class BootstrapFewShot(Teleprompter):
                     )
                 else:
                     # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
-                    demo = Example(augmented=True, **inputs, **outputs)
+                    # The predictor, now adds the input into the output Prediction directly
+                    # therefore we have to dedupe this before creating the example
+                    inputs.update(**outputs)
+                    demo = Example(augmented=True, **inputs)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]

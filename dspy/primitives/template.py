@@ -59,7 +59,7 @@ class Template:
     def query(self, example: Example, is_demo: bool) -> str:
         if is_demo:
             self._example_has_input_fields(example)
-            self._example_has_output_fields(example)
+            # self._example_has_output_fields(example)
 
         result = []
 
@@ -74,10 +74,10 @@ class Template:
         for name, field in self.signature.output_fields.items():
             format_handler = self._get_format_handler(name)
 
-            if name not in example:
+            if name not in example and not is_demo:
                 result.append(f"{field.json_schema_extra['prefix']} ")
                 break
-            else:
+            elif name in example:
                 result.append(
                     f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
                 )
@@ -135,6 +135,7 @@ class Template:
             ]
         )
 
+        demos = example.get("demos", [])
         prefixes = [
             prefix.replace(" ", "\\s").replace("(", "\\(").replace(")", "\\)")
             for prefix in prefixes
@@ -153,7 +154,7 @@ class Template:
             matches = regex.findall(search_string, full_text)
 
             # Skip the first match as this is likely the guidelines
-            non_generated_count = 1 + len(example.get("demos", []))
+            non_generated_count = 1 + sum([name in demo for demo in demos])
             if non_generated_count >= len(matches):
                 matches = []
             else:

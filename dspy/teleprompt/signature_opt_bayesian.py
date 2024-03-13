@@ -1,5 +1,6 @@
 import dsp
 import dspy
+from dspy.primitives.example import Example
 from dspy.signatures.signature import signature_to_template
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.signatures import Signature
@@ -335,12 +336,11 @@ class BayesianSignatureOptimizer(Teleprompter):
                         if not instruct:
                             instruct = new_instruct
                         else:
-                            instruct.completions.proposed_instruction.extend(
-                                new_instruct.completions.proposed_instruction
+                            new_example = Example(
+                                proposed_instruction=new_instruct.proposed_instruction,
+                                proposed_prefix_for_output_field=new_instruct.proposed_prefix_for_output_field,
                             )
-                            instruct.completions.proposed_prefix_for_output_field.extend(
-                                new_instruct.completions.proposed_prefix_for_output_field
-                            )
+                            instruct.completions.add_example(new_example)
                 # Just data
                 elif view_data:
                     instruct = dspy.Predict(
@@ -383,10 +383,11 @@ class BayesianSignatureOptimizer(Teleprompter):
                     )(basic_instruction=basic_instruction)
 
             # Add in our initial prompt as a candidate as well
-            instruct.completions.proposed_instruction.insert(0, basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.insert(
-                0, basic_prefix
+            new_example = Example(
+                proposed_instruction=basic_instruction,
+                proposed_prefix_for_output_field=basic_prefix,
             )
+            instruct.completions.add_example(new_example, 0)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
 

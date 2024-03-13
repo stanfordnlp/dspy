@@ -57,8 +57,14 @@ class Completions(BaseModel):
 
         return False
 
-    def add_example(self, example: Example):
-        self.examples.append(example)
+    def add_example(self, example: Example, position: int = -1):
+        assert type(example) == Example
+        self.examples.insert(position, example)
+
+    def extend_examples(self, examples: list[Example]):
+        for idx, example in enumerate(examples):
+            assert type(example) == Example, f"idx: {idx}, example: {example}"
+        self.examples.extend(examples)
 
     def get_farthest_example(self) -> Example:
         # This may likely can be cleaned up to return the first complete example

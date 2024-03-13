@@ -14,7 +14,7 @@ class BaseBackend(BaseModel, ABC):
     def __call__(
         self,
         signature: Signature,
-        attempts: int = 1,
+        attempts: int = 5,
         **kwargs,
     ) -> Completions:
         # Recursively complete generation, until at least one complete completion is available.

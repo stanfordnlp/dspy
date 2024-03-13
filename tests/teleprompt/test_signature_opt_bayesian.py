@@ -3,15 +3,18 @@ import pytest
 import re
 import dspy
 from dsp.modules import LM
+from dspy.backends.lm.base import BaseLM, GeneratedContent
 from dspy.teleprompt.signature_opt_bayesian import BayesianSignatureOptimizer
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLM, DummyLanguageModel
 from dspy import Example
+from dspy.backends import TemplateBackend
 
 
 # Define a simple metric function for testing
 def simple_metric(example, prediction, trace=None):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
+
 
 # Some example data
 capitals = {
@@ -34,7 +37,51 @@ trainset = [
     Example(
         input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"
     ).with_inputs("input"),
-] + [Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input") for country, capital in capitals.items()]
+] + [
+    Example(input=f"What is the capital of {country}?", output=capital).with_inputs(
+        "input"
+    )
+    for country, capital in capitals.items()
+]
+
+
+class ConditionalLanguageModel(BaseLM):
+    def generate(self, prompt: str, n: int = 1, **kwargs) -> list[GeneratedContent]:
+        if prompt.endswith("Observations:"):
+            answer = "(*silence*)"
+        elif prompt.endswith("Proposed Instruction:"):
+            answer = " Input: "
+        elif prompt.endswith("Proposed Prefix For Output Field:"):
+            answer = " Output: "
+        elif prompt.endswith("Summary:"):
+            answer = " summarizing..."
+        else:
+            pairs = re.findall(r"Input: (.*)\n\nOutput: (.*)", prompt)
+
+            last = re.search(r"Input: (.*)\n\nReasoning: (.*)$", prompt)
+            current_question = last.group(1)
+
+            if match := re.match(r"What is the capital of (.*?)\?", current_question):
+                country = match.group(1)
+                # If we had a previous example of a question about a capital, the model
+                # has learned the format, and will answer with question correctly.
+                if any("capital" in question for question, _ in pairs):
+                    answer = (capitals | extra_capitals)[country]
+                # Otherwise, it is confused and will answer with the country's name.
+                else:
+                    answer = country
+
+            # For other questions, the model will answer with the last word of the question.
+            else:
+                answer = current_question.split()[-1]
+
+            answer = "think deeply.\n\nOutput: " + answer
+
+        dummy_response = [{"message": {"content": answer}} for _ in range(n)]
+        return dummy_response
+
+    def count_tokens(self, prompt: str) -> int:
+        return len(prompt)
 
 
 class ConditionalLM(LM):
@@ -72,10 +119,10 @@ class ConditionalLM(LM):
             # For other questions, the model will answer with the last word of the question.
             else:
                 answer = current_question.split()[-1]
-            
+
             answer = "think deeply.\nOutput: " + answer
 
-        RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
+        RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
         print("=== DummyLM ===")
         print(prompt, end="")
         print(f"{RED}{answer}{RESET}")
@@ -107,9 +154,11 @@ class ConditionalLM(LM):
 
     def get_convo(self, index):
         """get the prompt + anwer from the ith message"""
-        return self.history[index]['prompt'] \
-            + " " \
-            + self.history[index]['response']['choices'][0]['text']
+        return (
+            self.history[index]["prompt"]
+            + " "
+            + self.history[index]["response"]["choices"][0]["text"]
+        )
 
 
 def test_bayesian_signature_optimizer_initialization():
@@ -136,8 +185,9 @@ class SimpleModule(dspy.Module):
 
 
 def test_signature_optimizer_optimization_process():
-    lm = ConditionalLM()
-    dspy.settings.configure(lm=lm)
+    lm = ConditionalLanguageModel()
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     student = SimpleModule(signature="input -> output")
 
@@ -163,9 +213,11 @@ def test_signature_optimizer_optimization_process():
 
 
 def test_signature_optimizer_bad_lm():
-    dspy.settings.configure(
-        lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
+    lm = DummyLanguageModel(
+        answers=[[f"Optimized instruction {i}\n\nOutput: a"] for i in range(65)]
     )
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
     student = SimpleModule(signature="input -> output")
     optimizer = BayesianSignatureOptimizer(
         metric=simple_metric,
@@ -192,8 +244,9 @@ def test_signature_optimizer_bad_lm():
 def test_optimization_and_output_verification():
     # Make a language model that is always right, except on the last
     # example in the train set.
-    lm = ConditionalLM()
-    dspy.settings.configure(lm=lm)
+    lm = ConditionalLanguageModel()
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     optimizer = BayesianSignatureOptimizer(
         metric=simple_metric,
@@ -219,12 +272,9 @@ def test_optimization_and_output_verification():
     test_input = "What is the capital of Spain?"
     prediction = optimized_student(input=test_input)
 
-    print("CORRECT ANSWER")
-    print(lm.get_convo(-1))
-
     assert prediction.output == "Madrid"
-
-    assert lm.get_convo(-1) == textwrap.dedent(
+    print(backend.history[-1].prompt)
+    assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Input:
 
@@ -233,29 +283,36 @@ def test_optimization_and_output_verification():
         Follow the following format.
 
         Input: ${input}
+        
         Reasoning: Let's think step by step in order to ${produce the output}. We ...
+
         Output: ${output}
 
         ---
 
         Input: What is the capital of Norway?
+
         Reasoning: Let's think step by step in order to think deeply.
+
         Output: Oslo
 
         ---
 
         Input: What is the capital of Sweden?
+
         Reasoning: Let's think step by step in order to think deeply.
+
         Output: Stockholm
 
         ---
 
         Input: What is the capital of France?
+
         Output: Paris
 
         ---
 
         Input: What is the capital of Spain?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Madrid"""
+
+        Reasoning: Let's think step by step in order to"""
     )
