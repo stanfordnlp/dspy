@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Required
 import backoff
 from groq import Groq, AsyncGroq
 import groq
@@ -42,15 +42,18 @@ class GroqLM(LM):
 
     def __init__(
         self,
+        api_key: str,
         model: str = "mixtral-8x7b-32768",
-        api_key: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
-
+        self.provider = "groq"
         if api_key:
             self.api_key = api_key
             self.client = Groq(api_key = api_key)
+        else:
+            raise ValueError("api_key is required for groq")
+            
 
         self.kwargs = {
             "temperature": 0.0,
@@ -85,7 +88,7 @@ class GroqLM(LM):
 
         history = {
             "prompt": prompt,
-            "response": response,
+            "response": response.choices[0].message.content,
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
         }
