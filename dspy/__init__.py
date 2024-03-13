@@ -21,9 +21,11 @@ ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google
+GROQ = dsp.GroqLM
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
+
 
 Anyscale = dsp.Anyscale
 Together = dsp.Together
