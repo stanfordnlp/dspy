@@ -17,6 +17,7 @@ from .signatures import (
     GenerateFieldDescription,
     GenerateInputFieldsData,
     GenerateOutputFieldsData,
+    GetFeedbackOnGeneration,
     UnderstandTask,
     UpdateTaskDescriptionBasedOnFeedback,
 )
@@ -35,6 +36,7 @@ class Synthesizer:
 
         self.explain_task = dspy.Predict(ExplainTask)
         self.understand_task = dspy.Predict(UnderstandTask)
+        self.get_feedback_on_generation = dspy.Predict(GetFeedbackOnGeneration)
         self.generate_field_description = dspy.Predict(GenerateFieldDescription)
         self.update_task_description = dspy.Predict(UpdateTaskDescriptionBasedOnFeedback)
 
@@ -58,7 +60,14 @@ class Synthesizer:
             return feedback
         
         elif self.config.feedback_mode == "llm":
-            raise NotImplementedError("Feedback mode 'llm' is not implemented yet.")
+            feedback = self.get_feedback_on_generation(
+                synthetic_data=[examples],
+                task_description=self.generate_output_data.__doc__,
+            )
+
+            print(feedback.feedback)
+
+            return feedback.feedback
 
         else:
             raise ValueError("Feedback mode should be either 'human' or 'llm'.")

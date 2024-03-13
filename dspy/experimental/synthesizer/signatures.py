@@ -44,6 +44,23 @@ class UpdateTaskDescriptionBasedOnFeedback(dspy.Signature):
         desc="Updated description of the task.",
     )
 
+class GetFeedbackOnGeneration(dspy.Signature):
+    """Provide constructive feedback on the synthetic data generated, focusing on its quality, relevance, and diversity. Highlight any areas that require improvement and offer suggestions for enhancement. The feedback should center on the overall effectiveness of the synthetic data in aligning with the task description and knowledge seed. Avoid delving into specific data points, models, examples, algorithms, or technical intricacies. Your feedback should be critical but constructive, aiming to improve the synthetic data and the task description."""
+
+    synthetic_data = dspy.InputField(
+        prefix="Synthetic Data:",
+        desc="Synthetic data generated.",
+        format=format_examples,
+    )
+    task_description = dspy.InputField(
+        prefix="Task Description:",
+        desc="Description of the task the synthetic data is aligned with.",
+    )
+    feedback = dspy.OutputField(
+        prefix="Feedback:",
+        desc="Feedback on the synthetic data.",
+    )
+
 class GenerateFieldDescription(dspy.Signature):
     """Generate a concise and informative description for a given field based on the provided name and task description. This description should be no longer than 10 words and should be in simple english."""
 
