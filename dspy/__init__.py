@@ -1,5 +1,10 @@
 import dsp
-from dsp.modules.hf_client import ChatModuleClient, HFClientSGLang, HFClientVLLM, HFServerTGI
+from dsp.modules.hf_client import (
+    ChatModuleClient,
+    HFClientSGLang,
+    HFClientVLLM,
+    HFServerTGI,
+)
 
 from .predict import *
 from .primitives import *
@@ -7,7 +12,7 @@ from .retrieve import *
 from .signatures import *
 
 # Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
+from .functional import *  # isort: skip
 
 settings = dsp.settings
 
@@ -19,6 +24,7 @@ ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google
+VertexAI = dsp.VertexAI
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM

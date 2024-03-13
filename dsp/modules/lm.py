@@ -46,20 +46,27 @@ class LM(ABC):
 
             if prompt != last_prompt:
 
-                if provider == "clarifai" or provider == "google" or provider == "claude":
+                if (
+                    provider == "clarifai"
+                    or provider == "google"
+                    or provider == "claude"
+                    or provider == "vertexai"
+                ):
                     printed.append(
                         (
                             prompt,
-                            x['response'],
+                            x["response"],
                         ),
                     )
                 else:
                     printed.append(
                         (
                             prompt,
-                            x["response"].generations
-                            if provider == "cohere"
-                            else x["response"]["choices"],
+                            (
+                                x["response"].generations
+                                if provider == "cohere"
+                                else x["response"]["choices"]
+                            ),
                         ),
                     )
 
@@ -79,11 +86,13 @@ class LM(ABC):
             if provider == "cohere":
                 text = choices[0].text
             elif provider == "openai" or provider == "ollama":
-                text = ' ' + self._get_choice_text(choices[0]).strip()
-            elif provider == "clarifai" or provider == "claude" :
-                text=choices
+                text = " " + self._get_choice_text(choices[0]).strip()
+            elif provider == "clarifai" or provider == "claude":
+                text = choices
             elif provider == "google":
                 text = choices[0].parts[0].text
+            elif provider == "vertexai":
+                text = choices[0].candidates[0].text
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
@@ -99,6 +108,6 @@ class LM(ABC):
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
-        model = kwargs.pop('model')
+        model = kwargs.pop("model")
 
         return self.__class__(model=model, **kwargs)
