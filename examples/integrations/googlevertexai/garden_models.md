@@ -1,6 +1,3 @@
-Below is a README template for using the `GoogleVertexAI` class in Markdown format. You can adjust the content to fit the specifics of your project or library.
-
-```markdown
 # GoogleVertexAI Usage Guide
 
 This guide provides instructions on how to use the `GoogleVertexAI` class to interact with Google Vertex AI's API for text and code generation.
