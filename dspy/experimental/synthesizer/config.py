@@ -1,5 +1,7 @@
-from typing import Optional, Any
+from typing import Any, Optional
+
 from pydantic import BaseModel, model_validator
+
 
 class SynthesizerArguments(BaseModel):
     feedback_mode: Optional[str] = None

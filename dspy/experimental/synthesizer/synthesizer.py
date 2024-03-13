@@ -1,11 +1,12 @@
-import dspy
 import random
-
-from datasets import Dataset
-from tqdm import tqdm, trange
-from rich import print as rprint
 from collections.abc import Mapping
 from typing import List, Optional, Union
+
+from datasets import Dataset
+from rich import print as rprint
+from tqdm import tqdm, trange
+
+import dspy
 
 from .config import SynthesizerArguments
 from .instruction_suffixes import (
