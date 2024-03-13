@@ -66,8 +66,6 @@ class Synthesizer:
                 task_description=self.generate_output_data.__doc__,
             )
 
-            print(feedback.feedback)
-
             return feedback.feedback
 
         else:
