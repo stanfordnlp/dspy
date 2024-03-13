@@ -184,7 +184,10 @@ class Evaluate:
         df = pd.DataFrame(data)
 
         # Truncate every cell in the DataFrame
-        df = df.map(truncate_cell)
+        if hasattr(df, "map"):  # DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0
+            df = df.map(truncate_cell)
+        else:
+            df = df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
         assert callable(metric)
