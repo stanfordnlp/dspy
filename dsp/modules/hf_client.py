@@ -116,7 +116,16 @@ def send_hftgi_request_v00(arg, **kwargs):
 class HFClientVLLM(HFModel):
     def __init__(self, model, port, url="http://localhost", **kwargs):
         super().__init__(model=model, is_client=True)
-        self.url = f"{url}:{port}"
+        
+        if type(url) == list:
+            self.urls = ['/v1'.join(url_.split('/v1')[:-1]) for url_ in url]
+        
+        elif type(url) == str:
+            self.urls = [f'{url}:{port}']
+        
+        else:
+            raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
+        
         self.headers = {"Content-Type": "application/json"}
 
     def _generate(self, prompt, **kwargs):
@@ -128,9 +137,13 @@ class HFClientVLLM(HFModel):
             "max_tokens": kwargs["max_tokens"],
             "temperature": kwargs["temperature"],
         }
+        
+        # Round robin the urls.
+        url = self.urls.pop(0)
+        self.urls.append(url)
 
         response = send_hfvllm_request_v00(
-            f"{self.url}/v1/completions",
+            f"{url}/v1/completions",
             json=payload,
             headers=self.headers,
         )
