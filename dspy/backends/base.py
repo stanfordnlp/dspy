@@ -10,13 +10,17 @@ class BaseBackend(BaseModel, ABC):
     """A backend takes a signature, its params, and returns a list of structured predictions."""
 
     history: list[Completions] = Field(default_factory=list)
+    attempts: int = Field(default=1)
 
     def __call__(
         self,
         signature: Signature,
-        attempts: int = 5,
+        attempts: int = 1,
         **kwargs,
     ) -> Completions:
+        # Allow overriding the attempts at the Backend Initialization Step
+        attempts = max(attempts, self.attempts)
+
         # Recursively complete generation, until at least one complete completion is available.
         signature = ensure_signature(signature)
 

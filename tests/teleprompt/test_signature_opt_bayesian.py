@@ -186,7 +186,7 @@ class SimpleModule(dspy.Module):
 
 def test_signature_optimizer_optimization_process():
     lm = ConditionalLanguageModel()
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
 
     student = SimpleModule(signature="input -> output")
@@ -216,7 +216,7 @@ def test_signature_optimizer_bad_lm():
     lm = DummyLanguageModel(
         answers=[[f"Optimized instruction {i}\n\nOutput: a"] for i in range(65)]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
     student = SimpleModule(signature="input -> output")
     optimizer = BayesianSignatureOptimizer(
@@ -245,7 +245,7 @@ def test_optimization_and_output_verification():
     # Make a language model that is always right, except on the last
     # example in the train set.
     lm = ConditionalLanguageModel()
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
 
     optimizer = BayesianSignatureOptimizer(

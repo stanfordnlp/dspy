@@ -47,8 +47,9 @@ def test_compile_with_predict_instances():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(["Initial thoughts", "Finish[blue]"])
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[["Initial thoughts", "Finish[blue]"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False)
 
     # Initialize BootstrapFewShot and compile the student
     bootstrap = BootstrapFewShot(
@@ -142,11 +143,8 @@ def test_error_handling_during_bootstrap():
     teacher = BuggyModule("input -> output")
 
     # Setup DummyLM to simulate an error scenario
-    lm = DummyLM(
-        [
-            "Initial thoughts",  # Simulate initial teacher's prediction
-        ]
-    )
+    lm = DummyLanguageModel(answers=[["Initial thoughts"]])
+    backend = TemplateBackend(lm=lm, attempts=1)
     dspy.settings.configure(lm=lm)
 
     bootstrap = BootstrapFewShot(
@@ -167,13 +165,9 @@ def test_validation_set_usage():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(
-        [
-            "Initial thoughts",
-            "Finish[blue]",  # Expected output for both training and validation
-        ]
-    )
-    dspy.settings.configure(lm=lm)
+    lm = DummyLanguageModel(answers=[["Initial thoughts"], ["Finish[blue]"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend)
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1

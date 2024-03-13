@@ -122,6 +122,8 @@ class Template:
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"
 
+        print(full_text)
+
         # Generate Search Strings
         prefixes = (
             [
@@ -134,6 +136,8 @@ class Template:
                 for _, field in self.signature.input_fields.items()
             ]
         )
+
+        print(prefixes)
 
         demos = example.get("demos", [])
         prefixes = [
@@ -164,6 +168,8 @@ class Template:
                 example[name] = full_text
             elif matches != []:
                 example[name] = matches[-1].strip()
+
+        print(example)
 
         return example
 

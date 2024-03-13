@@ -58,7 +58,7 @@ def test_signature_optimizer_optimization_process():
             ]
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
     # dspy.settings.configure(
     #     lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
@@ -92,7 +92,7 @@ def test_signature_optimizer_statistics_tracking():
             ["Optimized instruction\n\nProposed Prefix For Output Field: Dummy Prefix"]
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
     # dspy.settings.configure(lm=DummyLM(["Optimized instruction"]))
     student = SimpleModule("input -> output")
@@ -120,16 +120,14 @@ def test_optimization_and_output_verification():
             [
                 "Optimized Prompt\n\nProposed Prefix For Output Field: Optimized Prefix: "
             ],
-            ["The color of the sky\n\nOptimized Prefix: blue"],
-            [
-                "What the fox says\n\nOptimized Prefix: Ring-ding-ding-ding-dingeringeding"
-            ],
+            ["The color of the sky\n\Output: blue"],
+            ["What the fox says\n\nOutput: Ring-ding-ding-ding-dingeringeding"],
             ["the color of the sky\n\nOutput: blue"],
             ["What the fox says\n\nOutput: Ring-ding-ding-ding-dingeringeding"],
             ["Generate the capital of France\n\nOptimized Prefix: No more responses"],
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=1)
     dspy.settings.configure(backend=backend, cache=False)
     optimizer = SignatureOptimizer(
         metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
@@ -180,7 +178,7 @@ def test_statistics_tracking_during_optimization():
             ]
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
 
     optimizer = SignatureOptimizer(
