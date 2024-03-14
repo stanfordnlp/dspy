@@ -653,6 +653,28 @@ def test_field_validator_in_signature():
     _ = ValidatedSignature(a="with space")
 
 
+def test_lm_as_validator():
+    @predictor
+    def is_square(n: int) -> bool:
+        """Is n a square number?"""
+
+    def check_square(n):
+        assert is_square(n=n)
+        return n
+
+    @predictor
+    def next_square(n: int) -> Annotated[int, AfterValidator(check_square)]:
+        """What is the next square number after n?"""
+
+    lm = DummyLM(["3", "False", "4", "True"])
+    dspy.settings.configure(lm=lm)
+
+    m = next_square(n=2)
+    lm.inspect_history(n=2)
+
+    assert m == 4
+
+
 def test_annotated_validator():
     def is_square(n: int) -> int:
         root = n**0.5
@@ -692,3 +714,70 @@ def test_annotated_validator_functional():
     lm.inspect_history(n=2)
 
     assert m == 4
+
+
+def test_demos():
+    demos = [
+        dspy.Example(input="What is the speed of light?", output="3e8"),
+    ]
+    program = LabeledFewShot(k=len(demos)).compile(
+        student=dspy.TypedPredictor("input -> output"),
+        trainset=[ex.with_inputs("input") for ex in demos],
+    )
+
+    lm = DummyLM(["Paris"])
+    dspy.settings.configure(lm=lm)
+
+    assert program(input="What is the capital of France?").output == "Paris"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Output: ${output}
+
+        ---
+
+        Input: What is the speed of light?
+        Output: 3e8
+
+        ---
+
+        Input: What is the capital of France?
+        Output: Paris""")
+
+
+def _test_demos_missing_input():
+    demos = [dspy.Example(input="What is the speed of light?", output="3e8")]
+    program = LabeledFewShot(k=len(demos)).compile(
+        student=dspy.TypedPredictor("input -> output, thoughts"),
+        trainset=[ex.with_inputs("input") for ex in demos],
+    )
+    dspy.settings.configure(lm=DummyLM(["My thoughts", "Paris"]))
+    assert program(input="What is the capital of France?").output == "Paris"
+
+    assert dspy.settings.lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Thoughts: ${thoughts}
+        Output: ${output}
+
+        ---
+
+        Input: What is the speed of light?
+        Output: 3e8
+
+        ---
+
+        Input: What is the capital of France?
+        Thoughts: My thoughts
+        Output: Paris""")

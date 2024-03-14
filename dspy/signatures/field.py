@@ -19,6 +19,9 @@ def move_kwargs(**kwargs):
             json_schema_extra[k] = v
         else:
             pydantic_kwargs[k] = v
+    # Also copy over the pydantic "description" if no dspy "desc" is given.
+    if "description" in kwargs and "desc" not in json_schema_extra:
+        json_schema_extra["desc"] = kwargs["description"]
     pydantic_kwargs["json_schema_extra"] = json_schema_extra
     return pydantic_kwargs
 
