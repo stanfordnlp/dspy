@@ -83,7 +83,7 @@ class LM(ABC):
             elif provider == "clarifai" or provider == "claude" :
                 text=choices
             elif provider == "google":
-                text = choices[0].parts[0].text
+                text = choices[0].candidates[0].content.parts[0].text
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
