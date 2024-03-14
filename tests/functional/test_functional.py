@@ -1,7 +1,7 @@
 import datetime
 import textwrap
 import pydantic
-from pydantic import Field, BaseModel, field_validator
+from pydantic import AfterValidator, Field, BaseModel, field_validator
 from typing import Annotated, Generic, Literal, TypeVar
 from typing import List
 
@@ -362,9 +362,9 @@ def test_multi_errors():
 
         Email: ${email}
 
-        Past Error (flight_information): An error to avoid in the future
+        Past Error in Flight Information: An error to avoid in the future
 
-        Past Error (flight_information, 2): An error to avoid in the future
+        Past Error (2) in Flight Information: An error to avoid in the future
 
         Flight Information: ${flight_information}. Respond with a single JSON object. JSON Schema: {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
 
@@ -372,9 +372,9 @@ def test_multi_errors():
 
         Email: Some email
 
-        Past Error (flight_information): String should match pattern '^[A-Z]{3}$': origin (error type: string_pattern_mismatch)
+        Past Error in Flight Information: String should match pattern '^[A-Z]{3}$': origin (error type: string_pattern_mismatch)
 
-        Past Error (flight_information, 2): String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
+        Past Error (2) in Flight Information: String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
 
         Flight Information: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}"""
     )
@@ -418,28 +418,25 @@ def test_field_validator():
 
         Follow the following format.
 
-        Past Error (get_user_details): An error to avoid in the future
-        Past Error (get_user_details, 2): An error to avoid in the future
+        Past Error in Get User Details: An error to avoid in the future
+        Past Error (2) in Get User Details: An error to avoid in the future
         Get User Details: ${get_user_details}. Respond with a single JSON object. JSON Schema: {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
         ---
 
-        Past Error (get_user_details): Value error, Name must be in uppercase.: name (error type: value_error)
-        Past Error (get_user_details, 2): Value error, Name must be in uppercase.: name (error type: value_error)
+        Past Error in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
+        Past Error (2) in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
         Get User Details: {"name": "lower case name", "age": 25}"""
     )
 
 
 def test_annotated_field():
-    # Since we don't currently validate fields on the main signature,
-    # the annotated fields are also not validated.
-    # But at least it should not crash.
-
     @predictor
     def test(input: Annotated[str, Field(description="description")]) -> Annotated[float, Field(gt=0, lt=1)]:
         pass
 
-    lm = DummyLM(["0.5"])
+    # First try 0, which fails, then try 0.5, which passes
+    lm = DummyLM(["0", "0.5"])
     dspy.settings.configure(lm=lm)
 
     output = test(input="input")
@@ -654,3 +651,44 @@ def test_field_validator_in_signature():
         _ = ValidatedSignature(a="no-space")
 
     _ = ValidatedSignature(a="with space")
+
+
+def test_annotated_validator():
+    def is_square(n: int) -> int:
+        root = n**0.5
+        if not root.is_integer():
+            raise ValueError(f"{n} is not a square")
+        return n
+
+    class MySignature(dspy.Signature):
+        """What is the next square number after n?"""
+
+        n: int = dspy.InputField()
+        next_square: Annotated[int, AfterValidator(is_square)] = dspy.OutputField()
+
+    lm = DummyLM(["3", "4"])
+    dspy.settings.configure(lm=lm)
+
+    m = TypedPredictor(MySignature)(n=2).next_square
+    lm.inspect_history(n=2)
+
+    assert m == 4
+
+
+def test_annotated_validator_functional():
+    def is_square(n: int) -> int:
+        if not (n**0.5).is_integer():
+            raise ValueError(f"{n} is not a square")
+        return n
+
+    @predictor
+    def next_square(n: int) -> Annotated[int, AfterValidator(is_square)]:
+        """What is the next square number after n?"""
+
+    lm = DummyLM(["3", "4"])
+    dspy.settings.configure(lm=lm)
+
+    m = next_square(n=2)
+    lm.inspect_history(n=2)
+
+    assert m == 4
