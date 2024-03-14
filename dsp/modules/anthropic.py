@@ -49,7 +49,7 @@ class Claude(LM):
             from anthropic import Anthropic, RateLimitError
         except ImportError as err:
             raise ImportError("Claude requires `pip install anthropic`.") from err
-        
+
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
         self.api_base = BASE_URL if api_base is None else api_base
@@ -80,7 +80,6 @@ class Claude(LM):
         # caching mechanism requires hashable kwargs
         kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs.pop("n")
-        print(kwargs)
         response = self.client.messages.create(**kwargs)
 
         history = {
@@ -120,7 +119,7 @@ class Claude(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-      
+
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses
         # so this cannot be a proper indicator for incomplete response unless it isnt the user-intent.
