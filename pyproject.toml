@@ -108,6 +108,7 @@ sphinx_rtd_theme = { version = "*", optional = true }
 autodoc_pydantic = { version = "*", optional = true }
 sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
+rich = "^13.7.1"
 
 
 [tool.poetry.group.dev.dependencies]
