@@ -19,7 +19,7 @@ BASE_URL = "https://api.anthropic.com/v1/messages"
 
 
 def backoff_hdlr(details):
-    """Handler from https://pypi.org/project/backoff/"""
+    """Handler from https://pypi.org/project/backoff/."""
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
@@ -28,7 +28,7 @@ def backoff_hdlr(details):
 
 
 def giveup_hdlr(details):
-    """wrapper function that decides when to give up on retry"""
+    """Wrapper function that decides when to give up on retry."""
     if "rate limits" in details.message:
         return False
     return True
@@ -46,19 +46,19 @@ class Claude(LM):
         super().__init__(model)
 
         try:
-            from anthropic import Anthropic, RateLimitError
+            from anthropic import Anthropic
         except ImportError as err:
             raise ImportError("Claude requires `pip install anthropic`.") from err
-        
+
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
         self.api_base = BASE_URL if api_base is None else api_base
 
         self.kwargs = {
-            "temperature": 0.0 if "temperature" not in kwargs else kwargs["temperature"],
+            "temperature": kwargs.get("temperature", 0.0),
             "max_tokens": min(kwargs.get("max_tokens", 4096), 4096),
-            "top_p": 1.0 if "top_p" not in kwargs else kwargs["top_p"],
-            "top_k": 1 if "top_k" not in kwargs else kwargs["top_k"],
+            "top_p": kwargs.get("top_p", 1.0),
+            "top_k": kwargs.get("top_k", 1),
             "n": kwargs.pop("n", kwargs.pop("num_generations", 1)),
             **kwargs,
         }
@@ -80,7 +80,6 @@ class Claude(LM):
         # caching mechanism requires hashable kwargs
         kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs.pop("n")
-        print(kwargs)
         response = self.client.messages.create(**kwargs)
 
         history = {
@@ -102,7 +101,7 @@ class Claude(LM):
         giveup=giveup_hdlr,
     )
     def request(self, prompt: str, **kwargs):
-        """Handles retrieval of completions from Anthropic whilst handling API errors"""
+        """Handles retrieval of completions from Anthropic whilst handling API errors."""
         return self.basic_request(prompt, **kwargs)
 
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
@@ -120,16 +119,14 @@ class Claude(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-      
+
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses
         # so this cannot be a proper indicator for incomplete response unless it isnt the user-intent.
-        # if only_completed and response.stop_reason != "end_turn":
-        #     choices = []
 
         n = kwargs.pop("n", 1)
         completions = []
-        for i in range(n):
+        for _ in range(n):
             response = self.request(prompt, **kwargs)
             # TODO: Log llm usage instead of hardcoded openai usage
             # if dsp.settings.log_openai_usage:
