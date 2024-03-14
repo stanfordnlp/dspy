@@ -80,7 +80,7 @@ class Claude(LM):
         # caching mechanism requires hashable kwargs
         kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs.pop("n")
-        print(kwargs)
+        
         response = self.client.messages.create(**kwargs)
 
         history = {
