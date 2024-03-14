@@ -119,7 +119,22 @@ class TypedPredictor(dspy.Module):
             is_output = field.json_schema_extra["__dspy_field_type"] == "output"
             type_ = field.annotation
             if is_output:
-                if type_ in (str, int, float, bool):
+                if type_ is bool:
+
+                    def parse(x):
+                        x = x.strip().lower()
+                        if x not in ("true", "false"):
+                            raise ValueError("Respond with true or false")
+                        return x == "true"
+
+                    signature = signature.with_updated_fields(
+                        name,
+                        desc=field.json_schema_extra.get("desc", "")
+                        + (" (Respond with true or false)" if type_ != str else ""),
+                        format=lambda x: x if isinstance(x, str) else str(x),
+                        parser=parse,
+                    )
+                elif type_ in (str, int, float, bool):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
