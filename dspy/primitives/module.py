@@ -1,4 +1,5 @@
 import copy
+from collections import deque
 from collections.abc import Generator
 
 import ujson
@@ -9,45 +10,48 @@ class BaseModule:
         pass
 
     def named_parameters(self):
-        """
-        Unlike PyTorch, handles (non-recursive) lists of parameters too.
-        """
-
+        """Unlike PyTorch, handles lists of parameters too."""
         from dspy.predict.parameter import Parameter
 
-        visited = set()
-        named_parameters = []
+        # Remove the 'self.' prefix from the names
+        return [(name[5:], param) for name, param in self.named_sub_modules(Parameter)]
 
-        def add_parameter(param_name, param_value):
-            if isinstance(param_value, Parameter) and id(param_value) not in visited:
-                visited.add(id(param_value))
-                named_parameters.append((param_name, param_value))
+    def named_sub_modules(self, type_=None, skip_compiled=False) -> Generator[tuple[str, "BaseModule"], None, None]:
+        """Find all sub-modules in the module, as well as their names.
 
-        for name, value in self.__dict__.items():
-            if isinstance(value, Parameter):
-                add_parameter(name, value)
+        Say self.children[4]['key'].sub_module is a sub-module. Then the name will be
+        'children[4][key].sub_module'. But if the sub-module is accessible at different
+        paths, only one of the paths will be returned.
+        """
+        if type_ is None:
+            type_ = BaseModule
 
-            elif isinstance(value, BaseModule):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, "_compiled", False):
-                    for sub_name, param in value.named_parameters():
-                        add_parameter(f"{name}.{sub_name}", param)
+        queue = deque([("self", self)])
+        seen = {id(self)}
 
-            elif isinstance(value, (list, tuple)):
-                for idx, item in enumerate(value):
-                    add_parameter(f"{name}[{idx}]", item)
+        def add_to_queue(name, item):
+            if id(item) not in seen:
+                seen.add(id(item))
+                queue.append((name, item))
 
-            elif isinstance(value, dict):
-                for key, item in value.items():
-                    add_parameter(f"{name}['{key}']", item)
+        while queue:
+            name, item = queue.popleft()
+            if isinstance(item, type_):
+                yield name, item
 
-        return named_parameters
+            if isinstance(item, BaseModule):
+                if skip_compiled and getattr(item, "_compiled", False):
+                    continue
+                for sub_name, sub_item in item.__dict__.items():
+                    add_to_queue(f"{name}.{sub_name}", sub_item)
 
-    def named_sub_modules(self, root_name="base") -> Generator[tuple[str, "BaseModule"], None, None]:
-        yield root_name, self
-        for name, value in self.__dict__.items():
-            if isinstance(value, BaseModule):
-                yield from value.named_sub_modules(root_name=f"{root_name}.{name}")
+            elif isinstance(item, (list, tuple)):
+                for i, sub_item in enumerate(item):
+                    add_to_queue(f"{name}[{i}]", sub_item)
+
+            elif isinstance(item, dict):
+                for key, sub_item in item.items():
+                    add_to_queue(f"{name}[{key}]", sub_item)
 
     def parameters(self):
         return [param for _, param in self.named_parameters()]

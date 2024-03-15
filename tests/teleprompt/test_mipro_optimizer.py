@@ -3,7 +3,7 @@ import pytest
 import re
 import dspy
 from dsp.modules import LM
-from dspy.teleprompt.signature_opt_bayesian import BayesianSignatureOptimizer
+from dspy.teleprompt.signature_opt_bayesian import MIPRO
 from dspy.utils.dummies import DummyLM
 from dspy import Example
 
@@ -41,7 +41,7 @@ class ConditionalLM(LM):
     def __init__(self):
         super().__init__("conditional-lm")
 
-    def basic_request(self, prompt, n=1, **kwargs):
+    def basic_request(self, prompt, num_candidates=1, **kwargs):
         # If we are in the "optimization" stage, we don't say much.
         if prompt.endswith("Observations:"):
             answer = " (*silence*)"
@@ -52,8 +52,9 @@ class ConditionalLM(LM):
         elif prompt.endswith("Summary:"):
             answer = " summarizing..."
         else:
-            pairs = re.findall(r"Input: (.*)\nOutput: (.*)", prompt)
+            pairs = re.findall(r"Input: (.*?)\n(?:Reasoning:.*?\n)?Output: (.*?)\n", prompt, re.DOTALL)
 
+            # breakpoint()
             print("PROMPT:", prompt)
             print("PAIRS:", pairs)
 
@@ -82,7 +83,7 @@ class ConditionalLM(LM):
         print("===")
 
         dummy_response = {"choices": []}
-        for _ in range(n):
+        for _ in range(num_candidates):
             dummy_response["choices"].append(
                 {
                     "text": answer,
@@ -113,11 +114,11 @@ class ConditionalLM(LM):
 
 
 def test_bayesian_signature_optimizer_initialization():
-    optimizer = BayesianSignatureOptimizer(
-        metric=simple_metric, n=10, init_temperature=1.4, verbose=True, track_stats=True
+    optimizer = MIPRO(
+        metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
-    assert optimizer.n == 10, "Incorrect 'n' parameter initialization"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
     assert (
         optimizer.init_temperature == 1.4
     ), "Initial temperature not correctly initialized"
@@ -141,9 +142,9 @@ def test_signature_optimizer_optimization_process():
 
     student = SimpleModule(signature="input -> output")
 
-    optimizer = BayesianSignatureOptimizer(
+    optimizer = MIPRO(
         metric=simple_metric,
-        n=10,
+        num_candidates=10,
         init_temperature=1.4,
         verbose=False,
         track_stats=False,
@@ -152,11 +153,12 @@ def test_signature_optimizer_optimization_process():
     # Adjustments: Include required parameters for the compile method
     optimized_student = optimizer.compile(
         student=student,
-        devset=trainset,
-        optuna_trials_num=10,
+        trainset=trainset,
+        num_trials=10,
         max_bootstrapped_demos=3,
         max_labeled_demos=5,
         eval_kwargs={"num_threads": 1, "display_progress": False},
+        requires_permission_to_run=False,
     )
 
     assert len(optimized_student.predictor.demos) == 5
@@ -167,9 +169,9 @@ def test_signature_optimizer_bad_lm():
         lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
     )
     student = SimpleModule(signature="input -> output")
-    optimizer = BayesianSignatureOptimizer(
+    optimizer = MIPRO(
         metric=simple_metric,
-        n=10,
+        num_candidates=10,
         init_temperature=1.4,
         verbose=False,
         track_stats=False,
@@ -181,11 +183,12 @@ def test_signature_optimizer_bad_lm():
     with pytest.raises(ValueError):
         _optimized_student = optimizer.compile(
             student=student,
-            devset=trainset,
-            optuna_trials_num=10,
+            trainset=trainset,
+            num_trials=10,
             max_bootstrapped_demos=3,
             max_labeled_demos=5,
             eval_kwargs={"num_threads": 1, "display_progress": False},
+            requires_permission_to_run=False,
         )
 
 
@@ -195,9 +198,9 @@ def test_optimization_and_output_verification():
     lm = ConditionalLM()
     dspy.settings.configure(lm=lm)
 
-    optimizer = BayesianSignatureOptimizer(
+    optimizer = MIPRO(
         metric=simple_metric,
-        n=10,
+        num_candidates=10,
         init_temperature=1.4,
         verbose=False,
         track_stats=True,
@@ -208,11 +211,12 @@ def test_optimization_and_output_verification():
     # Compile the student with the optimizer
     optimized_student = optimizer.compile(
         student=student,
-        devset=trainset,
-        optuna_trials_num=4,
+        trainset=trainset,
+        num_trials=4,
         max_bootstrapped_demos=2,
         max_labeled_demos=3,
         eval_kwargs={"num_threads": 1, "display_progress": False},
+        requires_permission_to_run=False,
     )
 
     # Simulate calling the optimized student with a new input
@@ -224,17 +228,23 @@ def test_optimization_and_output_verification():
 
     assert prediction.output == "Madrid"
 
-    assert lm.get_convo(-1) == textwrap.dedent(
+    expected_lm_output = textwrap.dedent(
         """\
         Input:
 
         ---
-
+        
         Follow the following format.
-
+        
         Input: ${input}
         Reasoning: Let's think step by step in order to ${produce the output}. We ...
         Output: ${output}
+
+        ---
+
+        Input: What is the capital of France?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Paris
 
         ---
 
@@ -244,14 +254,8 @@ def test_optimization_and_output_verification():
 
         ---
 
-        Input: What is the capital of Sweden?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Stockholm
-
-        ---
-
-        Input: What is the capital of France?
-        Output: Paris
+        Input: What does the fox say?
+        Output: Ring-ding-ding-ding-dingeringeding!
 
         ---
 
@@ -259,3 +263,5 @@ def test_optimization_and_output_verification():
         Reasoning: Let's think step by step in order to think deeply.
         Output: Madrid"""
     )
+
+    assert lm.get_convo(-1) == expected_lm_output

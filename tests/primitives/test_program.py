@@ -1,5 +1,4 @@
 import dspy
-from dspy.primitives.module import BaseModule
 from dspy.primitives.program import (
     Module,
     set_attribute_by_name,
@@ -59,45 +58,81 @@ def test_nested_named_predictors():
     assert "hop.predict2" in names
 
 
-class SubModule(BaseModule):
-    pass
-
-
-class AnotherSubModule(BaseModule):
-    pass
-
-
 def test_empty_module():
-    module = BaseModule()
-    assert list(module.named_sub_modules()) == [("base", module)]
+    module = Module()
+    assert list(module.named_sub_modules()) == [("self", module)]
 
 
 def test_single_level():
-    module = BaseModule()
-    module.sub = SubModule()
-    expected = [("base", module), ("base.sub", module.sub)]
+    module = Module()
+    module.sub = Module()
+    expected = [("self", module), ("self.sub", module.sub)]
     assert list(module.named_sub_modules()) == expected
 
 
 def test_multiple_levels():
-    module = BaseModule()
-    module.sub = SubModule()
-    module.sub.subsub = SubModule()
-    expected = [("base", module), ("base.sub", module.sub), ("base.sub.subsub", module.sub.subsub)]
+    module = Module()
+    module.sub = Module()
+    module.sub.subsub = Module()
+    expected = [("self", module), ("self.sub", module.sub), ("self.sub.subsub", module.sub.subsub)]
     assert list(module.named_sub_modules()) == expected
 
 
 def test_multiple_sub_modules():
-    module = BaseModule()
-    module.sub1 = SubModule()
-    module.sub2 = SubModule()
-    expected = [("base", module), ("base.sub1", module.sub1), ("base.sub2", module.sub2)]
+    module = Module()
+    module.sub1 = Module()
+    module.sub2 = Module()
+    expected = [("self", module), ("self.sub1", module.sub1), ("self.sub2", module.sub2)]
     assert sorted(list(module.named_sub_modules())) == sorted(expected)
 
 
 def test_non_base_module_attributes():
-    module = BaseModule()
-    module.sub = SubModule()
-    module.not_a_sub = "Not a BaseModule"
-    expected = [("base", module), ("base.sub", module.sub)]
+    module = Module()
+    module.sub = Module()
+    module.not_a_sub = "Not a self"
+    expected = [("self", module), ("self.sub", module.sub)]
     assert list(module.named_sub_modules()) == expected
+
+
+def test_complex_module_traversal():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    same_sub = Module()
+    root.sub_module.nested_tuple = (Module(), [Module(), Module()])
+    expected_names = {
+        "self",
+        "self.sub_module",
+        "self.sub_module.nested_list[0]",
+        "self.sub_module.nested_list[1][key]",
+        "self.sub_module.nested_tuple[0]",
+        "self.sub_module.nested_tuple[1][0]",
+        "self.sub_module.nested_tuple[1][1]",
+    }
+    found_names = {name for name, _ in root.named_sub_modules()}
+
+    assert (
+        found_names == expected_names
+    ), f"Missing or extra modules found. Missing: {expected_names-found_names}, Extra: {found_names-expected_names}"
+
+
+def test_complex_module_traversal():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    same_module = Module()
+    root.sub_module.nested_tuple = (Module(), [same_module, same_module])
+    expected_names = {
+        "self",
+        "self.sub_module",
+        "self.sub_module.nested_list[0]",
+        "self.sub_module.nested_list[1][key]",
+        "self.sub_module.nested_tuple[0]",
+        "self.sub_module.nested_tuple[1][0]",
+        # "self.sub_module.nested_tuple[1][1]", This should not be included, as it's the same module as the previous one
+    }
+    found_names = {name for name, _ in root.named_sub_modules()}
+
+    assert (
+        found_names == expected_names
+    ), f"Missing or extra modules found. Missing: {expected_names-found_names}, Extra: {found_names-expected_names}"
