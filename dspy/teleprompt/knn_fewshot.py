@@ -18,7 +18,10 @@ class KNNFewShot(Teleprompter):
             knn_trainset = self.KNN(**kwargs)
             few_shot_bootstrap = BootstrapFewShot()
             compiled_program = few_shot_bootstrap.compile(
-                student, teacher=teacher, trainset=knn_trainset, valset=valset
+                student,
+                teacher=teacher,
+                trainset=knn_trainset,
+                valset=valset,
             )
             return compiled_program(**kwargs)
 

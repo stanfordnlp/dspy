@@ -49,7 +49,7 @@ class BayesianSignatureOptimizer(MIPRO):
         view_data_batch_size=10,
     ):
         print(
-            "\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m"
+            "\u001b[31m[WARNING] BayesianSignatureOptimizer has been deprecated and replaced with MIPRO.  BayesianSignatureOptimizer will be removed in a future release. \u001b[31m",
         )
 
         super().__init__(

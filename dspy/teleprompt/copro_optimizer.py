@@ -39,7 +39,7 @@ class BasicGenerateInstruction(Signature):
     basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -51,7 +51,7 @@ class GenerateInstructionGivenAttempts(dspy.Signature):
     attempted_instructions = dspy.InputField(format=dsp.passages2text)
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -153,11 +153,15 @@ class COPRO(Teleprompter):
             if self.prompt_model:
                 with dspy.settings.context(lm=self.prompt_model):
                     instruct = dspy.Predict(
-                        BasicGenerateInstruction, n=self.breadth - 1, temperature=self.init_temperature
+                        BasicGenerateInstruction,
+                        n=self.breadth - 1,
+                        temperature=self.init_temperature,
                     )(basic_instruction=basic_instruction)
             else:
                 instruct = dspy.Predict(
-                    BasicGenerateInstruction, n=self.breadth - 1, temperature=self.init_temperature
+                    BasicGenerateInstruction,
+                    n=self.breadth - 1,
+                    temperature=self.init_temperature,
                 )(basic_instruction=basic_instruction)
             # Add in our initial prompt as a candidate as well
             instruct.completions.proposed_instruction.append(basic_instruction)
@@ -175,7 +179,7 @@ class COPRO(Teleprompter):
 
         # For each iteration in depth...
         for d in range(
-            self.depth
+            self.depth,
         ):  # TODO: fix this so that we eval the new batch of predictors with the new best followoing predictors
             print(f"Iteration Depth: {d+1}/{self.depth}.")
 
@@ -214,7 +218,7 @@ class COPRO(Teleprompter):
                             print(f"Predictor {i+1}")
                         self._print_signature(predictor)
                     print(
-                        f"At Depth {d+1}/{self.depth}, Evaluating Prompt Candidate #{c_i+1}/{len(candidates_)} for Predictor {p_i+1} of {len(module.predictors())}."
+                        f"At Depth {d+1}/{self.depth}, Evaluating Prompt Candidate #{c_i+1}/{len(candidates_)} for Predictor {p_i+1} of {len(module.predictors())}.",
                     )
                     score = evaluate(module_clone, devset=trainset, **eval_kwargs)
                     if self.verbose and self.prompt_model:
@@ -264,7 +268,7 @@ class COPRO(Teleprompter):
                 self._set_signature(p_new, updated_signature)
                 if self.verbose:
                     print(
-                        f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}"
+                        f"Updating Predictor {id(p_old)} to:\ni: {best_candidate['instruction']}\np: {best_candidate['prefix']}",
                     )
                 if self.verbose:
                     print("Full predictor with update: ")
@@ -305,11 +309,15 @@ class COPRO(Teleprompter):
                 if self.prompt_model:
                     with dspy.settings.context(lm=self.prompt_model):
                         instr = dspy.Predict(
-                            GenerateInstructionGivenAttempts, n=self.breadth, temperature=self.init_temperature
+                            GenerateInstructionGivenAttempts,
+                            n=self.breadth,
+                            temperature=self.init_temperature,
                         )(attempted_instructions=attempts)
                 else:
                     instr = dspy.Predict(
-                        GenerateInstructionGivenAttempts, n=self.breadth, temperature=self.init_temperature
+                        GenerateInstructionGivenAttempts,
+                        n=self.breadth,
+                        temperature=self.init_temperature,
                     )(attempted_instructions=attempts)
 
                 if self.verbose and self.prompt_model:
@@ -318,7 +326,7 @@ class COPRO(Teleprompter):
                 new_candidates[id(p_base)] = instr.completions
                 all_candidates[id(p_base)].proposed_instruction.extend(instr.completions.proposed_instruction)
                 all_candidates[id(p_base)].proposed_prefix_for_output_field.extend(
-                    instr.completions.proposed_prefix_for_output_field
+                    instr.completions.proposed_prefix_for_output_field,
                 )
 
             if self.verbose and self.prompt_model:

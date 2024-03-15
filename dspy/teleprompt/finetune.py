@@ -82,7 +82,7 @@ class BootstrapFinetune(Teleprompter):
         if teacher is None:
             print(
                 "WARNING: Using a vanilla teacher. "
-                "Are you sure you want to use BootstrapFinetune without a compiled teacher?"
+                "Are you sure you want to use BootstrapFinetune without a compiled teacher?",
             )
 
         teachers = teacher if isinstance(teacher, list) else [teacher]
@@ -136,7 +136,7 @@ class BootstrapFinetune(Teleprompter):
 
         compiler_config = {
             "save": "".join(
-                random.Random(time.time()).choices(string.ascii_uppercase + string.digits, k=13)
+                random.Random(time.time()).choices(string.ascii_uppercase + string.digits, k=13),
             ),  # https://stackoverflow.com/a/2257449/1493011
             "peft": peft,
             "fp16": False,

@@ -51,7 +51,7 @@ class BasicGenerateInstruction(Signature):
     basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -62,7 +62,7 @@ class BasicGenerateInstructionWithDataObservations(Signature):
     observations = dspy.InputField(desc="Observations about the dataset and task")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -77,7 +77,7 @@ class BasicGenerateInstructionWithExamples(dspy.Signature):
     examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -91,7 +91,7 @@ class BasicGenerateInstructionWithExamplesAndDataObservations(dspy.Signature):
     basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
-        desc="The string at the end of the prompt, which will help the model start solving the task"
+        desc="The string at the end of the prompt, which will help the model start solving the task",
     )
 
 
@@ -100,7 +100,7 @@ class ObservationSummarizer(dspy.Signature):
 
     observations = dspy.InputField(desc="Observations I have made about my dataset")
     summary = dspy.OutputField(
-        desc="Two to Three sentence summary of only the most significant highlights of my observations"
+        desc="Two to Three sentence summary of only the most significant highlights of my observations",
     )
 
 
@@ -126,7 +126,7 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     examples = dspy.InputField(desc="Sample data points from the dataset")
     prior_observations = dspy.InputField(desc="Some prior observations I made about the data")
     observations = dspy.OutputField(
-        desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add"
+        desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add",
     )
 
 
@@ -180,7 +180,8 @@ class MIPRO(Teleprompter):
         for b in range(self.view_data_batch_size, len(trainset), self.view_data_batch_size):
             upper_lim = min(len(trainset), b + self.view_data_batch_size)
             output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(
-                prior_observations=observations, examples=(trainset[b:upper_lim].__repr__())
+                prior_observations=observations,
+                examples=(trainset[b:upper_lim].__repr__()),
             )
             iterations += 1
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
@@ -293,15 +294,17 @@ class MIPRO(Teleprompter):
                             instruct = new_instruct
                         else:
                             instruct.completions.proposed_instruction.extend(
-                                new_instruct.completions.proposed_instruction
+                                new_instruct.completions.proposed_instruction,
                             )
                             instruct.completions.proposed_prefix_for_output_field.extend(
-                                new_instruct.completions.proposed_prefix_for_output_field
+                                new_instruct.completions.proposed_prefix_for_output_field,
                             )
                 # Just data
                 elif view_data:
                     instruct = dspy.Predict(
-                        BasicGenerateInstructionWithDataObservations, n=N - 1, temperature=self.init_temperature
+                        BasicGenerateInstructionWithDataObservations,
+                        n=N - 1,
+                        temperature=self.init_temperature,
                     )(basic_instruction=basic_instruction, observations=self.observations)
                 # Just examples
                 elif view_examples:
@@ -327,7 +330,7 @@ class MIPRO(Teleprompter):
                 # Neither
                 else:
                     instruct = dspy.Predict(BasicGenerateInstruction, n=N - 1, temperature=self.init_temperature)(
-                        basic_instruction=basic_instruction
+                        basic_instruction=basic_instruction,
                     )
 
             # Add in our initial prompt as a candidate as well
@@ -365,7 +368,7 @@ class MIPRO(Teleprompter):
 
         estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
         estimated_prompt_model_calls = 10 + self.num_candidates * len(
-            student.predictors()
+            student.predictors(),
         )  # num data summary calls + N * P
 
         user_message = textwrap.dedent(f"""\
@@ -454,7 +457,12 @@ class MIPRO(Teleprompter):
 
             # Generate N candidate prompts
             instruction_candidates, _ = self._generate_first_N_candidates(
-                module, self.num_candidates, view_data, view_examples, demo_candidates, trainset
+                module,
+                self.num_candidates,
+                view_data,
+                view_examples,
+                demo_candidates,
+                trainset,
             )
 
             # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
@@ -486,11 +494,13 @@ class MIPRO(Teleprompter):
 
                         # Suggest the index of the instruction candidate to use in our trial
                         instruction_idx = trial.suggest_categorical(
-                            f"{id(p_old)}_predictor_instruction", range(len(p_instruction_candidates))
+                            f"{id(p_old)}_predictor_instruction",
+                            range(len(p_instruction_candidates)),
                         )
                         if demo_candidates:
                             demos_idx = trial.suggest_categorical(
-                                f"{id(p_old)}_predictor_demos", range(len(p_demo_candidates))
+                                f"{id(p_old)}_predictor_demos",
+                                range(len(p_demo_candidates)),
                             )
                         trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
                         if demo_candidates:

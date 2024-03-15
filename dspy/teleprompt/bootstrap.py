@@ -84,13 +84,13 @@ class BootstrapFewShot(Teleprompter):
         student, teacher = self.student, self.teacher
 
         assert len(student.predictors()) == len(
-            teacher.predictors()
+            teacher.predictors(),
         ), "Student and teacher must have the same number of predictors."
 
         for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
             assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
-                predictor2.signature
+                predictor2.signature,
             ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
@@ -195,11 +195,11 @@ class BootstrapFewShot(Teleprompter):
                     # TODO: Look closer into this. It's a bit tricky to reproduce.
                     print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
                     print(
-                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells."
+                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
                     )
                     print("Try restarting the notebook, or open an issue.")
                     raise KeyError(
-                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}."
+                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
                     ) from e
 
                 name2traces[predictor_name].append(demo)
