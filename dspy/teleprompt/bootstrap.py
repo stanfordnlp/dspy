@@ -1,17 +1,14 @@
-import dsp
-import tqdm
 import random
 import threading
 
-import dspy
-from dspy.predict.retry import Retry
+import tqdm
 
+import dsp
+import dspy
 from dspy.primitives import Example
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -67,8 +64,8 @@ class BootstrapFewShot(Teleprompter):
         self.student._compiled = True
 
         # set assert_failures and suggest_failures as attributes of student w/ value 0
-        setattr(self.student, "_assert_failures", 0)
-        setattr(self.student, "_suggest_failures", 0)
+        self.student._assert_failures = 0
+        self.student._suggest_failures = 0
 
         return self.student
 
@@ -97,6 +94,7 @@ class BootstrapFewShot(Teleprompter):
 
         assert len(student.predictors()) == len(
             teacher.predictors()
+        ,
         ), "Student and teacher must have the same number of predictors."
 
         for (name1, predictor1), (name2, predictor2) in zip(
@@ -107,7 +105,7 @@ class BootstrapFewShot(Teleprompter):
             ), "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
                 predictor2.signature
-            ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+            ,), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(
                 predictor2
             ), "Student and teacher must be different objects."
@@ -142,9 +140,7 @@ class BootstrapFewShot(Teleprompter):
                     if success:
                         bootstrapped[example_idx] = True
 
-        print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}."
-        )
+        print(f"Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.")
 
         # Unbootstrapped training examples
 
@@ -201,9 +197,7 @@ class BootstrapFewShot(Teleprompter):
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
                 raise e
-            print(
-                f"Failed to run or to evaluate example {example} with {self.metric} due to {e}."
-            )
+            print(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
             for step in trace:
@@ -226,15 +220,13 @@ class BootstrapFewShot(Teleprompter):
                     continue  # FIXME: !
 
                     # TODO: Look closer into this. It's a bit tricky to reproduce.
+                    print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
                     print(
-                        f"Failed to find predictor {predictor} in {self.predictor2name}."
-                    )
-                    print(
-                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells."
+                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
                     )
                     print("Try restarting the notebook, or open an issue.")
                     raise KeyError(
-                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}."
+                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
                     ) from e
 
                 name2traces[predictor_name].append(demo)
@@ -255,7 +247,6 @@ class BootstrapFewShot(Teleprompter):
 
             raw_demos = rng.sample(raw_demos, sample_size)
 
-            import dspy
 
             if dspy.settings.release >= 20230928:
                 predictor.demos = raw_demos + augmented_demos

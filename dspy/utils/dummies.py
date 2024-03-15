@@ -1,9 +1,11 @@
 import random
-from dsp.modules import LM
-from typing import List, Union, Dict
-import numpy as np
-from dsp.utils.utils import dotdict
 import re
+from typing import Union
+
+import numpy as np
+
+from dsp.modules import LM
+from dsp.utils.utils import dotdict
 
 import typing as t
 from dspy.backends.lm.base import BaseLM, GeneratedContent
@@ -18,10 +20,9 @@ class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
     def __init__(
-        self, answers: Union[List[str], Dict[str, str]], follow_examples: bool = False
+        self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False
     ):
-        """
-        Initializes the dummy language model.
+        """Initializes the dummy language model.
         Parameters:
         - answers: A list of strings or a dictionary with string keys and values.
         - follow_examples: If True, and the prompt contains an example exactly equal to the prompt,
@@ -34,7 +35,7 @@ class DummyLM(LM):
         self.answers = answers
         self.follow_examples = follow_examples
 
-    def basic_request(self, prompt, n=1, **kwargs):
+    def basic_request(self, prompt, n=1, **kwargs) -> dict[str, list[dict[str, str]]]:
         """Generates a dummy response based on the prompt."""
         dummy_response = {"choices": []}
         for _ in range(n):
@@ -73,7 +74,7 @@ class DummyLM(LM):
                 {
                     "text": answer,
                     "finish_reason": "simulated completion",
-                }
+                },
             )
 
             RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
@@ -93,26 +94,20 @@ class DummyLM(LM):
 
         return dummy_response
 
-    def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
+    def __call__(self, prompt, _only_completed=True, _return_sorted=False, **kwargs):
         """Retrieves dummy completions."""
         response = self.basic_request(prompt, **kwargs)
         choices = response["choices"]
 
         # Filter choices and return text completions.
-        completions = [choice["text"] for choice in choices]
+        return [choice["text"] for choice in choices]
 
-        return completions
-
-    def get_convo(self, index):
-        """Get the prompt + anwer from the ith message"""
-        return (
-            self.history[index]["prompt"]
-            + " "
-            + self.history[index]["response"]["choices"][0]["text"]
-        )
+    def get_convo(self, index) -> str:
+        """Get the prompt + anwer from the ith message."""
+        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
-def dummy_rm(passages=()):
+def dummy_rm(passages=()) -> callable:
     if not passages:
 
         def inner(query: str, *, k: int, **kwargs):
@@ -135,8 +130,7 @@ def dummy_rm(passages=()):
 
 
 class DummyVectorizer:
-    """Simple vectorizer based on n-grams"""
-
+    """Simple vectorizer based on n-grams."""
     def __init__(self, max_length=100, n_gram=2):
         self.max_length = max_length
         self.n_gram = n_gram
@@ -145,14 +139,14 @@ class DummyVectorizer:
         self.coeffs = [random.randrange(1, self.P) for _ in range(n_gram)]
 
     def _hash(self, gram):
-        """Hashes a string using a polynomial hash function"""
+        """Hashes a string using a polynomial hash function."""
         h = 1
         for coeff, c in zip(self.coeffs, gram):
             h = h * coeff + ord(c)
             h %= self.P
         return h % self.max_length
 
-    def __call__(self, texts: List[str]) -> np.ndarray:
+    def __call__(self, texts: list[str]) -> np.ndarray:
         vecs = []
         for text in texts:
             grams = [

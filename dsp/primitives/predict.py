@@ -1,12 +1,11 @@
 from collections import Counter
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
 
 import dsp
-from dsp.utils import zipstar, normalize_text
-from dsp.primitives.inspect import FuncInspector
-from dsp.utils.utils import dotdict
-from dsp.templates.template_v3 import Template
 from dsp.primitives.demonstrate import Example
+from dsp.templates.template_v3 import Template
+from dsp.utils import normalize_text, zipstar
+from dsp.utils.utils import dotdict
 
 
 class Completions:
@@ -147,7 +146,7 @@ def _generate(template: Template, **kwargs) -> Callable:
                         "template": template,
                         "inputs": inputs,
                         "outputs": outputs,
-                    }
+                    },
                 )
         else:
             # assert not dsp.settings.compiling, "TODO: At this point, cannot compile n>1 generations"
@@ -159,7 +158,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
 
 def generate_sc(
-    example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs
+    example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs,
 ):
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
@@ -168,7 +167,7 @@ def generate_sc(
     completions = dsp.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
     return majority_vote_(
-        completions, normalize=normalize, prediction_field=prediction_field
+        completions, normalize=normalize, prediction_field=prediction_field,
     )
 
 
@@ -184,14 +183,14 @@ def extract_final_answer(example, completions, extract=None):
 
     # TODO: make thread-safe?
     dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "completions": completions}
+        {**dsp.settings.lm.history[-1], "completions": completions},
     )
 
     return completions
 
 
 def majority(
-    completions: Completions, normalize: bool = True, field: Optional[str] = None
+    completions: Completions, normalize: bool = True, field: Optional[str] = None,
 ):
     """Returns the most common completion for the target field or the last field in the template."""
     field = completions.template.fields[-1].output_variable if field is None else field
@@ -235,7 +234,7 @@ def majority_vote_(completions: Completions, normalize: bool, prediction_field: 
         pred = normalized_to_original[pred]
 
     dsp.settings.lm.history.append(
-        {**dsp.settings.lm.history[-1], "topk": topk, "completions": [pred]}
+        {**dsp.settings.lm.history[-1], "topk": topk, "completions": [pred]},
     )
 
     return [pred]

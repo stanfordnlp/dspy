@@ -3,14 +3,15 @@ from dspy import Predict, Signature
 from dspy.backends.json import JSONBackend
 from dspy.utils.dummies import DummyLanguageModel
 from dspy.backends import TemplateBackend
+from dspy.utils.dummies import DummyLM
+import copy
+import textwrap
 
 
 def test_initialization_with_string_signature():
     signature_string = "input1, input2 -> output"
     predict = Predict(signature_string)
-    expected_instruction = (
-        "Given the fields `input1`, `input2`, produce the fields `output`."
-    )
+    expected_instruction = "Given the fields `input1`, `input2`, produce the fields `output`."
     assert predict.signature.instructions == expected_instruction
     assert predict.signature.instructions == Signature(signature_string).instructions
 
@@ -114,3 +115,58 @@ def test_multi_output_json():
 
     results = program(question="What is 1+1?")
     assert results.completions[1].answer == "my second answer"
+
+
+def test_multi_output2():
+    program = Predict("question -> answer1, answer2", n=2)
+    dspy.settings.configure(
+        lm=DummyLM(
+            [
+                "my 0 answer\nAnswer 2: my 2 answer",
+                "my 1 answer\nAnswer 2: my 3 answer",
+            ],
+        )
+    )
+    results = program(question="What is 1+1?")
+    assert results.completions.answer1[0] == "my 0 answer"
+    assert results.completions.answer1[1] == "my 1 answer"
+    assert results.completions.answer2[0] == "my 2 answer"
+    assert results.completions.answer2[1] == "my 3 answer"
+
+
+def test_named_predictors():
+    class MyModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.inner = Predict("question -> answer")
+
+    program = MyModule()
+    assert program.named_predictors() == [("inner", program.inner)]
+
+    # Check that it also works the second time.
+    program2 = copy.deepcopy(program)
+    assert program2.named_predictors() == [("inner", program2.inner)]
+
+
+def test_output_only():
+    class OutputOnlySignature(dspy.Signature):
+        output = dspy.OutputField()
+
+    predictor = Predict(OutputOnlySignature)
+
+    lm = DummyLM(["short answer"])
+    dspy.settings.configure(lm=lm)
+    assert predictor().output == "short answer"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields , produce the fields `output`.
+        
+        ---
+        
+        Follow the following format.
+        
+        Output: ${output}
+        
+        ---
+        
+        Output: short answer""")

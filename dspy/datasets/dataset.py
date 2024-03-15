@@ -1,8 +1,9 @@
-import uuid
 import random
+import uuid
 
-from dspy import Example
 from dsp.utils import dotdict
+from dspy import Example
+
 
 class Dataset:
     def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None):

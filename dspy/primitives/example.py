@@ -1,4 +1,3 @@
-import copy
 
 class Example:
     def __init__(self, base=None, **kwargs):

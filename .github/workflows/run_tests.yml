@@ -1,33 +1,70 @@
-name: Build and Run Tests
+name: Lint, Test, and Build
 
 on:
   push:
     branches:
       - main
   pull_request:
+    types: [opened, synchronize, reopened]
 
 env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
+  fix:
+    name: Check Ruff Fix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - name: Ruff Fix Attempt
+        id: ruff_fix
+        uses: chartboost/ruff-action@v1
+        with:
+          args: --fix-only --exit-non-zero-on-fix
+        continue-on-error: true
+
+      - name: Fail Workflow if Ruff Fix Failed
+        if: steps.ruff_fix.outcome == 'failure'
+        run: |
+          echo "Ruff fix failed, failing the workflow."
+          echo "Please run 'ruff check . --fix-only' locally and push the changes."
+          exit 1
+
   test:
-    name: Test
+    name: Run Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+          cache: "poetry"
       - name: Install dependencies
-        run: poetry install
+        run: poetry install --no-interaction
+      - name: Run lint with tests
+        uses: chartboost/ruff-action@v1
+        with:
+          args: --fix-only
       - name: Run tests with pytest
         run: poetry run pytest tests/
+
   build_poetry:
     name: Build Poetry
     runs-on: ubuntu-latest
@@ -35,13 +72,21 @@ jobs:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+          cache: "poetry"
       - name: Build
         run: poetry build
       - name: Install built package
@@ -50,6 +95,7 @@ jobs:
         run: python -c "import dspy"
       - name: Test import dsp
         run: python -c "import dsp"
+
   build_setup:
     name: Build Setup
     runs-on: ubuntu-latest
@@ -57,10 +103,20 @@ jobs:
       matrix:
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "poetry"
       - name: Run setup.py build
         run: python setup.py build

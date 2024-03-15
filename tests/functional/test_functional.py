@@ -1,17 +1,19 @@
 import datetime
 import textwrap
 import pydantic
-from pydantic import Field, BaseModel, field_validator
-from typing import Annotated
-import warnings
+from pydantic import AfterValidator, Field, BaseModel, field_validator
+from typing import Annotated, Generic, Literal, TypeVar
+from typing import List
 
 import pytest
 
 import dspy
 from dspy.backends.template import TemplateBackend
-from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, functional
+from dspy.functional import predictor, cot, FunctionalModule, TypedPredictor, TypedChainOfThought
+from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
+from dspy.teleprompt.vanilla import LabeledFewShot
 from dspy.utils.dummies import DummyLanguageModel
 
 
@@ -27,6 +29,22 @@ def test_simple():
     expected = "What is the speed of light?"
 
     question = hard_question(topic="Physics")
+    lm.inspect_history(n=2)
+
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_questions(topics: List[str]) -> List[str]:
+        pass
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
+    dspy.settings.configure(lm=lm)
+
+    question = hard_questions(topics=["Physics", "Music"])
+    lm.inspect_history(n=2)
 
     assert question == expected
 
@@ -76,9 +94,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: list[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -103,7 +119,8 @@ def test_simple_class():
         answers=[
             ["What is the speed of light?"],
             ["Some bad reasoning, 3e8 m/s\n\nAnswer: 3e8"],
-            [f"Some good reasoning...\n\nAnswer: {expected.model_dump_json()}"],
+            [f"{...}",  # Model is asked to create an example
+            "Some good reasoning...\n\nAnswer: {expected.model_dump_json()}"],
         ]
     )
     backend = TemplateBackend(lm=lm)
@@ -111,7 +128,7 @@ def test_simple_class():
 
     qa = QA()
     assert isinstance(qa, FunctionalModule)
-    assert isinstance(qa.answer, functional._StripOutput)
+    assert isinstance(qa.answer, dspy.Module)
 
     question, answer = qa(topic="Physics")
 
@@ -213,15 +230,14 @@ def test_bootstrap_effectiveness():
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend, cache=False)
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     # lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    demos = compiled_student.predictors()[0].demos
+    _, predict = next(compiled_student.named_sub_modules(Predict, skip_compiled=False))
+    demos = predict.demos
     assert len(demos) == 1
     assert demos[0].input == trainset[0].input
     assert demos[0].output == trainset[0].output
@@ -240,7 +256,7 @@ def test_bootstrap_effectiveness():
 
         Input: ${input}
         
-        Output: ${output}. Respond with a single str value
+        Output: ${output}
 
         ---
 
@@ -337,7 +353,7 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
-    warnings.warn("This test is dependent on the version of pydantic used.")
+
 
     assert backend.history[-1].prompt == textwrap.dedent(
         """\
@@ -349,22 +365,21 @@ def test_multi_errors():
 
         Email: ${email}
 
-        Past Error (flight_information): An error to avoid in the future
+        Past Error in Flight Information: An error to avoid in the future
 
-        Past Error (flight_information, 2): An error to avoid in the future
+        Past Error (2) in Flight Information: An error to avoid in the future
 
-        Flight Information: ${flight_information}. Respond with a single JSON object using the schema {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
+        Flight Information: ${flight_information}. Respond with a single JSON object. JSON Schema: {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
 
         ---
 
         Email: Some email
 
-        Past Error (flight_information): 1 validation error for TravelInformation origin String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='JF0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+        Past Error in Flight Information: String should match pattern '^[A-Z]{3}$': origin (error type: string_pattern_mismatch)
 
-        Past Error (flight_information, 2): 1 validation error for TravelInformation destination String should match pattern '^[A-Z]{3}$' [type=string_pattern_mismatch, input_value='LA0', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/string_pattern_mismatch
+        Past Error (2) in Flight Information: String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
 
         Flight Information:"""
-        # Note: Pydantic version is hardcoded in the url here
     )
 
 
@@ -393,7 +408,7 @@ def test_field_validator():
     with pytest.raises(ValueError):
         get_user_details()
 
-    warnings.warn("This test is dependent on the version of pydantic used.")
+    print(lm.get_convo(-1))
     assert backend.history[-1].prompt == textwrap.dedent(
         """\
         Given the fields , produce the fields `get_user_details`.
@@ -402,17 +417,370 @@ def test_field_validator():
 
         Follow the following format.
 
-        Past Error (get_user_details): An error to avoid in the future
+        Past Error in Get User Details: An error to avoid in the future
 
-        Past Error (get_user_details, 2): An error to avoid in the future
+        Past Error (2) in Get User Details: An error to avoid in the future
 
-        Get User Details: ${get_user_details}. Respond with a single JSON object using the schema {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
+        Get User Details: ${get_user_details}. Respond with a single JSON object. JSON Schema: {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
         ---
 
-        Past Error (get_user_details): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+        Past Error in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
 
-        Past Error (get_user_details, 2): 1 validation error for UserDetails name Value error, Name must be in uppercase. [type=value_error, input_value='lower case name', input_type=str] For further information visit https://errors.pydantic.dev/2.5/v/value_error
+        Past Error (2) in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
 
         Get User Details:"""
     )
+
+
+def test_annotated_field():
+    @predictor
+    def test(input: Annotated[str, Field(description="description")]) -> Annotated[float, Field(gt=0, lt=1)]:
+        pass
+
+    # First try 0, which fails, then try 0.5, which passes
+    lm = DummyLM(["0", "0.5"])
+    dspy.settings.configure(lm=lm)
+
+    output = test(input="input")
+
+    assert output == 0.5
+
+
+def test_multiple_outputs():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input -> output")
+    output = test(input="input", config=dict(n=3)).completions.output
+    assert output == ["0", "1", "2"]
+
+
+def test_multiple_outputs_int():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    class TestSignature(dspy.Signature):
+        input: int = dspy.InputField()
+        output: int = dspy.OutputField()
+
+    test = TypedPredictor(TestSignature)
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_multiple_outputs_int_cot():
+    # Note: Multiple outputs only work when the language model "speculatively" generates all the outputs in one go.
+    lm = DummyLM(
+        [
+            "thoughts 0\nOutput: 0\n",
+            "thoughts 1\nOutput: 1\n",
+            "thoughts 2\nOutput: 2\n",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    test = TypedChainOfThought("input:str -> output:int")
+
+    output = test(input="8", config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_parse_type_string():
+    lm = DummyLM([str(i) for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input:int -> output:int")
+
+    output = test(input=8, config=dict(n=3)).completions.output
+    assert output == [0, 1, 2]
+
+
+def test_literal():
+    lm = DummyLM([f'{{"value": "{i}"}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal["2", "3"]:
+        pass
+
+    assert f() == "2"
+
+
+def test_literal_int():
+    lm = DummyLM([f'{{"value": {i}}}' for i in range(100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor
+    def f() -> Literal[2, 3]:
+        pass
+
+    assert f() == 2
+
+
+def test_fields_on_base_signature():
+    class SimpleOutput(dspy.Signature):
+        output: float = dspy.OutputField(gt=0, lt=1)
+
+    lm = DummyLM(
+        [
+            "2.1",  # Bad output
+            "0.5",  # Good output
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    predictor = TypedPredictor(SimpleOutput)
+
+    assert predictor().output == 0.5
+
+
+def test_synthetic_data_gen():
+    class SyntheticFact(BaseModel):
+        fact: str = Field(..., description="a statement")
+        varacity: bool = Field(..., description="is the statement true or false")
+
+    class ExampleSignature(dspy.Signature):
+        """Generate an example of a synthetic fact."""
+
+        fact: SyntheticFact = dspy.OutputField()
+
+    lm = DummyLM(
+        [
+            '{"fact": "The sky is blue", "varacity": true}',
+            '{"fact": "The sky is green", "varacity": false}',
+            '{"fact": "The sky is red", "varacity": true}',
+            '{"fact": "The earth is flat", "varacity": false}',
+            '{"fact": "The earth is round", "varacity": true}',
+            '{"fact": "The earth is a cube", "varacity": false}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    generator = TypedPredictor(ExampleSignature)
+    examples = generator(config=dict(n=3))
+    for ex in examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)
+    assert examples.completions.fact[0] == SyntheticFact(fact="The sky is blue", varacity=True)
+
+    # If you have examples and want more
+    existing_examples = [
+        dspy.Example(fact="The sky is blue", varacity=True),
+        dspy.Example(fact="The sky is green", varacity=False),
+    ]
+    trained = LabeledFewShot().compile(student=generator, trainset=existing_examples)
+
+    augmented_examples = trained(config=dict(n=3))
+    for ex in augmented_examples.completions.fact:
+        assert isinstance(ex, SyntheticFact)
+
+
+def test_list_input2():
+    # Inspired by the Signature Optimizer
+
+    class ScoredString(pydantic.BaseModel):
+        string: str
+        score: float
+
+    class ScoredSignature(dspy.Signature):
+        attempted_signatures: list[ScoredString] = dspy.InputField()
+        proposed_signature: str = dspy.OutputField()
+
+    program = TypedChainOfThought(ScoredSignature)
+
+    lm = DummyLM(["Thoughts", "Output"])
+    dspy.settings.configure(lm=lm)
+
+    output = program(
+        attempted_signatures=[
+            ScoredString(string="string 1", score=0.5),
+            ScoredString(string="string 2", score=0.4),
+            ScoredString(string="string 3", score=0.3),
+        ]
+    ).proposed_signature
+
+    print(lm.get_convo(-1))
+
+    assert output == "Output"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `attempted_signatures`, produce the fields `proposed_signature`.
+
+        ---
+
+        Follow the following format.
+
+        Attempted Signatures: ${attempted_signatures}
+        Reasoning: Let's think step by step in order to ${produce the proposed_signature}. We ...
+        Proposed Signature: ${proposed_signature}
+
+        ---
+
+        Attempted Signatures: [{"string":"string 1","score":0.5},{"string":"string 2","score":0.4},{"string":"string 3","score":0.3}]
+        Reasoning: Let's think step by step in order to Thoughts
+        Proposed Signature: Output""")
+
+
+def test_generic_signature():
+    T = TypeVar("T")
+
+    class GenericSignature(dspy.Signature, Generic[T]):
+        """My signature"""
+
+        output: T = dspy.OutputField()
+
+    predictor = TypedPredictor(GenericSignature[int])
+    assert predictor.signature.instructions == "My signature"
+
+    lm = DummyLM(["23"])
+    dspy.settings.configure(lm=lm)
+
+    assert predictor().output == 23
+
+
+def test_field_validator_in_signature():
+    class ValidatedSignature(dspy.Signature):
+        a: str = dspy.OutputField()
+
+        @pydantic.field_validator("a")
+        @classmethod
+        def space_in_a(cls, a: str) -> str:
+            if not " " in a:
+                raise ValueError("a must contain a space")
+            return a
+
+    with pytest.raises(pydantic.ValidationError):
+        _ = ValidatedSignature(a="no-space")
+
+    _ = ValidatedSignature(a="with space")
+
+
+def test_lm_as_validator():
+    @predictor
+    def is_square(n: int) -> bool:
+        """Is n a square number?"""
+
+    def check_square(n):
+        assert is_square(n=n)
+        return n
+
+    @predictor
+    def next_square(n: int) -> Annotated[int, AfterValidator(check_square)]:
+        """What is the next square number after n?"""
+
+    lm = DummyLM(["3", "False", "4", "True"])
+    dspy.settings.configure(lm=lm)
+
+    m = next_square(n=2)
+    lm.inspect_history(n=2)
+
+    assert m == 4
+
+
+def test_annotated_validator():
+    def is_square(n: int) -> int:
+        root = n**0.5
+        if not root.is_integer():
+            raise ValueError(f"{n} is not a square")
+        return n
+
+    class MySignature(dspy.Signature):
+        """What is the next square number after n?"""
+
+        n: int = dspy.InputField()
+        next_square: Annotated[int, AfterValidator(is_square)] = dspy.OutputField()
+
+    lm = DummyLM(["3", "4"])
+    dspy.settings.configure(lm=lm)
+
+    m = TypedPredictor(MySignature)(n=2).next_square
+    lm.inspect_history(n=2)
+
+    assert m == 4
+
+
+def test_annotated_validator_functional():
+    def is_square(n: int) -> int:
+        if not (n**0.5).is_integer():
+            raise ValueError(f"{n} is not a square")
+        return n
+
+    @predictor
+    def next_square(n: int) -> Annotated[int, AfterValidator(is_square)]:
+        """What is the next square number after n?"""
+
+    lm = DummyLM(["3", "4"])
+    dspy.settings.configure(lm=lm)
+
+    m = next_square(n=2)
+    lm.inspect_history(n=2)
+
+    assert m == 4
+
+
+def test_demos():
+    demos = [
+        dspy.Example(input="What is the speed of light?", output="3e8"),
+    ]
+    program = LabeledFewShot(k=len(demos)).compile(
+        student=dspy.TypedPredictor("input -> output"),
+        trainset=[ex.with_inputs("input") for ex in demos],
+    )
+
+    lm = DummyLM(["Paris"])
+    dspy.settings.configure(lm=lm)
+
+    assert program(input="What is the capital of France?").output == "Paris"
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Output: ${output}
+
+        ---
+
+        Input: What is the speed of light?
+        Output: 3e8
+
+        ---
+
+        Input: What is the capital of France?
+        Output: Paris""")
+
+
+def _test_demos_missing_input():
+    demos = [dspy.Example(input="What is the speed of light?", output="3e8")]
+    program = LabeledFewShot(k=len(demos)).compile(
+        student=dspy.TypedPredictor("input -> output, thoughts"),
+        trainset=[ex.with_inputs("input") for ex in demos],
+    )
+    dspy.settings.configure(lm=DummyLM(["My thoughts", "Paris"]))
+    assert program(input="What is the capital of France?").output == "Paris"
+
+    assert dspy.settings.lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Thoughts: ${thoughts}
+        Output: ${output}
+
+        ---
+
+        Input: What is the speed of light?
+        Output: 3e8
+
+        ---
+
+        Input: What is the capital of France?
+        Thoughts: My thoughts
+        Output: Paris""")

@@ -1,14 +1,17 @@
-import dspy
-from dspy.datasets import HotPotQA
-from .base_task import BaseTask
-from dspy.evaluate import Evaluate
-from dspy import Example
-from functools import lru_cache
-import openai
-from dotenv import load_dotenv
 import os
 import uuid
+from functools import lru_cache
+
+import openai
+from dotenv import load_dotenv
 from tqdm import tqdm
+
+import dspy
+from dspy import Example
+from dspy.datasets import HotPotQA
+
+from .base_task import BaseTask
+
 
 class TweetSignature(dspy.Signature):
     ("""Given context and a question, answer with a tweet""")
@@ -48,7 +51,7 @@ class Assess(dspy.Signature):
     assessment_question = dspy.InputField()
     assessment_answer = dspy.OutputField(desc="Yes or No")
 
-@lru_cache()
+@lru_cache
 def load_models():
     load_dotenv()  # This will load the .env file's variables
 
@@ -76,7 +79,7 @@ def metric(gold, pred, trace=None):
         correct =  dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=correct)
         engaging = dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=engaging)
 
-    correct, engaging, faithful = [m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful]]
+    correct, engaging, faithful = (m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful])
     score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
     return 1 - abs(score - score_pred) # We want a score we can maximize, so take the negative L1 norm and add 1
@@ -98,7 +101,7 @@ class TweetMetric(dspy.Module):
         correct =  self.correct(context='N/A', assessed_text=tweet, assessment_question=correct)
         engaging = self.engaging(context='N/A', assessed_text=tweet, assessment_question=engaging)
 
-        correct, engaging, faithful = [m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful]]
+        correct, engaging, faithful = (m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful])
         score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
         return dspy.Prediction(score= score/3.0)

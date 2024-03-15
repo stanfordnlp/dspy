@@ -35,7 +35,7 @@ def retrieveRerankEnsemble(queries: list[str], k: int) -> list[str]:
         for idx in np.argsort(passages_cs_scores)[::-1]:
             psg = retrieved_passages[idx]
             passages[psg.long_text] = passages.get(psg.long_text, []) + [
-                passages_cs_scores[idx]
+                passages_cs_scores[idx],
             ]
 
     passages = [(np.average(score), text) for text, score in passages.items()]
