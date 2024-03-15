@@ -83,7 +83,6 @@ class LM(ABC):
             elif provider == "clarifai" or provider == "claude" :
                 text=choices
             elif provider == "groq":
-                # print(choices)
                 text = ' ' + choices
             elif provider == "google":
                 text = choices[0].parts[0].text
