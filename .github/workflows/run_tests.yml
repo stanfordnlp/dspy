@@ -35,7 +35,7 @@ jobs:
           exit 1
 
   test:
-    name: Run Tests
+    name: Run Tests and Coverage
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -64,6 +64,14 @@ jobs:
           args: --fix-only
       - name: Run tests with pytest
         run: poetry run pytest tests/
+      - name: Build coverage file
+        run: |
+          poetry run pytest --junitxml=pytest.xml --cov-report=term-missing:skip-covered --cov=dspy --cov=dsp tests/ | tee pytest-coverage.txt
+      - name: Pytest coverage comment
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-coverage-path: ./pytest-coverage.txt
+          junitxml-path: ./pytest.xml
 
   build_poetry:
     name: Build Poetry
