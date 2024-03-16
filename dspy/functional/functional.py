@@ -115,7 +115,13 @@ class TypedPredictor(dspy.Module):
         # TODO: Instead of using a language model to create the example, we can also just use a
         # library like https://pypi.org/project/polyfactory/ that's made exactly to do this.
 
-    def _format_error(self, error: Exception, task_description: Union[str, FieldInfo], model_output: str) -> str:
+    def _format_error(
+        self,
+        error: Exception,
+        task_description: Union[str, FieldInfo],
+        model_output: str,
+        lm_explain: bool,
+    ) -> str:
         if isinstance(error, pydantic.ValidationError):
             errors = []
             for e in error.errors():
@@ -125,7 +131,7 @@ class TypedPredictor(dspy.Module):
         else:
             error_text = repr(error)
 
-        if self.explain_errors:
+        if self.explain_errors and lm_explain:
             if isinstance(task_description, FieldInfo):
                 args = task_description.json_schema_extra
                 task_description = args["prefix"] + " " + args["desc"]
@@ -153,7 +159,9 @@ class TypedPredictor(dspy.Module):
             language_model_output: str = dspy.InputField(desc="The output of the model")
             error: str = dspy.InputField(desc="The validation error trigged by the models output")
             explanation: str = dspy.OutputField(desc="Explain what the model did wrong")
-            advice: str = dspy.OutputField(desc="Instructions for the model to do better next time")
+            advice: str = dspy.OutputField(
+                desc="Instructions for the model to do better next time. A single paragraph."
+            )
 
         # TODO: We could also try repair the output here. For example, if the output is a float, but the
         # model returned a "float + explanation", the repair could be to remove the explanation.
@@ -273,7 +281,12 @@ class TypedPredictor(dspy.Module):
                         parser = field.json_schema_extra.get("parser", lambda x: x)
                         parsed[name] = parser(value)
                     except (pydantic.ValidationError, ValueError) as e:
-                        errors[name] = self._format_error(e, signature.fields[name], value)
+                        errors[name] = self._format_error(
+                            e,
+                            signature.fields[name],
+                            value,
+                            lm_explain=try_i + 1 < self.max_retries,
+                        )
 
                         # If we can, we add an example to the error message
                         current_desc = field.json_schema_extra.get("desc", "")
@@ -307,6 +320,7 @@ class TypedPredictor(dspy.Module):
                             "> " + field.json_schema_extra["prefix"] + " " + completion[name]
                             for name, field in signature.output_fields.items()
                         ),
+                        lm_explain=try_i + 1 < self.max_retries,
                     )
             if errors:
                 # Add new fields for each error
