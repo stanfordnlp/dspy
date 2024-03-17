@@ -82,11 +82,13 @@ Main method to execute the code generation and refinement process.
 
 ```python
 #Define a simple signature for basic question answering
-generate_answer_signature = dspy.Signature("question -> answer")
-generate_answer_signature.attach(question=("Question:", "")).attach(answer=("Answer:", "often between 1 and 5 words"))
+class GenerateAnswer(dspy.Signature):
+    """Answer questions with short factoid answers."""
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
 
 # Pass signature to ProgramOfThought Module
-pot = dspy.ProgramOfThought(generate_answer_signature)
+pot = dspy.ProgramOfThought(GenerateAnswer)
 
 #Call the ProgramOfThought module on a particular input
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'

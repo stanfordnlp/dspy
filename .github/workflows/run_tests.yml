@@ -1,29 +1,38 @@
-name: Fix, Test, and Build
+name: Lint, Test, and Build
 
 on:
   push:
     branches:
       - main
   pull_request:
+    types: [opened, synchronize, reopened]
 
 env:
   POETRY_VERSION: "1.6.1"
 
 jobs:
   fix:
-    name: Apply Ruff Fix
+    name: Check Ruff Fix
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-      - uses: chartboost/ruff-action@v1
+      - name: Ruff Fix Attempt
+        id: ruff_fix
+        uses: chartboost/ruff-action@v1
         with:
-          args: --fix-only
-      - uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Automatic Style fixes"
+          args: --fix-only --exit-non-zero-on-fix
+        continue-on-error: true
+
+      - name: Fail Workflow if Ruff Fix Failed
+        if: steps.ruff_fix.outcome == 'failure'
+        run: |
+          echo "Ruff fix failed, failing the workflow."
+          echo "Please run 'ruff check . --fix-only' locally and push the changes."
+          exit 1
 
   test:
     name: Run Tests
@@ -33,8 +42,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
@@ -66,8 +73,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
@@ -99,8 +104,6 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
