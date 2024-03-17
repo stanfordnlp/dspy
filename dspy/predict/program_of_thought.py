@@ -8,10 +8,12 @@ from ..primitives.python_interpreter import CodePrompt, PythonInterpreter
 
 
 class ProgramOfThought(Module):
-    def __init__(self, signature, max_iters=3):
+    def __init__(self, signature, max_iters=3, import_white_list=None):
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.import_white_list = import_white_list
+
 
         self.input_fields = signature.input_fields
         self.output_fields = signature.output_fields
@@ -156,9 +158,10 @@ class ProgramOfThought(Module):
         if not code:
             return code, None, "Error: Empty code before execution."
         code_prompt = CodePrompt(code, code_type="python")
-        interpreter = PythonInterpreter(action_space={"print": print})
+        interpreter = PythonInterpreter(action_space={"print": print}, import_white_list=self.import_white_list)
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
+            print
             return code, output, None
         except Exception as e:
             return code, None, str(e)
