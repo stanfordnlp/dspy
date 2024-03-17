@@ -43,8 +43,11 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
 
     payload = {"query": query, "k": k}
     res = requests.get(url, params=payload, timeout=10)
+    res = res.json()
+    if "error" in res and res["error"]:
+        raise(Exception("Server error: " + res["message"]))
 
-    topk = res.json()["topk"][:k]
+    topk = res["topk"][:k]
     topk = [{**d, "long_text": d["text"]} for d in topk]
     return topk[:k]
 
