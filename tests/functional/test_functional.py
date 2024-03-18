@@ -781,3 +781,24 @@ def _test_demos_missing_input():
         Input: What is the capital of France?
         Thoughts: My thoughts
         Output: Paris""")
+
+
+def test_conlist():
+    dspy.settings.configure(
+        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+    )
+
+    @predictor
+    def make_numbers(input: str) -> Annotated[list[int], Field(min_items=2)]:
+        pass
+
+    assert make_numbers(input="What are the first two numbers?") == [1, 2]
+
+
+def test_conlist2():
+    dspy.settings.configure(
+        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+    )
+
+    make_numbers = TypedPredictor("input:str -> output:Annotated[List[int], Field(min_items=2)]")
+    assert make_numbers(input="What are the first two numbers?").output == [1, 2]
