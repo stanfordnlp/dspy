@@ -8,8 +8,8 @@ import ujson
 
 import dspy
 from dsp.templates import passages2text
-from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
+from dspy.primitives.prediction import Completions, Prediction
 
 
 def predictor(func) -> dspy.Module:
@@ -293,6 +293,7 @@ class TypedPredictor(dspy.Module):
                     parsed_results.append(parsed)
                 except pydantic.ValidationError as e:
                     errors["general"] = _format_error(e)
+
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():
@@ -313,12 +314,21 @@ class TypedPredictor(dspy.Module):
                     )
             else:
                 # If there are no errors, we return the parsed results
-                return Prediction.from_completions(
-                    {
-                        key: [r[key] for r in parsed_results]
-                        for key in signature.output_fields
-                    },
+                examples = []
+                for r in parsed_results:
+                    example = dspy.Example()
+                    for key in signature.output_fields:
+                        example[key] = r[key]
+
+                    examples.append(example)
+
+                completions = Completions.new(
+                    signature=signature, examples=examples, prompt="unknown", kwargs={}
                 )
+
+                pred = Prediction.from_completions(completions)
+                return pred
+
         raise ValueError(
             "Too many retries trying to get the correct output format. "
             + "Try simplifying the requirements.",
