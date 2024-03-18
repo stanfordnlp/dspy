@@ -135,9 +135,10 @@ class AzureOpenAI(LM):
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
+        system_instructions = kwargs.pop("system_instructions", "")
+        
         if self.model_type == "chat":
-            # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            kwargs["messages"] = [{"role": "system", "content": system_instructions}, {"role": "user", "content": prompt}]
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(self.client, **kwargs)
 

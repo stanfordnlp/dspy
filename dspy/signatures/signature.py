@@ -19,7 +19,6 @@ def signature_to_template(signature) -> dsp.Template:
         **{name: new_to_old_field(field) for name, field in signature.fields.items()},
     )
 
-
 def _default_instructions(cls) -> str:
     inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
     outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
@@ -54,6 +53,14 @@ class SignatureMeta(type(BaseModel)):
                     if doc != "":
                         cls.__doc__ = doc
 
+        if cls.__doc__:
+            system_instructions, user_instructions = cls._parse_docstring(cls.__doc__)
+            cls.system_instructions = system_instructions
+            cls.__doc__ = user_instructions or _default_instructions(cls)
+        else:
+            cls.system_instructions = ""
+            cls.__doc__ = _default_instructions(cls)
+
         # The more likely case is that the user has just not given us a type.
         # In that case, we should default to the input/output format.
         if cls.__doc__ is None:
@@ -70,7 +77,44 @@ class SignatureMeta(type(BaseModel)):
                 field.json_schema_extra["desc"] = f"${{{name}}}"
 
         return cls
+    
+    @staticmethod
+    def _parse_docstring(docstring):
+        """
+        Extracts system instructions from a docstring and separates them from user instructions.
 
+        This method looks for the keyword "system:" in the docstring. Text following this keyword up to a "---"
+        marker, or the end of the docstring if no marker is present, is considered as system instructions.
+        The rest of the docstring is considered user instructions. If "system:" is not found, all the text
+        is treated as user instructions.
+
+        Parameters:
+        - docstring (str): The docstring to parse.
+
+        Returns:
+        Tuple[str, str]: A tuple containing system instructions and user instructions.
+        """
+        system_marker = "system:"
+        end_marker = "---"
+        system_instructions = ""
+        user_instructions = docstring  
+        if "system" in docstring.lower():
+            system_marker_index = docstring.lower().find(system_marker)
+            if system_marker_index != -1:
+                end_marker_index = docstring.lower().find(end_marker, system_marker_index)
+                if end_marker_index != -1:
+                    system_instructions = docstring[system_marker_index + len(system_marker):end_marker_index].strip()
+                    user_instructions = (docstring[:system_marker_index].strip() + "\n" + docstring[end_marker_index + len(end_marker):].strip()).strip()
+                else:
+                    system_instructions = docstring[system_marker_index + len(system_marker):].strip()
+                    user_instructions = docstring[:system_marker_index].strip()
+            else:
+                user_instructions = docstring.strip()
+        else:
+            user_instructions = docstring.strip()
+        return system_instructions, user_instructions
+
+        
     def _validate_fields(cls):
         for name, field in cls.model_fields.items():
             extra = field.json_schema_extra or {}

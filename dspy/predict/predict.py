@@ -84,6 +84,11 @@ class Predict(Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
+        system_instructions = getattr(self.signature, 'system_instructions', None)
+        
+        if system_instructions:
+            config["system_instructions"] = system_instructions
+
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
 
