@@ -1,24 +1,46 @@
 import random
+from typing import Optional, TypedDict
+
+import dspy
 
 from .teleprompt import Teleprompter
 
 
+class LabeledFewShotCompileKwargs(TypedDict):
+    trainset: list[dspy.Example]
+    sample: bool
+
+
 class LabeledFewShot(Teleprompter):
-    def __init__(self, k=16):
+    def __init__(self, k: int = 16):
         self.k = k
 
-    def compile(self, student, *, trainset, sample=True):
-        self.student = student.reset_copy()
-        self.trainset = trainset
+        self.student: Optional[dspy.Module] = None
+        self.trainset: Optional[list[dspy.Example]] = None
 
-        if len(self.trainset) == 0:
+    def compile(
+        self,
+        student: dspy.Module,
+        *,
+        trainset: Optional[list[dspy.Example]] = None,
+        sample: bool = True,
+        **_,
+    ) -> dspy.Module:
+        self.student = student.reset_copy()
+        assert self.student is not None, "self.student was None!"
+        self.trainset = trainset if trainset else []
+
+        if not self.trainset:
             return self.student
 
         rng = random.Random(0)
 
         for predictor in self.student.predictors():
             if sample:
-                predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
+                predictor.demos = rng.sample(
+                    self.trainset,
+                    min(self.k, len(self.trainset)),
+                )
             else:
                 predictor.demos = self.trainset[: min(self.k, len(self.trainset))]
 

@@ -109,15 +109,20 @@ autodoc_pydantic = { version = "*", optional = true }
 sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
 rich = "^13.7.1"
+jupyter = "^1.0.0"
+matplotlib = "^3.8.3"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^6.2.5"
-transformers = "^4.38.2"
-torch = "^2.2.1"
-pytest-mock = "^3.12.0"
-ruff = "^0.3.0"
 black = "^24.2.0"
+mypy = "^1.8.0"
+pre-commit = "^3.6.2"
+pytest = "^6.2.5"
+pytest-mock = "^3.12.0"
+ruff = "^0.3.1"
+torch = "^2.2.1"
+transformers = "^4.38.2"
+types-tqdm = "^4.66.0.20240106"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
@@ -265,6 +270,14 @@ ignore = [
     "E731",
     # Sometimes we need List and Tuple
     "UP006",
+    # Asserts sometimes needed (e.g. assert X is not None)
+    "S101",
+    # Prints are currently being used for logging
+    "T201",
+    # .compile shadows a python builtin, and this is fine
+    "A003",
+    # Commented out code allowable for the time being
+    "ERA001",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -287,3 +300,4 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**/{tests,docs}/*" = ["ALL"]
 "**__init__.py" = ["F401"]
+"dspy/teleprompt/bootstrap.py" = ["SIM108"]

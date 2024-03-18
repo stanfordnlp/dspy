@@ -1,5 +1,6 @@
 import random
 import threading
+from typing import Optional
 
 import tqdm
 
@@ -15,7 +16,8 @@ from .vanilla import LabeledFewShot
 
 # TODO: Switch here from dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
 # NOTE: Notice the places where we don't shuffle examples. I do like that this one doesn't shuffle.
-# Other ones that consider options may want to use both unshuffled and then shuffle a few times, when considering candidates.
+# Other ones that consider options may want to use both unshuffled and then shuffle a few times,
+# when considering candidates.
 
 # TODO: the max_rounds via branch_idx to get past the cache, not just temperature.
 # In principle, we can also sample multiple outputs from the final generation step
@@ -25,7 +27,8 @@ from .vanilla import LabeledFewShot
 # won't hurt our "best effort" guarantees.)
 
 # TODO: When this bootstraps for another teleprompter like finetune, we want all demos we gather.
-# But when it's for direct use we may want to sample ONE demo per predictor--example pair. This is important for "multi-use" modules.
+# But when it's for direct use we may want to sample ONE demo per predictor--example pair.
+# This is important for "multi-use" modules.
 
 # TODO: Add baselines=[...]
 
@@ -35,12 +38,13 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings={},
+        teacher_settings=None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
         max_errors=5,
     ):
+        teacher_settings = teacher_settings or {}
         self.metric = metric
         self.metric_threshold = metric_threshold
         self.teacher_settings = teacher_settings
@@ -52,11 +56,27 @@ class BootstrapFewShot(Teleprompter):
         self.error_count = 0
         self.error_lock = threading.Lock()
 
-    def compile(self, student, *, teacher=None, trainset, valset=None):
-        self.trainset = trainset
-        self.valset = valset
+        self.student: Optional[dspy.Module] = None
+        self.teacher: Optional[dspy.Module] = None
+        self.trainset: Optional[list[dspy.Example]] = None
+        self.valset: Optional[list[dspy.Example]] = None
+
+    def compile(
+        self,
+        student: dspy.Module,
+        *,
+        teacher: Optional[dspy.Module] = None,
+        trainset: Optional[list[dspy.Example]] = None,
+        valset: Optional[list[dspy.Example]] = None,
+        **_,
+    ) -> dspy.Module:
+        self.trainset = trainset if trainset is not None else []
+        self.valset = valset if valset is not None else []
 
         self._prepare_student_and_teacher(student, teacher)
+        assert self.student is not None, "self.student was None!"
+        assert self.teacher is not None, "self.teacher was None!"
+
         self._prepare_predictor_mappings()
         self._bootstrap()
 
@@ -69,7 +89,7 @@ class BootstrapFewShot(Teleprompter):
 
         return self.student
 
-    def _prepare_student_and_teacher(self, student, teacher):
+    def _prepare_student_and_teacher(self, student: dspy.Module, teacher: dspy.Module):
         self.student = student.reset_copy()
         self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
@@ -91,7 +111,10 @@ class BootstrapFewShot(Teleprompter):
             assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
                 predictor2.signature,
-            ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+            ), (
+                f"Student and teacher must have the same signatures. "
+                f"{type(predictor1.signature)} != {type(predictor2.signature)}"
+            )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
             name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
@@ -124,7 +147,7 @@ class BootstrapFewShot(Teleprompter):
                     if success:
                         bootstrapped[example_idx] = True
 
-        print(f"Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.")
+        print(f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.")
 
         # Unbootstrapped training examples
 
@@ -146,7 +169,7 @@ class BootstrapFewShot(Teleprompter):
             with dsp.settings.context(trace=[], **self.teacher_settings):
                 lm = dsp.settings.lm
                 lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
-                new_settings = dict(lm=lm) if round_idx > 0 else {}
+                new_settings = {"lm": lm} if round_idx > 0 else {}
 
                 with dsp.settings.context(**new_settings):
                     for name, predictor in teacher.named_predictors():
@@ -167,7 +190,6 @@ class BootstrapFewShot(Teleprompter):
                         success = metric_val
                 else:
                     success = True
-                # print(success, example, prediction)
         except Exception as e:
             success = False
             with self.error_lock:
@@ -195,7 +217,8 @@ class BootstrapFewShot(Teleprompter):
                     # TODO: Look closer into this. It's a bit tricky to reproduce.
                     print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
                     print(
-                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
+                        "Are you doing this in a notebook (Jupyter)? "
+                        "This might be caused by redefining values by rerunning cells.",
                     )
                     print("Try restarting the notebook, or open an issue.")
                     raise KeyError(
@@ -206,7 +229,7 @@ class BootstrapFewShot(Teleprompter):
 
         return success
 
-    def _train(self):
+    def _train(self) -> dspy.Module:
         rng = random.Random(0)
         raw_demos = self.validation
 
