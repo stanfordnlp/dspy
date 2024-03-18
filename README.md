@@ -33,7 +33,8 @@ If you need help thinking about your task, we recently created a [Discord server
 1. **[Tutorials & Documentation](#2-documentation)**
 1. **[Framework Syntax](#3-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
 1. **[Compiling: Two Powerful Concepts](#4-two-powerful-concepts-signatures--teleprompters)**
-1. **[FAQ: Is DSPy right for me?](#5-faq-is-dspy-right-for-me)**
+1. **[Pydantic Types](#5-pydantic-types)** 
+1. **[FAQ: Is DSPy right for me?](#6-faq-is-dspy-right-for-me)**
 
 
 

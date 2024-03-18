@@ -72,11 +72,11 @@ class ChromadbRM(dspy.Retrieve):
         persist_directory: str,
         embedding_function: Optional[
             EmbeddingFunction[Embeddable]
-        ] = None,
+        ] = ef.DefaultEmbeddingFunction(),
         k: int = 7,
     ):
         self._init_chromadb(collection_name, persist_directory)
-        self.ef = embedding_function or self._chromadb_collection.embedding_function
+        self.ef = embedding_function
 
         super().__init__(k=k)
 
@@ -145,6 +145,10 @@ class ChromadbRM(dspy.Retrieve):
             query_embeddings=embeddings, n_results=k,
         )
 
-        passages = [dotdict({"long_text": x}) for x in results["documents"][0]]
-
-        return passages
+        zipped_results = zip(
+            results["ids"][0], 
+            results["distances"][0], 
+            results["documents"][0], 
+            results["metadatas"][0])
+        results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
+        return results

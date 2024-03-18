@@ -20,10 +20,11 @@ class LabeledFewShot(Teleprompter):
             if sample:
                 predictor.demos = rng.sample(self.trainset, min(self.k, len(self.trainset)))
             else:
-                predictor.demos = self.trainset[:min(self.k, len(self.trainset))]
+                predictor.demos = self.trainset[: min(self.k, len(self.trainset))]
 
         return self.student
-    
+
+
 # NOTE: I believe templatev2 keeps rdemos as long as they have the last field.
 # This may change later, especially with the introduction of required vs optional fields.
 # NOTE: Since we're relying on downstream code to handle the demos, this sampling may be sub-sampled.

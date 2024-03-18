@@ -184,7 +184,10 @@ class Evaluate:
         df = pd.DataFrame(data)
 
         # Truncate every cell in the DataFrame
-        df = df.applymap(truncate_cell)
+        if hasattr(df, "map"):  # DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0
+            df = df.map(truncate_cell)
+        else:
+            df = df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
         assert callable(metric)
@@ -219,7 +222,7 @@ class Evaluate:
                 ipython_display(HTML(message))
 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results
+            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in reordered_devset]
         elif return_all_scores:
             return round(100 * ncorrect / ntotal, 2), [score for *_, score in reordered_devset]
         elif return_outputs:

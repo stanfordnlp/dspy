@@ -3,6 +3,7 @@ import random
 import sys
 import textwrap
 from collections import defaultdict
+from typing import Any
 
 import optuna
 
@@ -43,12 +44,16 @@ Note that this teleprompter takes in the following parameters:
                 This information will be returned as attributes of the best program.
 """
 
+
 class BasicGenerateInstruction(Signature):
     """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative."""
 
     basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
-    proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
+    proposed_prefix_for_output_field = dspy.OutputField(
+        desc="The string at the end of the prompt, which will help the model start solving the task",
+    )
+
 
 class BasicGenerateInstructionWithDataObservations(Signature):
     """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English.  I will also give you some ``observations`` I have made about the dataset and task. Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative."""
@@ -56,54 +61,88 @@ class BasicGenerateInstructionWithDataObservations(Signature):
     basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
     observations = dspy.InputField(desc="Observations about the dataset and task")
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
-    proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
+    proposed_prefix_for_output_field = dspy.OutputField(
+        desc="The string at the end of the prompt, which will help the model start solving the task",
+    )
+
 
 class BasicGenerateInstructionWithExamples(dspy.Signature):
-        ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will also provide you with the current ``basic instruction`` that is being used for this task. I will also provide you with some ``examples`` of the expected inputs and outputs.
+    """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will also provide you with the current ``basic instruction`` that is being used for this task. I will also provide you with some ``examples`` of the expected inputs and outputs.
 
-Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative.""")
-        # attempted_instructions = dspy.InputField(format=str, desc="Previously attempted task instructions, along with their resulting validation score, and an example of the instruction in use on a sample from our dataset.")
-        basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
-        # examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
-        examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
-        proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
-        proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
+    Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative."""
+
+    # attempted_instructions = dspy.InputField(format=str, desc="Previously attempted task instructions, along with their resulting validation score, and an example of the instruction in use on a sample from our dataset.")
+    basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
+    # examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
+    examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
+    proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
+    proposed_prefix_for_output_field = dspy.OutputField(
+        desc="The string at the end of the prompt, which will help the model start solving the task",
+    )
+
 
 class BasicGenerateInstructionWithExamplesAndDataObservations(dspy.Signature):
-        ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will give you some ``observations`` I have made about the dataset and task, along with some ``examples`` of the expected inputs and outputs. I will also provide you with the current ``basic instruction`` that is being used for this task.
+    """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will give you some ``observations`` I have made about the dataset and task, along with some ``examples`` of the expected inputs and outputs. I will also provide you with the current ``basic instruction`` that is being used for this task.
 
-Your task is to propose a new improved instruction and prefix for the output field that will lead a good language model to perform the task well. Don't be afraid to be creative.""")
-        observations = dspy.InputField(desc="Observations about the dataset and task")
-        examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
-        basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
-        proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
-        proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
+    Your task is to propose a new improved instruction and prefix for the output field that will lead a good language model to perform the task well. Don't be afraid to be creative."""
+
+    observations = dspy.InputField(desc="Observations about the dataset and task")
+    examples = dspy.InputField(format=dsp.passages2text, desc="Example(s) of the task")
+    basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
+    proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
+    proposed_prefix_for_output_field = dspy.OutputField(
+        desc="The string at the end of the prompt, which will help the model start solving the task",
+    )
+
 
 class ObservationSummarizer(dspy.Signature):
-    ("""Given a series of observations I have made about my dataset, please summarize them into a brief 2-3 sentence summary which highlights only the most important details.""")
+    """Given a series of observations I have made about my dataset, please summarize them into a brief 2-3 sentence summary which highlights only the most important details."""
+
     observations = dspy.InputField(desc="Observations I have made about my dataset")
-    summary = dspy.OutputField(desc="Two to Three sentence summary of only the most significant highlights of my observations")
+    summary = dspy.OutputField(
+        desc="Two to Three sentence summary of only the most significant highlights of my observations",
+    )
+
 
 class DatasetDescriptor(dspy.Signature):
-    ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
-    """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
-    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
-    
+    (
+        """Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
+        """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
+        """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative"""
+    )
+
     examples = dspy.InputField(desc="Sample data points from the dataset")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed")
 
+
 class DatasetDescriptorWithPriorObservations(dspy.Signature):
-    ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
-    """I will also provide you with a few observations I have already made.  Please add your own observations or if you feel the observations are comprehensive say 'COMPLETE' """
-    """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
-    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
-    
+    (
+        """Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
+        """I will also provide you with a few observations I have already made.  Please add your own observations or if you feel the observations are comprehensive say 'COMPLETE' """
+        """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
+        """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative"""
+    )
+
     examples = dspy.InputField(desc="Sample data points from the dataset")
     prior_observations = dspy.InputField(desc="Some prior observations I made about the data")
-    observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
+    observations = dspy.OutputField(
+        desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add",
+    )
+
 
 class MIPRO(Teleprompter):
-    def __init__(self, metric, prompt_model=None, task_model=None, teacher_settings={}, num_candidates=10, init_temperature=1.0, verbose=False, track_stats=True, view_data_batch_size=10):
+    def __init__(
+        self,
+        metric,
+        prompt_model=None,
+        task_model=None,
+        teacher_settings={},
+        num_candidates=10,
+        init_temperature=1.0,
+        verbose=False,
+        track_stats=True,
+        view_data_batch_size=10,
+    ):
         self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
@@ -113,17 +152,22 @@ class MIPRO(Teleprompter):
         self.track_stats = track_stats
         self.teacher_settings = teacher_settings
         self.view_data_batch_size = view_data_batch_size
-        
+
     def _print_full_program(self, program):
-        for i,predictor in enumerate(program.predictors()):
-            if self.verbose: print(f"Predictor {i}")
-            if self.verbose: print(f"i: {self._get_signature(predictor).instructions}")
+        for i, predictor in enumerate(program.predictors()):
+            if self.verbose:
+                print(f"Predictor {i}")
+            if self.verbose:
+                print(f"i: {self._get_signature(predictor).instructions}")
             *_, last_field = self._get_signature(predictor).fields.values()
-            if self.verbose: print(f"p: {last_field.json_schema_extra['prefix']}")
-            if self.verbose: print("\n")
-    
+            if self.verbose:
+                print(f"p: {last_field.json_schema_extra['prefix']}")
+            if self.verbose:
+                print("\n")
+
     def _print_model_history(self, model, n=1):
-        if self.verbose: print(f"Model ({model}) History:")
+        if self.verbose:
+            print(f"Model ({model}) History:")
         model.inspect_history(n=n)
 
     def _observe_data(self, trainset, max_iterations=10):
@@ -134,8 +178,11 @@ class MIPRO(Teleprompter):
         skips = 0
         iterations = 0
         for b in range(self.view_data_batch_size, len(trainset), self.view_data_batch_size):
-            upper_lim = min(len(trainset), b+self.view_data_batch_size)
-            output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=(trainset[b:upper_lim].__repr__()))
+            upper_lim = min(len(trainset), b + self.view_data_batch_size)
+            output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(
+                prior_observations=observations,
+                examples=(trainset[b:upper_lim].__repr__()),
+            )
             iterations += 1
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
                 skips += 1
@@ -149,9 +196,8 @@ class MIPRO(Teleprompter):
         summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
 
         return summary.summary
-    
-    def _create_example_string(self, fields, example):
 
+    def _create_example_string(self, fields, example):
         # Building the output string
         output = []
         for field in fields:
@@ -167,21 +213,30 @@ class MIPRO(Teleprompter):
             output.append(field_str)
 
         # Joining all the field strings
-        return '\n'.join(output)
+        return "\n".join(output)
 
     def _get_signature(self, predictor):
-        if (hasattr(predictor, 'extended_signature')):
+        if hasattr(predictor, "extended_signature"):
             return predictor.extended_signature
-        elif (hasattr(predictor, 'signature')):
+        elif hasattr(predictor, "signature"):
             return predictor.signature
-    
+        return None
+
     def _set_signature(self, predictor, updated_signature):
-        if (hasattr(predictor, 'extended_signature')):
+        if hasattr(predictor, "extended_signature"):
             predictor.extended_signature = updated_signature
-        elif (hasattr(predictor, 'signature')):
+        elif hasattr(predictor, "signature"):
             predictor.signature = updated_signature
-    
-    def _generate_first_N_candidates(self, module, N, view_data, view_examples, demo_candidates, devset):
+
+    def _generate_first_N_candidates(  # noqa: N802
+        self,
+        module: dspy.Module,
+        N: int,  # noqa: N803
+        view_data: bool,
+        view_examples: bool,
+        demo_candidates: dict,
+        devset,
+    ) -> tuple[dict, dict]:
         candidates = {}
         evaluated_candidates = defaultdict(dict)
 
@@ -189,26 +244,25 @@ class MIPRO(Teleprompter):
             # Create data observations
             self.observations = None
             with dspy.settings.context(lm=self.prompt_model):
-                self.observations = self._observe_data(devset).replace("Observations:","").replace("Summary:","")
-            
+                self.observations = self._observe_data(devset).replace("Observations:", "").replace("Summary:", "")
+
         if view_examples:
             example_sets = {}
             for predictor in module.predictors():
                 # Get all augmented examples
                 example_set = {}
-                all_sets_of_examples = demo_candidates[id(predictor)] # Get all generated sets of examples
+                all_sets_of_examples = demo_candidates[id(predictor)]  # Get all generated sets of examples
                 for example_set_i, set_of_examples in enumerate(all_sets_of_examples):
-                    if example_set_i != 0: # Skip the no examples case
-                        for example in set_of_examples: # Get each individual example in the set
-                            if "augmented" in example.keys():
-                                if example["augmented"]:
-                                    if example_set_i not in example_set:
-                                        example_set[example_set_i] = []
-                                    fields_to_use = signature_to_template(predictor.signature).fields
-                                    input_variable_names = list(self._get_signature(predictor).input_fields.keys())
-                                    example_string = self._create_example_string(fields_to_use, example)
-                                    example_set[example_set_i].append(example_string)
-                        example_sets[id(predictor)] = example_set  
+                    if example_set_i != 0:  # Skip the no examples case
+                        for example in set_of_examples:  # Get each individual example in the set
+                            if "augmented" in example and example["augmented"]:
+                                if example_set_i not in example_set:
+                                    example_set[example_set_i] = []
+                                fields_to_use = signature_to_template(predictor.signature).fields
+                                _input_variable_names = list(self._get_signature(predictor).input_fields.keys())
+                                example_string = self._create_example_string(fields_to_use, example)
+                                example_set[example_set_i].append(example_string)
+                        example_sets[id(predictor)] = example_set
                     else:
                         example_set[example_set_i] = []
                         example_sets[id(predictor)] = example_set
@@ -223,7 +277,7 @@ class MIPRO(Teleprompter):
             with dspy.settings.context(lm=self.prompt_model):
                 # Data & Examples
                 if view_data and view_examples:
-                    if 1 not in example_sets[id(predictor)].keys():
+                    if 1 not in example_sets[id(predictor)]:
                         raise ValueError("No examples found for the given predictor")
                     instruct = None
                     for i in range(1, self.num_candidates):
@@ -239,15 +293,23 @@ class MIPRO(Teleprompter):
                         if not instruct:
                             instruct = new_instruct
                         else:
-                            instruct.completions.proposed_instruction.extend(new_instruct.completions.proposed_instruction)
-                            instruct.completions.proposed_prefix_for_output_field.extend(new_instruct.completions.proposed_prefix_for_output_field)
+                            instruct.completions.proposed_instruction.extend(
+                                new_instruct.completions.proposed_instruction,
+                            )
+                            instruct.completions.proposed_prefix_for_output_field.extend(
+                                new_instruct.completions.proposed_prefix_for_output_field,
+                            )
                 # Just data
-                elif view_data: 
-                    instruct = dspy.Predict(BasicGenerateInstructionWithDataObservations, n=N-1, temperature=self.init_temperature)(basic_instruction=basic_instruction, observations=self.observations)
+                elif view_data:
+                    instruct = dspy.Predict(
+                        BasicGenerateInstructionWithDataObservations,
+                        n=N - 1,
+                        temperature=self.init_temperature,
+                    )(basic_instruction=basic_instruction, observations=self.observations)
                 # Just examples
-                elif view_examples: 
+                elif view_examples:
                     instruct = None
-                    for i in range(1,self.num_candidates): # Note: skip over the first example set which is empty
+                    for i in range(1, self.num_candidates):  # Note: skip over the first example set which is empty
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamples,
                             n=1,
@@ -259,33 +321,55 @@ class MIPRO(Teleprompter):
                         if not instruct:
                             instruct = new_instruct
                         else:
-                            instruct.completions.proposed_instruction.extend(new_instruct.completions.proposed_instruction)
-                            instruct.completions.proposed_prefix_for_output_field.extend(new_instruct.completions.proposed_prefix_for_output_field)
+                            instruct.completions.proposed_instruction.extend(
+                                new_instruct.completions.proposed_instruction,
+                            )
+                            instruct.completions.proposed_prefix_for_output_field.extend(
+                                new_instruct.completions.proposed_prefix_for_output_field,
+                            )
                 # Neither
-                else: 
-                    instruct = dspy.Predict(BasicGenerateInstruction, n=N-1, temperature=self.init_temperature)(basic_instruction=basic_instruction)
-            
+                else:
+                    instruct = dspy.Predict(BasicGenerateInstruction, n=N - 1, temperature=self.init_temperature)(
+                        basic_instruction=basic_instruction,
+                    )
+
             # Add in our initial prompt as a candidate as well
             instruct.completions.proposed_instruction.insert(0, basic_instruction)
             instruct.completions.proposed_prefix_for_output_field.insert(0, basic_prefix)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
-        
-        if self.verbose: self._print_model_history(self.prompt_model)
-        
+
+        if self.verbose:
+            self._print_model_history(self.prompt_model)
+
         return candidates, evaluated_candidates
 
-    def compile(self, student, *, trainset, num_trials, max_bootstrapped_demos, max_labeled_demos, eval_kwargs, seed=42, view_data=True, view_examples=True, requires_permission_to_run=True):
+    def compile(
+        self,
+        student: dspy.Program,
+        *,
+        trainset: list[dspy.Example],
+        num_trials: int,
+        max_bootstrapped_demos: int,
+        max_labeled_demos: int,
+        eval_kwargs: dict[str, Any],
+        seed=42,
+        view_data=True,
+        view_examples=True,
+        requires_permission_to_run=True,
+    ) -> dspy.Program:
         # Define ANSI escape codes for colors
-        YELLOW = '\033[93m'
-        BLUE = '\033[94m'
-        BOLD = '\033[1m'
-        ENDC = '\033[0m'  # Resets the color to default
+        YELLOW = "\033[93m"
+        BLUE = "\033[94m"
+        BOLD = "\033[1m"
+        ENDC = "\033[0m"  # Resets the color to default
 
         random.seed(seed)
-        
+
         estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
-        estimated_prompt_model_calls = 10 + self.num_candidates * len(student.predictors()) # num data summary calls + N * P
+        estimated_prompt_model_calls = 10 + self.num_candidates * len(
+            student.predictors(),
+        )  # num data summary calls + N * P
 
         user_message = textwrap.dedent(f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
@@ -305,7 +389,7 @@ class MIPRO(Teleprompter):
 
             {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
             {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}""")
-        
+
         user_confirmation_message = textwrap.dedent(f"""\
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
 
@@ -315,47 +399,54 @@ class MIPRO(Teleprompter):
         """)
 
         print(user_message)
-        
+
         sys.stdout.flush()  # Flush the output buffer to force the message to print
 
-
-        run=True
+        run = True
         if requires_permission_to_run:
             print(user_confirmation_message)
             user_input = input("Do you wish to continue? (y/n): ").strip().lower()
-            if user_input != 'y':
+            if user_input != "y":
                 print("Compilation aborted by the user.")
-                run=False
+                run = False
 
         if run:
             # Set up program and evaluation function
             module = student.deepcopy()
             evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
-            
+
             # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
-            if max_bootstrapped_demos==0 and max_labeled_demos==0: #TODO: address case when max_bootstrapped alone is 0
-                max_bootstrapped_demos_for_candidate_gen = 1 
-                max_labeled_demos_for_candidate_gen = 1 #TODO: this might only need to be 0
+            if (
+                max_bootstrapped_demos == 0 and max_labeled_demos == 0
+            ):  # TODO: address case when max_bootstrapped alone is 0
+                max_bootstrapped_demos_for_candidate_gen = 1
+                max_labeled_demos_for_candidate_gen = 1  # TODO: this might only need to be 0
             else:
-                max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos 
+                max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos
                 max_labeled_demos_for_candidate_gen = max_labeled_demos
 
             # Generate N few shot example sets
             demo_candidates = {}
             for i in range(self.num_candidates):
-                if i == 0: # Story empty set of demos as default for index 0
+                if i == 0:  # Story empty set of demos as default for index 0
                     for module_p in module.predictors():
                         if id(module_p) not in demo_candidates:
                             demo_candidates[id(module_p)] = []
                         demo_candidates[id(module_p)].append([])
                 else:
-                    if self.verbose: print(f"Creating basic bootstrap: {i}/{self.num_candidates-1}")
+                    if self.verbose:
+                        print(f"Creating basic bootstrap: {i}/{self.num_candidates-1}")
 
                     # Create a new basic bootstrap few - shot program .
                     rng = random.Random(i)
                     shuffled_trainset = trainset[:]  # Create a copy of devset
                     rng.shuffle(shuffled_trainset)  # Shuffle the copy
-                    tp = BootstrapFewShot(metric = self.metric, max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen, max_labeled_demos=max_labeled_demos_for_candidate_gen, teacher_settings=self.teacher_settings)
+                    tp = BootstrapFewShot(
+                        metric=self.metric,
+                        max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen,
+                        max_labeled_demos=max_labeled_demos_for_candidate_gen,
+                        teacher_settings=self.teacher_settings,
+                    )
                     candidate_program = tp.compile(student=module.deepcopy(), trainset=shuffled_trainset)
 
                     # Store the candidate demos
@@ -363,16 +454,23 @@ class MIPRO(Teleprompter):
                         if id(module_p) not in demo_candidates:
                             demo_candidates[id(module_p)] = []
                         demo_candidates[id(module_p)].append(candidate_p.demos)
-                
+
             # Generate N candidate prompts
-            instruction_candidates, _ = self._generate_first_N_candidates(module, self.num_candidates, view_data, view_examples, demo_candidates, trainset)
+            instruction_candidates, _ = self._generate_first_N_candidates(
+                module,
+                self.num_candidates,
+                view_data,
+                view_examples,
+                demo_candidates,
+                trainset,
+            )
 
             # Reset demo_candidates to None for our optimization if the user asked for no fewshot examples
-            if max_bootstrapped_demos==0 and max_labeled_demos==0:
+            if max_bootstrapped_demos == 0 and max_labeled_demos == 0:
                 demo_candidates = None
 
             # Initialize variables to store the best program and its score
-            best_score = float('-inf')
+            best_score = float("-inf")
             best_program = None
             trial_num = 0
 
@@ -384,40 +482,56 @@ class MIPRO(Teleprompter):
                     nonlocal best_program, best_score, trial_num, trial_logs  # Allow access to the outer variables
                     candidate_program = baseline_program.deepcopy()
 
-                    # Suggest the instruction to use for our predictor 
+                    # Suggest the instruction to use for our predictor
                     print(f"Starting trial #{trial_num}")
                     trial_logs[trial_num] = {}
 
                     for p_old, p_new in zip(baseline_program.predictors(), candidate_program.predictors()):
-
                         # Get instruction candidates for our given predictor
                         p_instruction_candidates = instruction_candidates[id(p_old)]
-                        if demo_candidates: p_demo_candidates = demo_candidates[id(p_old)]
+                        if demo_candidates:
+                            p_demo_candidates = demo_candidates[id(p_old)]
 
                         # Suggest the index of the instruction candidate to use in our trial
-                        instruction_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_instruction",range(len(p_instruction_candidates)))
-                        if demo_candidates: demos_idx = trial.suggest_categorical(f"{id(p_old)}_predictor_demos",range(len(p_demo_candidates)))
+                        instruction_idx = trial.suggest_categorical(
+                            f"{id(p_old)}_predictor_instruction",
+                            range(len(p_instruction_candidates)),
+                        )
+                        if demo_candidates:
+                            demos_idx = trial.suggest_categorical(
+                                f"{id(p_old)}_predictor_demos",
+                                range(len(p_demo_candidates)),
+                            )
                         trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
-                        if demo_candidates: trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
+                        if demo_candidates:
+                            trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 
-                        # Get the selected instruction candidate 
+                        # Get the selected instruction candidate
                         selected_candidate = p_instruction_candidates[instruction_idx]
                         selected_instruction = selected_candidate.proposed_instruction.strip('"').strip()
                         selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip('"').strip()
 
                         # Use this candidates in our program
                         *_, last_field = self._get_signature(p_new).fields.keys()
-                        updated_signature = self._get_signature(p_new).with_instructions(selected_instruction).with_updated_fields(last_field, prefix=selected_prefix)
+                        updated_signature = (
+                            self._get_signature(p_new)
+                            .with_instructions(selected_instruction)
+                            .with_updated_fields(last_field, prefix=selected_prefix)
+                        )
                         self._set_signature(p_new, updated_signature)
 
                         # Get the selected demos
-                        if demo_candidates: selected_demos = p_demo_candidates[demos_idx]
+                        if demo_candidates:
+                            selected_demos = p_demo_candidates[demos_idx]
 
                         # Use these demos in our program
-                        if demo_candidates: p_new.demos = selected_demos
-                        
-                    if self.verbose: print("Evaling the following program:")
-                    if self.verbose: self._print_full_program(candidate_program)
+                        if demo_candidates:
+                            p_new.demos = selected_demos
+
+                    if self.verbose:
+                        print("Evaling the following program:")
+                    if self.verbose:
+                        self._print_full_program(candidate_program)
                     trial_logs[trial_num]["program"] = candidate_program
 
                     # Evaluate with the new prompts
@@ -430,11 +544,13 @@ class MIPRO(Teleprompter):
                         end_index = min((i + 1) * batch_size, len(trainset))
                         split_trainset = trainset[start_index:end_index]
                         split_score = evaluate(candidate_program, devset=split_trainset, display_table=0)
-                        if self.verbose: print(f"{i}st split score: {split_score}")
+                        if self.verbose:
+                            print(f"{i}st split score: {split_score}")
 
                         total_score += split_score * len(split_trainset)
-                        curr_weighted_avg_score = total_score / min((i+1)*100,len(trainset))
-                        if self.verbose: print(f"curr average score: {curr_weighted_avg_score}")
+                        curr_weighted_avg_score = total_score / min((i + 1) * 100, len(trainset))
+                        if self.verbose:
+                            print(f"curr average score: {curr_weighted_avg_score}")
 
                         trial.report(curr_weighted_avg_score, i)
 
@@ -443,35 +559,38 @@ class MIPRO(Teleprompter):
                             print("Trial pruned.")
                             trial_logs[trial_num]["score"] = curr_weighted_avg_score
                             trial_logs[trial_num]["pruned"] = True
-                            trial_num += 1 
+                            trial_num += 1
                             raise optuna.TrialPruned()
-                    
-                    if self.verbose: print(f"Fully evaled score: {curr_weighted_avg_score}")
-                    if self.verbose: self._print_model_history(self.task_model, n=1)
+
+                    if self.verbose:
+                        print(f"Fully evaled score: {curr_weighted_avg_score}")
+                    if self.verbose:
+                        self._print_model_history(self.task_model, n=1)
                     score = curr_weighted_avg_score
-                    
+
                     trial_logs[trial_num]["score"] = curr_weighted_avg_score
                     trial_logs[trial_num]["pruned"] = False
-                    
+
                     # Update the best program if the current score is better
                     if score > best_score:
                         best_score = score
                         best_program = candidate_program.deepcopy()
-                    
-                    trial_num += 1 
+
+                    trial_num += 1
 
                     return score
 
                 return objective
 
-            # Run the trial 
+            # Run the trial
             objective_function = create_objective(module, instruction_candidates, demo_candidates, evaluate, trainset)
             sampler = optuna.samplers.TPESampler(seed=seed)
             study = optuna.create_study(direction="maximize", sampler=sampler)
-            score = study.optimize(objective_function, n_trials=num_trials)
+            _score = study.optimize(objective_function, n_trials=num_trials)
 
             if best_program is not None and self.track_stats:
                 best_program.trial_logs = trial_logs
 
             print(f"Returning {best_program} from continue_program")
             return best_program
+        return None
