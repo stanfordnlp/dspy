@@ -37,17 +37,12 @@ class YouRM(dspy.Retrieve):
         )
         docs = []
         for query in queries:
-            # signature as per: https://api.you.com/api-key
             headers = {"X-API-Key": self.ydc_api_key}
-            params = {"query": query}
             results = requests.get(
-                "https://api.ydc-index.io/search",
+                f"https://api.ydc-index.io/search?query={query}",
                 headers=headers,
-                params=params,
             ).json()
-            for hit in results["hits"]:
+            for hit in results["hits"][:k]:
                 for snippet in hit["snippets"]:
                     docs.append(snippet)
-        # only return K docs
-        data = [dotdict({"long_text": document}) for document in docs[:k]]
-        return data
+        return [dotdict({"long_text": document}) for document in docs]
