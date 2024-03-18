@@ -53,9 +53,9 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, max_retries=3) -> dspy.Module:  # noqa: N802
+def TypedChainOfThought(signature, instructions=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
     """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
-    signature = ensure_signature(signature)
+    signature = ensure_signature(signature, instructions)
     output_keys = ", ".join(signature.output_fields.keys())
     return TypedPredictor(
         signature.prepend(
@@ -70,7 +70,7 @@ def TypedChainOfThought(signature, max_retries=3) -> dspy.Module:  # noqa: N802
 
 
 class TypedPredictor(dspy.Module):
-    def __init__(self, signature, max_retries=3, wrap_json=False, explain_errors=False):
+    def __init__(self, signature, instructions=None, *, max_retries=3, wrap_json=False, explain_errors=False):
         """Like dspy.Predict, but enforces type annotations in the signature.
 
         Args:
@@ -79,14 +79,14 @@ class TypedPredictor(dspy.Module):
             wrap_json: If True, json objects in the input will be wrapped in ```json ... ```
         """
         super().__init__()
-        self.signature = ensure_signature(signature)
+        self.signature = ensure_signature(signature, instructions)
         self.predictor = dspy.Predict(signature)
         self.max_retries = max_retries
         self.wrap_json = wrap_json
         self.explain_errors = explain_errors
 
     def copy(self) -> "TypedPredictor":
-        return TypedPredictor(self.signature, self.max_retries, self.wrap_json)
+        return TypedPredictor(self.signature, max_retries=self.max_retries, wrap_json=self.wrap_json)
 
     def __repr__(self):
         """Return a string representation of the TypedPredictor object."""
