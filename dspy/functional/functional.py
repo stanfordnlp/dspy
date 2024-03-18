@@ -160,7 +160,7 @@ class TypedPredictor(dspy.Module):
             error: str = dspy.InputField(desc="The validation error trigged by the models output")
             explanation: str = dspy.OutputField(desc="Explain what the model did wrong")
             advice: str = dspy.OutputField(
-                desc="Instructions for the model to do better next time. A single paragraph."
+                desc="Instructions for the model to do better next time. A single paragraph.",
             )
 
         # TODO: We could also try repair the output here. For example, if the output is a float, but the
