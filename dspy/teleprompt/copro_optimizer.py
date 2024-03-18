@@ -183,9 +183,6 @@ class COPRO(Teleprompter):
                     n=self.breadth - 1,
                     temperature=self.init_temperature,
                 )(basic_instruction=basic_instruction)
-            # Add in our initial prompt as a candidate as well
-            instruct.completions.proposed_instruction.append(basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.append(basic_prefix)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
 
