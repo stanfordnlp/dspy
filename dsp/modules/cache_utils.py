@@ -6,7 +6,7 @@ from joblib import Memory
 
 from dsp.utils import dotdict
 
-cache_turn_on = not os.environ.get('DSP_CACHEBOOL', 'True').lower() == 'false'
+cache_turn_on = os.environ.get('DSP_CACHEBOOL', 'True').lower() != 'false'
 
 
 def noop_decorator(arg=None, *noop_args, **noop_kwargs):
