@@ -1,17 +1,12 @@
 import logging
-import os
-import json
-from typing import Any, Literal, Optional, Required
-import backoff
-from groq import Groq, AsyncGroq
-import groq
-import functools
+from typing import Any
 
+import backoff
+import groq
+from groq import Groq
 
 import dsp
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
-
 
 # Configure logging
 logging.basicConfig(
@@ -166,4 +161,3 @@ class GroqLM(LM):
             completions = [c for _, c in scored_completions]
 
         return completions
-
