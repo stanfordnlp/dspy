@@ -36,8 +36,12 @@ Note that this teleprompter takes in the following parameters:
 class BasicGenerateInstruction(Signature):
     """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative."""
 
-    basic_instruction = dspy.InputField(desc="The initial instructions before optimization")
-    proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
+    basic_instruction = dspy.InputField(
+        desc="The initial instructions before optimization"
+    )
+    proposed_instruction = dspy.OutputField(
+        desc="The improved instructions for the language model"
+    )
     proposed_prefix_for_output_field = dspy.OutputField(
         desc="The string at the end of the prompt, which will help the model start solving the task",
     )
@@ -46,10 +50,13 @@ class BasicGenerateInstruction(Signature):
 class GenerateInstructionGivenAttempts(dspy.Signature):
     """You are an instruction optimizer for large language models. I will give some task instructions I've tried, along with their corresponding validation scores. The instructions are arranged in increasing order based on their scores, where higher scores indicate better quality.
 
-    Your task is to propose a new instruction that will lead a good language model to perform the task even better. Don't be afraid to be creative."""
+    Your task is to propose a new instruction that will lead a good language model to perform the task even better. Don't be afraid to be creative.
+    """
 
     attempted_instructions = dspy.InputField(format=dsp.passages2text)
-    proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
+    proposed_instruction = dspy.OutputField(
+        desc="The improved instructions for the language model"
+    )
     proposed_prefix_for_output_field = dspy.OutputField(
         desc="The string at the end of the prompt, which will help the model start solving the task",
     )
@@ -77,8 +84,13 @@ class COPRO(Teleprompter):
         self.track_stats = track_stats
 
     def _check_candidates_equal(self, candidate1, candidate2):
-        for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
-            if self._get_signature(p1).instructions != self._get_signature(p2).instructions:
+        for p1, p2 in zip(
+            candidate1["program"].predictors(), candidate2["program"].predictors()
+        ):
+            if (
+                self._get_signature(p1).instructions
+                != self._get_signature(p2).instructions
+            ):
                 return False
             *_, p1_last_field = self._get_signature(p1).fields.values()
             *_, p2_last_field = self._get_signature(p2).fields.values()
@@ -110,7 +122,9 @@ class COPRO(Teleprompter):
         if self.verbose:
             signature = self._get_signature(predictor)
             print(f"i: {signature.instructions}")
-            print(f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}")
+            print(
+                f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}"
+            )
             print()
 
     def _get_signature(self, predictor):
@@ -131,10 +145,12 @@ class COPRO(Teleprompter):
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0
         results_best = {
-            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []} for p in module.predictors()
+            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []}
+            for p in module.predictors()
         }
         results_latest = {
-            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []} for p in module.predictors()
+            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []}
+            for p in module.predictors()
         }
 
         if self.track_stats:
@@ -149,7 +165,11 @@ class COPRO(Teleprompter):
             basic_prefix = None
             *_, last_key = self._get_signature(predictor).fields.keys()
             basic_instruction = self._get_signature(predictor).instructions
-            basic_prefix = self._get_signature(predictor).fields[last_key].json_schema_extra["prefix"]
+            basic_prefix = (
+                self._get_signature(predictor)
+                .fields[last_key]
+                .json_schema_extra["prefix"]
+            )
             if self.prompt_model:
                 with dspy.settings.context(lm=self.prompt_model):
                     instruct = dspy.Predict(
@@ -186,8 +206,12 @@ class COPRO(Teleprompter):
             latest_scores = []
 
             # Go through our module's predictors
-            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(), module_clone.predictors())):
-                candidates_ = latest_candidates[id(p_old)]  # Use the most recently generated candidates for evaluation
+            for p_i, (p_old, p_new) in enumerate(
+                zip(module.predictors(), module_clone.predictors())
+            ):
+                candidates_ = latest_candidates[
+                    id(p_old)
+                ]  # Use the most recently generated candidates for evaluation
                 if len(module.predictors()) > 1:
                     candidates_ = all_candidates[
                         id(p_old)
@@ -222,7 +246,9 @@ class COPRO(Teleprompter):
                     )
                     score = evaluate(module_clone, devset=trainset, **eval_kwargs)
                     if self.verbose and self.prompt_model:
-                        print(f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}")
+                        print(
+                            f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}"
+                        )
                     total_calls += 1
                     if self.verbose:
                         print("----------------")
@@ -233,7 +259,12 @@ class COPRO(Teleprompter):
                     # if verbose: print(f"evaluated_candidates[id(p_old)] {evaluated_candidates[id(p_old)]}")
                     if (instruction, prefix) in evaluated_candidates[id(p_old)]:
                         # if verbose: print(f"if evaluated_candidates[id(p_old)][(instruction, prefix)] {evaluated_candidates[id(p_old)][(instruction, prefix)]}")
-                        if evaluated_candidates[id(p_old)][(instruction, prefix)]["score"] >= score:
+                        if (
+                            evaluated_candidates[id(p_old)][(instruction, prefix)][
+                                "score"
+                            ]
+                            >= score
+                        ):
                             replace_entry = False
 
                     if replace_entry:
@@ -252,13 +283,18 @@ class COPRO(Teleprompter):
                 if self.track_stats:
                     results_latest[id(p_old)]["depth"].append(d)
                     results_latest[id(p_old)]["max"].append(max(latest_scores))
-                    results_latest[id(p_old)]["average"].append(sum(latest_scores) / len(latest_scores))
+                    results_latest[id(p_old)]["average"].append(
+                        sum(latest_scores) / len(latest_scores)
+                    )
                     results_latest[id(p_old)]["min"].append(min(latest_scores))
                     results_latest[id(p_old)]["std"].append(np.std(latest_scores))
 
                 # Now that we've evaluated the candidates, set this predictor to the best performing version
                 # to ensure the next round of scores reflect the best possible version
-                best_candidate = max(evaluated_candidates[id(p_old)].values(), key=lambda candidate: candidate["score"])
+                best_candidate = max(
+                    evaluated_candidates[id(p_old)].values(),
+                    key=lambda candidate: candidate["score"],
+                )
                 *_, last_key = self._get_signature(p_old).fields.keys()
                 updated_signature = (
                     self._get_signature(p_new)
@@ -295,15 +331,23 @@ class COPRO(Teleprompter):
                     scores = [x["score"] for x in best_predictors][:10]
                     results_best[id(p_base)]["depth"].append(d)
                     results_best[id(p_base)]["max"].append(max(scores))
-                    results_best[id(p_base)]["average"].append(sum(scores) / len(scores))
+                    results_best[id(p_base)]["average"].append(
+                        sum(scores) / len(scores)
+                    )
                     results_best[id(p_base)]["min"].append(min(scores))
                     results_best[id(p_base)]["std"].append(np.std(scores))
 
                 for i in range(shortest_len - 1, -1, -1):
                     # breakpoint()
-                    attempts.append(f'Instruction #{shortest_len-i}: {best_predictors[i]["instruction"]}')
-                    attempts.append(f'Prefix #{shortest_len-i}: {best_predictors[i]["prefix"]}')
-                    attempts.append(f'Resulting Score #{shortest_len-i}: {best_predictors[i]["score"]}')
+                    attempts.append(
+                        f'Instruction #{shortest_len-i}: {best_predictors[i]["instruction"]}'
+                    )
+                    attempts.append(
+                        f'Prefix #{shortest_len-i}: {best_predictors[i]["prefix"]}'
+                    )
+                    attempts.append(
+                        f'Resulting Score #{shortest_len-i}: {best_predictors[i]["score"]}'
+                    )
 
                 # Generate next batch of potential prompts to optimize, with previous attempts as input
                 if self.prompt_model:
@@ -324,7 +368,9 @@ class COPRO(Teleprompter):
                     print(f"{self.prompt_model.inspect_history(n=1)}")
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions
-                all_candidates[id(p_base)].proposed_instruction.extend(instr.completions.proposed_instruction)
+                all_candidates[id(p_base)].proposed_instruction.extend(
+                    instr.completions.proposed_instruction
+                )
                 all_candidates[id(p_base)].proposed_prefix_for_output_field.extend(
                     instr.completions.proposed_prefix_for_output_field,
                 )
