@@ -8,7 +8,6 @@ from dspy.backends import TemplateBackend
 from dspy.utils import DummyLM
 
 
-
 class HopModule(dspy.Module):
     def __init__(self):
         super().__init__()
@@ -22,7 +21,9 @@ class HopModule(dspy.Module):
 
 def test_module_initialization():
     module = Module()
-    assert module._compiled is False, "Module _compiled attribute should be False upon initialization"
+    assert (
+        module._compiled is False
+    ), "Module _compiled attribute should be False upon initialization"
 
 
 def test_named_predictors():
@@ -30,20 +31,38 @@ def test_named_predictors():
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
     names, preds = zip(*named_preds)
-    assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
+    assert (
+        "predict1" in names and "predict2" in names
+    ), "Named predictors should include 'predict1' and 'predict2'"
 
 
 def test_predictors():
     module = HopModule()
     preds = module.predictors()
     assert len(preds) == 2, "Should return correct number of Predict instances"
-    assert all(isinstance(p, dspy.Predict) for p in preds), "All returned items should be instances of PredictMock"
+    assert all(
+        isinstance(p, dspy.Predict) for p in preds
+    ), "All returned items should be instances of PredictMock"
 
 
 def test_forward():
+    dspy.settings.configure(experimental=False)
+
     program = HopModule()
-    lm = DummyLanguageModel(answers=[["let me check"], ["2"]])backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, cache=False)
+    dspy.settings.configure(
+        lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
+    )
+    result = program(question="What is 1+1?").answer
+    assert result == "2"
+
+
+def test_forward_experimental():
+    dspy.settings.configure(experimental=True)
+
+    program = HopModule()
+    lm = DummyLanguageModel(answers=[["let me check"], ["2"]])
+    backend = TemplateBackend(lm=lm)
+    dspy.settings.configure(backend=backend, cache=False, lm=None)
     result = program(question="What is 1+1?").answer
     assert result == "2"
 
@@ -78,7 +97,11 @@ def test_multiple_levels():
     module = Module()
     module.sub = Module()
     module.sub.subsub = Module()
-    expected = [("self", module), ("self.sub", module.sub), ("self.sub.subsub", module.sub.subsub)]
+    expected = [
+        ("self", module),
+        ("self.sub", module.sub),
+        ("self.sub.subsub", module.sub.subsub),
+    ]
     assert list(module.named_sub_modules()) == expected
 
 
@@ -86,7 +109,11 @@ def test_multiple_sub_modules():
     module = Module()
     module.sub1 = Module()
     module.sub2 = Module()
-    expected = [("self", module), ("self.sub1", module.sub1), ("self.sub2", module.sub2)]
+    expected = [
+        ("self", module),
+        ("self.sub1", module.sub1),
+        ("self.sub2", module.sub2),
+    ]
     assert sorted(list(module.named_sub_modules())) == sorted(expected)
 
 
