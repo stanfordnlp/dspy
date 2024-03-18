@@ -3,7 +3,7 @@ import random
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.signatures.signature import ensure_signature, signature_to_template, signature_to_guided_template
 
 
 class Predict(Parameter):
@@ -59,6 +59,8 @@ class Predict(Parameter):
         lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
         assert lm is not None, "No LM is loaded."
 
+        is_guided = isinstance(lm, dsp.GuidedLM)
+
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
@@ -85,7 +87,10 @@ class Predict(Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         # Switch to legacy format for dsp.generate
-        template = signature_to_template(signature)
+        if not is_guided:
+            template = signature_to_template(signature)
+        else:
+            template = signature_to_guided_template(signature)
 
         if self.lm is None:
             x, C = dsp.generate(template, **config)(x, stage=self.stage)

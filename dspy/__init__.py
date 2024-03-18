@@ -28,6 +28,8 @@ Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
 Bedrock = dsp.Bedrock
-
+GuidedLlama = dsp.GuidedLlama
+GuidedLM = dsp.GuidedLM
+GuidedOpenAI = dsp.GuidedOpenAI
 configure = settings.configure
 context = settings.context

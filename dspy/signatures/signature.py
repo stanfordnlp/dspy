@@ -11,6 +11,12 @@ from pydantic.fields import FieldInfo
 import dsp
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
+def signature_to_guided_template(signature) -> dsp.GuidedTemplate:
+    """Convert from new to legacy format with guidance support."""
+    return dsp.GuidedTemplate(
+        signature.instructions,
+        signature.fields
+    )
 
 def signature_to_template(signature) -> dsp.Template:
     """Convert from new to legacy format."""
