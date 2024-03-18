@@ -1,3 +1,4 @@
+import typing as t
 from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ class BaseBackend(BaseModel, ABC):
     def __call__(
         self,
         signature: Signature,
+        config: dict[str, t.Any] = {},
         attempts: int = 1,
         **kwargs,
     ) -> Completions:
@@ -30,7 +32,7 @@ class BaseBackend(BaseModel, ABC):
         while i < attempts:
             # Returns a List of Completions
             # which may or may not be complete
-            completions = self.generate(signature, **kwargs)
+            completions = self.generate(signature=signature, config=config, **kwargs)
 
             # If 1 or more complete generations exist, simple return all complete
             if completions.has_complete_example():
@@ -66,6 +68,7 @@ class BaseBackend(BaseModel, ABC):
     def generate(
         self,
         signature: Signature,
+        config: dict[str, t.Any],
         **kwargs,
     ) -> Completions:
         """Generates `n` predictions (complete/partial) for the signature output."""

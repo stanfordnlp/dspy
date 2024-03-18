@@ -17,7 +17,8 @@ class TemplateBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
-        demos: t.List[str] = [],
+        demos: list[str] = [],
+        config: dict[str, t.Any] = {},
         **kwargs,
     ) -> Completions:
         """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output"""
@@ -39,7 +40,7 @@ class TemplateBackend(BaseBackend):
         for input in signature.input_fields:
             del kwargs[input]
 
-        pred = self.lm(template(example), **kwargs)
+        pred = self.lm(template(example), **config)
 
         # This returns a list of Examples
         extracted_examples = [

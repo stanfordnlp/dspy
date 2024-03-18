@@ -24,6 +24,7 @@ class JSONBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
+        config: dict[str, t.Any] = {},
         demos: t.List[str] = [],
         **kwargs,
     ) -> Completions:
@@ -42,7 +43,7 @@ class JSONBackend(BaseBackend):
         pred = self.lm(
             template(example, is_json=True),
             response_format={"type": "json_object"},
-            **kwargs,
+            **config,
         )
         extracted = [
             json.loads(prediction["message"]["content"])

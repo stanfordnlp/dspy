@@ -15,16 +15,17 @@ class Predict(Parameter):
         self.reset()
 
     def reset(self):
-        if dsp.settings.get("experimental", False):
+        if dspy.settings.get("backend", None) is not None:
             self.backend = None
         else:
             self.lm = None
+
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self):
-        if dsp.settings.get("experimental", False):
+        if dspy.settings.get("backend", None) is not None:
             state_keys = ["backend", "traces", "train", "demos"]
         else:
             state_keys = ["lm", "traces", "train", "demos"]
@@ -62,15 +63,12 @@ class Predict(Parameter):
         # Extract the three privileged keyword arguments.
         signature = kwargs.pop("new_signature", kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
-        config = dict(**self.config, **kwargs.pop("config", {}), **kwargs)
+        config = dict(**self.config, **kwargs.pop("config", {}))
 
-        if dsp.settings.get("experimental", False):
-            # Get the right Backend to use.
-            backend = kwargs.pop("backend", self.backend) or dspy.settings.get(
-                "backend", None
-            )
-            assert backend is not None, "No Backend is configured."
+        # Check if we should use backend
+        backend = dspy.settings.get("backend", None)
 
+        if backend is not None:
             if not all(k in kwargs for k in signature.input_fields):
                 present = [k for k in signature.input_fields if k in kwargs]
                 missing = [k for k in signature.input_fields if k not in kwargs]
@@ -78,7 +76,7 @@ class Predict(Parameter):
                     f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
                 )
 
-            completions = backend(signature, demos=demos, **config)
+            completions = backend(signature, demos=demos, config=config, **kwargs)
 
             pred = Prediction.from_completions(completions)
 
