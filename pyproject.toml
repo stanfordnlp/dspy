@@ -109,6 +109,8 @@ autodoc_pydantic = { version = "*", optional = true }
 sphinx-reredirects = { version = "^0.1.2", optional = true }
 sphinx-automodapi = { version = "0.16.0", optional = true }
 rich = "^13.7.1"
+jupyter = "^1.0.0"
+matplotlib = "^3.8.3"
 
 
 [tool.poetry.group.dev.dependencies]

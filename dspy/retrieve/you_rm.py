@@ -30,11 +30,7 @@ class YouRM(dspy.Retrieve):
 
         k = k if k is not None else self.k
 
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         docs = []
         for query in queries:
             headers = {"X-API-Key": self.ydc_api_key}
