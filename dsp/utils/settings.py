@@ -45,6 +45,7 @@ class Settings:
                 suggest_failures=0,
                 langchain_history=[],
                 cache=True,
+                experimental=False,
             )
             cls._instance.__append(config)
 
