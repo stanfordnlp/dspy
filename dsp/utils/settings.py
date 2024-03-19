@@ -36,7 +36,7 @@ class Settings:
                 force_reuse_cached_compilation=False,
                 compiling=False,
                 skip_logprobs=False,
-                trace=None,
+                trace=[],
                 release=0,
                 log_openai_usage=False,
                 bypass_assert=False,
