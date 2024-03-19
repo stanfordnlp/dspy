@@ -4,7 +4,7 @@ import re
 import dspy
 from dsp.modules import LM
 from dspy.teleprompt.signature_opt_bayesian import MIPRO
-from dspy.utils import DummyLM, clean_up_lm_test
+from dspy.utils import DummyLM
 from dspy import Example
 
 
@@ -152,54 +152,22 @@ class SimpleModule(dspy.Module):
         return self.predictor(**kwargs)
 
 
-@clean_up_lm_test
 def test_signature_optimizer_optimization_process():
     lm = ConditionalLM()
-    dspy.settings.configure(lm=lm)
+    with dspy.settings.context(lm=lm, backend=None):
 
-    student = SimpleModule(signature="input -> output")
+        student = SimpleModule(signature="input -> output")
 
-    optimizer = MIPRO(
-        metric=simple_metric,
-        num_candidates=10,
-        init_temperature=1.4,
-        verbose=False,
-        track_stats=False,
-    )
+        optimizer = MIPRO(
+            metric=simple_metric,
+            num_candidates=10,
+            init_temperature=1.4,
+            verbose=False,
+            track_stats=False,
+        )
 
-    # Adjustments: Include required parameters for the compile method
-    optimized_student = optimizer.compile(
-        student=student,
-        trainset=trainset,
-        num_trials=10,
-        max_bootstrapped_demos=3,
-        max_labeled_demos=5,
-        eval_kwargs={"num_threads": 1, "display_progress": False},
-        requires_permission_to_run=False,
-    )
-
-    assert len(optimized_student.predictor.demos) == 5
-
-
-@clean_up_lm_test
-def test_signature_optimizer_bad_lm():
-    dspy.settings.configure(
-        lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
-    )
-    student = SimpleModule(signature="input -> output")
-    optimizer = MIPRO(
-        metric=simple_metric,
-        num_candidates=10,
-        init_temperature=1.4,
-        verbose=False,
-        track_stats=False,
-    )
-
-    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DummyLM,
-    # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
-    # and therefore the set of examples that we're using to generate new prompts is empty
-    with pytest.raises(ValueError):
-        _optimized_student = optimizer.compile(
+        # Adjustments: Include required parameters for the compile method
+        optimized_student = optimizer.compile(
             student=student,
             trainset=trainset,
             num_trials=10,
@@ -209,76 +177,104 @@ def test_signature_optimizer_bad_lm():
             requires_permission_to_run=False,
         )
 
+        assert len(optimized_student.predictor.demos) == 5
 
-@clean_up_lm_test
+
+def test_signature_optimizer_bad_lm():
+    lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
+    with dspy.settings.context(lm=lm, backend=None):
+        student = SimpleModule(signature="input -> output")
+        optimizer = MIPRO(
+            metric=simple_metric,
+            num_candidates=10,
+            init_temperature=1.4,
+            verbose=False,
+            track_stats=False,
+        )
+
+        # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DummyLM,
+        # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
+        # and therefore the set of examples that we're using to generate new prompts is empty
+        with pytest.raises(ValueError):
+            _optimized_student = optimizer.compile(
+                student=student,
+                trainset=trainset,
+                num_trials=10,
+                max_bootstrapped_demos=3,
+                max_labeled_demos=5,
+                eval_kwargs={"num_threads": 1, "display_progress": False},
+                requires_permission_to_run=False,
+            )
+
+
 def test_optimization_and_output_verification():
     # Make a language model that is always right, except on the last
     # example in the train set.
     lm = ConditionalLM()
-    dspy.settings.configure(lm=lm)
+    with dspy.settings.context(lm=lm, backend=None):
 
-    optimizer = MIPRO(
-        metric=simple_metric,
-        num_candidates=10,
-        init_temperature=1.4,
-        verbose=False,
-        track_stats=True,
-    )
+        optimizer = MIPRO(
+            metric=simple_metric,
+            num_candidates=10,
+            init_temperature=1.4,
+            verbose=False,
+            track_stats=True,
+        )
 
-    student = SimpleModule("input -> output")
+        student = SimpleModule("input -> output")
 
-    # Compile the student with the optimizer
-    optimized_student = optimizer.compile(
-        student=student,
-        trainset=trainset,
-        num_trials=4,
-        max_bootstrapped_demos=2,
-        max_labeled_demos=3,
-        eval_kwargs={"num_threads": 1, "display_progress": False},
-        requires_permission_to_run=False,
-    )
+        # Compile the student with the optimizer
+        optimized_student = optimizer.compile(
+            student=student,
+            trainset=trainset,
+            num_trials=4,
+            max_bootstrapped_demos=2,
+            max_labeled_demos=3,
+            eval_kwargs={"num_threads": 1, "display_progress": False},
+            requires_permission_to_run=False,
+        )
 
-    # Simulate calling the optimized student with a new input
-    test_input = "What is the capital of Spain?"
-    prediction = optimized_student(input=test_input)
+        # Simulate calling the optimized student with a new input
+        test_input = "What is the capital of Spain?"
+        prediction = optimized_student(input=test_input)
 
-    print("CORRECT ANSWER")
-    print(lm.get_convo(-1))
+        print("CORRECT ANSWER")
+        print(lm.get_convo(-1))
 
-    assert prediction.output == "Madrid"
+        assert prediction.output == "Madrid"
 
-    expected_lm_output = textwrap.dedent(
-        """\
-        Input:
+        expected_lm_output = textwrap.dedent(
+            """\
+            Input:
 
-        ---
-        
-        Follow the following format.
-        
-        Input: ${input}
-        Reasoning: Let's think step by step in order to ${produce the output}. We ...
-        Output: ${output}
+            ---
+            
+            Follow the following format.
+            
+            Input: ${input}
+            Reasoning: Let's think step by step in order to ${produce the output}. We ...
+            Output: ${output}
 
-        ---
+            ---
 
-        Input: What is the capital of France?
-        Output: Paris
+            Input: What is the capital of France?
+            Output: Paris
 
-        ---
+            ---
 
-        Input: What is the capital of Norway?
-        Output: Oslo
+            Input: What is the capital of Norway?
+            Output: Oslo
 
-        ---
+            ---
 
-        Input: What does the fox say?
-        Output: Ring-ding-ding-ding-dingeringeding!
+            Input: What does the fox say?
+            Output: Ring-ding-ding-ding-dingeringeding!
 
-        ---
+            ---
 
-        Input: What is the capital of Spain?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Madrid"""
-    )
+            Input: What is the capital of Spain?
+            Reasoning: Let's think step by step in order to think deeply.
+            Output: Madrid"""
+        )
 
-    assert lm.get_convo(-1) == expected_lm_output, lm.get_convo(-1)
+        assert lm.get_convo(-1) == expected_lm_output, lm.get_convo(-1)
