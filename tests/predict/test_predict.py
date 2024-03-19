@@ -63,15 +63,14 @@ def test_instructions_after_dump_and_load_state():
     assert new_instance.signature.instructions == "original instructions"
 
 
-class TranslateToEnglish(dspy.Signature):
-    """Translate content from a language to English."""
-
-    content: str = dspy.InputField()
-    language: str = dspy.InputField()
-    translation: str = dspy.OutputField()
-
-
 def test_demos_after_dump_and_load_state():
+    class TranslateToEnglish(dspy.Signature):
+        """Translate content from a language to English."""
+
+        content: str = dspy.InputField()
+        language: str = dspy.InputField()
+        translation: str = dspy.OutputField()
+
     original_instance = Predict(TranslateToEnglish)
     original_instance.demos = [
         dspy.Example(
@@ -95,21 +94,20 @@ def test_demos_after_dump_and_load_state():
     assert new_instance.demos[0]["content"] == original_instance.demos[0].content
 
 
-class TypedTranslateToEnglish(dspy.Signature):
-    """Translate content from a language to English."""
-
-    class Input(pydantic.BaseModel):
-        content: str
-        language: str
-
-    class Output(pydantic.BaseModel):
-        translation: str
-
-    input: Input = dspy.InputField()
-    output: Output = dspy.OutputField()
-
-
 def test_typed_demos_after_dump_and_load_state():
+    class TypedTranslateToEnglish(dspy.Signature):
+        """Translate content from a language to English."""
+
+        class Input(pydantic.BaseModel):
+            content: str
+            language: str
+
+        class Output(pydantic.BaseModel):
+            translation: str
+
+        input: Input = dspy.InputField()
+        output: Output = dspy.OutputField()
+
     original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
     original_instance.demos = [
         dspy.Example(
@@ -208,7 +206,8 @@ def test_output_only():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         Given the fields , produce the fields `output`.
         
         ---
@@ -219,4 +218,5 @@ def test_output_only():
         
         ---
         
-        Output: short answer""")
+        Output: short answer"""
+    )

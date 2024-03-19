@@ -1,10 +1,11 @@
 import random
 
+from pydantic import BaseModel
+
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
-from pydantic import BaseModel
 
 
 class Predict(Parameter):
