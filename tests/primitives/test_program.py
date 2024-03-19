@@ -3,10 +3,8 @@ from dspy.primitives.program import (
     Module,
     set_attribute_by_name,
 )  # Adjust the import based on your file structure
-from dspy.utils import DummyLanguageModel
+from dspy.utils import DummyLanguageModel, DummyLM
 from dspy.backends import TemplateBackend
-from dspy.utils import DummyLM
-from dspy.utils.testing import clean_up_lm_test
 
 
 class HopModule(dspy.Module):
@@ -46,27 +44,22 @@ def test_predictors():
     ), "All returned items should be instances of PredictMock"
 
 
-@clean_up_lm_test
 def test_forward():
-    dspy.settings.configure(experimental=False)
 
     program = HopModule()
-    dspy.settings.configure(
-        lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
-    )
-    result = program(question="What is 1+1?").answer
-    assert result == "2"
+    lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
+    with dspy.settings.context(lm=lm, backend=None):
+        result = program(question="What is 1+1?").answer
+        assert result == "2"
 
 
-def test_forward_experimental():
-    dspy.settings.configure(experimental=True)
-
+def test_forward_with_backend():
     program = HopModule()
     lm = DummyLanguageModel(answers=[["let me check"], ["2"]])
     backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, cache=False, lm=None)
-    result = program(question="What is 1+1?").answer
-    assert result == "2"
+    with dspy.settings.context(backend=backend, cache=False, lm=None):
+        result = program(question="What is 1+1?").answer
+        assert result == "2"
 
 
 def test_nested_named_predictors():
