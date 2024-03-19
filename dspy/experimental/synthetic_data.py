@@ -1,6 +1,6 @@
+import logging
 import random
 from typing import List, Optional
-import logging
 
 from pydantic import BaseModel
 
