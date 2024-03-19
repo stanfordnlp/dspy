@@ -29,12 +29,12 @@ class TemplateBackend(BaseBackend):
             demos = []
 
         # TODO: Move this check to logging
-        # if not all(k in kwargs for k in signature.input_fields):
-        #     present = [k for k in signature.input_fields if k in kwargs]
-        #     missing = [k for k in signature.input_fields if k not in kwargs]
-        #     print(
-        #         f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
-        #     )
+        if not all(k in kwargs for k in signature.input_fields):
+            present = [k for k in signature.input_fields if k in kwargs]
+            missing = [k for k in signature.input_fields if k not in kwargs]
+            print(
+                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
+            )
 
         # Generate Example
         example = Example(demos=demos, **kwargs)
