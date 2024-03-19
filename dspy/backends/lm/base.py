@@ -1,12 +1,12 @@
-import dspy
 import os
-from pathlib import Path
 import typing as t
 from abc import ABC, abstractmethod
+from pathlib import Path
 
-from pydantic import BaseModel, Field
 from joblib import Memory
+from pydantic import BaseModel, Field
 
+import dspy
 
 _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
@@ -23,7 +23,7 @@ class LMOutput(BaseModel):
 class BaseLM(BaseModel, ABC):
     history: list[LMOutput] = Field(default_factory=list)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: t.Any, **kwargs):
         super().__init__(*args, **kwargs)
         self._generate_with_cache = _cache_memory.cache(self.generate)
 
@@ -33,7 +33,8 @@ class BaseLM(BaseModel, ABC):
         generations = generator(prompt, **kwargs)
 
         # This is necessary to satisfy the type checked for memoized functions
-        assert generations is not None
+        if generations is None:
+            raise ValueError("Generator failed to create generations.")
 
         output = LMOutput(prompt=prompt, generations=generations, kwargs=kwargs)
         self.history.append(output)

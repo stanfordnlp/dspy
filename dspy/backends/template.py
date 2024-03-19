@@ -1,10 +1,10 @@
-from dspy.signatures.signature import Signature, SignatureMeta
-from dspy.primitives.example import Example
-from dspy.primitives.template import Template
-from dspy.primitives.prediction import Completions
-
-
 import typing as t
+
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Completions
+from dspy.primitives.template import Template
+from dspy.signatures.signature import Signature, SignatureMeta
+
 from .base import BaseBackend
 from .lm.litellm import BaseLM
 
@@ -17,18 +17,24 @@ class TemplateBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
-        demos: list[str] = [],
-        config: dict[str, t.Any] = {},
+        demos: list[str] = None,
+        config: dict[str, t.Any] = None,
         **kwargs,
     ) -> Completions:
-        """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output"""
+        """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output."""
+        if config is None:
+            config = {}
 
-        if not all(k in kwargs for k in signature.input_fields):
-            present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
-            print(
-                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
-            )
+        if demos is None:
+            demos = []
+
+        # TODO: Move this check to logging
+        # if not all(k in kwargs for k in signature.input_fields):
+        #     present = [k for k in signature.input_fields if k in kwargs]
+        #     missing = [k for k in signature.input_fields if k not in kwargs]
+        #     print(
+        #         f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
+        #     )
 
         # Generate Example
         example = Example(demos=demos, **kwargs)
@@ -37,8 +43,8 @@ class TemplateBackend(BaseBackend):
         template = Template(signature)
 
         # Clean Up Kwargs Before Sending Through Language Model
-        for input in signature.input_fields:
-            del kwargs[input]
+        for field in signature.input_fields:
+            del kwargs[field]
 
         pred = self.lm(template(example), **config)
 
@@ -48,13 +54,12 @@ class TemplateBackend(BaseBackend):
             for prediction in pred.generations
         ]
 
-        assert type(signature) == SignatureMeta, type(signature)
+        if type(signature) != SignatureMeta:
+            raise AssertionError("Signature not provided appropriately.")
 
-        completions = Completions.new(
+        return Completions.new(
             signature=signature,
             examples=extracted_examples,
             prompt=pred.prompt,
             kwargs=pred.kwargs,
         )
-
-        return completions

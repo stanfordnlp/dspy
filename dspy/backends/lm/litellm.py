@@ -3,7 +3,6 @@ import typing as t
 from litellm import ModelResponse, completion, token_counter
 from pydantic import Field
 
-
 from .base import BaseLM, GeneratedContent
 
 
@@ -32,10 +31,11 @@ class LiteLM(BaseLM):
             messages=[{"role": "user", "content": prompt}],
             **options,
         )
-        assert type(response) == ModelResponse
 
-        choices = [dict(c) for c in response.choices if c["finish_reason"] != "length"]
-        return choices
+        if type(response) != ModelResponse:
+            raise AssertionError("Response from completion incorrect type/format")
+
+        return [dict(c) for c in response.choices if c["finish_reason"] != "length"]
 
     def count_tokens(self, prompt: str) -> int:
         """Counts the number of tokens for a specific prompt."""

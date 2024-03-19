@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
 
-from dspy.signatures.signature import Signature, ensure_signature
 from dspy.primitives.prediction import Completions
+from dspy.signatures.signature import Signature, ensure_signature
 
 
 class BaseBackend(BaseModel, ABC):
@@ -16,12 +16,17 @@ class BaseBackend(BaseModel, ABC):
     def __call__(
         self,
         signature: Signature,
-        config: dict[str, t.Any] = {},
+        config: dict[str, t.Any] = None,
         attempts: int = 1,
         **kwargs,
     ) -> Completions:
+        if config is None:
+            config = {}
+
         # Allow overriding the attempts at the Backend Initialization Step
         attempts = max(attempts, self.attempts)
+        if attempts < 1:
+            raise ValueError("'attempts' argument passed must be greater than 0.")
 
         # Recursively complete generation, until at least one complete completion is available.
         signature = ensure_signature(signature)
@@ -53,11 +58,10 @@ class BaseBackend(BaseModel, ABC):
 
             i += 1
 
-        assert completions is not None
         completions.remove_incomplete()
         if len(completions) == 0:
             raise Exception(
-                "Generation failed, recursively attempts to complete did not succeed."
+                "Generation failed, recursively attempts to complete did not succeed.",
             )
 
         self.history.append(completions)
