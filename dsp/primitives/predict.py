@@ -98,11 +98,20 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion[field_names[last_field_idx]] = ""
 
             # Recurse with greedy decoding and a shorter length.
-            max_tokens = kwargs.get("max_tokens", dsp.settings.lm.kwargs["max_tokens"])
+            max_tokens = (kwargs.get("max_tokens") or 
+                        kwargs.get("max_output_tokens") or
+                        dsp.settings.lm.kwargs.get("max_tokens") or 
+                        dsp.settings.lm.kwargs.get('max_output_tokens'))
+
+
+            if max_tokens is None:
+                raise ValueError("Required 'max_tokens' or 'max_output_tokens' not specified in settings.")
             max_tokens = min(max(75, max_tokens // 2), max_tokens)
+            keys = list(kwargs.keys()) + list(dsp.settings.lm.kwargs.keys()) 
+            max_tokens_key = "max_tokens" if "max_tokens" in keys else "max_output_tokens"
             new_kwargs = {
                 **kwargs,
-                "max_tokens": max_tokens,
+                max_tokens_key: max_tokens,
                 "n": 1,
                 "temperature": 0.0,
             }
