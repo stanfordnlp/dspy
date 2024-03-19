@@ -2,7 +2,7 @@ import textwrap
 import dspy
 from dspy.backends.template import TemplateBackend
 from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils import DummyLM, DummyLanguageModel, clean_up_lm_test
+from dspy.utils import DummyLM, DummyLanguageModel
 from dspy import Example
 
 
