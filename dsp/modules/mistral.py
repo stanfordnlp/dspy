@@ -12,7 +12,6 @@ try:
     mistralai_api_error = MistralAPIException
 except ImportError:
     mistralai_api_error = Exception
-    print("Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.")
 
 
 def backoff_hdlr(details):
@@ -55,7 +54,12 @@ class Mistral(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
+
+        if mistralai_api_error == Exception:
+            raise ImportError("Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`.")
+
         self.client = MistralClient(api_key=api_key)
+
         self.provider = "mistral"
         self.kwargs = {
             "model": model,
