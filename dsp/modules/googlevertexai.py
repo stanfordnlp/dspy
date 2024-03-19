@@ -11,7 +11,7 @@ try:
     from vertexai.language_models import CodeGenerationModel, TextGenerationModel
     from vertexai.preview.generative_models import GenerativeModel
 except ImportError:
-    print("Not loading VertexAI because it is not installed.")
+    pass
 
 
 def backoff_hdlr(details):
