@@ -45,15 +45,26 @@ class Claude(LM):
     ):
         super().__init__(model)
 
+
         try:
             from anthropic import Anthropic
         except ImportError as err:
             raise ImportError("Claude requires `pip install anthropic`.") from err
+        supported_models = [
+        "claude-instant-1.2",
+        "claude-2.0",
+        "claude-2.1",
+        "claude-3-opus-20240229",
+        "claude-3-haiku-20240307",
+        "claude-3-sonnet-20240229",
+    ]
+    
+        if model not in supported_models:
+            raise ValueError(f"Unsupported model: {model}. Supported models are: {', '.join(supported_models)}")
 
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
         self.api_base = BASE_URL if api_base is None else api_base
-
         self.kwargs = {
             "temperature": kwargs.get("temperature", 0.0),
             "max_tokens": min(kwargs.get("max_tokens", 4096), 4096),
