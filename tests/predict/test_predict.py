@@ -3,7 +3,7 @@ import dspy
 from dspy import Predict, Signature
 from dspy.backends.json import JSONBackend
 from dspy.backends import TemplateBackend
-from dspy.utils import DummyLM, DummyLanguageModel, clean_up_lm_test
+from dspy.utils import DummyLM, DummyLanguageModel
 import copy
 import textwrap
 
@@ -18,7 +18,6 @@ def test_initialization_with_string_signature():
     assert predict.signature.instructions == Signature(signature_string).instructions
 
 
-@clean_up_lm_test
 def test_reset_method():
     predict_instance = Predict("input -> output")
     predict_instance.lm = "modified"
@@ -33,7 +32,6 @@ def test_reset_method():
     assert predict_instance.demos == []
 
 
-@clean_up_lm_test
 def test_dump_and_load_state():
     predict_instance = Predict("input -> output")
     predict_instance.lm = "lm_state"
@@ -43,35 +41,32 @@ def test_dump_and_load_state():
     assert new_instance.lm == "lm_state"
 
 
-@clean_up_lm_test
 def test_call_method():
     predict_instance = Predict("input -> output")
     lm = DummyLM(["test output"])
-    dspy.settings.configure(lm=lm)
-    result = predict_instance(input="test input")
-    assert result.output == "test output"
-    assert lm.get_convo(-1) == (
-        "Given the fields `input`, produce the fields `output`.\n"
-        "\n---\n\n"
-        "Follow the following format.\n\n"
-        "Input: ${input}\n"
-        "Output: ${output}\n"
-        "\n---\n\n"
-        "Input: test input\n"
-        "Output: test output"
-    )
+    with dspy.settings.context(lm=lm):
+        result = predict_instance(input="test input")
+        assert result.output == "test output"
+        assert lm.get_convo(-1) == (
+            "Given the fields `input`, produce the fields `output`.\n"
+            "\n---\n\n"
+            "Follow the following format.\n\n"
+            "Input: ${input}\n"
+            "Output: ${output}\n"
+            "\n---\n\n"
+            "Input: test input\n"
+            "Output: test output"
+        )
 
 
-@clean_up_lm_test
 def test_call_method_with_backend():
     predict_instance = Predict("input -> output")
 
     lm = DummyLanguageModel(answers=[["test output"]])
     backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, lm=None)
-
-    result = predict_instance(input="test input")
-    assert result.output == "test output"
+    with dspy.settings.context(backend=backend, lm=None, cache=False):
+        result = predict_instance(input="test input")
+        assert result.output == "test output"
 
 
 def test_dump_load_state():
@@ -82,46 +77,41 @@ def test_dump_load_state():
     assert new_instance.signature.instructions == "original instructions"
 
 
-@clean_up_lm_test
 def test_forward_method():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([]), backend=None)
-    result = program(question="What is 1+1?").answer
-    assert result == "No more responses"
+    with dspy.settings.context(lm=DummyLM([]), backend=None):
+        result = program(question="What is 1+1?").answer
+        assert result == "No more responses"
 
 
-@clean_up_lm_test
 def test_forward_method_with_backend():
     lm = DummyLanguageModel(answers=[["No more responses"]])
     backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, lm=None)
+    with dspy.settings.context(backend=backend, lm=None):
+        program = Predict("question -> answer")
+        result = program(question="What is 1+1?").answer
+        assert result == "No more responses"
 
-    program = Predict("question -> answer")
-    result = program(question="What is 1+1?").answer
-    assert result == "No more responses"
 
-
-@clean_up_lm_test
 def test_forward_method2():
     program = Predict("question -> answer1, answer2")
-    dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
-    result = program(question="What is 1+1?")
-    assert result.answer1 == "my first answer"
-    assert result.answer2 == "my second answer"
+    with dspy.settings.context(lm=DummyLM(["my first answer", "my second answer"]), backend=None):
+        result = program(question="What is 1+1?")
+        assert result.answer1 == "my first answer"
+        assert result.answer2 == "my second answer"
 
 
-@clean_up_lm_test
 def test_forward_method2_with_backend():
     lm = DummyLanguageModel(
         answers=[[" my first answer\n\nAnswer 2: my second answer"]]
     )
     backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, lm=None)
+    with dspy.settings.context(backend=backend, lm=None):
 
-    program = Predict("question -> answer1, answer2")
-    result = program(question="What is 1+1?")
-    assert result.answer1 == "my first answer"
-    assert result.answer2 == "my second answer"
+        program = Predict("question -> answer1, answer2")
+        result = program(question="What is 1+1?")
+        assert result.answer1 == "my first answer"
+        assert result.answer2 == "my second answer"
 
 
 def test_config_management():
@@ -131,31 +121,26 @@ def test_config_management():
     assert "new_key" in config and config["new_key"] == "value"
 
 
-@clean_up_lm_test
 def test_multi_output():
     program = Predict("question -> answer", n=2)
-    dspy.settings.configure(
-        lm=DummyLM(["my first answer", "my second answer"]), backend=None
-    )
-    results = program(question="What is 1+1?")
-    assert results.completions[0].answer == "my first answer"
-    assert results.completions[1].answer == "my second answer"
+    lm = DummyLM(["my first answer", "my second answer"])
+    with dspy.settings.context(lm=lm, backend=None):
+        results = program(question="What is 1+1?")
+        assert results.completions[0].answer == "my first answer"
+        assert results.completions[1].answer == "my second answer"
 
 
-@clean_up_lm_test
 def test_multi_output_with_backend():
     program = Predict("question -> answer", n=2)
 
     lm = DummyLanguageModel(answers=[["my first answer", "my second answer"]])
     backend = TemplateBackend(lm=lm)
-    dspy.settings.configure(backend=backend, lm=None)
+    with dspy.settings.context(backend=backend, lm=None):
+        results = program(question="What is 1+1?")
+        assert results.completions[0].answer == "my first answer"
+        assert results.completions[1].answer == "my second answer"
 
-    results = program(question="What is 1+1?")
-    assert results.completions[0].answer == "my first answer"
-    assert results.completions[1].answer == "my second answer"
 
-
-@clean_up_lm_test
 def test_multi_output_json_with_backend():
     program = Predict("question -> answer", n=2)
 
@@ -168,28 +153,26 @@ def test_multi_output_json_with_backend():
         ]
     )
     backend = JSONBackend(lm=lm)
-    dspy.settings.configure(backend=backend, lm=None)
+    with dspy.settings.context(backend=backend, lm=None):
+        results = program(question="What is 1+1?")
+        assert results.completions[1].answer == "my second answer"
 
-    results = program(question="What is 1+1?")
-    assert results.completions[1].answer == "my second answer"
 
-
-@clean_up_lm_test
 def test_multi_output2():
     program = Predict("question -> answer1, answer2", n=2)
-    dspy.settings.configure(
-        lm=DummyLM(
+    lm=DummyLM(
             [
                 "my 0 answer\nAnswer 2: my 2 answer",
                 "my 1 answer\nAnswer 2: my 3 answer",
             ],
         )
-    )
-    results = program(question="What is 1+1?")
-    assert results.completions[0].answer1 == "my 0 answer"
-    assert results.completions[1].answer1 == "my 1 answer"
-    assert results.completions[0].answer2 == "my 2 answer"
-    assert results.completions[1].answer2 == "my 3 answer"
+
+    with dspy.settings.context(lm=lm, backend=None):
+        results = program(question="What is 1+1?")
+        assert results.completions[0].answer1 == "my 0 answer"
+        assert results.completions[1].answer1 == "my 1 answer"
+        assert results.completions[0].answer2 == "my 2 answer"
+        assert results.completions[1].answer2 == "my 3 answer"
 
 
 def test_named_predictors():
@@ -206,7 +189,6 @@ def test_named_predictors():
     assert program2.named_predictors() == [("inner", program2.inner)]
 
 
-@clean_up_lm_test
 def test_output_only():
     class OutputOnlySignature(dspy.Signature):
         output = dspy.OutputField()
@@ -214,20 +196,20 @@ def test_output_only():
     predictor = Predict(OutputOnlySignature)
 
     lm = DummyLM(["short answer"])
-    dspy.settings.configure(lm=lm)
-    assert predictor().output == "short answer"
+    with dspy.settings.context(lm=lm, backend=None):
+        assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        Given the fields , produce the fields `output`.
-        
-        ---
-        
-        Follow the following format.
-        
-        Output: ${output}
-        
-        ---
-        
-        Output: short answer"""
-    )
+        assert lm.get_convo(-1) == textwrap.dedent(
+            """\
+            Given the fields , produce the fields `output`.
+            
+            ---
+            
+            Follow the following format.
+            
+            Output: ${output}
+            
+            ---
+            
+            Output: short answer"""
+        )
