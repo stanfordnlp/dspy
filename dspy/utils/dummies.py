@@ -104,7 +104,11 @@ class DummyLM(LM):
 
     def get_convo(self, index) -> str:
         """Get the prompt + anwer from the ith message."""
-        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
+        return (
+            self.history[index]["prompt"]
+            + " "
+            + self.history[index]["response"]["choices"][0]["text"]
+        )
 
 
 def dummy_rm(passages=()) -> callable:
@@ -131,6 +135,7 @@ def dummy_rm(passages=()) -> callable:
 
 class DummyVectorizer:
     """Simple vectorizer based on n-grams."""
+
     def __init__(self, max_length=100, n_gram=2):
         self.max_length = max_length
         self.n_gram = n_gram

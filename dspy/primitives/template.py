@@ -122,6 +122,8 @@ class Template:
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"
 
+        print(full_text)
+
         # Generate Search Strings
         prefixes = (
             [
@@ -141,6 +143,7 @@ class Template:
             for prefix in prefixes
         ]
         for idx, (name, field) in enumerate(self.signature.output_fields.items()):
+            print(f"NAME: {name}")
             stop_prefixes = "|".join(prefixes[idx:])
 
             target_prefix = (

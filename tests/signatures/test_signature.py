@@ -5,7 +5,7 @@ from dspy import Signature, infer_prefix, InputField, OutputField
 from typing import List
 
 import dspy
-from dspy.utils.dummies import DummyLM
+from dspy.utils import DummyLM, clean_up_lm_test
 
 
 def test_field_types_and_custom_attributes():
@@ -43,8 +43,12 @@ def test_all_fields_have_prefix():
         input = InputField(prefix="Modified:")
         output = OutputField()
 
-    assert TestSignature.input_fields["input"].json_schema_extra["prefix"] == "Modified:"
-    assert TestSignature.output_fields["output"].json_schema_extra["prefix"] == "Output:"
+    assert (
+        TestSignature.input_fields["input"].json_schema_extra["prefix"] == "Modified:"
+    )
+    assert (
+        TestSignature.output_fields["output"].json_schema_extra["prefix"] == "Output:"
+    )
 
 
 def test_signature_parsing():
@@ -69,7 +73,10 @@ def test_with_updated_field():
     assert signature1 is not signature2, "The type should be immutable"
     for key in signature1.fields.keys():
         if key != "input1":
-            assert signature1.fields[key].json_schema_extra == signature2.fields[key].json_schema_extra
+            assert (
+                signature1.fields[key].json_schema_extra
+                == signature2.fields[key].json_schema_extra
+            )
     assert signature1.instructions == signature2.instructions
 
 
@@ -96,14 +103,18 @@ def test_signature_instructions_none():
 
 
 def test_signature_from_dict():
-    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
+    signature = Signature(
+        {"input1": InputField(), "input2": InputField(), "output": OutputField()}
+    )
     for k in ["input1", "input2", "output"]:
         assert k in signature.fields
         assert signature.fields[k].annotation == str
 
 
 def test_signature_from_dict():
-    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
+    signature = Signature(
+        {"input1": InputField(), "input2": InputField(), "output": OutputField()}
+    )
     assert "input1" in signature.input_fields
     assert "input2" in signature.input_fields
     assert "output" in signature.output_fields
@@ -180,6 +191,7 @@ def test_insantiating2():
     assert isinstance(value, SubSignature)
 
 
+@clean_up_lm_test
 def test_multiline_instructions():
     class MySignature(Signature):
         """First line
@@ -193,7 +205,8 @@ def test_multiline_instructions():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         First line
                 Second line
         
@@ -205,4 +218,5 @@ def test_multiline_instructions():
         
         ---
         
-        Output: short answer""")
+        Output: short answer"""
+    )

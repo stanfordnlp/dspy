@@ -2,7 +2,7 @@ import textwrap
 import dspy
 from dspy.backends.template import TemplateBackend
 from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils.dummies import DummyLM, DummyLanguageModel
+from dspy.utils import DummyLM, DummyLanguageModel, clean_up_lm_test
 from dspy import Example
 
 
@@ -25,9 +25,7 @@ trainset = [
 
 
 def test_signature_optimizer_initialization():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
     assert optimizer.breadth == 2, "Breadth not correctly initialized"
     assert optimizer.depth == 1, "Depth not correctly initialized"
@@ -46,10 +44,33 @@ class SimpleModule(dspy.Module):
         return self.predictor(**kwargs)
 
 
+@clean_up_lm_test
 def test_signature_optimizer_optimization_process():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.settings.configure(
+        lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
     )
+
+    student = SimpleModule("input -> output")
+
+    # Assuming the compile method of COPRO requires a student module, a development set, and evaluation kwargs
+    optimized_student = optimizer.compile(
+        student,
+        trainset=trainset,
+        eval_kwargs={"num_threads": 1, "display_progress": False},
+    )
+
+    # Check that the optimized student has been modified from the original
+    # This check can be more specific based on how the optimization modifies the student
+    assert optimized_student is not student, "Optimization did not modify the student"
+
+    # Further tests can be added to verify the specifics of the optimization process,
+    # such as checking the instructions of the optimized student's predictors.
+
+
+@clean_up_lm_test
+def test_signature_optimizer_optimization_process_with_backend():
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
 
     lm = DummyLanguageModel(
         answers=[
@@ -79,10 +100,34 @@ def test_signature_optimizer_optimization_process():
     # such as checking the instructions of the optimized student's predictors.
 
 
+@clean_up_lm_test
 def test_signature_optimizer_statistics_tracking():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    optimizer.track_stats = True  # Enable statistics tracking
+
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction"]))
+    student = SimpleModule("input -> output")
+    optimized_student = optimizer.compile(
+        student,
+        trainset=trainset,
+        eval_kwargs={"num_threads": 1, "display_progress": False},
     )
+
+    # Verify that statistics have been tracked and attached to the optimized student
+    assert hasattr(
+        optimized_student, "total_calls"
+    ), "Total calls statistic not tracked"
+    assert hasattr(
+        optimized_student, "results_best"
+    ), "Best results statistics not tracked"
+
+
+# Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
+
+
+@clean_up_lm_test
+def test_signature_optimizer_statistics_tracking_with_backend():
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
     lm = DummyLanguageModel(
@@ -112,24 +157,17 @@ def test_signature_optimizer_statistics_tracking():
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
 
 
+@clean_up_lm_test
 def test_optimization_and_output_verification():
-    lm = DummyLanguageModel(
-        answers=[
-            [
-                "Optimized Prompt\n\nProposed Prefix For Output Field: Optimized Prefix: "
-            ],
-            ["The color of the sky\n\Output: blue"],
-            ["What the fox says\n\nOutput: Ring-ding-ding-ding-dingeringeding"],
-            ["the color of the sky\n\nOutput: blue"],
-            ["What the fox says\n\nOutput: Ring-ding-ding-ding-dingeringeding"],
-            ["Generate the capital of France\n\nOptimized Prefix: No more responses"],
+    lm = DummyLM(
+        [
+            "Optimized Prompt",
+            "Optimized Prefix",
         ]
     )
-    backend = TemplateBackend(lm=lm, attempts=1)
-    dspy.settings.configure(backend=backend, cache=False)
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    dspy.settings.configure(lm=lm)
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+
     student = SimpleModule("input -> output")
 
     # Compile the student with the optimizer
@@ -138,13 +176,16 @@ def test_optimization_and_output_verification():
         trainset=trainset,
         eval_kwargs={"num_threads": 1, "display_progress": False},
     )
+
     # Simulate calling the optimized student with a new input
     test_input = "What is the capital of France?"
     prediction = optimized_student(input=test_input)
 
+    print(lm.get_convo(-1))
+
     assert prediction.output == "No more responses"
 
-    assert backend.history[-1].prompt == textwrap.dedent(
+    assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Optimized Prompt
 
@@ -153,16 +194,14 @@ def test_optimization_and_output_verification():
         Follow the following format.
 
         Input: ${input}
-
         Reasoning: Let's think step by step in order to ${produce the output}. We ...
-
-        Optimized Prefix: ${output}
+        Optimized Prefix ${output}
 
         ---
 
         Input: What is the capital of France?
-
-        Reasoning: Let's think step by step in order to"""
+        Reasoning: Let's think step by step in order to No more responses
+        Optimized Prefix No more responses"""
     )
 
 
@@ -177,9 +216,7 @@ def test_statistics_tracking_during_optimization():
     backend = TemplateBackend(lm=lm, attempts=5)
     dspy.settings.configure(backend=backend, cache=False)
 
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
     student = SimpleModule("input -> output")

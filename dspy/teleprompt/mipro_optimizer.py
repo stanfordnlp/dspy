@@ -342,11 +342,8 @@ class MIPRO(Teleprompter):
                         if not instruct:
                             instruct = new_instruct
                         else:
-                            instruct.completions.proposed_instruction.extend(
-                                new_instruct.completions.proposed_instruction,
-                            )
-                            instruct.completions.proposed_prefix_for_output_field.extend(
-                                new_instruct.completions.proposed_prefix_for_output_field,
+                            instruct.completions.extend_examples(
+                                new_instruct.completions.examples
                             )
                 # Just data
                 elif view_data:
@@ -392,10 +389,12 @@ class MIPRO(Teleprompter):
                     )
 
             # Add in our initial prompt as a candidate as well
-            instruct.completions.proposed_instruction.insert(0, basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.insert(
-                0, basic_prefix
+            new_example = dspy.Example(
+                basic_instruction=basic_instruction,
+                proposed_instruction=basic_instruction,
+                proposed_prefix_for_output_field=basic_prefix,
             )
+            instruct.completions.add_example(new_example, 0)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
 

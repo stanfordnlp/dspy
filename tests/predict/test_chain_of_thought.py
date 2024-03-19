@@ -1,8 +1,7 @@
 import textwrap
 import dspy
 from dspy import ChainOfThought
-from dspy.utils import DummyLM
-from dspy.utils.dummies import DummyLanguageModel
+from dspy.utils import DummyLM, DummyLanguageModel
 from dspy.backends import TemplateBackend
 
 
@@ -40,8 +39,6 @@ def test_initialization_with_string_signature():
 
 
 def test_initialization_with_string_signature_experimental():
-    dspy.settings.configure(experimental=True)
-
     lm = DummyLanguageModel(answers=[["find the number after 1\n\nAnswer: 2"]])
     backend = TemplateBackend(lm=lm)
     dspy.settings.configure(backend=backend, lm=None, cache=False)

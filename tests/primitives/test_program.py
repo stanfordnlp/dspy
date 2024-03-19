@@ -6,6 +6,7 @@ from dspy.primitives.program import (
 from dspy.utils import DummyLanguageModel
 from dspy.backends import TemplateBackend
 from dspy.utils import DummyLM
+from dspy.utils.testing import clean_up_lm_test
 
 
 class HopModule(dspy.Module):
@@ -45,6 +46,7 @@ def test_predictors():
     ), "All returned items should be instances of PredictMock"
 
 
+@clean_up_lm_test
 def test_forward():
     dspy.settings.configure(experimental=False)
 
