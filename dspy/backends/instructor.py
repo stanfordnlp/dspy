@@ -1,4 +1,3 @@
-import typing as t
 
 from dspy.backends.lm.base import MinimalLM
 from dspy.signatures.signature import Signature

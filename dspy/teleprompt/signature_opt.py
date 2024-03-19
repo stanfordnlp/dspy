@@ -1,11 +1,6 @@
+
+
 from .copro_optimizer import COPRO
-import dsp
-import dspy
-from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.signatures import Signature
-from dspy.evaluate.evaluate import Evaluate
-from collections import defaultdict
-from dspy.primitives.example import Example
 
 """
 ===============================================================

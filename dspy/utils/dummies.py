@@ -1,26 +1,25 @@
 import random
 import re
+import typing as t
 from typing import Union
 
 import numpy as np
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
-
-import typing as t
 from dspy.backends.lm.base import BaseLM, GeneratedContent
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import (
     Completions,
 )
-from dspy.signatures.signature import Signature, InputField, OutputField
+from dspy.signatures.signature import InputField, OutputField, Signature
 
 
 class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
     def __init__(
-        self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False
+        self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False,
     ):
         """Initializes the dummy language model.
         Parameters:
@@ -51,7 +50,7 @@ class DummyLM(LM):
                     # the "Follow the following format" section.
                     answer = possible_answers[-1]
                     print(
-                        f"DummyLM got found previous example for {prefix} with value {answer=}"
+                        f"DummyLM got found previous example for {prefix} with value {answer=}",
                     )
                 else:
                     print(f"DummyLM couldn't find previous example for {prefix=}")
@@ -59,7 +58,7 @@ class DummyLM(LM):
             if answer is None:
                 if isinstance(self.answers, dict):
                     answer = next(
-                        (v for k, v in self.answers.items() if k in prompt), None
+                        (v for k, v in self.answers.items() if k in prompt), None,
                     )
                 else:
                     if len(self.answers) > 0:

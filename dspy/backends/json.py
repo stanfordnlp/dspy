@@ -1,10 +1,10 @@
 import json
 import typing as t
-from dspy.signatures.signature import Signature
-from dspy.primitives.example import Example
-from dspy.primitives.template import Template
-from dspy.primitives.prediction import Completions
 
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Completions
+from dspy.primitives.template import Template
+from dspy.signatures.signature import Signature
 
 from .base import BaseBackend
 from .lm import BaseLM

@@ -1,14 +1,16 @@
-import regex
 import typing as t
-from dspy.signatures.signature import Signature
+
+import regex
+
 from dspy.primitives.example import Example
+from dspy.signatures.signature import Signature
 
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
     assert len(passages) > 0
     if len(passages) > 1:
         return "\n".join(
-            [f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)]
+            [f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)],
         )
     else:
         return passages[0]
@@ -68,7 +70,7 @@ class Template:
             format_handler = self._get_format_handler(name)
 
             result.append(
-                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}",
             )
 
         for name, field in self.signature.output_fields.items():
@@ -79,7 +81,7 @@ class Template:
                 break
             elif name in example:
                 result.append(
-                    f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+                    f"{field.json_schema_extra['prefix']} {format_handler(example[name])}",
                 )
 
         return "\n\n".join(result)
@@ -97,7 +99,7 @@ class Template:
                 field_strings.append(f"{name}: {field.json_schema_extra['desc']}")
             else:
                 field_strings.append(
-                    f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
+                    f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}",
                 )
 
         return result + "\n\n".join(field_strings)
@@ -173,7 +175,7 @@ class Template:
         return example
 
     def __call__(
-        self, example: Example, show_guidelines: bool = True, is_json: bool = False
+        self, example: Example, show_guidelines: bool = True, is_json: bool = False,
     ) -> str:
         prompt_spans = []
 

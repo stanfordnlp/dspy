@@ -1,7 +1,7 @@
-import dspy
 import random
 
 import dsp
+import dspy
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Completions, Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
@@ -73,7 +73,7 @@ class Predict(Parameter):
                 present = [k for k in signature.input_fields if k in kwargs]
                 missing = [k for k in signature.input_fields if k not in kwargs]
                 print(
-                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
+                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
                 )
 
             completions = backend(signature, demos=demos, config=config, **kwargs)
@@ -99,7 +99,7 @@ class Predict(Parameter):
             num_generations = config.get("n")
             if num_generations is None:
                 num_generations = lm.kwargs.get(
-                    "n", lm.kwargs.get("num_generations", None)
+                    "n", lm.kwargs.get("num_generations", None),
                 )
 
             if (temperature is None or temperature <= 0.15) and num_generations > 1:
@@ -114,7 +114,7 @@ class Predict(Parameter):
                 present = [k for k in signature.input_fields if k in kwargs]
                 missing = [k for k in signature.input_fields if k not in kwargs]
                 print(
-                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
+                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
                 )
 
             # Switch to legacy format for dsp.generate

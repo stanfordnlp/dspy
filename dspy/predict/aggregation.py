@@ -1,5 +1,5 @@
 from dsp.utils import normalize_text
-from dspy.primitives.prediction import Completions, Prediction
+from dspy.primitives.prediction import Prediction
 
 default_normalize = lambda s: normalize_text(s) or None
 

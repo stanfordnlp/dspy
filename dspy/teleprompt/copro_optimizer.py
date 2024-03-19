@@ -37,10 +37,10 @@ class BasicGenerateInstruction(Signature):
     """You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Your task is to propose an instruction that will lead a good language model to perform the task well. Don't be afraid to be creative."""
 
     basic_instruction = dspy.InputField(
-        desc="The initial instructions before optimization"
+        desc="The initial instructions before optimization",
     )
     proposed_instruction = dspy.OutputField(
-        desc="The improved instructions for the language model"
+        desc="The improved instructions for the language model",
     )
     proposed_prefix_for_output_field = dspy.OutputField(
         desc="The string at the end of the prompt, which will help the model start solving the task",
@@ -55,7 +55,7 @@ class GenerateInstructionGivenAttempts(dspy.Signature):
 
     attempted_instructions = dspy.InputField(format=dsp.passages2text)
     proposed_instruction = dspy.OutputField(
-        desc="The improved instructions for the language model"
+        desc="The improved instructions for the language model",
     )
     proposed_prefix_for_output_field = dspy.OutputField(
         desc="The string at the end of the prompt, which will help the model start solving the task",
@@ -85,7 +85,7 @@ class COPRO(Teleprompter):
 
     def _check_candidates_equal(self, candidate1, candidate2):
         for p1, p2 in zip(
-            candidate1["program"].predictors(), candidate2["program"].predictors()
+            candidate1["program"].predictors(), candidate2["program"].predictors(),
         ):
             if (
                 self._get_signature(p1).instructions
@@ -123,7 +123,7 @@ class COPRO(Teleprompter):
             signature = self._get_signature(predictor)
             print(f"i: {signature.instructions}")
             print(
-                f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}"
+                f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}",
             )
             print()
 
@@ -204,7 +204,7 @@ class COPRO(Teleprompter):
 
             # Go through our module's predictors
             for p_i, (p_old, p_new) in enumerate(
-                zip(module.predictors(), module_clone.predictors())
+                zip(module.predictors(), module_clone.predictors()),
             ):
                 candidates_ = latest_candidates[
                     id(p_old)
@@ -244,7 +244,7 @@ class COPRO(Teleprompter):
                     score = evaluate(module_clone, devset=trainset, **eval_kwargs)
                     if self.verbose and self.prompt_model:
                         print(
-                            f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}"
+                            f"prompt_model.inspect_history(n=1) {self.prompt_model.inspect_history(n=1)}",
                         )
                     total_calls += 1
                     if self.verbose:
@@ -281,7 +281,7 @@ class COPRO(Teleprompter):
                     results_latest[id(p_old)]["depth"].append(d)
                     results_latest[id(p_old)]["max"].append(max(latest_scores))
                     results_latest[id(p_old)]["average"].append(
-                        sum(latest_scores) / len(latest_scores)
+                        sum(latest_scores) / len(latest_scores),
                     )
                     results_latest[id(p_old)]["min"].append(min(latest_scores))
                     results_latest[id(p_old)]["std"].append(np.std(latest_scores))
@@ -329,7 +329,7 @@ class COPRO(Teleprompter):
                     results_best[id(p_base)]["depth"].append(d)
                     results_best[id(p_base)]["max"].append(max(scores))
                     results_best[id(p_base)]["average"].append(
-                        sum(scores) / len(scores)
+                        sum(scores) / len(scores),
                     )
                     results_best[id(p_base)]["min"].append(min(scores))
                     results_best[id(p_base)]["std"].append(np.std(scores))
@@ -337,13 +337,13 @@ class COPRO(Teleprompter):
                 for i in range(shortest_len - 1, -1, -1):
                     # breakpoint()
                     attempts.append(
-                        f'Instruction #{shortest_len-i}: {best_predictors[i]["instruction"]}'
+                        f'Instruction #{shortest_len-i}: {best_predictors[i]["instruction"]}',
                     )
                     attempts.append(
-                        f'Prefix #{shortest_len-i}: {best_predictors[i]["prefix"]}'
+                        f'Prefix #{shortest_len-i}: {best_predictors[i]["prefix"]}',
                     )
                     attempts.append(
-                        f'Resulting Score #{shortest_len-i}: {best_predictors[i]["score"]}'
+                        f'Resulting Score #{shortest_len-i}: {best_predictors[i]["score"]}',
                     )
 
                 # Generate next batch of potential prompts to optimize, with previous attempts as input
@@ -366,7 +366,7 @@ class COPRO(Teleprompter):
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions
                 all_candidates[id(p_base)].completions.extend_examples(
-                    instr.completions
+                    instr.completions,
                 )
 
             if self.verbose and self.prompt_model:

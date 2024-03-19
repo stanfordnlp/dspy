@@ -85,7 +85,7 @@ class BootstrapFewShot(Teleprompter):
         ):
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(
-                self.teacher.reset_copy(), trainset=self.trainset
+                self.teacher.reset_copy(), trainset=self.trainset,
             )
 
     def _prepare_predictor_mappings(self):
@@ -98,7 +98,7 @@ class BootstrapFewShot(Teleprompter):
         ), "Student and teacher must have the same number of predictors."
 
         for (name1, predictor1), (name2, predictor2) in zip(
-            student.named_predictors(), teacher.named_predictors()
+            student.named_predictors(), teacher.named_predictors(),
         ):
             assert (
                 name1 == name2
@@ -107,7 +107,7 @@ class BootstrapFewShot(Teleprompter):
                 predictor2.signature
             ,), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(
-                predictor2
+                predictor2,
             ), "Student and teacher must be different objects."
 
             name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
@@ -205,7 +205,7 @@ class BootstrapFewShot(Teleprompter):
 
                 if "dspy_uuid" in example:
                     demo = Example(
-                        augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs
+                        augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs,
                     )
                 else:
                     # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
@@ -241,7 +241,7 @@ class BootstrapFewShot(Teleprompter):
             augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
 
             sample_size = min(
-                self.max_labeled_demos - len(augmented_demos), len(raw_demos)
+                self.max_labeled_demos - len(augmented_demos), len(raw_demos),
             )
             sample_size = max(0, sample_size)
 

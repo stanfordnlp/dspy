@@ -1,5 +1,6 @@
-import dspy
 import decorator
+
+import dspy
 
 
 def clean_up_lm_test(func):

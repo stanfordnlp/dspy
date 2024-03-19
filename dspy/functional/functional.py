@@ -8,8 +8,8 @@ import ujson
 
 import dspy
 from dsp.templates import passages2text
-from dspy.signatures.signature import ensure_signature, make_signature
 from dspy.primitives.prediction import Completions, Prediction
+from dspy.signatures.signature import ensure_signature, make_signature
 
 
 def predictor(func) -> dspy.Module:
@@ -152,18 +152,18 @@ class TypedPredictor(dspy.Module):
                         inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel)
                     ):
                         type_ = pydantic.create_model(
-                            "Output", value=(type_, ...), __base__=pydantic.BaseModel
+                            "Output", value=(type_, ...), __base__=pydantic.BaseModel,
                         )
                         to_json = lambda x, type_=type_: type_(
-                            value=x
+                            value=x,
                         ).model_dump_json()[
                             9:-1
                         ]  # {"value":"123"}
                         from_json = lambda x, type_=type_: type_.model_validate_json(
-                            '{"value":' + x + "}"
+                            '{"value":' + x + "}",
                         ).value
                         schema = json.dumps(
-                            type_.model_json_schema()["properties"]["value"]
+                            type_.model_json_schema()["properties"]["value"],
                         )
                     else:
                         to_json = lambda x: x.model_dump_json()
@@ -178,13 +178,13 @@ class TypedPredictor(dspy.Module):
                         and issubclass(type_, pydantic.BaseModel)
                     ):
                         type_ = pydantic.create_model(
-                            "Output", value=(type_, ...), __base__=pydantic.BaseModel
+                            "Output", value=(type_, ...), __base__=pydantic.BaseModel,
                         )
                         to_json = lambda x, type_=type_: type_(
-                            value=x
+                            value=x,
                         ).model_dump_json()
                         from_json = lambda x, type_=type_: type_.model_validate_json(
-                            x
+                            x,
                         ).value
                         schema = json.dumps(type_.model_json_schema())
                     else:
@@ -207,7 +207,7 @@ class TypedPredictor(dspy.Module):
                             x if isinstance(x, str) else to_json(x)
                         ),
                         parser=lambda x, from_json=from_json: from_json(
-                            _unwrap_json(x)
+                            _unwrap_json(x),
                         ),
                         type_=type_,
                     )
@@ -220,7 +220,7 @@ class TypedPredictor(dspy.Module):
                 elif typing.get_origin(type_) in (List, list, Tuple, tuple):
                     (inner_type,) = typing.get_args(type_)
                     if inspect.isclass(inner_type) and issubclass(
-                        inner_type, pydantic.BaseModel
+                        inner_type, pydantic.BaseModel,
                     ):
                         format_ = (
                             lambda x: x
@@ -323,7 +323,7 @@ class TypedPredictor(dspy.Module):
                     examples.append(example)
 
                 completions = Completions.new(
-                    signature=signature, examples=examples, prompt="unknown", kwargs={}
+                    signature=signature, examples=examples, prompt="unknown", kwargs={},
                 )
 
                 pred = Prediction.from_completions(completions)
@@ -375,7 +375,7 @@ def _func_to_signature(func):
     annotation = annotations.get("return", str)
     if typing.get_origin(annotation) is Annotated:
         desc = next(
-            (arg for arg in typing.get_args(annotation) if isinstance(arg, str)), None
+            (arg for arg in typing.get_args(annotation) if isinstance(arg, str)), None,
         )
         if desc is not None:
             kwargs["desc"] = desc
@@ -395,5 +395,5 @@ def _unwrap_json(output):
     if not output.startswith("{") or not output.endswith("}"):
         raise ValueError("json output should start and end with { and }")
     return ujson.dumps(
-        ujson.loads(output)
+        ujson.loads(output),
     )  # ujson is a bit more robust than the standard json
