@@ -460,7 +460,7 @@ files = [
 name = "cffi"
 version = "1.16.0"
 description = "Foreign Function Interface for Python calling C code."
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "cffi-1.16.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:6b3d6606d369fc1da4fd8c357d026317fbb9c9b75d36dc16e90e84c26854b088"},
@@ -1809,13 +1809,22 @@ testing = ["flufl.flake8", "importlib-resources (>=1.3)", "jaraco.test (>=5.4)",
 
 [[package]]
 name = "importlib-resources"
+<<<<<<< HEAD
 version = "6.4.0"
+=======
+version = "6.3.1"
+>>>>>>> a5434475 (poetry lock , imports resolved)
 description = "Read resources from Python packages"
 optional = false
 python-versions = ">=3.8"
 files = [
+<<<<<<< HEAD
     {file = "importlib_resources-6.4.0-py3-none-any.whl", hash = "sha256:50d10f043df931902d4194ea07ec57960f66a80449ff867bfe782b4c486ba78c"},
     {file = "importlib_resources-6.4.0.tar.gz", hash = "sha256:cdb2b453b8046ca4e3798eb1d84f3cce1446a0e8e7b5ef4efb600f19fc398145"},
+=======
+    {file = "importlib_resources-6.3.1-py3-none-any.whl", hash = "sha256:4811639ca7fa830abdb8e9ca0a104dc6ad13de691d9fe0d3173a71304f068159"},
+    {file = "importlib_resources-6.3.1.tar.gz", hash = "sha256:29a3d16556e330c3c8fb8202118c5ff41241cc34cbfb25989bbad226d99b7995"},
+>>>>>>> a5434475 (poetry lock , imports resolved)
 ]
 
 [package.dependencies]
@@ -2431,13 +2440,22 @@ mkdocs = ">=1.0.3"
 
 [[package]]
 name = "mkdocs-material"
+<<<<<<< HEAD
 version = "9.5.15"
+=======
+version = "9.5.14"
+>>>>>>> a5434475 (poetry lock , imports resolved)
 description = "Documentation that simply works"
 optional = false
 python-versions = ">=3.8"
 files = [
+<<<<<<< HEAD
     {file = "mkdocs_material-9.5.15-py3-none-any.whl", hash = "sha256:e5c96dec3d19491de49ca643fc1dbb92b278e43cdb816c775bc47db77d9b62fb"},
     {file = "mkdocs_material-9.5.15.tar.gz", hash = "sha256:39f03cca45e82bf54eb7456b5a18bd252eabfdd67f237a229471484a0a4d4635"},
+=======
+    {file = "mkdocs_material-9.5.14-py3-none-any.whl", hash = "sha256:a45244ac221fda46ecf8337f00ec0e5cb5348ab9ffb203ca2a0c313b0d4dbc27"},
+    {file = "mkdocs_material-9.5.14.tar.gz", hash = "sha256:2a1f8e67cda2587ab93ecea9ba42d0ca61d1d7b5fad8cf690eeaeb39dcd4b9af"},
+>>>>>>> a5434475 (poetry lock , imports resolved)
 ]
 
 [package.dependencies]
@@ -3109,13 +3127,22 @@ sympy = "*"
 
 [[package]]
 name = "openai"
+<<<<<<< HEAD
 version = "1.14.3"
+=======
+version = "1.14.1"
+>>>>>>> a5434475 (poetry lock , imports resolved)
 description = "The official Python library for the openai API"
 optional = false
 python-versions = ">=3.7.1"
 files = [
+<<<<<<< HEAD
     {file = "openai-1.14.3-py3-none-any.whl", hash = "sha256:7a465994a7ccf677a110c6cc2ef9d86229bad42c060b585b67049aa749f3b774"},
     {file = "openai-1.14.3.tar.gz", hash = "sha256:37b514e9c0ff45383ec9b242abd0f7859b1080d4b54b61393ed341ecad1b8eb9"},
+=======
+    {file = "openai-1.14.1-py3-none-any.whl", hash = "sha256:f9322b0bf3b82bbd06930fad535369a023f35a3a96d3ef0b827644a15d7aae97"},
+    {file = "openai-1.14.1.tar.gz", hash = "sha256:1fab5dd623cdc0c7c6e7da5d8d11fa6900f94191c2dfb6510d7eac33195fa175"},
+>>>>>>> a5434475 (poetry lock , imports resolved)
 ]
 
 [package.dependencies]
@@ -3763,7 +3790,7 @@ pyasn1 = ">=0.4.6,<0.6.0"
 name = "pycparser"
 version = "2.21"
 description = "C parser in Python"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 files = [
     {file = "pycparser-2.21-py2.py3-none-any.whl", hash = "sha256:8ee45429555515e1f6b185e78100aea234072576aa43ab53aefcae078162fca9"},
@@ -4570,11 +4597,16 @@ pyasn1 = ">=0.1.3"
 
 [[package]]
 name = "ruff"
+<<<<<<< HEAD
 version = "0.3.4"
+=======
+version = "0.3.3"
+>>>>>>> a5434475 (poetry lock , imports resolved)
 description = "An extremely fast Python linter and code formatter, written in Rust."
 optional = false
 python-versions = ">=3.7"
 files = [
+<<<<<<< HEAD
     {file = "ruff-0.3.4-py3-none-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:60c870a7d46efcbc8385d27ec07fe534ac32f3b251e4fc44b3cbfd9e09609ef4"},
     {file = "ruff-0.3.4-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:6fc14fa742e1d8f24910e1fff0bd5e26d395b0e0e04cc1b15c7c5e5fe5b4af91"},
     {file = "ruff-0.3.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d3ee7880f653cc03749a3bfea720cf2a192e4f884925b0cf7eecce82f0ce5854"},
@@ -4592,6 +4624,25 @@ files = [
     {file = "ruff-0.3.4-py3-none-win_amd64.whl", hash = "sha256:de0d5069b165e5a32b3c6ffbb81c350b1e3d3483347196ffdf86dc0ef9e37dd6"},
     {file = "ruff-0.3.4-py3-none-win_arm64.whl", hash = "sha256:6810563cc08ad0096b57c717bd78aeac888a1bfd38654d9113cb3dc4d3f74232"},
     {file = "ruff-0.3.4.tar.gz", hash = "sha256:f0f4484c6541a99862b693e13a151435a279b271cff20e37101116a21e2a1ad1"},
+=======
+    {file = "ruff-0.3.3-py3-none-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:973a0e388b7bc2e9148c7f9be8b8c6ae7471b9be37e1cc732f8f44a6f6d7720d"},
+    {file = "ruff-0.3.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:cfa60d23269d6e2031129b053fdb4e5a7b0637fc6c9c0586737b962b2f834493"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1eca7ff7a47043cf6ce5c7f45f603b09121a7cc047447744b029d1b719278eb5"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:e7d3f6762217c1da954de24b4a1a70515630d29f71e268ec5000afe81377642d"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:b24c19e8598916d9c6f5a5437671f55ee93c212a2c4c569605dc3842b6820386"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:5a6cbf216b69c7090f0fe4669501a27326c34e119068c1494f35aaf4cc683778"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:352e95ead6964974b234e16ba8a66dad102ec7bf8ac064a23f95371d8b198aab"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:8d6ab88c81c4040a817aa432484e838aaddf8bfd7ca70e4e615482757acb64f8"},
+    {file = "ruff-0.3.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:79bca3a03a759cc773fca69e0bdeac8abd1c13c31b798d5bb3c9da4a03144a9f"},
+    {file = "ruff-0.3.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:2700a804d5336bcffe063fd789ca2c7b02b552d2e323a336700abb8ae9e6a3f8"},
+    {file = "ruff-0.3.3-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:fd66469f1a18fdb9d32e22b79f486223052ddf057dc56dea0caaf1a47bdfaf4e"},
+    {file = "ruff-0.3.3-py3-none-musllinux_1_2_i686.whl", hash = "sha256:45817af234605525cdf6317005923bf532514e1ea3d9270acf61ca2440691376"},
+    {file = "ruff-0.3.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:0da458989ce0159555ef224d5b7c24d3d2e4bf4c300b85467b08c3261c6bc6a8"},
+    {file = "ruff-0.3.3-py3-none-win32.whl", hash = "sha256:f2831ec6a580a97f1ea82ea1eda0401c3cdf512cf2045fa3c85e8ef109e87de0"},
+    {file = "ruff-0.3.3-py3-none-win_amd64.whl", hash = "sha256:be90bcae57c24d9f9d023b12d627e958eb55f595428bafcb7fec0791ad25ddfc"},
+    {file = "ruff-0.3.3-py3-none-win_arm64.whl", hash = "sha256:0171aab5fecdc54383993389710a3d1227f2da124d76a2784a7098e818f92d61"},
+    {file = "ruff-0.3.3.tar.gz", hash = "sha256:38671be06f57a2f8aba957d9f701ea889aa5736be806f18c0cd03d6ff0cbca8d"},
+>>>>>>> a5434475 (poetry lock , imports resolved)
 ]
 
 [[package]]
@@ -6385,14 +6436,19 @@ multidict = ">=4.0"
 [[package]]
 name = "zipp"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "3.18.1"
 =======
 version = "3.18.0"
 >>>>>>> cb6e2588 (making version compatible)
+=======
+version = "3.18.1"
+>>>>>>> a5434475 (poetry lock , imports resolved)
 description = "Backport of pathlib-compatible object wrapper for zip files"
 optional = false
 python-versions = ">=3.8"
 files = [
+<<<<<<< HEAD
 <<<<<<< HEAD
     {file = "zipp-3.18.1-py3-none-any.whl", hash = "sha256:206f5a15f2af3dbaee80769fb7dc6f249695e940acca08dfb2a4769fe61e538b"},
     {file = "zipp-3.18.1.tar.gz", hash = "sha256:2884ed22e7d8961de1c9a05142eb69a247f120291bc0206a00a7642f09b5b715"},
@@ -6400,6 +6456,10 @@ files = [
     {file = "zipp-3.18.0-py3-none-any.whl", hash = "sha256:c1bb803ed69d2cce2373152797064f7e79bc43f0a3748eb494096a867e0ebf79"},
     {file = "zipp-3.18.0.tar.gz", hash = "sha256:df8d042b02765029a09b157efd8e820451045890acc30f8e37dd2f94a060221f"},
 >>>>>>> cb6e2588 (making version compatible)
+=======
+    {file = "zipp-3.18.1-py3-none-any.whl", hash = "sha256:206f5a15f2af3dbaee80769fb7dc6f249695e940acca08dfb2a4769fe61e538b"},
+    {file = "zipp-3.18.1.tar.gz", hash = "sha256:2884ed22e7d8961de1c9a05142eb69a247f120291bc0206a00a7642f09b5b715"},
+>>>>>>> a5434475 (poetry lock , imports resolved)
 ]
 
 [package.extras]
@@ -6418,4 +6478,8 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
+<<<<<<< HEAD
 content-hash = "8ebefcbe706bfffbdc30518bc8c6cada8214d126dc625824b481113b109b4ec1"
+=======
+content-hash = "01ebe9c08886c5a57ce146d6437016fb2bb0abeaea96ae3e41469f4320332b76"
+>>>>>>> a5434475 (poetry lock , imports resolved)

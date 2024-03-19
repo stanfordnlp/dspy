@@ -2,8 +2,14 @@ import logging
 from typing import Any
 
 import backoff
-import groq
-from groq import Groq
+
+try:
+    import groq
+    from groq import Groq
+    groq_api_error = (groq.APIError, groq.RateLimitError)
+except ImportError:
+    groq_api_error = (Exception)
+
 
 import dsp
 from dsp.modules.lm import LM
@@ -94,7 +100,7 @@ class GroqLM(LM):
 
     @backoff.on_exception(
         backoff.expo,
-        groq.RateLimitError,
+        groq_api_error,
         max_time=1000,
         on_backoff=backoff_hdlr,
     )
