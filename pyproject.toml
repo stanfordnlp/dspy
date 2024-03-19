@@ -119,6 +119,7 @@ torch = "^2.2.1"
 pytest-mock = "^3.12.0"
 ruff = "^0.3.0"
 black = "^24.2.0"
+decorator = "^5.1.1"
 [tool.poetry.extras]
 chromadb = ["chromadb"]
 qdrant = ["qdrant-client", "fastembed"]

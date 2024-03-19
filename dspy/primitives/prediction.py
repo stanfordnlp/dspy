@@ -158,7 +158,7 @@ class Prediction(Example):
         self,
         field: t.Optional[str] = None,
         normalize: t.Callable[[str], t.Optional[str]] = default_normalize,
-    ) -> t.Self:
+    ):
         if normalize is None:
             normalize = lambda x: x
 
