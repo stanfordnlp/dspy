@@ -8,6 +8,7 @@ from .signatures import *
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import * # isort: skip
+from .utils.logging import logger, set_log_level
 
 settings = dsp.settings
 
