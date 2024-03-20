@@ -84,6 +84,8 @@ class LM(ABC):
                 text=choices
             elif provider == "google":
                 text = choices[0].parts[0].text
+            elif provider == "google_vertex":
+                text = choices[0].content.parts[0].text
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
