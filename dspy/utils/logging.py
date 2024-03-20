@@ -30,14 +30,14 @@ structlog.configure(
             {
                 structlog.processors.CallsiteParameter.FILENAME,
                 structlog.processors.CallsiteParameter.LINENO,
-            }
+            },
         ),
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.dev.ConsoleRenderer()
+        structlog.dev.ConsoleRenderer(),
     ],
     logger_factory=structlog.stdlib.LoggerFactory(),
     wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True
+    cache_logger_on_first_use=True,
 )
 
 logger = structlog.get_logger()
