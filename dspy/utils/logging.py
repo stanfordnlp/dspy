@@ -1,6 +1,7 @@
 
 import logging
 import os
+import sys
 
 import structlog
 
@@ -13,8 +14,11 @@ def set_log_level(level: str) -> None:
         raise ValueError("log level provider ({level}) is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
 
     log_level = getattr(logging, level)
-    logging.basicConfig(level=log_level)
-
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=logging.INFO,
+    )
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(log_level))
 
 set_log_level(level)
