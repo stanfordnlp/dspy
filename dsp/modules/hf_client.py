@@ -116,11 +116,11 @@ def send_hftgi_request_v00(arg, **kwargs):
 class HFClientVLLM(HFModel):
     def __init__(self, model, port, url="http://localhost", **kwargs):
         super().__init__(model=model, is_client=True)
+
+        if isinstance(url, list):
+            self.urls = url
         
-        if type(url) == list:
-            self.urls = ['/v1'.join(url_.split('/v1')[:-1]) for url_ in url]
-        
-        elif type(url) == str:
+        elif isinstance(url, str):
             self.urls = [f'{url}:{port}']
         
         else:
