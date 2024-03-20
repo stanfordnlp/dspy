@@ -272,6 +272,8 @@ def optimize_signature(
         pass
     elif strategy == "best":
         i = scores.index(max(scores))
+        if verbose:
+            print(f"Best signature: {i} with score: {scores[i]}")
         for name, p in named_predictors:
             p.signature = candidates[name][i].to_signature()
     else:
@@ -279,6 +281,6 @@ def optimize_signature(
 
     return OptimizerResult(
         program=module,
-        signatures=[{name: sigs[i].to_signature()} for name, sigs in candidates.items() for i in range(n_iterations)],
+        signatures=[{name: sigs[i].to_signature() for name, sigs in candidates.items()} for i in range(n_iterations)],
         scores=scores,
     )
