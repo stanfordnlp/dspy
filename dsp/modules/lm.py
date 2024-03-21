@@ -46,7 +46,6 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-
                 if provider == "clarifai" or provider == "google":
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":

@@ -16,12 +16,12 @@ Let's take a simple task as an example i.e. given the `context` and `query`, the
 from pydantic import BaseModel, Field
 
 class Input(BaseModel):
-    context: str = Field(..., description="The context for the question")
-    query: str = Field(..., description="The question to be answered")
+    context: str = Field(description="The context for the question")
+    query: str = Field(description="The question to be answered")
 
 class Output(BaseModel):
-    answer: str = Field(..., description="The answer for the question")
-    factual_: float = Field(..., description="The confidence score for the answer")
+    answer: str = Field(description="The answer for the question")
+    confidence: float = Field(ge=0, le=1, description="The confidence score for the answer")
 ```
 
 As you can see, we can describe the attributes by defining a simple Signature that takes in the input and returns the output.
@@ -46,6 +46,11 @@ predictor = dspy.TypedPredictor(QASignature)
 
 Similar to other modules, we pass the `QASignature` to `dspy.TypedPredictor` which enforces the typed constraints.
 
+And similarly to `dspy.Predict`, we can also use a "string signature", which we type as:
+```python
+predictor = dspy.TypedPredictor("input:Input -> output:Output")
+```
+
 ### I/O in Typed Predictors
 
 Now let's test out the Typed Predictor by providing some sample input to the predictor and verifying the output type. We can create an `Input` instance and pass it to the predictor to get a dictionary of the output. 
@@ -62,8 +67,8 @@ prediction = predictor(input=doc_query_pair)
 Let's see the output and its type.
 
 ```python
-answer = prediction['answer']
-confidence_score = prediction['confidence_score']
+answer = prediction.answer
+confidence_score = prediction.confidence
 
 print(f"Prediction: {prediction}\n\n")
 print(f"Answer: {answer}, Answer Type: {type(answer)}")
@@ -89,18 +94,18 @@ prediction = cot_predictor(input=doc_query_pair)
 
 While the `dspy.TypedPredictor` and `dspy.TypedChainOfThought` provide a convenient way to use typed predictors, you can also use them as decorators to enforce type constraints on the inputs and outputs of the function. This relies on the internal definitions of the Signature class and its function arguments, outputs, and docstrings.
 
-```
-# Function name is output key
-
+```python
 @dspy.predictor
-def qa_function(doc_query_pair: Input) -> Output:
-    """Answer the question based on the context and query provided, and on the scale of 10 tell how confident you are about the answer."""
+def answer(doc_query_pair: Input) -> Output:
+    """Answer the question based on the context and query provided, and on the scale of 0-1 tell how confident you are about the answer."""
     pass
 
 @dspy.cot
-def qa_function(doc_query_pair: Input) -> Output:
-    """Answer the question based on the context and query provided, and on the scale of 10 tell how confident you are about the answer."""
+def answer(doc_query_pair: Input) -> Output:
+    """Answer the question based on the context and query provided, and on the scale of 0-1 tell how confident you are about the answer."""
     pass
+
+prediction = answer(doc_query_pair=doc_query_pair)
 ```
 
 ## Composing Functional Typed Predictors in `dspy.Module`

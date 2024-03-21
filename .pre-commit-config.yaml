@@ -5,15 +5,12 @@ default_stages: [commit]
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
-  #  - repo: https://github.com/astral-sh/ruff-pre-commit
-  #    # Ruff version.
-  #    rev: v0.1.11
-  #    hooks:
-  #      # Run the linter.
-  #      - id: ruff
-  #        args: [--fix]
-  #      # Run the formatter.
-  #      - id: ruff-format
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.11
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
 
   - repo: https://github.com/timothycrosley/isort
     rev: 5.12.0
@@ -50,14 +47,15 @@ repos:
         args:
           - "--autofix"
           - "--indent=2"
-  #  - repo: local
-  #    hooks:
-  #      - id: validate-commit-msg
-  #        name: Commit Message is Valid
-  #        language: pygrep
-  #        entry: ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([\w,\.,\-,\(,\),\/]+\)(!?)(:)\s{1}([\w,\W,:]+)
-  #        stages: [commit-msg]
-  #        args: [--negate]
+
+  - repo: local
+    hooks:
+      - id: validate-commit-msg
+        name: Commit Message is Valid
+        language: pygrep
+        entry: ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([\w,\.,\-,\(,\),\/]+\)(!?)(:)\s{1}([\w,\W,:]+)
+        stages: [commit-msg]
+        args: [--negate]
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.0.3

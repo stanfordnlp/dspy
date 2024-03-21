@@ -1,3 +1,4 @@
+from .anthropic import Claude
 from .azure_openai import AzureOpenAI
 from .bedrock import *
 from .cache_utils import *

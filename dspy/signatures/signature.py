@@ -206,11 +206,13 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     pass
 
 
-def ensure_signature(signature: Union[str, Type[Signature]]) -> Signature:
+def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
     if signature is None:
         return None
     if isinstance(signature, str):
-        return Signature(signature)
+        return Signature(signature, instructions)
+    if instructions is not None:
+        raise ValueError("Don't specify instructions when initializing with a Signature")
     return signature
 
 
@@ -277,27 +279,22 @@ def _parse_signature(signature: str) -> Tuple[Type, Field]:
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
+    inputs_str, outputs_str = signature.split("->")
+
     fields = {}
-    inputs_str, outputs_str = map(str.strip, signature.split("->"))
-    inputs = [v.strip() for v in inputs_str.split(",") if v.strip()]
-    outputs = [v.strip() for v in outputs_str.split(",") if v.strip()]
-    for name_type in inputs:
-        name, type_ = _parse_named_type_node(name_type)
+    for name, type_ in _parse_arg_string(inputs_str):
         fields[name] = (type_, InputField())
-    for name_type in outputs:
-        name, type_ = _parse_named_type_node(name_type)
+    for name, type_ in _parse_arg_string(outputs_str):
         fields[name] = (type_, OutputField())
 
     return fields
 
 
-def _parse_named_type_node(node, names=None) -> Any:
-    parts = node.split(":")
-    if len(parts) == 1:
-        return parts[0], str
-    name, type_str = parts
-    type_ = _parse_type_node(ast.parse(type_str), names)
-    return name, type_
+def _parse_arg_string(string: str, names=None) -> Dict[str, str]:
+    args = ast.parse("def f(" + string + "): pass").body[0].args.args
+    names = [arg.arg for arg in args]
+    types = [str if arg.annotation is None else _parse_type_node(arg.annotation) for arg in args]
+    return zip(names, types)
 
 
 def _parse_type_node(node, names=None) -> Any:
@@ -306,7 +303,7 @@ def _parse_type_node(node, names=None) -> Any:
     without using structural pattern matching introduced in Python 3.10.
     """
     if names is None:
-        names = {}
+        names = typing.__dict__
 
     if isinstance(node, ast.Module):
         body = node.body
@@ -325,15 +322,22 @@ def _parse_type_node(node, names=None) -> Any:
         for type_ in [int, str, float, bool, list, tuple, dict]:
             if type_.__name__ == id_:
                 return type_
+        raise ValueError(f"Unknown name: {id_}")
 
-    elif isinstance(node, ast.Subscript):
+    if isinstance(node, ast.Subscript):
         base_type = _parse_type_node(node.value, names)
         arg_type = _parse_type_node(node.slice, names)
         return base_type[arg_type]
 
-    elif isinstance(node, ast.Tuple):
+    if isinstance(node, ast.Tuple):
         elts = node.elts
         return tuple(_parse_type_node(elt, names) for elt in elts)
+
+    if isinstance(node, ast.Call):
+        if node.func.id == "Field":
+            keys = [kw.arg for kw in node.keywords]
+            values = [kw.value.value for kw in node.keywords]
+            return Field(**dict(zip(keys, values)))
 
     raise ValueError(f"Code is not syntactically valid: {node}")
 
