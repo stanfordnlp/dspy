@@ -24,10 +24,14 @@ class ColBERTv2:
     def __call__(
         self, query: str, k: int = 10, simplify: bool = False,
     ) -> Union[list[str], list[dotdict]]:
-        if self.post_requests:
-            topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
-        else:
-            topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k)
+        try:
+            if self.post_requests:
+                topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
+            else:
+                topk: list[dict[str, Any]] = colbertv2_get_request(self.url, query, k)
+        except KeyError as e:
+            # Reraise KeyError with additional context
+            raise KeyError(f"Key not found in ColBERTv2 server response: {e}") from e
 
         if simplify:
             return [psg["long_text"] for psg in topk]
@@ -43,11 +47,8 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
 
     payload = {"query": query, "k": k}
     res = requests.get(url, params=payload, timeout=10)
-    res = res.json()
-    if "error" in res and res["error"]:
-        raise(Exception("Server error: " + res["message"]))
 
-    topk = res["topk"][:k]
+    topk = res.json()["topk"][:k]
     topk = [{**d, "long_text": d["text"]} for d in topk]
     return topk[:k]
 
