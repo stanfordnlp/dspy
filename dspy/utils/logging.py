@@ -47,6 +47,8 @@ class LogSettings:
         if level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             raise ValueError("log level provider ({level}) is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
 
+        self.level = level
+
         log_level = getattr(logging, level)
         logger.setLevel(log_level)
 
