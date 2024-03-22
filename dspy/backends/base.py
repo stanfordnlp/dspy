@@ -20,8 +20,11 @@ class BaseBackend(BaseModel, ABC):
         attempts: int = 1,
         **kwargs,
     ) -> Completions:
+
+        # Override config provided at initialization with provided config
         if config is None:
             config = {}
+
 
         # Allow overriding the attempts at the Backend Initialization Step
         attempts = max(attempts, self.attempts)
@@ -43,18 +46,20 @@ class BaseBackend(BaseModel, ABC):
             if completions.has_complete_example():
                 break
 
-            max_example = completions.get_farthest_example()
+            # If a partial example was generated then update for all generated values
+            if len(completions.examples) > 0:
+                max_example = completions.get_farthest_example()
 
-            for field in signature.fields:
-                if field in max_example:
-                    kwargs[field] = max_example.get(field)
+                for field in signature.fields:
+                    if field in max_example:
+                        kwargs[field] = max_example.get(field)
 
             # Setting temperature to 0.0, leads to greedy decoding
-            kwargs["temperature"] = 0.0
+            config["temperature"] = 0.0
 
             # Cut the max_tokens in half each time if it has been set
             if "max_tokens" in kwargs:
-                kwargs["max_tokens"] = max(1, int(kwargs["max_tokens"] / 2))
+                config["max_tokens"] = max(1, int(config["max_tokens"] / 2))
 
             i += 1
 
