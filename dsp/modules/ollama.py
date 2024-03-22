@@ -1,10 +1,10 @@
-from dsp.modules.lm import LM
-from typing import Any, Literal, Optional
+import datetime
+import hashlib
+from typing import Any, Literal
 
-import os, multiprocessing, datetime, hashlib
 import requests
 
-import json
+from dsp.modules.lm import LM
 
 
 def post_request_metadata(model_name, prompt):
@@ -33,7 +33,7 @@ class OllamaLocal(LM):
         model: str = "llama2",
         model_type: Literal["chat", "text"] = "text",
         base_url: str = "http://localhost:11434",
-        timeout_s: float = 15,
+        timeout_s: float = 120,
         temperature: float = 0.0,
         max_tokens: int = 150,
         top_p: int = 1,
@@ -116,7 +116,7 @@ class OllamaLocal(LM):
                         "content": "".join(text),
                     },
                     "finish_reason": "stop",
-                }
+                },
             )
             tot_eval_tokens += response_json.get("eval_count")
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}

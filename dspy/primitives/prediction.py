@@ -1,9 +1,11 @@
 import typing as t
-from pydantic import BaseModel, ConfigDict
-from dspy.primitives.example import Example
-from dspy.signatures.signature import SignatureMeta, Signature
-from dsp.utils import normalize_text
 from collections import Counter
+
+from pydantic import BaseModel, ConfigDict
+
+from dsp.utils import normalize_text
+from dspy.primitives.example import Example
+from dspy.signatures.signature import Signature, SignatureMeta
 
 default_normalize = lambda s: normalize_text(s) or None
 
@@ -81,9 +83,7 @@ class Completions(BaseModel):
     def filter(self, field: str, value: str):
         i = 0
         while i < len(self.examples):
-            if field not in self.examples[i]:
-                del self.examples[i]
-            elif normalize_text(self.examples[i][field]) != value:
+            if field not in self.examples[i] or normalize_text(self.examples[i][field]) != value:
                 del self.examples[i]
             else:
                 i += 1
@@ -158,7 +158,7 @@ class Prediction(Example):
         self,
         field: t.Optional[str] = None,
         normalize: t.Callable[[str], t.Optional[str]] = default_normalize,
-    ) -> t.Self:
+    ):
         if normalize is None:
             normalize = lambda x: x
 

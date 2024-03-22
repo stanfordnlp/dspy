@@ -1,17 +1,20 @@
-from .tasks.scone import ScoNeTask
-from .tasks.hotpotqa import HotPotQATask
-from .tasks.gsm8k import GSM8KTask
-from .tasks.biodex import BioDexTask
-from .tasks.tweet import TweetTask
-from .tasks.tweet_metric import TweetMetricTask
-from dspy.evaluate import Evaluate
-from dotenv import load_dotenv
-import openai
-import os
-import dspy
 import csv
 import datetime
+import os
 from timeit import default_timer as timer
+
+import openai
+from dotenv import load_dotenv
+
+import dspy
+from dspy.evaluate import Evaluate
+
+from .tasks.biodex import BioDexTask
+from .tasks.gsm8k import GSM8KTask
+from .tasks.hotpotqa import HotPotQATask
+from .tasks.scone import ScoNeTask
+from .tasks.tweet import TweetTask
+from .tasks.tweet_metric import TweetMetricTask
 
 datasets = ["ScoNe", "HotPotQA", "GSM8K", "BioDex", "Tweet"]
 
@@ -142,7 +145,7 @@ class OptimizerTester:
                 'view_data': False,
                 'optimizer_log_dir': 'NA',
                 'additional_notes': '',
-                'misc': ''
+                'misc': '',
             })
 
     def test_optimizer_default(self, optimizer_function, datasets=datasets, test_name="default"):
@@ -195,7 +198,7 @@ class OptimizerTester:
                 'view_data': False,
                 'optimizer_log_dir': log_dir,
                 'additional_notes': '',
-                'misc': ''
+                'misc': '',
             }
 
             output.update(output_dict)

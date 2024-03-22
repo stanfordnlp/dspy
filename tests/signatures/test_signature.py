@@ -1,7 +1,11 @@
+import textwrap
 import pytest
 import pydantic
 from dspy import Signature, infer_prefix, InputField, OutputField
 from typing import List
+
+import dspy
+from dspy.utils import DummyLM
 
 
 def test_field_types_and_custom_attributes():
@@ -89,6 +93,8 @@ def test_instructions_signature():
 def test_signature_instructions():
     sig1 = Signature("input1 -> output1", instructions="This is a test")
     assert sig1.instructions == "This is a test"
+    sig2 = Signature("input1 -> output1", "This is a test")
+    assert sig2.instructions == "This is a test"
 
 
 def test_signature_instructions_none():
@@ -164,3 +170,52 @@ def test_infer_prefix():
     assert infer_prefix("URLAddress") == "URL Address"
     assert infer_prefix("isHTTPSecure") == "Is HTTP Secure"
     assert infer_prefix("isHTTPSSecure123") == "Is HTTPS Secure 123"
+
+
+def test_insantiating():
+    sig = Signature("input -> output")
+    assert issubclass(sig, Signature)
+    assert sig.__name__ == "StringSignature"
+    value = sig(input="test", output="test")
+    assert isinstance(value, sig)
+
+
+def test_insantiating2():
+    class SubSignature(Signature):
+        input = InputField()
+        output = OutputField()
+
+    assert issubclass(SubSignature, Signature)
+    assert SubSignature.__name__ == "SubSignature"
+    value = SubSignature(input="test", output="test")
+    assert isinstance(value, SubSignature)
+
+
+def test_multiline_instructions():
+    class MySignature(Signature):
+        """First line
+        Second line"""
+
+        output = OutputField()
+
+    predictor = dspy.Predict(MySignature)
+
+    lm = DummyLM(["short answer"])
+    with dspy.settings.context(lm=lm, backend=None):
+        assert predictor().output == "short answer"
+
+        assert lm.get_convo(-1) == textwrap.dedent(
+            """\
+            First line
+                    Second line
+            
+            ---
+            
+            Follow the following format.
+            
+            Output: ${output}
+            
+            ---
+            
+            Output: short answer"""
+        )

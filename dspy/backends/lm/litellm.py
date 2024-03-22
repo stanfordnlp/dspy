@@ -3,8 +3,7 @@ import typing as t
 from litellm import ModelResponse, completion, token_counter
 from pydantic import Field
 
-
-from .base import BaseLM, GeneratedContent
+from .base import BaseLM
 
 
 class LiteLM(BaseLM):
@@ -23,7 +22,7 @@ class LiteLM(BaseLM):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[GeneratedContent]:
+    ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         # We are not streaming this content in, therefore we can assume it'll always be a litellm ModelResponse
@@ -32,10 +31,11 @@ class LiteLM(BaseLM):
             messages=[{"role": "user", "content": prompt}],
             **options,
         )
-        assert type(response) == ModelResponse
 
-        choices = [dict(c) for c in response.choices if c["finish_reason"] != "length"]
-        return choices
+        if type(response) != ModelResponse:
+            raise AssertionError("Response from completion incorrect type/format")
+
+        return [c["message"]["content"] for c in response.choices if c["finish_reason"] != "length"]
 
     def count_tokens(self, prompt: str) -> int:
         """Counts the number of tokens for a specific prompt."""

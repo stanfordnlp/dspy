@@ -1,8 +1,6 @@
 import pytest
 import dspy
-import typing as t
 from dspy.signatures.signature import Signature, InputField, OutputField
-from dspy.backends.lm.base import BaseLM, GeneratedContent
 from dspy.backends.template import TemplateBackend
 from dspy.utils.dummies import DummyLanguageModel
 
@@ -31,14 +29,13 @@ def test_backend_complete_generation():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(answers=[["Joy", "Joy", "Joy", "Joy", "Joy"]])
     backend = TemplateBackend(lm=dummy_lm)
-    dspy.settings.configure(backend=backend)
-
-    # Generate Sample Signature
-    n = 5
-    x = backend(Emotion, sentence="This is a positive sentence", n=n)
-    assert len(x) == n
-    assert x.examples[0].sentence == "This is a positive sentence"
-    assert x.examples[0].sentiment == "Joy"
+    with dspy.settings.context(backend=backend, lm=None):
+        # Generate Sample Signature
+        n = 5
+        x = backend(Emotion, sentence="This is a positive sentence", n=n)
+        assert len(x) == n
+        assert x.examples[0].sentence == "This is a positive sentence"
+        assert x.examples[0].sentiment == "Joy"
 
 
 def test_backend_with_recover():
@@ -52,17 +49,16 @@ def test_backend_with_recover():
         ],
     )
     backend = TemplateBackend(lm=dummy_lm)
-    dspy.settings.configure(backend=backend)
-
-    # Generate Incomplete on the first try
-    # Nothing should be returned from the generation as no results were complete
-    n = 1
-    with pytest.raises(Exception):
-        backend(
-            COTCheckCitationFaithfulness,
-            context=["The 21-year-old made seven appearances for the Hammers."],
-            text="Lee scored 3 goals for Colchester United.",
-        )
+    with dspy.settings.context(backend=backend, lm=None):
+        # Generate Incomplete on the first try
+        # Nothing should be returned from the generation as no results were complete
+        n = 1
+        with pytest.raises(Exception):
+            backend(
+                COTCheckCitationFaithfulness,
+                context=["The 21-year-old made seven appearances for the Hammers."],
+                text="Lee scored 3 goals for Colchester United.",
+            )
 
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
@@ -74,19 +70,19 @@ def test_backend_with_recover():
         ]
     )
     backend = TemplateBackend(lm=dummy_lm)
-    dspy.settings.configure(backend=backend)
+    with dspy.settings.context(backend=backend, lm=None, cache=False):
 
-    # Generate Complete after recovery
-    n = 1
-    x = backend(
-        COTCheckCitationFaithfulness,
-        context=["The 21-year-old made seven appearances for the Hammers."],
-        text="Lee scored 3 goals for Colchester United.",
-        attempts=2,
-        n=n,
-    )
+        # Generate Complete after recovery
+        n = 1
+        x = backend(
+            COTCheckCitationFaithfulness,
+            context=["The 21-year-old made seven appearances for the Hammers."],
+            text="Lee scored 3 goals for Colchester United.",
+            attempts=2,
+            n=n,
+        )
 
-    assert x.examples[0].rationale is not None
+        assert x.examples[0].rationale is not None
 
-    assert x.rationale
-    assert x.faithfulness
+        assert x.rationale
+        assert x.faithfulness

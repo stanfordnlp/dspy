@@ -1,10 +1,10 @@
 import json
 import typing as t
-from dspy.signatures.signature import Signature
-from dspy.primitives.example import Example
-from dspy.primitives.template import Template
-from dspy.primitives.prediction import Completions
 
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Completions
+from dspy.primitives.template import Template
+from dspy.signatures.signature import Signature
 
 from .base import BaseBackend
 from .lm import BaseLM
@@ -24,6 +24,7 @@ class JSONBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
+        config: dict[str, t.Any] = {},
         demos: t.List[str] = [],
         **kwargs,
     ) -> Completions:
@@ -42,10 +43,10 @@ class JSONBackend(BaseBackend):
         pred = self.lm(
             template(example, is_json=True),
             response_format={"type": "json_object"},
-            **kwargs,
+            **config,
         )
         extracted = [
-            json.loads(prediction["message"]["content"])
+            json.loads(prediction)
             for prediction in pred.generations
         ]
 

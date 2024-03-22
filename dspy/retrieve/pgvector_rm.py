@@ -1,14 +1,16 @@
-import dspy
+from typing import List, Optional
+
 import openai
-from typing import List, Union, Optional
+
+import dspy
 
 try:
-    from pgvector.psycopg2 import register_vector
     import psycopg2
+    from pgvector.psycopg2 import register_vector
     from psycopg2 import sql
 except ImportError:
     raise ImportError(
-        "The 'pgvector' extra is required to use PgVectorRM. Install it with `pip install dspy-ai[pgvector]`"
+        "The 'pgvector' extra is required to use PgVectorRM. Install it with `pip install dspy-ai[pgvector]`",
     )
 
 
@@ -61,7 +63,7 @@ class PgVectorRM(dspy.Retrieve):
             openai_client: openai.OpenAI,
             k: Optional[int]=20,
             embedding_field: str = "embedding",
-            fields: List[str] = ['text']
+            fields: List[str] = ['text'],
     ):
         """
         k = 20 is the number of paragraphs to retrieve
@@ -89,7 +91,7 @@ class PgVectorRM(dspy.Retrieve):
         query_embedding = self.openai_client.embeddings.create(
             model="text-embedding-ada-002",
             input=query,
-            encoding_format="float"
+            encoding_format="float",
         ).data[0].embedding
 
         related_paragraphs = []
@@ -101,7 +103,7 @@ class PgVectorRM(dspy.Retrieve):
                 for f in self.fields
             ]),
             table=sql.Identifier(self.pg_table_name),
-            embedding_field=sql.Identifier(self.embedding_field)
+            embedding_field=sql.Identifier(self.embedding_field),
         )
 
         with self.conn as conn:

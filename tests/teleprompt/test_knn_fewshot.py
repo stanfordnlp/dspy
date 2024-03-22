@@ -51,22 +51,22 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
 
     # Setup DummyLM with a response for a query similar to one of the training examples
     lm = DummyLM(["Madrid", "10"])
-    dspy.settings.configure(lm=lm)  # Responses for the capital of Spain and the result of 5+5)
+    with dspy.settings.context(lm=lm, backend=None):
 
-    knn_few_shot = setup_knn_few_shot
-    trainset = knn_few_shot.KNN.trainset
-    compiled_student = knn_few_shot.compile(student, teacher=teacher, trainset=trainset, valset=None)
+        knn_few_shot = setup_knn_few_shot
+        trainset = knn_few_shot.KNN.trainset
+        compiled_student = knn_few_shot.compile(student, teacher=teacher, trainset=trainset, valset=None)
 
-    assert len(compiled_student.predictor.demos) == 1
-    assert compiled_student.predictor.demos[0].input == trainset[0].input
-    assert compiled_student.predictor.demos[0].output == trainset[0].output
-    
-    # Simulate a query that is similar to one of the training examples
-    output = compiled_student.forward(input = "What is the capital of Spain?").output
+        assert len(compiled_student.predictor.demos) == 1
+        assert compiled_student.predictor.demos[0].input == trainset[0].input
+        assert compiled_student.predictor.demos[0].output == trainset[0].output
+        
+        # Simulate a query that is similar to one of the training examples
+        output = compiled_student.forward(input = "What is the capital of Spain?").output
 
-    print("CONVO")
-    print(lm.get_convo(-1))
+        print("CONVO")
+        print(lm.get_convo(-1))
 
-    # Validate that the output corresponds to one of the expected DummyLM responses
-    # This assumes the compiled_student's forward method will execute the predictor with the given query
-    assert output in ["Madrid", "10"], "The compiled student did not return the correct output based on the query"
+        # Validate that the output corresponds to one of the expected DummyLM responses
+        # This assumes the compiled_student's forward method will execute the predictor with the given query
+        assert output in ["Madrid", "10"], "The compiled student did not return the correct output based on the query"

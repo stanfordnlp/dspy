@@ -25,10 +25,10 @@ def test_backend_complete_generation():
         ]
     )
     backend = JSONBackend(lm=dummy_lm)
-    dspy.configure(backend=backend)
+    with dspy.settings.context(backend=backend, lm=None, cache=False):
 
-    # Generate Sample Signature
-    n = 5
-    x = backend(Emotion, sentence="This is a positive sentence", n=n)
-    assert len(x) == n
-    assert x.sentiment == "Joy"
+        # Generate Sample Signature
+        n = 5
+        x = backend(Emotion, sentence="This is a positive sentence", n=n)
+        assert len(x) == n
+        assert x.sentiment == "Joy"

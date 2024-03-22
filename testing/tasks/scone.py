@@ -1,9 +1,13 @@
 import glob
 import os
-import pandas as pd
-import dspy
-from .base_task import BaseTask
 import random
+
+import pandas as pd
+
+import dspy
+
+from .base_task import BaseTask
+
 
 def load_scone(dirname):
     dfs = []
@@ -27,7 +31,7 @@ def load_scone(dirname):
             "context": row['sentence1' + suffix],
             "question": question,
             "answer": label,
-            "category": row['category']
+            "category": row['category'],
         }).with_inputs("context", "question")
 
     return list(data_df.apply(as_example, axis=1).values)
