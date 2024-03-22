@@ -50,7 +50,7 @@ class TemplateBackend(BaseBackend):
 
         # This returns a list of Examples
         extracted_examples = [
-            template.extract(example, prediction["message"]["content"])
+            template.extract(example, prediction)
             for prediction in pred.generations
         ]
 

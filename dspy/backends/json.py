@@ -46,7 +46,7 @@ class JSONBackend(BaseBackend):
             **config,
         )
         extracted = [
-            json.loads(prediction["message"]["content"])
+            json.loads(prediction)
             for prediction in pred.generations
         ]
 

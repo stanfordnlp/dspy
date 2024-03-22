@@ -1,8 +1,6 @@
 import pytest
 import dspy
-import typing as t
 from dspy.signatures.signature import Signature, InputField, OutputField
-from dspy.backends.lm.base import BaseLM, GeneratedContent
 from dspy.backends.template import TemplateBackend
 from dspy.utils.dummies import DummyLanguageModel
 

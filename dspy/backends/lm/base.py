@@ -11,12 +11,11 @@ import dspy
 _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
-GeneratedContent = dict[str, t.Any]
 
 
 class LMOutput(BaseModel):
     prompt: str
-    generations: list[GeneratedContent]
+    generations: list[str]
     kwargs: dict[str, t.Any]
 
 
@@ -46,7 +45,7 @@ class BaseLM(BaseModel, ABC):
         self,
         prompt: str,
         **kwargs,
-    ) -> list[GeneratedContent]:
+    ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         ...
 

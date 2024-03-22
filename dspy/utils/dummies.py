@@ -7,7 +7,7 @@ import numpy as np
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
-from dspy.backends.lm.base import BaseLM, GeneratedContent
+from dspy.backends.lm.base import BaseLM
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import (
     Completions,
@@ -173,12 +173,12 @@ class DummyLanguageModel(BaseLM):
     answers: list[list[str]]
     step: int = 0
 
-    def generate(self, prompt: str, **kwargs) -> t.List[GeneratedContent]:
+    def generate(self, prompt: str, **kwargs) -> t.List[str]:
         if len(self.answers) == 1:
-            return [{"message": {"content": content}} for content in self.answers[0]]
+            return [content for content in self.answers[0]]
 
         output = [
-            {"message": {"content": content}} for content in self.answers[self.step]
+            content for content in self.answers[self.step]
         ]
         self.step += 1
 
