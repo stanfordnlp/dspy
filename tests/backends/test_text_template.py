@@ -1,6 +1,5 @@
-import pytest
 from dspy import Example, Signature, InputField, OutputField
-from dspy.primitives import Template
+from dspy.backends.templates.text import TextTemplate
 
 
 class Emotion(Signature):
@@ -89,16 +88,16 @@ TEMPLATE_SCENARIOS = [
 
 def test_example_initialization():
     for scenario in TEMPLATE_SCENARIOS:
-        template = Template(scenario["signature"])
-        example = Example(**scenario["input_kwargs"])
-        assert template(example) == scenario["prompt"], print(template(example))
+        template = TextTemplate()
+        example = Example(scenario["signature"], **scenario["input_kwargs"])
+        assert template.generate(scenario["signature"], example) == scenario["prompt"], print(template.generate(scenario["signature"], example))
 
 
 def test_template_extraction():
     for scenario in TEMPLATE_SCENARIOS:
-        template = Template(scenario["signature"])
-        example = Example(**scenario["input_kwargs"])
-        extracted = template.extract(example, scenario["output"])
+        template = TextTemplate()
+        example = Example(scenario["signature"], **scenario["input_kwargs"])
+        extracted = template.extract(scenario["signature"], example, scenario["output"])
         correct_example = Example(
             **scenario["input_kwargs"], **scenario["output_kwargs"]
         )

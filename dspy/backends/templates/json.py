@@ -26,6 +26,8 @@ class JSONTemplate(BaseTemplate):
 
     def extract(self, signature: Signature, example: Example, raw_pred: str) -> Example:
 
+        example = example.copy()
+
         try:
             pred = json.loads(raw_pred)
             for k, v in pred.items():
