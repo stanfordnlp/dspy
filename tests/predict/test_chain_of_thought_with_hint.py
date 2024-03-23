@@ -1,7 +1,7 @@
 import dspy
 from dspy import ChainOfThoughtWithHint
 from dspy.utils import DummyLanguageModel, DummyLM
-from dspy.backends import TemplateBackend
+from dspy.modelling import TemplateBackend
 
 
 def test_cot_with_no_hint():

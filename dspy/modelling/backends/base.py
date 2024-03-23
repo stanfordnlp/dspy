@@ -16,8 +16,8 @@ class BaseBackend(BaseModel, ABC):
     def __call__(
         self,
         signature: Signature,
-        config: dict[str, t.Any] = None,
         attempts: int = 1,
+        config: dict[str, t.Any] = None,
         **kwargs,
     ) -> Completions:
 

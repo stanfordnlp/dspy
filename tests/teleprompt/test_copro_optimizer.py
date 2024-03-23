@@ -1,6 +1,6 @@
 import textwrap
 import dspy
-from dspy.backends.template import TemplateBackend
+from dspy.modelling.backends import TemplateBackend
 from dspy.teleprompt.signature_opt import COPRO
 from dspy.utils import DummyLM, DummyLanguageModel
 from dspy import Example

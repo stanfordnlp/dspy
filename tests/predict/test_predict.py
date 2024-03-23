@@ -1,8 +1,7 @@
 import dsp
 import dspy
 from dspy import Predict, Signature
-from dspy.backends.json import JSONBackend
-from dspy.backends import TemplateBackend
+from dspy.modelling import TemplateBackend, JSONBackend
 from dspy.utils import DummyLM, DummyLanguageModel
 import copy
 import textwrap

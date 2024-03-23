@@ -1,16 +1,13 @@
-import json
 import typing as t
 
-from pydantic import Field
-from dspy.backends.templates.json import JSONTemplate
-from dspy.backends.templates.base import BaseTemplate
-
+from dspy.modelling.lm import BaseLM
+from dspy.modelling.templates.base import BaseTemplate
+from dspy.modelling.templates.json import JSONTemplate
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
 
 from .base import BaseBackend
-from .lm import BaseLM
 
 
 def patch_example(example: Example, data: dict[str, t.Any]) -> Example:

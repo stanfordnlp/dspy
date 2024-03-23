@@ -1,12 +1,12 @@
 import typing as t
 
+from dspy.modelling.lm import BaseLM
+from dspy.modelling.templates import BaseTemplate, TextTemplate
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, SignatureMeta
-from dspy.backends.templates import TextTemplate, BaseTemplate
 
 from .base import BaseBackend
-from .lm.litellm import BaseLM
 
 
 class TemplateBackend(BaseBackend):

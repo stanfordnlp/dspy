@@ -3,7 +3,7 @@ import dspy
 from dspy.utils import DummyLM, DummyLanguageModel
 import textwrap
 
-from dspy.backends import TemplateBackend
+from dspy.modelling import TemplateBackend
 
 
 class BasicQA(Signature):

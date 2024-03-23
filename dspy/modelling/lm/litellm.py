@@ -1,14 +1,13 @@
+# Currently, LiteLLM logs way to much to the console in Info
+# I am setting this to WARNING to silence this
+# at some point, we will need to manage this appropriately with the new dspy logger
+import logging
 import typing as t
 
 from litellm import ModelResponse, completion, token_counter
 from pydantic import Field
 
 from .base import BaseLM
-
-# Currently, LiteLLM logs way to much to the console in Info
-# I am setting this to WARNING to silence this
-# at some point, we will need to manage this appropriately with the new dspy logger
-import logging
 
 logger = logging.getLogger("LiteLLM")
 logger.setLevel(logging.WARNING)

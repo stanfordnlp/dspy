@@ -1,11 +1,14 @@
 
-import regex
 import typing as t
-from abc import abstractmethod
+
+import regex
 from pydantic import Field
-from dspy.backends.templates.base import BaseTemplate
-from dspy.signatures.signature import Signature
+
 from dspy.primitives.example import Example
+from dspy.signatures.signature import Signature
+
+from .base import BaseTemplate
+
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
     assert len(passages) > 0
@@ -128,7 +131,7 @@ class TextTemplate(BaseTemplate):
         field_strings = []
         for _, field in signature.fields.items():
             field_strings.append(
-                f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
+                f"{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}",
             )
 
         result = result + "\n\n".join(field_strings)
@@ -148,7 +151,7 @@ class TextTemplate(BaseTemplate):
             format_handler = format_handlers.get(name, default_format_handler)
 
             result.append(
-                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}",
             )
 
         for name, field in signature.output_fields.items():
@@ -159,7 +162,7 @@ class TextTemplate(BaseTemplate):
                 break
             elif name in example:
                 result.append(
-                    f"{field.json_schema_extra['prefix']} {format_handler(example[name])}"
+                    f"{field.json_schema_extra['prefix']} {format_handler(example[name])}",
                 )
 
         return "\n\n".join(result)

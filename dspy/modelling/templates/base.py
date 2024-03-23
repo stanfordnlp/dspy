@@ -1,8 +1,9 @@
 
 from abc import ABC, abstractmethod
+
 from pydantic import BaseModel
 
-from dspy import Signature, Example
+from dspy import Example, Signature
 
 
 class BaseTemplate(BaseModel, ABC):

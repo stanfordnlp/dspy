@@ -4,7 +4,7 @@ from dspy.predict import Predict
 from dspy.utils.dummies import DummyLanguageModel, DummyLM
 from dspy import Example
 from dspy.teleprompt import BootstrapFewShot
-from dspy.backends import TemplateBackend
+from dspy.modelling import TemplateBackend
 import textwrap
 
 

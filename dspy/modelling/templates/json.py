@@ -1,7 +1,9 @@
 
 import json
-from dspy.backends.templates.base import BaseTemplate
-from dspy import Signature, Example
+
+from dspy import Example, Signature
+
+from .base import BaseTemplate
 
 
 class JSONTemplate(BaseTemplate):
@@ -50,15 +52,15 @@ class JSONTemplate(BaseTemplate):
             else:
                 missing_fields.append((name, field))
 
-        result = f"Provided the following:"
+        result = "Provided the following:"
         for (name, field) in included_fields:
             result += f"\n{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
 
-        result += f"\n\nPlease return the following fields:"
+        result += "\n\nPlease return the following fields:"
         for (name, field) in missing_fields:
             result += f"\n{field.json_schema_extra['prefix']} {field.json_schema_extra['desc']}"
 
-        result += f"\n\nAccording to the following JSON schema:"
+        result += "\n\nAccording to the following JSON schema:"
 
         schema = {"properties": {name: {"title": f"{name.capitalize()}", "type": "string"} for name, _ in signature.fields.items()},
                   "required": [name for name, _ in signature.fields.items()]}
