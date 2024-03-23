@@ -101,7 +101,7 @@ class PgVectorRM(dspy.Retrieve):
         # Embed query
         query_embedding = self._get_embeddings(query)
 
-        related_paragraphs = []
+        retrieved_docs = []
 
         fields = sql.SQL(',').join([
             sql.Identifier(f)
@@ -133,9 +133,9 @@ class PgVectorRM(dspy.Retrieve):
                 columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
                     data = dict(zip(columns, row))
-                    related_paragraphs.append(dspy.Example(**data))
+                    retrieved_docs.append(dspy.Example(**data))
         # Return Prediction
-        return related_paragraphs
+        return retrieved_docs
 
     def _get_embeddings(self, query: str) -> list[float]:
         if self.openai_client is not None:
