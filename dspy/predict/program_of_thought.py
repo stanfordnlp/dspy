@@ -116,7 +116,7 @@ class ProgramOfThought(Module):
         elif mode == "regenerate":
             instr = [
                 f"You are given {mode_inputs} due to an error in previous code.",
-                f"Your task is to correct the error and provide the new `generated_code`.",
+                "Your task is to correct the error and provide the new `generated_code`.",
             ]
         else:  # mode == 'answer'
             instr = [
