@@ -89,12 +89,12 @@ class PgVectorRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query: str):
-        """Search with PgVector for self.k top passages for query
+    def forward(self, query: str, include_similarity: bool = False):
+        """Search with PgVector for self.k top passages for query using cosine similarity
 
         Args:
             query  (str): The query to search for
-            k (Optional[int]): The number of top passages to retrieve. Defaults to self.k
+            include_similarity (bool): Whether or not to include the similarity for each record
         Returns:
             dspy.Prediction: an object containing the retrieved passages.
         """
@@ -103,12 +103,23 @@ class PgVectorRM(dspy.Retrieve):
 
         related_paragraphs = []
 
+        fields = sql.SQL(',').join([
+            sql.Identifier(f)
+            for f in self.fields
+        ])
+        if include_similarity:
+            similarity_field = (
+                sql.SQL(',') +
+                sql.SQL(
+                    '1 - ({embedding_field} <=> %s) AS similarity'
+                ).format(embedding_field=sql.Identifier(self.embedding_field))
+            )
+            fields += similarity_field
+
         sql_query = sql.SQL(
-            "select {fields} from {table} order by {embedding_field} <-> %s::vector limit %s").format(
-            fields=sql.SQL(',').join([
-                sql.Identifier(f)
-                for f in self.fields
-            ]),
+            "select {fields} from {table} order by {embedding_field} <=> %s::vector limit %s"
+        ).format(
+            fields=fields,
             table=sql.Identifier(self.pg_table_name),
             embedding_field=sql.Identifier(self.embedding_field),
         )
@@ -117,7 +128,7 @@ class PgVectorRM(dspy.Retrieve):
             with conn.cursor() as cur:
                 cur.execute(
                     sql_query,
-                    (query_embedding, self.k))
+                    (query_embedding, query_embedding, self.k))
                 rows = cur.fetchall()
                 columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
