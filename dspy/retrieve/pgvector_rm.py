@@ -89,7 +89,7 @@ class PgVectorRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query: str, k: Optional[int] = 20):
+    def forward(self, query: str):
         """Search with PgVector for self.k top passages for query
 
         Args:
