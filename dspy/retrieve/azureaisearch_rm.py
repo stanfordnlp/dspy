@@ -96,7 +96,7 @@ class AzureAISearchRM(dspy.Retrieve):
         query_speller: str = "lexicon",
         use_semantic_captions: bool = False,
         query_type: Optional[QueryType] = QueryType.FULL,
-        semantic_configuration_name: str = None
+        semantic_configuration_name: str = None,
 
     ):
         self.search_service_name = search_service_name
@@ -137,7 +137,7 @@ class AzureAISearchRM(dspy.Retrieve):
                                         'extractive|highlight-false'
                                         if use_semantic_captions
                                         else None
-                                    )
+                                    ),
                                 )
         else:
             results = client.search(search_text=query,top=top,filter=filter)
