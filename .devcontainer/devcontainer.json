@@ -20,6 +20,7 @@
     }
   },
   "features": {
+    "ghcr.io/devcontainers-contrib/features/tmux-apt-get:1": {},
     "ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
       "omzPlugins": "https://github.com/zsh-users/zsh-syntax-highlighting.git https://github.com/zsh-users/zsh-autosuggestions.git",
       "plugins": "zsh-syntax-highlighting zsh-autosuggestions"
