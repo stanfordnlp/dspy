@@ -202,7 +202,9 @@ class Synthesizer:
             }
 
             if self.config.num_example_for_optim:
-                kwargs["ground_source"] = random.sample(ground_source, self.config.num_example_for_optim)
+                if not isinstance(ground_source, list):
+                    raise ValueError("Ground source must be a list of examples when `num_example_for_optim` is provided.")
+                kwargs["ground_source"] = random.sample(ground_source, k=self.config.num_example_for_optim)
             
             with dspy.context(lm=self.input_lm):
                 inputs = self.input_predictor(**kwargs)
