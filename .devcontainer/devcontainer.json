@@ -10,17 +10,19 @@
         "ms-python.mypy-type-checker",
         "ms-vsliveshare.vsliveshare",
         "ms-python.python",
-        "eamodio.gitlens"
+        "eamodio.gitlens",
+        "github.vscode-pull-request-github"
       ],
       "settings": {
-        "python.testing.pytestEnabled": true
+        "python.testing.pytestEnabled": true,
+        "terminal.integrated.defaultProfile.linux": "zsh"
       }
     }
   },
   "features": {
     "ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
       "omzPlugins": "https://github.com/zsh-users/zsh-syntax-highlighting.git https://github.com/zsh-users/zsh-autosuggestions.git",
-      "plugins": "zsh-syntax-highlisting zsh-autosuggestions"
+      "plugins": "zsh-syntax-highlighting zsh-autosuggestions"
     },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
