@@ -5,6 +5,7 @@ from dsp.utils import dotdict
 
 try:
     import weaviate
+    from weaviate.collections.classes.grpc import HybridFusion
     import weaviate.classes as wvc
 except ImportError:
     raise ImportError(
@@ -48,11 +49,11 @@ class WeaviateRM(dspy.Retrieve):
 
     def __init__(self, 
                  weaviate_collection_name: str, 
-                 weaviate_client: weaviate.Client, 
+                 weaviate_client: weaviate.WeaviateClient,
                  k: int = 3,
                  weaviate_collection_text_key: Optional[str] = "content",
                  weaviate_alpha: Optional[float] = 0.5,
-                 weaviate_fusion_type: Optional[wvc.HybridFusion] = wvc.HybridFusion.RELATIVE_SCORE
+                 weaviate_fusion_type: Optional[HybridFusion] = HybridFusion.RELATIVE_SCORE
         ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
