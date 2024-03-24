@@ -53,6 +53,8 @@ class LM(ABC):
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
                     printed.append((prompt, x["response"].generations))
+                elif provider == "mistral":
+                    printed.append((prompt, x['response'].choices))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -77,6 +79,8 @@ class LM(ABC):
                 text = choices
             elif provider == "google":
                 text = choices[0].parts[0].text
+            elif provider == "mistral":
+                text = choices[0].message.content
             else:
                 text = choices[0]["text"]
             self.print_green(text, end="")
