@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e  # Exit immediately if a command exits with a non-zero status.
+
 git config --global --add safe.directory /workspaces/dspy
 
 pip install poetry==1.7.1
