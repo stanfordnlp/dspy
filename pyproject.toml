@@ -96,7 +96,7 @@ fastembed = { version = "^0.1.0", optional = true }
 marqo = { version = "*", optional = true }
 qdrant-client = { version = "^1.6.2", optional = true }
 pinecone-client = { version = "^2.2.4", optional = true }
-weaviate-client = { version = "^3.26.1", optional = true }
+weaviate-client = { version = "^4.5.4", optional = true }
 sphinx = { version = ">=4.3.0", optional = true }
 furo = { version = ">=2023.3.27", optional = true }
 docutils = { version = "<0.17", optional = true }
