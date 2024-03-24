@@ -8,7 +8,7 @@ import dspy
 
 
 class DescriptionSignature(dspy.Signature):
-    """Custom signature to generate descriptions."""
+    """Given a field name and an example value, predict a short text only description of what the field contains."""
 
     field_name = dspy.InputField(desc="name of a field")
     example = dspy.InputField(desc="an example value for the field")
