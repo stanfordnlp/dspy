@@ -26,7 +26,6 @@
     },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/itsmechlark/features/postgresql:1": {},
     "ghcr.io/schlich/devcontainer-features/powerlevel10k:1": {}
   },
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
