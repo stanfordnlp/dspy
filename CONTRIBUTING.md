@@ -58,3 +58,21 @@ This ends up looking like `feature(dspy): added new feature` or `enh(devcontaine
 ```
 ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)
 ```
+
+Detailed Breakdown
+^: Asserts the start of a line. This means the pattern must match from the beginning of the string.
+
+(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert): This is a capture group that matches any one of the listed keywords. These keywords represent various types of commits, such as feat (feature), fix (bug fix), docs (documentation), etc.
+
+\( and \): Matches the literal parentheses ( and ). These are escaped with a backslash because parentheses are special characters in regular expressions, used for defining capture groups.
+
+[a-z,A-Z,0-9,\-,\_,\/,:]+: Matches one or more characters inside the square brackets. It includes lowercase and uppercase letters (a-z, A-Z), digits (0-9), and specific special characters (-, \_, /, :). The comma (,) here is likely intended as a separator in the explanation but is actually being treated as a literal character to match, which might be a mistake unless the comma is an expected character in this context.
+
+(:): Captures the colon character. This is another literal match, but it's also captured into a group because of the parentheses.
+
+\s{1}: Matches exactly one whitespace character. {1} is technically redundant since the default behavior without specifying a quantity is to match exactly one.
+
+([\w\s]+): This capture group matches one or more word characters (\w, which includes letters, digits, and underscores) or whitespace characters (\s). This part is likely intended to capture the commit message that follows the initial keyword and scope.
+
+Summary
+Putting it all together, this regex is used to enforce a structured format for commit messages, starting with a keyword indicating the commit type, followed by a scope enclosed in parentheses, a colon, a single space, and then the descriptive message. The scope part allows for various characters, including letters, numbers, and a few special characters, to accommodate different naming conventions.
