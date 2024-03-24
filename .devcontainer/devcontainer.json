@@ -9,7 +9,8 @@
         "ms-toolsai.jupyter",
         "ms-python.mypy-type-checker",
         "ms-vsliveshare.vsliveshare",
-        "ms-python.python"
+        "ms-python.python",
+        "eamodio.gitlens"
       ],
       "settings": {
         "python.testing.pytestEnabled": true
