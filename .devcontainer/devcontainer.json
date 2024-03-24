@@ -10,7 +10,10 @@
         "ms-python.mypy-type-checker",
         "ms-vsliveshare.vsliveshare",
         "ms-python.python"
-      ]
+      ],
+      "settings": {
+        "python.testing.pytestEnabled": true
+      }
     }
   },
   "features": {
