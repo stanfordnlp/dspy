@@ -1,5 +1,4 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 # Configure logging
 logging.basicConfig(
@@ -12,10 +11,10 @@ import functools
 import json
 from typing import Any, Literal, Optional, cast
 
-import dsp
 import backoff
 import openai
 
+import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -25,16 +24,14 @@ except Exception:
     OPENAI_LEGACY = True
 
 try:
-    from openai.openai_object import OpenAIObject
     import openai.error
+    from openai.openai_object import OpenAIObject
 
     ERRORS = (
         openai.error.RateLimitError,
-        openai.error.ServiceUnavailableError,
-        openai.error.APIError,
     )
 except Exception:
-    ERRORS = (openai.RateLimitError, openai.APIError)
+    ERRORS = (openai.RateLimitError,)
     OpenAIObject = dict
 
 
@@ -43,7 +40,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 
@@ -65,11 +62,14 @@ class GPT3(LM):
         api_provider: Literal["openai"] = "openai",
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
+        system_prompt: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
         openai.api_type = api_provider
+
+        self.system_prompt = system_prompt
 
         assert (
             api_provider != "azure"
@@ -121,6 +121,9 @@ class GPT3(LM):
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
             kwargs["messages"] = [{"role": "user", "content": prompt}]
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(**kwargs)

@@ -3,10 +3,10 @@ from typing import Tuple
 try:
     import faiss
     from faiss import Index
-except ImportError as e:
+except ImportError:
     raise ImportError(
         "You need to install FAISS library to perform ANN/KNN. Please check the official doc: "
-        "https://github.com/facebookresearch/faiss/blob/main/INSTALL.md"
+        "https://github.com/facebookresearch/faiss/blob/main/INSTALL.md",
     )
 
 
@@ -48,7 +48,7 @@ def _get_ivf_index(
     n_objects: int,
     in_list_dist_type: str,
     centroid_dist_type: str,
-    encode_residuals: bool
+    encode_residuals: bool,
 ) -> Index:
     # according to the FAISS doc, this should be OK
     n_list = int(4 * (n_objects ** 0.5))
@@ -73,7 +73,7 @@ def _get_ivf_index(
         n_list,
         faiss.ScalarQuantizer.QT_fp16,  # TODO: should be optional?
         centroid_metric,
-        encode_residuals
+        encode_residuals,
     )
     return index
 
@@ -85,7 +85,7 @@ def create_faiss_index(
     max_gpu_devices: int = 0,
     encode_residuals: bool = True,
     in_list_dist_type: str = 'L2',
-    centroid_dist_type: str = 'L2'
+    centroid_dist_type: str = 'L2',
 ) -> Index:
     """
     Create IVF index (with IP or L2 dist), without adding data and training
@@ -118,7 +118,7 @@ def create_faiss_index(
             n_objects=n_objects,
             in_list_dist_type=in_list_dist_type,
             centroid_dist_type=centroid_dist_type,
-            encode_residuals=encode_residuals
+            encode_residuals=encode_residuals,
         )
 
     index.nprobe = n_probe

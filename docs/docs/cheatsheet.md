@@ -101,7 +101,7 @@ You can choose only selected columns from the csv by specifying them in the argu
 ```python
 dolly_100_dataset = dl.from_csv(
     "dolly_subset_100_rows.csv",
-    fields=["instruction", "context", "response"],
+    fields=("instruction", "context", "response"),
     input_keys=("instruction", "context")
 )
 ```
@@ -282,8 +282,13 @@ your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_progr
 
 #### Compiling a compiled program - bootstrapping a bootstraped program
 
-your_dspy_program_compiledx2 = teleprompter.compile(your_dspy_program, teacher=your_dspy_program_compiled, trainset=trainset)
-
+```python
+your_dspy_program_compiledx2 = teleprompter.compile(
+    your_dspy_program,
+    teacher=your_dspy_program_compiled,
+    trainset=trainset,
+)
+```
 
 ### dspy.BootstrapFewShotWithRandomSearch
 
@@ -301,13 +306,15 @@ Other custom configurations are similar to customizing the `dspy.BootstrapFewSho
 ### dspy.Ensemble
 
 ```python
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch, Ensemble
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt.ensemble import Ensemble
 
 fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
-ensemble_optimizer = dspy.Ensemble(reduce_fn=dspy.majority)
-your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(your_dspy_program_compiled.programs[:3])
+ensemble_optimizer = Ensemble(reduce_fn=dspy.majority)
+programs = [x[-1] for x in your_dspy_program_compiled.candidate_programs]
+your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(programs[:3])
 ```
 
 ### dspy.BootstrapFinetune
@@ -360,6 +367,20 @@ teleprompter = BayesianSignatureOptimizer(prompt_model=model_to_generate_prompts
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 
 compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+```
+
+### Signature Optimizer with Types
+
+```python
+from dspy.teleprompt.signature_opt_typed import optimize_signature
+from dspy.evaluate.metrics import answer_exact_match
+from dspy.functional import TypedChainOfThought
+
+compiled_program = optimize_signature(
+    student=TypedChainOfThought("question -> answer"),
+    evaluator=Evaluate(devset=devset, metric=answer_exact_match, num_threads=10, display_progress=True),
+    n_iterations=50,
+).program
 ```
 
 ### dspy.KNNFewShot

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
 import json
+from typing import Any, Optional
+
 from dsp.modules.aws_lm import AWSLM
 
 
@@ -10,6 +11,7 @@ class Bedrock(AWSLM):
         self,
         region_name: str,
         model: str,
+        profile_name: Optional[str] = None,
         input_output_ratio: int = 3,
         max_new_tokens: int = 1500,
     ) -> None:
@@ -27,12 +29,14 @@ class Bedrock(AWSLM):
             model=model,
             service_name="bedrock-runtime",
             region_name=region_name,
+            profile_name=profile_name,
             truncate_long_prompts=False,
             input_output_ratio=input_output_ratio,
             max_new_tokens=max_new_tokens,
             batch_n=True,  # Bedrock does not support the `n` parameter
         )
         self._validate_model(model)
+        self.provider = "claude" if "claude" in model.lower() else "bedrock"
 
     def _validate_model(self, model: str) -> None:
         if "claude" not in model.lower():
@@ -47,7 +51,7 @@ class Bedrock(AWSLM):
         query_args: dict[str, Any] = self._sanitize_kwargs(base_args)
         query_args["prompt"] = prompt
         # AWS Bedrock forbids these keys
-        if "max_tokens" in query_args.keys():
+        if "max_tokens" in query_args:
             max_tokens: int = query_args["max_tokens"]
             input_tokens: int = self._estimate_tokens(prompt)
             max_tokens_to_sample: int = max_tokens - input_tokens
@@ -67,7 +71,7 @@ class Bedrock(AWSLM):
         return completion
 
     def _extract_input_parameters(
-        self, body: dict[Any, Any]
+        self, body: dict[Any, Any],
     ) -> dict[str, str | float | int]:
         return body
 

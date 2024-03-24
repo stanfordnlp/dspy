@@ -1,9 +1,10 @@
-from contextlib import contextmanager
-from dsp.utils.utils import dotdict
 import threading
+from contextlib import contextmanager
+
+from dsp.utils.utils import dotdict
 
 
-class Settings(object):
+class Settings:
     """DSP configuration settings."""
 
     _instance = None
@@ -35,14 +36,14 @@ class Settings(object):
                 force_reuse_cached_compilation=False,
                 compiling=False,
                 skip_logprobs=False,
-                trace=None,
+                trace=[],
                 release=0,
                 log_openai_usage=False,
                 bypass_assert=False,
                 bypass_suggest=False,
                 assert_failures=0,
                 suggest_failures=0,
-                langchain_history=[]
+                langchain_history=[],
             )
             cls._instance.__append(config)
 

@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from dsp.modules.lm import LM
 
+
 class ClarifaiLLM(LM):
     """Integration to call models hosted in clarifai platform.
 

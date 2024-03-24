@@ -1,4 +1,4 @@
-# Contibuting
+# Contributing
 
 ## Finding Issues
 
@@ -16,7 +16,7 @@ Then install the package through poetry:
 Note - You may need to install poetry. See [here](https://python-poetry.org/docs/#installing-with-the-official-installer)
 
 ```bash
-poetry install --with test
+poetry install --with dev
 ```
 
 ## Testing

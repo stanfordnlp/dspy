@@ -33,7 +33,8 @@ class LM(ABC):
 
     def inspect_history(self, n: int = 1, skip: int = 0):
         """Prints the last n prompts and their completions.
-        TODO: print the valid choice that contains filled output field instead of the first
+
+        TODO: print the valid choice that contains filled output field instead of the first.
         """
         provider: str = self.provider
 
@@ -45,23 +46,17 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-
                 if provider == "clarifai" or provider == "google":
-                    printed.append(
-                        (
-                            prompt,
-                            x['response']
-                        )
-                    )
+                    printed.append((prompt, x["response"]))
+                elif provider == "anthropic":
+                    blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
+                    printed.append((prompt, blocks))
+                elif provider == "cohere":
+                    printed.append((prompt, x["response"].generations))
+                elif provider == "mistral":
+                    printed.append((prompt, x['response'].choices))
                 else:
-                    printed.append(
-                        (
-                            prompt,
-                            x["response"].generations
-                            if provider == "cohere"
-                            else x["response"]["choices"],
-                        )
-                    )
+                    printed.append((prompt, x["response"]["choices"]))
 
             last_prompt = prompt
 
@@ -82,9 +77,13 @@ class LM(ABC):
             if provider == "cohere":
                 text = choices[0].text
             elif provider == "openai" or provider == "ollama":
-                text = ' ' + self._get_choice_text(choices[0]).strip()
+                text = " " + self._get_choice_text(choices[0]).strip()
             elif provider == "clarifai":
-                text=choices
+                text = choices
+            elif provider == "google":
+                text = choices[0].parts[0].text
+            elif provider == "mistral":
+                text = choices[0].message.content
             else:
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="")
@@ -104,6 +103,6 @@ class LM(ABC):
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
-        model = kwargs.pop('model')
+        model = kwargs.pop("model")
 
-        return self.__class__(model, **kwargs)
+        return self.__class__(model=model, **kwargs)

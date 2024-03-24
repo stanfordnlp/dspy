@@ -1,8 +1,7 @@
-import dsp, dspy
+import dsp
+import dspy
 
 from .predict import Predict
-
-
 
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
 

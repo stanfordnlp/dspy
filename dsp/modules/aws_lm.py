@@ -4,10 +4,11 @@ A generalized AWS LLM.
 
 from __future__ import annotations
 
-from abc import abstractmethod
-import logging
-from typing import Any, Literal
 import json
+import logging
+from abc import abstractmethod
+from typing import Any, Literal, Optional
+
 from dsp.modules.lm import LM
 
 # Heuristic translating number of chars to tokens
@@ -26,6 +27,7 @@ class AWSLM(LM):
         region_name: str,
         service_name: str,
         max_new_tokens: int,
+        profile_name: Optional[str] = None,
         truncate_long_prompts: bool = False,
         input_output_ratio: int = 3,
         batch_n: bool = True,
@@ -54,7 +56,12 @@ class AWSLM(LM):
 
         import boto3
 
-        self.predictor = boto3.client(service_name, region_name=region_name)
+        if profile_name is None:
+            self.predictor = boto3.client(service_name, region_name=region_name)
+        else:
+            self.predictor = boto3.Session(profile_name=profile_name).client(
+                service_name, region_name=region_name,
+            )
 
     @abstractmethod
     def _create_body(self, prompt: str, **kwargs):
@@ -81,7 +88,7 @@ class AWSLM(LM):
 
     @abstractmethod
     def _extract_input_parameters(
-        self, body: dict[Any, Any]
+        self, body: dict[Any, Any],
     ) -> dict[str, str | float | int]:
         pass
 
@@ -94,7 +101,7 @@ class AWSLM(LM):
         else:
             llm_out = [generated.replace(formatted_prompt, "") for generated in llm_out]
         self.history.append(
-            {"prompt": formatted_prompt, "response": llm_out, "kwargs": body}
+            {"prompt": formatted_prompt, "response": llm_out, "kwargs": body},
         )
         return llm_out
 
@@ -107,20 +114,20 @@ class AWSLM(LM):
             truncated_prompt: str = self._truncate_prompt(prompt)
             formatted_prompt = self._format_prompt(truncated_prompt)
         else:
-            formatted_prompt = self._format_prompt((prompt))
+            formatted_prompt = self._format_prompt(prompt)
 
         llm_out: str | list[str]
         if "n" in kwargs.keys():
             if self._batch_n:
                 llm_out = self._simple_api_call(
-                    formatted_prompt=formatted_prompt, **kwargs
+                    formatted_prompt=formatted_prompt, **kwargs,
                 )
             else:
                 del kwargs["n"]
                 llm_out = []
                 for _ in range(0, kwargs["n"]):
                     generated: str | list[str] = self._simple_api_call(
-                        formatted_prompt=formatted_prompt, **kwargs
+                        formatted_prompt=formatted_prompt, **kwargs,
                     )
                     if isinstance(generated, str):
                         llm_out.append(generated)

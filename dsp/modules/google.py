@@ -1,5 +1,7 @@
 import os
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Optional
+
 import backoff
 
 from dsp.modules.lm import LM
@@ -18,7 +20,7 @@ def backoff_hdlr(details):
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
-        "{kwargs}".format(**details)
+        "{kwargs}".format(**details),
     )
 
 
@@ -32,19 +34,19 @@ def giveup_hdlr(details):
 BLOCK_ONLY_HIGH = [
   {
     "category": "HARM_CATEGORY_HARASSMENT",
-    "threshold": "BLOCK_ONLY_HIGH"
+    "threshold": "BLOCK_ONLY_HIGH",
   },
   {
     "category": "HARM_CATEGORY_HATE_SPEECH",
-    "threshold": "BLOCK_ONLY_HIGH"
+    "threshold": "BLOCK_ONLY_HIGH",
   },
   {
     "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-    "threshold": "BLOCK_ONLY_HIGH"
+    "threshold": "BLOCK_ONLY_HIGH",
   },
   {
     "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-    "threshold": "BLOCK_ONLY_HIGH"
+    "threshold": "BLOCK_ONLY_HIGH",
   },
 ]
 
@@ -60,7 +62,7 @@ class Google(LM):
         model: str = "models/gemini-1.0-pro",
         api_key: Optional[str] = None,
         safety_settings: Optional[Iterable] = BLOCK_ONLY_HIGH,
-        **kwargs
+        **kwargs,
     ):
         """
         Parameters
@@ -89,7 +91,7 @@ class Google(LM):
             "max_output_tokens": 2048,
             "top_p": 1,
             "top_k": 1,
-            **kwargs
+            **kwargs,
         }
 
         self.config = genai.GenerationConfig(**kwargs)
@@ -145,7 +147,7 @@ class Google(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        **kwargs
+        **kwargs,
     ):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"

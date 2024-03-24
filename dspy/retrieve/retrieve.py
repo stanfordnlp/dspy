@@ -1,8 +1,7 @@
-from typing import List, Union, Optional
+import random
+from typing import List, Optional, Union
 
 import dsp
-import random
-
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 
