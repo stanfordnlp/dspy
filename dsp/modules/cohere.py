@@ -67,9 +67,9 @@ class Cohere(LM):
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "num_generations": 1,
+            "stop_sequences": stop_sequences
             **kwargs,
         }
-        self.stop_sequences = stop_sequences
         self.max_num_generations = 5
 
         self.history: list[dict[str, Any]] = []
@@ -78,7 +78,6 @@ class Cohere(LM):
         raw_kwargs = kwargs
         kwargs = {
             **self.kwargs,
-            "stop_sequences": self.stop_sequences,
             "prompt": prompt,
             **kwargs,
         }
