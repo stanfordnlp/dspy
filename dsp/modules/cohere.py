@@ -12,7 +12,6 @@ except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
 
-
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
     print(
@@ -108,13 +107,5 @@ class Cohere(LM):
         prompt: str,
         **kwargs,
     ):
-
         response = self.request(prompt, **kwargs)
-
-        # ToDo, add
-        '''
-        if dsp.settings.log_coherelm_usage:
-            self.log_usage(response)
-        '''
-
         return response.text
