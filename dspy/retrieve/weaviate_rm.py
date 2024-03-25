@@ -5,8 +5,8 @@ from dsp.utils import dotdict
 
 try:
     import weaviate
-    from weaviate.collections.classes.grpc import HybridFusion
     import weaviate.classes as wvc
+    from weaviate.collections.classes.grpc import HybridFusion
 except ImportError:
     raise ImportError(
         "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`",
@@ -53,7 +53,7 @@ class WeaviateRM(dspy.Retrieve):
                  k: int = 3,
                  weaviate_collection_text_key: Optional[str] = "content",
                  weaviate_alpha: Optional[float] = 0.5,
-                 weaviate_fusion_type: Optional[HybridFusion] = HybridFusion.RELATIVE_SCORE
+                 weaviate_fusion_type: Optional[HybridFusion] = HybridFusion.RELATIVE_SCORE,
         ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
@@ -87,7 +87,7 @@ class WeaviateRM(dspy.Retrieve):
                                               alpha=self._weaviate_alpha,
                                               fusion_type=self._weaviate_fusion_type,
                                               return_metadata=wvc.query.MetadataQuery(
-                                                  distance=True, score=True)
+                                                  distance=True, score=True),
                                               )
 
             parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]
