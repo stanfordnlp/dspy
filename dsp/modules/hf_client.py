@@ -136,8 +136,6 @@ class HFClientVLLM(HFModel):
         payload = {
             "model": self.model,
             "prompt": prompt,
-            "max_tokens": kwargs["max_tokens"],
-            "temperature": kwargs["temperature"],
         }
 
         
