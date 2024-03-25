@@ -117,6 +117,9 @@ class PgVectorRM(dspy.Retrieve):
                 ).format(embedding_field=sql.Identifier(self.embedding_field))
             )
             fields += similarity_field
+            args = (query_embedding, query_embedding, self.k)
+        else:
+            args = (query_embedding, self.k)
 
         sql_query = sql.SQL(
             "select {fields} from {table} order by {embedding_field} <=> %s::vector limit %s"
@@ -130,7 +133,7 @@ class PgVectorRM(dspy.Retrieve):
             with conn.cursor() as cur:
                 cur.execute(
                     sql_query,
-                    (query_embedding, query_embedding, self.k))
+                    args)
                 rows = cur.fetchall()
                 columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
