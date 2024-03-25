@@ -68,10 +68,11 @@ class PgVectorRM(dspy.Retrieve):
             pg_table_name: str,
             openai_client: Optional[openai.OpenAI] = None,
             embedding_func: Optional[Callable] = None,
-            k: Optional[int] = 20,
+            k: int = 20,
             embedding_field: str = "embedding",
-            fields: list[str] = ['text'],
+            fields: Optional[list[str]] = None,
             embedding_model: str = "text-embedding-ada-002",
+            include_similarity: bool = False,
     ):
         """
         k = 20 is the number of paragraphs to retrieve
@@ -83,13 +84,14 @@ class PgVectorRM(dspy.Retrieve):
         self.conn = psycopg2.connect(db_url)
         register_vector(self.conn)
         self.pg_table_name = pg_table_name
-        self.fields = fields
+        self.fields = fields or ['text']
         self.embedding_field = embedding_field
         self.embedding_model = embedding_model
+        self.include_similarity = include_similarity
 
         super().__init__(k=k)
 
-    def forward(self, query: str, include_similarity: bool = False):
+    def forward(self, query: str):
         """Search with PgVector for self.k top passages for query using cosine similarity
 
         Args:
@@ -107,7 +109,7 @@ class PgVectorRM(dspy.Retrieve):
             sql.Identifier(f)
             for f in self.fields
         ])
-        if include_similarity:
+        if self.include_similarity:
             similarity_field = (
                 sql.SQL(',') +
                 sql.SQL(
