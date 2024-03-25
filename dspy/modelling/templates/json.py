@@ -19,7 +19,7 @@ class JSONTemplate(BaseTemplate):
 
         # Generate spans for all the demos
         for demo in example.demos:
-            prompt_spans.append(self._example_span(signature, example))
+            prompt_spans.append(self._example_span(signature, demo))
 
         # Generate span for the active example
         prompt_spans.append(self._example_span(signature, example))
@@ -72,13 +72,13 @@ class JSONTemplate(BaseTemplate):
     @staticmethod
     def _example_span(signature: Signature, example: Example) -> str:
 
-        span = ""
+        span = {}
 
-        for name, field in signature.fields.items():
+        for name, _ in signature.fields.items():
             if name in example:
-                span += f"{field.json_schema_extra['prefix']} {example[name]}"
+                span[name] = f"{example[name]}"
 
-        return span
+        return json.dumps(span)
 
 
 
