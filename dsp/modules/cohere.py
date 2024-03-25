@@ -7,7 +7,7 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
-    cohere_api_error = cohere.core.api_error.ApiError
+    cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
@@ -64,12 +64,9 @@ class Cohere(LM):
             "temperature": 0.0,
             "max_tokens": 150,
             "p": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
-            "num_generations": 1,
-            "stop_sequences": stop_sequences
             **kwargs,
         }
+        self.stop_sequences = stop_sequences
         self.max_num_generations = 5
 
         self.history: list[dict[str, Any]] = []
@@ -78,6 +75,7 @@ class Cohere(LM):
         raw_kwargs = kwargs
         kwargs = {
             **self.kwargs,
+            "stop_sequences": self.stop_sequences,
             "chat_history": [],
             "message": prompt,
             **kwargs,
@@ -118,5 +116,5 @@ class Cohere(LM):
         if dsp.settings.log_coherelm_usage:
             self.log_usage(response)
         '''
-        
+
         return response.text
