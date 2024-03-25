@@ -18,10 +18,6 @@ For example, to use OpenAI language models, you can do it as follows.
 gpt3_turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=300)
 dspy.configure(lm=gpt3_turbo)
 ```
-**Output:**
-```text
-['Hello! How can I assist you today?']
-```
 
 ## Directly calling the LM.
 
@@ -29,6 +25,11 @@ You can simply call the LM with a string to give it a raw prompt, i.e. a string.
 
 ```python
 gpt3_turbo("hello! this is a raw prompt to GPT-3.5")
+```
+
+**Output:**
+```text
+['Hello! How can I assist you today?']
 ```
 
 This is almost never the recommended way to interact with LMs in DSPy, but it is allowed.
