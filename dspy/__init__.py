@@ -14,6 +14,7 @@ settings = dsp.settings
 
 AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3
+Mistral = dsp.Mistral
 Databricks = dsp.Databricks
 Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
