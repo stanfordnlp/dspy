@@ -1,4 +1,3 @@
-import math
 from typing import Any, Optional
 
 import backoff
@@ -86,7 +85,7 @@ class Cohere(LM):
             "prompt": prompt,
             "response": response,
             "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs
+            "raw_kwargs": raw_kwargs,
         })
 
         return response
