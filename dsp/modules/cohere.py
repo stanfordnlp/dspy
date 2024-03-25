@@ -78,18 +78,19 @@ class Cohere(LM):
         raw_kwargs = kwargs
         kwargs = {
             **self.kwargs,
-            "prompt": prompt,
+            "chat_history": [],
+            "message": prompt,
             **kwargs,
         }
-        response = self.co.generate(**kwargs)
+        response = self.co.chat(**kwargs)
 
-        history = {
+
+        self.history.append({
             "prompt": prompt,
             "response": response,
             "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+            "raw_kwargs": raw_kwargs
+        })
 
         return response
 
