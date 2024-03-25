@@ -134,11 +134,12 @@ class HFClientVLLM(HFModel):
         kwargs = {**self.kwargs, **kwargs}
 
         payload = {
-            "model": kwargs["model"],
+            "model": self.model,
             "prompt": prompt,
             "max_tokens": kwargs["max_tokens"],
             "temperature": kwargs["temperature"],
         }
+
         
         # Round robin the urls.
         url = self.urls.pop(0)
