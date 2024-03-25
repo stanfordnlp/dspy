@@ -1,9 +1,7 @@
 import logging
 import os
 from typing import Any, Optional
-
 import backoff
-
 from dsp.modules.lm import LM
 
 try:
@@ -12,11 +10,8 @@ try:
 except ImportError:
     anthropic_rate_limit = Exception
 
-
 logger = logging.getLogger(__name__)
-
 BASE_URL = "https://api.anthropic.com/v1/messages"
-
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/."""
@@ -26,41 +21,26 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details),
     )
 
-
 def giveup_hdlr(details):
     """Wrapper function that decides when to give up on retry."""
     if "rate limits" in details.message:
         return False
     return True
 
-
 class Claude(LM):
     """Wrapper around anthropic's API. Supports both the Anthropic and Azure APIs."""
     def __init__(
-            self,
-            model: str = "claude-instant-1.2",
-            api_key: Optional[str] = None,
-            api_base: Optional[str] = None,
-            **kwargs,
+        self,
+        model: str = "claude-3-opus-20240229",
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        **kwargs,
     ):
         super().__init__(model)
-
-
         try:
             from anthropic import Anthropic
         except ImportError as err:
             raise ImportError("Claude requires `pip install anthropic`.") from err
-        supported_models = [
-        "claude-instant-1.2",
-        "claude-2.0",
-        "claude-2.1",
-        "claude-3-opus-20240229",
-        "claude-3-haiku-20240307",
-        "claude-3-sonnet-20240229",
-    ]
-    
-        if model not in supported_models:
-            raise ValueError(f"Unsupported model: {model}. Supported models are: {', '.join(supported_models)}")
 
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
@@ -86,13 +66,11 @@ class Claude(LM):
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
-
         kwargs = {**self.kwargs, **kwargs}
         # caching mechanism requires hashable kwargs
         kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs.pop("n")
         response = self.client.messages.create(**kwargs)
-
         history = {
             "prompt": prompt,
             "response": response,
@@ -100,7 +78,6 @@ class Claude(LM):
             "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
-
         return response
 
     @backoff.on_exception(
@@ -126,15 +103,11 @@ class Claude(LM):
         Returns:
             list[str]: list of completion choices
         """
-
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
-
-
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses
         # so this cannot be a proper indicator for incomplete response unless it isnt the user-intent.
-
         n = kwargs.pop("n", 1)
         completions = []
         for _ in range(n):
