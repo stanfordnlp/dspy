@@ -136,6 +136,7 @@ class HFClientVLLM(HFModel):
         payload = {
             "model": self.model,
             "prompt": prompt,
+            **kwargs,
         }
 
         
