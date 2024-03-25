@@ -7,7 +7,7 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
-    cohere_api_error = cohere.CohereAPIError
+    cohere_api_error = cohere.core.api_error.ApiError
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
