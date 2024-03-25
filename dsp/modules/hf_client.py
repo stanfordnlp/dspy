@@ -127,6 +127,8 @@ class HFClientVLLM(HFModel):
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
         self.headers = {"Content-Type": "application/json"}
+        self.kwargs = kwargs
+
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
