@@ -41,7 +41,7 @@ Search the chromadb collection for the top `k` passages matching the given query
 ChromadbRM have the flexibility from a variety of embedding functions as outlined in the [chromadb embeddings documentation](https://docs.trychroma.com/embeddings). While different options are available, this example demonstrates how to utilize OpenAI embeddings specifically.
 
 ```python
-from dspy.retrieve.chroma_rm import ChromadbRM
+from dspy.retrieve.chromadb_rm import ChromadbRM
 import os
 import openai
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
