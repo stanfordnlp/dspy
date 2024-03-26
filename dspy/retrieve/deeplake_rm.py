@@ -79,7 +79,7 @@ class DeeplakeRM(dspy.Retrieve):
         ]
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int],
+        self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs
     ) -> dspy.Prediction:
         
         """Search with DeepLake for self.k top passages for query
@@ -106,7 +106,7 @@ class DeeplakeRM(dspy.Retrieve):
             results = self._deeplake_client(
             path=self._deeplake_vectorstore_name,
             embedding_function=self.embedding_function,
-            ).search(query, k=k)
+            ).search(query, k=k,**kwargs)
 
             for score,text in zip(results.get('score',0.0),results.get('text',"")):
                 passages[text] += score

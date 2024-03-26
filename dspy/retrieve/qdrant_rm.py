@@ -53,7 +53,7 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query
 
         Args:
@@ -71,7 +71,7 @@ class QdrantRM(dspy.Retrieve):
 
         k = k if k is not None else self.k
         batch_results = self._qdrant_client.query_batch(
-            self._qdrant_collection_name, query_texts=queries, limit=k)
+            self._qdrant_collection_name, query_texts=queries, limit=k,**kwargs)
 
         passages_scores = defaultdict(float)
         for batch in batch_results:
