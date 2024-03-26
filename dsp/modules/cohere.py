@@ -62,6 +62,7 @@ class Cohere(LM):
             "temperature": 0.0,
             "max_tokens": 150,
             "p": 1,
+            "num_generations": 1,
             **kwargs,
         }
         self.stop_sequences = stop_sequences
@@ -78,6 +79,7 @@ class Cohere(LM):
             "message": prompt,
             **kwargs,
         }
+        kwargs.pop("num_generations")
         response = self.co.chat(**kwargs)
 
 
