@@ -9,4 +9,4 @@ datasets
 requests
 optuna
 pydantic==2.5.0
-# To be deleted
+structlog

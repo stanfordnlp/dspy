@@ -44,7 +44,7 @@ chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
 marqo = ["marqo"]
 pinecone = ["pinecone-client~=2.2.4"]
-weaviate = ["weaviate-client~=3.26.1"]
+weaviate = ["weaviate-client~=4.5.4"]
 docs = [
     "sphinx>=4.3.0",
     "furo>=2023.3.27",
@@ -96,7 +96,7 @@ fastembed = { version = "^0.1.0", optional = true }
 marqo = { version = "*", optional = true }
 qdrant-client = { version = "^1.6.2", optional = true }
 pinecone-client = { version = "^2.2.4", optional = true }
-weaviate-client = { version = "^3.26.1", optional = true }
+weaviate-client = { version = "^4.5.4", optional = true }
 sphinx = { version = ">=4.3.0", optional = true }
 furo = { version = ">=2023.3.27", optional = true }
 docutils = { version = "<0.17", optional = true }
@@ -111,6 +111,7 @@ sphinx-automodapi = { version = "0.16.0", optional = true }
 rich = "^13.7.1"
 psycopg2 = {version = "^2.9.9", optional = true}
 pgvector = {version = "^0.2.5", optional = true}
+structlog = "^24.1.0"
 
 
 [tool.poetry.group.dev.dependencies]
