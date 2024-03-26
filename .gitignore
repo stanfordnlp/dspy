@@ -46,8 +46,3 @@ finetuning_ckpts/
 assertion.log
 *.log
 *.db
-.venv
-temp_req.py
-trial.ipynb
-dsp/modules/error.html
-checkit.py
