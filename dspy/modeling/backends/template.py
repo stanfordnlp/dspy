@@ -1,7 +1,7 @@
 import typing as t
 
-from dspy.modelling.lm import BaseLM
-from dspy.modelling.templates import BaseTemplate, TextTemplate
+from dspy.modeling.lm import BaseLM
+from dspy.modeling.templates import BaseTemplate, TextTemplate
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, SignatureMeta

@@ -8,7 +8,7 @@ from typing import List
 import pytest
 
 import dspy
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 from dspy.functional import (
     predictor,
     cot,

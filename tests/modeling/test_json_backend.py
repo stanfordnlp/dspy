@@ -1,6 +1,6 @@
 import dspy
 from dspy.utils.dummies import DummyLanguageModel
-from dspy.modelling import JSONBackend
+from dspy.modeling import JSONBackend
 from dspy.signatures.signature import Signature, InputField, OutputField
 
 

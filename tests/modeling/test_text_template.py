@@ -1,5 +1,5 @@
 from dspy import Example, Signature, InputField, OutputField
-from dspy.modelling import TextTemplate
+from dspy.modeling import TextTemplate
 
 
 class Emotion(Signature):

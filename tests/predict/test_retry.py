@@ -1,7 +1,7 @@
 import functools
 import dspy
 from dspy.utils import DummyLanguageModel, DummyLM
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 from dspy.primitives.assertions import assert_transform_module, backtrack_handler
 
 def test_retry_simple():

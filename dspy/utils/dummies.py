@@ -7,7 +7,7 @@ import numpy as np
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
-from dspy.modelling.lm.base import BaseLM
+from dspy.modeling.lm.base import BaseLM
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import (
     Completions,

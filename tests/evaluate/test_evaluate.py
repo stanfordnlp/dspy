@@ -1,5 +1,5 @@
 import dspy
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict

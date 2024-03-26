@@ -4,7 +4,7 @@ from dspy.primitives.program import (
     set_attribute_by_name,
 )  # Adjust the import based on your file structure
 from dspy.utils import DummyLanguageModel, DummyLM
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 
 
 class HopModule(dspy.Module):

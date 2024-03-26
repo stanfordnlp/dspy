@@ -1,5 +1,5 @@
 import dspy
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 from dspy.utils.dummies import dummy_rm, DummyLanguageModel
 
 

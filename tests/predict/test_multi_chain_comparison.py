@@ -1,6 +1,6 @@
 import dspy
 from dspy.utils import DummyLM, DummyLanguageModel
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 
 
 def test_basic_example():

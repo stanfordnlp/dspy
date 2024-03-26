@@ -2,7 +2,7 @@ import textwrap
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM, DummyLanguageModel
-from dspy.modelling import TemplateBackend
+from dspy.modeling import TemplateBackend
 
 
 def test_initialization_with_string_signature():
