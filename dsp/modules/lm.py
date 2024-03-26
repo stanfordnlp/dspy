@@ -75,7 +75,6 @@ class LM(ABC):
 
             text = ""
             if provider == "cohere":
-                # The Cohere `Chat` API does not support multiple generations per call
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
