@@ -18,10 +18,6 @@ For example, to use OpenAI language models, you can do it as follows.
 gpt3_turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=300)
 dspy.configure(lm=gpt3_turbo)
 ```
-**Output:**
-```text
-['Hello! How can I assist you today?']
-```
 
 ## Directly calling the LM.
 
@@ -31,11 +27,16 @@ You can simply call the LM with a string to give it a raw prompt, i.e. a string.
 gpt3_turbo("hello! this is a raw prompt to GPT-3.5")
 ```
 
+**Output:**
+```text
+['Hello! How can I assist you today?']
+```
+
 This is almost never the recommended way to interact with LMs in DSPy, but it is allowed.
 
 ## Using the LM with DSPy signatures.
 
-You can also use the LM via DSPy [signatures] and [modules], which we discuss in more depth in the remaining guides.
+You can also use the LM via DSPy [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures) and [`modules`](https://dspy-docs.vercel.app/docs/building-blocks/modules), which we discuss in more depth in the remaining guides.
 
 ```python
 # Define a module (ChainOfThought) and assign it a signature (return an answer, given a question).

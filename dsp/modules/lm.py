@@ -26,10 +26,10 @@ class LM(ABC):
         return self.basic_request(prompt, **kwargs)
 
     def print_green(self, text: str, end: str = "\n"):
-        print("\x1b[32m" + str(text) + "\x1b[0m", end=end)
+        return "\x1b[32m" + str(text) + "\x1b[0m" + end
 
     def print_red(self, text: str, end: str = "\n"):
-        print("\x1b[31m" + str(text) + "\x1b[0m", end=end)
+        return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
     def inspect_history(self, n: int = 1, skip: int = 0):
         """Prints the last n prompts and their completions.
@@ -53,6 +53,8 @@ class LM(ABC):
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
                     printed.append((prompt, x["response"].generations))
+                elif provider == "mistral":
+                    printed.append((prompt, x['response'].choices))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -62,12 +64,15 @@ class LM(ABC):
                 break
 
         for idx, (prompt, choices) in enumerate(reversed(printed)):
+            printing_value = ""
+
             # skip the first `skip` prompts
             if (n - idx - 1) < skip:
                 continue
 
-            print("\n\n\n")
-            print(prompt, end="")
+            printing_value += "\n\n\n"
+            printing_value += prompt
+
             text = ""
             if provider == "cohere":
                 text = choices[0].text
@@ -77,13 +82,19 @@ class LM(ABC):
                 text = choices
             elif provider == "google":
                 text = choices[0].parts[0].text
+            elif provider == "mistral":
+                text = choices[0].message.content
             else:
                 text = choices[0]["text"]
-            self.print_green(text, end="")
+            printing_value += self.print_green(text, end="")
 
             if len(choices) > 1:
-                self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
-            print("\n\n\n")
+                printing_value += self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
+
+            printing_value += "\n\n\n"
+
+        print(printing_value)
+        return printing_value
 
     @abstractmethod
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):

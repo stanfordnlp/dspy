@@ -8,20 +8,22 @@ from ..primitives.python_interpreter import CodePrompt, PythonInterpreter
 
 
 class ProgramOfThought(Module):
-    def __init__(self, signature, max_iters=3):
+    def __init__(self, signature, max_iters=3, import_white_list=None):
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.import_white_list = import_white_list
 
         self.input_fields = signature.input_fields
         self.output_fields = signature.output_fields
 
+        assert len(self.output_fields) == 1, "PoT only supports one output field."
+
+        self.output_field_name = next(iter(self.output_fields))
         inputs_ = ", ".join(
             [f"`{field_name}`" for field_name in self.input_fields.keys()],
         )
-        outputs_ = ", ".join(
-            [f"`{field_name}`" for field_name in self.output_fields.keys()],
-        )
+        outputs_ = f"`{self.output_field_name}`"
 
         assert len(self.output_fields) == 1, "PoT only supports one output field."
 
@@ -55,7 +57,6 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
-
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
         fields_for_mode = {
@@ -92,7 +93,7 @@ class ProgramOfThought(Module):
                     prefix="Code Output:",
                     desc="output of previously-generated python code",
                 ),
-                "answer": self.signature.fields["answer"],
+                self.output_field_name: self.signature.fields[self.output_field_name],
             },
         }
         signature_dict.update(fields_for_mode[mode])
@@ -105,12 +106,7 @@ class ProgramOfThought(Module):
                 for field_name in self._generate_signature(mode).input_fields
             ],
         )
-        mode_outputs = ", ".join(
-            [
-                f"`{field_name}`"
-                for field_name in self._generate_signature(mode).output_fields
-            ],
-        )
+        mode_outputs = f"`{self.output_field_name}`"
         if mode == "generate":
             instr = [
                 f"You will be given {mode_inputs} and you will respond with {mode_outputs}.",
@@ -120,7 +116,7 @@ class ProgramOfThought(Module):
         elif mode == "regenerate":
             instr = [
                 f"You are given {mode_inputs} due to an error in previous code.",
-                f"Your task is to correct the error and provide the new {mode_outputs}.",
+                "Your task is to correct the error and provide the new `generated_code`.",
             ]
         else:  # mode == 'answer'
             instr = [
@@ -128,6 +124,7 @@ class ProgramOfThought(Module):
             ]
 
         return "\n".join(instr)
+
 
     def parse_code(self, code_data):
         code = (
@@ -156,24 +153,26 @@ class ProgramOfThought(Module):
         if not code:
             return code, None, "Error: Empty code before execution."
         code_prompt = CodePrompt(code, code_type="python")
-        interpreter = PythonInterpreter(action_space={"print": print})
+        interpreter = PythonInterpreter(action_space={"print": print}, import_white_list=self.import_white_list)
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
+            print
             return code, output, None
         except Exception as e:
             return code, None, str(e)
-
     def forward(self, **kwargs):
-        code_data = self.code_generate(question=kwargs["question"])
+        input_kwargs = {
+            field_name: kwargs[field_name] for field_name in self.input_fields
+        }
+        code_data = self.code_generate(**input_kwargs)
         parsed_code, error = self.parse_code(code_data)
         # FIXME: Don't try to execute the code if it didn't parse
         code, output, error = self.execute_code(parsed_code)
         hop = 0
         while hop < self.max_iters and error:
             print("Error in code execution")
-            code_data = self.code_regenerate(
-                question=kwargs["question"], previous_code=code, error=error,
-            )
+            input_kwargs.update({"previous_code": code, "error": error})
+            code_data = self.code_regenerate(**input_kwargs)
             parsed_code, error = self.parse_code(code_data)
             # FIXME: Don't try to execute the code if it didn't parse
             code, output, error = self.execute_code(parsed_code)
@@ -181,7 +180,6 @@ class ProgramOfThought(Module):
             if hop == self.max_iters:
                 print("Max hops reached. Error persists.")
                 return None
-        answer_gen_result = self.generate_answer(
-            question=kwargs["question"], final_generated_code=code, code_output=output,
-        )
+        input_kwargs.update({"final_generated_code": code, "code_output": output})
+        answer_gen_result = self.generate_answer(**input_kwargs)
         return answer_gen_result
