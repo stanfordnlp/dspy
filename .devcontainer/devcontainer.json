@@ -5,7 +5,6 @@
         "ms-vscode-remote.vscode-remote-extensionpack",
         "charliermarsh.ruff",
         "ms-azuretools.vscode-docker",
-        "github.vscode-pull-requrest-github",
         "ms-toolsai.jupyter",
         "ms-python.mypy-type-checker",
         "ms-vsliveshare.vsliveshare",
