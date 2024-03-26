@@ -218,11 +218,11 @@ class HFServerTGI:
         docker_process.wait()
 
 class Together(HFModel):
-    def __init__(self, model, api_key , **kwargs):
+    def __init__(self, model, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = "https://api.together.xyz/v1/"
-        self.token = api_key
+        self.api_base = os.getenv("TOGETHER_API_BASE")
+        self.token = os.getenv("TOGETHER_API_KEY")
         self.model = model
 
         self.use_inst_template = False
@@ -248,9 +248,11 @@ class Together(HFModel):
         max_time=1000,
         on_backoff=backoff_hdlr,
     )
-    def _generate(self, prompt, use_chat_api=True, **kwargs):
+    def _generate(self, prompt, use_chat_api=False, **kwargs):
         url = f"{self.api_base}"
+
         kwargs = {**self.kwargs, **kwargs}
+
         stop = kwargs.get("stop")
         temperature = kwargs.get("temperature")
         max_tokens = kwargs.get("max_tokens", 150)
@@ -270,10 +272,10 @@ class Together(HFModel):
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                # "top_p": top_p,
-                # "top_k": top_k,
-                # "repetition_penalty": repetition_penalty,
-                # "stop": stop,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repetition_penalty": repetition_penalty,
+                "stop": stop,
             }
         else:
             body = {
@@ -281,37 +283,26 @@ class Together(HFModel):
                 "prompt": prompt,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                # "top_p": top_p,
-                # "top_k": top_k,
-                # "repetition_penalty": repetition_penalty,
-                # "stop": stop,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repetition_penalty": repetition_penalty,
+                "stop": stop,
             }
 
-        headers = {
-            "Authorization": f"Bearer {self.token}",     
-            "Content-Type": "application/json"
-            }
+        headers = {"Authorization": f"Bearer {self.token}"}
 
-        try:   
-            # print(url, headers, body)
-            # resp = requests.post(url, headers = headers , json = body) 
-            # print(resp.text)
-            # return resp.json()
-
+        try:
             with self.session.post(url, headers=headers, json=body) as resp:
-                print(resp)
                 resp_json = resp.json()
-                print(resp_json)
                 if use_chat_api:
-                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
+                    completions = [resp_json['output'].get('choices', [])[0].get('message', {}).get('content', "")]
                 else:
-                    completions = [resp_json.get('choices', [])[0].get('content', "")]
+                    completions = [resp_json['output'].get('choices', [])[0].get('text', "")]
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
         except Exception as e:
-            pass
-            # if resp_json:
-            #     print(f"resp_json:{resp_json}")
+            if resp_json:
+                print(f"resp_json:{resp_json}")
             print(f"Failed to parse JSON response: {e}")
             raise Exception("Received invalid JSON response from server")
 
