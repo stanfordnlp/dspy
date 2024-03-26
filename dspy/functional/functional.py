@@ -9,6 +9,7 @@ import ujson
 import dspy
 from dsp.templates import passages2text
 from dspy.primitives.prediction import Completions, Prediction
+from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
@@ -322,8 +323,9 @@ class TypedPredictor(dspy.Module):
 
                     examples.append(example)
 
+                # This prompt should be fixed in some way
                 completions = Completions.new(
-                    signature=signature, examples=examples, prompt="unknown", kwargs={},
+                    signature=signature, examples=examples, prompt=Prompt(content=None, messages=None), kwargs={},
                 )
 
                 pred = Prediction.from_completions(completions)

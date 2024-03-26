@@ -90,7 +90,8 @@ def test_example_initialization():
     for scenario in TEMPLATE_SCENARIOS:
         template = TextTemplate()
         example = Example(scenario["signature"], **scenario["input_kwargs"])
-        assert template.generate(scenario["signature"], example) == scenario["prompt"], print(template.generate(scenario["signature"], example))
+        prompt = template.generate(scenario["signature"], example)
+        assert prompt.content == scenario["prompt"], print(prompt)
 
 
 def test_template_extraction():

@@ -7,6 +7,8 @@ import typing as t
 from litellm import ModelResponse, completion, token_counter
 from pydantic import Field
 
+from dspy.primitives.prompt import Prompt
+
 from .base import BaseLM
 
 logger = logging.getLogger("LiteLLM")
@@ -19,6 +21,7 @@ class LiteLM(BaseLM):
         "top_p": 1,
         "frequency_penalty": 0,
         "presence_penalty": 0,
+        "num_retries": 3,
     }
 
     model: str
@@ -26,15 +29,19 @@ class LiteLM(BaseLM):
 
     def generate(
         self,
-        prompt: str,
+        prompt: t.Union[str, Prompt],
         **kwargs,
     ) -> list[str]:
         """Generates `n` predictions for the signature output."""
+
+        if isinstance(prompt, str):
+            prompt = Prompt(content=prompt, messages=None)
+
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         # We are not streaming this content in, therefore we can assume it'll always be a litellm ModelResponse
         response = completion(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=prompt.get_messages(),
             **options,
         )
 

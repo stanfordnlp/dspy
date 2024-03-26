@@ -3,6 +3,7 @@ from dspy.primitives.prediction import (
 )
 from dspy.primitives.example import Example
 from dspy.signatures.signature import Signature, InputField, OutputField
+from dspy.primitives.prompt import Prompt
 
 
 class QuestionSignature(Signature):
@@ -30,7 +31,7 @@ def test_get_completions():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
+        prompt=Prompt(content="DUMMY PROMPT", messages=None),
         kwargs={},
     )
 
@@ -55,7 +56,7 @@ def test_completions_complete_checks():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
+        prompt=Prompt(content="DUMMY PROMPT", messages=None),
         kwargs={},
     )
 
@@ -82,7 +83,7 @@ def test_completions_numerous_answers():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
+        prompt=Prompt(content="DUMMY PROMPT", messages=None),
         kwargs={},
     )
 

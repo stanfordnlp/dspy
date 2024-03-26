@@ -12,6 +12,7 @@ from dspy.primitives.example import Example
 from dspy.primitives.prediction import (
     Completions,
 )
+from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import InputField, OutputField, Signature
 
 
@@ -173,7 +174,7 @@ class DummyLanguageModel(BaseLM):
     answers: list[list[str]]
     step: int = 0
 
-    def generate(self, prompt: str, **kwargs) -> t.List[str]:
+    def generate(self, prompt: t.Union[str, Prompt], **kwargs) -> t.List[str]:
         if len(self.answers) == 1:
             return [content for content in self.answers[0]]
 
@@ -200,6 +201,6 @@ def make_dummy_completions(signature, list_of_dicts: list[dict[str, t.Any]]):
     return Completions.new(
         signature=DummySignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
+        prompt=Prompt(content="DUMMY PROMPT", messages=None),
         kwargs={},
     )

@@ -4,11 +4,12 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
 from dspy import Example, Signature
+from dspy.primitives.prompt import Prompt
 
 
 class BaseTemplate(BaseModel, ABC):
     @abstractmethod
-    def generate(self, signature: Signature, example: Example) -> str:
+    def generate(self, signature: Signature, example: Example) -> Prompt:
         """Generate a prompt given an Example"""
         ...
 

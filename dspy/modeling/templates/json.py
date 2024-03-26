@@ -2,12 +2,13 @@
 import json
 
 from dspy import Example, Signature
+from dspy.primitives.prompt import Prompt
 
 from .base import BaseTemplate
 
 
 class JSONTemplate(BaseTemplate):
-    def generate(self, signature: Signature, example: Example) -> str:
+    def generate(self, signature: Signature, example: Example) -> Prompt:
 
         prompt_spans = []
 
@@ -24,7 +25,8 @@ class JSONTemplate(BaseTemplate):
         # Generate span for the active example
         prompt_spans.append(self._example_span(signature, example))
 
-        return "\n\n--\n\n".join(prompt_spans)
+        content = "\n\n--\n\n".join(prompt_spans)
+        return Prompt(content=content, messages=[{"role": "user", "content": content}])
 
     def extract(self, signature: Signature, example: Example, raw_pred: str) -> Example:
 

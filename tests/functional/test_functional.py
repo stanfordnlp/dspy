@@ -362,7 +362,8 @@ def test_bootstrap_effectiveness_with_backend():
         prediction = compiled_student(input=trainset[0].input)
         assert prediction == trainset[0].output
 
-        assert backend.history[-1].prompt == textwrap.dedent(
+        assert backend.history[-1].prompt.content is not None
+        assert backend.history[-1].prompt.content == textwrap.dedent(
             """\
             Given the fields `input`, produce the fields `output`.
 
@@ -587,7 +588,8 @@ def test_multi_errors_with_backend():
             origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
         )
 
-        assert backend.history[-1].prompt == textwrap.dedent(
+        assert backend.history[-1].prompt.content is not None
+        assert backend.history[-1].prompt.content == textwrap.dedent(
             """\
             Given the fields `email`, produce the fields `flight_information`.
 
@@ -692,7 +694,8 @@ def test_field_validator_with_backend():
         with pytest.raises(ValueError):
             get_user_details()
 
-        assert backend.history[-1].prompt == textwrap.dedent(
+        assert backend.history[-1].prompt.content is not None
+        assert backend.history[-1].prompt.content == textwrap.dedent(
             """\
             Given the fields , produce the fields `get_user_details`.
 

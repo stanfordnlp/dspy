@@ -7,13 +7,14 @@ from joblib import Memory
 from pydantic import BaseModel, Field
 
 import dspy
+from dspy.primitives.prompt import Prompt
 
 _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
 
 class LMOutput(BaseModel):
-    prompt: str
+    prompt: Prompt
     generations: list[str]
     kwargs: dict[str, t.Any]
 
@@ -25,7 +26,7 @@ class BaseLM(BaseModel, ABC):
         super().__init__(*args, **kwargs)
         self._generate_with_cache = _cache_memory.cache(self.generate)
 
-    def __call__(self, prompt: str, **kwargs) -> LMOutput:
+    def __call__(self, prompt: t.Union[str, Prompt], **kwargs) -> LMOutput:
         """Generates `n` predictions for the signature output."""
         generator = self._generate_with_cache if dspy.settings.cache else self.generate
         generations = generator(prompt, **kwargs)
@@ -42,7 +43,7 @@ class BaseLM(BaseModel, ABC):
     @abstractmethod
     def generate(
         self,
-        prompt: str,
+        prompt: t.Union[str, Prompt],
         **kwargs,
     ) -> list[str]:
         """Generates `n` predictions for the signature output."""

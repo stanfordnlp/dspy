@@ -170,7 +170,8 @@ def test_bootstrap_effectiveness_with_backend():
         assert prediction.output == trainset[0].output
 
         # For debugging
-        assert backend.history[-1].prompt == textwrap.dedent(
+        assert backend.history[-1].prompt.content is not None
+        assert backend.history[-1].prompt.content == textwrap.dedent(
             """\
             Given the fields `input`, produce the fields `output`.
 

@@ -5,6 +5,7 @@ import regex
 from pydantic import Field
 
 from dspy.primitives.example import Example
+from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import Signature
 
 from .base import BaseTemplate
@@ -41,7 +42,7 @@ class TextTemplate(BaseTemplate):
 
     format_handlers: dict[str, t.Callable] = Field(default_factory=dict)
 
-    def generate(self, signature: Signature, example: Example) -> str:
+    def generate(self, signature: Signature, example: Example) -> Prompt:
 
         # Set up Format Handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS
@@ -66,14 +67,21 @@ class TextTemplate(BaseTemplate):
         # Generate Empty Demo for Generation
         prompt_spans.append(self._query(signature, example, False, format_handlers))
 
-        return "\n\n---\n\n".join([span.strip() for span in prompt_spans])
+        content = "\n\n---\n\n".join([span.strip() for span in prompt_spans])
+
+        return Prompt(content=content, messages=[{"role": "user", "content": content}])
 
     def extract(self, signature: Signature, example: Example, raw_pred: str) -> Example:
 
         # We have to deepcopy, so that the values dont continously overwrite each other
         example = example.copy()
 
-        full_text = self.generate(signature, example) + raw_pred
+        prompt = self.generate(signature, example)
+
+        if prompt.content is not None:
+            full_text = prompt.content + raw_pred
+        else:
+            full_text = raw_pred
 
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"
