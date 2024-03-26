@@ -27,7 +27,7 @@ HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
 
 Anyscale = dsp.Anyscale
-Together = dsp.TogetherLM
+Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
 Bedrock = dsp.Bedrock
