@@ -32,6 +32,9 @@ class HFClientTGI(HFModel):
         self.headers = {"Content-Type": "application/json"}
 
         self.kwargs = {
+            "model": model,
+            "port": port,
+            "url": url,
             "temperature": 0.01,
             "max_tokens": 75,
             "top_p": 0.97,
