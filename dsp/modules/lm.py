@@ -52,7 +52,7 @@ class LM(ABC):
                     blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
-                    printed.append((prompt, x["response"].generations))
+                    printed.append((prompt, x["response"]))
                 elif provider == "mistral":
                     printed.append((prompt, x['response'].choices))
                 else:
