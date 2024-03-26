@@ -12,7 +12,6 @@ _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
 
-
 class LMOutput(BaseModel):
     prompt: str
     generations: list[str]
@@ -20,7 +19,7 @@ class LMOutput(BaseModel):
 
 
 class BaseLM(BaseModel, ABC):
-    history: list[LMOutput] = Field(default_factory=list)
+    history: list[LMOutput] = Field(default_factory=list, exclude=True)
 
     def __init__(self, *args: t.Any, **kwargs):
         super().__init__(*args, **kwargs)
