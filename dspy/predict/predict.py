@@ -1,5 +1,7 @@
 import random
 
+from pydantic import BaseModel
+
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -20,8 +22,18 @@ class Predict(Parameter):
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train", "demos"]
+        state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
+
+        state["demos"] = []
+        for demo in self.demos:
+            demo = demo.copy()
+
+            for field in demo:
+                if isinstance(demo[field], BaseModel):
+                    demo[field] = demo[field].model_dump_json()
+
+            state["demos"].append(demo)
 
         # Cache the signature instructions and the last field's name.
         state["signature_instructions"] = self.signature.instructions

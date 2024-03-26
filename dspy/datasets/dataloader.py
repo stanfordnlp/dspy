@@ -62,6 +62,13 @@ class DataLoader(Dataset):
         
         return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
+    def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        dataset = load_dataset("parquet", data_files=file_path)["train"]
+
+        if not fields:
+            fields = list(dataset.features)
+
+        return [dspy.Example({field: row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
 
     def sample(
         self,

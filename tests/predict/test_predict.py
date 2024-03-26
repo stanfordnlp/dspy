@@ -1,8 +1,10 @@
 import dspy
-from dspy import Predict, Signature
+from dspy import Predict, Signature, TypedPredictor
 from dspy.utils.dummies import DummyLM
 import copy
 import textwrap
+import pydantic
+import ujson
 
 
 def test_initialization_with_string_signature():
@@ -26,7 +28,7 @@ def test_reset_method():
     assert predict_instance.demos == []
 
 
-def test_dump_and_load_state():
+def test_lm_after_dump_and_load_state():
     predict_instance = Predict("input -> output")
     predict_instance.lm = "lm_state"
     dumped_state = predict_instance.dump_state()
@@ -53,12 +55,84 @@ def test_call_method():
     )
 
 
-def test_dump_load_state():
+def test_instructions_after_dump_and_load_state():
     predict_instance = Predict(Signature("input -> output", "original instructions"))
     dumped_state = predict_instance.dump_state()
     new_instance = Predict(Signature("input -> output", "new instructions"))
     new_instance.load_state(dumped_state)
     assert new_instance.signature.instructions == "original instructions"
+
+
+def test_demos_after_dump_and_load_state():
+    class TranslateToEnglish(dspy.Signature):
+        """Translate content from a language to English."""
+
+        content: str = dspy.InputField()
+        language: str = dspy.InputField()
+        translation: str = dspy.OutputField()
+
+    original_instance = Predict(TranslateToEnglish)
+    original_instance.demos = [
+        dspy.Example(
+            content="¿Qué tal?",
+            language="SPANISH",
+            translation="Hello there",
+        ).with_inputs("content", "language"),
+    ]
+
+    dumped_state = original_instance.dump_state()
+    assert len(dumped_state["demos"]) == len(original_instance.demos)
+    assert dumped_state["demos"][0]["content"] == original_instance.demos[0].content
+
+    saved_state = ujson.dumps(dumped_state)
+    loaded_state = ujson.loads(saved_state)
+
+    new_instance = Predict(TranslateToEnglish)
+    new_instance.load_state(loaded_state)
+    assert len(new_instance.demos) == len(original_instance.demos)
+    # Demos don't need to keep the same types after saving and loading the state.
+    assert new_instance.demos[0]["content"] == original_instance.demos[0].content
+
+
+def test_typed_demos_after_dump_and_load_state():
+    class TypedTranslateToEnglish(dspy.Signature):
+        """Translate content from a language to English."""
+
+        class Input(pydantic.BaseModel):
+            content: str
+            language: str
+
+        class Output(pydantic.BaseModel):
+            translation: str
+
+        input: Input = dspy.InputField()
+        output: Output = dspy.OutputField()
+
+    original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
+    original_instance.demos = [
+        dspy.Example(
+            input=TypedTranslateToEnglish.Input(
+                content="¿Qué tal?",
+                language="SPANISH",
+            ),
+            output=TypedTranslateToEnglish.Output(
+                translation="Hello there",
+            ),
+        ).with_inputs("input"),
+    ]
+
+    dumped_state = original_instance.dump_state()
+    assert len(dumped_state["demos"]) == len(original_instance.demos)
+    assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
+
+    saved_state = ujson.dumps(dumped_state)
+    loaded_state = ujson.loads(saved_state)
+
+    new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
+    new_instance.load_state(loaded_state)
+    assert len(new_instance.demos) == len(original_instance.demos)
+    # Demos don't need to keep the same types after saving and loading the state.
+    assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
 
 def test_forward_method():
@@ -132,7 +206,8 @@ def test_output_only():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         Given the fields , produce the fields `output`.
         
         ---
@@ -143,4 +218,5 @@ def test_output_only():
         
         ---
         
-        Output: short answer""")
+        Output: short answer"""
+    )
