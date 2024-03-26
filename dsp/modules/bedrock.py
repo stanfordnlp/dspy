@@ -51,10 +51,11 @@ class Bedrock(AWSLM):
     def _create_body(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> dict[str, Any]:
         base_args: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens_to_sample": self._max_new_tokens,
         }
         for k, v in kwargs.items():
             base_args[k] = v
+
+        query_args: dict[str, Any] = self._sanitize_kwargs(base_args)
 
         if self.use_messages:
             messages = [ChatMessage(role="user", content=prompt)]
@@ -64,18 +65,12 @@ class Bedrock(AWSLM):
                 messages.insert(0, ChatMessage(role="system", content="You are a helpful AI assistant."))
             serialized_messages = [vars(m) for m in messages if m.role != "system"]
             system_message = next(m["content"] for m in [vars(m) for m in messages if m.role == "system"])
-            query_args = {
-                "messages": serialized_messages,
-                "system": system_message,
-                "anthropic_version": base_args["anthropic_version"],
-                "max_tokens": base_args["max_tokens_to_sample"],
-            }
+            query_args["messages"] = serialized_messages
+            query_args["system"] = system_message
+            query_args["max_tokens"] = self._max_new_tokens
         else:
-            query_args = {
-                "prompt": self._format_prompt(prompt),
-                "anthropic_version": base_args["anthropic_version"],
-                "max_tokens_to_sample": base_args["max_tokens_to_sample"],
-            }
+            query_args["prompt"] = self._format_prompt(prompt)
+            query_args["max_tokens_to_sample"] = self._max_new_tokens
 
         return query_args
 
