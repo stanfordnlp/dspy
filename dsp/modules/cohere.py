@@ -109,4 +109,4 @@ class Cohere(LM):
         **kwargs,
     ):
         response = self.request(prompt, **kwargs)
-        return response.text
+        return [response.text]
