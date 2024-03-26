@@ -1,19 +1,24 @@
 from __future__ import annotations
-
 import json
-from typing import Any, Optional
-
+from typing import Any, Optional, List
 from dsp.modules.aws_lm import AWSLM
+from dataclasses import dataclass
+
+
+@dataclass
+class ChatMessage:
+    role: str
+    content: str
 
 
 class Bedrock(AWSLM):
     def __init__(
-        self,
-        region_name: str,
-        model: str,
-        profile_name: Optional[str] = None,
-        input_output_ratio: int = 3,
-        max_new_tokens: int = 1500,
+            self,
+            region_name: str,
+            model: str,
+            profile_name: Optional[str] = None,
+            input_output_ratio: int = 3,
+            max_new_tokens: int = 1500,
     ) -> None:
         """Use an AWS Bedrock language model.
         NOTE: You must first configure your AWS credentials with the AWS CLI before using this model!
@@ -37,19 +42,24 @@ class Bedrock(AWSLM):
         )
         self._validate_model(model)
         self.provider = "claude" if "claude" in model.lower() else "bedrock"
+        self.use_messages = "claude-3" in model.lower()
 
     def _validate_model(self, model: str) -> None:
         if "claude" not in model.lower():
             raise NotImplementedError("Only claude models are supported as of now")
 
-    def _create_body(self, prompt: str, **kwargs) -> dict[str, str | float]:
+    def _create_body(self, prompt: str, messages: Optional[List[ChatMessage]] = None, **kwargs) -> dict[
+        str, str | float | list]:
         base_args: dict[str, Any] = {
             "max_tokens_to_sample": self._max_new_tokens,
         }
         for k, v in kwargs.items():
             base_args[k] = v
         query_args: dict[str, Any] = self._sanitize_kwargs(base_args)
-        query_args["prompt"] = prompt
+        if self.use_messages:
+            query_args["messages"] = [vars(m) for m in messages]
+        else:
+            query_args["prompt"] = self._format_prompt(prompt)
         # AWS Bedrock forbids these keys
         if "max_tokens" in query_args:
             max_tokens: int = query_args["max_tokens"]
@@ -71,7 +81,7 @@ class Bedrock(AWSLM):
         return completion
 
     def _extract_input_parameters(
-        self, body: dict[Any, Any],
+            self, body: dict[Any, Any],
     ) -> dict[str, str | float | int]:
         return body
 
