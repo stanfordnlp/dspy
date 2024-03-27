@@ -88,7 +88,7 @@ class WeaviateRM(dspy.Retrieve):
                                               fusion_type=self._weaviate_fusion_type,
                                               return_metadata=wvc.query.MetadataQuery(
                                                   distance=True, score=True),
-                                              **kwargs
+                                              **kwargs,
                                               )
 
             parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]

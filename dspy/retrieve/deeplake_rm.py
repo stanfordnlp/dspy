@@ -79,7 +79,7 @@ class DeeplakeRM(dspy.Retrieve):
         ]
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs
+        self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs,
     ) -> dspy.Prediction:
         
         """Search with DeepLake for self.k top passages for query

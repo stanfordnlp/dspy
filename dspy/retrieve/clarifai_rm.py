@@ -57,7 +57,7 @@ class ClarifaiRM(dspy.Retrieve):
         return requested_text
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs
+        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs,
     ) -> dspy.Prediction:
         """Uses clarifai-python SDK search function and retrieves top_k similar passages for given query,
         Args:
