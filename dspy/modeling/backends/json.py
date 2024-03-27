@@ -7,7 +7,7 @@ from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
 
-from .base import BaseBackend
+from .template import TemplateBackend
 
 
 def patch_example(example: Example, data: dict[str, t.Any]) -> Example:
@@ -18,41 +18,20 @@ def patch_example(example: Example, data: dict[str, t.Any]) -> Example:
     return example
 
 
-class JSONBackend(BaseBackend):
+class JSONBackend(TemplateBackend):
     lm: BaseLM
 
     def generate(
         self,
         signature: Signature,
-        config: dict[str, t.Any] = {},
-        demos: t.List[str] = [],
+        demos: t.Optional[list[str]] = None,
+        config: t.Optional[dict[str, t.Any]] = None,
         template: BaseTemplate = JSONTemplate(),
         **kwargs,
     ) -> Completions:
         """Uses response_format json to generate structured predictions."""
+        if config is None:
+            config = {}
 
-        # Generate Example
-        example = Example(demos=demos, **kwargs)
-
-        # Clean Up Kwargs Before Sending Through Language Model
-        for input in signature.input_fields:
-            del kwargs[input]
-
-        prompt = template.generate(signature=signature, example=example)
-        pred = self.lm(
-            prompt,
-            response_format={"type": "json_object"},
-            **config,
-        )
-
-        # Remove predictions which are not json valid
-        extracted = [template.extract(signature=signature, example=example, raw_pred=prediction) for prediction in pred.generations]
-
-        completions = Completions.new(
-            signature=signature,
-            examples=extracted,
-            prompt=pred.prompt,
-            kwargs=pred.kwargs,
-        )
-
-        return completions
+        config.update({"response_format": {"type": "json_object"}})
+        return super().generate(signature=signature, config=config, demos=demos, template=template, **kwargs)

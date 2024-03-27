@@ -17,8 +17,8 @@ class TemplateBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
-        demos: list[str] = None,
-        config: dict[str, t.Any] = None,
+        demos: t.Optional[list[str]] = None,
+        config: t.Optional[dict[str, t.Any]] = None,
         template: BaseTemplate = TextTemplate(),
         **kwargs,
     ) -> Completions:

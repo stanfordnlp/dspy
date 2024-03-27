@@ -17,7 +17,7 @@ class BaseBackend(BaseModel, ABC):
         self,
         signature: Signature,
         attempts: int = 1,
-        config: dict[str, t.Any] = None,
+        config: t.Optional[dict[str, t.Any]] = None,
         **kwargs,
     ) -> Completions:
 
