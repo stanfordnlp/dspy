@@ -62,7 +62,7 @@ class WeaviateRM(dspy.Retrieve):
         self._weaviate_fusion_type = weaviate_fusion_type
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs) -> dspy.Prediction:
         """Search with Weaviate for self.k top passages for query
 
         Args:
@@ -88,6 +88,7 @@ class WeaviateRM(dspy.Retrieve):
                                               fusion_type=self._weaviate_fusion_type,
                                               return_metadata=wvc.query.MetadataQuery(
                                                   distance=True, score=True),
+                                              **kwargs
                                               )
 
             parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]
