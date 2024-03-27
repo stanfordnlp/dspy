@@ -177,6 +177,14 @@ print(f"Question: {question}")
 print(f"Final Predicted Answer (after ReAct process): {result.answer}")
 ```
 
+Note that for the simple question as above, the "search" tool is not called as determined by the language model. But for more complex questions, you'll need to load a retrieval module first. Skipping this step will lead to an `AssertionError: No RM is loaded`. To avoid this, you can load the retrieval module as follows:
+
+```python
+colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+dspy.settings.configure(rm=colbertv2_wiki17_abstracts)
+```
+
+
 ### dspy.Retreive
 
 ```python
