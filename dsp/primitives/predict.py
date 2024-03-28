@@ -111,6 +111,7 @@ def _generate(template: Template, **kwargs) -> Callable:
             max_tokens_key = "max_tokens" if "max_tokens" in keys else "max_output_tokens"
             new_kwargs = {
                 **kwargs,
+                # Set the required max tokens key to the new value.
                 max_tokens_key: max_tokens,
                 "n": 1,
                 "temperature": 0.0,

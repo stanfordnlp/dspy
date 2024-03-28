@@ -44,6 +44,8 @@ class GPT3(LM):
         api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
         api_provider (Literal["openai"], optional): The API provider to use. Defaults to "openai".
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
+        max_tokens (int, optional): The maximum number of tokens to use. The maximum number of tokens to
+            return is half of this value. Defaults to 150.
         **kwargs: Additional arguments to pass to the API provider.
     """
 
@@ -55,6 +57,7 @@ class GPT3(LM):
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = 150,
         **kwargs,
     ):
         super().__init__(model)
@@ -86,7 +89,7 @@ class GPT3(LM):
 
         self.kwargs = {
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": max_tokens,
             "top_p": 1,
             "frequency_penalty": 0,
             "presence_penalty": 0,
