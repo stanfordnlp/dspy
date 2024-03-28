@@ -198,7 +198,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
                 input=cur_batch,
             )
 
-            cur_batch_embeddings = [cur_obj['embedding'] for cur_obj in response['data']]
+            cur_batch_embeddings = [cur_obj.embedding for cur_obj in response.data]
             embeddings_list.extend(cur_batch_embeddings)
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
