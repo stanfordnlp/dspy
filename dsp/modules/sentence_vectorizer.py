@@ -1,9 +1,10 @@
 import abc
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import openai
 
+InputExamplesTypes = Union[List["Example"], List[str]]
 
 class BaseSentenceVectorizer(abc.ABC):
     '''
@@ -19,12 +20,19 @@ class BaseSentenceVectorizer(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+    def __call__(self, inp_examples: List) -> np.ndarray:
+        """
+        Instances of this class vary in terms of the objects they support.
+        List[Example], List[str] are variably supported by the __call__ methods.
+        """
         pass
 
-    def _extract_text_from_examples(self, inp_examples: List) -> List[str]:
-        if isinstance(inp_examples[0], str):
-            return inp_examples 
+    def _extract_text_from_examples(self, inp_examples: InputExamplesTypes) -> List[str]:
+        assert not isinstance(inp_examples, str), "inp_examples should be a list of Examples or strings"
+        # if passed strings, then just return them
+        if all([isinstance(inp_example, str) for inp_example in inp_examples]):
+            return inp_examples
+        # Otherwise, join all text from the input fields.
         return [" ".join([example[key] for key in example._input_keys]) for example in inp_examples]
 
 
@@ -182,7 +190,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
         if api_key:
             openai.api_key = api_key
 
-    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+    def __call__(self, inp_examples: InputExamplesTypes) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
         # maybe it's better to preallocate numpy matrix, but we don't know emb_dim
         embeddings_list = []
