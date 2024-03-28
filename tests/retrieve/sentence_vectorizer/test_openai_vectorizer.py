@@ -7,13 +7,12 @@ from dsp import OpenAIVectorizer
 
 @pytest.mark.skipif(os.getenv('OPENAI_API_KEY') is None, reason="Skipping this test because OPENAI_API_KEY is not set")
 def test__call__():
-    # Currently these classes are used to vectorise the input sections of an Example class.
     vectorizer = OpenAIVectorizer()
     input_examples = [
         example.with_inputs('question')
         for example in [
             Example(question="Why?", answer="Who knows?"),
-            Example(question="Why not?", answer="I don't know?"),
+            Example(question="Why not?", answer="I don't know"),
         ]
     ]
     vectorizer(inp_examples=input_examples)
@@ -21,7 +20,5 @@ def test__call__():
 
 @pytest.mark.skipif(os.getenv('OPENAI_API_KEY') is None, reason="Skipping this test because OPENAI_API_KEY is not set")
 def test__call__with_str():
-    # Currently these classes are used to vectorise the input sections of an Example class.
     vectorizer = OpenAIVectorizer()
-    vectorizer("Hello world")
-
+    vectorizer("Hello world!")
