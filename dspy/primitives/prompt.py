@@ -14,6 +14,7 @@ class ContentType(Enum):
     IMAGE_URL = "image_url"
 
 class TextContent(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
     type: ContentType
     text: str
 
@@ -21,6 +22,7 @@ class URL(BaseModel):
     url: str
 
 class ImageContent(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
     type: ContentType
     image_url: URL
 
