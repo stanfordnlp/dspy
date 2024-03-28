@@ -29,7 +29,7 @@ class BaseLM(BaseModel, ABC):
     def __call__(self, prompt: t.Union[str, Prompt], **kwargs) -> LMOutput:
         """Generates `n` predictions for the signature output."""
         if isinstance(prompt, str):
-            prompt = Prompt(content=prompt, messages=None)
+            prompt = Prompt.from_str(prompt)
 
         if dspy.settings.cache:
             generations = cached_generation(self, prompt, **kwargs)
@@ -55,7 +55,7 @@ class BaseLM(BaseModel, ABC):
         ...
 
     @abstractmethod
-    def count_tokens(self, prompt: str) -> int:
+    def count_tokens(self, prompt: t.Union[str, Prompt]) -> int:
         """Counts the number of tokens for a specific prompt."""
         ...
 

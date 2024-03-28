@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Role(Enum):
@@ -25,6 +25,7 @@ class ImageContent(BaseModel):
     image_url: URL
 
 class Message(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
     role: Role
     content: Union[str, ImageContent, TextContent]
 

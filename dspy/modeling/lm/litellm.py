@@ -35,13 +35,13 @@ class LiteLM(BaseLM):
         """Generates `n` predictions for the signature output."""
 
         if isinstance(prompt, str):
-            prompt = Prompt(content=prompt, messages=None)
+            prompt = Prompt.from_str(prompt)
 
         options = {**self.STANDARD_PARAMS, **self.default_params, **kwargs}
         # We are not streaming this content in, therefore we can assume it'll always be a litellm ModelResponse
         response = completion(
             model=self.model,
-            messages=prompt.get_messages(),
+            messages=prompt.messages_data,
             **options,
         )
 
@@ -54,9 +54,12 @@ class LiteLM(BaseLM):
 
         return [c["message"]["content"] for c in response.choices if c["finish_reason"] != "length"]
 
-    def count_tokens(self, prompt: str) -> int:
+    def count_tokens(self, prompt: t.Union[str, Prompt]) -> int:
         """Counts the number of tokens for a specific prompt."""
+        if isinstance(prompt, str):
+            prompt = Prompt.from_str(prompt)
+
         return token_counter(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=prompt.messages_data,
         )
