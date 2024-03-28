@@ -29,7 +29,7 @@
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/schlich/devcontainer-features/powerlevel10k:1": {}
   },
-  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "image": "mcr.microsoft.com/devcontainers/python:3.9",
   "name": "Python 3",
   "postCreateCommand": "chmod +x ./.devcontainer/post_create.sh && ./.devcontainer/post_create.sh"
 }
