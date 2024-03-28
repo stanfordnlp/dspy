@@ -1,12 +1,12 @@
 import typing as t
 
+from dspy.modeling.lm import BaseLM
+from dspy.modeling.templates import BaseTemplate, TextTemplate
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
-from dspy.primitives.template import Template
 from dspy.signatures.signature import Signature, SignatureMeta
 
 from .base import BaseBackend
-from .lm.litellm import BaseLM
 
 
 class TemplateBackend(BaseBackend):
@@ -17,8 +17,9 @@ class TemplateBackend(BaseBackend):
     def generate(
         self,
         signature: Signature,
-        demos: list[str] = None,
-        config: dict[str, t.Any] = None,
+        demos: t.Optional[list[str]] = None,
+        config: t.Optional[dict[str, t.Any]] = None,
+        template: BaseTemplate = TextTemplate(),
         **kwargs,
     ) -> Completions:
         """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output."""
@@ -39,18 +40,12 @@ class TemplateBackend(BaseBackend):
         # Generate Example
         example = Example(demos=demos, **kwargs)
 
-        # Generate Template
-        template = Template(signature)
-
-        # Clean Up Kwargs Before Sending Through Language Model
-        for field in signature.input_fields:
-            del kwargs[field]
-
-        pred = self.lm(template(example), **config)
+        # Pass through language model
+        pred = self.lm(template.generate(signature, example), **config)
 
         # This returns a list of Examples
         extracted_examples = [
-            template.extract(example, prediction)
+            template.extract(signature, example, prediction)
             for prediction in pred.generations
         ]
 

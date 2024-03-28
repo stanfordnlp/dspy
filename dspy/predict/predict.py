@@ -4,6 +4,7 @@ import dsp
 import dspy
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Completions, Prediction
+from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 
@@ -147,7 +148,7 @@ class Predict(Parameter):
             completions = Completions.new(
                 signature=self.signature,
                 examples=examples,
-                prompt=template(x),
+                prompt=Prompt.from_str(template(x)),
                 kwargs=config,
             )
 

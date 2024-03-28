@@ -1,7 +1,7 @@
 import pytest
 import dspy
 from dspy.signatures.signature import Signature, InputField, OutputField
-from dspy.backends.template import TemplateBackend
+from dspy.modeling import TemplateBackend
 from dspy.utils.dummies import DummyLanguageModel
 
 
