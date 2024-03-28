@@ -201,6 +201,6 @@ def make_dummy_completions(signature, list_of_dicts: list[dict[str, t.Any]]):
     return Completions.new(
         signature=DummySignature,
         examples=examples,
-        prompt=Prompt(content="DUMMY PROMPT", messages=None),
+        prompt=Prompt.from_str("DUMMY PROMPT"),
         kwargs={},
     )

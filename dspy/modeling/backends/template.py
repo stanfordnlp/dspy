@@ -40,10 +40,7 @@ class TemplateBackend(BaseBackend):
         # Generate Example
         example = Example(demos=demos, **kwargs)
 
-        # Clean Up Kwargs Before Sending Through Language Model
-        for field in signature.input_fields:
-            del kwargs[field]
-
+        # Pass through language model
         pred = self.lm(template.generate(signature, example), **config)
 
         # This returns a list of Examples

@@ -78,10 +78,7 @@ class TextTemplate(BaseTemplate):
 
         prompt = self.generate(signature, example)
 
-        if prompt.content is not None:
-            full_text = prompt.content + raw_pred
-        else:
-            full_text = raw_pred
+        full_text = prompt.to_str() + raw_pred
 
         if not full_text.endswith("\n\n---"):
             full_text = full_text + "\n\n---"

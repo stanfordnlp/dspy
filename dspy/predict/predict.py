@@ -148,7 +148,7 @@ class Predict(Parameter):
             completions = Completions.new(
                 signature=self.signature,
                 examples=examples,
-                prompt=Prompt(content=template(x), messages=None),
+                prompt=Prompt.from_str(template(x)),
                 kwargs=config,
             )
 

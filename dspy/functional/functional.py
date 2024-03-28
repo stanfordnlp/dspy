@@ -325,7 +325,7 @@ class TypedPredictor(dspy.Module):
 
                 # This prompt should be fixed in some way
                 completions = Completions.new(
-                    signature=signature, examples=examples, prompt=Prompt(content=None, messages=None), kwargs={},
+                    signature=signature, examples=examples, prompt=Prompt.from_str(""), kwargs={},
                 )
 
                 pred = Prediction.from_completions(completions)

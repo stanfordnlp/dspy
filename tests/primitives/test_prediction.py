@@ -31,7 +31,7 @@ def test_get_completions():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt=Prompt(content="DUMMY PROMPT", messages=None),
+        prompt=Prompt.from_str("DUMMY PROMPT"),
         kwargs={},
     )
 
@@ -56,7 +56,7 @@ def test_completions_complete_checks():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt=Prompt(content="DUMMY PROMPT", messages=None),
+        prompt=Prompt.from_str("DUMMY PROMPT"),
         kwargs={},
     )
 
@@ -83,7 +83,7 @@ def test_completions_numerous_answers():
     completions = Completions.new(
         signature=QuestionSignature,
         examples=examples,
-        prompt=Prompt(content="DUMMY PROMPT", messages=None),
+        prompt=Prompt.from_str("DUMMY PROMPT"),
         kwargs={},
     )
 
