@@ -29,14 +29,14 @@ class Retrieve(Parameter):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> Prediction:
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split('\n')[0].strip() for query in queries]
 
         # print(queries)
         # TODO: Consider removing any quote-like markers that surround the query too.
         k = k if k is not None else self.k
-        passages = dsp.retrieveEnsemble(queries, k=k)
+        passages = dsp.retrieveEnsemble(queries, k=k,**kwargs)
         return Prediction(passages=passages)
 
 # TODO: Consider doing Prediction.from_completions with the individual sets of passages (per query) too.

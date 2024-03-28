@@ -107,7 +107,7 @@ class FaissRM(dspy.Retrieve):
                 logging.debug(f"    Hit {j} = {indices[j]}/{distances[j]}: {self._document_chunks[indices[j]]}")
         return
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None,**kwargs) -> dspy.Prediction:
         """Search the faiss index for k or self.k top passages for query.
 
         Args:
@@ -127,7 +127,7 @@ class FaissRM(dspy.Retrieve):
             passages = [(self._document_chunks[ind], ind) for ind in index_list[0]]
             return [dotdict({"long_text": passage[0], "index": passage[1]}) for passage in passages]
 
-        distance_list, index_list = self._faiss_index.search(emb_npa, (k or self.k) * 3)
+        distance_list, index_list = self._faiss_index.search(emb_npa, (k or self.k) * 3,**kwargs)
         # self._dump_raw_results(queries, index_list, distance_list)
         passage_scores = {}
         for emb in range(len(embeddings)):
