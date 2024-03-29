@@ -11,3 +11,4 @@ DSPy currently supports integrations with: (sorted alphabetically):
 - VectaraRM
 - WeaviateRM
 - YouRM
+- MilvusRM

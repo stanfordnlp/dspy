@@ -29,6 +29,7 @@ setup(
         "pinecone": ["pinecone-client~=2.2.4"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
+        "milvus": ["pymilvus~=2.3.7"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
