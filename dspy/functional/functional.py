@@ -86,7 +86,12 @@ class TypedPredictor(dspy.Module):
         self.explain_errors = explain_errors
 
     def copy(self) -> "TypedPredictor":
-        return TypedPredictor(self.signature, max_retries=self.max_retries, wrap_json=self.wrap_json)
+        return TypedPredictor(
+            self.signature,
+            max_retries=self.max_retries,
+            wrap_json=self.wrap_json,
+            explain_errors=self.explain_errors,
+        )
 
     def __repr__(self):
         """Return a string representation of the TypedPredictor object."""
