@@ -290,6 +290,18 @@ your_dspy_program_compiledx2 = teleprompter.compile(
 )
 ```
 
+#### Saving/loading a compiled program
+
+```python
+save_path = './v1.json'
+your_dspy_program_compiledx2.save(save_path)
+```
+
+```python
+loaded_program = YourProgramClass()
+loaded_program.load(path=save_path)
+```
+
 ### dspy.BootstrapFewShotWithRandomSearch
 
 ```python
