@@ -2,7 +2,7 @@ import textwrap
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM, DummyLanguageModel
-from dspy.modeling import TemplateBackend
+from dspy.modeling import TextBackend
 
 
 def test_initialization_with_string_signature():
@@ -10,7 +10,6 @@ def test_initialization_with_string_signature():
 
     lm = DummyLM(["find the number after 1", "2"])
     with dspy.settings.context(lm=lm, backend=None):
-
         predict = ChainOfThought("question -> answer")
         assert list(predict.extended_signature.output_fields.keys()) == [
             "rationale",
@@ -41,9 +40,8 @@ def test_initialization_with_string_signature():
 
 def test_initialization_with_string_signature_experimental():
     lm = DummyLanguageModel(answers=[["find the number after 1\n\nAnswer: 2"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         predict = ChainOfThought("question -> answer")
         assert list(predict.extended_signature.output_fields.keys()) == [
             "rationale",

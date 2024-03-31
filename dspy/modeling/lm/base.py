@@ -8,16 +8,14 @@ from joblib import Memory
 from pydantic import BaseModel, Field
 
 import dspy
-from dspy.primitives.prompt import Prompt
 
 _cachedir = os.environ.get("DSP_CACHEDIR") or str(Path.home() / ".joblib_cache")
 _cache_memory = Memory(_cachedir, verbose=0)
 
 
 class LMOutput(BaseModel):
-    prompt: Prompt
-    generations: list[str]
     kwargs: dict[str, t.Any]
+    generations: list[str]
 
 
 class BaseLM(BaseModel, ABC):
@@ -26,21 +24,19 @@ class BaseLM(BaseModel, ABC):
     def __init__(self, *args: t.Any, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def __call__(self, prompt: t.Union[str, Prompt], **kwargs) -> LMOutput:
+    def __call__(self, **kwargs) -> LMOutput:
         """Generates `n` predictions for the signature output."""
-        if isinstance(prompt, str):
-            prompt = Prompt.from_str(prompt)
 
         if dspy.settings.cache:
-            generations = cached_generation(self, prompt, **kwargs)
+            generations = cached_generation(self, **kwargs)
         else:
-            generations = self.generate(prompt, **kwargs)
+            generations = self.generate(**kwargs)
 
         # This is necessary to satisfy the type checked for memoized functions
         if generations is None:
             raise ValueError("Generator failed to create generations.")
 
-        output = LMOutput(prompt=prompt, generations=generations, kwargs=kwargs)
+        output = LMOutput(kwargs=kwargs, generations=generations)
         self.history.append(output)
 
         return output
@@ -48,24 +44,17 @@ class BaseLM(BaseModel, ABC):
     @abstractmethod
     def generate(
         self,
-        prompt: t.Union[str, Prompt],
         **kwargs,
     ) -> list[str]:
         """Generates `n` predictions for the signature output."""
         ...
 
-    @abstractmethod
-    def count_tokens(self, prompt: t.Union[str, Prompt]) -> int:
-        """Counts the number of tokens for a specific prompt."""
-        ...
 
-def cached_generation(cls: BaseLM, prompt: t.Union[str, Prompt], **kwargs):
-
+def cached_generation(cls: BaseLM, **kwargs):
     hashed = joblib.hash(cls.model_dump_json())
-    
+
     @_cache_memory.cache(ignore=["cls"])
-    def _cache_call(cls: BaseLM, hash: str, prompt: t.Union[str, Prompt], **kwargs):
-        return cls.generate(prompt, **kwargs)
+    def _cache_call(cls: BaseLM, hash: str, **kwargs):
+        return cls.generate(**kwargs)
 
-
-    return _cache_call(cls, hash=hashed, prompt=prompt, **kwargs)
+    return _cache_call(cls, hash=hashed, **kwargs)

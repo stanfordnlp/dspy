@@ -4,7 +4,6 @@ import dsp
 import dspy
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Completions, Prediction
-from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 
@@ -37,9 +36,7 @@ class Predict(Parameter):
         state["signature_instructions"] = self.signature.instructions
 
         *_, last_key = self.signature.fields.keys()
-        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra[
-            "prefix"
-        ]
+        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
 
         return state
 
@@ -93,14 +90,13 @@ class Predict(Parameter):
 
             # If temperature is 0.0 but its n > 1, set temperature to 0.7
             temperature = config.get("temperature")
-            temperature = (
-                lm.kwargs["temperature"] if temperature is None else temperature
-            )
+            temperature = lm.kwargs["temperature"] if temperature is None else temperature
 
             num_generations = config.get("n")
             if num_generations is None:
                 num_generations = lm.kwargs.get(
-                    "n", lm.kwargs.get("num_generations", None),
+                    "n",
+                    lm.kwargs.get("num_generations", None),
                 )
 
             if (temperature is None or temperature <= 0.15) and num_generations > 1:
@@ -129,9 +125,7 @@ class Predict(Parameter):
                 with dsp.settings.context(lm=self.lm, query_only=True):
                     x, C = dsp.generate(template, **config)(x, stage=self.stage)
 
-            assert (
-                self.stage in x
-            ), "The generated (input, output) example was not stored"
+            assert self.stage in x, "The generated (input, output) example was not stored"
 
             examples = []
             for c in C:
@@ -145,11 +139,10 @@ class Predict(Parameter):
 
                 examples.append(example)
 
-            completions = Completions.new(
+            completions = Completions(
                 signature=self.signature,
                 examples=examples,
-                prompt=Prompt.from_str(template(x)),
-                kwargs=config,
+                input_kwargs=config,
             )
 
             pred = Prediction.from_completions(completions)

@@ -1,6 +1,6 @@
 import dspy
 from dspy.utils import DummyLM, DummyLanguageModel
-from dspy.modeling import TemplateBackend
+from dspy.modeling import TextBackend
 
 
 def test_basic_example():
@@ -68,7 +68,7 @@ def test_basic_example_with_backend():
     # Call the MultiChainComparison on the completions
     question = "What is the color of the sky?"
     lm = DummyLanguageModel(answers=[["my rationale\n\nAnswer: blue"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, cache=False, lm=None):
         final_pred = compare_answers(completions, question=question)
 

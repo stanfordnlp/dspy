@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict
 
 from dsp.utils import normalize_text
 from dspy.primitives.example import Example
-from dspy.primitives.prompt import Prompt
 from dspy.signatures.signature import Signature, SignatureMeta
 
 default_normalize = lambda s: normalize_text(s) or None
@@ -17,18 +16,10 @@ class Completions(BaseModel):
 
     signature: SignatureMeta
     examples: list[Example]
-    prompt: Prompt
-    kwargs: dict[str, t.Any]
+    input_kwargs: dict[str, t.Any]
     data: dict[str, list[t.Any]]
 
-    @classmethod
-    def new(
-        cls,
-        signature: Signature,
-        examples: list[Example],
-        prompt: Prompt,
-        kwargs: dict[str, t.Any],
-    ):
+    def __init__(self, signature: Signature, examples: list[Example], input_kwargs: dict, **kwargs):
         data = {}
         for example in examples:
             for k, v in example.items():
@@ -37,15 +28,7 @@ class Completions(BaseModel):
                 else:
                     data[k] = [v]
 
-        cls = Completions(
-            signature=signature,
-            examples=examples,
-            prompt=prompt,
-            kwargs=kwargs,
-            data=data,
-        )
-
-        return cls
+        super().__init__(signature=signature, examples=examples, input_kwargs=input_kwargs, data=data, **kwargs)
 
     def has_complete_example(self) -> bool:
         for example in self.examples:

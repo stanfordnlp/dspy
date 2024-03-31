@@ -1,6 +1,7 @@
 import dsp
 from dsp.modules.hf_client import ChatModuleClient, HFClientSGLang, HFClientVLLM, HFServerTGI
 
+from .modeling import *
 from .predict import *
 from .primitives import *
 from .retrieve import *

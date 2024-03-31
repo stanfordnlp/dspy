@@ -8,7 +8,7 @@ from typing import List
 import pytest
 
 import dspy
-from dspy.modeling import TemplateBackend
+from dspy.modeling import TextBackend
 from dspy.functional import (
     predictor,
     cot,
@@ -31,7 +31,6 @@ def test_simple():
     expected = "What is the speed of light?"
     lm = DummyLM([expected])
     with dspy.settings.context(lm=lm, backend=None):
-
         question = hard_question(topic="Physics")
         lm.inspect_history(n=2)
 
@@ -44,9 +43,8 @@ def test_simple_with_backend():
         """Think of a hard factual question about a topic."""
 
     lm = DummyLanguageModel(answers=[["What is the speed of light?"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         expected = "What is the speed of light?"
 
         question = hard_question(topic="Physics")
@@ -60,11 +58,8 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(
-        ['{"value": ["What is the speed of light?", "What is the speed of sound?"]}']
-    )
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
     with dspy.settings.context(lm=lm, backend=None):
-
         question = hard_questions(topics=["Physics", "Music"])
         lm.inspect_history(n=2)
 
@@ -82,7 +77,6 @@ def test_simple_type():
     expected = "What is the speed of light?"
     lm = DummyLM([f'{{"value": "{expected}"}}'])
     with dspy.settings.context(lm=lm, backend=None):
-
         question = hard_question(topic="Physics")
 
         assert isinstance(question, Question)
@@ -99,9 +93,8 @@ def test_simple_type_with_backend():
 
     expected = "What is the speed of light?"
     lm = DummyLanguageModel(answers=[[f'{{"value": "{expected}"}}']])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None):
-
         question = hard_question(topic="Physics")
 
         assert isinstance(question, Question)
@@ -122,7 +115,6 @@ def test_simple_type_input():
     question = Question(value="What is the speed of light?")
     lm = DummyLM([f'{{"value": "3e8"}}'])
     with dspy.settings.context(lm=lm, backend=None):
-
         result = answer(question=question)
 
         assert result == Answer(value="3e8")
@@ -142,9 +134,8 @@ def test_simple_type_input_with_backend():
     question = Question(value="What is the speed of light?")
 
     lm = DummyLanguageModel(answers=[[f'{{"value": "3e8"}}']])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(lm=None, backend=backend):
-
         result = answer(question=question)
 
         assert result == Answer(value="3e8")
@@ -154,9 +145,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: List[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -189,7 +178,6 @@ def test_simple_class():
     )
 
     with dspy.settings.context(lm=lm, backend=None):
-
         qa = QA()
         assert isinstance(qa, FunctionalModule)
         assert isinstance(qa.answer, dspy.Module)
@@ -206,9 +194,7 @@ def test_simple_class_with_backend():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: List[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -239,9 +225,8 @@ def test_simple_class_with_backend():
             [f"Some good reasoning...\n\nAnswer: {expected.model_dump_json()}"],
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         qa = QA()
         assert isinstance(qa, FunctionalModule)
         assert isinstance(qa.answer, dspy.Module)
@@ -264,9 +249,8 @@ def test_simple_oop_with_backend():
     program = TypedPredictor(MySignature)
     expected = "What is the speed of light?"
     lm = DummyLanguageModel(answers=[[Question(value=expected).model_dump_json()]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         question = program(topic="Physics").output
 
         assert isinstance(question, Question)
@@ -340,15 +324,10 @@ def test_bootstrap_effectiveness_with_backend():
     teacher = SimpleModule()
     assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLanguageModel(
-        answers=[["blue"], ["blue"], ["Ring-ding-ding-ding-dingeringeding!"]]
-    )
-    backend = TemplateBackend(lm=lm)
+    lm = DummyLanguageModel(answers=[["blue"], ["blue"], ["Ring-ding-ding-ding-dingeringeding!"]])
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, cache=False, lm=None):
-
-        bootstrap = BootstrapFewShot(
-            metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-        )
+        bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
         # Check that the compiled student has the correct demos
@@ -362,9 +341,11 @@ def test_bootstrap_effectiveness_with_backend():
         prediction = compiled_student(input=trainset[0].input)
         assert prediction == trainset[0].output
 
-        assert backend.history[-1].prompt is not None
-        assert backend.history[-1].prompt.to_str() == textwrap.dedent(
-            """\
+        assert backend.history[-1].input_kwargs["messages"] == [
+            {
+                "role": "user",
+                "content": textwrap.dedent(
+                    """\
             Given the fields `input`, produce the fields `output`.
 
             ---
@@ -386,7 +367,9 @@ def test_bootstrap_effectiveness_with_backend():
             Input: What is the color of the sky?
 
             Output:"""
-        )
+                ),
+            }
+        ]
 
 
 def test_regex():
@@ -416,7 +399,7 @@ def test_regex():
             '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
         ]
     )
-    
+
     with dspy.settings.context(lm=lm, backend=None):
         assert flight_information(email=email) == TravelInformation(
             origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
@@ -448,13 +431,10 @@ def test_regex_with_backend():
             ['{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'],
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         predict = flight_information(email=email)
-        assert predict == TravelInformation(
-            origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
-        )
+        assert predict == TravelInformation(origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25))
 
 
 def test_raises():
@@ -499,7 +479,7 @@ def test_raises_with_backend():
             ["..."],
         ]
     )
-    backend = TemplateBackend(lm=lm, attempts=1)
+    backend = TextBackend(lm=lm, attempts=1)
 
     with dspy.settings.context(backend=backend, lm=None):
         with pytest.raises(ValueError):
@@ -528,7 +508,6 @@ def test_multi_errors():
     )
 
     with dspy.settings.context(lm=lm, backend=None):
-
         assert flight_information(email="Some email") == TravelInformation(
             origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
         )
@@ -580,17 +559,18 @@ def test_multi_errors_with_backend():
         ]
     )
 
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
 
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         assert flight_information(email="Some email") == TravelInformation(
             origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
         )
 
-        assert backend.history[-1].prompt is not None
-        assert backend.history[-1].prompt.to_str() == textwrap.dedent(
-            """\
+        assert backend.history[-1].input_kwargs["messages"] == [
+            {
+                "role": "user",
+                "content": textwrap.dedent(
+                    """\
             Given the fields `email`, produce the fields `flight_information`.
 
             ---
@@ -614,7 +594,9 @@ def test_multi_errors_with_backend():
             Past Error (2) in Flight Information: String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
 
             Flight Information:"""
-        )
+                ),
+            }
+        ]
 
 
 def test_field_validator():
@@ -643,7 +625,6 @@ def test_field_validator():
     )
 
     with dspy.settings.context(lm=lm, backend=None):
-
         with pytest.raises(ValueError):
             get_user_details()
 
@@ -687,16 +668,17 @@ def test_field_validator_with_backend():
     # Keep making the mistake (lower case name) until we run
     # out of retries.
     lm = DummyLanguageModel(answers=[['{"name": "lower case name", "age": 25}'] * 10])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
 
     with dspy.settings.context(backend=backend, cache=True, lm=None):
-
         with pytest.raises(ValueError):
             get_user_details()
 
-        assert backend.history[-1].prompt is not None
-        assert backend.history[-1].prompt.to_str() == textwrap.dedent(
-            """\
+        assert backend.history[-1].input_kwargs["messages"] == [
+            {
+                "role": "user",
+                "content": textwrap.dedent(
+                    """\
             Given the fields , produce the fields `get_user_details`.
 
             ---
@@ -716,21 +698,20 @@ def test_field_validator_with_backend():
             Past Error (2) in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
 
             Get User Details:"""
-        )
+                ),
+            }
+        ]
 
 
 def test_annotated_field():
     @predictor
-    def test(
-        input: Annotated[str, Field(description="description")]
-    ) -> Annotated[float, Field(gt=0, lt=1)]:
+    def test(input: Annotated[str, Field(description="description")]) -> Annotated[float, Field(gt=0, lt=1)]:
         pass
 
     # First try 0, which fails, then try 0.5, which passes
     lm = DummyLM(["0", "0.5"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         output = test(input="input")
 
         assert output == 0.5
@@ -740,7 +721,6 @@ def test_multiple_outputs():
     lm = DummyLM([str(i) for i in range(100)])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         test = TypedPredictor("input -> output")
         result = test(input="input", config=dict(n=3))
 
@@ -771,9 +751,8 @@ def test_multiple_outputs_int_cot():
             "thoughts 2\nOutput: 2\n",
         ]
     )
-    
-    with dspy.settings.context(lm=lm, backend=None):
 
+    with dspy.settings.context(lm=lm, backend=None):
         test = TypedChainOfThought("input:str -> output:int")
 
         results = test(input="8", config=dict(n=3))
@@ -784,7 +763,6 @@ def test_parse_type_string():
     lm = DummyLM([str(i) for i in range(100)])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         test = TypedPredictor("input:int -> output:int")
 
         results = test(input=8, config=dict(n=3))
@@ -827,7 +805,6 @@ def test_fields_on_base_signature():
     )
 
     with dspy.settings.context(lm=lm, backend=None):
-
         predictor = TypedPredictor(SimpleOutput)
 
         assert predictor().output == 0.5
@@ -855,14 +832,11 @@ def test_synthetic_data_gen():
     )
 
     with dspy.settings.context(lm=lm, backend=None):
-
         generator = TypedPredictor(ExampleSignature)
         examples = generator(config=dict(n=3))
         for completion in examples.completions:
             assert isinstance(completion.fact, SyntheticFact), type(completion.fact)
-        assert examples.completions[0].fact == SyntheticFact(
-            fact="The sky is blue", varacity=True
-        )
+        assert examples.completions[0].fact == SyntheticFact(fact="The sky is blue", varacity=True)
 
         # If you have examples and want more
         existing_examples = [
@@ -892,7 +866,6 @@ def test_list_input2():
     lm = DummyLM(["Thoughts", "Output"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         output = program(
             attempted_signatures=[
                 ScoredString(string="string 1", score=0.5),
@@ -939,7 +912,6 @@ def test_generic_signature():
     lm = DummyLM(["23"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         assert predictor().output == 23
 
 
@@ -974,9 +946,8 @@ def test_lm_as_validator():
         """What is the next square number after n?"""
 
     lm = DummyLM(["3", "False", "4", "True"])
-    
-    with dspy.settings.context(lm=lm, backend=None):
 
+    with dspy.settings.context(lm=lm, backend=None):
         m = next_square(n=2)
         lm.inspect_history(n=2)
         assert m == 4
@@ -996,9 +967,8 @@ def test_annotated_validator():
         next_square: Annotated[int, AfterValidator(is_square)] = dspy.OutputField()
 
     lm = DummyLM(["3", "4"])
-    
-    with dspy.settings.context(lm=lm, backend=None):
 
+    with dspy.settings.context(lm=lm, backend=None):
         m = TypedPredictor(MySignature)(n=2).next_square
         lm.inspect_history(n=2)
 
@@ -1018,7 +988,6 @@ def test_annotated_validator_functional():
     lm = DummyLM(["3", "4"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         m = next_square(n=2)
         lm.inspect_history(n=2)
 
@@ -1037,7 +1006,6 @@ def test_demos():
     lm = DummyLM(["Paris"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         assert program(input="What is the capital of France?").output == "Paris"
 
         assert lm.get_convo(-1) == textwrap.dedent(

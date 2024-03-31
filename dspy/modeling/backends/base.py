@@ -3,8 +3,10 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
 
+from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.modeling.lm.base import LMOutput
 
 
 class BaseBackend(BaseModel, ABC):
@@ -13,6 +15,27 @@ class BaseBackend(BaseModel, ABC):
     history: list[Completions] = Field(default_factory=list)
     attempts: int = Field(default=1)
 
+    @abstractmethod
+    def prepare_request(
+        self,
+        signature: Signature,
+        example: Example,
+        config: dict[str, t.Any],
+    ) -> dict:
+        """Takes params passed to call, and returns kwargs for LM."""
+        ...
+
+    @abstractmethod
+    def process_response(
+        self,
+        signature: Signature,
+        example: Example,
+        output: LMOutput,
+        input_kwargs: dict,
+    ) -> Completions:
+        """Takes output from LM, and generates Completions."""
+        ...
+
     def __call__(
         self,
         signature: Signature,
@@ -20,11 +43,9 @@ class BaseBackend(BaseModel, ABC):
         config: t.Optional[dict[str, t.Any]] = None,
         **kwargs,
     ) -> Completions:
-
         # Override config provided at initialization with provided config
         if config is None:
             config = {}
-
 
         # Allow overriding the attempts at the Backend Initialization Step
         attempts = max(attempts, self.attempts)

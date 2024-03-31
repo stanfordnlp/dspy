@@ -1,5 +1,5 @@
 import dspy
-from dspy.modeling import TemplateBackend
+from dspy.modeling import TextBackend
 from dspy.utils.dummies import dummy_rm, DummyLanguageModel
 
 
@@ -12,7 +12,6 @@ def test_example_no_tools():
         ]
     )
     with dspy.settings.context(lm=lm, rm=dummy_rm(), backend=None):
-
         program = dspy.ReAct("question -> answer")
 
         # Check default tools
@@ -31,10 +30,9 @@ def test_example_no_tools():
             print("---")
 
         assert lm.get_convo(-1).endswith(
-            "Question: What is the color of the sky?\n"
-            "Thought 1: Initial thoughts\n"
-            "Action 1: Finish[blue]"
+            "Question: What is the color of the sky?\n" "Thought 1: Initial thoughts\n" "Action 1: Finish[blue]"
         )
+
 
 def test_example_search():
     # Createa a simple dataset which the model will use with the Retrieve tool.
@@ -57,7 +55,6 @@ def test_example_search():
         ]
     )
     with dspy.settings.context(lm=lm, rm=rm, backend=None):
-
         program = dspy.ReAct("question -> answer")
 
         # Check default tools
@@ -85,12 +82,12 @@ def test_example_search():
             "Action 2: Finish[blue]"
         )
 
+
 def test_example_no_tools_with_backend():
     # Createa a simple dataset which the model will use with the Retrieve tool.
     lm = DummyLanguageModel(answers=[["Initial thoughts\n\nAction 1: Finish[blue]"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         program = dspy.ReAct("question -> answer")
 
         # Check default tools
@@ -104,8 +101,7 @@ def test_example_no_tools_with_backend():
         # For debugging
         print("---")
         for event in backend.history:
-            print(event.prompt)
-
+            print(event.input_kwargs)
 
 
 def test_example_search_with_backend():
@@ -117,7 +113,7 @@ def test_example_search_with_backend():
             ]
         ]
     )
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     rm = dummy_rm(
         [
             "We all know the color of the sky is blue.",

@@ -1,7 +1,8 @@
 import dspy
-from dspy.modeling import TemplateBackend
+from dspy.modeling import TextBackend
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
+from dspy.modeling.backends.text import TextBackend
 from dspy.predict import Predict
 from dspy.utils.dummies import DummyLM, DummyLanguageModel
 
@@ -28,7 +29,7 @@ def test_evaluate_initialization():
 
 
 def test_evaluate_call():
-    lm=DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"})
+    lm = DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"})
     with dspy.settings.context(lm=lm, backend=None, cache=False):
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")
@@ -41,11 +42,11 @@ def test_evaluate_call():
         score = ev(program)
         assert score == 100.0
 
+
 def test_evaluate_call_with_backend():
     lm = DummyLanguageModel(answers=[[" 2"], [" 4"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")
         ev = Evaluate(
@@ -56,8 +57,9 @@ def test_evaluate_call_with_backend():
         score = ev(program)
         assert score == 100.0
 
+
 def test_evaluate_call_bad():
-    lm=DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"})
+    lm = DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"})
     with dspy.settings.context(backend=None, lm=lm):
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")
@@ -69,9 +71,10 @@ def test_evaluate_call_bad():
         score = ev(program)
         assert score == 0.0
 
+
 def test_evaluate_call_bad_with_backend():
     lm = DummyLanguageModel(answers=[[" 0"], [" 0"]])
-    backend = TemplateBackend(lm=lm)
+    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")

@@ -1,7 +1,7 @@
 import pytest
 import dspy
 from dspy.signatures.signature import Signature, InputField, OutputField
-from dspy.modeling import TemplateBackend
+from dspy import TextBackend
 from dspy.utils.dummies import DummyLanguageModel
 
 
@@ -20,15 +20,13 @@ class COTCheckCitationFaithfulness(Signature):
     rationale = OutputField(
         desc="Think step by step in order to generate the faithfulness.",
     )
-    faithfulness = OutputField(
-        desc="True/False indicating if text is faithful to context"
-    )
+    faithfulness = OutputField(desc="True/False indicating if text is faithful to context")
 
 
 def test_backend_complete_generation():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(answers=[["Joy", "Joy", "Joy", "Joy", "Joy"]])
-    backend = TemplateBackend(lm=dummy_lm)
+    backend = TextBackend(lm=dummy_lm)
     with dspy.settings.context(backend=backend, lm=None):
         # Generate Sample Signature
         n = 5
@@ -42,13 +40,11 @@ def test_backend_with_recover():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
         answers=[
-            [
-                "produce the faithfulness. We know that Lee has two loan spells in League One last term."
-            ],
+            ["produce the faithfulness. We know that Lee has two loan spells in League One last term."],
             ["True"],
         ],
     )
-    backend = TemplateBackend(lm=dummy_lm)
+    backend = TextBackend(lm=dummy_lm)
     with dspy.settings.context(backend=backend, lm=None):
         # Generate Incomplete on the first try
         # Nothing should be returned from the generation as no results were complete
@@ -63,15 +59,12 @@ def test_backend_with_recover():
     # Initialize Backend
     dummy_lm = DummyLanguageModel(
         answers=[
-            [
-                "produce the faithfulness. We know that Lee has two loan spells in League One last term."
-            ],
+            ["produce the faithfulness. We know that Lee has two loan spells in League One last term."],
             ["True"],
         ]
     )
-    backend = TemplateBackend(lm=dummy_lm)
+    backend = TextBackend(lm=dummy_lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         # Generate Complete after recovery
         n = 1
         x = backend(
