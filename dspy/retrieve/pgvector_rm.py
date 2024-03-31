@@ -35,6 +35,7 @@ class PgVectorRM(dspy.Retrieve):
         k (Optional[int]): Default number of top passages to retrieve. Defaults to 20
         embedding_field (str = "embedding"): Field containing passage embeddings. Defaults to "embedding"
         fields (List[str] = ['text']): Fields to retrieve from the table. Defaults to "text"
+        embedding_model (str = "text-embedding-ada-002"): Field containing the OpenAI embedding model to use. Defaults to "text-embedding-ada-002"
 
     Examples:
         Below is a code snippet that shows how to use PgVector as the default retriever
@@ -67,9 +68,11 @@ class PgVectorRM(dspy.Retrieve):
             pg_table_name: str,
             openai_client: Optional[openai.OpenAI] = None,
             embedding_func: Optional[Callable] = None,
-            k: Optional[int] = 20,
+            k: int = 20,
             embedding_field: str = "embedding",
-            fields: list[str] = ['text'],
+            fields: Optional[list[str]] = None,
+            embedding_model: str = "text-embedding-ada-002",
+            include_similarity: bool = False,
     ):
         """
         k = 20 is the number of paragraphs to retrieve
@@ -81,31 +84,47 @@ class PgVectorRM(dspy.Retrieve):
         self.conn = psycopg2.connect(db_url)
         register_vector(self.conn)
         self.pg_table_name = pg_table_name
-        self.fields = fields
+        self.fields = fields or ['text']
         self.embedding_field = embedding_field
+        self.embedding_model = embedding_model
+        self.include_similarity = include_similarity
 
         super().__init__(k=k)
 
-    def forward(self, query: str, k: Optional[int]=20):
-        """Search with PgVector for self.k top passages for query
+    def forward(self, query: str):
+        """Search with PgVector for self.k top passages for query using cosine similarity
 
         Args:
             query  (str): The query to search for
-            k (Optional[int]): The number of top passages to retrieve. Defaults to self.k
+            include_similarity (bool): Whether or not to include the similarity for each record
         Returns:
             dspy.Prediction: an object containing the retrieved passages.
         """
         # Embed query
         query_embedding = self._get_embeddings(query)
 
-        related_paragraphs = []
+        retrieved_docs = []
+
+        fields = sql.SQL(',').join([
+            sql.Identifier(f)
+            for f in self.fields
+        ])
+        if self.include_similarity:
+            similarity_field = (
+                sql.SQL(',') +
+                sql.SQL(
+                    '1 - ({embedding_field} <=> %s) AS similarity',
+                ).format(embedding_field=sql.Identifier(self.embedding_field))
+            )
+            fields += similarity_field
+            args = (query_embedding, query_embedding, self.k)
+        else:
+            args = (query_embedding, self.k)
 
         sql_query = sql.SQL(
-            "select {fields} from {table} order by {embedding_field} <-> %s::vector limit %s").format(
-            fields=sql.SQL(',').join([
-                sql.Identifier(f)
-                for f in self.fields
-            ]),
+            "select {fields} from {table} order by {embedding_field} <=> %s::vector limit %s",
+        ).format(
+            fields=fields,
             table=sql.Identifier(self.pg_table_name),
             embedding_field=sql.Identifier(self.embedding_field),
         )
@@ -114,17 +133,19 @@ class PgVectorRM(dspy.Retrieve):
             with conn.cursor() as cur:
                 cur.execute(
                     sql_query,
-                    (query_embedding, self.k))
+                    args)
                 rows = cur.fetchall()
+                columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
-                    related_paragraphs.append(dspy.Example(long_text=row[0], document_id=row[1]))
+                    data = dict(zip(columns, row))
+                    retrieved_docs.append(dspy.Example(**data))
         # Return Prediction
-        return related_paragraphs
+        return retrieved_docs
 
     def _get_embeddings(self, query: str) -> list[float]:
         if self.openai_client is not None:
             return self.openai_client.embeddings.create(
-                model="text-embedding-ada-002",
+                model=self.embedding_model,
                 input=query,
                 encoding_format="float",
             ).data[0].embedding

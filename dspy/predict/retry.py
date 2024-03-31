@@ -32,6 +32,12 @@ class Retry(Predict):
         return signature
 
     def forward(self, *, past_outputs, **kwargs):
+        # Take into account the possible new signature, as in TypedPredictor
+        new_signature = kwargs.pop("new_signature", None)
+        if new_signature:
+            self.original_signature = new_signature
+            self.new_signature = self._create_new_signature(self.original_signature)
+
         # Convert the dict past_outputs={"answer": ...} to kwargs
         # {past_answer=..., ...}
         for key, value in past_outputs.items():
@@ -42,7 +48,7 @@ class Retry(Predict):
         # Note: This only works if the wrapped module is a Predict or ChainOfThought.
         kwargs["new_signature"] = self.new_signature
         return self.original_forward(**kwargs)
-    
+
     def __call__(self, **kwargs):
         cached_kwargs = copy.deepcopy(kwargs)
         kwargs["_trace"] = False
@@ -59,7 +65,7 @@ class Retry(Predict):
         # now pop multiple reserved keys
         # NOTE(shangyin) past_outputs seems not useful to include in demos,
         # therefore dropped
-        for key in ["_trace", "demos", "signature", "config", "lm", "past_outputs"]:
+        for key in ["_trace", "demos", "signature", "new_signature", "config", "lm", "past_outputs"]:
             kwargs.pop(key, None)
 
         if dsp.settings.trace is not None:

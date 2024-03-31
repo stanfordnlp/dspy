@@ -95,3 +95,24 @@ config = dict(max_bootstrapped_demos=3, max_labeled_demos=3, num_candidate_progr
 teleprompter = BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
 optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINSET_HERE)
 ```
+
+## Saving and loading optimizer output
+
+After running a program through an optimizer, it's useful to also save it. At a later point, a program can be loaded from a file and used for inference. For this, the `load` and `save` methods can be used.
+
+### Saving a program
+
+```python
+optimized_program.save(YOUR_SAVE_PATH)
+```
+
+The resulting file is in plain-text JSON format. It contains all the parameters and steps in the source program. You can always read it and see what the optimizer generated.
+
+### Loading a program
+
+To load a program from a file, you can instantiate an object from that class and then call the load method on it.
+
+```python
+loaded_program = YOUR_PROGRAM_CLASS()
+loaded_program.load(path=YOUR_SAVE_PATH)
+```

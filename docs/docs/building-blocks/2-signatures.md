@@ -6,7 +6,7 @@ sidebar_position: 2
 
 When we assign tasks to LMs in DSPy, we specify the behavior we need as a Signature.
 
-**A signature is a declarative specification of input/output behavior of a DSPy module.** Signatures allow you tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
+**A signature is a declarative specification of input/output behavior of a DSPy module.** Signatures allow you to tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
 
 
 You're probably familiar with function signatures, which specify the input and output arguments and their types. DSPy signatures are similar, but the differences are that:
@@ -157,4 +157,4 @@ Prediction(
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
 
-You should compose multiple signatures into bigger [DSPy modules] and [compile] these modules into optimized prompts and finetunes.
+You should compose multiple signatures into bigger [DSPy modules](https://dspy-docs.vercel.app/docs/building-blocks/modules) and [compile these modules into optimized prompts](https://dspy-docs.vercel.app/docs/building-blocks/optimizers#what-does-a-dspy-optimizer-tune-how-does-it-tune-them) and finetunes.

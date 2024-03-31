@@ -1,4 +1,3 @@
-import math
 from typing import Any, Optional
 
 import backoff
@@ -7,11 +6,10 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
-    cohere_api_error = cohere.CohereAPIError
+    cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
-
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -37,7 +35,7 @@ class Cohere(LM):
 
     def __init__(
         self,
-        model: str = "command-nightly",
+        model: str = "command-r",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
         **kwargs,
@@ -47,7 +45,7 @@ class Cohere(LM):
         ----------
         model : str
             Which pre-trained model from Cohere to use?
-            Choices are [`command`, `command-nightly`, `command-light`, `command-light-nightly`]
+            Choices are [`command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
         api_key : str
             The API key for Cohere.
             It can be obtained from https://dashboard.cohere.ai/register.
@@ -64,8 +62,6 @@ class Cohere(LM):
             "temperature": 0.0,
             "max_tokens": 150,
             "p": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
             "num_generations": 1,
             **kwargs,
         }
@@ -79,18 +75,22 @@ class Cohere(LM):
         kwargs = {
             **self.kwargs,
             "stop_sequences": self.stop_sequences,
-            "prompt": prompt,
+            "chat_history": [],
+            "message": prompt,
             **kwargs,
         }
-        response = self.co.generate(**kwargs)
+        kwargs.pop("num_generations")
+        if "n" in kwargs.keys():
+            kwargs.pop("n")
+        response = self.co.chat(**kwargs)
 
-        history = {
+
+        self.history.append({
             "prompt": prompt,
             "response": response,
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+        })
 
         return response
 
@@ -108,38 +108,7 @@ class Cohere(LM):
     def __call__(
         self,
         prompt: str,
-        only_completed: bool = True,
-        return_sorted: bool = False,
         **kwargs,
     ):
-        assert only_completed, "for now"
-        assert return_sorted is False, "for now"
-
-        # Cohere uses 'num_generations' whereas dsp.generate() uses 'n'
-        n = kwargs.pop("n", 1)
-
-        # Cohere can generate upto self.max_num_generations completions at a time
-        choices = []
-        num_iters = math.ceil(n / self.max_num_generations)
-        remainder = n % self.max_num_generations
-        for i in range(num_iters):
-            if i == (num_iters - 1):
-                kwargs["num_generations"] = (
-                    remainder if remainder != 0 else self.max_num_generations
-                )
-            else:
-                kwargs["num_generations"] = self.max_num_generations
-            response = self.request(prompt, **kwargs)
-            choices.extend(response.generations)
-        completions = [c.text for c in choices]
-
-        if return_sorted and kwargs.get("num_generations", 1) > 1:
-            scored_completions = []
-
-            for c in choices:
-                scored_completions.append((c.likelihood, c.text))
-
-            scored_completions = sorted(scored_completions, reverse=True)
-            completions = [c for _, c in scored_completions]
-
-        return completions
+        response = self.request(prompt, **kwargs)
+        return [response.text]
