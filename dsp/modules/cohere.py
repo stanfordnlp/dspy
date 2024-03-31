@@ -80,6 +80,8 @@ class Cohere(LM):
             **kwargs,
         }
         kwargs.pop("num_generations")
+        if "n" in kwargs.keys():
+            kwargs.pop("n")
         response = self.co.chat(**kwargs)
 
 

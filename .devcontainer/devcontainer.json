@@ -1,0 +1,35 @@
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode-remote.vscode-remote-extensionpack",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker",
+        "ms-toolsai.jupyter",
+        "ms-python.mypy-type-checker",
+        "ms-vsliveshare.vsliveshare",
+        "ms-python.python",
+        "eamodio.gitlens",
+        "github.vscode-pull-request-github"
+      ],
+      "settings": {
+        "git.autofetch": true,
+        "python.testing.pytestEnabled": true,
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/tmux-apt-get:1": {},
+    "ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
+      "omzPlugins": "https://github.com/zsh-users/zsh-syntax-highlighting.git https://github.com/zsh-users/zsh-autosuggestions.git",
+      "plugins": "zsh-syntax-highlighting zsh-autosuggestions"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/schlich/devcontainer-features/powerlevel10k:1": {}
+  },
+  "image": "mcr.microsoft.com/devcontainers/python:3.9",
+  "name": "Python 3",
+  "postCreateCommand": "chmod +x ./.devcontainer/post_create.sh && ./.devcontainer/post_create.sh"
+}
