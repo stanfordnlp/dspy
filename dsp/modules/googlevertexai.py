@@ -34,21 +34,24 @@ class GoogleVertexAI(LM):
     """
 
     def __init__(
-        self, model_name: str = "text-bison@002", **kwargs,
+        self, model: str = "text-bison@002", **kwargs,
     ):
         """
         Parameters
         ----------
         model : str
             Which pre-trained model from Google to use?
-            Choices are [`text-bison@002`]
+            Choices are ['gemini-1.0-pro-001', 'gemini-1.0-pro',
+            'claude-3-sonnet@20240229', 'claude-3-sonnet@20240229', 'claude-3-haiku@20240307',
+            'text-bison@002', 'text-bison-32k@002', 'text-bison',]
+            full list at https://console.cloud.google.com/vertex-ai/model-garden
         **kwargs: dict
             Additional arguments to pass to the API provider.
         """
-        super().__init__(model_name)
-        self._is_gemini = "gemini" in model_name
+        super().__init__(model)
+        self._is_gemini = "gemini" in model
         self._init_vertexai(kwargs)
-        if "code" in model_name:
+        if "code" in model:
             model_cls = CodeGenerationModel
             self.available_args = {
                 'suffix',
@@ -57,7 +60,7 @@ class GoogleVertexAI(LM):
                 'stop_sequences',
                 'candidate_count',
             }
-        elif "gemini" in model_name:
+        elif "gemini" in model:
             model_cls = GenerativeModel
             self.available_args = {
                 'max_output_tokens',
@@ -67,7 +70,7 @@ class GoogleVertexAI(LM):
                 'stop_sequences',
                 'candidate_count',
             }
-        elif 'text' in model_name:
+        elif 'text' in model:
             model_cls = TextGenerationModel
             self.available_args = {
                 'max_output_tokens',
@@ -81,12 +84,12 @@ class GoogleVertexAI(LM):
             raise PydanticCustomError(
                 'model',
                 'model name is not valid, got "{model_name}"',
-                dict(wrong_value=model_name),
+                dict(wrong_value=model),
             )
         if self._is_gemini:
-            self.client = model_cls(model_name=model_name, safety_settings=kwargs.get('safety_settings')) # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
+            self.client = model_cls(model_name=model, safety_settings=kwargs.get('safety_settings')) # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
         else:
-            self.client = model_cls.from_pretrained(model_name)
+            self.client = model_cls.from_pretrained(model)
         self.provider = "googlevertexai"
         self.kwargs = {
             **self.kwargs,
