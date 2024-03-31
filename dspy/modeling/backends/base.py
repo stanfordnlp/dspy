@@ -94,11 +94,37 @@ class BaseBackend(BaseModel, ABC):
 
         return completions
 
-    @abstractmethod
     def generate(
         self,
         signature: Signature,
-        config: dict[str, t.Any],
+        demos: t.Optional[list[str]] = None,
+        config: t.Optional[dict[str, t.Any]] = None,
         **kwargs,
     ) -> Completions:
         """Generates `n` predictions (complete/partial) for the signature output."""
+
+        if config is None:
+            config = {}
+
+        if demos is None:
+            demos = []
+
+        # TODO: Move this check to logging
+        if not all(k in kwargs for k in signature.input_fields):
+            present = [k for k in signature.input_fields if k in kwargs]
+            missing = [k for k in signature.input_fields if k not in kwargs]
+            print(
+                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
+            )
+
+        # Generate Example
+        example = Example(demos=demos, **kwargs)
+
+        # Get full kwargs for Model
+        model_kwargs = self.prepare_request(signature, example, config)
+
+        # Pass Through Language Model
+        generations = self.lm(**model_kwargs)
+
+        # This returns a list of Examples
+        return self.process_response(signature, example, generations, model_kwargs)

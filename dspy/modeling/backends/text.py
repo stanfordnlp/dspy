@@ -179,43 +179,8 @@ class TextBackend(BaseBackend):
         if type(signature) != SignatureMeta:
             raise AssertionError("Signature not provided appropriately.")
 
-        # TODO: change to __init__
         return Completions(
             signature=signature,
             examples=extracted,
             input_kwargs=input_kwargs,
         )
-
-    def generate(
-        self,
-        signature: Signature,
-        demos: t.Optional[list[str]] = None,
-        config: t.Optional[dict[str, t.Any]] = None,
-        **kwargs,
-    ) -> Completions:
-        """Wrap the signature and demos into an example, and pass through the Language Model, returning Signature compliant output."""
-        if config is None:
-            config = {}
-
-        if demos is None:
-            demos = []
-
-        # TODO: Move this check to logging
-        if not all(k in kwargs for k in signature.input_fields):
-            present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
-            print(
-                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
-            )
-
-        # Generate Example
-        example = Example(demos=demos, **kwargs)
-
-        # Get full kwargs for model
-        model_kwargs = self.prepare_request(signature, example, config)
-
-        # Pass through language model
-        generations = self.lm(**model_kwargs)
-
-        # This returns a list of Examples
-        return self.process_response(signature, example, generations, model_kwargs)

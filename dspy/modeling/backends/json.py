@@ -106,30 +106,3 @@ class JSONBackend(BaseBackend):
         config.update({"messages": [{"role": "user", "content": content}]})
 
         return config
-
-    def generate(
-        self,
-        signature: Signature,
-        demos: t.Optional[list[str]] = None,
-        config: t.Optional[dict[str, t.Any]] = None,
-        **kwargs,
-    ) -> Completions:
-        if config is None:
-            config = {}
-
-        if demos is None:
-            demos = []
-
-        # Generate Example
-        example = Example(demos=demos, **kwargs)
-
-        # Get full kwargs for model
-        model_kwargs = self.prepare_request(signature, example, config)
-
-        # Pass Through Language Model
-        generations = self.lm(**model_kwargs)
-
-        output = self.process_response(signature, example, generations, model_kwargs)
-        self.history.append(output)
-
-        return output
