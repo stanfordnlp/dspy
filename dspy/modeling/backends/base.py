@@ -3,10 +3,10 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
 
+from dspy.modeling.lm.base import LMOutput
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.modeling.lm.base import LMOutput
 
 
 class BaseBackend(BaseModel, ABC):

@@ -4,7 +4,7 @@
 import logging
 import typing as t
 
-from litellm import ModelResponse, completion, token_counter
+from litellm import ModelResponse, completion
 from pydantic import Field
 
 from .base import BaseLM
