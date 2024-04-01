@@ -112,7 +112,6 @@ rich = "^13.7.1"
 psycopg2 = {version = "^2.9.9", optional = true}
 pgvector = {version = "^0.2.5", optional = true}
 structlog = "^24.1.0"
-boto3 = { version = "^1.29.1", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
@@ -124,7 +123,6 @@ black = "^24.2.0"
 pre-commit = "^3.7.0"
 
 [tool.poetry.extras]
-aws = ["boto3"]
 chromadb = ["chromadb"]
 qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
