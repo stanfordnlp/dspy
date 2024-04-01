@@ -77,3 +77,40 @@ class Bedrock(AWSLM):
 
     def _format_prompt(self, raw_prompt: str) -> str:
         return "\n\nHuman: " + raw_prompt + "\n\nAssistant:"
+
+class BedrockClaudeV3(Bedrock):
+    """AWS Bedrock Claude V3 requires different request body parameters compared with other models available in the service"""
+    # https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-runtime_example_bedrock-runtime_Claude3_Text_section.html 
+    def _create_body(self, prompt: str, **kwargs):
+        base_args: dict[str, Any] = {
+            "max_tokens": self._max_new_tokens,
+        }
+        for k, v in kwargs.items():
+            base_args[k] = v
+        query_args: dict[str, Any] = self._sanitize_kwargs(base_args)
+        
+        # the parameter `anthropic_version` is required for the model to work.
+        query_args["anthropic_version"] = "bedrock-2023-05-31"
+        
+        # Assuming the prompt is TEXT.
+        query_args["messages"] = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        return query_args
+
+    def _call_model(self, body: str) -> str:
+        response = self.predictor.invoke_model(
+            modelId=self._model_name,
+            body=body,
+            accept="application/json",
+            contentType="application/json",
+        )
+        response_body = json.loads(response["body"].read())
+        # Assuming the content is TEXT.
+        completions = [
+            output["text"]
+            for output in response_body.get("content", [])
+            if output["type"] == "text"
+        ]
+        return "\n".join(completions)
+    
+    def _format_prompt(self, raw_prompt: str) -> str:
+        return raw_prompt
