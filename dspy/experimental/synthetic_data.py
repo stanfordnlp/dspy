@@ -8,8 +8,6 @@ import dspy
 
 
 class DescriptionSignature(dspy.Signature):
-    """Given a field name and an example value, predict a short text only description of what the field contains."""
-
     field_name = dspy.InputField(desc="name of a field")
     example = dspy.InputField(desc="an example value for the field")
     description = dspy.OutputField(desc="a short text only description of what the field contains")
@@ -46,7 +44,7 @@ class SyntheticDataGenerator:
         Infer fields to generate if an inital sample of examples is provided.
 
         Returns:
-            dict: dictionnary of fields to generate
+            dict: dictionary of fields to generate
         """  # noqa: D205
         if self.schema_class:
             data_schema = self.schema_class.model_json_schema()
