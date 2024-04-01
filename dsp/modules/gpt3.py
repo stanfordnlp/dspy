@@ -116,7 +116,7 @@ class GPT3(LM):
             messages = [{"role": "user", "content": prompt}]
             if self.system_prompt:
                 messages.insert(0, {"role": "system", "content": self.system_prompt})
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            kwargs["messages"] = messages
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(**kwargs)
 
