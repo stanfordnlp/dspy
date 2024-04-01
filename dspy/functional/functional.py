@@ -59,7 +59,7 @@ def TypedChainOfThought(signature, instructions=None, rationale_type=None, *, ma
     output_keys = ", ".join(signature.output_fields.keys())
 
     DEFAULT_RATIONALE = dspy.OutputField(
-        prefix="Rationale: Let's think step by step in order to",
+        prefix="Reasoning: Let's think step by step in order to",
         desc="${produce the " + output_keys + "}. We ...",
     )
     rationale_type = rationale_type or DEFAULT_RATIONALE
