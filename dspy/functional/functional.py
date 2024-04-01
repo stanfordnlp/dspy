@@ -62,7 +62,7 @@ def TypedChainOfThought(signature, instructions=None, rationale_type=None, *, ma
         prefix="Rationale: Let's think step by step in order to",
         desc="${produce the " + output_keys + "}. We ...",
     )
-    rationale_type = rationale_type or DEFAULT_RATIONALE
+    rationale_type = DEFAULT_RATIONALE or rationale_type
 
     return TypedPredictor(
         signature.prepend(
