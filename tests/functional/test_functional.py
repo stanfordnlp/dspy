@@ -619,6 +619,48 @@ def test_list_input2():
         Proposed Signature: Output""")
 
 
+def test_custom_rationale_type():
+    class Question(pydantic.BaseModel):
+        value: str
+
+    class QuestionSignature(dspy.Signature):
+        topic: str = dspy.InputField()
+        question: Question = dspy.OutputField()
+
+    rationale_type = dspy.OutputField(
+        prefix="Custom Reasoning: Let's break this down. To generate a question about",
+        desc="${topic}, we should ...",
+    )
+
+    program = TypedChainOfThought(QuestionSignature, rationale_type=rationale_type)
+
+    expected = "What is the speed of light?"
+    lm = DummyLM(["Thoughts", f'{{"value": "{expected}"}}'])
+    dspy.settings.configure(lm=lm)
+
+    output = program(topic="Physics")
+
+    assert isinstance(output.question, Question)
+    assert output.question.value == expected
+
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        Given the fields `topic`, produce the fields `question`.
+
+        ---
+
+        Follow the following format.
+
+        Topic: ${topic}
+        Custom Reasoning: Let's break this down. To generate a question about ${topic}, we should ...
+        Question: ${question}. Respond with a single JSON object. JSON Schema: {"properties": {"value": {"title": "Value", "type": "string"}}, "required": ["value"], "title": "Question", "type": "object"}
+
+        ---
+
+        Topic: Physics
+        Custom Reasoning: Let's break this down. To generate a question about Thoughts
+        Question: {"value": "What is the speed of light?"}""")
+
+
 def test_generic_signature():
     T = TypeVar("T")
 
