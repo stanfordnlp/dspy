@@ -39,7 +39,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-aws = ["boto3~=1.29.1"]
+aws = ["boto3"]
 anthropic = ["anthropic~=0.18.0"]
 chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client~=1.6.2", "fastembed~=0.1.0"]
