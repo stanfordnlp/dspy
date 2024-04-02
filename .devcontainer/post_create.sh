@@ -24,3 +24,5 @@ if [ -f "$personalization_script" ]; then
     chmod +x "$personalization_script"
     $personalization_script
 fi
+
+chmod +x ./.devcontainer/interpreter_warning.py && poetry run python ./.devcontainer/interpreter_warning.py
