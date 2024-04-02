@@ -6,7 +6,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 # Signature Optimizer
 
-`SignatureOptimizer` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This teleprompter is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and un refine prompt.
+`COPRO` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This teleprompter is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and unrefined prompt.
 
 ## Setting up a Sample Pipeline
 
@@ -75,16 +75,16 @@ devset_with_input = [dspy.Example({"question": r["question"], "answer": r["answe
 evaluate(cot_baseline, devset=devset_with_input)
 ```
 
-Now we have the baseline pipeline ready to use, so let's try using the `SignatureOptimizer` teleprompter and optimizing our pipeline to make it even better!
+Now we have the baseline pipeline ready to use, so let's try using the `COPRO` teleprompter and optimizing our pipeline to make it even better!
 
-## Using `SignatureOptimizer`
+## Using `COPRO`
 
 Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `validate_context_and_answer` imported and used above:
 
 ```python
-from dspy.teleprompt import SignatureOptimizer
+from dspy.teleprompt import COPRP
 
-teleprompter = SignatureOptimizer(
+teleprompter = COPRO(
     metric=validate_context_and_answer,
     verbose=True,
 )
@@ -95,7 +95,7 @@ In this teleprompter there is a breadth and depth argument that defines the numb
 ```python
 kwargs = dict(num_threads=64, display_progress=True, display_table=0) # Used in Evaluate class in the optimization process
 
-compiled_prompt_opt = teleprompter.compile(cot, devset=devset, eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(cot, trainset=devset, eval_kwargs=kwargs)
 ```
 
 Once the training is done you'll have better instructions and prefixes that you'll need to edit in signature manually. So let's say the output during optimization is like:
@@ -123,9 +123,9 @@ The prefix would be proposed only for the output field that is defined first i.e
 
 Reinitialize the Pipeline object and reevaluate the pipeline! And now you have a more powerful predictor with more optimized Signature!
 
-## How `SignatureOptimizer` works?
+## How `COPRO` works?
 
-It is interesting that to get optimal prefixes and instruction, `SignatureOptimizer` uses Signatures. Basically `SignatureOptimizer` uses Signature to optimize Signature!! Let's look at the codebase a bit more closely:
+It is interesting that to get optimal prefixes and instruction, `COPRO` uses Signatures. Basically `COPRO` uses Signature to optimize Signature!! Let's look at the codebase a bit more closely:
 
 ```python
 class BasicGenerateInstruction(Signature):
