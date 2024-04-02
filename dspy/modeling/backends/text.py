@@ -1,13 +1,10 @@
-import typing as t
-
 import regex
-
-from dspy.modeling.lm import BaseLM, LMOutput
-from dspy.primitives.example import Example
-from dspy.primitives.prediction import Completions
+import typing as t
+from litellm import ModelResponse, completion
+from pydantic import Field
+from dspy.primitives import Example, Completions
 from dspy.signatures.signature import Signature, SignatureMeta
-
-from .base import BaseBackend
+from dspy.modeling.backends.base import BaseBackend
 
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
@@ -38,12 +35,42 @@ DEFAULT_FORMAT_HANDLERS = {
 
 
 class TextBackend(BaseBackend):
-    """Behaves like prior versions of DSPy, using a general text completion prompt format and parsing predictions."""
+    """TextBackend takes a signature, its params, and predicts structured outputs leveraging LiteLLM."""
 
-    lm: BaseLM
+    STANDARD_PARAMS: dict[str, t.Any] = {
+        "temperature": 0,
+        "max_tokens": 500,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "num_retries": 3,
+    }
 
-    @staticmethod
-    def _guidelines(signature: Signature, example: Example) -> str:
+    model: str
+    default_params: dict[str, t.Any] = Field(default_factory=dict)
+
+    def generate(
+        self,
+        signature: Signature,
+        demos: list[str],
+        config: dict[str, t.Any],
+        **kwargs,
+    ) -> Completions:
+        # Generate Example
+        example = Example(demos=demos, **kwargs)
+
+        # Get Full Kwargs for Model
+        model_kwargs = self.prepare_request(signature, example, config)
+
+        # Pass Through Language Model
+        options = {**self.STANDARD_PARAMS, **self.default_params, **model_kwargs}
+
+        # We are not streaming this content in, therefore we can assume it'll always be
+        response = completion(model=self.model, **options)
+
+        return self.process_response(signature, example, response, model_kwargs)
+
+    def _guidelines(self, signature: Signature, example: Example) -> str:
         result = "Follow the following format.\n\n"
 
         field_strings = []
@@ -87,42 +114,6 @@ class TextBackend(BaseBackend):
 
         return "\n\n".join(result)
 
-    def prepare_request(
-        self,
-        signature: Signature,
-        example: Example,
-        config: dict[str, t.Any],
-    ) -> dict:
-        # Set up Format Handlers
-        format_handlers = DEFAULT_FORMAT_HANDLERS
-        for name, field in signature.fields.items():
-            fmt = field.json_schema_extra.get("format")
-            if fmt:
-                format_handlers[name] = fmt
-
-        prompt_spans = []
-
-        # Start by getting the instructions
-        prompt_spans.append(signature.instructions)
-
-        # Generate the Guidelines
-        prompt_spans.append(self._guidelines(signature, example))
-
-        # Generate Spans for Each Demo
-        for demo in example.get("demos", []):
-            prompt_spans.append(self._query(signature, demo, True, format_handlers))
-
-        # Generate Empty Demo for Generation
-        prompt_spans.append(self._query(signature, example, False, format_handlers))
-
-        content = "\n\n---\n\n".join([span.strip() for span in prompt_spans])
-
-        messages = {"messages": [{"role": "user", "content": content}]}
-
-        config.update(**messages)
-
-        return config
-
     def _extract(self, signature: Signature, example: Example, text: str) -> Example:
         # We have to deepcopy, so that the values don't continously overwrite each other
         example = example.copy()
@@ -163,18 +154,59 @@ class TextBackend(BaseBackend):
 
         return example
 
+    def prepare_request(self, signature: Signature, example: Example, config: dict, **kwargs) -> dict:
+        # Set up Format Handlers
+        format_handlers = DEFAULT_FORMAT_HANDLERS
+        for name, field in signature.fields.items():
+            fmt = field.json_schema_extra.get("format")
+            if fmt:
+                format_handlers[name] = fmt
+
+        prompt_spans = []
+
+        # Start by getting the instructions
+        prompt_spans.append(signature.instructions)
+
+        # Generate the Guidelines
+        prompt_spans.append(self._guidelines(signature, example))
+
+        # Generate Spans for Each Demo
+        for demo in example.get("demos", []):
+            prompt_spans.append(self._query(signature, demo, True, format_handlers))
+
+        # Generate Empty Demo for Generation
+        prompt_spans.append(self._query(signature, example, False, format_handlers))
+
+        content = "\n\n---\n\n".join([span.strip() for span in prompt_spans])
+
+        messages = {"messages": [{"role": "user", "content": content}]}
+
+        config.update(**messages)
+
+        return config
+
     def process_response(
         self,
         signature: Signature,
         example: Example,
-        output: LMOutput,
+        response: t.Any,
         input_kwargs: dict,
+        **kwargs,
     ) -> Completions:
+        # TODO: Move this to proper logging
+        if len([c for c in response.choices if c["finish_reason"] == "length"]) > 0:
+            print("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
+
+        generated_messages = [c["message"] for c in response.choices if c["finish_reason"] != "length"]
         # Get the full text
         prompt_text = "\n\n".join([message["content"] for message in input_kwargs["messages"]])
 
+        print(prompt_text, generated_messages)
+
         # Extract examples
-        extracted = [self._extract(signature, example, prompt_text + generation) for generation in output.generations]
+        extracted = [
+            self._extract(signature, example, prompt_text + message["content"]) for message in generated_messages
+        ]
 
         if type(signature) != SignatureMeta:
             raise AssertionError("Signature not provided appropriately.")

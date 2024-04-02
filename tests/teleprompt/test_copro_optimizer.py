@@ -2,7 +2,7 @@ import textwrap
 import dspy
 from dspy.modeling.backends import TextBackend
 from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils import DummyLM, DummyLanguageModel
+from dspy.utils import DummyLM, DummyBackend
 from dspy import Example
 
 
@@ -65,10 +65,9 @@ def test_signature_optimizer_optimization_process():
 def test_signature_optimizer_optimization_process_with_backend():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[["Optimized instruction 1\n\nProposed Prefix For Output Field: Optimized instruction 2"]]
     )
-    backend = TextBackend(lm=lm, attempts=5)
     with dspy.settings.context(lm=None, backend=backend, cache=False):
         student = SimpleModule("input -> output")
 
@@ -111,8 +110,7 @@ def test_signature_optimizer_statistics_tracking_with_backend():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
-    lm = DummyLanguageModel(answers=[["Optimized instruction\n\nProposed Prefix For Output Field: Dummy Prefix"]])
-    backend = TextBackend(lm=lm, attempts=5)
+    backend = DummyBackend(answers=[["Optimized instruction\n\nProposed Prefix For Output Field: Dummy Prefix"]])
     with dspy.settings.context(lm=None, backend=backend, cache=False):
         student = SimpleModule("input -> output")
         optimized_student = optimizer.compile(
@@ -177,10 +175,9 @@ def test_optimization_and_output_verification():
 
 
 def test_statistics_tracking_during_optimization():
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[["Optimized instructions for stats tracking\n\nProposed Prefix For Output Field: Prompt 2"]]
     )
-    backend = TextBackend(lm=lm, attempts=5)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
         optimizer.track_stats = True  # Enable statistics tracking

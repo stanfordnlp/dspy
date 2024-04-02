@@ -7,12 +7,13 @@ import numpy as np
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
-from dspy.modeling.lm.base import BaseLM
+from dspy.modeling.backends.text import TextBackend
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import (
     Completions,
 )
 from dspy.signatures.signature import InputField, OutputField, Signature
+from pydantic import Field, BaseModel
 
 
 class DummyLM(LM):
@@ -164,20 +165,6 @@ class DummyVectorizer:
         return vecs
 
 
-class DummyLanguageModel(BaseLM):
-    answers: list[list[str]]
-    step: int = 0
-
-    def generate(self, **kwargs) -> t.List[str]:
-        if len(self.answers) == 1:
-            return [content for content in self.answers[0]]
-
-        output = [content for content in self.answers[self.step]]
-        self.step += 1
-
-        return output
-
-
 class DummySignature(Signature):
     """Produce the answer given the question"""
 
@@ -192,3 +179,28 @@ def make_dummy_completions(signature, list_of_dicts: list[dict[str, t.Any]]):
         examples=examples,
         input_kwargs={},
     )
+
+
+class DummyResponse(BaseModel):
+    choices: list = Field(default_factory=list)
+
+
+class DummyBackend(TextBackend):
+    model: str = Field(default="dummy")
+    answers: list[list[str]] = Field(default_factory=list)
+    step: int = Field(default=0)
+
+    def generate(self, signature: Signature, demos: list[str], config: dict[str, t.Any], **kwargs) -> Completions:
+        example = Example(demos=demos, **kwargs)
+
+        model_kwargs = self.prepare_request(signature, example, config)
+
+        if len(self.answers) <= self.step:
+            raise ValueError("not enough answers provided")
+
+        response = DummyResponse(
+            choices=[{"message": {"content": c}, "finish_reason": "done"} for c in self.answers[self.step]]
+        )
+        self.step += 1
+
+        return self.process_response(signature, example, response, input_kwargs=model_kwargs)

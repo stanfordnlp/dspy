@@ -4,7 +4,7 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.modeling.backends.text import TextBackend
 from dspy.predict import Predict
-from dspy.utils.dummies import DummyLM, DummyLanguageModel
+from dspy.utils.dummies import DummyLM, DummyBackend
 
 
 def new_example(question, answer):
@@ -44,8 +44,7 @@ def test_evaluate_call():
 
 
 def test_evaluate_call_with_backend():
-    lm = DummyLanguageModel(answers=[[" 2"], [" 4"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[[" 2"], [" 4"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")
@@ -73,8 +72,7 @@ def test_evaluate_call_bad():
 
 
 def test_evaluate_call_bad_with_backend():
-    lm = DummyLanguageModel(answers=[[" 0"], [" 0"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[[" 0"], [" 0"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
         program = Predict("question -> answer")

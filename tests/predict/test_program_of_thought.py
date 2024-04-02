@@ -1,6 +1,6 @@
 from dspy import Signature, ProgramOfThought
 import dspy
-from dspy.utils import DummyLM, DummyLanguageModel
+from dspy.utils import DummyLM, DummyBackend
 import textwrap
 
 from dspy.modeling import TextBackend
@@ -133,13 +133,12 @@ def test_pot_code_generation_with_error():
 def test_pot_code_generation_with_backend():
     pot = ProgramOfThought(BasicQA)
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["Reason_A\n\nCode: ```python\nresult = 1+1\n```"],
             ["Reason_B\n\nAnswer: 2"],
         ]
     )
-    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"
@@ -148,14 +147,13 @@ def test_pot_code_generation_with_backend():
 def test_pot_code_generation_with_error_with_backend():
     pot = ProgramOfThought(BasicQA)
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["Reason_A\n\nCode:\n```python\nresult = 1+0/0\n```"],
             ["Reason_B\n\nCode:\n```python\nresult = 1+1\n```"],
             ["Reason_C\n\nAnswer: 2"],
         ]
     )
-    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"

@@ -1,28 +1,18 @@
 import typing as t
 from abc import ABC, abstractmethod
-
-from pydantic import BaseModel, Field
-
-from dspy.modeling.lm.base import LMOutput
-from dspy.primitives.example import Example
+from pydantic import Field, BaseModel
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.primitives.example import Example
 
 
 class BaseBackend(BaseModel, ABC):
-    """A backend takes a signature, its params, and returns a list of structured predictions."""
-
     history: list[Completions] = Field(default_factory=list)
     attempts: int = Field(default=1)
 
     @abstractmethod
-    def prepare_request(
-        self,
-        signature: Signature,
-        example: Example,
-        config: dict[str, t.Any],
-    ) -> dict:
-        """Takes params passed to call, and returns kwargs for LM."""
+    def prepare_request(self, signature: Signature, example: Example, config: dict, **kwargs) -> dict:
+        """Given a Signature, Example, and Config kwargs, provide a dictionary of arguments for the Backend."""
         ...
 
     @abstractmethod
@@ -30,10 +20,16 @@ class BaseBackend(BaseModel, ABC):
         self,
         signature: Signature,
         example: Example,
-        output: LMOutput,
+        response: t.Any,
         input_kwargs: dict,
+        **kwargs,
     ) -> Completions:
-        """Takes output from LM, and generates Completions."""
+        """Given a Signature, Example, and Generated Output, process generations and return completions."""
+        ...
+
+    @abstractmethod
+    def generate(self, signature: Signature, demos: list[str], config: dict[str, t.Any], **kwargs) -> Completions:
+        """Generates predictions (complete/partial) for the signature output."""
         ...
 
     def __call__(
@@ -43,7 +39,7 @@ class BaseBackend(BaseModel, ABC):
         config: t.Optional[dict[str, t.Any]] = None,
         **kwargs,
     ) -> Completions:
-        # Override config provided at initialization with provided config
+        """Recursively generates and checks completions for completeness, returning once complete."""
         if config is None:
             config = {}
 
@@ -93,38 +89,3 @@ class BaseBackend(BaseModel, ABC):
         self.history.append(completions)
 
         return completions
-
-    def generate(
-        self,
-        signature: Signature,
-        demos: t.Optional[list[str]] = None,
-        config: t.Optional[dict[str, t.Any]] = None,
-        **kwargs,
-    ) -> Completions:
-        """Generates `n` predictions (complete/partial) for the signature output."""
-
-        if config is None:
-            config = {}
-
-        if demos is None:
-            demos = []
-
-        # TODO: Move this check to logging
-        if not all(k in kwargs for k in signature.input_fields):
-            present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
-            print(
-                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
-            )
-
-        # Generate Example
-        example = Example(demos=demos, **kwargs)
-
-        # Get full kwargs for Model
-        model_kwargs = self.prepare_request(signature, example, config)
-
-        # Pass Through Language Model
-        generations = self.lm(**model_kwargs)
-
-        # This returns a list of Examples
-        return self.process_response(signature, example, generations, model_kwargs)

@@ -1,6 +1,5 @@
 import dspy
-from dspy.modeling import TextBackend
-from dspy.utils.dummies import dummy_rm, DummyLanguageModel
+from dspy.utils.dummies import dummy_rm, DummyBackend
 
 
 def test_example_no_tools():
@@ -85,8 +84,7 @@ def test_example_search():
 
 def test_example_no_tools_with_backend():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    lm = DummyLanguageModel(answers=[["Initial thoughts\n\nAction 1: Finish[blue]"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["Initial thoughts\n\nAction 1: Finish[blue]"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         program = dspy.ReAct("question -> answer")
 
@@ -106,14 +104,12 @@ def test_example_no_tools_with_backend():
 
 def test_example_search_with_backend():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
-            [
-                "Initial thoughts\n\nAction 1: Search[the color of the sky]\n\nThought 2: More thoughts\n\nAction 2: Finish[blue]"
-            ]
+            ["Initial thoughts\n\nAction 1: Search[the color of the sky]"],
+            ["Thought 2: More thoughts\n\nAction 2: Finish[blue]"],
         ]
     )
-    backend = TextBackend(lm=lm)
     rm = dummy_rm(
         [
             "We all know the color of the sky is blue.",

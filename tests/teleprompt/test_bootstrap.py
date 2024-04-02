@@ -1,7 +1,7 @@
 import pytest
 import dspy
 from dspy.predict import Predict
-from dspy.utils.dummies import DummyLanguageModel, DummyLM
+from dspy.utils.dummies import DummyBackend, DummyLM
 from dspy import Example
 from dspy.teleprompt import BootstrapFewShot
 from dspy.modeling import TextBackend
@@ -59,8 +59,7 @@ def test_compile_with_predict_instances_with_backend():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLanguageModel(answers=[["Initial thoughts", "Finish[blue]"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["Initial thoughts", "Finish[blue]"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         # Initialize BootstrapFewShot and compile the student
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
@@ -124,8 +123,7 @@ def test_bootstrap_effectiveness_with_backend():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLanguageModel(answers=[["blue"], ["blue"], ["Ring-dint-ding-ding-dingeringeding!"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["blue"], ["blue"], ["Ring-dint-ding-ding-dingeringeding!"]])
     with dspy.settings.context(backend=backend, cache=False, trace=[], lm=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
@@ -226,8 +224,7 @@ def test_error_handling_during_bootstrap_with_backend():
     teacher = BuggyModule("input -> output")
 
     # Setup DummyLM to simulate an error scenario
-    lm = DummyLanguageModel(answers=[["Initial thoughts"]])
-    backend = TextBackend(lm=lm, attempts=1)
+    backend = DummyBackend(answers=[["Initial thoughts"]])
     with dspy.settings.context(lm=None, backend=backend, cache=False):
         bootstrap = BootstrapFewShot(
             metric=simple_metric,
@@ -268,8 +265,7 @@ def test_validation_set_usage_with_backend():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLanguageModel(answers=[["Initial thoughts"], ["Finish[blue]"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["Initial thoughts"], ["Finish[blue]"]])
     with dspy.settings.context(backend=backend, lm=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)

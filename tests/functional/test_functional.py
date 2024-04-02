@@ -8,7 +8,6 @@ from typing import List
 import pytest
 
 import dspy
-from dspy.modeling import TextBackend
 from dspy.functional import (
     predictor,
     cot,
@@ -20,7 +19,7 @@ from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.vanilla import LabeledFewShot
-from dspy.utils import DummyLanguageModel, DummyLM
+from dspy.utils import DummyBackend, DummyLM
 
 
 def test_simple():
@@ -42,8 +41,7 @@ def test_simple_with_backend():
     def hard_question(topic: str) -> str:
         """Think of a hard factual question about a topic."""
 
-    lm = DummyLanguageModel(answers=[["What is the speed of light?"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["What is the speed of light?"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         expected = "What is the speed of light?"
 
@@ -92,8 +90,7 @@ def test_simple_type_with_backend():
         """Think of a hard factual question about a topic."""
 
     expected = "What is the speed of light?"
-    lm = DummyLanguageModel(answers=[[f'{{"value": "{expected}"}}']])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[[f'{{"value": "{expected}"}}']])
     with dspy.settings.context(backend=backend, lm=None):
         question = hard_question(topic="Physics")
 
@@ -133,8 +130,7 @@ def test_simple_type_input_with_backend():
 
     question = Question(value="What is the speed of light?")
 
-    lm = DummyLanguageModel(answers=[[f'{{"value": "3e8"}}']])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[[f'{{"value": "3e8"}}']])
     with dspy.settings.context(lm=None, backend=backend):
         result = answer(question=question)
 
@@ -215,7 +211,7 @@ def test_simple_class_with_backend():
         comments=["It is the speed of light", "It is a constant"],
     )
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["What is the speed of light?"],
             ["Some bad reasoning, 3e8 m/s\n\nAnswer: 3e8"],
@@ -225,7 +221,6 @@ def test_simple_class_with_backend():
             [f"Some good reasoning...\n\nAnswer: {expected.model_dump_json()}"],
         ]
     )
-    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         qa = QA()
         assert isinstance(qa, FunctionalModule)
@@ -248,8 +243,7 @@ def test_simple_oop_with_backend():
     # Run the signature
     program = TypedPredictor(MySignature)
     expected = "What is the speed of light?"
-    lm = DummyLanguageModel(answers=[[Question(value=expected).model_dump_json()]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[[Question(value=expected).model_dump_json()]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         question = program(topic="Physics").output
 
@@ -324,8 +318,7 @@ def test_bootstrap_effectiveness_with_backend():
     teacher = SimpleModule()
     assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLanguageModel(answers=[["blue"], ["blue"], ["Ring-ding-ding-ding-dingeringeding!"]])
-    backend = TextBackend(lm=lm)
+    backend = DummyBackend(answers=[["blue"], ["blue"], ["Ring-ding-ding-ding-dingeringeding!"]])
     with dspy.settings.context(backend=backend, cache=False, lm=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
@@ -424,14 +417,13 @@ def test_regex_with_backend():
     """
     )
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
             ["{...}"],
             ['{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'],
         ]
     )
-    backend = TextBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         predict = flight_information(email=email)
         assert predict == TravelInformation(origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25))
@@ -470,7 +462,7 @@ def test_raises_with_backend():
     def flight_information(email: str) -> TravelInformation:
         pass
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["A list of bad inputs"],
             ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
@@ -479,7 +471,6 @@ def test_raises_with_backend():
             ["..."],
         ]
     )
-    backend = TextBackend(lm=lm, attempts=1)
 
     with dspy.settings.context(backend=backend, lm=None):
         with pytest.raises(ValueError):
@@ -549,7 +540,7 @@ def test_multi_errors_with_backend():
     def flight_information(email: str) -> TravelInformation:
         pass
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ['{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'],
             ["{...}"],
@@ -558,8 +549,6 @@ def test_multi_errors_with_backend():
             ['{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'],
         ]
     )
-
-    backend = TextBackend(lm=lm)
 
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         assert flight_information(email="Some email") == TravelInformation(
@@ -667,9 +656,7 @@ def test_field_validator_with_backend():
 
     # Keep making the mistake (lower case name) until we run
     # out of retries.
-    lm = DummyLanguageModel(answers=[['{"name": "lower case name", "age": 25}'] * 10])
-    backend = TextBackend(lm=lm)
-
+    backend = DummyBackend(answers=[['{"name": "lower case name", "age": 25}']] * 10, default_params={"num_retries": 1})
     with dspy.settings.context(backend=backend, cache=True, lm=None):
         with pytest.raises(ValueError):
             get_user_details()

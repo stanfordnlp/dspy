@@ -1,2 +1,1 @@
-from .backends import JSONBackend, TextBackend
-from .lm import *
+from .backends import TextBackend, JSONBackend

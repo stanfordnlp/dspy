@@ -1,11 +1,10 @@
 import json
 import typing as t
-
-from dspy.modeling.backends.base import BaseBackend
-from dspy.modeling.lm import BaseLM, LMOutput
-from dspy.primitives.example import Example
-from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
+from dspy.primitives.example import Example
+from dspy.modeling.backends import TextBackend
+from dspy.primitives.prediction import Completions
+from litellm import ModelResponse
 
 
 def patch_example(example: Example, data: dict[str, t.Any]) -> Example:
@@ -16,11 +15,8 @@ def patch_example(example: Example, data: dict[str, t.Any]) -> Example:
     return example
 
 
-class JSONBackend(BaseBackend):
-    lm: BaseLM
-
-    @staticmethod
-    def _guidelines(signature: Signature, example: Example) -> str:
+class JSONBackend(TextBackend):
+    def _guidelines(self, signature: Signature, example: Example) -> str:
         included_fields = []
         missing_fields = []
         for name, field in signature.fields.items():
@@ -48,8 +44,7 @@ class JSONBackend(BaseBackend):
         result += f"\n{json.dumps(schema)}"
         return result
 
-    @staticmethod
-    def _example_span(signature: Signature, example: Example) -> str:
+    def _example_span(self, signature: Signature, example: Example) -> str:
         span = {}
         for name, _ in signature.fields.items():
             if name in example:
@@ -70,22 +65,7 @@ class JSONBackend(BaseBackend):
 
         return example
 
-    def process_response(
-        self,
-        signature: Signature,
-        example: Example,
-        output: LMOutput,
-        input_kwargs: dict,
-    ) -> Completions:
-        extracted = [self._extract(signature, example, generation) for generation in output.generations]
-        return Completions(signature=signature, examples=extracted, input_kwargs=input_kwargs)
-
-    def prepare_request(
-        self,
-        signature: Signature,
-        example: Example,
-        config: dict[str, t.Any],
-    ) -> dict:
+    def prepare_request(self, signature: Signature, example: Example, config: dict, **kwargs) -> dict:
         prompt_spans = []
 
         # Start by getting the instructions
@@ -106,3 +86,23 @@ class JSONBackend(BaseBackend):
         config.update({"messages": [{"role": "user", "content": content}]})
 
         return config
+
+    def process_response(
+        self,
+        signature: Signature,
+        example: Example,
+        response: t.Any,
+        input_kwargs: dict,
+        **kwargs,
+    ) -> Completions:
+        if type(response) != ModelResponse:
+            raise AssertionError("Response from completion incorrect type/format")
+
+        # TODO: Move this to proper logging
+        if len([c for c in response.choices if c["finish_reason"] == "length"]) > 0:
+            print("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
+
+        messages = [c["message"] for c in response.choices if c["finish_reason"] != "length"]
+
+        extracted = [self._extract(signature, example, message["content"]) for message in messages]
+        return Completions(signature=signature, examples=extracted, input_kwargs=input_kwargs)
