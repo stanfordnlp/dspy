@@ -14,6 +14,7 @@
       ],
       "settings": {
         "git.autofetch": true,
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
         "python.testing.pytestEnabled": true,
         "terminal.integrated.defaultProfile.linux": "zsh"
       }
