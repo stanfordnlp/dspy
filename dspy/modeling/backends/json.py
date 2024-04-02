@@ -5,7 +5,7 @@ from json import JSONDecodeError
 
 from litellm import ModelResponse
 
-from dspy.modeling.backends import TextBackend
+from .text import TextBackend
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
