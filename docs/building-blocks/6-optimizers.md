@@ -47,9 +47,9 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 #### Automatic Instruction Optimization
 
-4. **`SignatureOptimizer`**: Generates and refines new instructions for each step, and optimizes them with coordinate ascent.
+4. **`COPRO`**: Generates and refines new instructions for each step, and optimizes them with coordinate ascent.
 
-5. **`BayesianSignatureOptimizer`**: Generates instructions and few-shot examples in each step. The instruction generation is data-aware and demonstration-aware. Uses Bayesian Optimization to effectively search over the space of generation instructions/demonstrations across your modules.
+5. **`MIPRO`**: Generates instructions and few-shot examples in each step. The instruction generation is data-aware and demonstration-aware. Uses Bayesian Optimization to effectively search over the space of generation instructions/demonstrations across your modules.
 
 
 #### Automatic Finetuning
@@ -74,7 +74,7 @@ Here's the general guidance on getting started:
 
 * If you have slightly more data, e.g. 50 examples of your task, use `BootstrapFewShotWithRandomSearch`.
 
-* If you have more data than that, e.g. 300 examples or more, use `BayesianSignatureOptimizer`.
+* If you have more data than that, e.g. 300 examples or more, use `MIPRO`.
 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very efficient program, compile that down to a small LM with `BootstrapFinetune`.
 
