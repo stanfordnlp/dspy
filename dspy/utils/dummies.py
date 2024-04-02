@@ -4,6 +4,7 @@ import typing as t
 from typing import Union
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
@@ -13,7 +14,6 @@ from dspy.primitives.prediction import (
     Completions,
 )
 from dspy.signatures.signature import InputField, OutputField, Signature
-from pydantic import Field, BaseModel
 
 
 class DummyLM(LM):
@@ -199,7 +199,7 @@ class DummyBackend(TextBackend):
             raise ValueError("not enough answers provided")
 
         response = DummyResponse(
-            choices=[{"message": {"content": c}, "finish_reason": "done"} for c in self.answers[self.step]]
+            choices=[{"message": {"content": c}, "finish_reason": "done"} for c in self.answers[self.step]],
         )
         self.step += 1
 

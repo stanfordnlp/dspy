@@ -1,29 +1,42 @@
-import regex
+import logging
 import typing as t
-from litellm import ModelResponse, completion
+
+import regex
+from litellm import completion
 from pydantic import Field
-from dspy.primitives import Example, Completions
-from dspy.signatures.signature import Signature, SignatureMeta
+
 from dspy.modeling.backends.base import BaseBackend
+from dspy.primitives import Completions, Example
+from dspy.signatures.signature import Signature, SignatureMeta
+
+logger = logging.getLogger(__name__)
 
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
-    assert len(passages) > 0
-    if len(passages) > 1:
-        return "\n".join(
-            [f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)],
-        )
-    else:
+    passages = list(passages)
+    if len(passages) == 0:
+        raise ValueError("Empty passages passed to format handler.")
+
+    if len(passages) == 1:
         return passages[0]
+
+    return "\n".join(
+        [f"[{idx + 1}] <<{text}>>" for idx, text in enumerate(passages)],
+    )
 
 
 def format_answers(answers: t.Iterable[str]) -> str:
-    assert len(answers) > 0
-    return (answers[0]).strip()
+    answers = list(answers)
+    if len(answers) == 0:
+        raise ValueError("Empty answers passed to format handler.")
+
+    return answers[0].strip()
 
 
 def default_format_handler(x: str) -> str:
-    assert type(x) == str
+    if not isinstance(x, str):
+        raise ValueError(f"Wrong type passed to format handlers: {type(x)} should be a str")
+
     return " ".join(x.split())
 
 
@@ -70,7 +83,7 @@ class TextBackend(BaseBackend):
 
         return self.process_response(signature, example, response, model_kwargs)
 
-    def _guidelines(self, signature: Signature, example: Example) -> str:
+    def _guidelines(self, signature: Signature, _example: Example) -> str:
         result = "Follow the following format.\n\n"
 
         field_strings = []
@@ -109,7 +122,7 @@ class TextBackend(BaseBackend):
                 result.append(f"{field.json_schema_extra['prefix']} ")
                 break
 
-            elif name in example:
+            if name in example:
                 result.append(f"{field.json_schema_extra['prefix']} {format_handler(example[name])}")
 
         return "\n\n".join(result)
@@ -142,10 +155,7 @@ class TextBackend(BaseBackend):
             matches = regex.findall(search_string, text)
 
             non_generated_count = 1 + sum([name in demo for demo in demos])
-            if non_generated_count >= len(matches):
-                matches = []
-            else:
-                matches = matches[non_generated_count:]
+            matches = [] if non_generated_count >= len(matches) else matches[non_generated_count:]
 
             if matches == [] and len(signature.output_fields) == 0:
                 example[name] = text
@@ -154,7 +164,7 @@ class TextBackend(BaseBackend):
 
         return example
 
-    def prepare_request(self, signature: Signature, example: Example, config: dict, **kwargs) -> dict:
+    def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
         # Set up Format Handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS
         for name, field in signature.fields.items():
@@ -191,17 +201,15 @@ class TextBackend(BaseBackend):
         example: Example,
         response: t.Any,
         input_kwargs: dict,
-        **kwargs,
+        **_kwargs,
     ) -> Completions:
-        # TODO: Move this to proper logging
         if len([c for c in response.choices if c["finish_reason"] == "length"]) > 0:
-            print("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
+            logger.info("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
 
         generated_messages = [c["message"] for c in response.choices if c["finish_reason"] != "length"]
+
         # Get the full text
         prompt_text = "\n\n".join([message["content"] for message in input_kwargs["messages"]])
-
-        print(prompt_text, generated_messages)
 
         # Extract examples
         extracted = [

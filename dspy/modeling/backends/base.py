@@ -1,9 +1,11 @@
 import typing as t
 from abc import ABC, abstractmethod
-from pydantic import Field, BaseModel
+
+from pydantic import BaseModel, Field
+
+from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.primitives.example import Example
 
 
 class BaseBackend(BaseModel, ABC):

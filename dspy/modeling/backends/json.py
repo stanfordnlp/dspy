@@ -1,10 +1,16 @@
 import json
+import logging
 import typing as t
-from dspy.signatures.signature import Signature
-from dspy.primitives.example import Example
-from dspy.modeling.backends import TextBackend
-from dspy.primitives.prediction import Completions
+from json import JSONDecodeError
+
 from litellm import ModelResponse
+
+from dspy.modeling.backends import TextBackend
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Completions
+from dspy.signatures.signature import Signature
+
+logger = logging.getLogger(__name__)
 
 
 def patch_example(example: Example, data: dict[str, t.Any]) -> Example:
@@ -60,12 +66,12 @@ class JSONBackend(TextBackend):
                 k_lower = k.lower()
                 if k_lower in signature.fields:
                     example[k_lower] = v
-        except:
-            print("Invalid Text provided for JSON extraction")
+        except JSONDecodeError:
+            logger.error(f"Invalid text provided for JSON extraction: {text}")
 
         return example
 
-    def prepare_request(self, signature: Signature, example: Example, config: dict, **kwargs) -> dict:
+    def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
         prompt_spans = []
 
         # Start by getting the instructions
@@ -93,14 +99,13 @@ class JSONBackend(TextBackend):
         example: Example,
         response: t.Any,
         input_kwargs: dict,
-        **kwargs,
+        **_kwargs,
     ) -> Completions:
         if type(response) != ModelResponse:
             raise AssertionError("Response from completion incorrect type/format")
 
-        # TODO: Move this to proper logging
         if len([c for c in response.choices if c["finish_reason"] == "length"]) > 0:
-            print("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
+            logger.info("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
 
         messages = [c["message"] for c in response.choices if c["finish_reason"] != "length"]
 
