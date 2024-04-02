@@ -6,6 +6,7 @@ git config --global --add safe.directory /workspaces/dspy
 
 pip install poetry==1.7.1
 poetry config installer.max-workers 4
+poetry config virtualenvs.in-project true
 
 poetry install --with dev
 
