@@ -40,6 +40,14 @@ class RAGatouilleRM(dspy.Retrieve):
             raise FileNotFoundError(f"Index not found: {e}")
 
     def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int]) -> dspy.Prediction:
+        """Search with RAGAtouille based index for self.k top passages for query
+
+        Args:
+            query_or_queries (Union[str, List[str]]): The query or queries to search for.
+            k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+        Returns:
+            dspy.Prediction: An object containing the retrieved passages.
+        """
         k = k if k is not None else self.k
         queries = (
             [query_or_queries]
