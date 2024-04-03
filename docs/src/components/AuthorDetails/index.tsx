@@ -23,6 +23,9 @@ const FeatureList: FeatureItem[] = [
     linkedinLink: 'https://www.linkedin.com/in/arnav-singhvi-1323a7189/',
     portfolioLink: 'https://arnavsinghvi11.github.io/',
   },
+  {
+    name: 'Prajapati Harishkumar Kishorkumar'
+  }
 ];
 
 export default function AuthorDetails(props: FeatureItem): JSX.Element {

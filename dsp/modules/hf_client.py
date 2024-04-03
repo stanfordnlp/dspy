@@ -127,16 +127,18 @@ class HFClientVLLM(HFModel):
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
         self.headers = {"Content-Type": "application/json"}
+        self.kwargs = kwargs
+
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
 
         payload = {
-            "model": kwargs["model"],
+            "model": self.model,
             "prompt": prompt,
-            "max_tokens": kwargs["max_tokens"],
-            "temperature": kwargs["temperature"],
+            **kwargs,
         }
+
         
         # Round robin the urls.
         url = self.urls.pop(0)

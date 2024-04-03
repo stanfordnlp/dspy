@@ -52,7 +52,7 @@ class LM(ABC):
                     blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
-                    printed.append((prompt, x["response"].generations))
+                    printed.append((prompt, x["response"].text))
                 elif provider == "mistral":
                     printed.append((prompt, x['response'].choices))
                 else:
@@ -75,7 +75,7 @@ class LM(ABC):
 
             text = ""
             if provider == "cohere":
-                text = choices[0].text
+                text = choices
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
             elif provider == "clarifai":
