@@ -34,5 +34,5 @@ Enables making queries to the RAGatouille made index for retrieval. Internally, 
 - `k` (_int_, _optional_): Number of passages to retrieve. Defaults to 3.
 
 **Returns:**
-- `dspy.Prediction`: List of K passages
+- `dspy.Prediction`: List of k passages
 
