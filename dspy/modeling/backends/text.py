@@ -11,6 +11,9 @@ from dspy.signatures.signature import Signature, SignatureMeta
 
 logger = logging.getLogger(__name__)
 
+litellm_logger = logging.getLogger("LiteLLM")
+litellm_logger.setLevel(logging.WARNING)
+
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
     passages = list(passages)
