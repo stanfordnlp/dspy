@@ -1,19 +1,18 @@
-from dsp.utils.utils import dotdict
+from typing import Optional, Union
+
 import dspy
-from typing import List, Optional, Union
+from dsp.utils.utils import dotdict
 
 try:
     from ragatouille import RAGPretrainedModel
 except ImportError:
-    raise ImportError(
-        "You need to install RAGAtouille library"
-        "Please use the command: pip install ragatouille"
+    raise Exception(
+        "You need to install RAGAtouille library, Please use the command: pip install ragatouille",
     )
 
 
 class RAGatouilleRM(dspy.Retrieve):
-    """
-    A retrieval model that uses RAGatouille library to return the top passages for a given query
+    """A retrieval model that uses RAGatouille library to return the top passages for a given query.
 
     Assumes that you already have an index created with RAGatouille.
     Reference: https://github.com/bclavie/RAGatouille
@@ -40,7 +39,7 @@ class RAGatouilleRM(dspy.Retrieve):
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Index not found: {e}")
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int]) -> dspy.Prediction:
         k = k if k is not None else self.k
         queries = (
             [query_or_queries]
