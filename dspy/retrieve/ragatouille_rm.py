@@ -2,13 +2,12 @@ from dsp.utils.utils import dotdict
 import dspy
 from typing import List, Optional, Union
 
-
 try:
     from ragatouille import RAGPretrainedModel
 except ImportError:
     raise ImportError(
         "You need to install RAGAtouille library"
-        "Please use the command: pip install ragatouille"        
+        "Please use the command: pip install ragatouille"
     )
 
 
@@ -23,7 +22,7 @@ class RAGatouilleRM(dspy.Retrieve):
         index_root (str): Folder path where you index is stored.
         index_name (str): Name of the index you want to retrieve from.
         k (int, optional): The default number of passages to retrieve. Defaults to 3.
-    
+
     Examples:
         Below is a code snippet that shows how to use RAGatouille index as the default retriver:
         ```python
@@ -33,26 +32,24 @@ class RAGatouilleRM(dspy.Retrieve):
         ```
     """
 
-    def __init__(self, index_root:str, index_name:str, k:int = 3):
-        super.__init__(k=k)
+    def __init__(self, index_root: str, index_name: str, k: int = 3):
+        super().__init__(k=k)
         self.index_path = f"{index_root}/{index_name}"
         try:
             self.model = RAGPretrainedModel.from_index(index_path=self.index_path)
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Index not found: {e}") 
-    
-    def forward(self, query_or_queries: Union[str, List[str]], k:Optional[int]) -> dspy.Prediction:
-        k = k if k is not None else self.k 
+            raise FileNotFoundError(f"Index not found: {e}")
+
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
+        k = k if k is not None else self.k
         queries = (
-                [query_or_queries]
-                if isinstance(query_or_queries, str)
-                else query_or_queries
-            )
+            [query_or_queries]
+            if isinstance(query_or_queries, str)
+            else query_or_queries
+        )
         queries = [q for q in queries if q]
         passages = []
         for query in queries:
             results = self.model.search(query=query, k=k)
-            passages.extend(dotdict({"long_text":d["content"]}) for d in results)
+            passages.extend(dotdict({"long_text": d["content"]}) for d in results)
         return dspy.Prediction(passages=passages)
-    
-        
