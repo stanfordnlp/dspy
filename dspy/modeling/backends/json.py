@@ -87,7 +87,7 @@ class JSONBackend(TextBackend):
         # Generate Span for the active example
         prompt_spans.append(self._example_span(signature, example))
 
-        content = "\n\n--\n\n".join(prompt_spans)
+        content = "\n\n---\n\n".join(prompt_spans)
 
         config.update({"messages": [{"role": "user", "content": content}]})
 
