@@ -54,7 +54,7 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
     queries = [q for q in queries if q]
 
     if len(queries) == 1:
-        return retrieve(queries[0], k)
+        return retrieve(queries[0], k, **kwargs)
 
     passages = {}
     for q in queries:
