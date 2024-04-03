@@ -128,13 +128,14 @@ class HFClientVLLM(HFModel):
         
         self.headers = {"Content-Type": "application/json"}
         self.kwargs = kwargs
+        self.model = model
 
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
 
         payload = {
-            "model": self.model,
+            "model": self.kwargs["model"],
             "prompt": prompt,
             **kwargs,
         }
