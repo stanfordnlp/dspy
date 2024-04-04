@@ -108,6 +108,10 @@ class AzureOpenAI(LM):
             **kwargs,
         }  # TODO: add kwargs above for </s>
 
+        self.api_base = api_base
+        self.api_version = api_version
+        self.api_key = api_key
+
         self.history: list[dict[str, Any]] = []
 
     def _openai_client(self):
@@ -219,6 +223,19 @@ class AzureOpenAI(LM):
             completions = [c for _, c in scored_completions]
 
         return completions
+    
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.kwargs, **kwargs}
+        model = kwargs.pop("model")
+
+        return self.__class__(
+            model=model, 
+            api_key=self.api_key, 
+            api_version=self.api_version, 
+            api_base=self.api_base, 
+            **kwargs,
+        )
 
 
 @CacheMemory.cache
