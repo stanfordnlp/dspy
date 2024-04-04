@@ -30,7 +30,7 @@ def giveup_hdlr(details):
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
-    Currently supported models include `command`, `command-nightly`, `command-light`, `command-light-nightly`.
+    Currently supported models include `command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`.
     """
 
     def __init__(
@@ -45,7 +45,7 @@ class Cohere(LM):
         ----------
         model : str
             Which pre-trained model from Cohere to use?
-            Choices are [`command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
+            Choices are [`command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
         api_key : str
             The API key for Cohere.
             It can be obtained from https://dashboard.cohere.ai/register.
