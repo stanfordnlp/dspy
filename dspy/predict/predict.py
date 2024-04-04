@@ -99,14 +99,7 @@ class Predict(Parameter):
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
 
-        if self.lm is None:
-            x, C = dsp.generate(template, **config)(x, stage=self.stage)
-        else:
-            # Note: query_only=True means the instructions and examples are not included.
-            # I'm not really sure why we'd want to do that, but it's there.
-            with dsp.settings.context(lm=self.lm, query_only=True):
-                x, C = dsp.generate(template, **config)(x, stage=self.stage)
-
+        x, C = dsp.generate(template, **config)(x, stage=self.stage)
         assert self.stage in x, "The generated (input, output) example was not stored"
 
         completions = []
