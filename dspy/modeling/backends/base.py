@@ -1,4 +1,5 @@
 import os
+import pprint
 import typing as t
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -113,6 +114,19 @@ class BaseBackend(BaseModel, ABC):
         self.history.append(completions)
 
         return completions
+
+    def inspect_history(self, element: int) -> None:
+        """Index into the backend historical completions, and pretty print all details."""
+
+        # Print Input Kwargs
+        print("===INPUT KWARGS===")
+
+        pp = pprint.PrettyPrinter(indent=2)
+        pp.pprint(self.history[element]["input_kwargs"])
+
+        # Print Completions
+        print("\n===COMPLETIONS===")
+        print(self.history[-1])
 
 
 def cached_request(cls: BaseBackend, **kwargs) -> Completions:
