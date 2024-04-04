@@ -54,7 +54,7 @@ class TextBackend(BaseBackend):
     """TextBackend takes a signature, its params, and predicts structured outputs leveraging LiteLLM."""
 
     STANDARD_PARAMS: dict[str, t.Any] = {
-        "temperature": 0,
+        "temperature": 0.5,
         "max_tokens": 500,
         "top_p": 1,
         "frequency_penalty": 0,
@@ -169,6 +169,8 @@ class TextBackend(BaseBackend):
         return example
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
+        options = {**self.STANDARD_PARAMS, **config}
+
         # Set up Format Handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS
         for name, field in signature.fields.items():
@@ -195,9 +197,9 @@ class TextBackend(BaseBackend):
 
         messages = {"messages": [{"role": "user", "content": content}]}
 
-        config.update(**messages)
+        options.update(**messages)
 
-        return config
+        return options
 
     def make_request(self, **kwargs) -> t.Any:
         return completion(model=self.model, **kwargs)
