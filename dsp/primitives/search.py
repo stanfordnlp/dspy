@@ -54,14 +54,8 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
     queries = [q for q in queries if q]
 
     if len(queries) == 1:
-<<<<<<< HEAD
         return retrieve(queries[0], k)
     all_queries_passages = []
-=======
-        return retrieve(queries[0], k, **kwargs)
-
-    passages = {}
->>>>>>> fd63306642553ecb7d0916ea4156a374ae53c255
     for q in queries:
         passages = {}
         retrieved_passages =  dsp.settings.rm(q, k=k * 3,**kwargs)
