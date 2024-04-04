@@ -14,7 +14,7 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
         # it's not an iterable yet; make it one.
         # TODO: we should unify the type signatures of dspy.Retriever
         passages = [passages]
-    passages = [psg.long_text for psg in passages]
+    # passages = [psg.long_text for psg in passages]
     
     if dsp.settings.reranker:
         passages_cs_scores = dsp.settings.reranker(query, passages)
@@ -55,17 +55,22 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
 
     if len(queries) == 1:
         return retrieve(queries[0], k)
-
-    passages = {}
+    all_queries_passages = []
     for q in queries:
-        for psg in dsp.settings.rm(q, k=k * 3,**kwargs):
+        passages = {}
+        retrieved_passages =  dsp.settings.rm(q, k=k * 3,**kwargs)
+        # for idx,psg in enumerate(retrieved_passages):
+        #     retrieved_passages[idx]["tracking_idx"] = idx
+        for idx,psg in enumerate(retrieved_passages):
             if by_prob:
-                passages[psg.long_text] = passages.get(psg.long_text, 0.0) + psg.prob
+                passages[(idx,psg.long_text)] = passages.get(psg.long_text, 0.0) + psg.prob
             else:
-                passages[psg.long_text] = passages.get(psg.long_text, 0.0) + psg.score
-
-    passages = [(score, text) for text, score in passages.items()]
-    passages = sorted(passages, reverse=True)[:k]
-    passages = [text for _, text in passages]
-
-    return passages
+                passages[(idx,psg.long_text)] = passages.get(psg.long_text, 0.0) + psg.score
+            retrieved_passages[idx]["tracking_idx"] = idx
+        # passages = [(score, text) for text, score in passages.items()]
+        passages = sorted(passages.items(), key=lambda item: item[1])[:k]
+        # passages = sorted(passages, reverse=True)[:k]
+        req_indices = [psg[0][0] for psg in passages]
+        passages = [rp for rp in retrieved_passages if rp.get("tracking_idx") in req_indices]
+        all_queries_passages.append(passages)
+    return all_queries_passages
