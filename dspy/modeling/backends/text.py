@@ -65,28 +65,6 @@ class TextBackend(BaseBackend):
     model: str
     default_params: dict[str, t.Any] = Field(default_factory=dict)
 
-    # def generate(
-    #     self,
-    #     signature: Signature,
-    #     demos: list[str],
-    #     config: dict[str, t.Any],
-    #     **kwargs,
-    # ) -> Completions:
-    #     print("CALLING OUT")
-    #     # Generate Example
-    #     example = Example(demos=demos, **kwargs)
-    #
-    #     # Get Full Kwargs for Model
-    #     model_kwargs = self.prepare_request(signature, example, config)
-    #
-    #     # Pass Through Language Model
-    #     options = {**self.STANDARD_PARAMS, **self.default_params, **model_kwargs}
-    #
-    #     # We are not streaming this content in, therefore we can assume it'll always be
-    #     response = completion(model=self.model, **options)
-    #
-    #     return self.process_response(signature, example, response, model_kwargs)
-
     def _guidelines(self, signature: Signature, _example: Example) -> str:
         result = "Follow the following format.\n\n"
 
