@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import json
-from typing import Any, Optional
-from dsp.modules.aws_lm import AWSLM
 from dataclasses import dataclass
+from typing import Any
+
+from dsp.modules.aws_lm import AWSLM
 
 
 @dataclass
@@ -16,7 +18,7 @@ class Bedrock(AWSLM):
             self,
             region_name: str,
             model: str,
-            profile_name: Optional[str] = None,
+            profile_name: str | None = None,
             input_output_ratio: int = 3,
             max_new_tokens: int = 1500,
     ) -> None:
@@ -48,7 +50,7 @@ class Bedrock(AWSLM):
         if "claude" not in model.lower():
             raise NotImplementedError("Only claude models are supported as of now")
 
-    def _create_body(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> dict[str, Any]:
+    def _create_body(self, prompt: str, system_prompt: str | None = None, **kwargs) -> dict[str, Any]:
         base_args: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
         }
