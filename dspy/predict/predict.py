@@ -99,7 +99,8 @@ class Predict(Parameter):
         # Switch to legacy format for dsp.generate
         template = signature_to_template(signature)
 
-        x, C = dsp.generate(template, **config)(x, stage=self.stage)
+        with dsp.settings.context(lm=lm):
+            x, C = dsp.generate(template, **config)(x, stage=self.stage)
         assert self.stage in x, "The generated (input, output) example was not stored"
 
         completions = []
