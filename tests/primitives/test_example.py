@@ -59,6 +59,7 @@ def test_example_eq():
     example1 = Example(a=1, b=2)
     example2 = Example(a=1, b=2)
     assert example1 == example2
+    assert example1 != ""
 
 
 def test_example_hash():
