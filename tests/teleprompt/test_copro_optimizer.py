@@ -1,8 +1,8 @@
 import textwrap
 import dspy
-from dspy.backends.template import TemplateBackend
+from dspy.modeling.backends import TextBackend
 from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils import DummyLM, DummyLanguageModel
+from dspy.utils import DummyLM, DummyBackend
 from dspy import Example
 
 
@@ -14,9 +14,7 @@ def simple_metric(example, prediction):
 
 # Example training and validation sets
 trainset = [
-    Example(input="Question: What is the color of the sky?", output="blue").with_inputs(
-        "input"
-    ),
+    Example(input="Question: What is the color of the sky?", output="blue").with_inputs("input"),
     Example(
         input="Question: What does the fox say?",
         output="Ring-ding-ding-ding-dingeringeding!",
@@ -29,9 +27,7 @@ def test_signature_optimizer_initialization():
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
     assert optimizer.breadth == 2, "Breadth not correctly initialized"
     assert optimizer.depth == 1, "Depth not correctly initialized"
-    assert (
-        optimizer.init_temperature == 1.4
-    ), "Initial temperature not correctly initialized"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
 
 
 class SimpleModule(dspy.Module):
@@ -46,10 +42,9 @@ class SimpleModule(dspy.Module):
 
 def test_signature_optimizer_optimization_process():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
-    lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
+    lm = DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         student = SimpleModule("input -> output")
 
         # Assuming the compile method of COPRO requires a student module, a development set, and evaluation kwargs
@@ -70,14 +65,9 @@ def test_signature_optimizer_optimization_process():
 def test_signature_optimizer_optimization_process_with_backend():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
 
-    lm = DummyLanguageModel(
-        answers=[
-            [
-                "Optimized instruction 1\n\nProposed Prefix For Output Field: Optimized instruction 2"
-            ]
-        ]
+    backend = DummyBackend(
+        answers=[["Optimized instruction 1\n\nProposed Prefix For Output Field: Optimized instruction 2"]]
     )
-    backend = TemplateBackend(lm=lm, attempts=5)
     with dspy.settings.context(lm=None, backend=backend, cache=False):
         student = SimpleModule("input -> output")
 
@@ -98,10 +88,9 @@ def test_signature_optimizer_optimization_process_with_backend():
 def test_signature_optimizer_statistics_tracking():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
-    lm=DummyLM(["Optimized instruction"])
+    lm = DummyLM(["Optimized instruction"])
 
     with dspy.settings.context(lm=lm, backend=None):
-
         student = SimpleModule("input -> output")
         optimized_student = optimizer.compile(
             student,
@@ -110,12 +99,8 @@ def test_signature_optimizer_statistics_tracking():
         )
 
         # Verify that statistics have been tracked and attached to the optimized student
-        assert hasattr(
-            optimized_student, "total_calls"
-        ), "Total calls statistic not tracked"
-        assert hasattr(
-            optimized_student, "results_best"
-        ), "Best results statistics not tracked"
+        assert hasattr(optimized_student, "total_calls"), "Total calls statistic not tracked"
+        assert hasattr(optimized_student, "results_best"), "Best results statistics not tracked"
 
 
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
@@ -125,12 +110,7 @@ def test_signature_optimizer_statistics_tracking_with_backend():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
-    lm = DummyLanguageModel(
-        answers=[
-            ["Optimized instruction\n\nProposed Prefix For Output Field: Dummy Prefix"]
-        ]
-    )
-    backend = TemplateBackend(lm=lm, attempts=5)
+    backend = DummyBackend(answers=[["Optimized instruction\n\nProposed Prefix For Output Field: Dummy Prefix"]])
     with dspy.settings.context(lm=None, backend=backend, cache=False):
         student = SimpleModule("input -> output")
         optimized_student = optimizer.compile(
@@ -140,12 +120,8 @@ def test_signature_optimizer_statistics_tracking_with_backend():
         )
 
         # Verify that statistics have been tracked and attached to the optimized student
-        assert hasattr(
-            optimized_student, "total_calls"
-        ), "Total calls statistic not tracked"
-        assert hasattr(
-            optimized_student, "results_best"
-        ), "Best results statistics not tracked"
+        assert hasattr(optimized_student, "total_calls"), "Total calls statistic not tracked"
+        assert hasattr(optimized_student, "results_best"), "Best results statistics not tracked"
 
 
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
@@ -199,16 +175,10 @@ def test_optimization_and_output_verification():
 
 
 def test_statistics_tracking_during_optimization():
-    lm = DummyLanguageModel(
-        answers=[
-            [
-                "Optimized instructions for stats tracking\n\nProposed Prefix For Output Field: Prompt 2"
-            ]
-        ]
+    backend = DummyBackend(
+        answers=[["Optimized instructions for stats tracking\n\nProposed Prefix For Output Field: Prompt 2"]]
     )
-    backend = TemplateBackend(lm=lm, attempts=5)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
         optimizer.track_stats = True  # Enable statistics tracking
 
@@ -220,18 +190,12 @@ def test_statistics_tracking_during_optimization():
         )
 
         # Verify that statistics have been tracked
-        assert hasattr(
-            optimized_student, "total_calls"
-        ), "Optimizer did not track total metric calls"
+        assert hasattr(optimized_student, "total_calls"), "Optimizer did not track total metric calls"
         assert optimized_student.total_calls > 0, "Optimizer reported no metric calls"
 
         # Check if the results_best and results_latest contain valid statistics
-        assert (
-            "results_best" in optimized_student.__dict__
-        ), "Optimizer did not track the best results"
-        assert (
-            "results_latest" in optimized_student.__dict__
-        ), "Optimizer did not track the latest results"
+        assert "results_best" in optimized_student.__dict__, "Optimizer did not track the best results"
+        assert "results_latest" in optimized_student.__dict__, "Optimizer did not track the latest results"
         assert (
             len(optimized_student.results_best) > 0
         ), "Optimizer did not properly populate the best results statistics"

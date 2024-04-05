@@ -1,23 +1,26 @@
 from dspy import Signature, ProgramOfThought
 import dspy
-from dspy.utils import DummyLM, DummyLanguageModel
+from dspy.utils import DummyLM, DummyBackend
 import textwrap
 
-from dspy.backends import TemplateBackend
+from dspy.modeling import TextBackend
 
 
 class BasicQA(Signature):
     question = dspy.InputField()
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 
+
 def test_pot_code_generation():
     pot = ProgramOfThought(BasicQA)
-    lm = DummyLM([
-        "Reason_A",
-        "```python\nresult = 1+1\n```", 
-        "Reason_B",
-        "2",
-    ])
+    lm = DummyLM(
+        [
+            "Reason_A",
+            "```python\nresult = 1+1\n```",
+            "Reason_B",
+            "2",
+        ]
+    )
     with dspy.settings.context(lm=lm, backend=None):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"
@@ -50,16 +53,19 @@ def test_pot_code_generation():
 
             Answer: 2""")
 
+
 def test_pot_code_generation_with_error():
     pot = ProgramOfThought(BasicQA)
-    lm = DummyLM([
-        "Reason_A",
-        "```python\nresult = 1+0/0\n```",
-        "Reason_B", # Error: division by zero
-        "```python\nresult = 1+1\n```",
-        "Reason_C",
-        "2",
-    ])
+    lm = DummyLM(
+        [
+            "Reason_A",
+            "```python\nresult = 1+0/0\n```",
+            "Reason_B",  # Error: division by zero
+            "```python\nresult = 1+1\n```",
+            "Reason_C",
+            "2",
+        ]
+    )
     with dspy.settings.context(lm=lm, backend=None):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"
@@ -123,16 +129,16 @@ def test_pot_code_generation_with_error():
 
             Answer: 2""")
 
+
 def test_pot_code_generation_with_backend():
     pot = ProgramOfThought(BasicQA)
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["Reason_A\n\nCode: ```python\nresult = 1+1\n```"],
             ["Reason_B\n\nAnswer: 2"],
         ]
     )
-    backend = TemplateBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"
@@ -141,15 +147,13 @@ def test_pot_code_generation_with_backend():
 def test_pot_code_generation_with_error_with_backend():
     pot = ProgramOfThought(BasicQA)
 
-    lm = DummyLanguageModel(
+    backend = DummyBackend(
         answers=[
             ["Reason_A\n\nCode:\n```python\nresult = 1+0/0\n```"],
             ["Reason_B\n\nCode:\n```python\nresult = 1+1\n```"],
             ["Reason_C\n\nAnswer: 2"],
         ]
     )
-    backend = TemplateBackend(lm=lm)
     with dspy.settings.context(backend=backend, lm=None, cache=False):
-
         res = pot(question="What is 1+1?")
         assert res.answer == "2"

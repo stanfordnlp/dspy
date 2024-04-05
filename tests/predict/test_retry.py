@@ -1,8 +1,10 @@
 import functools
 import dspy
-from dspy.utils import DummyLanguageModel, DummyLM
-from dspy.backends import TemplateBackend
+from dspy.utils import DummyLM
+from dspy.modeling import TextBackend
 from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+from dspy.utils.dummies import DummyBackend
+
 
 def test_retry_simple():
     predict = dspy.Predict("question -> answer")
@@ -24,11 +26,9 @@ def test_retry_simple():
 
         print(lm.get_convo(-1))
         assert lm.get_convo(-1).endswith(
-            "Question: What color is the sky?\n\n"
-            "Past Answer: red\n\n"
-            "Instructions: Try harder\n\n"
-            "Answer: blue"
+            "Question: What color is the sky?\n\n" "Past Answer: red\n\n" "Instructions: Try harder\n\n" "Answer: blue"
         )
+
 
 def test_retry_forward_with_feedback():
     # First we make a mistake, then we fix it
@@ -64,6 +64,7 @@ def test_retry_forward_with_feedback():
             "Answer: blue"
         )
 
+
 def test_retry_simple_with_backend():
     predict = dspy.Predict("question -> answer")
     retry_module = dspy.Retry(predict)
@@ -73,8 +74,7 @@ def test_retry_simple_with_backend():
         assert f"past_{field}" in retry_module.new_signature.input_fields
     assert "feedback" in retry_module.new_signature.input_fields
 
-    lm = DummyLanguageModel(answers=[["blue"]])
-    backend = TemplateBackend(lm=lm)
+    backend = DummyBackend(answers=[["blue"]])
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         result = retry_module.forward(
             question="What color is the sky?",
@@ -87,8 +87,7 @@ def test_retry_simple_with_backend():
 
 def test_retry_forward_with_feedback_with_backend():
     # First we make a mistake, then we fix it
-    lm = DummyLanguageModel(answers=[["red"], ["blue"]])
-    backend = TemplateBackend(lm=lm)
+    backend = DummyBackend(answers=[["red"], ["blue"]])
     with dspy.settings.context(backend=backend, lm=None, trace=[], cache=False):
 
         class SimpleModule(dspy.Module):

@@ -3,8 +3,8 @@ from dspy.primitives.program import (
     Module,
     set_attribute_by_name,
 )  # Adjust the import based on your file structure
-from dspy.utils import DummyLanguageModel, DummyLM
-from dspy.backends import TemplateBackend
+from dspy.utils import DummyBackend, DummyLM
+from dspy.modeling import TextBackend
 
 
 class HopModule(dspy.Module):
@@ -20,9 +20,7 @@ class HopModule(dspy.Module):
 
 def test_module_initialization():
     module = Module()
-    assert (
-        module._compiled is False
-    ), "Module _compiled attribute should be False upon initialization"
+    assert module._compiled is False, "Module _compiled attribute should be False upon initialization"
 
 
 def test_named_predictors():
@@ -30,24 +28,19 @@ def test_named_predictors():
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
     names, preds = zip(*named_preds)
-    assert (
-        "predict1" in names and "predict2" in names
-    ), "Named predictors should include 'predict1' and 'predict2'"
+    assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
 def test_predictors():
     module = HopModule()
     preds = module.predictors()
     assert len(preds) == 2, "Should return correct number of Predict instances"
-    assert all(
-        isinstance(p, dspy.Predict) for p in preds
-    ), "All returned items should be instances of PredictMock"
+    assert all(isinstance(p, dspy.Predict) for p in preds), "All returned items should be instances of PredictMock"
 
 
 def test_forward():
-
     program = HopModule()
-    lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
+    lm = DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
     with dspy.settings.context(lm=lm, backend=None):
         result = program(question="What is 1+1?").answer
         assert result == "2"
@@ -55,8 +48,7 @@ def test_forward():
 
 def test_forward_with_backend():
     program = HopModule()
-    lm = DummyLanguageModel(answers=[["let me check"], ["2"]])
-    backend = TemplateBackend(lm=lm)
+    backend = DummyBackend(answers=[["let me check"], ["2"]])
     with dspy.settings.context(backend=backend, cache=False, lm=None):
         result = program(question="What is 1+1?").answer
         assert result == "2"

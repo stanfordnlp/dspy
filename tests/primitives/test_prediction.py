@@ -27,11 +27,10 @@ def test_get_completions():
         Example(question="What is the first letter of the alphabet?", answer="a"),
     ]
 
-    completions = Completions.new(
+    completions = Completions(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
-        kwargs={},
+        input_kwargs={},
     )
 
     assert completions.question == "What is the first letter of the alphabet?"
@@ -52,11 +51,10 @@ def test_completions_complete_checks():
         Example(question="What is the first letter of the alphabet?", answer="a"),
     ]
 
-    completions = Completions.new(
+    completions = Completions(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
-        kwargs={},
+        input_kwargs={},
     )
 
     assert completions.has_complete_example()
@@ -79,11 +77,10 @@ def test_completions_numerous_answers():
         ),
     ]
 
-    completions = Completions.new(
+    completions = Completions(
         signature=QuestionSignature,
         examples=examples,
-        prompt="DUMMY PROMPT",
-        kwargs={},
+        input_kwargs={},
     )
 
     assert len(completions) == 3
