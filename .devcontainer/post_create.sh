@@ -6,6 +6,7 @@ git config --global --add safe.directory /workspaces/dspy
 
 pip install poetry==1.7.1
 poetry config installer.max-workers 4
+poetry config virtualenvs.in-project true
 
 poetry install --with dev
 
@@ -23,3 +24,5 @@ if [ -f "$personalization_script" ]; then
     chmod +x "$personalization_script"
     $personalization_script
 fi
+
+chmod +x ./.devcontainer/interpreter_warning.py && poetry run python ./.devcontainer/interpreter_warning.py

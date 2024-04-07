@@ -9,6 +9,7 @@ from .databricks import *
 from .google import *
 from .googlevertexai import *
 from .gpt3 import *
+from .groq_client import *
 from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
 from .mistral import *
@@ -16,3 +17,4 @@ from .ollama import *
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
+
