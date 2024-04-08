@@ -158,8 +158,8 @@ if __name__ == "__main__":
     "The early bird catches the worm."
 ]
 
-    col = dspy.ColBERTv2Local()
-    col.build_index(passages=passages)
-    searcher = col.get_index(passages=passages[:10])
-    res = searcher.get_docs(searcher,query="Software",k=5)
-    print(res)
+    col = dspy.ColBERTv2Local(passages=passages)
+    
+    # searcher = col.get_index(passages=passages[:10])
+    # res = searcher.get_docs(searcher,query="Software",k=5)
+    # print(res)
