@@ -144,5 +144,6 @@ class ColBERTv2Local:
                 #Passing the filter function of relevant 
                 filter_fn=lambda pids: torch.tensor(
                     [pid for pid in pids if pid in filtered_pids],dtype=torch.int32).to(device))
-            
+        else:
+            results = self.searcher.search(query, k=k)
         return results
