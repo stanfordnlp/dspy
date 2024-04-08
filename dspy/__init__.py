@@ -7,10 +7,12 @@ from .retrieve import *
 from .signatures import *
 
 # Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
+from .functional import *  # isort: skip
 from .utils.logging import logger, set_log_level, set_log_output
 
 settings = dsp.settings
+
+LM = dsp.LM
 
 AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3
