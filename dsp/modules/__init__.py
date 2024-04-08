@@ -7,6 +7,7 @@ from .cohere import *
 from .colbertv2 import ColBERTv2
 from .databricks import *
 from .google import *
+from .googlevertexai import *
 from .gpt3 import *
 from .groq_client import *
 from .hf import HFModel
