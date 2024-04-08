@@ -18,6 +18,7 @@ Mistral = dsp.Mistral
 Databricks = dsp.Databricks
 Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
+ColBERTv2Local = dsp.ColBERTv2Local
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google

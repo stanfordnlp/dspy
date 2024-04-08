@@ -1,10 +1,14 @@
 import functools
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List
 
 import requests
-
+import colbert
+from colbert import Indexer, Searcher
+from colbert.infra import Run, RunConfig, ColBERTConfig
+from colbert.data import Queries, Collection
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
+import os
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 
@@ -74,3 +78,36 @@ def colbertv2_post_request_v2_wrapped(*args, **kwargs):
 
 
 colbertv2_post_request = colbertv2_post_request_v2_wrapped
+os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
+
+class ColBERTv2Local:
+    def __init__(self,checkpoint:str='colbert-ir/colbertv2.0'):
+
+        self.checkpoint = checkpoint
+
+
+    def build_index(self,passages:List[str],nranks:int=1,index_name_or_path:str = "Colbert-RM-",nbits:int=2,DOC_MAXLEN:int=300,INDEX_BSIZE:int=256,KMEANS_ITER:int=8,experiment_name:str="Colbert-Experiment"):
+
+        with Run().context(RunConfig(nranks=nranks, experiment=experiment_name)):  
+            config = ColBERTConfig(doc_maxlen=DOC_MAXLEN, nbits=nbits, kmeans_niters=KMEANS_ITER,index_bsize=INDEX_BSIZE)
+                                                                                       
+
+            indexer = Indexer(checkpoint=self.checkpoint, config=config)
+            indexer.index(name=index_name_or_path, collection=passages, overwrite=True)
+
+    def get_index(self,index_name_or_path:str = "Colbert-RM-",experiment_name:str="Colbert-Experiment",passages:List[str] = []):
+        with Run().context(RunConfig(experiment=experiment_name)):
+            searcher = Searcher(index=index_name_or_path, collection=passages)
+        self.searcher = searcher
+        return searcher
+    
+    def get_docs(self,searcher:Searcher,query:str,k:int=7):
+        
+        results = searcher.search(
+            query,
+            #Number of passages to receive
+            k=k)
+            #Passing the filter function of relevant 
+            # filter_fn=lambda pids: torch.tensor(
+            #     [pid for pid in pids if pid in relevant_ids],dtype=torch.int32).to(device))
+        return results

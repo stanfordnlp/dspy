@@ -4,7 +4,7 @@ from .bedrock import *
 from .cache_utils import *
 from .clarifai import *
 from .cohere import *
-from .colbertv2 import ColBERTv2
+from .colbertv2 import ColBERTv2, ColBERTv2Local
 from .databricks import *
 from .google import *
 from .gpt3 import *
