@@ -37,15 +37,8 @@ def retrieveRerankEnsemble(queries: list[str], k: int,**kwargs) -> list[str]:
         passages = []
         retrieved_passages = dsp.settings.rm(query, k=k*3,**kwargs)
         # passages_cs_scores = dsp.settings.reranker(query,k=k,passages=[psg["long_text"] for psg in retrieved_passages])
-        passages_cs_scores = dsp.settings.reranker(query,k=k)
-        # passages_cs_scores = dsp.settings.reranker(query, retrieved_passages)
-        for idx in np.argsort(passages_cs_scores)[::-1]:
-            psg = retrieved_passages[idx]
-            # passages[psg.long_text] = passages.get(psg.long_text, []) + [
-            #     passages_cs_scores[idx],
-            # ]
-            # passages.append((psg,passages_cs_scores[idx]))
-            passages.append([passages_cs_scores[idx],psg])
+        passage_ids,passage_scores,passages = dsp.settings.reranker(query,k=k)
+
         # all_queries_passages.append(passages)
 
         # passages = [(np.average(score), psg) for score,psg in passages]

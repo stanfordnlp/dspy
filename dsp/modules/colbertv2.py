@@ -77,7 +77,7 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
 class ColBERTv2Local:
-    def __init__(self,checkpoint:str='colbert-ir/colbertv2.0',passages:List[str]=[],index_name_or_path:str = "Colbert-RM",experiment_name:str="Colbert-Experiment",load_only:bool=False,nranks:int=1,nbits:int=2,DOC_MAXLEN:int=300,INDEX_BSIZE:int=256,KMEANS_ITER:int=8):
+    def __init__(self,checkpoint:str='colbert-ir/colbertv2.0',passages:List[str]=[],index_name_or_path:str = "Colbert-RM",experiment_name:str="Colbert-Experiment",load_only:bool=False,nranks:int=1,nbits:int=2,DOC_MAXLEN:int=300,INDEX_BSIZE:int=256,KMEANS_ITER:int=8,**kwargs):
 
 
         self.checkpoint = checkpoint
@@ -92,12 +92,12 @@ class ColBERTv2Local:
 
         if not load_only:
             print(f"Building the index for experiment {self.experiment_name} with index name {self.index_name_or_path}")
-            self.build_index()
+            self.build_index(**kwargs)
         
         print(f"Loading the index for experiment {self.experiment_name} with index name {self.index_name_or_path}")
         self.searcher = self.get_index()
 
-    def build_index(self):
+    def build_index(self,**kwargs):
 
         try:
             import colbert
@@ -107,9 +107,7 @@ class ColBERTv2Local:
         from colbert import Indexer
         from colbert.infra import Run, RunConfig, ColBERTConfig
         with Run().context(RunConfig(nranks=self.nranks, experiment=self.experiment_name)):  
-            config = ColBERTConfig(doc_maxlen=self.DOC_MAXLEN, nbits=self.nbits, kmeans_niters=self.KMEANS_ITER,index_bsize=self.INDEX_BSIZE)
-                                                                                       
-
+            config = ColBERTConfig(doc_maxlen=self.DOC_MAXLEN, nbits=self.nbits, kmeans_niters=self.KMEANS_ITER,index_bsize=self.INDEX_BSIZE,**kwargs)                                                                                     
             indexer = Indexer(checkpoint=self.checkpoint, config=config)
             indexer.index(name=self.index_name_or_path, collection=self.passages, overwrite=True)
 
@@ -127,10 +125,6 @@ class ColBERTv2Local:
         return searcher
     
     def __call__(self,query:str,k:int=7,**kwargs):
-        try:
-            import colbert
-        except ImportError:
-            print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
         import torch
         
         if kwargs.get("filtered_pids"):
@@ -146,4 +140,11 @@ class ColBERTv2Local:
                     [pid for pid in pids if pid in filtered_pids],dtype=torch.int32).to(device))
         else:
             results = self.searcher.search(query, k=k)
-        return results
+        passage_ids = []
+        passage_score = []
+        passages = []
+        for pid,_,score in zip(*results):
+            passage_ids.append(pid)
+            passage_score.append(score)
+            passages.append(self.searcher.collection[pid])
+        return passage_ids,passage_score,passages
