@@ -6,21 +6,14 @@ import backoff
 try:
     import groq
     from groq import Groq
+
     groq_api_error = (groq.APIError, groq.RateLimitError)
 except ImportError:
-    groq_api_error = (Exception)
+    groq_api_error = Exception
 
 
 import dsp
 from dsp.modules.lm import LM
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler("groq_usage.log")],
-)
-
 
 
 def backoff_hdlr(details):
@@ -51,10 +44,9 @@ class GroqLM(LM):
         self.provider = "groq"
         if api_key:
             self.api_key = api_key
-            self.client = Groq(api_key = api_key)
+            self.client = Groq(api_key=api_key)
         else:
             raise ValueError("api_key is required for groq")
-            
 
         self.kwargs = {
             "temperature": 0.0,
@@ -64,13 +56,12 @@ class GroqLM(LM):
             "presence_penalty": 0,
             "n": 1,
             **kwargs,
-        }  
+        }
         models = self.client.models.list().data
         if models is not None:
-            if model in [m.id for m in models]: 
+            if model in [m.id for m in models]:
                 self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
-
 
     def log_usage(self, response):
         """Log the total tokens from the Groq API response."""
@@ -118,7 +109,7 @@ class GroqLM(LM):
         """Handles retreival of model completions whilst handling rate limiting and caching."""
         response = self.client.chat.completions.create(**kwargs)
         return response
-    
+
     def __call__(
         self,
         prompt: str,
