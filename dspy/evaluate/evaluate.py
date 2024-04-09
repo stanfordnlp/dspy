@@ -3,8 +3,9 @@ import types
 
 import pandas as pd
 import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
-import dsp
+import dspy
 
 try:
     from IPython.display import HTML
@@ -35,16 +36,17 @@ class Evaluate:
         num_threads=1,
         display_progress=False,
         display_table=False,
-        display=True,
         max_errors=5,
         return_outputs=False,
+        # TODO: Passing Kwargs such that display=False does not cause an error
+        # We may want to manage this better with a DeprecatedWarning moving forward
+        **_kwargs,
     ):
         self.devset = devset
         self.metric = metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
-        self.display = display
         self.max_errors = max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
@@ -55,14 +57,15 @@ class Evaluate:
         ntotal = 0
         reordered_devset = []
 
-        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True,
-                         disable=not display_progress)
+        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
         for idx, arg in devset:
             example_idx, example, prediction, score = wrapped_program(idx, arg)
             reordered_devset.append((example_idx, example, prediction, score))
             ncorrect += score
             ntotal += 1
-            self._update_progress(pbar, ncorrect, ntotal)
+            with logging_redirect_tqdm():
+                self._update_progress(pbar, ncorrect, ntotal)
+
         pbar.close()
 
         return reordered_devset, ncorrect, ntotal
@@ -73,15 +76,12 @@ class Evaluate:
         reordered_devset = []
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {executor.submit(wrapped_program, idx, arg)
-                       for idx, arg in devset}
-            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True,
-                             disable=not display_progress)
+            futures = {executor.submit(wrapped_program, idx, arg) for idx, arg in devset}
+            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
 
             for future in as_completed(futures):
                 example_idx, example, prediction, score = future.result()
-                reordered_devset.append(
-                    (example_idx, example, prediction, score))
+                reordered_devset.append((example_idx, example, prediction, score))
                 ncorrect += score
                 ntotal += 1
                 self._update_progress(pbar, ncorrect, ntotal)
@@ -90,8 +90,7 @@ class Evaluate:
         return reordered_devset, ncorrect, ntotal
 
     def _update_progress(self, pbar, ncorrect, ntotal):
-        pbar.set_description(
-            f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
+        pbar.set_description(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
         pbar.update()
 
     def __call__(
@@ -102,7 +101,6 @@ class Evaluate:
         num_threads=None,
         display_progress=None,
         display_table=None,
-        display=None,
         return_all_scores=False,
         return_outputs=False,
     ):
@@ -111,22 +109,15 @@ class Evaluate:
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
         display_table = display_table if display_table is not None else self.display_table
-
-        display = self.display if display is None else display
-        display_progress = display_progress and display
-        display_table = display_table if display else False
         return_outputs = return_outputs if return_outputs is not False else self.return_outputs
         results = []
 
         def wrapped_program(example_idx, example):
             # NOTE: TODO: Won't work if threads create threads!
-            creating_new_thread = threading.get_ident() not in dsp.settings.stack_by_thread
+            thread_stacks = dspy.settings.stack_by_thread
+            creating_new_thread = threading.get_ident() not in thread_stacks
             if creating_new_thread:
-                dsp.settings.stack_by_thread[threading.get_ident()] = list(
-                    dsp.settings.main_stack)
-                # print(threading.get_ident(), dsp.settings.stack_by_thread[threading.get_ident()])
-
-            # print(type(example), example)
+                thread_stacks[threading.get_ident()] = list(dspy.settings.main_stack)
 
             try:
                 prediction = program(**example.inputs())
@@ -137,9 +128,9 @@ class Evaluate:
 
                 # increment assert and suggest failures to program's attributes
                 if hasattr(program, "_assert_failures"):
-                    program._assert_failures += dsp.settings.assert_failures
+                    program._assert_failures += dspy.settings.get("assert_failures")
                 if hasattr(program, "_suggest_failures"):
-                    program._suggest_failures += dsp.settings.suggest_failures
+                    program._suggest_failures += dspy.settings.get("suggest_failures")
 
                 return example_idx, example, prediction, score
             except Exception as e:
@@ -148,17 +139,19 @@ class Evaluate:
                     current_error_count = self.error_count
                 if current_error_count >= self.max_errors:
                     raise e
-                print(f"Error for example in dev set: \t\t {e}")
-                return example_idx, example, dict(), 0.0
+
+                with logging_redirect_tqdm():
+                    dspy.logger.error(f"Error for example in dev set: \t\t {e}")
+
+                return example_idx, example, {}, 0.0
             finally:
                 if creating_new_thread:
-                    del dsp.settings.stack_by_thread[threading.get_ident()]
+                    del thread_stacks[threading.get_ident()]
 
         devset = list(enumerate(devset))
 
         if num_threads == 1:
-            reordered_devset, ncorrect, ntotal = self._execute_single_thread(
-                wrapped_program, devset, display_progress)
+            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
                 wrapped_program,
@@ -167,16 +160,13 @@ class Evaluate:
                 display_progress,
             )
         if return_outputs:  # Handle the return_outputs logic
-            results = [(example, prediction, score)
-                       for _, example, prediction, score in reordered_devset]
+            results = [(example, prediction, score) for _, example, prediction, score in reordered_devset]
 
-        if display:
-            print(
-                f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)}%)")
+        with logging_redirect_tqdm():
+            dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 
-        # data = [{**example, **prediction, 'correct': score} for example, prediction, score in zip(reordered_devset, preds, scores)]
         data = [
             merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
         ]
@@ -190,9 +180,7 @@ class Evaluate:
             df = df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
-        assert callable(metric)
-        metric_name = metric.__name__ if isinstance(
-            metric, types.FunctionType) else metric.__class__.__name__
+        metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
         df.rename(columns={"correct": metric_name}, inplace=True)
 
         if display_table:
@@ -205,6 +193,7 @@ class Evaluate:
 
             styled_df = configure_dataframe_display(df_to_display, metric_name)
 
+            # KC:::Fix this
             ipython_display(styled_df)
 
             if truncated_rows > 0:
@@ -219,13 +208,16 @@ class Evaluate:
                     ... {truncated_rows} more rows not displayed ...
                 </div>
                 """
+                # KC:::Fix this
                 ipython_display(HTML(message))
 
         if return_all_scores and return_outputs:
             return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in reordered_devset]
-        elif return_all_scores:
+
+        if return_all_scores:
             return round(100 * ncorrect / ntotal, 2), [score for *_, score in reordered_devset]
-        elif return_outputs:
+
+        if return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
@@ -263,8 +255,7 @@ def configure_dataframe_display(df, metric_name):
     pd.set_option("display.width", 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    df.loc[:, metric_name] = df[metric_name].apply(
-        lambda x: f"✔️ [{x}]" if x is True else f"{x}")
+    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
 
     # Return styled DataFrame
     return df.style.set_table_styles(
