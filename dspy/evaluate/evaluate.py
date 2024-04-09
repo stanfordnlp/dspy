@@ -3,6 +3,7 @@ import types
 
 import pandas as pd
 import tqdm
+import sys
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
@@ -57,7 +58,7 @@ class Evaluate:
         ntotal = 0
         reordered_devset = []
 
-        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
+        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
         for idx, arg in devset:
             example_idx, example, prediction, score = wrapped_program(idx, arg)
             reordered_devset.append((example_idx, example, prediction, score))
