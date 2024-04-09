@@ -124,7 +124,6 @@ class ColBERTv2RetrieverLocal:
             searcher = Searcher(index=self.index_name_or_path, collection=self.passages)
         return searcher
     
-    @CacheMemory.cache
     def __call__(self,query:str,k:int=7,**kwargs):
         import torch
         
@@ -140,9 +139,9 @@ class ColBERTv2RetrieverLocal:
                 filter_fn=lambda pids: torch.tensor(
                     [pid for pid in pids if pid in filtered_pids],dtype=torch.int32).to(device))
         else:
-            results = self.searcher.search(query, k=k)
+            searcher_results = self.searcher.search(query, k=k)
         results = []
-        for pid,_,score in zip(*results):
+        for pid,_,score in zip(*searcher_results):
             results.append(dotdict({'long_text':self.searcher.collection[pid],'score':score,'pid':pid}))
         return results
 
