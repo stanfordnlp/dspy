@@ -23,8 +23,8 @@ turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
 dspy.settings.configure(lm=turbo)
 
 # Load math questions from the GSM8K dataset
-gms8k = GSM8K()
-gsm8k_trainset, gsm8k_devset = gms8k.train[:10], gms8k.dev[:10]
+gsm8k = GSM8K()
+gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 ```
 
 ## Define the Module
@@ -51,7 +51,7 @@ from dspy.teleprompt import BootstrapFewShot
 # Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 4-shot examples of our CoT program.
 config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
 
-# Optimize! Use the `gms8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
+# Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
 teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
 optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset, valset=gsm8k_devset)
 ```

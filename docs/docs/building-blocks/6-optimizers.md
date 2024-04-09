@@ -47,9 +47,9 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 #### Automatic Instruction Optimization
 
-4. **`SignatureOptimizer`**: Generates and refines new instructions for each step, and optimizes them with coordinate ascent.
+4. **`COPRO`**: Generates and refines new instructions for each step, and optimizes them with coordinate ascent.
 
-5. **`BayesianSignatureOptimizer`**: Generates instructions and few-shot examples in each step. The instruction generation is data-aware and demonstration-aware. Uses Bayesian Optimization to effectively search over the space of generation instructions/demonstrations across your modules.
+5. **`MIPRO`**: Generates instructions and few-shot examples in each step. The instruction generation is data-aware and demonstration-aware. Uses Bayesian Optimization to effectively search over the space of generation instructions/demonstrations across your modules.
 
 
 #### Automatic Finetuning
@@ -74,7 +74,7 @@ Here's the general guidance on getting started:
 
 * If you have slightly more data, e.g. 50 examples of your task, use `BootstrapFewShotWithRandomSearch`.
 
-* If you have more data than that, e.g. 300 examples or more, use `BayesianSignatureOptimizer`.
+* If you have more data than that, e.g. 300 examples or more, use `MIPRO`.
 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very efficient program, compile that down to a small LM with `BootstrapFinetune`.
 
@@ -94,4 +94,25 @@ config = dict(max_bootstrapped_demos=3, max_labeled_demos=3, num_candidate_progr
 
 teleprompter = BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
 optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINSET_HERE)
+```
+
+## Saving and loading optimizer output
+
+After running a program through an optimizer, it's useful to also save it. At a later point, a program can be loaded from a file and used for inference. For this, the `load` and `save` methods can be used.
+
+### Saving a program
+
+```python
+optimized_program.save(YOUR_SAVE_PATH)
+```
+
+The resulting file is in plain-text JSON format. It contains all the parameters and steps in the source program. You can always read it and see what the optimizer generated.
+
+### Loading a program
+
+To load a program from a file, you can instantiate an object from that class and then call the load method on it.
+
+```python
+loaded_program = YOUR_PROGRAM_CLASS()
+loaded_program.load(path=YOUR_SAVE_PATH)
 ```

@@ -8,7 +8,7 @@ Using DSPy well for solving a new task is just doing good machine learning with 
 
 What this means is that it's an iterative process. You make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
 
-As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](https://dspy-docs.vercel.app/docs/building-blocks/modules) to use, giving each layer a [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`]https://dspy-docs.vercel.app/docs/building-blocks/optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](https://dspy-docs.vercel.app/docs/building-blocks/modules) to use, giving each layer a [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`](https://dspy-docs.vercel.app/docs/building-blocks/optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
 
 ## 1) Define your task.
@@ -89,7 +89,7 @@ Here's the general guidance on getting started:
 
 * If you have slightly more data, e.g. 50 examples of your task, use [`BootstrapFewShotWithRandomSearch`](https://dspy-docs.vercel.app/docs/deep-dive/teleprompter/bootstrap-fewshot).
 
-* If you have more data than that, e.g. 300 examples or more, use [`BayesianSignatureOptimizer`](https://dspy-docs.vercel.app/docs/deep-dive/teleprompter/signature-optimizer).
+* If you have more data than that, e.g. 300 examples or more, use [`MIPRO`](https://dspy-docs.vercel.app/docs/deep-dive/teleprompter/signature-optimizer).
 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very efficient program, compile that down to a small LM with `BootstrapFinetune`.
 
