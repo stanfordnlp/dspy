@@ -10,7 +10,7 @@ with open('requirements.txt', encoding='utf-8') as f:
 
 setup(	
     name="dspy-ai",	
-    version="2.4.1",	
+    version="2.4.3",	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	
@@ -29,7 +29,8 @@ setup(
         "pinecone": ["pinecone-client~=2.2.4"],	
         "weaviate": ["weaviate-client~=3.26.1"],	
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
-        "myscale":["clickhouse-connect"]
+        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "myscale":["clickhouse-connect"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
