@@ -37,6 +37,8 @@ dependencies = [
     "optuna",
     "pydantic>=2.5.0,<=2.7",
     "structlog"
+    "urllib3==2.2.1",
+    "pillow",
 ]
 
 [project.optional-dependencies]
@@ -118,12 +120,13 @@ rich = "^13.7.1"
 psycopg2 = {version = "^2.9.9", optional = true}
 pgvector = {version = "^0.2.5", optional = true}
 structlog = "^24.1.0"
+pillow = {version = "*", optional = true}
 
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
 transformers = "^4.38.2"
-torch = "^2.2.1"
+torch = { version = "^2.2.1", optional = true }
 pytest-mock = "^3.12.0"
 ruff = "^0.3.0"
 black = "^24.2.0"
