@@ -53,6 +53,11 @@ class Evaluate:
         self.error_lock = threading.Lock()
         self.return_outputs = return_outputs
 
+        if "display" in _kwargs:
+            dspy.logger.warning(
+                "DeprecationWarning: 'display' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
+            )
+
     def _execute_single_thread(self, wrapped_program, devset, display_progress):
         ncorrect = 0
         ntotal = 0
