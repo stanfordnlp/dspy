@@ -83,10 +83,10 @@ class RetrieveThenRerank(Parameter):
         for name, value in state.items():
             setattr(self, name, value)
 
-    def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+    # def __call__(self, *args, **kwargs):
+    #     return self.forward(*args, **kwargs)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> Union[Prediction,List[Prediction]]:
+    def __call__(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> Union[Prediction,List[Prediction]]:
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split('\n')[0].strip() for query in queries]
 
@@ -97,23 +97,21 @@ class RetrieveThenRerank(Parameter):
         if isinstance(passages[0],List):
             pred_returns = []
             for query_passages in passages:
-                passages_dict = {key:[] for key in list(query_passages[0].keys()) if key!="tracking_idx"}
-                for psg in query_passages:
-                    for key,value in psg.items():
-                        if key == "tracking_idx": continue
+                passages_dict = {key:[] for key in list(query_passages[0].keys())}
+                for docs in query_passages:
+                    for key,value in docs.items():
                         passages_dict[key].append(value)
                 if "long_text" in passages_dict:
-                    passages_dict["passages"] = passages_dict.pop("long_text")
+                    passages_dict["passages"] = passages_dict.pop("long_text")    
+
                 pred_returns.append(Prediction(**passages_dict))           
             return pred_returns
         elif isinstance(passages[0], Dict):
-            #passages dict will contain {"long_text":long_text_list,"metadatas";metadatas_list...}
             passages_dict = {key:[] for key in list(passages[0].keys())}
-            
-            for psg in passages:
-                for key,value in psg.items():
+            for docs in passages:
+                for key,value in docs.items():
                     passages_dict[key].append(value)
             if "long_text" in passages_dict:
                 passages_dict["passages"] = passages_dict.pop("long_text")
             return Prediction(**passages_dict)
-        
+            

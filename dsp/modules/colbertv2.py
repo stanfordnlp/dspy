@@ -76,7 +76,7 @@ def colbertv2_post_request_v2_wrapped(*args, **kwargs):
 colbertv2_post_request = colbertv2_post_request_v2_wrapped
 os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
-class ColBERTv2Local:
+class ColBERTv2RetrieverLocal:
     def __init__(self,checkpoint:str='colbert-ir/colbertv2.0',passages:List[str]=[],index_name_or_path:str = "Colbert-RM",experiment_name:str="Colbert-Experiment",load_only:bool=False,nranks:int=1,nbits:int=2,DOC_MAXLEN:int=300,INDEX_BSIZE:int=256,KMEANS_ITER:int=8,**kwargs):
 
 
@@ -124,6 +124,7 @@ class ColBERTv2Local:
             searcher = Searcher(index=self.index_name_or_path, collection=self.passages)
         return searcher
     
+    @CacheMemory.cache
     def __call__(self,query:str,k:int=7,**kwargs):
         import torch
         
@@ -140,11 +141,44 @@ class ColBERTv2Local:
                     [pid for pid in pids if pid in filtered_pids],dtype=torch.int32).to(device))
         else:
             results = self.searcher.search(query, k=k)
-        passage_ids = []
-        passage_score = []
-        passages = []
+        results = []
         for pid,_,score in zip(*results):
-            passage_ids.append(pid)
-            passage_score.append(score)
-            passages.append(self.searcher.collection[pid])
-        return passage_ids,passage_score,passages
+            results.append(dotdict({'long_text':self.searcher.collection[pid],'score':score,'pid':pid}))
+        return results
+
+class ColBERTv2RerankerLocal:
+    try:
+        import colbert
+    except ImportError:
+        print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
+    from colbert.infra.config.config import ColBERTConfig
+    
+    def __init__(self,checkpoint_name:str='bert-base-uncased',colbert_config:ColBERTConfig=None):
+        self.colbert_config = colbert_config
+        self.checkpoint_name = checkpoint_name
+        self.colbert_config.checkpoint = checkpoint_name
+
+    # def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    #     return self.forward(*args, **kwargs)
+
+    def __call__(self,query:str,passages:List[str]=[]):
+        from colbert.modeling.tokenization.doc_tokenization import DocTokenizer
+        from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
+        from colbert.modeling.colbert import ColBERT 
+        import numpy as np
+        assert len(passages) > 0, "Passages should not be empty"
+        self.colbert_config.nway = len(passages)
+        query_tokenizer = QueryTokenizer(self.colbert_config,verbose=1)
+        doc_tokenizer = DocTokenizer(self.colbert_config)
+        query_ids,query_masks = query_tokenizer.tensorize([query])
+        doc_ids,doc_masks = doc_tokenizer.tensorize(passages)
+
+        col = ColBERT(self.checkpoint_name,self.colbert_config) 
+        # col.colbert_config.nway = len(passages)
+        # tensor_scores = col([query_ids,query_masks],[doc_ids,doc_masks])
+        Q = col.query(query_ids,query_masks)
+        DOC_IDS,DOC_MASKS = col.doc(doc_ids,doc_masks,keep_dims='return_mask')
+        Q_duplicated = Q.repeat_interleave(len(passages), dim=0).contiguous()
+        tensor_scores = col.score(Q_duplicated,DOC_IDS,DOC_MASKS)
+        passage_score_arr = np.array([score.cpu().detach().numpy().tolist() for score in tensor_scores])
+        return passage_score_arr
