@@ -6,7 +6,7 @@ sidebar_position: 1
 
 ### Constructor
 
-Initialize an instance of the `MilvusRM` class, with the option to use OpenAI's `text-embedding-3-small` embeddings or any customized embedding function .
+Initialize an instance of the `MilvusRM` class, with the option to use OpenAI's `text-embedding-3-small` embeddings or any customized embedding function.
 
 ```python
 MilvusRM(
@@ -49,7 +49,7 @@ To support passage retrieval, it assumes that a Milvus collection has been creat
 - `text`: The text of the passage
 
 MilvusRM uses OpenAI's `text-embedding-3-small` embedding by default or any customized embedding function.
-While different options are available, this examples below demonstrate how to utilize the default OpenAI embeddings and a customized embedding function using the BGE model.
+While different options are available, the examples below demonstrate how to utilize the default OpenAI embeddings and a customized embedding function using the BGE model.
 
 #### Default OpenAI Embeddings
 
