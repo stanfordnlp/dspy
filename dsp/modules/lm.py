@@ -46,7 +46,7 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                if provider == "clarifai" or provider == "google":
+                if provider == "clarifai" or provider == "google" or provider == "Bedrock" or provider == "Sagemaker":
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
                     blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
@@ -74,7 +74,7 @@ class LM(ABC):
             printing_value += prompt
 
             text = ""
-            if provider == "cohere":
+            if provider == "cohere" or provider == "Bedrock" or provider == "Sagemaker":
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = ' ' + self._get_choice_text(choices[0]).strip()
