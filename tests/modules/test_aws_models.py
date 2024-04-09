@@ -52,7 +52,10 @@ def run_tests():
         with dspy.context(lm=lm):
             question = "What is the capital of France?"
             answer = predict_func(question=question).answer
-            print(f"Question: {question}\nAnswer: {answer}\n\n")
+            print(f"Question: {question}\nAnswer: {answer}")
+            print("---------------------------------")
+            lm.inspect_history()
+            print("---------------------------------\n")
 
 
 if __name__ == "__main__":

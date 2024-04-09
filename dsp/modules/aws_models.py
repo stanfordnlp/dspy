@@ -201,7 +201,8 @@ class AWSAnthropic(AWSModel):
             max_new_tokens=max_new_tokens,
             **kwargs,
         )
-        self.provider = aws_provider
+        self.aws_provider = aws_provider
+        self.provider = aws_provider.get_provider_name()
 
         for k, v in kwargs.items():
             self.kwargs[k] = v
@@ -211,7 +212,7 @@ class AWSAnthropic(AWSModel):
         for k, v in kwargs.items():
             base_args[k] = v
 
-        n, query_args = self.provider.sanitize_kwargs(base_args)
+        n, query_args = self.aws_provider.sanitize_kwargs(base_args)
 
         # Anthropic models do not support the following parameters
         query_args.pop("frequency_penalty", None)
@@ -236,7 +237,7 @@ class AWSAnthropic(AWSModel):
         return (n, query_args)
 
     def _call_model(self, body: str) -> str:
-        response = self.provider.predictor.invoke_model(
+        response = self.aws_provider.predictor.invoke_model(
             modelId=self._model_name,
             body=body,
         )
@@ -263,7 +264,8 @@ class AWSMeta(AWSModel):
             max_new_tokens=max_new_tokens,
             **kwargs,
         )
-        self.provider = aws_provider
+        self.aws_provider = aws_provider
+        self.provider = aws_provider.get_provider_name()
 
         for k, v in kwargs.items():
             self.kwargs[k] = v
@@ -275,7 +277,7 @@ class AWSMeta(AWSModel):
         for k, v in kwargs.items():
             base_args[k] = v
 
-        n, query_args = self.provider.sanitize_kwargs(base_args)
+        n, query_args = self.aws_provider.sanitize_kwargs(base_args)
 
         # Meta models do not support the following parameters
         query_args.pop("frequency_penalty", None)
@@ -287,7 +289,7 @@ class AWSMeta(AWSModel):
         return (n, query_args)
 
     def _call_model(self, body: str) -> str:
-        response = self.provider.predictor.invoke_model(
+        response = self.aws_provider.predictor.invoke_model(
             modelId=self._model_name,
             body=body,
         )
