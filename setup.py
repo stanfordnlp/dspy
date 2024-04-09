@@ -34,7 +34,8 @@ setup(
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
-        "myscale":["clickhouse-connect"]
+        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "myscale":["clickhouse-connect"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
