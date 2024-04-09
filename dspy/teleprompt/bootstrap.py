@@ -124,7 +124,9 @@ class BootstrapFewShot(Teleprompter):
                     if success:
                         bootstrapped[example_idx] = True
 
-        print(f"Bootstrapped {len(bootstrapped)} full traces after {example_idx+1} examples in round {round_idx}.")
+        dspy.logger.info(
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}."
+        )
 
         # Unbootstrapped training examples
 
@@ -167,7 +169,6 @@ class BootstrapFewShot(Teleprompter):
                         success = metric_val
                 else:
                     success = True
-                # print(success, example, prediction)
         except Exception as e:
             success = False
             with self.error_lock:
@@ -175,7 +176,7 @@ class BootstrapFewShot(Teleprompter):
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
                 raise e
-            print(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
+            dspy.logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
             for step in trace:
@@ -192,15 +193,15 @@ class BootstrapFewShot(Teleprompter):
                 except KeyError as e:
                     continue  # FIXME: !
 
-                    # TODO: Look closer into this. It's a bit tricky to reproduce.
-                    print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
-                    print(
-                        "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
-                    )
-                    print("Try restarting the notebook, or open an issue.")
-                    raise KeyError(
-                        f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
-                    ) from e
+                    # # TODO: Look closer into this. It's a bit tricky to reproduce.
+                    # print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
+                    # print(
+                    #     "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
+                    # )
+                    # print("Try restarting the notebook, or open an issue.")
+                    # raise KeyError(
+                    #     f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
+                    # ) from e
 
                 name2traces[predictor_name].append(demo)
 
