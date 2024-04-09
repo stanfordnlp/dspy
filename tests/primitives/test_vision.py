@@ -4,7 +4,7 @@
 import numpy as np
 from pathlib import Path
 import PIL.Image as PILImage
-from dspy.primitives.vision import Image
+from dsp.primitives.vision import Image
 import pytest
 import io
 from unittest.mock import MagicMock, patch
@@ -34,7 +34,7 @@ def test_image_initialization_with_file_path(tmp_path, image):
     
 
 def test_image_initialization_with_url(image):
-    with patch('dspy.primitives.vision.urlopen') as mock_urlopen:
+    with patch('dsp.primitives.vision.urlopen') as mock_urlopen:
         class MockResponse:
             def __init__(self, data):
                 self.data = data
