@@ -118,7 +118,6 @@ class Image(BaseModel):
               image_data = response.read()
 
       # Convert the image data to a PIL Image
-      buffer = io.BytesIO(image_data)
       return PILImage.frombuffer('RGB', (10, 10), image_data)
     
   @model_validator(mode='before')
@@ -191,4 +190,4 @@ class Image(BaseModel):
     self.pil.save(path)
 
   def model_dump(self) -> dict:
-    return {'base64': self.base64, 'encoding': self.encoding, 'size': self.size}
+    return {'url': self.url, 'encoding': self.encoding, 'size': self.size}

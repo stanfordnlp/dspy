@@ -5,8 +5,7 @@ import backoff
 from dsp.modules.lm import LM
 
 try:
-    import cohere
-    cohere_api_error = cohere.errors.UnauthorizedError
+    from  cohere.errors import UnauthorizedError as cohere_api_error
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")

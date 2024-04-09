@@ -11,7 +11,7 @@ import openai
 import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.vlm import VLM
-from dspy.primitives.vision import Image, SupportsImage
+from dsp.primitives.vision import Image, SupportsImage
 
 # Configure logging
 logging.basicConfig(
@@ -35,8 +35,7 @@ try:
     )
 except Exception:
     ERRORS = (openai.RateLimitError,)
-    OpenAIObject = dict
-
+    OpenAIObject = openai.OpenAI
 
 def backoff_hdlr(details) -> None:
   """Handler from https://pypi.org/project/backoff/ ."""
@@ -63,6 +62,7 @@ class GPT4Vision(VLM):
       api_key: Optional[str] = os.getenv("OPENAI_API_KEY"),
       api_provider: Literal["openai"] = "openai",
       api_base: Optional[str] = None,
+      model_type: Literal["chat", "completion"] = None,
       system_prompt: Optional[str] = None,
       **kwargs,
   ):
@@ -72,7 +72,7 @@ class GPT4Vision(VLM):
 
     self.system_prompt = system_prompt
 
-    self.model_type = "chat"
+    self.model_type = model_type or "chat"
 
     if api_key:
       openai.api_key = api_key
@@ -126,13 +126,19 @@ class GPT4Vision(VLM):
       ]
     else:
       content = prompt
-    messages = [{"role": "user", "content": content}]
-    if self.system_prompt:
+    
+    if self.model_type == "chat":
+      messages = [{"role": "user", "content": content}]
+      if self.system_prompt:
         messages.insert(0, {"role": "system", "content": self.system_prompt})
    
-    kwargs["messages"] = messages
-    kwargs = {"stringify_request": json.dumps(kwargs)}
-    response = chat_request(**kwargs)
+      kwargs["messages"] = messages
+      kwargs = {"stringify_request": json.dumps(kwargs)}
+      response = chat_request(**kwargs)
+    else:
+      kwargs["prompt"] = prompt
+      kwargs = {"stringify_request": json.dumps(kwargs)}
+      response = completion_request(**kwargs)
 
 
     history = {
@@ -226,7 +232,7 @@ class GPT4Vision(VLM):
 def cached_gpt4vision_chat_request(**kwargs) -> Any:
   if "stringify_request" in kwargs:
     kwargs = json.loads(kwargs["stringify_request"])
-  return openai.ChatCompletion.create(**kwargs)
+  return openai.chat.completions.create(**kwargs)
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
@@ -234,6 +240,42 @@ def cached_gpt4vision_chat_request(**kwargs) -> Any:
 def cached_gpt4vision_chat_request_wrapped(**kwargs) -> Any:
   return cached_gpt4vision_chat_request(**kwargs)
 
-
 def chat_request(**kwargs) -> dict[str, Any]:
   return cached_gpt4vision_chat_request_wrapped(**kwargs)
+
+
+
+@CacheMemory.cache
+def cached_gpt4vision_completion_request(**kwargs) -> Any:
+  if "stringify_request" in kwargs:
+    kwargs = json.loads(kwargs["stringify_request"])
+  return openai.completions.create(**kwargs)
+
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def cached_gpt4vision_completion_request_wrapped(**kwargs) -> Any:
+  return cached_gpt4vision_completion_request(**kwargs)
+
+
+def completion_request(**kwargs) -> dict[str, Any]:
+  return cached_gpt4vision_completion_request_wrapped(**kwargs)
+
+
+@CacheMemory.cache
+def legacy_cached_gpt4vision_chat_request(**kwargs) -> Any:
+  if "stringify_request" in kwargs:
+    kwargs = json.loads(kwargs["stringify_request"])
+  return openai.ChatCompletion.create(**kwargs)
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache
+def legacy_cached_gpt4vision_chat_request_wrapped(**kwargs) -> Any:
+  return legacy_cached_gpt4vision_chat_request(**kwargs)
+
+
+@CacheMemory.cache
+def legacy_chat_request(**kwargs) -> Any:
+  if "stringify_request" in kwargs:
+    kwargs = json.loads(kwargs["stringify_request"])
+  return legacy_cached_gpt4vision_chat_request_wrapped(**kwargs)
