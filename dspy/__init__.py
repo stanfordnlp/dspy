@@ -33,7 +33,13 @@ Anyscale = dsp.Anyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
+
 Bedrock = dsp.Bedrock
+Sagemaker = dsp.Sagemaker
+AWSModel = dsp.AWSModel
+AWSMistral = dsp.AWSMistral
+AWSAnthropic = dsp.AWSAnthropic
+AWSMeta = dsp.AWSMeta
 
 configure = settings.configure
 context = settings.context
