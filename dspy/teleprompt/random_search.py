@@ -56,7 +56,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.max_labeled_demos = max_labeled_demos
 
         dspy.logger.info(
-            "Going to sample between", self.min_num_samples, "and", self.max_num_samples, "traces per predictor."
+            "Going to sample between", self.min_num_samples, "and", self.max_num_samples, "traces per predictor.",
         )
         dspy.logger.info("Will attempt to train", self.num_candidate_sets, "candidate sets.")
 

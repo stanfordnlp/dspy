@@ -125,7 +125,7 @@ class BootstrapFewShot(Teleprompter):
                         bootstrapped[example_idx] = True
 
         dspy.logger.info(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}."
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
         )
 
         # Unbootstrapped training examples
@@ -190,7 +190,7 @@ class BootstrapFewShot(Teleprompter):
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
-                except KeyError as e:
+                except KeyError:
                     continue  # FIXME: !
 
                     # # TODO: Look closer into this. It's a bit tricky to reproduce.

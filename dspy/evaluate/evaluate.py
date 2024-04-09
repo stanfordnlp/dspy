@@ -1,9 +1,9 @@
+import sys
 import threading
 import types
 
 import pandas as pd
 import tqdm
-import sys
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
