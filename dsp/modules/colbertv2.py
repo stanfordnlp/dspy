@@ -78,17 +78,19 @@ os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
 class ColBERTv2RetrieverLocal:
     from colbert.infra import Run, RunConfig, ColBERTConfig
-    def __init__(self,passages:List[str],load_only:bool=False,checkpoint:str='colbert-ir/colbertv2.0',colbert_config:ColBERTConfig=ColBERTConfig()):
+    def __init__(self,passages:List[str],load_only:bool=False,index_name:str="colbert_rm",checkpoint:str='colbert-ir/colbertv2.0',colbert_config:ColBERTConfig=ColBERTConfig()):
         """Colbertv2 retriever module
 
         Args:
             passages (List[str]): list of passages
             load_only (bool, optional): whether to load the index or . Defaults to False.
+            index_name (str, optional): name of the index. Defaults to "colbert_rm".
             checkpoint (str, optional): checkpoint for generating embeddings. Defaults to 'colbert-ir/colbertv2.0'.
             colbert_config (ColBERTConfig, optional): colbert config for building and searching. Defaults to ColBERTConfig().
         """
         self.checkpoint = checkpoint
         self.colbert_config = colbert_config
+        self.colbert_config.index_name = index_name
         self.checkpoint = checkpoint
         self.colbert_config.checkpoint = checkpoint
         self.passages = passages
@@ -97,7 +99,7 @@ class ColBERTv2RetrieverLocal:
             print(f"Building the index for experiment {self.colbert_config.experiment} with index name {self.colbert_config.index_name}")
             self.build_index()
         
-        print(f"Loading the index for experiment {self.experiment} with index name {self.index_name}")
+        print(f"Loading the index for experiment {self.colbert_config.experiment} with index name {self.colbert_config.index_name}")
         self.searcher = self.get_index()
 
     def build_index(self):
@@ -122,8 +124,8 @@ class ColBERTv2RetrieverLocal:
         from colbert import Searcher
         from colbert.infra import Run, RunConfig
         
-        with Run().context(RunConfig(experiment=self.experiment_name)):
-            searcher = Searcher(index=self.index_name_or_path, collection=self.passages)
+        with Run().context(RunConfig(experiment=self.colbert_config.experiment)):
+            searcher = Searcher(index=self.colbert_config.index_name, collection=self.passages)
         return searcher
     
     def __call__(self,query:str,k:int=7,**kwargs):
@@ -143,7 +145,7 @@ class ColBERTv2RetrieverLocal:
         else:
             searcher_results = self.searcher.search(query, k=k)
         results = []
-        for pid,_,score in zip(*searcher_results):
+        for pid,rank,score in zip(*searcher_results):
             results.append(dotdict({'long_text':self.searcher.collection[pid],'score':score,'pid':pid}))
         return results
 
@@ -154,10 +156,16 @@ class ColBERTv2RerankerLocal:
         print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
     from colbert.infra.config.config import ColBERTConfig
     
-    def __init__(self,checkpoint_name:str='bert-base-uncased',colbert_config:ColBERTConfig=ColBERTConfig()):
+    def __init__(self,checkpoint:str='bert-base-uncased',colbert_config:ColBERTConfig=ColBERTConfig()):
+        """_summary_
+
+        Args:
+            checkpoint_name (str, optional): checkpoint for embeddings. Defaults to 'bert-base-uncased'.
+            colbert_config (ColBERTConfig, optional): Colbert config. Defaults to ColBERTConfig().
+        """
         self.colbert_config = colbert_config
-        self.checkpoint_name = checkpoint_name
-        self.colbert_config.checkpoint = checkpoint_name
+        self.checkpoint_name = checkpoint
+        self.colbert_config.checkpoint = checkpoint
 
     # def __call__(self, *args: Any, **kwargs: Any) -> Any:
     #     return self.forward(*args, **kwargs)
