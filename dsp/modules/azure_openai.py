@@ -44,7 +44,7 @@ class AzureOpenAI(LM):
     Args:
         api_base (str): Azure URL endpoint for model calling, often called 'azure_endpoint'.
         api_version (str): Version identifier for API.
-        model (str, optional): OpenAI or Azure supported LLM model to use. Defaults to "text-davinci-002".
+        model (str, optional): OpenAI or Azure supported LLM model to use. Defaults to "gpt-3.5-turbo-instruct".
         api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "chat".
         **kwargs: Additional arguments to pass to the API provider.
