@@ -26,7 +26,6 @@ __all__ = [
     "SynthesizerArguments",
 ]
 
-
 class Synthesizer:
     def __init__(self, config: SynthesizerArguments):
         self.config = config
@@ -46,7 +45,7 @@ class Synthesizer:
         if self.config.feedback_mode == "human":
             input_keys = examples.inputs().keys()
 
-            print("-" * 75)
+            print("-"*75)
             print_text = "[bold blue]Generated Data:[bold blue]\n[bold red]Inputs:[bold red]\n"
 
             for key in input_keys:
@@ -54,10 +53,9 @@ class Synthesizer:
 
             rprint(print_text)
             feedback = input("Provide feedback on the generated data: ")
-            print("-" * 75)
+            print("-"*75)
 
             return feedback
-
         elif self.config.feedback_mode == "llm":
             feedback = self.get_feedback_on_generation(
                 synthetic_data=[examples],
@@ -155,8 +153,8 @@ class Synthesizer:
 
         elif isinstance(ground_source, list) and isinstance(ground_source[0], dspy.Example):
             task_description = self.explain_task(examples=ground_source).explanation
-            input_keys = {key: f"${{{key}}}" for key in ground_source[0].inputs()}
-            output_keys = {key: f"${{{key}}}" for key in ground_source[0].labels()}
+            input_keys = {key:f"${{{key}}}" for key in ground_source[0].inputs()}
+            output_keys = {key:f"${{{key}}}" for key in ground_source[0].labels()}
 
             return task_description, input_keys, output_keys
 
@@ -200,14 +198,17 @@ class Synthesizer:
             }
 
             if self.config.num_example_for_optim:
-                kwargs["ground_source"] = random.sample(ground_source, self.config.num_example_for_optim)
+                if not isinstance(ground_source, list):
+                    raise ValueError("Ground source must be a list of examples when `num_example_for_optim` is provided.")
+                kwargs["ground_source"] = random.sample(ground_source, k=self.config.num_example_for_optim)
 
             with dspy.context(lm=self.input_lm):
                 inputs = self.input_predictor(**kwargs)
 
-            input_kwargs = [
-                {key: getattr(completions, key) for key in input_keys} for completions in inputs.completions
-            ]
+            input_kwargs = [{
+                key: getattr(completions, key)
+                for key in input_keys
+            } for completions in inputs.completions]
 
             for kwargs in input_kwargs:
                 outputs = None
@@ -225,7 +226,6 @@ class Synthesizer:
 
             if self.config.feedback_mode and idx < self.config.num_example_for_feedback:
                 feedback = self._gather_feedback(data[-1])
-
                 task_description = self.update_task_description(
                     task_description=task_description,
                     feedback=feedback,

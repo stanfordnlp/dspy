@@ -206,11 +206,13 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     pass
 
 
-def ensure_signature(signature: Union[str, Type[Signature]]) -> Signature:
+def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
     if signature is None:
         return None
     if isinstance(signature, str):
-        return Signature(signature)
+        return Signature(signature, instructions)
+    if instructions is not None:
+        raise ValueError("Don't specify instructions when initializing with a Signature")
     return signature
 
 

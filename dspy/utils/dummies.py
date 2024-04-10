@@ -10,21 +10,16 @@ from dsp.modules import LM
 from dsp.utils.utils import dotdict
 from dspy.modeling.backends.text import TextBackend
 from dspy.primitives.example import Example
-from dspy.primitives.prediction import (
-    Completions,
-)
+from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import InputField, OutputField, Signature
 
 
 class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
-    def __init__(
-        self,
-        answers: Union[list[str], dict[str, str]],
-        follow_examples: bool = False,
-    ):
+    def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
         """Initializes the dummy language model.
+
         Parameters:
         - answers: A list of strings or a dictionary with string keys and values.
         - follow_examples: If True, and the prompt contains an example exactly equal to the prompt,

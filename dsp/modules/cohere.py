@@ -8,11 +8,10 @@ from dsp.modules.lm import LM
 try:
     import cohere
 
-    cohere_api_error = cohere.CohereAPIError
+    cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
-
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -33,12 +32,12 @@ def giveup_hdlr(details):
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
-    Currently supported models include `command`, `command-nightly`, `command-light`, `command-light-nightly`.
+    Currently supported models include `command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`.
     """
 
     def __init__(
         self,
-        model: str = "command-nightly",
+        model: str = "command-r",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
         **kwargs,
@@ -48,7 +47,7 @@ class Cohere(LM):
         ----------
         model : str
             Which pre-trained model from Cohere to use?
-            Choices are [`command`, `command-nightly`, `command-light`, `command-light-nightly`]
+            Choices are [`command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
         api_key : str
             The API key for Cohere.
             It can be obtained from https://dashboard.cohere.ai/register.
@@ -65,8 +64,6 @@ class Cohere(LM):
             "temperature": 0.0,
             "max_tokens": 150,
             "p": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
             "num_generations": 1,
             **kwargs,
         }
@@ -80,18 +77,22 @@ class Cohere(LM):
         kwargs = {
             **self.kwargs,
             "stop_sequences": self.stop_sequences,
-            "prompt": prompt,
+            "chat_history": [],
+            "message": prompt,
             **kwargs,
         }
-        response = self.co.generate(**kwargs)
+        kwargs.pop("num_generations")
+        if "n" in kwargs.keys():
+            kwargs.pop("n")
+        response = self.co.chat(**kwargs)
 
-        history = {
+
+        self.history.append({
             "prompt": prompt,
             "response": response,
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
-        }
-        self.history.append(history)
+        })
 
         return response
 

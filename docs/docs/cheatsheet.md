@@ -216,7 +216,7 @@ def parse_integer_answer(answer, only_first_line=True):
     except (ValueError, IndexError):
         # print(answer)
         answer = 0
-    
+
     return answer
 
 # Metric Function
@@ -254,7 +254,7 @@ evaluate_program(your_dspy_program)
 
 ## DSPy Optimizers
 
-### dspy.LabeledFewShot 
+### dspy.LabeledFewShot
 ```python
 from dspy.teleprompt import LabeledFewShot
 
@@ -262,7 +262,7 @@ labeled_fewshot_optimizer = dspy.LabeledFewShot(k=8)
 your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-### dspy.BootstrapFewShot 
+### dspy.BootstrapFewShot
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
@@ -290,6 +290,18 @@ your_dspy_program_compiledx2 = teleprompter.compile(
 )
 ```
 
+#### Saving/loading a compiled program
+
+```python
+save_path = './v1.json'
+your_dspy_program_compiledx2.save(save_path)
+```
+
+```python
+loaded_program = YourProgramClass()
+loaded_program.load(path=save_path)
+```
+
 ### dspy.BootstrapFewShotWithRandomSearch
 
 ```python
@@ -300,7 +312,7 @@ fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric,
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ```
-Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
 
 ### dspy.Ensemble
@@ -344,29 +356,43 @@ for p in finetune_program.predictors():
     p.activated = False
 ```
 
-### dspy.SignatureOptimizer
+### dspy.COPRO
 
 ```python
-from dspy.teleprompt import SignatureOptimizer
+from dspy.teleprompt import COPRO
 
 eval_kwargs = dict(num_threads=16, display_progress=True, display_table=0)
 
-signature_optimizer_teleprompter = SignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory)
+copro_teleprompter = COPRO(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory)
 
-compiled_program_optimized_signature = signature_optimizer_teleprompter.compile(your_dspy_program.deepcopy(), devset=trainset, evalset=devset, eval_kwargs=eval_kwargs)
+compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_program, trainset=trainset, eval_kwargs=eval_kwargs)
 ```
 
-### dspy.BayesianSignatureOptimizer
+### dspy.MIPRO
 
 
 ```python
-from dspy.teleprompt import BayesianSignatureOptimizer
+from dspy.teleprompt import MIPRO
 
-teleprompter = BayesianSignatureOptimizer(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, n=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
+teleprompter = MIPRO(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, n=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
 
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 
-compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, devset=devset[:DEV_NUM], optuna_trials_num=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, trainset=trainset, num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+```
+
+### Signature Optimizer with Types
+
+```python
+from dspy.teleprompt.signature_opt_typed import optimize_signature
+from dspy.evaluate.metrics import answer_exact_match
+from dspy.functional import TypedChainOfThought
+
+compiled_program = optimize_signature(
+    student=TypedChainOfThought("question -> answer"),
+    evaluator=Evaluate(devset=devset, metric=answer_exact_match, num_threads=10, display_progress=True),
+    n_iterations=50,
+).program
 ```
 
 ### Signature Optimizer with Types
@@ -403,7 +429,7 @@ fewshot_optuna_optimizer = BootstrapFewShotWithOptuna(metric=your_defined_metric
 
 your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
 ```
-Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
 
 ## DSPy Assertions
@@ -415,9 +441,9 @@ dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_m
 dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
 ```
 
-### Activating DSPy Program with Assertions 
+### Activating DSPy Program with Assertions
 
-**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above.
 
 ```python
 #1. Using `assert_transform_module:

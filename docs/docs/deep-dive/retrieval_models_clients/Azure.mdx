@@ -4,80 +4,130 @@ sidebar_position: 2
 
 import AuthorDetails from '@site/src/components/AuthorDetails';
 
-# AzureCognitiveSearch
+# AzureAISearch
+
+A retrieval module that utilizes Azure AI Search to retrieve top passages for a given query.
 
 ## Prerequisites
 
 ```bash
-pip install azure-core
+pip install azure-search-documents
 ```
 
-## Setting up the Azure Client
+## Setting up the AzureAISearchRM Client
 
-The constructor initializes an instance of the `AzureCognitiveSearch` class and sets up parameters for sending queries and retrieving results with the Azure Cognitive Search server.
+The constructor initializes an instance of the `AzureAISearchRM` class and sets up parameters for sending queries and retrieving results with the Azure AI Search server.
 
-- `search_service_name` (_str_): Name of Azure Cognitive Search server.
-- `search_api_key` (_str_): API Authentication token for accessing Azure Cognitive Search server.
-- `search_index_name` (_str_): Name of search index in the Azure Cognitive Search server.
-- `field_text` (_str_): Field name that maps to DSP "content" field.
-- `field_score` (_str_): Field name that maps to DSP "score" field.
+- `search_service_name` (str): The name of the Azure AI Search service.
+- `search_api_key` (str): The API key for accessing the Azure AI Search service.
+- `search_index_name` (str): The name of the search index in the Azure AI Search service.
+- `field_text` (str): The name of the field containing text content in the search index. This field will be mapped to the "content" field in the dsp framework.
+- `k` (int, optional): The default number of top passages to retrieve. Defaults to 3.
+- `semantic_ranker` (bool, optional): Whether to use semantic ranking. Defaults to False.
+- `filter` (str, optional): Additional filter query. Defaults to None.
+- `query_language` (str, optional): The language of the query. Defaults to "en-Us".
+- `query_speller` (str, optional): The speller mode. Defaults to "lexicon".
+- `use_semantic_captions` (bool, optional): Whether to use semantic captions. Defaults to False.
+- `query_type` (Optional[QueryType], optional): The type of query. Defaults to QueryType.FULL.
+- `semantic_configuration_name` (str, optional): The name of the semantic configuration. Defaults to None.
+
+Available Query Types:
+
+    SIMPLE
+    """Uses the simple query syntax for searches. Search text is interpreted using a simple query
+    #: language that allows for symbols such as +, * and "". Queries are evaluated across all
+    #: searchable fields by default, unless the searchFields parameter is specified."""
+    FULL
+    """Uses the full Lucene query syntax for searches. Search text is interpreted using the Lucene
+    #: query language which allows field-specific and weighted searches, as well as other advanced
+    #: features."""
+    SEMANTIC
+    """Best suited for queries expressed in natural language as opposed to keywords. Improves
+    #: precision of search results by re-ranking the top search results using a ranking model trained
+    #: on the Web corpus.""
+
+    More Details: https://learn.microsoft.com/en-us/azure/search/search-query-overview
+
+Example of the AzureAISearchRM constructor:
 
 ```python
-class AzureCognitiveSearch:
-    def __init__(
-        self,
-        search_service_name: str,
-        search_api_key: str,
-        search_index_name: str,
-        field_text: str,
-        field_score: str, # required field to map with "score" field in dsp framework
-    ):
+AzureAISearchRM(
+    search_service_name: str,
+    search_api_key: str,
+    search_index_name: str,
+    field_text: str,
+    k: int = 3,
+    semantic_ranker: bool = False,
+    filter: str = None,
+    query_language: str = "en-Us",
+    query_speller: str = "lexicon",
+    use_semantic_captions: bool = False,
+    query_type: Optional[QueryType] = QueryType.FULL,
+    semantic_configuration_name: str = None
+)
 ```
 
 ## Under the Hood
 
-### `__call__(self, query: str, k: int = 10) -> Union[list[str], list[dotdict]]:`
+### `forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction`
 
 **Parameters:**
-- `query` (_str_): Search query string used for retrieval sent to Azure Cognitive Search service.
-- `k` (_int_, _optional_): Number of passages to retrieve. Defaults to 10.
+
+- `query_or_queries` (Union[str, List[str]]): The query or queries to search for.
+- `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
-- `Union[list[str], list[dotdict]]`: list of top-k search results 
 
-Internally, the method handles the specifics of preparing the request query to the Azure Cognitive Search service and corresponding payload to obtain the response. 
+- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with a `long_text` attribute.
 
-The method sends a query and number of desired passages (k) to Azure Cognitive Search using `azure_search_request`. This function communicates with Azure and processes the search results as a list of dictionaries. 
+Internally, the method handles the specifics of preparing the request query to the Azure AI Search service and corresponding payload to obtain the response.
 
-This is then converted to `dotdict` objects that internally map the retrieved content and scores, listed by descending order of relevance.
+The function handles the retrieval of the top-k passages based on the provided query.
 
-## Sending Retrieval Requests via Azure Client
-1) _**Recommended**_ Configure default RM using `dspy.configure`.
+## Sending Retrieval Requests via AzureAISearchRM Client
+
+1. _**Recommended**_ Configure default RM using `dspy.configure`.
 
 This allows you to define programs in DSPy and have DSPy internally conduct retrieval using `dsp.retrieve` on the query on the configured RM.
 
 ```python
 import dspy
-import dsp
+from dspy.retrieve.azureaisearch_rm import AzureAISearchRM
 
-dspy.settings.configure(rm= TODO)
-retrieval_response = dsp.retrieve("When was the first FIFA World Cup held?", k=5)
+azure_search = AzureAISearchRM(
+    "search_service_name",
+    "search_api_key",
+    "search_index_name",
+    "field_text",
+    "k"=3
+)
+
+dspy.settings.configure(rm=azure_search)
+retrieve = dspy.Retrieve(k=3)
+retrieval_response = retrieve("What is Thermodynamics").passages
 
 for result in retrieval_response:
     print("Text:", result, "\n")
 ```
 
+2. Generate responses using the client directly.
 
-2) Generate responses using the client directly.
 ```python
-import dspy
+from dspy.retrieve.azureaisearch_rm import AzureAISearchRM
 
-retrieval_response = TODO('When was the first FIFA World Cup held?', k=5)
+azure_search = AzureAISearchRM(
+    "search_service_name",
+    "search_api_key",
+    "search_index_name",
+    "field_text",
+    "k"=3
+)
 
+retrieval_response = azure_search("What is Thermodynamics", k=3)
 for result in retrieval_response:
-    print("Text:", result['text'], "\n")
+    print("Text:", result.long_text, "\n")
 ```
 
 ***
 
-<AuthorDetails name="Arnav Singhvi"/>
+<AuthorDetails name="Prajapati Harishkumar Kishorkumar"/>

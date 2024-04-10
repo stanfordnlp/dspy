@@ -1,5 +1,4 @@
 import re
-import textwrap
 
 import pytest
 
@@ -7,14 +6,13 @@ import dspy
 from dsp.modules import LM
 from dspy import Example
 from dspy.teleprompt.signature_opt_bayesian import MIPRO
-from dspy.utils import DummyLM
+from dspy.utils.dummies import DummyLM
 
 
 # Define a simple metric function for testing
 def simple_metric(example, prediction, trace=None):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
-
 
 # Some example data
 capitals = {
@@ -62,7 +60,7 @@ class ConditionalLM(LM):
             print("PROMPT:", prompt)
             print("PAIRS:", pairs)
 
-            last = re.search(r"Input: (.*)\nReasoning:(.*)$", prompt)
+            last = re.search(r"Input: (.*)\nReasoning: (.*)$", prompt)
             current_question = last.group(1)
 
             if match := re.match(r"What is the capital of (.*?)\?", current_question):
@@ -121,15 +119,13 @@ class ConditionalLM(LM):
 
 def test_bayesian_signature_optimizer_initialization():
     optimizer = MIPRO(
-        metric=simple_metric,
-        num_candidates=10,
-        init_temperature=1.4,
-        verbose=True,
-        track_stats=True,
+        metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
     assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
-    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
+    assert (
+        optimizer.init_temperature == 1.4
+    ), "Initial temperature not correctly initialized"
     assert optimizer.verbose is True, "Verbose flag not correctly initialized"
     assert optimizer.track_stats is True, "Track stats flag not correctly initialized"
 
@@ -183,19 +179,19 @@ def test_signature_optimizer_bad_lm():
             track_stats=False,
         )
 
-        # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DummyLM,
-        # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
-        # and therefore the set of examples that we're using to generate new prompts is empty
-        with pytest.raises(ValueError):
-            _optimized_student = optimizer.compile(
-                student=student,
-                trainset=trainset,
-                num_trials=10,
-                max_bootstrapped_demos=3,
-                max_labeled_demos=5,
-                eval_kwargs={"num_threads": 1, "display_progress": False},
-                requires_permission_to_run=False,
-            )
+    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DummyLM,
+    # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
+    # and therefore the set of examples that we're using to generate new prompts is empty
+    with pytest.raises(ValueError):
+        _optimized_student = optimizer.compile(
+            student=student,
+            trainset=trainset,
+            num_trials=10,
+            max_bootstrapped_demos=3,
+            max_labeled_demos=5,
+            eval_kwargs={"num_threads": 1, "display_progress": False},
+            requires_permission_to_run=False,
+        )
 
 
 def test_optimization_and_output_verification():
@@ -248,11 +244,13 @@ def test_optimization_and_output_verification():
             ---
 
             Input: What is the capital of France?
+            Reasoning: Let's think step by step in order to think deeply.
             Output: Paris
 
             ---
 
             Input: What is the capital of Norway?
+            Reasoning: Let's think step by step in order to think deeply.
             Output: Oslo
 
             ---

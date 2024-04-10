@@ -47,3 +47,4 @@ finetuning_ckpts/
 assertion.log
 *.log
 *.db
+/.devcontainer/.personalization.sh

@@ -118,9 +118,7 @@ class ChromadbRM(dspy.Retrieve):
         return self.ef(queries)
 
     def forward(
-        self,
-        query_or_queries: Union[str, List[str]],
-        k: Optional[int] = None,
+        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs,
     ) -> dspy.Prediction:
         """Search with db for self.k top passages for query
 
@@ -136,18 +134,13 @@ class ChromadbRM(dspy.Retrieve):
 
         k = self.k if k is None else k
         results = self._chromadb_collection.query(
-            query_embeddings=embeddings,
-            n_results=k,
+            query_embeddings=embeddings, n_results=k,**kwargs,
         )
 
         zipped_results = zip(
             results["ids"][0],
             results["distances"][0],
             results["documents"][0],
-            results["metadatas"][0],
-        )
-        results = [
-            dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta})
-            for id, dist, doc, meta in zipped_results
-        ]
+            results["metadatas"][0])
+        results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
         return results

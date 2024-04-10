@@ -158,7 +158,6 @@ class Prediction(Example):
         pred._completions.filter(field, majority_class)
 
         return pred
-
     @classmethod
     def from_completions(cls, completions: Completions):
         obj = cls()

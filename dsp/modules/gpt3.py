@@ -1,14 +1,6 @@
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler("openai_usage.log")],
-)
-
 import functools
 import json
+import logging
 from typing import Any, Literal, Optional, cast
 
 import backoff
@@ -60,11 +52,14 @@ class GPT3(LM):
         api_provider: Literal["openai"] = "openai",
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
+        system_prompt: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
         openai.api_type = api_provider
+
+        self.system_prompt = system_prompt
 
         assert (
             api_provider != "azure"
@@ -115,7 +110,10 @@ class GPT3(LM):
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+            kwargs["messages"] = messages
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(**kwargs)
 

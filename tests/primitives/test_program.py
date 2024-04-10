@@ -1,10 +1,7 @@
 import dspy
-from dspy.primitives.program import (
-    Module,
-    set_attribute_by_name,
-)  # Adjust the import based on your file structure
-from dspy.utils import DummyBackend, DummyLM
 from dspy.modeling import TextBackend
+from dspy.primitives.program import Module, set_attribute_by_name  # Adjust the import based on your file structure
+from dspy.utils import DummyBackend, DummyLM
 
 
 class HopModule(dspy.Module):

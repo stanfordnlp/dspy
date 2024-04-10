@@ -1,5 +1,7 @@
 import random
 
+from pydantic import BaseModel
+
 import dsp
 import dspy
 from dspy.predict.parameter import Parameter
@@ -28,9 +30,18 @@ class Predict(Parameter):
         if dspy.settings.get("backend", None) is not None:
             state_keys = ["backend", "traces", "train", "demos"]
         else:
-            state_keys = ["lm", "traces", "train", "demos"]
-
+            state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
+
+        state["demos"] = []
+        for demo in self.demos:
+            demo = demo.copy()
+
+            for field in demo:
+                if isinstance(demo[field], BaseModel):
+                    demo[field] = demo[field].model_dump_json()
+
+            state["demos"].append(demo)
 
         # Cache the signature instructions and the last field's name.
         state["signature_instructions"] = self.signature.instructions
@@ -127,6 +138,16 @@ class Predict(Parameter):
 
             assert self.stage in x, "The generated (input, output) example was not stored"
 
+        completions = []
+
+        for c in C:
+            completions.append({})
+            for field in template.fields:
+                if field.output_variable not in kwargs.keys():
+                    completions[-1][field.output_variable] = getattr(
+                        c,
+                        field.output_variable,
+                    )
             examples = []
             for c in C:
                 example = dspy.Example()

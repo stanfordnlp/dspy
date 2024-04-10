@@ -1,20 +1,13 @@
 import datetime
 import textwrap
-import pydantic
-from pydantic import AfterValidator, Field, BaseModel, field_validator
-from typing import Annotated, Generic, Literal, TypeVar
-from typing import List
+from typing import Annotated, Generic, List, Literal, TypeVar
 
+import pydantic
 import pytest
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
 import dspy
-from dspy.functional import (
-    predictor,
-    cot,
-    FunctionalModule,
-    TypedPredictor,
-    TypedChainOfThought,
-)
+from dspy.functional import FunctionalModule, TypedChainOfThought, TypedPredictor, cot, predictor
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.teleprompt.bootstrap import BootstrapFewShot
@@ -61,7 +54,22 @@ def test_list_output():
         question = hard_questions(topics=["Physics", "Music"])
         lm.inspect_history(n=2)
 
-        assert question == expected
+    assert question == expected
+
+
+def test_list_output():
+    @predictor
+    def hard_questions(topics: List[str]) -> List[str]:
+        pass
+
+    expected = ["What is the speed of light?", "What is the speed of sound?"]
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
+    dspy.settings.configure(lm=lm)
+
+    question = hard_questions(topics=["Physics", "Music"])
+    lm.inspect_history(n=2)
+
+    assert question == expected
 
 
 def test_simple_type():
@@ -346,7 +354,7 @@ def test_bootstrap_effectiveness_with_backend():
             Follow the following format.
 
             Input: ${input}
-            
+
             Output: ${output}
 
             ---
@@ -377,7 +385,7 @@ def test_regex():
 
     email = textwrap.dedent(
         """\
-        We're excited to welcome you aboard your upcoming flight from 
+        We're excited to welcome you aboard your upcoming flight from
         John F. Kennedy International Airport (JFK) to Los Angeles International Airport (LAX)
         on December 25, 2022. Here's everything you need to know before you take off: ...
     """
@@ -411,7 +419,7 @@ def test_regex_with_backend():
 
     email = textwrap.dedent(
         """\
-        We're excited to welcome you aboard your upcoming flight from 
+        We're excited to welcome you aboard your upcoming flight from
         John F. Kennedy International Airport (JFK) to Los Angeles International Airport (LAX)
         on December 25, 2022. Here's everything you need to know before you take off: ...
     """
@@ -1051,3 +1059,44 @@ def _test_demos_missing_input():
             Thoughts: My thoughts
             Output: Paris"""
         )
+
+
+def test_conlist():
+    dspy.settings.configure(
+        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+    )
+
+    @predictor
+    def make_numbers(input: str) -> Annotated[list[int], Field(min_items=2)]:
+        pass
+
+    assert make_numbers(input="What are the first two numbers?") == [1, 2]
+
+
+def test_conlist2():
+    dspy.settings.configure(
+        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+    )
+
+    make_numbers = TypedPredictor("input:str -> output:Annotated[List[int], Field(min_items=2)]")
+    assert make_numbers(input="What are the first two numbers?").output == [1, 2]
+
+
+def test_model_validator():
+    class MySignature(dspy.Signature):
+        input_data: str = dspy.InputField()
+        allowed_categories: list[str] = dspy.InputField()
+        category: str = dspy.OutputField()
+
+        @model_validator(mode="after")
+        def check_cateogry(self):
+            if self.category not in self.allowed_categories:
+                raise ValueError(f"category not in {self.allowed_categories}")
+            return self
+
+    lm = DummyLM(["horse", "dog"])
+    dspy.settings.configure(lm=lm)
+    predictor = TypedPredictor(MySignature)
+
+    pred = predictor(input_data="What is the best animal?", allowed_categories=["cat", "dog"])
+    assert pred.category == "dog"

@@ -1,14 +1,6 @@
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler("azure_openai_usage.log")],
-)
-
 import functools
 import json
+import logging
 from typing import Any, Literal, Optional, cast
 
 import backoff
@@ -115,6 +107,10 @@ class AzureOpenAI(LM):
             "n": 1,
             **kwargs,
         }  # TODO: add kwargs above for </s>
+
+        self.api_base = api_base
+        self.api_version = api_version
+        self.api_key = api_key
 
         self.history: list[dict[str, Any]] = []
 
@@ -227,6 +223,19 @@ class AzureOpenAI(LM):
             completions = [c for _, c in scored_completions]
 
         return completions
+    
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.kwargs, **kwargs}
+        model = kwargs.pop("model")
+
+        return self.__class__(
+            model=model, 
+            api_key=self.api_key, 
+            api_version=self.api_version, 
+            api_base=self.api_base, 
+            **kwargs,
+        )
 
 
 @CacheMemory.cache

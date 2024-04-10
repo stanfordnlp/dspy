@@ -7,6 +7,7 @@ import pytest
 import dspy
 from dspy import InputField, OutputField, Signature, infer_prefix
 from dspy.utils import DummyLM
+from dspy.utils.dummies import DummyLM
 
 
 def test_field_types_and_custom_attributes():

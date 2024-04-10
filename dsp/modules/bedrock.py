@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Optional
 
 from dsp.modules.aws_lm import AWSLM
 
@@ -11,6 +11,7 @@ class Bedrock(AWSLM):
         self,
         region_name: str,
         model: str,
+        profile_name: Optional[str] = None,
         input_output_ratio: int = 3,
         max_new_tokens: int = 1500,
     ) -> None:
@@ -28,6 +29,7 @@ class Bedrock(AWSLM):
             model=model,
             service_name="bedrock-runtime",
             region_name=region_name,
+            profile_name=profile_name,
             truncate_long_prompts=False,
             input_output_ratio=input_output_ratio,
             max_new_tokens=max_new_tokens,

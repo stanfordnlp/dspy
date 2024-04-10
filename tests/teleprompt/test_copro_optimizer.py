@@ -1,9 +1,9 @@
 import textwrap
+
 import dspy
-from dspy.modeling.backends import TextBackend
-from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils import DummyLM, DummyBackend
 from dspy import Example
+from dspy.teleprompt.signature_opt import COPRO
+from dspy.utils import DummyBackend, DummyLM
 
 
 # Define a simple metric function for testing
@@ -11,16 +11,11 @@ def simple_metric(example, prediction):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
 
-
 # Example training and validation sets
 trainset = [
     Example(input="Question: What is the color of the sky?", output="blue").with_inputs("input"),
-    Example(
-        input="Question: What does the fox say?",
-        output="Ring-ding-ding-ding-dingeringeding!",
-    ).with_inputs("input"),
+    Example(input="Question: What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
 ]
-
 
 def test_signature_optimizer_initialization():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
@@ -28,7 +23,6 @@ def test_signature_optimizer_initialization():
     assert optimizer.breadth == 2, "Breadth not correctly initialized"
     assert optimizer.depth == 1, "Depth not correctly initialized"
     assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
-
 
 class SimpleModule(dspy.Module):
     def __init__(self, signature):

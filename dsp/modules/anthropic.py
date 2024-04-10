@@ -13,20 +13,16 @@ try:
 except ImportError:
     anthropic_rate_limit = Exception
 
-
 logger = logging.getLogger(__name__)
-
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
-
-def backoff_hdlr(details) -> None:
+def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/."""
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
         "calling function {target} with kwargs "
         "{kwargs}".format(**details),
     )
-
 
 def giveup_hdlr(details):
     """Wrapper function that decides when to give up on retry."""
@@ -55,7 +51,6 @@ class Claude(LM):
         self.provider = "anthropic"
         self.api_key = api_key = os.environ.get("ANTHROPIC_API_KEY") if api_key is None else api_key
         self.api_base = BASE_URL if api_base is None else api_base
-
         self.kwargs = {
             "temperature": kwargs.get("temperature", 0.0),
             "max_tokens": min(kwargs.get("max_tokens", 4096), 4096),
@@ -73,17 +68,15 @@ class Claude(LM):
         usage_data = response.usage
         if usage_data:
             total_tokens = usage_data.input_tokens + usage_data.output_tokens
-            logger.info(f"{total_tokens}")
+            logger.info(f'{total_tokens}')
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
-
         kwargs = {**self.kwargs, **kwargs}
         # caching mechanism requires hashable kwargs
         kwargs["messages"] = [{"role": "user", "content": prompt}]
         kwargs.pop("n")
         response = self.client.messages.create(**kwargs)
-
         history = {
             "prompt": prompt,
             "response": response,
@@ -91,7 +84,6 @@ class Claude(LM):
             "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
-
         return response
 
     @backoff.on_exception(
@@ -117,10 +109,8 @@ class Claude(LM):
         Returns:
             list[str]: list of completion choices
         """
-
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
-
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses
         # so this cannot be a proper indicator for incomplete response unless it isnt the user-intent.
