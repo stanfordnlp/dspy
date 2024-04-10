@@ -77,8 +77,8 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
 class ColBERTv2RetrieverLocal:
-    from colbert.infra import Run, RunConfig, ColBERTConfig
     def __init__(self,passages:List[str],load_only:bool=False,index_name:str="colbert_rm",checkpoint:str='colbert-ir/colbertv2.0',colbert_config:ColBERTConfig=ColBERTConfig()):
+        from colbert.infra import Run, RunConfig, ColBERTConfig
         """Colbertv2 retriever module
 
         Args:
@@ -150,13 +150,13 @@ class ColBERTv2RetrieverLocal:
         return results
 
 class ColBERTv2RerankerLocal:
-    try:
-        import colbert
-    except ImportError:
-        print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
-    from colbert.infra.config.config import ColBERTConfig
     
     def __init__(self,checkpoint:str='bert-base-uncased',colbert_config:ColBERTConfig=ColBERTConfig()):
+        try:
+            import colbert
+        except ImportError:
+            print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
+        from colbert.infra.config.config import ColBERTConfig
         """_summary_
 
         Args:
