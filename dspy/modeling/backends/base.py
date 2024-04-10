@@ -39,7 +39,8 @@ class BaseBackend(BaseModel, ABC):
         ...
 
     @abstractmethod
-    def make_request(self, **kwargs) -> t.Any: ...
+    def make_request(self, **kwargs) -> t.Any:
+        ...
 
     def generate(self, signature: Signature, demos: list[str], config: dict[str, t.Any], **kwargs) -> Completions:
         """Generates predictions (complete/partial) for the signature output."""

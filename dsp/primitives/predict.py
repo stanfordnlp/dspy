@@ -128,16 +128,8 @@ def _generate(template: Template, **kwargs) -> Callable:
 
             if dsp.settings.compiling:
                 inputs_ = set(original_example.keys())
-                inputs = [
-                    f.input_variable
-                    for f in template.fields
-                    if f.input_variable in inputs_
-                ]
-                outputs = [
-                    f.output_variable
-                    for f in template.fields
-                    if f.input_variable not in inputs_
-                ]
+                inputs = [f.input_variable for f in template.fields if f.input_variable in inputs_]
+                outputs = [f.output_variable for f in template.fields if f.input_variable not in inputs_]
 
                 example.compiling_stages = example.get("compiling_stages", [])
                 example.compiling_stages.append(
@@ -158,7 +150,12 @@ def _generate(template: Template, **kwargs) -> Callable:
 
 
 def generate_sc(
-    example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs,
+    example,
+    prompt,
+    normalize=True,
+    extract=None,
+    prediction_field=None,
+    **kwargs,
 ):
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
@@ -167,7 +164,9 @@ def generate_sc(
     completions = dsp.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
     return majority_vote_(
-        completions, normalize=normalize, prediction_field=prediction_field,
+        completions,
+        normalize=normalize,
+        prediction_field=prediction_field,
     )
 
 
@@ -177,9 +176,7 @@ def extract_final_answer(example, completions, extract=None):
     if extract:
         completions = [extract(example, p) for p in completions]
     else:
-        completions = [
-            p.strip().split("\n")[-1].split(":", 1)[-1].strip() for p in completions
-        ]
+        completions = [p.strip().split("\n")[-1].split(":", 1)[-1].strip() for p in completions]
 
     # TODO: make thread-safe?
     dsp.settings.lm.history.append(
@@ -190,7 +187,9 @@ def extract_final_answer(example, completions, extract=None):
 
 
 def majority(
-    completions: Completions, normalize: bool = True, field: Optional[str] = None,
+    completions: Completions,
+    normalize: bool = True,
+    field: Optional[str] = None,
 ):
     """Returns the most common completion for the target field or the last field in the template."""
     field = completions.template.fields[-1].output_variable if field is None else field

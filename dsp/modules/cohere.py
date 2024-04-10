@@ -7,6 +7,7 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
+
     cohere_api_error = cohere.CohereAPIError
 except ImportError:
     cohere_api_error = Exception
@@ -124,9 +125,7 @@ class Cohere(LM):
         remainder = n % self.max_num_generations
         for i in range(num_iters):
             if i == (num_iters - 1):
-                kwargs["num_generations"] = (
-                    remainder if remainder != 0 else self.max_num_generations
-                )
+                kwargs["num_generations"] = remainder if remainder != 0 else self.max_num_generations
             else:
                 kwargs["num_generations"] = self.max_num_generations
             response = self.request(prompt, **kwargs)

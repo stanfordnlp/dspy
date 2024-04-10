@@ -71,21 +71,15 @@ class BootstrapFewShot(Teleprompter):
 
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
-        self.teacher = (
-            teacher.deepcopy() if teacher is not None else student.reset_copy()
-        )
+        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
-        assert (
-            getattr(self.student, "_compiled", False) is False
-        ), "Student must be uncompiled."
+        assert getattr(self.student, "_compiled", False) is False, "Student must be uncompiled."
 
-        if (
-            self.max_labeled_demos
-            and getattr(self.teacher, "_compiled", False) is False
-        ):
+        if self.max_labeled_demos and getattr(self.teacher, "_compiled", False) is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(
-                self.teacher.reset_copy(), trainset=self.trainset,
+                self.teacher.reset_copy(),
+                trainset=self.trainset,
             )
 
     def _prepare_predictor_mappings(self):
@@ -93,19 +87,17 @@ class BootstrapFewShot(Teleprompter):
         student, teacher = self.student, self.teacher
 
         assert len(student.predictors()) == len(
-            teacher.predictors()
-        ,
+            teacher.predictors(),
         ), "Student and teacher must have the same number of predictors."
 
         for (name1, predictor1), (name2, predictor2) in zip(
-            student.named_predictors(), teacher.named_predictors(),
+            student.named_predictors(),
+            teacher.named_predictors(),
         ):
-            assert (
-                name1 == name2
-            ), "Student and teacher must have the same program structure."
+            assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
-                predictor2.signature
-            ,), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+                predictor2.signature,
+            ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
             assert id(predictor1) != id(
                 predictor2,
             ), "Student and teacher must be different objects."
@@ -144,9 +136,7 @@ class BootstrapFewShot(Teleprompter):
 
         # Unbootstrapped training examples
 
-        self.validation = [
-            x for idx, x in enumerate(self.trainset) if idx not in bootstrapped
-        ]
+        self.validation = [x for idx, x in enumerate(self.trainset) if idx not in bootstrapped]
         random.Random(0).shuffle(self.validation)
 
         self.validation = self.valset or self.validation
@@ -163,11 +153,7 @@ class BootstrapFewShot(Teleprompter):
         try:
             with dsp.settings.context(trace=[], **self.teacher_settings):
                 lm = dsp.settings.lm
-                lm = (
-                    lm.copy(temperature=0.7 + 0.001 * round_idx)
-                    if round_idx > 0
-                    else lm
-                )
+                lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
                 new_settings = dict(lm=lm) if round_idx > 0 else {}
 
                 with dsp.settings.context(**new_settings):
@@ -205,7 +191,10 @@ class BootstrapFewShot(Teleprompter):
 
                 if "dspy_uuid" in example:
                     demo = Example(
-                        augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs,
+                        augmented=True,
+                        dspy_uuid=example.dspy_uuid,
+                        **inputs,
+                        **outputs,
                     )
                 else:
                     # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
@@ -241,12 +230,12 @@ class BootstrapFewShot(Teleprompter):
             augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
 
             sample_size = min(
-                self.max_labeled_demos - len(augmented_demos), len(raw_demos),
+                self.max_labeled_demos - len(augmented_demos),
+                len(raw_demos),
             )
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)
-
 
             if dspy.settings.release >= 20230928:
                 predictor.demos = raw_demos + augmented_demos

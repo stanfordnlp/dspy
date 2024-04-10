@@ -1,5 +1,7 @@
 import pytest
-import dsp, dspy
+
+import dsp
+import dspy
 from dspy.predict.knn import KNN
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.utils.dummies import DummyLM, DummyVectorizer
@@ -52,7 +54,6 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     # Setup DummyLM with a response for a query similar to one of the training examples
     lm = DummyLM(["Madrid", "10"])
     with dspy.settings.context(lm=lm, backend=None):
-
         knn_few_shot = setup_knn_few_shot
         trainset = knn_few_shot.KNN.trainset
         compiled_student = knn_few_shot.compile(student, teacher=teacher, trainset=trainset, valset=None)
@@ -60,9 +61,9 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
         assert len(compiled_student.predictor.demos) == 1
         assert compiled_student.predictor.demos[0].input == trainset[0].input
         assert compiled_student.predictor.demos[0].output == trainset[0].output
-        
+
         # Simulate a query that is similar to one of the training examples
-        output = compiled_student.forward(input = "What is the capital of Spain?").output
+        output = compiled_student.forward(input="What is the capital of Spain?").output
 
         print("CONVO")
         print(lm.get_convo(-1))

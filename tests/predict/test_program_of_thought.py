@@ -1,9 +1,9 @@
-from dspy import Signature, ProgramOfThought
-import dspy
-from dspy.utils import DummyLM, DummyBackend
 import textwrap
 
+import dspy
+from dspy import ProgramOfThought, Signature
 from dspy.modeling import TextBackend
+from dspy.utils import DummyBackend, DummyLM
 
 
 class BasicQA(Signature):
@@ -24,7 +24,8 @@ def test_pot_code_generation():
     with dspy.settings.context(lm=lm, backend=None):
         res = pot(question="What is 1+1?")
         assert res.answer == "2"
-        assert lm.get_convo(index=-1) == textwrap.dedent("""\
+        assert lm.get_convo(index=-1) == textwrap.dedent(
+            """\
             Given the final code `question`, `final_generated_code`, `code_output`, provide the final `answer`.
 
             ---
@@ -51,7 +52,8 @@ def test_pot_code_generation():
 
             Reasoning: Let's think step by step in order to Reason_B
 
-            Answer: 2""")
+            Answer: 2"""
+        )
 
 
 def test_pot_code_generation_with_error():
@@ -71,7 +73,8 @@ def test_pot_code_generation_with_error():
         assert res.answer == "2"
 
         # The first code example failed
-        assert lm.get_convo(index=2) == textwrap.dedent("""\
+        assert lm.get_convo(index=2) == textwrap.dedent(
+            """\
             You are given `question`, `previous_code`, `error` due to an error in previous code.
             Your task is to correct the error and provide the new `generated_code`.
 
@@ -97,10 +100,12 @@ def test_pot_code_generation_with_error():
 
             Error: division by zero
 
-            Reasoning: Let's think step by step in order to Reason_B""")
+            Reasoning: Let's think step by step in order to Reason_B"""
+        )
 
         # The second code example succeeded
-        assert lm.get_convo(-1) == textwrap.dedent("""\
+        assert lm.get_convo(-1) == textwrap.dedent(
+            """\
             Given the final code `question`, `final_generated_code`, `code_output`, provide the final `answer`.
 
             ---
@@ -127,7 +132,8 @@ def test_pot_code_generation_with_error():
 
             Reasoning: Let's think step by step in order to Reason_C
 
-            Answer: 2""")
+            Answer: 2"""
+        )
 
 
 def test_pot_code_generation_with_backend():

@@ -85,12 +85,10 @@ class COPRO(Teleprompter):
 
     def _check_candidates_equal(self, candidate1, candidate2):
         for p1, p2 in zip(
-            candidate1["program"].predictors(), candidate2["program"].predictors(),
+            candidate1["program"].predictors(),
+            candidate2["program"].predictors(),
         ):
-            if (
-                self._get_signature(p1).instructions
-                != self._get_signature(p2).instructions
-            ):
+            if self._get_signature(p1).instructions != self._get_signature(p2).instructions:
                 return False
             *_, p1_last_field = self._get_signature(p1).fields.values()
             *_, p2_last_field = self._get_signature(p2).fields.values()
@@ -145,12 +143,10 @@ class COPRO(Teleprompter):
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0
         results_best = {
-            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []}
-            for p in module.predictors()
+            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []} for p in module.predictors()
         }
         results_latest = {
-            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []}
-            for p in module.predictors()
+            id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []} for p in module.predictors()
         }
 
         if self.track_stats:
@@ -165,11 +161,7 @@ class COPRO(Teleprompter):
             basic_prefix = None
             *_, last_key = self._get_signature(predictor).fields.keys()
             basic_instruction = self._get_signature(predictor).instructions
-            basic_prefix = (
-                self._get_signature(predictor)
-                .fields[last_key]
-                .json_schema_extra["prefix"]
-            )
+            basic_prefix = self._get_signature(predictor).fields[last_key].json_schema_extra["prefix"]
             if self.prompt_model:
                 with dspy.settings.context(lm=self.prompt_model):
                     instruct = dspy.Predict(
@@ -206,9 +198,7 @@ class COPRO(Teleprompter):
             for p_i, (p_old, p_new) in enumerate(
                 zip(module.predictors(), module_clone.predictors()),
             ):
-                candidates_ = latest_candidates[
-                    id(p_old)
-                ]  # Use the most recently generated candidates for evaluation
+                candidates_ = latest_candidates[id(p_old)]  # Use the most recently generated candidates for evaluation
                 if len(module.predictors()) > 1:
                     candidates_ = all_candidates[
                         id(p_old)
@@ -256,12 +246,7 @@ class COPRO(Teleprompter):
                     # if verbose: print(f"evaluated_candidates[id(p_old)] {evaluated_candidates[id(p_old)]}")
                     if (instruction, prefix) in evaluated_candidates[id(p_old)]:
                         # if verbose: print(f"if evaluated_candidates[id(p_old)][(instruction, prefix)] {evaluated_candidates[id(p_old)][(instruction, prefix)]}")
-                        if (
-                            evaluated_candidates[id(p_old)][(instruction, prefix)][
-                                "score"
-                            ]
-                            >= score
-                        ):
+                        if evaluated_candidates[id(p_old)][(instruction, prefix)]["score"] >= score:
                             replace_entry = False
 
                     if replace_entry:

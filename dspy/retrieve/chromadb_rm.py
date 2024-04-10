@@ -12,6 +12,7 @@ from dsp.utils import dotdict
 
 try:
     import openai.error
+
     ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
@@ -19,10 +20,7 @@ except Exception:
 try:
     import chromadb
     import chromadb.utils.embedding_functions as ef
-    from chromadb.api.types import (
-        Embeddable,
-        EmbeddingFunction,
-    )
+    from chromadb.api.types import Embeddable, EmbeddingFunction
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
 except ImportError:
@@ -54,7 +52,7 @@ class ChromadbRM(dspy.Retrieve):
         Below is a code snippet that shows how to use this as the default retriever:
         ```python
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
-        retriever_model = ChromadbRM('collection_name', 'db_path')
+        retriever_model = ChromadbRM("collection_name", "db_path")
         dspy.settings.configure(lm=llm, rm=retriever_model)
         # to test the retriever with "my query"
         retriever_model("my query")
@@ -62,7 +60,7 @@ class ChromadbRM(dspy.Retrieve):
 
         Below is a code snippet that shows how to use this in the forward() function of a module
         ```python
-        self.retrieve = ChromadbRM('collection_name', 'db_path', k=num_passages)
+        self.retrieve = ChromadbRM("collection_name", "db_path", k=num_passages)
         ```
     """
 
@@ -70,9 +68,7 @@ class ChromadbRM(dspy.Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        embedding_function: Optional[
-            EmbeddingFunction[Embeddable]
-        ] = ef.DefaultEmbeddingFunction(),
+        embedding_function: Optional[EmbeddingFunction[Embeddable]] = ef.DefaultEmbeddingFunction(),
         k: int = 7,
     ):
         self._init_chromadb(collection_name, persist_directory)
@@ -122,7 +118,9 @@ class ChromadbRM(dspy.Retrieve):
         return self.ef(queries)
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,
+        self,
+        query_or_queries: Union[str, List[str]],
+        k: Optional[int] = None,
     ) -> dspy.Prediction:
         """Search with db for self.k top passages for query
 
@@ -132,23 +130,24 @@ class ChromadbRM(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]  # Filter empty queries
         embeddings = self._get_embeddings(queries)
 
         k = self.k if k is None else k
         results = self._chromadb_collection.query(
-            query_embeddings=embeddings, n_results=k,
+            query_embeddings=embeddings,
+            n_results=k,
         )
 
         zipped_results = zip(
-            results["ids"][0], 
-            results["distances"][0], 
-            results["documents"][0], 
-            results["metadatas"][0])
-        results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
+            results["ids"][0],
+            results["distances"][0],
+            results["documents"][0],
+            results["metadatas"][0],
+        )
+        results = [
+            dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta})
+            for id, dist, doc, meta in zipped_results
+        ]
         return results

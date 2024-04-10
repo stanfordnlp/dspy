@@ -36,7 +36,7 @@ Note that this teleprompter takes in the following parameters:
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
-                If True, the method will track a dictionary with a key corresponding to the trial number, 
+                If True, the method will track a dictionary with a key corresponding to the trial number,
                 and a value containing a dict with the following keys:
                     * program: the program being evaluated at a given trial
                     * score: the last average evaluated score for the program
@@ -168,9 +168,7 @@ class MIPRO(Teleprompter):
         self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
-        self.prompt_model = (
-            prompt_model if prompt_model is not None else dspy.settings.lm
-        )
+        self.prompt_model = prompt_model if prompt_model is not None else dspy.settings.lm
         self.task_model = task_model if task_model is not None else dspy.settings.lm
         self.verbose = verbose
         self.track_stats = track_stats
@@ -204,20 +202,21 @@ class MIPRO(Teleprompter):
         skips = 0
         iterations = 0
         for b in range(
-            self.view_data_batch_size, len(trainset), self.view_data_batch_size,
+            self.view_data_batch_size,
+            len(trainset),
+            self.view_data_batch_size,
         ):
             upper_lim = min(len(trainset), b + self.view_data_batch_size)
             output = dspy.Predict(
-                DatasetDescriptorWithPriorObservations, n=1, temperature=1.0,
+                DatasetDescriptorWithPriorObservations,
+                n=1,
+                temperature=1.0,
             )(
                 prior_observations=observations,
                 examples=(trainset[b:upper_lim].__repr__()),
             )
             iterations += 1
-            if (
-                len(output["observations"]) >= 8
-                and output["observations"][:8].upper() == "COMPLETE"
-            ):
+            if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
                 skips += 1
                 if skips >= 5:
                     break
@@ -279,25 +278,17 @@ class MIPRO(Teleprompter):
             # Create data observations
             self.observations = None
             with dspy.settings.context(lm=self.prompt_model):
-                self.observations = (
-                    self._observe_data(devset)
-                    .replace("Observations:", "")
-                    .replace("Summary:", "")
-                )
+                self.observations = self._observe_data(devset).replace("Observations:", "").replace("Summary:", "")
 
         if view_examples:
             example_sets = {}
             for predictor in module.predictors():
                 # Get all augmented examples
                 example_set = {}
-                all_sets_of_examples = demo_candidates[
-                    id(predictor)
-                ]  # Get all generated sets of examples
+                all_sets_of_examples = demo_candidates[id(predictor)]  # Get all generated sets of examples
                 for example_set_i, set_of_examples in enumerate(all_sets_of_examples):
                     if example_set_i != 0:  # Skip the no examples case
-                        for (
-                            example
-                        ) in set_of_examples:  # Get each individual example in the set
+                        for example in set_of_examples:  # Get each individual example in the set
                             if "augmented" in example and example["augmented"]:
                                 if example_set_i not in example_set:
                                     example_set[example_set_i] = []
@@ -308,7 +299,8 @@ class MIPRO(Teleprompter):
                                     self._get_signature(predictor).input_fields.keys(),
                                 )
                                 example_string = self._create_example_string(
-                                    fields_to_use, example,
+                                    fields_to_use,
+                                    example,
                                 )
                                 example_set[example_set_i].append(example_string)
                         example_sets[id(predictor)] = example_set
@@ -359,7 +351,8 @@ class MIPRO(Teleprompter):
                 elif view_examples:
                     instruct = None
                     for i in range(
-                        1, self.num_candidates,
+                        1,
+                        self.num_candidates,
                     ):  # Note: skip over the first example set which is empty
                         new_instruct = dspy.Predict(
                             BasicGenerateInstructionWithExamples,
@@ -425,9 +418,7 @@ class MIPRO(Teleprompter):
 
         random.seed(seed)
 
-        estimated_task_model_calls_wo_module_calls = (
-            len(trainset) * num_trials
-        )  # M * T * P
+        estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
         estimated_prompt_model_calls = 10 + self.num_candidates * len(
             student.predictors(),
         )  # num data summary calls + N * P
@@ -443,7 +434,7 @@ class MIPRO(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of calls to prompt model * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
@@ -485,9 +476,7 @@ class MIPRO(Teleprompter):
                 max_bootstrapped_demos == 0 and max_labeled_demos == 0
             ):  # TODO: address case when max_bootstrapped alone is 0
                 max_bootstrapped_demos_for_candidate_gen = 1
-                max_labeled_demos_for_candidate_gen = (
-                    1  # TODO: this might only need to be 0
-                )
+                max_labeled_demos_for_candidate_gen = 1  # TODO: this might only need to be 0
             else:
                 max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos
                 max_labeled_demos_for_candidate_gen = max_labeled_demos
@@ -515,12 +504,14 @@ class MIPRO(Teleprompter):
                         teacher_settings=self.teacher_settings,
                     )
                     candidate_program = tp.compile(
-                        student=module.deepcopy(), trainset=shuffled_trainset,
+                        student=module.deepcopy(),
+                        trainset=shuffled_trainset,
                     )
 
                     # Store the candidate demos
                     for module_p, candidate_p in zip(
-                        module.predictors(), candidate_program.predictors(),
+                        module.predictors(),
+                        candidate_program.predictors(),
                     ):
                         if id(module_p) not in demo_candidates:
                             demo_candidates[id(module_p)] = []
@@ -564,7 +555,8 @@ class MIPRO(Teleprompter):
                     trial_logs[trial_num] = {}
 
                     for p_old, p_new in zip(
-                        baseline_program.predictors(), candidate_program.predictors(),
+                        baseline_program.predictors(),
+                        candidate_program.predictors(),
                     ):
                         # Get instruction candidates for our given predictor
                         p_instruction_candidates = instruction_candidates[id(p_old)]
@@ -581,24 +573,16 @@ class MIPRO(Teleprompter):
                                 f"{id(p_old)}_predictor_demos",
                                 range(len(p_demo_candidates)),
                             )
-                        trial_logs[trial_num][
-                            f"{id(p_old)}_predictor_instruction"
-                        ] = instruction_idx
+                        trial_logs[trial_num][f"{id(p_old)}_predictor_instruction"] = instruction_idx
                         if demo_candidates:
-                            trial_logs[trial_num][
-                                f"{id(p_old)}_predictor_demos"
-                            ] = demos_idx
+                            trial_logs[trial_num][f"{id(p_old)}_predictor_demos"] = demos_idx
 
                         # Get the selected instruction candidate
                         selected_candidate = p_instruction_candidates[instruction_idx]
-                        selected_instruction = (
-                            selected_candidate.proposed_instruction.strip('"').strip()
-                        )
-                        selected_prefix = (
-                            selected_candidate.proposed_prefix_for_output_field.strip(
-                                '"',
-                            ).strip()
-                        )
+                        selected_instruction = selected_candidate.proposed_instruction.strip('"').strip()
+                        selected_prefix = selected_candidate.proposed_prefix_for_output_field.strip(
+                            '"',
+                        ).strip()
 
                         # Use this candidates in our program
                         *_, last_field = self._get_signature(p_new).fields.keys()
@@ -633,14 +617,17 @@ class MIPRO(Teleprompter):
                         end_index = min((i + 1) * batch_size, len(trainset))
                         split_trainset = trainset[start_index:end_index]
                         split_score = evaluate(
-                            candidate_program, devset=split_trainset, display_table=0,
+                            candidate_program,
+                            devset=split_trainset,
+                            display_table=0,
                         )
                         if self.verbose:
                             print(f"{i}st split score: {split_score}")
 
                         total_score += split_score * len(split_trainset)
                         curr_weighted_avg_score = total_score / min(
-                            (i + 1) * 100, len(trainset),
+                            (i + 1) * 100,
+                            len(trainset),
                         )
                         if self.verbose:
                             print(f"curr average score: {curr_weighted_avg_score}")
@@ -677,7 +664,11 @@ class MIPRO(Teleprompter):
 
             # Run the trial
             objective_function = create_objective(
-                module, instruction_candidates, demo_candidates, evaluate, trainset,
+                module,
+                instruction_candidates,
+                demo_candidates,
+                evaluate,
+                trainset,
             )
             sampler = optuna.samplers.TPESampler(seed=seed)
             study = optuna.create_study(direction="maximize", sampler=sampler)

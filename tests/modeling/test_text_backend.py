@@ -1,4 +1,5 @@
 import textwrap
+
 from dspy.modeling import TextBackend
 from dspy.primitives.example import Example
 from dspy.signatures.signature import ensure_signature
@@ -15,7 +16,8 @@ def test_prepare_request():
     assert output["messages"] == [
         {
             "role": "user",
-            "content": textwrap.dedent("""\
+            "content": textwrap.dedent(
+                """\
             Given the fields `input`, produce the fields `output`.
 
             ---
@@ -30,7 +32,8 @@ def test_prepare_request():
 
             Input: what day of the week is it?
 
-            Output:"""),
+            Output:"""
+            ),
         }
     ]
 

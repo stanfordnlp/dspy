@@ -17,17 +17,23 @@ class Retry(Predict):
     def _create_new_signature(self, signature):
         # Add "Past" input fields for each output field
         for key, value in signature.output_fields.items():
-            signature = signature.append(f"past_{key}", dspy.InputField(
-                prefix="Past " + value.json_schema_extra["prefix"],
-                desc="past output with errors",
-                format=value.json_schema_extra.get("format"),
-            ))
+            signature = signature.append(
+                f"past_{key}",
+                dspy.InputField(
+                    prefix="Past " + value.json_schema_extra["prefix"],
+                    desc="past output with errors",
+                    format=value.json_schema_extra.get("format"),
+                ),
+            )
 
-        signature = signature.append("feedback", dspy.InputField(
-            prefix="Instructions:",
-            desc="Some instructions you must satisfy",
-            format=str,
-        ))
+        signature = signature.append(
+            "feedback",
+            dspy.InputField(
+                prefix="Instructions:",
+                desc="Some instructions you must satisfy",
+                format=str,
+            ),
+        )
 
         return signature
 
@@ -42,7 +48,7 @@ class Retry(Predict):
         # Note: This only works if the wrapped module is a Predict or ChainOfThought.
         kwargs["new_signature"] = self.new_signature
         return self.original_forward(**kwargs)
-    
+
     def __call__(self, **kwargs):
         cached_kwargs = copy.deepcopy(kwargs)
         kwargs["_trace"] = False

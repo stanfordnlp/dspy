@@ -146,5 +146,10 @@ class FaissRM(dspy.Retrieve):
         # first degree sort: number of queries that got a hit with any particular document chunk. More
         # is a better match. This is len(queries)-len(x[1])
         # second degree sort: sum of the distances of each hit returned by faiss. Smaller distance is a better match
-        sorted_passages = sorted(passage_scores.items(), key=lambda x: (len(queries) - len(x[1]), sum(x[1])))[: k or self.k]
-        return [ dotdict({"long_text": self._document_chunks[passage_index], "index": passage_index}) for passage_index, _ in sorted_passages ]
+        sorted_passages = sorted(passage_scores.items(), key=lambda x: (len(queries) - len(x[1]), sum(x[1])))[
+            : k or self.k
+        ]
+        return [
+            dotdict({"long_text": self._document_chunks[passage_index], "index": passage_index})
+            for passage_index, _ in sorted_passages
+        ]

@@ -82,7 +82,8 @@ class AWSLM(LM):
 
     @abstractmethod
     def _extract_input_parameters(
-        self, body: dict[Any, Any],
+        self,
+        body: dict[Any, Any],
     ) -> dict[str, str | float | int]:
         pass
 
@@ -114,14 +115,16 @@ class AWSLM(LM):
         if "n" in kwargs.keys():
             if self._batch_n:
                 llm_out = self._simple_api_call(
-                    formatted_prompt=formatted_prompt, **kwargs,
+                    formatted_prompt=formatted_prompt,
+                    **kwargs,
                 )
             else:
                 del kwargs["n"]
                 llm_out = []
                 for _ in range(0, kwargs["n"]):
                     generated: str | list[str] = self._simple_api_call(
-                        formatted_prompt=formatted_prompt, **kwargs,
+                        formatted_prompt=formatted_prompt,
+                        **kwargs,
                     )
                     if isinstance(generated, str):
                         llm_out.append(generated)

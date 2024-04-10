@@ -62,16 +62,11 @@ class QdrantRM(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]  # Filter empty queries
 
         k = k if k is not None else self.k
-        batch_results = self._qdrant_client.query_batch(
-            self._qdrant_collection_name, query_texts=queries, limit=k)
+        batch_results = self._qdrant_client.query_batch(self._qdrant_collection_name, query_texts=queries, limit=k)
 
         passages_scores = defaultdict(float)
         for batch in batch_results:
@@ -80,8 +75,7 @@ class QdrantRM(dspy.Retrieve):
                 passages_scores[result.document] += result.score
 
         # Sort passages by their accumulated scores in descending order
-        sorted_passages = sorted(
-            passages_scores.items(), key=lambda x: x[1], reverse=True)[:k]
+        sorted_passages = sorted(passages_scores.items(), key=lambda x: x[1], reverse=True)[:k]
 
         # Wrap each sorted passage in a dotdict with 'long_text'
         passages = [dotdict({"long_text": passage}) for passage, _ in sorted_passages]

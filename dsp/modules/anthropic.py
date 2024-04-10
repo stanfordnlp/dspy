@@ -8,6 +8,7 @@ from dsp.modules.lm import LM
 
 try:
     import anthropic
+
     anthropic_rate_limit = anthropic.RateLimitError
 except ImportError:
     anthropic_rate_limit = Exception
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
 
-def backoff_hdlr(details):
+def backoff_hdlr(details) -> None:
     """Handler from https://pypi.org/project/backoff/."""
     print(
         "Backing off {wait:0.1f} seconds after {tries} tries "
@@ -36,12 +37,13 @@ def giveup_hdlr(details):
 
 class Claude(LM):
     """Wrapper around anthropic's API. Supports both the Anthropic and Azure APIs."""
+
     def __init__(
-            self,
-            model: str = "claude-instant-1.2",
-            api_key: Optional[str] = None,
-            api_base: Optional[str] = None,
-            **kwargs,
+        self,
+        model: str = "claude-instant-1.2",
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        **kwargs,
     ):
         super().__init__(model)
 
@@ -71,7 +73,7 @@ class Claude(LM):
         usage_data = response.usage
         if usage_data:
             total_tokens = usage_data.input_tokens + usage_data.output_tokens
-            logger.info(f'{total_tokens}')
+            logger.info(f"{total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -118,7 +120,6 @@ class Claude(LM):
 
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
-
 
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses

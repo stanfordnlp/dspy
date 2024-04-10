@@ -1,11 +1,13 @@
-import textwrap
-import pytest
 import re
+import textwrap
+
+import pytest
+
 import dspy
 from dsp.modules import LM
+from dspy import Example
 from dspy.teleprompt.signature_opt_bayesian import MIPRO
 from dspy.utils import DummyLM
-from dspy import Example
 
 
 # Define a simple metric function for testing
@@ -32,13 +34,9 @@ extra_capitals = {
 # Example training and validation sets
 trainset = [
     Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
-    Example(
-        input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"
-    ).with_inputs("input"),
+    Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
 ] + [
-    Example(input=f"What is the capital of {country}?", output=capital).with_inputs(
-        "input"
-    )
+    Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input")
     for country, capital in capitals.items()
 ]
 
@@ -58,9 +56,7 @@ class ConditionalLM(LM):
         elif prompt.endswith("Summary:"):
             answer = " summarizing..."
         else:
-            pairs = re.findall(
-                r"Input: (.*?)\n(?:Reasoning:.*?\n)?Output: (.*?)\n", prompt, re.DOTALL
-            )
+            pairs = re.findall(r"Input: (.*?)\n(?:Reasoning:.*?\n)?Output: (.*?)\n", prompt, re.DOTALL)
 
             # breakpoint()
             print("PROMPT:", prompt)
@@ -132,12 +128,8 @@ def test_bayesian_signature_optimizer_initialization():
         track_stats=True,
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
-    assert (
-        optimizer.num_candidates == 10
-    ), "Incorrect 'num_candidates' parameter initialization"
-    assert (
-        optimizer.init_temperature == 1.4
-    ), "Initial temperature not correctly initialized"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
     assert optimizer.verbose is True, "Verbose flag not correctly initialized"
     assert optimizer.track_stats is True, "Track stats flag not correctly initialized"
 
@@ -155,7 +147,6 @@ class SimpleModule(dspy.Module):
 def test_signature_optimizer_optimization_process():
     lm = ConditionalLM()
     with dspy.settings.context(lm=lm, backend=None):
-
         student = SimpleModule(signature="input -> output")
 
         optimizer = MIPRO(
@@ -181,7 +172,7 @@ def test_signature_optimizer_optimization_process():
 
 
 def test_signature_optimizer_bad_lm():
-    lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
+    lm = DummyLM([f"Optimized instruction {i}" for i in range(30)])
     with dspy.settings.context(lm=lm, backend=None):
         student = SimpleModule(signature="input -> output")
         optimizer = MIPRO(
@@ -212,7 +203,6 @@ def test_optimization_and_output_verification():
     # example in the train set.
     lm = ConditionalLM()
     with dspy.settings.context(lm=lm, backend=None):
-
         optimizer = MIPRO(
             metric=simple_metric,
             num_candidates=10,
@@ -248,9 +238,9 @@ def test_optimization_and_output_verification():
             Input:
 
             ---
-            
+
             Follow the following format.
-            
+
             Input: ${input}
             Reasoning: Let's think step by step in order to ${produce the output}. We ...
             Output: ${output}

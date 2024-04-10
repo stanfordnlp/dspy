@@ -5,12 +5,12 @@ default_stages: [commit]
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.11
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
+  #   - repo: https://github.com/astral-sh/ruff-pre-commit
+  #     rev: v0.1.11
+  #     hooks:
+  #       - id: ruff
+  #         args: [--fix]
+  #       - id: ruff-format
 
   - repo: https://github.com/timothycrosley/isort
     rev: 5.12.0
@@ -36,7 +36,7 @@ repos:
         args: ["--allow-multiple-documents", "--unsafe"]
       - id: end-of-file-fixer
       - id: trailing-whitespace
-      - id: check-docstring-first
+#       - id: check-docstring-first
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
@@ -48,19 +48,19 @@ repos:
           - "--autofix"
           - "--indent=2"
 
-  - repo: local
-    hooks:
-      - id: validate-commit-msg
-        name: Commit Message is Valid
-        language: pygrep
-        entry: ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([\w,\.,\-,\(,\),\/]+\)(!?)(:)\s{1}([\w,\W,:]+)
-        stages: [commit-msg]
-        args: [--negate]
+#   - repo: local
+#     hooks:
+#       - id: validate-commit-msg
+#         name: Commit Message is Valid
+#         language: pygrep
+#         entry: ^(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([\w,\.,\-,\(,\),\/]+\)(!?)(:)\s{1}([\w,\W,:]+)
+#         stages: [commit-msg]
+#         args: [--negate]
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.0.3
-    hooks:
-      - id: prettier
-        additional_dependencies:
-          - prettier@2.1.2
-          - "@prettier/plugin-xml@0.12.0"
+#   - repo: https://github.com/pre-commit/mirrors-prettier
+#     rev: v3.0.3
+#     hooks:
+#       - id: prettier
+#         additional_dependencies:
+#           - prettier@2.1.2
+#           - "@prettier/plugin-xml@0.12.0"

@@ -27,9 +27,7 @@ try:
     import openai.error
     from openai.openai_object import OpenAIObject
 
-    ERRORS = (
-        openai.error.RateLimitError,
-    )
+    ERRORS = (openai.error.RateLimitError,)
 except Exception:
     ERRORS = (openai.RateLimitError,)
     OpenAIObject = dict
@@ -74,8 +72,7 @@ class GPT3(LM):
 
         default_model_type = (
             "chat"
-            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
-            and ("instruct" not in model)
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model) and ("instruct" not in model)
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type

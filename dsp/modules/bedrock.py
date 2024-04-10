@@ -69,7 +69,8 @@ class Bedrock(AWSLM):
         return completion
 
     def _extract_input_parameters(
-        self, body: dict[Any, Any],
+        self,
+        body: dict[Any, Any],
     ) -> dict[str, str | float | int]:
         return body
 

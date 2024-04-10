@@ -1,13 +1,11 @@
-from dspy.predict.aggregation import majority
-from dspy.primitives.prediction import Prediction, Completions
 from dsp.utils import normalize_text
+from dspy.predict.aggregation import majority
+from dspy.primitives.prediction import Completions, Prediction
 from dspy.utils.dummies import DummySignature, make_dummy_completions
 
 
 def test_majority_with_prediction():
-    completions = make_dummy_completions(
-        DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}]
-    )
+    completions = make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     prediction = Prediction.from_completions(completions)
 
     result = prediction.get_majority()
@@ -16,9 +14,7 @@ def test_majority_with_prediction():
 
 def test_majority_with_completions():
     prediction = Prediction.from_completions(
-        make_dummy_completions(
-            DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}]
-        )
+        make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     )
     result = majority(prediction)
     assert result.completions[0]["answer"] == "2"
@@ -26,9 +22,7 @@ def test_majority_with_completions():
 
 def test_majority_with_list():
     prediction = Prediction.from_completions(
-        make_dummy_completions(
-            DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}]
-        )
+        make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     )
     result = majority(prediction)
     assert result.completions[0]["answer"] == "2"
@@ -36,9 +30,7 @@ def test_majority_with_list():
 
 def test_majority_with_normalize():
     prediction = Prediction.from_completions(
-        make_dummy_completions(
-            DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}]
-        )
+        make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     )
     result = majority(prediction, normalize=normalize_text)
     assert result.completions[0]["answer"] == "2"
@@ -61,11 +53,7 @@ def test_majority_with_field():
 
 def test_majority_with_no_majority():
     prediction = Prediction.from_completions(
-        make_dummy_completions(
-            DummySignature, [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}]
-        )
+        make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}])
     )
     result = majority(prediction)
-    assert (
-        result.completions[0]["answer"] == "2"
-    )  # The first completion is returned in case of a tie
+    assert result.completions[0]["answer"] == "2"  # The first completion is returned in case of a tie

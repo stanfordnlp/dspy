@@ -8,7 +8,7 @@ from .retrieve import *
 from .signatures import *
 
 # Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
+from .functional import *  # isort: skip
 
 settings = dsp.settings
 
