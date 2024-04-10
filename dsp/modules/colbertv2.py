@@ -77,27 +77,30 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
 class ColBERTv2RetrieverLocal:
-    def __init__(self,checkpoint:str='colbert-ir/colbertv2.0',passages:List[str]=[],index_name_or_path:str = "Colbert-RM",experiment_name:str="Colbert-Experiment",load_only:bool=False,nranks:int=1,nbits:int=2,DOC_MAXLEN:int=300,INDEX_BSIZE:int=256,KMEANS_ITER:int=8,**kwargs):
+    from colbert.infra import Run, RunConfig, ColBERTConfig
+    def __init__(self,passages:List[str],load_only:bool=False,checkpoint:str='colbert-ir/colbertv2.0',colbert_config:ColBERTConfig=ColBERTConfig()):
+        """Colbertv2 retriever module
 
-
+        Args:
+            passages (List[str]): list of passages
+            load_only (bool, optional): whether to load the index or . Defaults to False.
+            checkpoint (str, optional): checkpoint for generating embeddings. Defaults to 'colbert-ir/colbertv2.0'.
+            colbert_config (ColBERTConfig, optional): colbert config for building and searching. Defaults to ColBERTConfig().
+        """
         self.checkpoint = checkpoint
-        self.index_name_or_path = index_name_or_path
-        self.experiment_name = experiment_name
-        self.nranks = nranks
-        self.nbits = nbits
-        self.DOC_MAXLEN = DOC_MAXLEN
-        self.INDEX_BSIZE = INDEX_BSIZE
-        self.KMEANS_ITER = KMEANS_ITER
+        self.colbert_config = colbert_config
+        self.checkpoint = checkpoint
+        self.colbert_config.checkpoint = checkpoint
         self.passages = passages
 
         if not load_only:
-            print(f"Building the index for experiment {self.experiment_name} with index name {self.index_name_or_path}")
-            self.build_index(**kwargs)
+            print(f"Building the index for experiment {self.colbert_config.experiment} with index name {self.colbert_config.index_name}")
+            self.build_index()
         
-        print(f"Loading the index for experiment {self.experiment_name} with index name {self.index_name_or_path}")
+        print(f"Loading the index for experiment {self.experiment} with index name {self.index_name}")
         self.searcher = self.get_index()
 
-    def build_index(self,**kwargs):
+    def build_index(self):
 
         try:
             import colbert
@@ -105,11 +108,10 @@ class ColBERTv2RetrieverLocal:
             print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
 
         from colbert import Indexer
-        from colbert.infra import Run, RunConfig, ColBERTConfig
-        with Run().context(RunConfig(nranks=self.nranks, experiment=self.experiment_name)):  
-            config = ColBERTConfig(doc_maxlen=self.DOC_MAXLEN, nbits=self.nbits, kmeans_niters=self.KMEANS_ITER,index_bsize=self.INDEX_BSIZE,**kwargs)                                                                                     
-            indexer = Indexer(checkpoint=self.checkpoint, config=config)
-            indexer.index(name=self.index_name_or_path, collection=self.passages, overwrite=True)
+        from colbert.infra import Run, RunConfig
+        with Run().context(RunConfig(nranks=self.colbert_config.nranks, experiment=self.colbert_config.experiment)):  
+            indexer = Indexer(checkpoint=self.checkpoint, config=self.colbert_config)
+            indexer.index(name=self.colbert_config.index_name, collection=self.passages, overwrite=True)
 
     def get_index(self):
         try:
@@ -152,7 +154,7 @@ class ColBERTv2RerankerLocal:
         print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
     from colbert.infra.config.config import ColBERTConfig
     
-    def __init__(self,checkpoint_name:str='bert-base-uncased',colbert_config:ColBERTConfig=None):
+    def __init__(self,checkpoint_name:str='bert-base-uncased',colbert_config:ColBERTConfig=ColBERTConfig()):
         self.colbert_config = colbert_config
         self.checkpoint_name = checkpoint_name
         self.colbert_config.checkpoint = checkpoint_name
