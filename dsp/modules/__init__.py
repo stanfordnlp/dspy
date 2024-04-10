@@ -4,7 +4,7 @@ from .bedrock import *
 from .cache_utils import *
 from .clarifai import *
 from .cohere import *
-from .colbertv2 import ColBERTv2, ColBERTv2RetrieverLocal,ColBERTv2RerankerLocal
+from .colbertv2 import ColBERTv2, ColBERTv2RerankerLocal, ColBERTv2RetrieverLocal
 from .databricks import *
 from .google import *
 from .googlevertexai import *

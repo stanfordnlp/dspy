@@ -1,5 +1,5 @@
 import random
-from typing import List, Optional, Union, Dict, Any
+from typing import Dict, List, Optional, Union
 
 import dsp
 from dspy.predict.parameter import Parameter

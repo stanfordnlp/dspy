@@ -1,10 +1,11 @@
 import functools
-from typing import Any, Optional, Union, List
+import os
+from typing import Any, List, Optional, Union
 
 import requests
+
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.utils import dotdict
-import os
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 
@@ -77,8 +78,7 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 os.environ['COLBERT_LOAD_TORCH_EXTENSION_VERBOSE'] = "True"
 
 class ColBERTv2RetrieverLocal:
-    def __init__(self,passages:List[str],load_only:bool=False,index_name:str="colbert_rm",checkpoint:str='colbert-ir/colbertv2.0',colbert_config:ColBERTConfig=ColBERTConfig()):
-        from colbert.infra import Run, RunConfig, ColBERTConfig
+    def __init__(self,passages:List[str],colbert_config=None,load_only:bool=False,index_name:str="colbert_rm",checkpoint:str='colbert-ir/colbertv2.0'):
         """Colbertv2 retriever module
 
         Args:
@@ -151,12 +151,11 @@ class ColBERTv2RetrieverLocal:
 
 class ColBERTv2RerankerLocal:
     
-    def __init__(self,checkpoint:str='bert-base-uncased',colbert_config:ColBERTConfig=ColBERTConfig()):
+    def __init__(self,colbert_config=None,checkpoint:str='bert-base-uncased'):
         try:
             import colbert
         except ImportError:
             print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
-        from colbert.infra.config.config import ColBERTConfig
         """_summary_
 
         Args:
@@ -171,10 +170,10 @@ class ColBERTv2RerankerLocal:
     #     return self.forward(*args, **kwargs)
 
     def __call__(self,query:str,passages:List[str]=[]):
+        import numpy as np
+        from colbert.modeling.colbert import ColBERT
         from colbert.modeling.tokenization.doc_tokenization import DocTokenizer
         from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
-        from colbert.modeling.colbert import ColBERT 
-        import numpy as np
         assert len(passages) > 0, "Passages should not be empty"
         self.colbert_config.nway = len(passages)
         query_tokenizer = QueryTokenizer(self.colbert_config,verbose=1)

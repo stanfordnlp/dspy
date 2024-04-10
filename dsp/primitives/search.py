@@ -1,5 +1,6 @@
-from collections.abc import Iterable
 import warnings
+from collections.abc import Iterable
+
 import numpy as np
 
 import dsp
