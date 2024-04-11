@@ -12,19 +12,19 @@ sidebar_position: 9
 # 2. Configure your AWS credentials with the AWS CLI before using these models
 
 # initialize the bedrock aws provider
-bedrock = Bedrock(region_name="us-west-2")
+bedrock = dspy.Bedrock(region_name="us-west-2")
 # For mixtral on Bedrock
-lm = AWSMistral(bedrock, "mistral.mixtral-8x7b-instruct-v0:1", **kwargs)
+lm = dspy.AWSMistral(bedrock, "mistral.mixtral-8x7b-instruct-v0:1", **kwargs)
 # For haiku on Bedrock
-lm = AWSAnthropic(bedrock, "anthropic.claude-3-haiku-20240307-v1:0", **kwargs)
+lm = dspy.AWSAnthropic(bedrock, "anthropic.claude-3-haiku-20240307-v1:0", **kwargs)
 # For llama2 on Bedrock
-lm = AWSMeta(bedrock, "meta.llama2-13b-chat-v1", **kwargs)
+lm = dspy.AWSMeta(bedrock, "meta.llama2-13b-chat-v1", **kwargs)
 
 # initialize the sagemaker aws provider
-sagemaker = Sagemaker(region_name="us-west-2")
+sagemaker = dspy.Sagemaker(region_name="us-west-2")
 # For mistral on Sagemaker
 # Note: you need to create a Sagemaker endpoint for the mistral model first
-lm = AWSMistral(sagemaker, "<YOUR_MISTRAL_ENDPOINT_NAME>", **kwargs)
+lm = dspy.AWSMistral(sagemaker, "<YOUR_MISTRAL_ENDPOINT_NAME>", **kwargs)
 
 ```
 
