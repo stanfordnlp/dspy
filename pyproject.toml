@@ -38,6 +38,7 @@ dependencies = [
     "pydantic>=2.5.0,<=2.7",
     "urllib3==2.2.1",
     "pillow",
+    "structlog"
 ]
 
 [project.optional-dependencies]
