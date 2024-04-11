@@ -10,7 +10,7 @@ from pydantic.fields import FieldInfo
 
 import dspy
 from dsp.templates import passages2text
-from dspy.primitives.prediction import Prediction
+from dspy.primitives.prediction import Completions, Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
@@ -119,63 +119,6 @@ class TypedPredictor(dspy.Module):
         # More directly.
         # TODO: Instead of using a language model to create the example, we can also just use a
         # library like https://pypi.org/project/polyfactory/ that's made exactly to do this.
-
-    def _format_error(
-        self,
-        error: Exception,
-        task_description: Union[str, FieldInfo],
-        model_output: str,
-        lm_explain: bool,
-    ) -> str:
-        if isinstance(error, pydantic.ValidationError):
-            errors = []
-            for e in error.errors():
-                fields = ", ".join(map(str, e["loc"]))
-                errors.append(f"{e['msg']}: {fields} (error type: {e['type']})")
-            error_text = "; ".join(errors)
-        else:
-            error_text = repr(error)
-
-        if self.explain_errors and lm_explain:
-            if isinstance(task_description, FieldInfo):
-                args = task_description.json_schema_extra
-                task_description = args["prefix"] + " " + args["desc"]
-            return (
-                error_text
-                + "\n"
-                + self._make_explanation(
-                    task_description=task_description,
-                    model_output=model_output,
-                    error=error_text,
-                )
-            )
-
-        return error_text
-
-    def _make_explanation(self, task_description: str, model_output: str, error: str) -> str:
-        class Signature(dspy.Signature):
-            __doc__ = textwrap.dedent(
-                """
-                I gave my language model a task, but it failed. Figure out what went wrong,
-                and write instructions to help it avoid the error next time.""",
-            )
-
-            task_description: str = dspy.InputField(desc="What I asked the model to do")
-            language_model_output: str = dspy.InputField(desc="The output of the model")
-            error: str = dspy.InputField(desc="The validation error trigged by the models output")
-            explanation: str = dspy.OutputField(desc="Explain what the model did wrong")
-            advice: str = dspy.OutputField(
-                desc="Instructions for the model to do better next time. A single paragraph.",
-            )
-
-        # TODO: We could also try repair the output here. For example, if the output is a float, but the
-        # model returned a "float + explanation", the repair could be to remove the explanation.
-
-        return dspy.Predict(Signature)(
-            task_description=task_description,
-            language_model_output=model_output,
-            error=error,
-        ).advice
 
     def _prepare_signature(self) -> dspy.Signature:
         """Add formats and parsers to the signature fields, based on the type annotations of the fields."""
@@ -286,13 +229,7 @@ class TypedPredictor(dspy.Module):
                         parser = field.json_schema_extra.get("parser", lambda x: x)
                         parsed[name] = parser(value)
                     except (pydantic.ValidationError, ValueError) as e:
-                        errors[name] = self._format_error(
-                            e,
-                            signature.fields[name],
-                            value,
-                            lm_explain=try_i + 1 < self.max_retries,
-                        )
-
+                        errors[name] = _format_error(e)
                         # If we can, we add an example to the error message
                         current_desc = field.json_schema_extra.get("desc", "")
                         i = current_desc.find("JSON Schema: ")
@@ -318,15 +255,8 @@ class TypedPredictor(dspy.Module):
                     _ = self.signature(**kwargs, **parsed)
                     parsed_results.append(parsed)
                 except pydantic.ValidationError as e:
-                    errors["general"] = self._format_error(
-                        e,
-                        signature.instructions,
-                        "\n\n".join(
-                            "> " + field.json_schema_extra["prefix"] + " " + completion[name]
-                            for name, field in signature.output_fields.items()
-                        ),
-                        lm_explain=try_i + 1 < self.max_retries,
-                    )
+                    errors["general"] = _format_error(e)
+
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():
@@ -345,13 +275,38 @@ class TypedPredictor(dspy.Module):
                     )
             else:
                 # If there are no errors, we return the parsed results
-                return Prediction.from_completions(
-                    {key: [r[key] for r in parsed_results] for key in signature.output_fields},
+                examples = []
+                for r in parsed_results:
+                    example = dspy.Example()
+                    for key in signature.output_fields:
+                        example[key] = r[key]
+
+                    examples.append(example)
+
+                # This prompt should be fixed in some way
+                completions = Completions(
+                    signature=signature,
+                    examples=examples,
+                    input_kwargs={},
                 )
+
+                pred = Prediction.from_completions(completions)
+                return pred
+
         raise ValueError(
             "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",
             errors,
         )
+
+
+def _format_error(error: Exception):
+    if isinstance(error, pydantic.ValidationError):
+        errors = []
+        for e in error.errors():
+            fields = ", ".join(map(str, e["loc"]))
+            errors.append(f"{e['msg']}: {fields} (error type: {e['type']})")
+        return "; ".join(errors)
+    return repr(error)
 
 
 def _func_to_signature(func):

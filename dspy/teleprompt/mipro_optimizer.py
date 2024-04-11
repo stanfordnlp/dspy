@@ -332,8 +332,6 @@ class MIPRO(Teleprompter):
                     )
 
             # Add in our initial prompt as a candidate as well
-            instruct.completions.proposed_instruction.insert(0, basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.insert(0, basic_prefix)
             new_example = dspy.Example(
                 basic_instruction=basic_instruction,
                 proposed_instruction=basic_instruction,

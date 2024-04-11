@@ -1,4 +1,5 @@
 import re
+import textwrap
 
 import pytest
 
@@ -244,13 +245,11 @@ def test_optimization_and_output_verification():
             ---
 
             Input: What is the capital of France?
-            Reasoning: Let's think step by step in order to think deeply.
             Output: Paris
 
             ---
 
             Input: What is the capital of Norway?
-            Reasoning: Let's think step by step in order to think deeply.
             Output: Oslo
 
             ---
@@ -265,4 +264,4 @@ def test_optimization_and_output_verification():
             Output: Madrid"""
         )
 
-        assert lm.get_convo(-1) == expected_lm_output, lm.get_convo(-1)
+        assert (lm.get_convo(-1) == expected_lm_output), lm.get_convo(-1)
