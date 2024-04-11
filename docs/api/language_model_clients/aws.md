@@ -30,7 +30,7 @@ lm = dspy.AWSMistral(sagemaker, "<YOUR_MISTRAL_ENDPOINT_NAME>", **kwargs)
 
 ### Constructor
 
-The constructor initializes the base class `LM` and the `AWSModel` class.
+The `AWSMistral` constructor initializes the base class `AWSModel` which itself inherits from the `LM` class.
 
 ```python
 class AWSMistral(AWSModel):
@@ -47,15 +47,40 @@ class AWSMistral(AWSModel):
 ```
 
 **Parameters:**
-- `aws_provider` (AWSProvider): The aws provider to use. One of `Bedrock` or `Sagemaker`.
-- `model` (_str_): Mistral AI pretrained models. Defaults to `mistral-medium-latest`.
+- `aws_provider` (AWSProvider): The aws provider to use. One of `dspy.Bedrock` or `dspy.Sagemaker`.
+- `model` (_str_): Mistral AI pretrained models. For Bedrock, this is the Model ID in https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns. For Sagemaker, this is the endpoint name.
 - `max_context_size` (_Optional[int]_, _optional_): Max context size for this model. Defaults to 32768.
 - `max_new_tokens` (_Optional[int]_, _optional_): Max new tokens possible for this model. Defaults to 1500.
 - `**kwargs`: Additional language model arguments to pass to the API provider.
 
 ### Methods
 
-Refer to [`dspy.OpenAI`](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI) documentation.
+```python
+def _format_prompt(self, raw_prompt: str) -> str:
+```
+This function formats the prompt for the model. Refer to the model card for the specific formatting required.
 
+<br/>
+
+```python
+def _create_body(self, prompt: str, **kwargs) -> tuple[int, dict[str, str | float]]:
+```
+This function creates the body of the request to the model. It takes the prompt and any additional keyword arguments and returns a tuple of the number of tokens to generate and a dictionary of keys including the prompt used to create the body of the request.
+
+<br/>
+
+```python
+def _call_model(self, body: str) -> str:
+```
+This function calls the model using the provider `call_model()` function and extracts the generated text (completion) from the provider-specific response.
+
+<br/>
+
+The above model-specific methods are called by the `AWSModel::basic_request()` method, which is the main method for querying the model. This method takes the prompt and any additional keyword arguments and calls the `AWSModel::_simple_api_call()` which then delegates to the model-specific `_create_body()` and `_call_model()` methods to create the body of the request, call the model and extract the generated text.
+
+
+Refer to [`dspy.OpenAI`](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI) documentation for information on the `LM` base class functionality.
+
+<br/>
 
 `AWSAnthropic` and `AWSMeta` work exactly the same as `AWSMistral`.
