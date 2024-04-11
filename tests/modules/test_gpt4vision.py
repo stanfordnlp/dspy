@@ -5,47 +5,86 @@ from dsp.modules.gpt4vision import (
     cached_gpt4vision_chat_request_wrapped,
     cached_gpt4vision_completion_request_wrapped,
     CacheMemory,
-    NotebookCacheMemory,
     GPT4Vision,
     ERRORS
 )
 from dsp.primitives.vision import Image
+from openai.types.completion import Completion
+from openai.types.chat.chat_completion import ChatCompletion
 import numpy as np
 
 
 
-mock_chat_response = {
+mock_chat_response = ChatCompletion(**{
     "id": "chat-test",
     "object": "chat_completion",
     "created": 123456789,
     "model": "gpt-4-vision-preview",
-    "choices": [{
-        "message": {"content": "Test chat"},
+    "object": "chat.completion",
+    "choices": [
+        {
+        "index": 0,
+        "message": {"role": "assistant",
+                    "content": "Test chat"},
         "finish_reason": "stop",
-        "logprobs": None  # or the appropriate value if needed
+        "logprobs": None 
     }],
-}
+})
 
-mock_completion_response = {
-    "id": "completion-test",
-    "object": "completion",
+mock_completion_response = Completion(**{
+    "id": "chat-test",
+    "object": "chat_completion",
     "created": 123456789,
     "model": "gpt-4-vision-preview",
-    "choices": [{
-        "message": {"content": "Test completion"},
+    "object": "text_completion",
+    "choices": [
+        {
+        "index": 0,
+        "text": "Test chat",
         "finish_reason": "stop",
-        "logprobs": None  # or the appropriate value if needed
+        "logprobs": None 
     }],
-}
+})
 
-# Test the basic_request method
-def test_basic_chat_request():
-  with patch('dsp.modules.gpt4vision.chat_request') as mock_chat_request:
-      mock_chat_request.return_value = mock_chat_response
-      gpt4vision = GPT4Vision()
-      response = gpt4vision.basic_request(prompt="Test prompt")
-      assert response == mock_chat_response
-      mock_chat_request.assert_called_once()
+
+mock_image = Image(np.random.randint(0, 255, (10, 10, 3), dtype=np.uint8), encoding='png')
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    CacheMemory.clear()
+
+@pytest.mark.requires_api_call
+def test_real():
+    GPT4Vision().request(prompt="Test prompt", image=mock_image)
+
+@patch('openai.completions.create')
+def test_basic_completion_request(mock_completions_create):
+    mock_completions_create.return_value = mock_completion_response
+    gpt4vision = GPT4Vision(model_type='text')
+    response = gpt4vision.basic_request(prompt="Test prompt")
+    assert response == mock_completion_response
+    mock_completions_create.assert_called_once()
+    
+@patch('openai.chat.completions.create')
+def test_basic_chat_request(mock_chat_create):
+    mock_chat_create.return_value = mock_chat_response
+    gpt4vision = GPT4Vision()
+    response = gpt4vision.basic_request(prompt="Test prompt")
+    assert response == mock_chat_response
+    mock_chat_create.assert_called_once()
+    
+    # Test cache
+    response = gpt4vision.basic_request(prompt="Test prompt")
+    assert response == mock_chat_response
+    mock_chat_create.assert_called_once()
+      
+def test_basic_chat_request_with_image():
+    with patch('dsp.modules.gpt4vision.chat_request') as mock_chat_request:
+        mock_chat_request.return_value = mock_chat_response
+        gpt4vision = GPT4Vision()
+        response = gpt4vision.basic_request(prompt="Test prompt", image=mock_image)
+        assert response == mock_chat_response
+        mock_chat_request.assert_called_once()
       
 # Test the request method with backoff and error handling
 def test_request_with_backoff():
@@ -75,8 +114,7 @@ def test_log_usage():
         gpt4vision.log_usage(mock_response)
         mock_logging_info.assert_called_with("100")
 
-# Test the completion request caching
-# Test the chat request caching
+
 def test_cached_gpt4vision_chat_request_wrapped():
     CacheMemory.clear()
     with patch('openai.chat.completions.create') as mock_chat_create:
@@ -113,4 +151,4 @@ def test_cached_gpt4vision_completions_request_wrapped():
 
 # Run the tests
 if __name__ == "__main__":
-    pytest.main([__file__, "-vv"])
+    pytest.main([__file__, "-vv",])

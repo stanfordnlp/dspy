@@ -100,6 +100,7 @@ class Predict(Parameter):
         template = signature_to_template(signature)
 
         if self.lm is None:
+
             x, C = dsp.generate(template, **config)(x, stage=self.stage)
         else:
             # Note: query_only=True means the instructions and examples are not included.
