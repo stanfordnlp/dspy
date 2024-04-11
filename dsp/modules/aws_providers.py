@@ -33,9 +33,9 @@ class AWSProvider(ABC):
             batch_n_enabled (bool): If False, call the LM N times rather than batching.
         """
         try:
-            import boto3  # pylint: disable=import-outside-toplevel
+            import boto3
         except ImportError as exc:
-            raise ImportError('Please install boto3 to use AWS models.') from exc
+            raise ImportError('pip install boto3 to use AWS models.') from exc
 
         if profile_name is None:
             self.predictor = boto3.client(service_name, region_name=region_name)
