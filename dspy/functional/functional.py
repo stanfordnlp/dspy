@@ -1,12 +1,10 @@
 import inspect
 import json
-import textwrap
 import typing
-from typing import Annotated, List, Tuple, Union  # noqa: UP035
+from typing import Annotated, List, Tuple  # noqa: UP035
 
 import pydantic
 import ujson
-from pydantic.fields import FieldInfo
 
 import dspy
 from dsp.templates import passages2text
