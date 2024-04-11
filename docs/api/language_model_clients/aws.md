@@ -30,7 +30,7 @@ lm = dspy.AWSMistral(sagemaker, "<YOUR_MISTRAL_ENDPOINT_NAME>", **kwargs)
 
 ### Constructor
 
-The constructor initializes the base class `LM` and the `AWSProvider` class.
+The constructor initializes the base class `LM` and the `AWSModel` class.
 
 ```python
 class AWSMistral(AWSModel):
