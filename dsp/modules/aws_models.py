@@ -204,6 +204,9 @@ class AWSAnthropic(AWSModel):
         self.aws_provider = aws_provider
         self.provider = aws_provider.get_provider_name()
 
+        if isinstance(self.aws_provider, Bedrock):
+            self.kwargs["anthropic_version"] = "bedrock-2023-05-31"
+
         for k, v in kwargs.items():
             self.kwargs[k] = v
 
@@ -233,7 +236,6 @@ class AWSAnthropic(AWSModel):
                 ],
             },
         ]
-        query_args["anthropic_version"] = "bedrock-2023-05-31"
         return (n, query_args)
 
     def _call_model(self, body: str) -> str:
