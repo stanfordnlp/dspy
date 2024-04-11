@@ -52,6 +52,7 @@ class Image(BaseModel):
   def __init__(self, arg=None, **kwargs):
     if arg is not None:
       if isinstance(arg, str):
+        print(arg)
         if urlparse(arg).scheme:
           kwargs['url'] = arg
         elif Path(arg).is_file():
@@ -64,6 +65,11 @@ class Image(BaseModel):
         kwargs['array'] = arg
       elif isinstance(arg, PILImage.Image):
         kwargs['pil'] = arg
+      elif isinstance(arg, Image):
+        # Overwrite an Image instance with the new kwargs
+        existing_kwargs = arg.model_dump()
+        existing_kwargs.update(kwargs)
+        kwargs = existing_kwargs
       else:
         raise ValueError(f"Unsupported argument type '{type(arg)}'.")
     super().__init__(**kwargs)

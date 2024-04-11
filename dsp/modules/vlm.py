@@ -26,6 +26,7 @@ class VLM(LM):
         pass
 
     def request(self, prompt, image, **kwargs) -> Any:
+        print(prompt, image)
         return self.basic_request(prompt, image **kwargs)
 
     def print_green(self, text: str, end: str = "\n") -> None:
@@ -75,7 +76,7 @@ class VLM(LM):
             if provider == "cohere":
                 text = choices[0].text
             elif provider == "openai" or provider == "ollama":
-                text = " " + self._get_choice_text(choices[0]).strip()
+                text = " " + self._get_choice_content(choices[0]).strip()
             elif provider == "clarifai":
                 text = choices
             elif provider == "google":

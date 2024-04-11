@@ -68,10 +68,13 @@ class TemplateV2:
 
             template = template[len(match.group(0)) :].strip()
 
-    def query(self, example: Example, is_demo: bool = False) -> str:
-        """Retrieves the input variables from the example and formats them into a query string."""
+    def query(self, example: Example, is_demo: bool = False) -> Union[str, tuple[str, Any]]:
+        """Retrieves the input variables from the example and formats them into a query string.
+        
+        If the example contains objects (e.g. images), they are returned as a tuple with the query string.
+        """
         result: list[str] = []
-
+        objects: list[Any] = []
         # If not a demo, find the last field that doesn't have a value set in `example` and set it to ""
         # This creates the "Output:" prefix at the end of the prompt.
         if not is_demo:
@@ -96,10 +99,11 @@ class TemplateV2:
             if field.input_variable in example and example[field.input_variable] is not None:
                 if field.input_variable in self.format_handlers:
                     format_handler = self.format_handlers[field.input_variable]
+                elif not isinstance(example[field.input_variable], str):
+                    objects.append(example[field.input_variable])
+                    break
                 else:
-
                     def format_handler(x):
-                        assert type(x) == str, f"Need format_handler for {field.input_variable} of type {type(x)}"
                         return " ".join(x.split())
 
                 formatted_value = format_handler(example[field.input_variable])
@@ -108,10 +112,14 @@ class TemplateV2:
                 result.append(
                     f"{field.name}{separator}{formatted_value}",
                 )
-
+        
         if self._has_augmented_guidelines() and (example.get("augmented", False)):
-            return "\n\n".join([r for r in result if r])
-        return "\n".join([r for r in result if r])
+            result_string = "\n\n".join([r for r in result if r])
+        else:
+            result_string = "\n".join([r for r in result if r])
+        if not objects:
+            return result_string
+        return result_string, *objects
 
     def guidelines(self, show_guidelines=True) -> str:
         """Returns the task guidelines as described in the lm prompt"""
@@ -197,7 +205,7 @@ class TemplateV2:
         return example
 
     def __call__(self, example, show_guidelines=True) -> str:
-        example = dsp.Example(example)
+        example = Example(example)
 
         if hasattr(dsp.settings, "query_only") and dsp.settings.query_only:
             return self.query(example)

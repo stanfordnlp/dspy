@@ -62,7 +62,7 @@ class GPT4Vision(VLM):
       api_key: Optional[str] = os.getenv("OPENAI_API_KEY"),
       api_provider: Literal["openai"] = "openai",
       api_base: Optional[str] = None,
-      model_type: Literal["chat", "completion"] = None,
+      model_type: Literal["chat", "text"] = None,
       system_prompt: Optional[str] = None,
       **kwargs,
   ):
@@ -143,8 +143,8 @@ class GPT4Vision(VLM):
 
     history = {
         "prompt": prompt,
-        "image": image,
-        "response": response,
+        "image": image.base64 if image else None,
+        "response": response.model_dump() if not OPENAI_LEGACY else response,
         "kwargs": kwargs,
         "raw_kwargs": raw_kwargs,
     }
@@ -195,9 +195,12 @@ class GPT4Vision(VLM):
 
     if dsp.settings.log_openai_usage:
       self.log_usage(response)
-
+    if not OPENAI_LEGACY:
+      response = response.model_dump()
+      
     choices = response["choices"]
     completed_choices = [c for c in choices if c["finish_reason"] != "length"]
+   
 
     if only_completed and len(completed_choices):
       choices = completed_choices
