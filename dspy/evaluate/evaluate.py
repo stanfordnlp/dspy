@@ -166,15 +166,16 @@ class Evaluate:
                 num_threads,
                 display_progress,
             )
-        if return_outputs:  # Handle the return_outputs logic
-            results = [(example, prediction, score)
-                       for _, example, prediction, score in reordered_devset]
 
         if display:
             print(
                 f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
+
+        if return_outputs:  # Handle the return_outputs logic
+            results = [(example, prediction, score)
+                       for _, example, prediction, score in predicted_devset]
 
         # data = [{**example, **prediction, 'correct': score} for example, prediction, score in zip(reordered_devset, preds, scores)]
         data = [
@@ -222,9 +223,9 @@ class Evaluate:
                 ipython_display(HTML(message))
 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in reordered_devset]
+            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in predicted_devset]
         elif return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in reordered_devset]
+            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
         elif return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
 
