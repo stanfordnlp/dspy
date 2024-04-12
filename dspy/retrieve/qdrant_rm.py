@@ -53,7 +53,7 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query
 
         Args:
