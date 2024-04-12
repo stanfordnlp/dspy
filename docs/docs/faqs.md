@@ -70,7 +70,7 @@ Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatoui
 
 - **How do I turn off the cache? How do I export the cache?**
 
-You can turn off the cache by setting the [`cache_turn_on` flag to `False`](https://github.com/stanfordnlp/dspy/blob/9d8a40c477b9dd6dcdc007647b5b9ddad2b5657a/dsp/modules/cache_utils.py#L10).
+You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/stanfordnlp/dspy/blob/main/dsp/modules/cache_utils.py#L9) environment variable to `False`.
 
 Your local cache will be saved to the global env directory `os.environ["DSP_NOTEBOOK_CACHEDIR"]` which you can usually set to `os.path.join(repo_path, 'cache')` and export this cache from here.
 
