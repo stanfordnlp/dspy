@@ -46,7 +46,7 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                if provider == "clarifai" or provider == "google":
+                if provider == "clarifai" or provider == "google" or provider == "groq":
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
                     blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
