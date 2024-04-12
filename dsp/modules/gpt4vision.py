@@ -156,7 +156,7 @@ class GPT4Vision(VLM):
   @backoff.on_exception(
       backoff.expo,
       ERRORS,
-      max_time=10,
+      max_time=100,
       on_backoff=backoff_hdlr,
   )
   def request(self, prompt: str, image: SupportsImage = None, **kwargs) -> Any:
