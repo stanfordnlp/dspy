@@ -63,11 +63,11 @@ class Evaluate:
 
         pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
         for idx, arg in devset:
-            example_idx, example, prediction, score = wrapped_program(idx, arg)
-            reordered_devset.append((example_idx, example, prediction, score))
-            ncorrect += score
-            ntotal += 1
             with logging_redirect_tqdm():
+                example_idx, example, prediction, score = wrapped_program(idx, arg)
+                reordered_devset.append((example_idx, example, prediction, score))
+                ncorrect += score
+                ntotal += 1
                 self._update_progress(pbar, ncorrect, ntotal)
 
         pbar.close()
@@ -144,8 +144,7 @@ class Evaluate:
                 if current_error_count >= self.max_errors:
                     raise e
 
-                with logging_redirect_tqdm():
-                    dspy.logger.error(f"Error for example in dev set: \t\t {e}")
+                dspy.logger.error(f"Error for example in dev set: \t\t {e}")
 
                 return example_idx, example, {}, 0.0
             finally:
@@ -166,8 +165,7 @@ class Evaluate:
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score) for _, example, prediction, score in reordered_devset]
 
-        with logging_redirect_tqdm():
-            dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 
