@@ -89,7 +89,7 @@ class Bedrock(AWSProvider):
         """_summary_.
 
         Args:
-            region_name (str, optional): The AWS region where this LM is hosted.
+            region_name (str): The AWS region where this LM is hosted.
             profile_name (str, optional): boto3 credentials profile.
         """
         super().__init__(region_name, "bedrock-runtime", profile_name, batch_n_enabled)
