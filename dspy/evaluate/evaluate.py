@@ -39,8 +39,6 @@ class Evaluate:
         display_table=False,
         max_errors=5,
         return_outputs=False,
-        # TODO: Passing Kwargs such that display=False does not cause an error
-        # We may want to manage this better with a DeprecatedWarning moving forward
         **_kwargs,
     ):
         self.devset = devset
@@ -199,7 +197,6 @@ class Evaluate:
 
             styled_df = configure_dataframe_display(df_to_display, metric_name)
 
-            # KC:::Fix this
             ipython_display(styled_df)
 
             if truncated_rows > 0:
@@ -214,7 +211,6 @@ class Evaluate:
                     ... {truncated_rows} more rows not displayed ...
                 </div>
                 """
-                # KC:::Fix this
                 ipython_display(HTML(message))
 
         if return_all_scores and return_outputs:
