@@ -2,7 +2,7 @@
 sidebar_position: 9
 ---
 
-# dsp.AWSMistral, dsp.AWSAnthropic, dsp.AWSMeta
+# dspy.AWSMistral, dspy.AWSAnthropic, dspy.AWSMeta
 
 ### Usage
 
