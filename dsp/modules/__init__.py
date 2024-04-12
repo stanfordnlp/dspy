@@ -1,6 +1,10 @@
 from .anthropic import Claude
+from .aws_models import AWSAnthropic, AWSMeta, AWSMistral, AWSModel
+
+# Below is obsolete. It has been replaced with Bedrock class in dsp/modules/aws_providers.py
+# from .bedrock import *
+from .aws_providers import Bedrock, Sagemaker
 from .azure_openai import AzureOpenAI
-from .bedrock import *
 from .cache_utils import *
 from .clarifai import *
 from .cohere import *
@@ -17,4 +21,3 @@ from .ollama import *
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
-
