@@ -77,7 +77,7 @@ or [Milvus](https://github.com/milvus-io/milvus) retrieval integration(s), inclu
 
 ```
 pip install dspy-ai[chromadb]  # or [qdrant] or [marqo] or [myscale] or [mongodb] or [pinecone] or [snowflake] or [weaviate] or [milvus]
-```
+``````
 
 ## 2) Documentation
 
