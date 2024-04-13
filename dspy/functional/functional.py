@@ -67,17 +67,21 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, instructions=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
+def TypedChainOfThought(signature, instructions=None, reasoning=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
     """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
     signature = ensure_signature(signature, instructions)
     output_keys = ", ".join(signature.output_fields.keys())
+
+    DEFAULT_RATIONALE = dspy.OutputField(
+        prefix="Reasoning: Let's think step by step in order to",
+        desc="${produce the " + output_keys + "}. We ...",
+    )
+    reasoning = reasoning or DEFAULT_RATIONALE
+
     return TypedPredictor(
         signature.prepend(
             "reasoning",
-            dspy.OutputField(
-                prefix="Reasoning: Let's think step by step in order to",
-                desc="${produce the " + output_keys + "}. We ...",
-            ),
+            reasoning,
         ),
         max_retries=max_retries,
     )
