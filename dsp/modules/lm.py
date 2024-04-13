@@ -63,13 +63,11 @@ class LM(ABC):
             if len(printed) >= n:
                 break
 
-        for idx, (prompt, choices) in enumerate(reversed(printed)):
-            printing_value = ""
-
+        for idx, (prompt, choices) in enumerate(printed):
             # skip the first `skip` prompts
-            if (n - idx - 1) < skip:
+            if (n - idx - 1) > skip:
                 continue
-
+            printing_value = ""
             printing_value += "\n\n\n"
             printing_value += prompt
 

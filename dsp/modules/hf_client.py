@@ -128,44 +128,86 @@ class HFClientVLLM(HFModel):
         
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
+        # kwargs needs to have model, port and url for the lm.copy() to work properly
+        self.kwargs.update({
+            'model': model,
+            'port': port,
+            'url': url
+        })
 
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
-
-        payload = {
-            "model": self.kwargs["model"],
-            "prompt": prompt,
-            **kwargs,
-        }
-
         
+        # get model_type
+        model_type = kwargs.get("model_type",None)
+
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-
-        response = send_hfvllm_request_v00(
-            f"{url}/v1/completions",
-            json=payload,
-            headers=self.headers,
-        )
-
-        try:
-            json_response = response.json()
-            completions = json_response["choices"]
-            response = {
-                "prompt": prompt,
-                "choices": [{"text": c["text"]} for c in completions],
+        
+        if model_type == "chat":
+            system_prompt = kwargs.get("system_prompt",None)
+            messages = [{"role": "user", "content": prompt}]
+            if system_prompt:
+                messages.insert(0, {"role": "system", "content": system_prompt})
+            payload = {
+                "model": self.kwargs["model"],
+                "messages": messages,
+                **kwargs,
             }
-            return response
+            response = send_hfvllm_chat_request_v00(
+                f"{url}/v1/chat/completions",
+                json=payload,
+                headers=self.headers,
+            )
 
-        except Exception:
-            print("Failed to parse JSON response:", response.text)
-            raise Exception("Received invalid JSON response from server")
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["message"]['content']} for c in completions],
+                }
+                return response
+
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
+        else:
+            payload = {
+                "model": self.kwargs["model"],
+                "prompt": prompt,
+                **kwargs,
+            }
+            
+            response = send_hfvllm_request_v00(
+                f"{url}/v1/completions",
+                json=payload,
+                headers=self.headers,
+            )
+
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["text"]} for c in completions],
+                }
+                return response
+
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
 
 
 @CacheMemory.cache
 def send_hfvllm_request_v00(arg, **kwargs):
+    return requests.post(arg, **kwargs)
+
+
+@CacheMemory.cache
+def send_hfvllm_chat_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 
