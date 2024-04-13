@@ -59,8 +59,7 @@ class Retrieve(Parameter):
             if "long_text" in passages_dict:
                 passages_dict["passages"] = passages_dict.pop("long_text")
             return Prediction(**passages_dict)
-        # elif isinstance(passages,List):
-        #     return Prediction(passages=passages)
+        
 # TODO: Consider doing Prediction.from_completions with the individual sets of passages (per query) too.
 
 class RetrieveThenRerank(Parameter):
@@ -83,10 +82,10 @@ class RetrieveThenRerank(Parameter):
         for name, value in state.items():
             setattr(self, name, value)
 
-    # def __call__(self, *args, **kwargs):
-    #     return self.forward(*args, **kwargs)
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
 
-    def __call__(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> Union[Prediction,List[Prediction]]:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> Union[Prediction,List[Prediction]]:
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split('\n')[0].strip() for query in queries]
 
