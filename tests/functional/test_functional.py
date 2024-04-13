@@ -619,7 +619,7 @@ def test_list_input2():
         Proposed Signature: Output""")
 
 
-def test_custom_rationale_type():
+def test_custom_reasoning_field():
     class Question(pydantic.BaseModel):
         value: str
 
@@ -627,12 +627,12 @@ def test_custom_rationale_type():
         topic: str = dspy.InputField()
         question: Question = dspy.OutputField()
 
-    rationale_type = dspy.OutputField(
+    reasoning = dspy.OutputField(
         prefix="Custom Reasoning: Let's break this down. To generate a question about",
         desc="${topic}, we should ...",
     )
 
-    program = TypedChainOfThought(QuestionSignature, rationale_type=rationale_type)
+    program = TypedChainOfThought(QuestionSignature, reasoning=reasoning)
 
     expected = "What is the speed of light?"
     lm = DummyLM(["Thoughts", f'{{"value": "{expected}"}}'])
