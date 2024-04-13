@@ -1,5 +1,4 @@
 import functools
-import os
 from typing import Any, List, Optional, Union
 
 import requests
