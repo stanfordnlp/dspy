@@ -141,9 +141,6 @@ class Image(BaseModel):
       Returns:
           dict: The validated and possibly transformed input data.
       """
-      # Check for mutually exclusive fields
-      image_fields = ['array', 'base64', 'path', 'pil', 'url']
-   
       provided_fields = {k: v for k, v in values.items() if v is not None and k in ['array', 'base64', 'path', 'pil', 'url']}
       if len(provided_fields) > 1:
         raise ValueError("Multiple image sources provided; only one is allowed.")
@@ -162,6 +159,7 @@ class Image(BaseModel):
       if 'path' in values:
           # Load the image and convert if the file extension does not match the desired encoding
           image = PILImage.open(values['path']).convert('RGB')
+          validated_values['path'] = values['path']
           validated_values.update(cls.from_pil(image, validated_values['encoding']))
 
       # Convert to PIL image and populate other fields
