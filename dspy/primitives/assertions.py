@@ -241,6 +241,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                     trace_element = dsp.settings.trace[i]
                                     mod = trace_element[0]
                                     if mod.signature == error_target_module:
+                                        error_state = e.state[i]
                                         dspy.settings.backtrack_to = mod
                                         break
                             else:
