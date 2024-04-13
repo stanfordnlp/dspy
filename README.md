@@ -71,7 +71,7 @@ For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-co
 
 ```
 pip install dspy-ai[chromadb]  # or [marqo] or [milvus] or [mongodb] or [myscale] or [pinecone] or [qdrant] or [weaviate] 
-
+```
 
 ## 2) Documentation
 
