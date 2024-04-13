@@ -250,6 +250,10 @@ class TemplateV2:
             example["augmented"] = True
 
         query = self.query(example)
+        if isinstance(query, tuple):
+            query, *objects = query
+        else:
+            objects = ()
 
         # if it has more lines than fields
         if len(query.split("\n")) > len(self.fields):
@@ -285,5 +289,6 @@ class TemplateV2:
             ]
 
         prompt = "\n\n---\n\n".join([p.strip() for p in parts if p])
-
+        if objects:
+            return prompt, *objects
         return prompt.strip()

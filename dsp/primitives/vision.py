@@ -52,7 +52,6 @@ class Image(BaseModel):
   def __init__(self, arg=None, **kwargs):
     if arg is not None:
       if isinstance(arg, str):
-        print(arg)
         if urlparse(arg).scheme:
           kwargs['url'] = arg
         elif Path(arg).is_file():
@@ -78,9 +77,12 @@ class Image(BaseModel):
     """Return a string representation of the image."""
     return f"Image(base64={self.base64[:10]}..., encoding={self.encoding}, size={self.size})"
 
+  def __str__(self):
+    """Return a string representation of the image."""
+    return self.__repr__()
 
   @staticmethod
-  def from_pil(image: PILImage.Image, encoding: str = 'png') -> 'Image':
+  def from_pil(image: PILImage.Image, encoding: str) -> 'Image':
       """Creates an Image instance from a PIL image.
 
       Args:
@@ -91,8 +93,7 @@ class Image(BaseModel):
           Image: An instance of the Image class with populated fields.
       """
       buffer = io.BytesIO()
-      image_format = image.format or encoding.upper()
-      image.save(buffer, format=image_format)
+      image.convert('RGB').save(buffer, format=encoding.upper())
       base64_encoded = base64lib.b64encode(buffer.getvalue()).decode('utf-8')
       data_url = f"data:image/{encoding};base64,{base64_encoded}"
 
@@ -102,6 +103,7 @@ class Image(BaseModel):
           'pil': image,
           'size': image.size,
           'url': data_url,
+          'encoding': encoding.lower(),
       }
 
   @staticmethod
@@ -124,7 +126,7 @@ class Image(BaseModel):
               image_data = response.read()
 
       # Convert the image data to a PIL Image
-      return PILImage.frombuffer('RGB', (10, 10), image_data)
+      return PILImage.open(io.BytesIO(image_data)).convert('RGB')
     
   @model_validator(mode='before')
   @classmethod
@@ -139,13 +141,11 @@ class Image(BaseModel):
       Returns:
           dict: The validated and possibly transformed input data.
       """
-      # Check for mutually exclusive fields
-      image_fields = ['array', 'base64', 'path', 'pil', 'url']
-      provided_fields = [field for field in image_fields if field in values]
+      provided_fields = {k: v for k, v in values.items() if v is not None and k in ['array', 'base64', 'path', 'pil', 'url']}
       if len(provided_fields) > 1:
-          raise ValueError(f"Only one of {image_fields} should be provided.")
+        raise ValueError("Multiple image sources provided; only one is allowed.")
 
-      # Initialize all fields to None or their default values
+          # Initialize all fields to None or their default values
       validated_values = {
           'array': None,
           'base64': '',
@@ -156,15 +156,15 @@ class Image(BaseModel):
           'size': None,
       }
 
-      # Load the image and populate other fields
       if 'path' in values:
-          image = PILImage.open(values['path'])
-          validated_values.update(cls.from_pil(image, validated_values['encoding']))
+          # Load the image and convert if the file extension does not match the desired encoding
+          image = PILImage.open(values['path']).convert('RGB')
           validated_values['path'] = values['path']
+          validated_values.update(cls.from_pil(image, validated_values['encoding']))
 
       # Convert to PIL image and populate other fields
       elif 'array' in values:
-          image = PILImage.fromarray(values['array'])
+          image = PILImage.fromarray(values['array']).convert('RGB')
           validated_values.update(cls.from_pil(image, validated_values['encoding']))
 
       elif 'pil' in values:
@@ -173,7 +173,7 @@ class Image(BaseModel):
       # If 'base64' is provided, decode and populate other fields
       elif 'base64' in values:
           image_data = base64lib.b64decode(values['base64'])
-          image = PILImage.open(io.BytesIO(image_data))
+          image = PILImage.open(io.BytesIO(image_data)).convert('RGB')
           validated_values.update(cls.from_pil(image, validated_values['encoding']))
 
       # If 'url' is provided, download the image and populate other fields

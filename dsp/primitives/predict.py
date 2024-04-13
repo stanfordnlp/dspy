@@ -74,6 +74,8 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
+        print('\n\n prompt to LM')
+        print(prompt)
         
         if isinstance(prompt, tuple):
             if len(prompt) > 0:

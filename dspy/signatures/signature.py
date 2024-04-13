@@ -30,6 +30,8 @@ class SignatureMeta(type(BaseModel)):
     def __call__(cls, *args, **kwargs):  # noqa: ANN002
         if cls is Signature:
             return make_signature(*args, **kwargs)
+        print('SignatureMeta __call__  ')
+        print(args, kwargs)
         return super().__call__(*args, **kwargs)
 
     def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804

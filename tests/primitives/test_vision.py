@@ -8,6 +8,7 @@ from dsp.primitives.vision import Image
 import pytest
 import io
 from unittest.mock import MagicMock, patch
+from tempfile import NamedTemporaryFile
 
 @pytest.fixture
 def image():
@@ -22,7 +23,7 @@ def test_image_initialization_with_numpy_array():
 def test_image_initialization_with_base64(image):
     
     base64_str = image.base64
-    img = Image(base64_str)
+    img = Image(base64_str, encoding='png')
     assert img.base64 == base64_str
 
 def test_image_initialization_with_file_path(tmp_path, image):
@@ -35,16 +36,17 @@ def test_image_initialization_with_file_path(tmp_path, image):
 
 def test_image_initialization_with_url(image):
     with patch('dsp.primitives.vision.urlopen') as mock_urlopen:
-        class MockResponse:
-            def __init__(self, data):
-                self.data = data
-            def __enter__(self):
-                return self
-            def __exit__(self, exc_type, exc_value, traceback):
-                pass
-            def read(self):
-                return self.data
-        mock_urlopen.return_value = MockResponse(image.pil.tobytes())
+        # Save the PIL image to a bytes buffer in PNG format
+        buffer = io.BytesIO()
+        image.pil.save(buffer, format='PNG')
+        buffer.seek(0)  # Rewind the buffer to the beginning
+        image_data = buffer.read()
+
+        # Create a mock response object with read() method returning image data
+        mock_response = MagicMock()
+        mock_response.read.return_value = image_data
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
 
         # Create an Image object with the URL
         url = "http://someurl.com/image.png"
@@ -78,7 +80,22 @@ def test_image_validate_kwargs_with_array():
 
 def test_image_validate_kwargs_with_invalid_encoding():
     with pytest.raises(ValueError):
-        Image.validate_kwargs({'encoding': 'invalid_format'})
+        Image(**{'encoding': 'invalid_format'})
+
+def test_initialize_with_png_path_and_jpeg_encoding():
+    with NamedTemporaryFile(suffix='.png') as tmp_file:
+        pil_img = PILImage.new('RGB', (100, 100), color='red')
+        pil_img.save(tmp_file.name, format='PNG')
+        img = Image(tmp_file.name, encoding='jpeg')
+        assert isinstance(img.pil, PILImage.Image)
+        assert img.encoding == 'jpeg'
+        
+        # Check if the image can be saved as JPEG
+        with NamedTemporaryFile(suffix='.jpg') as jpeg_file:
+            img.save(jpeg_file.name)
+            saved_img = PILImage.open(jpeg_file.name)
+            assert saved_img.format ==  'JPEG'
+
 
 # Invoke pytest
 if __name__ == "__main__":
