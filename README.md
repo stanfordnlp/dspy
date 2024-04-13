@@ -66,11 +66,12 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 By default, DSPy installs the latest `openai` from pip. However, if you install old version before OpenAI changed their API `openai~=0.28.1`, the library will use that just fine. Both are supported.
 
-For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chroma), [Qdrant](https://github.com/qdrant/qdrant), [Marqo](https://github.com/marqo-ai/marqo), [MyScaleDB](https://github.com/myscale/myscaledb), Pinecone, or [Weaviate](https://github.com/weaviate/weaviate) retrieval integration(s), include the extra(s) below:
+
+For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chroma), [Marqo](https://github.com/marqo-ai/marqo), [Milvus](https://github.com/milvus-io/milvus), MongoDB, [MyScaleDB](https://github.com/myscale/myscaledb), Pinecone, [Qdrant](https://github.com/qdrant/qdrant), or [Weaviate](https://github.com/weaviate/weaviate) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[chromadb]  # or [qdrant] or [marqo] or [myscale] or [mongodb] or [pinecone] or [weaviate]
-```
+pip install dspy-ai[chromadb]  # or [marqo] or [milvus] or [mongodb] or [myscale] or [pinecone] or [qdrant] or [weaviate] 
+
 
 ## 2) Documentation
 
@@ -144,6 +145,8 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 - Typed DSPy (contributed by [@normal-computing](https://github.com/normal-computing))
   - [Using DSPy to train Gpt 3.5 on HumanEval by Thomas Ahle](https://github.com/stanfordnlp/dspy/blob/main/examples/functional/functional.ipynb)
   - [Building a chess playing agent using DSPy by Franck SN](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e)
+
+TODO: Add links to the state-of-the-art results on Theory of Mind (ToM) by Plastic Labs, the results by Haize Labs for Red Teaming with DSPy, and the DSPy pipeline from Replit.
 
 There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
 
