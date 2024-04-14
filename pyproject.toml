@@ -41,6 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic~=0.18.0"]
+azure-ai-search = ["azure-search-documents~=11.6.0b1"]
 chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.1.0"]
 marqo = ["marqo"]
@@ -118,6 +119,7 @@ rich = "^13.7.1"
 psycopg2 = {version = "^2.9.9", optional = true}
 pgvector = {version = "^0.2.5", optional = true}
 structlog = "^24.1.0"
+azure-search-documents = {version = "^11.6.0b1", optional = true}
 
 
 [tool.poetry.group.dev.dependencies]
@@ -138,6 +140,7 @@ weaviate = ["weaviate-client"]
 milvus = ["pymilvus"]
 aws = ["boto3"]
 postgres = ["psycopg2", "pgvector"]
+azure-ai-search = ["azure-search-documents"]
 docs = [
     "sphinx",
     "furo",
