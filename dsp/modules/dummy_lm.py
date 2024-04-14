@@ -3,6 +3,7 @@ from typing import Union
 
 from dsp.modules import LM
 
+
 # This testing module was moved in PR #735 to patch Arize Phoenix logging
 class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
