@@ -1,3 +1,8 @@
+"""
+Retriever module for Azure AI Search
+Author: Prajapati Harishkumar Kishorkumar (@HARISHKUMAR1112001)
+"""
+
 import warnings
 from typing import Any, Callable, List, Optional, Union
 
