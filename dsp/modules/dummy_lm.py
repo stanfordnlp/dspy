@@ -1,8 +1,7 @@
-import random
 import re
 from typing import Union
+
 from dsp.modules import LM
-from dsp.utils.utils import dotdict
 
 
 class DummyLM(LM):

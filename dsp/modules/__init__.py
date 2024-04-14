@@ -6,6 +6,7 @@ from .clarifai import *
 from .cohere import *
 from .colbertv2 import ColBERTv2
 from .databricks import *
+from .dummy_lm import *
 from .google import *
 from .gpt3 import *
 from .hf import HFModel
@@ -15,4 +16,3 @@ from .ollama import *
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
-from .dummy_lm import *
