@@ -1,5 +1,4 @@
 import inspect
-import logging
 import uuid
 from typing import Any
 
@@ -7,26 +6,6 @@ import dsp
 import dspy
 
 #################### Assertion Helpers ####################
-
-
-def setup_logger():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-
-    fileHandler = logging.FileHandler("assertion.log")
-    fileHandler.setLevel(logging.DEBUG)
-
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    fileHandler.setFormatter(formatter)
-
-    logger.addHandler(fileHandler)
-
-    return logger
-
-
-logger = setup_logger()
 
 
 def _build_error_msg(feedback_msgs):
@@ -79,9 +58,12 @@ class DSPySuggestionError(AssertionError):
 
 
 class Constraint:
-
     def __init__(
-        self, result: bool, msg: str = "", target_module=None, is_metric: bool = False,
+        self,
+        result: bool,
+        msg: str = "",
+        target_module=None,
+        is_metric: bool = False,
     ):
         self.id = str(uuid.uuid4())
         self.result = result
@@ -100,10 +82,10 @@ class Assert(Constraint):
             if self.result:
                 return True
             elif dspy.settings.bypass_assert:
-                logger.error(f"AssertionError: {self.msg}")
+                dspy.logger.error(f"AssertionError: {self.msg}")
                 return True
             else:
-                logger.error(f"AssertionError: {self.msg}")
+                dspy.logger.error(f"AssertionError: {self.msg}")
                 raise DSPyAssertionError(
                     id=self.id,
                     msg=self.msg,
@@ -123,10 +105,10 @@ class Suggest(Constraint):
             if self.result:
                 return True
             elif dspy.settings.bypass_suggest:
-                logger.error(f"SuggestionFailed: {self.msg}")
+                dspy.logger.error(f"SuggestionFailed: {self.msg}")
                 return True
             else:
-                logger.error(f"SuggestionFailed: {self.msg}")
+                dspy.logger.error(f"SuggestionFailed: {self.msg}")
                 raise DSPySuggestionError(
                     id=self.id,
                     msg=self.msg,
@@ -230,11 +212,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                     if isinstance(current_error, DSPyAssertionError):
                         raise current_error
                     dsp.settings.trace.clear()
-                    result = (
-                        bypass_suggest_handler(func)(*args, **kwargs)
-                        if bypass_suggest
-                        else None
-                    )
+                    result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
                     break
                 else:
                     try:
@@ -263,31 +241,30 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                     trace_element = dsp.settings.trace[i]
                                     mod = trace_element[0]
                                     if mod.signature == error_target_module:
+                                        error_state = e.state[i]
                                         dspy.settings.backtrack_to = mod
                                         break
                             else:
                                 dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
 
                             if dspy.settings.backtrack_to is None:
-                                logger.error("Specified module not found in trace")
+                                dspy.logger.error("Specified module not found in trace")
 
                             # save unique feedback message for predictor
-                            if (
-                                error_msg
-                                not in dspy.settings.predictor_feedbacks.setdefault(
-                                    dspy.settings.backtrack_to, [],
-                                )
+                            if error_msg not in dspy.settings.predictor_feedbacks.setdefault(
+                                dspy.settings.backtrack_to,
+                                [],
                             ):
-                                dspy.settings.predictor_feedbacks[
-                                    dspy.settings.backtrack_to
-                                ].append(error_msg)
+                                dspy.settings.predictor_feedbacks[dspy.settings.backtrack_to].append(error_msg)
 
                             # assert isinstance(error_state[0].signature, dspy.Signature)
                             output_fields = error_state[0].signature.output_fields
                             past_outputs = {}
                             for field_name in output_fields.keys():
                                 past_outputs[field_name] = getattr(
-                                    error_state[2], field_name, None,
+                                    error_state[2],
+                                    field_name,
+                                    None,
                                 )
 
                             # save latest failure trace for predictor per suggestion
@@ -297,7 +274,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             error_op.pop("_assert_traces", None)
 
                         else:
-                            logger.error(
+                            dspy.logger.error(
                                 "UNREACHABLE: No trace available, this should not happen. Is this run time?",
                             )
 
@@ -324,7 +301,9 @@ default_assertion_handler = backtrack_handler
 
 
 def assert_transform_module(
-    module, assertion_handler=default_assertion_handler, **handler_args,
+    module,
+    assertion_handler=default_assertion_handler,
+    **handler_args,
 ):
     """
     Transform a module to handle assertions.
@@ -334,7 +313,7 @@ def assert_transform_module(
             "Module must have a forward method to have assertions handled.",
         )
     if getattr(module, "_forward", False):
-        logger.info(
+        dspy.logger.info(
             f"Module {module.__class__.__name__} already has a _forward method. Skipping...",
         )
         pass  # TODO warning: might be overwriting a previous _forward method
