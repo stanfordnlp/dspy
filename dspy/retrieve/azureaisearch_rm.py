@@ -36,9 +36,9 @@ class AzureAISearchRM(dspy.Retrieve):
         field_text (str): The name of the field containing text content in the search index. This field will be mapped to the "content" field in the dsp framework.
         field_vector (Optional[str]): The name of the field containing vector content in the search index. Defaults to None.
         k (int, optional): The default number of top passages to retrieve. Defaults to 3.
-        azure_openai_client (Optional[openai.AzureOpenAI]): An instance of the AzureOpenAI client. Defaults to None.
+        azure_openai_client (Optional[openai.AzureOpenAI]): An instance of the AzureOpenAI client. Either openai_client or embedding_func must be provided. Defaults to None.
         openai_embed_model (Optional[str]): The name of the OpenAI embedding model. Defaults to "text-embedding-ada-002".
-        embedding_func (Optional[Callable]): A function for generating embeddings. Defaults to None.
+        embedding_func (Optional[Callable]): A function for generating embeddings. Either openai_client or embedding_func must be provided. Defaults to None.
         semantic_ranker (bool, optional): Whether to use semantic ranking. Defaults to False.
         filter (str, optional): Additional filter query. Defaults to None.
         query_language (str, optional): The language of the query. Defaults to "en-Us".
