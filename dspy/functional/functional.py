@@ -12,18 +12,32 @@ from dspy.primitives.prediction import Completions, Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
-def predictor(func) -> dspy.Module:
-    """Decorator that creates a predictor module based on the provided function."""
-    signature = _func_to_signature(func)
-    *_, output_key = signature.output_fields.keys()
-    return _StripOutput(TypedPredictor(signature), output_key)
+def predictor(*args, **kwargs):
+    def _predictor(func) -> dspy.Module:
+        """Decorator that creates a predictor module based on the provided function."""
+        signature = _func_to_signature(func)
+        *_, output_key = signature.output_fields.keys()
+        return _StripOutput(TypedPredictor(signature, **kwargs), output_key)
+
+    # if we have only a single callable argument, the decorator was invoked with no key word arguments
+    #  so we just return the wrapped function
+    if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
+        return _predictor(args[0])
+    return _predictor
 
 
-def cot(func) -> dspy.Module:
-    """Decorator that creates a chain of thought module based on the provided function."""
-    signature = _func_to_signature(func)
-    *_, output_key = signature.output_fields.keys()
-    return _StripOutput(TypedChainOfThought(signature), output_key)
+def cot(*args, **kwargs):
+    def _cot(func) -> dspy.Module:
+        """Decorator that creates a chain of thought module based on the provided function."""
+        signature = _func_to_signature(func)
+        *_, output_key = signature.output_fields.keys()
+        return _StripOutput(TypedChainOfThought(signature, **kwargs), output_key)
+
+    # if we have only a single callable argument, the decorator was invoked with no key word arguments
+    #  so we just return the wrapped function
+    if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
+        return _cot(args[0])
+    return _cot
 
 
 class _StripOutput(dspy.Module):
@@ -51,17 +65,21 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, instructions=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
+def TypedChainOfThought(signature, instructions=None, reasoning=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
     """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
     signature = ensure_signature(signature, instructions)
     output_keys = ", ".join(signature.output_fields.keys())
+
+    DEFAULT_RATIONALE = dspy.OutputField(
+        prefix="Reasoning: Let's think step by step in order to",
+        desc="${produce the " + output_keys + "}. We ...",
+    )
+    reasoning = reasoning or DEFAULT_RATIONALE
+
     return TypedPredictor(
         signature.prepend(
             "reasoning",
-            dspy.OutputField(
-                prefix="Reasoning: Let's think step by step in order to",
-                desc="${produce the " + output_keys + "}. We ...",
-            ),
+            reasoning,
         ),
         max_retries=max_retries,
     )

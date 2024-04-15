@@ -2,7 +2,6 @@
 Author: Jagane Sundar: https://github.com/jagane.
 """
 
-import logging
 from typing import Optional, Union
 
 import numpy as np
@@ -81,7 +80,7 @@ class FaissRM(dspy.Retrieve):
         embeddings = self._vectorizer(document_chunks)
         xb = np.array(embeddings)
         d = len(xb[0])
-        logging.info(f"FaissRM: embedding size={d}")
+        dspy.logger.info(f"FaissRM: embedding size={d}")
         if len(xb) < 100:
             self._faiss_index = faiss.IndexFlatL2(d)
             self._faiss_index.add(xb)
@@ -93,7 +92,7 @@ class FaissRM(dspy.Retrieve):
             self._faiss_index.train(xb)
             self._faiss_index.add(xb)
 
-        logging.info(f"{self._faiss_index.ntotal} vectors in faiss index")
+        dspy.logger.info(f"{self._faiss_index.ntotal} vectors in faiss index")
         self._document_chunks = document_chunks  # save the input document chunks
 
         super().__init__(k=k)
@@ -102,9 +101,9 @@ class FaissRM(dspy.Retrieve):
         for i in range(len(queries)):
             indices = index_list[i]
             distances = distance_list[i]
-            logging.debug(f"Query: {queries[i]}")
+            dspy.logger.debug(f"Query: {queries[i]}")
             for j in range(len(indices)):
-                logging.debug(f"    Hit {j} = {indices[j]}/{distances[j]}: {self._document_chunks[indices[j]]}")
+                dspy.logger.debug(f"    Hit {j} = {indices[j]}/{distances[j]}: {self._document_chunks[indices[j]]}")
         return
 
     def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None, **kwargs) -> dspy.Prediction:
@@ -127,7 +126,7 @@ class FaissRM(dspy.Retrieve):
             passages = [(self._document_chunks[ind], ind) for ind in index_list[0]]
             return [dotdict({"long_text": passage[0], "index": passage[1]}) for passage in passages]
 
-        distance_list, index_list = self._faiss_index.search(emb_npa, (k or self.k) * 3,**kwargs)
+        distance_list, index_list = self._faiss_index.search(emb_npa, (k or self.k) * 3, **kwargs)
         # self._dump_raw_results(queries, index_list, distance_list)
         passage_scores = {}
         for emb in range(len(embeddings)):

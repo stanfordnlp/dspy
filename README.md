@@ -58,9 +58,15 @@ Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThoug
 
 All you need is:
 
-```
+```bash
 pip install dspy-ai
 ```
+
+To install the very latest from `main`:
+
+```bash
+pip install git+https://github.com/stanfordnlp/dspy.git
+````
 
 Or open our intro notebook in Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
@@ -145,6 +151,8 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 - Typed DSPy (contributed by [@normal-computing](https://github.com/normal-computing))
   - [Using DSPy to train Gpt 3.5 on HumanEval by Thomas Ahle](https://github.com/stanfordnlp/dspy/blob/main/examples/functional/functional.ipynb)
   - [Building a chess playing agent using DSPy by Franck SN](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e)
+
+TODO: Add links to the state-of-the-art results on Theory of Mind (ToM) by Plastic Labs, the results by Haize Labs for Red Teaming with DSPy, and the DSPy pipeline from Replit.
 
 There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
 
@@ -412,7 +420,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Karel D'Oosterlinck**, **Shangyin Tan**, **Manish Shetty**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, **Ashutosh Sharma**, and **Herumb Shandilya**.
+Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Cyrus Nouroozi**, **Kyle Caverly**, **Amir Mehr**, **Karel D'Oosterlinck**, **Shangyin Tan**, **Manish Shetty**, **Herumb Shandilya**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
 
 **DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
