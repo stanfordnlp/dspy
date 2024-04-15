@@ -2,7 +2,6 @@ import logging
 import typing as t
 
 import regex
-from litellm import completion
 from pydantic import Field
 
 from dspy.modeling.backends.base import BaseBackend
@@ -13,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 litellm_logger = logging.getLogger("LiteLLM")
 litellm_logger.setLevel(logging.WARNING)
+
+try:
+    from litellm import completion
+
+    _missing_litellm = False
+except ImportError as e:
+    _missing_litellm = True
 
 
 def passages_to_text(passages: t.Iterable[str]) -> str:
@@ -64,6 +70,13 @@ class TextBackend(BaseBackend):
 
     model: str
     default_params: dict[str, t.Any] = Field(default_factory=dict)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if _missing_litellm:
+            raise ImportError(
+                "'litellm' is not available. Please install dspy with the 'litellm' extra to use this Backend.",
+            )
 
     def _guidelines(self, signature: Signature, _example: Example) -> str:
         result = "Follow the following format.\n\n"
