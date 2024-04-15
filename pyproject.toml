@@ -1,8 +1,8 @@
 [build-system]
-requires = ["setuptools>=40.8.0", "wheel"]
-build-backend = "setuptools.build_meta"
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core"]
 
-[project]
+[tool.poetry]
 name = "dspy-ai"
 version = "2.4.3"
 description = "DSPy"
@@ -17,6 +17,10 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",    # removed 3.8
     "Programming Language :: Python :: 3.9",
+]
+packages = [
+    { include = "dsp", from = "dsp" },
+    { include = "dspy", from = "dspy" }
 ]
 
 [project.urls]
