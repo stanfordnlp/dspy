@@ -136,6 +136,8 @@ class DatabricksRM(dspy.Retrieve):
                     else:
                         doc_ids.append(str(val))
                     text = val
+                if col["name"] == self.text_column_name:   
+                    text = val   
                 if col["name"] == 'score':
                     score = val
             docs[text] += score
