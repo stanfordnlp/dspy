@@ -118,5 +118,5 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
-      - name: Run setup.py build
-        run: python setup.py build
+      - name: Run poetry build
+        run: poetry build
