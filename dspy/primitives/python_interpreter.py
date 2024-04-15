@@ -12,23 +12,20 @@
 # limitations under the License.
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 import ast
+import builtins
 import difflib
 import importlib
+import re
 import typing
-import inspect
+from collections.abc import Mapping
 from typing import (
     Any,
-    Callable,
     Dict,
-    Mapping,
     List,
     Optional,
     Set,
     Tuple,
-    TypeVar,
-    Union,
 )
-import builtins
 
 
 class InterpreterError(ValueError):
@@ -39,11 +36,11 @@ class InterpreterError(ValueError):
     pass
 
 
-class PythonInterpreter():
+class PythonInterpreter:
     r"""A customized python interpreter to control the execution of
     LLM-generated codes. The interpreter makes sure the code can only execute
     functions given in action space and import white list. It also supports
-    fuzzy variable matching to reveive uncertain input variable name.
+    fuzzy variable matching to receive uncertain input variable name.
 
     .. highlight:: none
 
@@ -116,9 +113,9 @@ class PythonInterpreter():
             code (str): Generated python code to be executed.
             state (Optional[Dict[str, Any]], optional): External variables that
                 may be used in the generated code. (default: :obj:`None`)
-            fuzz_state (Optional[Dict[str, Any]], optional): External varibles
-                that do not have certain varible names. The interpreter will
-                use fuzzy matching to access these varibales. For example, if
+            fuzz_state (Optional[Dict[str, Any]], optional): External variables
+                that do not have certain variable names. The interpreter will
+                use fuzzy matching to access these variables. For example, if
                 :obj:`fuzz_state` has a variable :obj:`image`, the generated
                 code can use :obj:`input_image` to access it. (default:
                 :obj:`None`)
@@ -506,10 +503,11 @@ class TextPrompt(str):
 
     @property
     def key_words(self) -> Set[str]:
-        r"""Returns a set of strings representing the keywords in the prompt.
-        """
-        from camel.utils import get_prompt_template_key_words
-        return get_prompt_template_key_words(self)
+        """Returns a set of strings representing the keywords in the prompt."""
+        # Regex to find format placeholders within the string, excluding escaped braces
+        pattern = re.compile(r"\{([^{}]+)\}")
+        found = pattern.findall(self)
+        return set(found)
 
     def format(self, *args: Any, **kwargs: Any) -> 'TextPrompt':
         r"""Overrides the built-in :obj:`str.format` method to allow for
@@ -570,14 +568,14 @@ class CodePrompt(TextPrompt):
 
     def execute(
         self, interpreter: Optional[PythonInterpreter] = None,
-        user_variable: Optional[Dict[str, Any]] = None
+        user_variable: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, PythonInterpreter]:
         r"""Executes the code string by a given python interpreter.
 
         Args:
             interpreter (PythonInterpreter, optional): interpreter to be used
                 during code execution. (default: :obj:`None`)
-            user_variable (Optional[Dict[str, Any]]): varibales that can be
+            user_variable (Optional[Dict[str, Any]]): variables that can be
                 used in the code, which applying fuzzy matching, such as images
                 or documents. (default: :obj:`None`)
 

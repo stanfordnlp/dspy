@@ -13,6 +13,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Vim
+*.swp
+
 # Jupyter Notebook
 .ipynb_checkpoints
 # notebooks/
@@ -40,3 +43,7 @@ finetuning_ckpts/
 # cache/
 * copy*
 .idea
+assertion.log
+*.log
+*.db
+/.devcontainer/.personalization.sh

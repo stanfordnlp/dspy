@@ -1,4 +1,5 @@
-import dspy 
+import dspy
+
 
 class AnswerCorrectnessSignature(dspy.Signature):
     """Verify that the predicted answer matches the gold answer."""

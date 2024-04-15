@@ -1,4 +1,3 @@
-import copy
 
 class Example:
     def __init__(self, base=None, **kwargs):
@@ -55,7 +54,7 @@ class Example:
         return self.__repr__()
     
     def __eq__(self, other):
-        return self._store == other._store
+        return isinstance(other, Example) and self._store == other._store
     
     def __hash__(self):
         return hash(tuple(self._store.items()))

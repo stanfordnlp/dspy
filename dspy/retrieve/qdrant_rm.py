@@ -1,13 +1,15 @@
 from collections import defaultdict
-from typing import List, Union
+from typing import List, Optional, Union
+
 import dspy
+from dsp.utils import dotdict
 
 try:
-    from qdrant_client import QdrantClient
     import fastembed
+    from qdrant_client import QdrantClient
 except ImportError:
     raise ImportError(
-        "The 'qdrant' extra is required to use QdrantRM. Install it with `pip install dspy-ai[qdrant]`"
+        "The 'qdrant' extra is required to use QdrantRM. Install it with `pip install dspy-ai[qdrant]`",
     )
 
 
@@ -21,7 +23,7 @@ class QdrantRM(dspy.Retrieve):
     Args:
         qdrant_collection_name (str): The name of the Qdrant collection.
         qdrant_client (QdrantClient): A QdrantClient instance.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
+        k (int, optional): The default number of top passages to retrieve. Defaults to 3.
 
     Examples:
         Below is a code snippet that shows how to use Qdrant as the default retriver:
@@ -51,12 +53,12 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None,**kwargs) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
-
+            k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
@@ -67,15 +69,21 @@ class QdrantRM(dspy.Retrieve):
         )
         queries = [q for q in queries if q]  # Filter empty queries
 
+        k = k if k is not None else self.k
         batch_results = self._qdrant_client.query_batch(
-            self._qdrant_collection_name, query_texts=queries, limit=self.k)
+            self._qdrant_collection_name, query_texts=queries, limit=k,**kwargs)
 
-        passages = defaultdict(float)
+        passages_scores = defaultdict(float)
         for batch in batch_results:
             for result in batch:
                 # If a passage is returned multiple times, the score is accumulated.
-                passages[result.document] += result.score
+                passages_scores[result.document] += result.score
 
+        # Sort passages by their accumulated scores in descending order
         sorted_passages = sorted(
-            passages.items(), key=lambda x: x[1], reverse=True)[:self.k]
-        return dspy.Prediction(passages=[passage for passage, _ in sorted_passages])
+            passages_scores.items(), key=lambda x: x[1], reverse=True)[:k]
+
+        # Wrap each sorted passage in a dotdict with 'long_text'
+        passages = [dotdict({"long_text": passage}) for passage, _ in sorted_passages]
+
+        return passages

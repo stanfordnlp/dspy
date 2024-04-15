@@ -1,0 +1,86 @@
+site_name: DSPy -- The framework for programming foundation models
+theme:
+  name: "material"
+  icon:
+    logo: material/atom
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: black
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+
+nav:
+  - 💡 About: index.md
+  - 🏁 Getting Started: repo/getting_started.md
+  - 💻 Contributing:
+      - 🚀 Getting Started: repo/contributing.md
+      - 📝 Documentation: repo/documentation.md
+
+repo_name: DSPy
+repo_url: https://github.com/stanfordnlp/dspy
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            filters:
+              - "!^_[^_]"
+              - "!__version__"
+              - "!__all__"
+            heading_level: 2
+            show_root_heading: true
+            show_category_heading: true
+            merge_init_into_class: true
+            show_if_no_docstring: true
+            separate_signature: true
+            group_by_category: true
+            members_order: alphabetical
+            show_signature_annotations: true
+
+extra_css:
+  - "custom.css"

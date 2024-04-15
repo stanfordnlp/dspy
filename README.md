@@ -6,35 +6,35 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
-Paper —— **[DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**
-
-[<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
-
-
-**DSPy** is the framework for solving advanced tasks with language models (LMs) and retrieval models (RMs). **DSPy** unifies techniques for **prompting** and **fine-tuning** LMs — and approaches for **reasoning**, **self-improvement**, and **augmentation with retrieval and tools**. All of these are expressed through modules that compose and learn.
-
-To make this possible:
-
-- **DSPy** provides **composable and declarative modules** for instructing LMs in a familiar Pythonic syntax. It upgrades "prompting techniques" like chain-of-thought and self-reflection from hand-adapted _string manipulation tricks_ into truly modular _generalized operations that learn to adapt to your task_.
-
-- **DSPy** introduces an **automatic compiler that teaches LMs** how to conduct the declarative steps in your program. Specifically, the **DSPy compiler** will internally _trace_ your program and then **craft high-quality prompts for large LMs (or train automatic finetunes for small LMs)** to teach them the steps of your task.
-
-The **DSPy compiler** _bootstraps_ prompts and finetunes from minimal data **without needing manual labels for the intermediate steps** in your program. Instead of brittle "prompt engineering" with hacky string manipulation, you can explore a systematic space of modular and trainable pieces.
-
-For complex tasks, **DSPy** can routinely teach powerful models like `GPT-3.5` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks. **DSPy** will compile the _same program_ into different few-shot prompts and/or finetunes for each LM.
+**[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
+[Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
+[Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
 
 
-If you want to see **DSPy** in action, **[open our intro tutorial notebook](intro.ipynb)**.
+**Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
+
+**Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
+
+----
+
+**DSPy is a framework for algorithmically optimizing LM prompts and weights**, especially when LMs are used one or more times within a pipeline. To use LMs to build a complex system _without_ DSPy, you generally have to: (1) break the problem down into steps, (2) prompt your LM well until each step works well in isolation, (3) tweak the steps to work well together, (4) generate synthetic examples to tune each step, and (5) use these examples to finetune smaller LMs to cut costs. Currently, this is hard and messy: every time you change your pipeline, your LM, or your data, all prompts (or finetuning steps) may need to change.
+
+To make this more systematic and much more powerful, **DSPy** does two things. First, it separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step. Second, **DSPy** introduces new `optimizers`, which are LM-driven algorithms that can tune the prompts and/or the weights of your LM calls, given a `metric` you want to maximize.
+
+**DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. This is a new paradigm in which LMs and their prompts fade into the background as optimizable pieces of a larger system that can learn from data. **tldr;** less prompting, higher scores, and a more systematic approach to solving hard tasks with LMs.
 
 
 ### Table of Contents
 
+If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
 
 1. **[Installation](#1-installation)**
-1. **[Framework Syntax](#2-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
-1. **[Compiling: Two Powerful Concepts](#3-two-powerful-concepts-signatures--teleprompters)**
-1. **[Tutorials & Documentation](#4-documentation--tutorials)**
-1. **[FAQ: Is DSPy right for me?](#5-faq-is-dspy-right-for-me)**
+1. **[Tutorials & Documentation](#2-documentation)**
+1. **[Framework Syntax](#3-syntax-youre-in-charge-of-the-workflowits-free-form-python-code)**
+1. **[Compiling: Two Powerful Concepts](#4-two-powerful-concepts-signatures--teleprompters)**
+1. **[Pydantic Types](#5-pydantic-types)** 
+1. **[FAQ: Is DSPy right for me?](#6-faq-is-dspy-right-for-me)**
 
 
 
@@ -42,30 +42,122 @@ If you want to see **DSPy** in action, **[open our intro tutorial notebook](intr
 
 When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
 
-Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `Retrieve`, etc.) and takes care of optimizing their prompts _for your program_ and your metric, whatever they aim to do. Whenever you modify your code, your data, or your validation constraints, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
+Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThought`, `ReAct`, etc.), which replace string-based prompting tricks. To replace prompt hacking and one-off synthetic data generators, **DSPy** also gives you general optimizers (`BootstrapFewShotWithRandomSearch` or [`BayesianSignatureOptimizer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/signature_opt_bayesian.py)), which are algorithms that update parameters in your program. Whenever you modify your code, your data, your assertions, or your metric, you can _compile_ your program again and **DSPy** will create new effective prompts that fit your changes.
 
+### Mini-FAQs
+
+**What do DSPy optimizers tune?** Each optimizer is different, but they all seek to maximize a metric on your program by updating prompts or LM weights. Current DSPy `optimizers` can inspect your data, simulate traces through your program to generate good/bad examples of each step, propose or refine instructions for each step based on past results, finetune the weights of your LM on self-generated examples, or combine several of these to improve quality or cut cost. We'd love to merge new optimizers that explore a richer space: most manual steps you currently go through for prompt engineering, "synthetic data" generation, or self-improvement can probably generalized into a DSPy optimizer that acts on arbitrary LM programs.
+
+**How should I use DSPy for my task?** Using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+
+**What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
+
+**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically.
 
 ## 1) Installation
 
 All you need is:
 
-```
+```bash
 pip install dspy-ai
 ```
 
+To install the very latest from `main`:
+
+```bash
+pip install git+https://github.com/stanfordnlp/dspy.git
+````
+
 Or open our intro notebook in Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
+By default, DSPy installs the latest `openai` from pip. However, if you install old version before OpenAI changed their API `openai~=0.28.1`, the library will use that just fine. Both are supported.
 
-> _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
-
-
-For the optional Pinecone, Qdrant, [chromadb](https://github.com/chroma-core/chroma), or  [marqo](https://github.com/marqo-ai/marqo) retrieval integration(s), include the extra(s) below:
+For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chroma), [Qdrant](https://github.com/qdrant/qdrant), [Marqo](https://github.com/marqo-ai/marqo), Pinecone, [Weaviate](https://github.com/weaviate/weaviate),
+or [Milvus](https://github.com/milvus-io/milvus) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[pinecone]  # or [qdrant] or [chromadb] or [marqo]
+pip install dspy-ai[chromadb]  # or [qdrant] or [marqo] or [mongodb] or [pinecone] or [weaviate] or [milvus]
 ```
 
-## 2) Syntax: You're in charge of the workflow—it's free-form Python code!
+## 2) Documentation
+
+The DSPy documentation is divided into **tutorials** (step-by-step illustration of solving a task in DSPy), **guides** (how to use specific parts of the API), and **examples** (self-contained programs that illustrate usage).
+
+### A) Tutorials
+
+| **Level** |  **Tutorial** |  **Run in Colab** |  **Description** |
+| --- | -------------  |  -------------  |  -------------  | 
+| Beginner |  [**Getting Started**](intro.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)  |  Introduces the basic building blocks in DSPy. Tackles the task of complex question answering with HotPotQA. |
+| Beginner | [**Minimal Working Example**](https://dspy-docs.vercel.app/docs/quick-start/minimal-example) | N/A | Builds and optimizes a very simple chain-of-thought program in DSPy for math question answering. Very short. |
+| Beginner | [**Compiling for Tricky Tasks**](examples/nli/scone/scone.ipynb) | N/A | Teaches LMs to reason about logical statements and negation. Uses GPT-4 to bootstrap few-shot CoT demonstations for GPT-3.5. Establishes a state-of-the-art result on [ScoNe](https://arxiv.org/abs/2305.19426). Contributed by [Chris Potts](https://twitter.com/ChrisGPotts/status/1740033519446057077). |
+| Beginner | [**Local Models & Custom Datasets**](skycamp2023.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/skycamp2023.ipynb) | Illustrates two different things together: how to use local models (Llama-2-13B in particular) and how to use your own data examples for training and development.
+| Intermediate | [**The DSPy Paper**](https://arxiv.org/abs/2310.03714) | N/A | Sections 3, 5, 6, and 7 of the DSPy paper can be consumed as a tutorial. They include explained code snippets, results, and discussions of the abstractions and API.
+| Intermediate | [**DSPy Assertions**](https://arxiv.org/abs/2312.13382) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/longformqa/longformqa_assertions.ipynb) | Introduces example of applying DSPy Assertions while generating long-form responses to questions with citations. Presents comparative evaluation in both zero-shot and compiled settings.
+| Intermediate | [**Finetuning for Complex Programs**](https://twitter.com/lateinteraction/status/1712135660797317577) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/qa/hotpot/multihop_finetune.ipynb) | Teaches a local T5 model (770M) to do exceptionally well on HotPotQA. Uses only 200 labeled answers. Uses no hand-written prompts, no calls to OpenAI, and no labels for retrieval or reasoning.
+| Advanced | [**Information Extraction**](https://twitter.com/KarelDoostrlnck/status/1724991014207930696) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/drive/1CpsOiLiLYKeGrhmq579_FmtGsD5uZ3Qe) | Tackles extracting information from long articles (biomedical research papers). Combines in-context learning and retrieval to set SOTA on BioDEX. Contributed by [Karel D’Oosterlinck](https://twitter.com/KarelDoostrlnck/status/1724991014207930696).  |
+
+
+**Other resources people find useful**:
+
+- [DSPy talk at ScaleByTheBay Nov 2023](https://www.youtube.com/watch?v=Dt3H2ninoeY).
+- [DSPy webinar with MLOps Learners](https://www.youtube.com/watch?v=im7bCLW2aM4), a bit longer with Q&A.
+- Hands-on Overviews of DSPy by the community: [DSPy Explained! by Connor Shorten](https://www.youtube.com/watch?v=41EfOY0Ldkc), [DSPy explained by code_your_own_ai](https://www.youtube.com/watch?v=ycfnKPxBMck)
+- Interviews: [Weaviate Podcast in-person](https://www.youtube.com/watch?v=CDung1LnLbY), and you can find 6-7 other remote podcasts on YouTube from a few different perspectives/audiences.
+- **Tracing in DSPy** with Arize Phoenix: [Tutorial for tracing your prompts and the steps of your DSPy programs](https://colab.research.google.com/github/Arize-ai/phoenix/blob/main/tutorials/tracing/dspy_tracing_tutorial.ipynb)
+- [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
+
+### B) Guides
+
+If you're new to DSPy, it's probably best to go in sequential order. You will probably refer to these guides frequently after that, e.g. to copy/paste snippets that you can edit for your own DSPy programs.
+
+
+1. **[Language Models](https://dspy-docs.vercel.app/docs/building-blocks/language_models)**
+
+2. **[Signatures](https://dspy-docs.vercel.app/docs/building-blocks/signatures)**
+
+3. **[Modules](https://dspy-docs.vercel.app/docs/building-blocks/modules)**
+
+5. **[Data](https://dspy-docs.vercel.app/docs/building-blocks/data)**
+
+5. **[Metrics](https://dspy-docs.vercel.app/docs/building-blocks/metrics)**
+
+4. **[Optimizers (formerly Teleprompters)](https://dspy-docs.vercel.app/docs/building-blocks/optimizers)**
+
+6. **[DSPy Assertions](https://dspy-docs.vercel.app/docs/building-blocks/assertions)**
+
+
+### C) Examples
+
+The DSPy team believes complexity has to be justified. We take this seriously: we never release a complex tutorial (above) or example (below) _unless we can demonstrate empirically that this complexity has generally led to improved quality or cost._ This kind of rule is rarely enforced by other frameworks or docs, but you can count on it in DSPy examples.
+
+There's a bunch of examples in the `examples/` directory and in the top-level directory. We welcome contributions!
+
+You can find other examples tweeted by [@lateinteraction](https://twitter.com/lateinteraction) on Twitter/X.
+
+**Some other examples (not exhaustive, feel free to add more via PR):**
+
+- Applying DSPy Assertions
+  - [Long-form Answer Generation with Citations, by Arnav Singhvi](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/longformqa/longformqa_assertions.ipynb)
+  - [Generating Answer Choices for Quiz Questions, by Arnav Singhvi](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/quiz/quiz_assertions.ipynb)
+  - [Generating Tweets for QA, by Arnav Singhvi](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/tweets/tweets_assertions.ipynb)
+- [Compiling LCEL runnables from LangChain in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/compiling_langchain.ipynb)
+- [AI feedback, or writing LM-based metrics in DSPy](https://github.com/stanfordnlp/dspy/blob/main/examples/tweets/tweet_metric.py)
+- [DSPy Optimizers Benchmark on a bunch of different tasks, by Michael Ryan](https://github.com/stanfordnlp/dspy/tree/main/testing/tasks)
+- [Indian Languages NLI with gains due to compiling by Saiful Haq](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb)
+- [Sophisticated Extreme Multi-Class Classification, IReRa, by Karel D’Oosterlinck](https://github.com/KarelDO/xmc.dspy)
+- [DSPy on BIG-Bench Hard Example, by Chris Levy](https://drchrislevy.github.io/posts/dspy/dspy.html)
+- [Using Ollama with DSPy for Mistral (quantized) by @jrknox1977](https://gist.github.com/jrknox1977/78c17e492b5a75ee5bbaf9673aee4641)
+- [Using DSPy, "The Unreasonable Effectiveness of Eccentric Automatic Prompts" (paper) by VMware's Rick Battle & Teja Gollapudi, and interview at TheRegister](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/)
+- [Optimizing Performance of Open Source LM for Text-to-SQL using DSPy and vLLM, by Juan Ovalle](https://github.com/jjovalle99/DSPy-Text2SQL)
+- Typed DSPy (contributed by [@normal-computing](https://github.com/normal-computing))
+  - [Using DSPy to train Gpt 3.5 on HumanEval by Thomas Ahle](https://github.com/stanfordnlp/dspy/blob/main/examples/functional/functional.ipynb)
+  - [Building a chess playing agent using DSPy by Franck SN](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e)
+
+TODO: Add links to the state-of-the-art results on Theory of Mind (ToM) by Plastic Labs, the results by Haize Labs for Red Teaming with DSPy, and the DSPy pipeline from Replit.
+
+There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
+
+## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
 
 **DSPy** hides tedious prompt engineering, but it cleanly exposes the important decisions you need to make: **[1]** what's your system design going to look like? **[2]** what are the important constraints on the behavior of your program?
 
@@ -93,7 +185,7 @@ A program has two key methods, which you can edit to fit your needs.
 Modules that use the LM, like `ChainOfThought`, require a _signature_. That is a declarative spec that tells the module what it's expected to do. In this example, we use the short-hand signature notation `context, question -> answer` to tell `ChainOfThought` it will be given some `context` and a `question` and must produce an `answer`. We will discuss more advanced **[signatures](#3a-declaring-the-inputoutput-behavior-of-lms-with-dspysignature)** below.
 
 
-**Your `forward` method** expresses any computation you want to do with your modules. In this case, we use the modules `self.retrieve` and `self.generate_answer` to search for some `context` and then use the `context` and `question` to generate the `answer`!
+**Your `forward` method** expresses any computation you want to do with your modules. In this case, we use the module `self.retrieve` to search for some `context` and then use the module `self.generate_answer`, which uses the `context` and `question` to generate the `answer`!
 
 You can now either use this `RAG` program in **zero-shot mode**. Or **compile** it to obtain higher quality. Zero-shot usage is simple. Just define an instance of your program and then call it:
 
@@ -107,12 +199,14 @@ The next section will discuss how to compile our simple `RAG` program. When we c
 If you later decide you need another step in your pipeline, just add another module and compile again. Maybe add a module that takes the chat history into account during search?
 
 
-## 3) Two Powerful Concepts: Signatures & Teleprompters
+## 4) Two Powerful Concepts: Signatures & Teleprompters
+
+**Note:** We will soon rename teleprompters to optimizers. This will not affect their functionality, but will simplify the terms used.
 
 To make it possible to compile any program you write, **DSPy** introduces two simple concepts: Signatures and Teleprompters.
 
 
-#### 3.a) Declaring the input/output behavior of LMs with `dspy.Signature`
+#### 4.a) Declaring the input/output behavior of LMs with `dspy.Signature`
 
 When we assign tasks to LMs in **DSPy**, we specify the behavior we need as a **Signature**. A signature is a declarative specification of input/output behavior of a **DSPy module**.
 
@@ -150,7 +244,7 @@ self.generate_answer = dspy.ChainOfThought(GenerateSearchQuery)
 You can optionally provide a `prefix` and/or `desc` key for each input or output field to refine or constraint the behavior of modules using your signature. The description of the sub-task itself is specified as the docstring (i.e., `"""Write a simple..."""`).
 
 
-#### 3.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
+#### 4.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
 
 After defining the `RAG` program, we can **compile** it. Compiling a program will update the parameters stored in each module. For large LMs, this is primarily in the form of creating and validating good demonstrations for inclusion in your prompt(s).
 
@@ -195,105 +289,61 @@ compiled_rag = teleprompter.compile(RAG(), trainset=my_rag_trainset)
 If we now use `compiled_rag`, it will invoke our LM with rich prompts with few-shot demonstrations of chain-of-thought retrieval-augmented question answering on our data.
 
 
-## 4) Documentation & Tutorials
+## 5) Pydantic Types
 
-While we work on new tutorials and documentation, please check out **[our intro notebook](intro.ipynb)**.
+Sometimes you need more than just string inputs/outputs.
+Assume, for example, you need to find 
 
-Or open it directly in free Google Colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
+```python
+from pydantic import BaseModel, Field
+from dspy.functional import TypedPredictor
 
+class TravelInformation(BaseModel):
+    origin: str = Field(pattern=r"^[A-Z]{3}$")
+    destination: str = Field(pattern=r"^[A-Z]{3}$")
+    date: datetime.date
+    confidence: float = Field(gt=0, lt=1)
 
+class TravelSignature(Signature):
+    """ Extract all travel information in the given email """
+    email: str = InputField()
+    flight_information: list[TravelInformation] = OutputField()
 
-###
-<details>
-  <summary><h3 style="display: inline">Module Reference</h3></summary>
+predictor = TypedPredictor(TravelSignature)
+predictor(email='...')
+```
 
-We have work-in-progress module documentation at [this PR](https://github.com/stanfordnlp/dspy/pull/93). Please let us know if anything there is unclear.
+Which will output a list of `TravelInformation` objects.
 
+There are other ways to create typed signatures too. Such as
+```python
+predictor = TypedChainOfThought("question:str -> answer:int")
+```
+which applies chain of thought, and is guaranteed to return an int.
 
-#### Language Model Clients
+There's even an approach inspired by [tanuki.py](https://github.com/Tanuki/tanuki.py), which can be convenient when defining modules:
+```python
+from dspy.functional import FunctionalModule, predictor, cot
 
-- [`dspy.OpenAI`](docs/language_models_client.md#openai)
-- [`dspy.Cohere`](docs/language_models_client.md#cohere)
-- [`dspy.TGI`](docs/language_models_client.md#tgi)
-- [`dspy.VLLM`](docs/language_models_client.md#vllm)
+class MyModule(FunctionalModule):
+    @predictor
+    def hard_question(possible_topics: list[str]) -> str:
+        """Write a hard question based on one of the topics. It should be answerable by a number."""
 
-#### Retrieval Model Clients
+    @cot
+    def answer(question: str) -> float:
+        pass
 
-- [`dspy.ColBERTv2`](docs/retrieval_models_client.md#colbertv2)
-- [`dspy.AzureCognitiveSearch`](docs/retrieval_models_client.md#azurecognitivesearch)
+    def forward(possible_topics: list[str]):
+        q = hard_question(possible_topics=possible_topics)
+        a = answer(question=q)
+        return (q, a)
+```
 
+For more examples, see [the list above](https://github.com/stanfordnlp/dspy#:~:text=Typed%20DSPy),
+as well as [the unit tests](https://github.com/stanfordnlp/dspy/blob/main/tests/functional/test_functional.py) for the module.
 
-#### Signatures
-
-- `dspy.Signature`
-- `dspy.InputField`
-- `dspy.OutputField`
-
-#### Modules
-
-- [`dspy.Predict`](docs/modules.md#dspypredict)
-- [`dspy.Retrieve`](docs/modules.md#dspyretrieve)
-- [`dspy.ChainOfThought`](docs/modules.md#dspychainofthought)
-- `dspy.majority` (functional self-consistency)
-- `dspy.ProgramOfThought` [[see open PR]](https://github.com/stanfordnlp/dspy/pull/116)
-- [`dspy.ReAct`](docs/modules.md#dspyreact)
-- [`dspy.MultiChainComparison`](docs/modules.md#dspymultichaincomparison)
-- `dspy.SelfCritique` [coming soon]
-- `dspy.SelfRevision` [coming soon]
-
-  
-#### Teleprompters
-
-- [`dspy.teleprompt.LabeledFewShot`](docs/teleprompters.md#telepromptlabeledfewshot)
-- [`dspy.teleprompt.BootstrapFewShot`](docs/teleprompters.md#telepromptbootstrapfewshot)
-- [`dspy.teleprompt.BootstrapFewShotWithRandomSearch`](docs/teleprompters.md#telepromptbootstrapfewshotwithrandomsearch)
-- `dspy.teleprompt.LabeledFinetune` [coming soon]
-- [`dspy.teleprompt.BootstrapFinetune`](docs/teleprompters.md#telepromptbootstrapfinetune)
-- [`dspy.teleprompt.Ensemble`](docs/teleprompters.md#telepromptensemble)
-- `dspy.teleprompt.kNN` [coming soon]
-
-</details>
-
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Intro Tutorial [coming soon]</h3></summary>
-
-**[Intro-01] Getting Started: High Quality Pipelined Prompts with Minimal Effort**
-
-**[Intro-02] Using DSPy For Your Own Task: Building Blocks**
-
-**[Intro-03] Adding Complexity: Multi-stage Programs**
-
-**[Intro-04] Adding Complexity for Your Own Task: Design Patterns**
-
-</details>
-
-
-###
-<details>
-  <summary><h3 style="display: inline">Advanced Demos [coming soon]</h3></summary>
-
-
-**[Advanced-01] Long-Form QA & Programmatic Evaluation.**
-
-**[Advanced-02] Programmatic Evaluation II & Dataset Creation.**
-
-**[Advanced-03] Compiling & Teleprompters.**
-
-**[Advanced-04] Extending DSPy with Modules or Teleprompters.**
-
-**[Advanced-05]: Agents and General Tool Use in DSPy.**
-
-**[Advanced-06]: Reproducibility, Saving Programs, and Advanced Caching.**
-
-
-</details>
-
-
-
-## 5) FAQ: Is DSPy right for me?
+## 6) FAQ: Is DSPy right for me?
 
 The **DSPy** philosophy and abstraction differ significantly from other libraries and frameworks, so it's usually straightforward to decide when **DSPy** is (or isn't) the right framework for your usecase.
 
@@ -345,16 +395,35 @@ This is very useful in many settings, but it's generally focused on low-level, s
 In contrast, **DSPy** automatically optimizes the prompts in your programs to align them with various task needs, which may also include producing valid structured ouputs. That said, we are considering allowing **Signatures** in **DSPy** to express regex-like constraints that are implemented by these libraries.
 </details>
 
+## Testing
 
+To run the tests, you need to first clone the repository.
 
+Then install the package through poetry:
+Note - You may need to 
+
+```bash
+poetry install --with test
+```
+
+Then run the all tests, or a specific test suite, with the following commands:
+
+```bash
+poetry run pytest
+poetry run pytest tests/PATH_TO_TEST_SUITE
+```
+
+## Contribution Quickstart
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to DSPy.
 
 ## Contributors & Acknowledgements
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Arnav Singhvi**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
+Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Cyrus Nouroozi**, **Kyle Caverly**, **Amir Mehr**, **Karel D'Oosterlinck**, **Shangyin Tan**, **Manish Shetty**, **Herumb Shandilya**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
 
-**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
+**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
 
@@ -380,12 +449,19 @@ If you use DSPy or DSP in a research paper, please cite our work as follows:
 }
 ```
 
-
 You can also read more about the evolution of the framework from Demonstrate-Search-Predict to DSPy:
-* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
-* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
-* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
+
+* [**DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines**](https://arxiv.org/abs/2312.13382)   (Academic Paper, Dec 2023) 
+* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023) 
 * [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
-* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023)
+* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022)
+
+
+
+> _Note: If you're looking for Demonstrate-Search-Predict (DSP), which is the previous version of DSPy, you can find it on the [v1](https://github.com/stanfordnlp/dspy/tree/v1) branch of this repo._
+
+
 
 

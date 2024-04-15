@@ -1,5 +1,5 @@
 import random
-from typing import Callable, Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -148,7 +148,7 @@ def cast_naive_get_question_and_answer(inp_example: Example) -> Example:
 def knn(
     train: list[Example],
     cast: Callable[[Example], Example] = cast_naive_get_only_question_text,
-    **knn_args
+    **knn_args,
 ) -> Callable[[Example, int], list[Example]]:
     """
     A function that vectorizes train data using `dsm.settings.vectorizer`, then build an ANN/KNN
@@ -171,7 +171,7 @@ def knn(
     all_vectors = vectorizer(train_casted_to_vectorize).astype(np.float32)
 
     index = create_faiss_index(
-        emb_dim=all_vectors.shape[1], n_objects=len(train), **knn_args
+        emb_dim=all_vectors.shape[1], n_objects=len(train), **knn_args,
     )
     index.train(all_vectors)
     index.add(all_vectors)
