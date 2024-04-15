@@ -131,6 +131,7 @@ black = "^24.2.0"
 decorator = "^5.1.1"
 pre-commit = "^3.7.0"
 setuptools = "^69.2.0"
+jupyter = "^1.0.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
