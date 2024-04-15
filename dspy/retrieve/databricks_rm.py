@@ -87,7 +87,7 @@ class DatabricksRM(dspy.Retrieve):
         self.docs_id_column_name = docs_id_column_name
         self.text_column_name = text_column_name
 
-    def forward(self, query: Union[str, List[float]], query_type: str = 'vector') -> dspy.Prediction:
+    def forward(self, query: Union[str, List[float]], query_type: str = 'text') -> dspy.Prediction:
         """Search with Databricks Vector Search Client for self.k top results for query
 
         Args:
