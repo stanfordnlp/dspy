@@ -61,6 +61,10 @@ class HFModel(LM):
         hf_autoconfig_kwargs = dict(token=token or os.environ.get("HF_TOKEN"))
         hf_autotokenizer_kwargs = hf_autoconfig_kwargs.copy()
         hf_automodel_kwargs = hf_autoconfig_kwargs.copy()
+
+        # silently remove device_map from model_kwargs if it is present, as the option is provided in the constructor
+        if "device_map" in model_kwargs:
+            model_kwargs.pop("device_map")
         hf_automodel_kwargs.update(model_kwargs)
         if not self.is_client:
             try:
