@@ -3,6 +3,7 @@ import random
 import re
 import shutil
 import subprocess
+from typing import Literal
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 import backoff
@@ -114,7 +115,7 @@ def send_hftgi_request_v00(arg, **kwargs):
 
 
 class HFClientVLLM(HFModel):
-    def __init__(self, model, port, url="http://localhost", **kwargs):
+    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", **kwargs):
         super().__init__(model=model, is_client=True)
 
         if isinstance(url, list):
@@ -126,27 +127,24 @@ class HFClientVLLM(HFModel):
         else:
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
+        self.model_type = model_type
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
         # kwargs needs to have model, port and url for the lm.copy() to work properly
         self.kwargs.update({
-            'model': model,
             'port': port,
-            'url': url
+            'url': url,
         })
 
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
         
-        # get model_type
-        model_type = kwargs.get("model_type",None)
-
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
         
-        if model_type == "chat":
+        if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt",None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
