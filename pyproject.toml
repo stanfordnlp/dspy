@@ -7,9 +7,8 @@ name = "dspy-ai"
 version = "2.4.3"
 description = "DSPy"
 readme = "README.md"
-authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
-license = { text = "MIT License" }
-requires-python = ">=3.9, <3.12"
+authors = ["Omar Khattab <okhattab@stanford.edu>"]
+license = "MIT License"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -19,8 +18,8 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
 ]
 packages = [
-    { include = "dsp", from = "dsp" },
-    { include = "dspy", from = "dspy" }
+    { include = "dsp" },
+    { include = "dspy" }
 ]
 
 [project.urls]
