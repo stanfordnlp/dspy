@@ -132,7 +132,7 @@ class AzureAISearchRM(dspy.Retrieve):
         ) -> List | Any:
             Returns embeddings for the given query.
 
-        check_sementic_configuration(
+        check_semantic_configuration(
             self,
             semantic_configuration_name,
             query_type
@@ -166,7 +166,7 @@ class AzureAISearchRM(dspy.Retrieve):
         query_type: Optional[QueryType] = QueryType.FULL,
         semantic_configuration_name: str = None,
         is_vector_search: Optional[bool] = False,
-        is_hybride_search: Optional[bool] = False,
+        is_hybrid_search: Optional[bool] = False,
         is_fulltext_search: Optional[bool] = True,
         vector_filter_mode: Optional[VectorFilterMode.PRE_FILTER] = None,
     ):
@@ -192,7 +192,7 @@ class AzureAISearchRM(dspy.Retrieve):
         self.query_type = query_type
         self.semantic_configuration_name = semantic_configuration_name
         self.is_vector_search = is_vector_search
-        self.is_hybride_search = is_hybride_search
+        self.is_hybrid_search = is_hybrid_search
         self.is_fulltext_search = is_fulltext_search
         self.vector_filter_mode = vector_filter_mode
 
@@ -224,7 +224,7 @@ class AzureAISearchRM(dspy.Retrieve):
         if is_vector_search:
             vector_query = self.get_embeddings(query, top, field_vector)
             if semantic_ranker:
-                self.check_sementic_configuration(semantic_configuration_name, query_type)
+                self.check_semantic_configuration(semantic_configuration_name, query_type)
                 results = client.search(
                     search_text=None,
                     filter=filter,
@@ -233,6 +233,7 @@ class AzureAISearchRM(dspy.Retrieve):
                     vector_filter_mode=vector_filter_mode,
                     semantic_configuration_name=semantic_configuration_name,
                     top=top,
+                    query_caption=("extractive|highlight-false" if use_semantic_captions else None),
                 )
             else:
                 results = client.search(
@@ -245,7 +246,7 @@ class AzureAISearchRM(dspy.Retrieve):
         if is_hybrid_search:
             vector_query = self.get_embeddings(query, top, field_vector)
             if semantic_ranker:
-                self.check_sementic_configuration(semantic_configuration_name, query_type)
+                self.check_semantic_configuration(semantic_configuration_name, query_type)
                 results = client.search(
                     search_text=query,
                     filter=filter,
@@ -270,7 +271,7 @@ class AzureAISearchRM(dspy.Retrieve):
                 )
         if is_fulltext_search:
             if semantic_ranker:
-                self.check_sementic_configuration(semantic_configuration_name, query_type)
+                self.check_semantic_configuration(semantic_configuration_name, query_type)
                 results = client.search(
                     search_text=query,
                     filter=filter,
@@ -337,7 +338,7 @@ class AzureAISearchRM(dspy.Retrieve):
                 self.query_type,
                 self.semantic_configuration_name,
                 self.is_vector_search,
-                self.is_hybride_search,
+                self.is_hybrid_search,
                 self.is_fulltext_search,
                 self.field_vector,
                 self.vector_filter_mode,
@@ -366,9 +367,10 @@ class AzureAISearchRM(dspy.Retrieve):
         assert (
             self.azure_openai_client or self.embedding_func
         ), "Either azure_openai_client or embedding_func must be provided."
-        assert field_vector, "field_vector must be provided."
-
+        
         if self.azure_openai_client is not None:
+            assert field_vector, "field_vector must be provided."
+            
             embedding = (
                 self.azure_openai_client.embeddings.create(input=query, model=self.openai_embed_model).data[0].embedding
             )
@@ -379,7 +381,7 @@ class AzureAISearchRM(dspy.Retrieve):
         else:
             return self.embedding_func(query)
 
-    def check_sementic_configuration(self, semantic_configuration_name, query_type):
+    def check_semantic_configuration(self, semantic_configuration_name, query_type):
         """
         Checks semantic configuration.
 
