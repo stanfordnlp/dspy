@@ -17,7 +17,7 @@ try:
     from litellm import completion
 
     _missing_litellm = False
-except ImportError as e:
+except ImportError:
     _missing_litellm = True
 
 

@@ -3,8 +3,6 @@ import logging
 import typing as t
 from json import JSONDecodeError
 
-from litellm import ModelResponse
-
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
@@ -102,9 +100,6 @@ class JSONBackend(TextBackend):
         input_kwargs: dict,
         **_kwargs,
     ) -> Completions:
-        if type(response) != ModelResponse:
-            raise AssertionError("Response from completion incorrect type/format")
-
         if len([c for c in response.choices if c["finish_reason"] == "length"]) > 0:
             logger.info("Some of the generations are being limited by 'max_tokens', you may want to raise this value.")
 
