@@ -29,6 +29,7 @@ class Settings:
             #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
             config = dotdict(
                 lm=None,
+                vlm=None,
                 rm=None,
                 branch_idx=0,
                 reranker=None,

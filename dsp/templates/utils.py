@@ -1,6 +1,5 @@
 from typing import Optional, Union
 
-
 def passages2text(passages: Union[str, list, tuple]) -> str:
     """Formats the given one or more passages into a single structured string."""
     if isinstance(passages, str):

@@ -74,7 +74,17 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
-        completions: list[dict[str, Any]] = generator(prompt, **kwargs)
+        print('\n\n prompt to LM')
+        print(prompt)
+        
+        if isinstance(prompt, tuple):
+            if len(prompt) > 0:
+                objects = prompt[1:]
+            prompt = prompt[0]
+        else:
+            objects = ()
+     
+        completions: list[dict[str, Any]] = generator(prompt,*objects, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 
         # Find the completions that are most complete.

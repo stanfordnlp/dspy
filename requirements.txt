@@ -10,3 +10,5 @@ requests
 optuna
 pydantic==2.5.0
 structlog
+urllib3
+# To be deleted

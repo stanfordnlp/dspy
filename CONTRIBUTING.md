@@ -41,6 +41,12 @@ poetry run pytest
 poetry run pytest tests/PATH_TO_TEST_SUITE
 ```
 
+To test actual api calls, you can use the following command:
+
+```bash
+poetry run pytest -m 'requires_api_call'
+```
+
 If you are changing CI actions, you can use the [act](https://nektosact.com/introduction.html) tool to test the CI locally.
 
 Example for testing the push action:
