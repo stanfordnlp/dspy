@@ -6,7 +6,6 @@ from typing import Any, Literal, Optional, cast
 import backoff
 import openai
 
-import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -192,8 +191,7 @@ class AzureOpenAI(LM):
 
         response = self.request(prompt, **kwargs)
 
-        if dsp.settings.log_openai_usage:
-            self.log_usage(response)
+        self.log_usage(response)
 
         choices = response["choices"]
 
@@ -223,17 +221,17 @@ class AzureOpenAI(LM):
             completions = [c for _, c in scored_completions]
 
         return completions
-    
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop("model")
 
         return self.__class__(
-            model=model, 
-            api_key=self.api_key, 
-            api_version=self.api_version, 
-            api_base=self.api_base, 
+            model=model,
+            api_key=self.api_key,
+            api_version=self.api_version,
+            api_base=self.api_base,
             **kwargs,
         )
 
