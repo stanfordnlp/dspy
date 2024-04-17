@@ -31,7 +31,7 @@ def giveup_hdlr(details) -> bool:
     return True
 
 
-class SnowflakeCortex(LM):
+class Snowflake(LM):
     """Wrapper around Snowflake's CortexAPI.
 
     Currently supported models include 'mistral-large','reka-flash','mixtral-8x7b',
