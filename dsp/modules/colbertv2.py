@@ -164,7 +164,7 @@ class ColBERTv2RerankerLocal:
             checkpoint_name (str, optional): checkpoint for embeddings. Defaults to 'bert-base-uncased'.
         """
         self.colbert_config = colbert_config
-        self.checkpoint_name = checkpoint
+        self.checkpoint = checkpoint
         self.colbert_config.checkpoint = checkpoint
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -184,7 +184,7 @@ class ColBERTv2RerankerLocal:
         query_ids,query_masks = query_tokenizer.tensorize([query])
         doc_ids,doc_masks = doc_tokenizer.tensorize(passages)
 
-        col = ColBERT(self.checkpoint_name,self.colbert_config) 
+        col = ColBERT(self.checkpoint,self.colbert_config) 
         Q = col.query(query_ids,query_masks)
         DOC_IDS,DOC_MASKS = col.doc(doc_ids,doc_masks,keep_dims='return_mask')
         Q_duplicated = Q.repeat_interleave(len(passages), dim=0).contiguous()
