@@ -91,12 +91,9 @@ class ReAct(Module):
             if action_name == "Finish":
                 return action_val
 
-            try:
-                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val).passages
-            except AttributeError:
-                # Handle the case where 'passages' attribute is missing
-                # TODO: This is a hacky way to handle this. Need to fix this.
-                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val)
+            result = self.tools[action_name](action_val)
+            # Handle the case where 'passages' attribute is missing
+            output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
 
         except Exception as e:
             output[f"Observation_{hop+1}"] = (
