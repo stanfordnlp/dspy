@@ -1,9 +1,10 @@
 import random
+
 random.seed(42) # meaning of life reproducibility.
 import threading
 
 import tqdm
-import wandb # Maybe an idea to refactor into a config to isolate the dependency, but it doesn't add too many LOC to customize the observability to the compiler.
+import wandb  # Maybe an idea to refactor into a config to isolate the dependency, but it doesn't add too many LOC to customize the observability to the compiler.
 
 import dsp
 import dspy
@@ -168,7 +169,7 @@ class BootstrapFewShot(Teleprompter):
                     if wandb_enabled:
                         wandb.log({
                             "metric_val": metric_val,
-                            "id": random.randint(0, 1_000_000_000)
+                            "id": random.randint(0, 1_000_000_000),
                         })
                     if self.metric_threshold:
                         success = metric_val >= self.metric_threshold
