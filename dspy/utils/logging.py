@@ -1,4 +1,3 @@
-
 import logging
 import os
 import sys
@@ -8,16 +7,15 @@ import structlog
 
 logger = structlog.get_logger()
 
+
 class LogSettings:
-    def __init__(self, level: str, output_type: str, method: str, file_name: t.Optional[str]) -> None:
-        self.level = level
+    def __init__(self, output_type: str, method: str, file_name: t.Optional[str]) -> None:
         self.output_type = output_type
         self.method = method
         self.file_name = file_name
         self._configure_structlog()
 
     def _configure_structlog(self):
-
         if self.output_type == "str":
             renderer = structlog.dev.ConsoleRenderer()
         else:
@@ -43,20 +41,9 @@ class LogSettings:
             wrapper_class=structlog.stdlib.BoundLogger,
         )
 
-    def set_log_level(self, level: str) -> None:
-        """Set the logging level."""
-
-        level = level.upper()
-        if level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            raise ValueError("log level provider ({level}) is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
-
-        self.level = level
-
-        log_level = getattr(logging, level)
-        logger.setLevel(log_level)
-
-    def set_log_output(self, method: t.Optional[str] = None, file_name: t.Optional[str] = None, output_type: t.Optional[str] = None):
-        
+    def set_log_output(
+        self, method: t.Optional[str] = None, file_name: t.Optional[str] = None, output_type: t.Optional[str] = None
+    ):
         if method is not None and method not in ["console", "file"]:
             raise ValueError("method provided can only be 'console', 'file'")
 
@@ -89,7 +76,7 @@ class LogSettings:
             log.addHandler(logging.StreamHandler(sys.stdout))
 
 
-level = os.environ.get("log_level", "info").upper()
+level = os.environ.get("LOG_LEVEL", "info").upper()
 
 # Set Defaults
 logging.basicConfig(
@@ -98,6 +85,6 @@ logging.basicConfig(
     level=level,
 )
 
-settings = LogSettings(level=level, output_type="str", method="console", file_name=None)
-set_log_level = settings.set_log_level
+
+settings = LogSettings(output_type="str", method="console", file_name=None)
 set_log_output = settings.set_log_output
