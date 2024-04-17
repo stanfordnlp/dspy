@@ -25,7 +25,7 @@ Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google
 GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
-Snowflake = dsp.Snowflake
+SnowflakeCortex = dsp.SnowflakeCortex
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
