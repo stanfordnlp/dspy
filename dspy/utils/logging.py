@@ -90,6 +90,11 @@ def show_logging(level: str = level) -> None:
         level=level,
     )
 
+    # 'backoff' is used by OpenAI, and defaults their log level to INFO.
+    # this can clobber up dspy relevant logging for users
+    # this silences there logs.
+    logging.getLogger("backoff").setLevel(logging.WARNING)
+
 
 settings = LogSettings(output_type="str", method="console", file_name=None)
 set_log_output = settings.set_log_output
