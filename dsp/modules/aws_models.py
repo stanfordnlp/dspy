@@ -148,7 +148,7 @@ class AWSMistral(AWSModel):
         return "<s> [INST] Human: " + raw_prompt + " [/INST] Assistant: "
 
     def _create_body(self, prompt: str, **kwargs) -> tuple[int, dict[str, str | float]]:
-        base_args: dict[str, Any] = self.kwargs
+        base_args: dict[str, Any] = self.kwargs.copy()
         for k, v in kwargs.items():
             base_args[k] = v
 
@@ -211,7 +211,7 @@ class AWSAnthropic(AWSModel):
             self.kwargs[k] = v
 
     def _create_body(self, prompt: str, **kwargs) -> tuple[int, dict[str, str | float]]:
-        base_args: dict[str, Any] = self.kwargs
+        base_args: dict[str, Any] = self.kwargs.copy()
         for k, v in kwargs.items():
             base_args[k] = v
 
@@ -275,7 +275,7 @@ class AWSMeta(AWSModel):
         self.kwargs["max_gen_len"] = self.kwargs.pop("max_tokens")
 
     def _create_body(self, prompt: str, **kwargs) -> tuple[int, dict[str, str | float]]:
-        base_args: dict[str, Any] = self.kwargs
+        base_args: dict[str, Any] = self.kwargs.copy()
         for k, v in kwargs.items():
             base_args[k] = v
 
