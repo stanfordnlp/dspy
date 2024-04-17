@@ -23,6 +23,10 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 
 ## ✅ Suggested Checklist:
 
+- [ ] I have added dependencies to the `pyproject.toml` file
+- [ ] I have updated the `poetry.lock` file
+- [ ] I have updated the `requirements.txt` file (till 2024-06-01)
+- [ ] I have updated the documentation accordingly
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] New and existing integration notebooks pass locally with my changes
 - [ ] Pre-Commit checks are passing (locally and remotely)
