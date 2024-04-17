@@ -13,23 +13,20 @@ class ChainOfThought(Predict):
 
         self.activated = activated
 
-        signature = self.signature
-        *keys, last_key = signature.kwargs.keys()
+        signature = ensure_signature(self.signature)
+        *_keys, last_key = signature.output_fields.keys()
 
-        DEFAULT_RATIONALE_TYPE = dsp.Type(prefix="Reasoning: Let's think step by step in order to",
-                                          desc="${produce the " + last_key + "}. We ...")
+        rationale_type = rationale_type or dspy.OutputField(
+            prefix="Reasoning: Let's think step by step in order to",
+            desc="${produce the " + last_key + "}. We ...",
+        )
 
-        rationale_type = rationale_type or DEFAULT_RATIONALE_TYPE
-        
-        extended_kwargs = {key: signature.kwargs[key] for key in keys}
-        extended_kwargs.update({'rationale': rationale_type, last_key: signature.kwargs[last_key]})
-        
-        self.extended_signature = dsp.Template(signature.instructions, **extended_kwargs)
+        self.extended_signature = signature.prepend("rationale", rationale_type, type_=str)
 ```
 
 **Parameters:**
 - `signature` (_Any_): Signature of predictive model.
-- `rationale_type` (_dsp.Type_, _optional_): Rationale type for reasoning steps. Defaults to `None`.
+- `rationale_type` (_dsp.OutputField_, _optional_): Rationale type for reasoning steps. Defaults to `None`.
 - `activated` (_bool_, _optional_): Flag for activated chain of thought processing. Defaults to `True`.
 - `**config` (_dict_): Additional configuration parameters for model.
 
@@ -63,4 +60,16 @@ pred = generate_answer(question=question)
 
 print(f"Question: {question}")
 print(f"Predicted Answer: {pred.answer}")
+```
+
+The following example shows how to specify your custom rationale.
+
+```python
+#define a custom rationale
+rationale_type = dspy.OutputField(
+            prefix="Reasoning: Let's think step by step in order to",
+            desc="${produce the answer}. We ...",
+        )
+#Pass signature to ChainOfThought module
+generate_answer = dspy.ChainOfThought(BasicQA, rationale_type=rationale_type)
 ```
