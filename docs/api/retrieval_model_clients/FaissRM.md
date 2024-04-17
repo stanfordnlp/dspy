@@ -40,7 +40,7 @@ The **FaissRM** module provides a retriever that uses an in-memory Faiss vector 
 
 ```python
 import dspy
-from dspy.retrieve import FaissRM
+from dspy.retrieve.faiss_rm import FaissRM
 
 document_chunks = [
     "The superbowl this year was played between the San Francisco 49ers and the Kanasas City Chiefs",

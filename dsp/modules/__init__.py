@@ -10,6 +10,7 @@ from .clarifai import *
 from .cohere import *
 from .colbertv2 import ColBERTv2, ColBERTv2RerankerLocal, ColBERTv2RetrieverLocal
 from .databricks import *
+from .dummy_lm import *
 from .google import *
 from .googlevertexai import *
 from .gpt3 import *
