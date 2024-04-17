@@ -74,7 +74,8 @@ def passage_match(passages, answers):
 
 def passage_has_answers(passage: str, answers: list[str]) -> bool:
     return has_answer(
-        tokenized_answers=[DPR_normalize(normalize_text(ans)) for ans in answers], text=normalize_text(passage),
+        tokenized_answers=[DPR_normalize(normalize_text(ans)) for ans in answers],
+        text=normalize_text(passage),
     )
 
 
