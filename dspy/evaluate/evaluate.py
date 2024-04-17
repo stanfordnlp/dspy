@@ -1,12 +1,16 @@
 import sys
 import threading
 import types
+import typing as t
 
 import pandas as pd
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Prediction
+from dspy.primitives.program import Module
 
 try:
     from IPython.display import HTML
@@ -27,18 +31,19 @@ TODO: Counting failures and having a max_failure count. When that is exceeded (a
 we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 """
 
+Metric = t.Callable[[Example, Prediction, ...], bool]
+
 
 class Evaluate:
     def __init__(
         self,
-        *,
-        devset,
-        metric=None,
-        num_threads=1,
-        display_progress=False,
-        display_table=False,
-        max_errors=5,
-        return_outputs=False,
+        devset: list[Example],
+        metric: t.Optional[Metric] = None,
+        num_threads: int = 1,
+        display_progress: bool = False,
+        display_table: bool = False,
+        max_errors: int = 5,
+        return_outputs: bool = False,
         **_kwargs,
     ):
         self.devset = devset
@@ -56,7 +61,12 @@ class Evaluate:
                 "DeprecationWarning: 'display' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
             )
 
-    def _execute_single_thread(self, wrapped_program, devset, display_progress):
+    def _execute_single_thread(
+        self,
+        wrapped_program: t.Callable[[int, Example], t.Tuple[int, Example, Prediction, float]],
+        devset: list[Example],
+        display_progress: bool,
+    ) -> t.Tuple[list[Example], int, int]:
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -64,6 +74,7 @@ class Evaluate:
         pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
         for idx, arg in devset:
             with logging_redirect_tqdm():
+                print(f"IDX: {idx}, {arg}, {type(idx)}, {type(arg)}")
                 example_idx, example, prediction, score = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction, score))
                 ncorrect += score
@@ -74,7 +85,13 @@ class Evaluate:
 
         return reordered_devset, ncorrect, ntotal
 
-    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress):
+    def _execute_multi_thread(
+        self,
+        wrapped_program: t.Callable[[int, Example], t.Tuple[int, Example, Prediction, float]],
+        devset: list[Example],
+        num_threads: int,
+        display_progress: bool,
+    ) -> t.Tuple[list[Example], int, int]:
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -93,21 +110,21 @@ class Evaluate:
 
         return reordered_devset, ncorrect, ntotal
 
-    def _update_progress(self, pbar, ncorrect, ntotal):
+    def _update_progress(self, pbar: tqdm.std.tqdm, ncorrect: int, ntotal: int) -> None:
         pbar.set_description(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
         pbar.update()
 
     def __call__(
         self,
-        program,
-        metric=None,
-        devset=None,
-        num_threads=None,
-        display_progress=None,
-        display_table=None,
-        return_all_scores=False,
-        return_outputs=False,
-    ):
+        program: Module,
+        metric: t.Optional[Metric] = None,
+        devset: t.Optional[list[Example]] = None,
+        num_threads: t.Optional[int] = None,
+        display_progress: t.Optional[bool] = None,
+        display_table: t.Optional[bool] = None,
+        return_all_scores: bool = False,
+        return_outputs: bool = False,
+    ) -> float:
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
@@ -116,7 +133,7 @@ class Evaluate:
         return_outputs = return_outputs if return_outputs is not False else self.return_outputs
         results = []
 
-        def wrapped_program(example_idx, example):
+        def wrapped_program(example_idx: int, example: Example) -> t.Tuple[int, Example, Prediction, float]:
             # NOTE: TODO: Won't work if threads create threads!
             thread_stacks = dspy.settings.stack_by_thread
             creating_new_thread = threading.get_ident() not in thread_stacks
