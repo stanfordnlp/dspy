@@ -40,6 +40,7 @@ class HFModel(LM):
             "sequential",
         ] = "auto",
         token: Optional[str] = None,
+        model_kwargs: Optional[dict] = {},
     ):
         """wrapper for Hugging Face models
 
@@ -49,6 +50,7 @@ class HFModel(LM):
             is_client (bool, optional): whether to access models via client. Defaults to False.
             hf_device_map (str, optional): HF config strategy to load the model.
                 Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
+            model_kwargs (dict, optional): additional kwargs to pass to the model constructor. Defaults to empty dict.
         """
 
         super().__init__(model)
@@ -59,6 +61,11 @@ class HFModel(LM):
         hf_autoconfig_kwargs = dict(token=token or os.environ.get("HF_TOKEN"))
         hf_autotokenizer_kwargs = hf_autoconfig_kwargs.copy()
         hf_automodel_kwargs = hf_autoconfig_kwargs.copy()
+
+        # silently remove device_map from model_kwargs if it is present, as the option is provided in the constructor
+        if "device_map" in model_kwargs:
+            model_kwargs.pop("device_map")
+        hf_automodel_kwargs.update(model_kwargs)
         if not self.is_client:
             try:
                 import torch
