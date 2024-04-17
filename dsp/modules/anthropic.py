@@ -69,7 +69,7 @@ class Claude(LM):
         usage_data = response.usage
         if usage_data:
             total_tokens = usage_data.input_tokens + usage_data.output_tokens
-            logger.info(f"{total_tokens}")
+            logger.debug(f"Anthropic Total Token Response Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
