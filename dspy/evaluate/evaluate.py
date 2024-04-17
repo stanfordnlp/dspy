@@ -24,8 +24,6 @@ except ImportError:
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from dsp.evaluation.utils import *
-
 """
 TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 we print the number of failures, the first N examples that failed, and the first N exceptions raised.
