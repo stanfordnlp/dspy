@@ -81,7 +81,7 @@ class Predict(Parameter):
             if not all(k in kwargs for k in signature.input_fields):
                 present = [k for k in signature.input_fields if k in kwargs]
                 missing = [k for k in signature.input_fields if k not in kwargs]
-                print(
+                dspy.logger.warning(
                     f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
                 )
 
@@ -96,7 +96,7 @@ class Predict(Parameter):
             return pred
 
         else:
-            lm = kwargs.pop("lm", self.lm) or dsp.settings.get("lm", None)
+            lm = kwargs.pop("lm", self.lm) or dspy.settings.get("lm", None)
             assert lm is not None, "No LM is loaded."
 
             # If temperature is 0.0 but its n > 1, set temperature to 0.7
@@ -121,7 +121,7 @@ class Predict(Parameter):
             if not all(k in kwargs for k in signature.input_fields):
                 present = [k for k in signature.input_fields if k in kwargs]
                 missing = [k for k in signature.input_fields if k not in kwargs]
-                print(
+                dspy.logger.warning(
                     f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
                 )
 
