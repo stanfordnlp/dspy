@@ -35,7 +35,7 @@ dependencies = [
     "datasets~=2.14.6,<3.0.0",
     "requests",
     "optuna",
-    "pydantic=^2.0",
+    "pydantic~=2.0",
     "structlog",
 ]
 
