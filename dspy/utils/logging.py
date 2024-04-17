@@ -42,7 +42,7 @@ class LogSettings:
         )
 
     def set_log_output(
-        self, method: t.Optional[str] = None, file_name: t.Optional[str] = None, output_type: t.Optional[str] = None
+        self, method: t.Optional[str] = None, file_name: t.Optional[str] = None, output_type: t.Optional[str] = None,
     ):
         if method is not None and method not in ["console", "file"]:
             raise ValueError("method provided can only be 'console', 'file'")
