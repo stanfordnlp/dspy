@@ -75,7 +75,7 @@ class TextBackend(BaseBackend):
         super().__init__(**kwargs)
         if _missing_litellm:
             raise ImportError(
-                "'litellm' is not available. Please install dspy with the 'litellm' extra to use this Backend.",
+                "'litellm' is not available. Please install dspy with the 'litellm' extra to use this Backend: `pip install dspy-ai[litellm]`.",
             )
 
     def _guidelines(self, signature: Signature, _example: Example) -> str:
