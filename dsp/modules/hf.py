@@ -1,7 +1,7 @@
 # from peft import PeftConfig, PeftModel
 # from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import os
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from dsp.modules.lm import LM
 
