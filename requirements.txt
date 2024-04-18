@@ -2,6 +2,8 @@
 ## We are not using this file for building our package and it is just for reference and development of people who are using this file ##
 
 ## note: When you are adding new dependencies, please add them to the requirements.txt file too and update that till ##
+## for adding the new dependencies to the requirements.txt file, you can use the following command ##
+## pip freeze > requirements.txt ##
 
 
 aiohttp==3.9.4
