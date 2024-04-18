@@ -3,6 +3,7 @@ import random
 import re
 import shutil
 import subprocess
+from typing import Literal
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 import backoff
@@ -117,7 +118,7 @@ def send_hftgi_request_v00(arg, **kwargs):
 
 
 class HFClientVLLM(HFModel):
-    def __init__(self, model, port, url="http://localhost", **kwargs):
+    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", **kwargs):
         super().__init__(model=model, is_client=True)
 
         if isinstance(url, list):
@@ -129,46 +130,85 @@ class HFClientVLLM(HFModel):
         else:
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
+        self.model_type = model_type
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
+        # kwargs needs to have model, port and url for the lm.copy() to work properly
+        self.kwargs.update({
+            'port': port,
+            'url': url,
+        })
 
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
-
-        payload = {
-            "model": self.kwargs["model"],
-            "prompt": prompt,
-            **kwargs,
-        }
-
         
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-
-        response = send_hfvllm_request_v00(
-            f"{url}/v1/completions",
-            json=payload,
-            headers=self.headers,
-        )
-
-        try:
-            json_response = response.json()
-            completions = json_response["choices"]
-            response = {
-                "prompt": prompt,
-                "choices": [{"text": c["text"]} for c in completions],
+        
+        if self.model_type == "chat":
+            system_prompt = kwargs.get("system_prompt",None)
+            messages = [{"role": "user", "content": prompt}]
+            if system_prompt:
+                messages.insert(0, {"role": "system", "content": system_prompt})
+            payload = {
+                "model": self.kwargs["model"],
+                "messages": messages,
+                **kwargs,
             }
-            return response
+            response = send_hfvllm_chat_request_v00(
+                f"{url}/v1/chat/completions",
+                json=payload,
+                headers=self.headers,
+            )
 
-        except Exception:
-            print("Failed to parse JSON response:", response.text)
-            raise Exception("Received invalid JSON response from server")
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["message"]['content']} for c in completions],
+                }
+                return response
+
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
+        else:
+            payload = {
+                "model": self.kwargs["model"],
+                "prompt": prompt,
+                **kwargs,
+            }
+            
+            response = send_hfvllm_request_v00(
+                f"{url}/v1/completions",
+                json=payload,
+                headers=self.headers,
+            )
+
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["text"]} for c in completions],
+                }
+                return response
+
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
 
 
 @CacheMemory.cache
 def send_hfvllm_request_v00(arg, **kwargs):
+    return requests.post(arg, **kwargs)
+
+
+@CacheMemory.cache
+def send_hfvllm_chat_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 
