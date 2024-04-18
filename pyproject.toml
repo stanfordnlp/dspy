@@ -62,6 +62,7 @@ docs = [
     "sphinx-automodapi==0.16.0",
 ]
 dev = ["pytest>=6.2.5"]
+fastembed = ["fastembed>=0.1.0"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -151,6 +152,7 @@ docs = [
     "sphinx-reredirects",
     "sphinx-automodapi",
 ]
+fastembed = ["fastembed"]
 
 [tool.poetry.group.doc.dependencies]
 mkdocs = ">=1.5.3"

@@ -31,6 +31,7 @@ setup(
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "fastembed": ["fastembed"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
