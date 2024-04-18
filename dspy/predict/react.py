@@ -99,7 +99,7 @@ class ReAct(Module):
             output[f"Observation_{hop+1}"] = (
                 "Failed to parse action. Bad formatting or incorrect action name."
             )
-            raise e
+            # raise e
 
     def forward(self, **kwargs):
         args = {key: kwargs[key] for key in self.input_fields.keys() if key in kwargs}
@@ -112,5 +112,7 @@ class ReAct(Module):
                 break
             args.update(output)
 
+        observations = [args[key] for key in args if key.startswith("Observation")]
+        
         # assumes only 1 output field for now - TODO: handling for multiple output fields
-        return dspy.Prediction(**{list(self.output_fields.keys())[0]: action_val or ""})
+        return dspy.Prediction(observations=observations, **{list(self.output_fields.keys())[0]: action_val or ""})
