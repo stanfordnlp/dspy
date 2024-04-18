@@ -6,7 +6,6 @@ from typing import Any, Literal, Optional, cast
 import backoff
 import openai
 
-import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -102,7 +101,7 @@ class GPT3(LM):
         usage_data = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
-            logging.info(f"{total_tokens}")
+            logging.debug(f"OpenAI Response Token Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -178,9 +177,7 @@ class GPT3(LM):
 
         response = self.request(prompt, **kwargs)
 
-        if dsp.settings.log_openai_usage:
-            self.log_usage(response)
-
+        self.log_usage(response)
         choices = response["choices"]
 
         completed_choices = [c for c in choices if c["finish_reason"] != "length"]

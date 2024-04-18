@@ -36,7 +36,6 @@ class Settings:
                 skip_logprobs=False,
                 trace=[],
                 release=0,
-                log_openai_usage=False,
                 bypass_assert=False,
                 bypass_suggest=False,
                 assert_failures=0,

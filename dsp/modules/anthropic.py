@@ -16,6 +16,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
+
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/."""
     print(
@@ -23,6 +24,7 @@ def backoff_hdlr(details):
         "calling function {target} with kwargs "
         "{kwargs}".format(**details),
     )
+
 
 def giveup_hdlr(details):
     """Wrapper function that decides when to give up on retry."""
@@ -68,7 +70,7 @@ class Claude(LM):
         usage_data = response.usage
         if usage_data:
             total_tokens = usage_data.input_tokens + usage_data.output_tokens
-            logger.info(f'{total_tokens}')
+            logger.debug(f"Anthropic Total Token Response Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -119,9 +121,7 @@ class Claude(LM):
         completions = []
         for _ in range(n):
             response = self.request(prompt, **kwargs)
-            # TODO: Log llm usage instead of hardcoded openai usage
-            # if dsp.settings.log_openai_usage:
-            #     self.log_usage(response)
+            self.log_usage(response)
             if only_completed and response.stop_reason == "max_tokens":
                 continue
             completions = [c.text for c in response.content]
