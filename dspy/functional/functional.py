@@ -305,7 +305,10 @@ class TypedPredictor(dspy.Module):
                         parsed[name] = parser(value)
                     except (pydantic.ValidationError, ValueError) as e:
                         errors[name] = self._format_error(
-                            e, signature.fields[name], value, lm_explain=try_i + 1 < self.max_retries,
+                            e,
+                            signature.fields[name],
+                            value,
+                            lm_explain=try_i + 1 < self.max_retries,
                         )
                         # If we can, we add an example to the error message
                         current_desc = field.json_schema_extra.get("desc", "")
@@ -368,7 +371,9 @@ class TypedPredictor(dspy.Module):
 
                     examples.append(example)
 
-                # This prompt should be fixed in some way
+                # TODO: Completions objects, are now tracking input args to provide a robust history.
+                # when constructed outside the general generation sense, we will need a way to construct
+                # partial completions
                 completions = Completions(
                     signature=signature,
                     examples=examples,
