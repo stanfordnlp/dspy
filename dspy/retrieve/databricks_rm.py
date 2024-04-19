@@ -115,10 +115,9 @@ class DatabricksRM(dspy.Retrieve):
             payload["query_text"] = query
         else:
             raise ValueError("Invalid query type specified. Use 'vector' or 'text'.")
-        if filters_json:
-            payload["filters_json"] = filters_json 
-        elif self.filters_json:
-            payload["filters_json"] = self.filters_json   
+
+        payload["filters_json"] = filters_json if filters_json else self.filters_json
+
         response = requests.post(
             f"{self.databricks_endpoint}/api/2.0/vector-search/indexes/{self.databricks_index_name}/query",
             json=payload,
