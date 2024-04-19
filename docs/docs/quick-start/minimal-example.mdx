@@ -8,7 +8,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 In this post, we walk you through a minimal working example using the DSPy library. 
 
-We make use of the GSM8K dataset and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
+We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
 
 ## Setup
 
@@ -27,9 +27,17 @@ gsm8k = GSM8K()
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 ```
 
+Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
+
+```python
+print(gsm8k_trainset)
+```
+
+The `gsm8k_trainset` and `gsm8k_devset` datasets contain a list of Examples with each example having `question` and `answer` field. We'll use these datasets to train and evaluate our model.
+
 ## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the `ChainOfThought` module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/api/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
 class CoT(dspy.Module):
@@ -43,7 +51,7 @@ class CoT(dspy.Module):
 
 ## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to optimizing it using the `BootstrapFewShotWithRandomSearch` teleprompter:
+With our simple program in place, let's move on to optimizing it using the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
 
 ```python
 from dspy.teleprompt import BootstrapFewShot

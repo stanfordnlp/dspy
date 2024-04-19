@@ -152,6 +152,7 @@ class Evaluate:
                     del thread_stacks[threading.get_ident()]
 
         devset = list(enumerate(devset))
+        tqdm.tqdm._instances.clear()
 
         if num_threads == 1:
             reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
@@ -254,7 +255,9 @@ def configure_dataframe_display(df, metric_name):
     pd.set_option("display.width", 400)  # Adjust
 
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
+    # df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
+    df[metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x else str(x))
+
 
     # Return styled DataFrame
     return df.style.set_table_styles(

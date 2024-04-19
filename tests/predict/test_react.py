@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import dspy
 from dspy.utils.dummies import dummy_rm
 
@@ -83,4 +85,72 @@ def test_example_search():
         "[3] «This sentence is completely irellevant to answer the question.»\n\n"
         "Thought 2: More thoughts\n\n"
         "Action 2: Finish[blue]"
+    )
+
+
+class DummyTool1:
+    name = "Tool1"
+    input_variable = "query"
+    desc = ""
+    num_calls = 0
+
+    def __call__(self, *args, **kwargs):
+        # test case with no passages attribute
+        assert args[0] == "foo"
+        self.num_calls += 1
+        return "tool 1 output"
+
+
+@dataclass
+class DummyOutput:
+    passages: str
+
+
+class DummyTool2:
+    name = "Tool2"
+    input_variable = "query"
+    desc = ""
+    num_calls = 0
+
+    def __call__(self, *args, **kwargs):
+        # test case with passages attribute
+        assert args[0] == "bar"
+        self.num_calls += 1
+        return DummyOutput(passages="tool 2 output")
+
+
+def test_custom_tools():
+    lm = dspy.utils.DummyLM(
+        [
+            "Initial thoughts",
+            "Tool1[foo]",
+            "More thoughts",
+            "Tool2[bar]",
+            "Even more thoughts",
+            "Finish[baz]",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    tool1 = DummyTool1()
+    tool2 = DummyTool2()
+    program = dspy.ReAct("question -> answer", tools=[tool1, tool2])
+
+    question = "What is the color of the sky?"
+    result = program(question=question)
+    assert result.answer == "baz"
+
+    # each tool should be called only once
+    assert tool1.num_calls == 1
+    assert tool2.num_calls == 1
+    assert lm.get_convo(-1).endswith(
+        "Question: What is the color of the sky?\n\n"
+        "Thought 1: Initial thoughts\n\n"
+        "Action 1: Tool1[foo]\n\n"
+        "Observation 1: tool 1 output\n\n"
+        "Thought 2: More thoughts\n\n"
+        "Action 2: Tool2[bar]\n\n"
+        "Observation 2: tool 2 output\n\n"
+        "Thought 3: Even more thoughts\n\n"
+        "Action 3: Finish[baz]"
     )
