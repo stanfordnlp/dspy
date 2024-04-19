@@ -43,6 +43,7 @@ class ChromadbRM(dspy.Retrieve):
         persist_directory (str): chromadb persist directory
         embedding_function (Optional[EmbeddingFunction[Embeddable]]): Optional function to use to embed documents. Defaults to DefaultEmbeddingFunction.
         k (int, optional): The number of top passages to retrieve. Defaults to 7.
+        client(Optional[chromadb.Client]): Optional chromadb client provided by user, default to None
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
@@ -51,7 +52,20 @@ class ChromadbRM(dspy.Retrieve):
         Below is a code snippet that shows how to use this as the default retriever:
         ```python
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        # using default chromadb client
         retriever_model = ChromadbRM('collection_name', 'db_path')
+        dspy.settings.configure(lm=llm, rm=retriever_model)
+        # to test the retriever with "my query"
+        retriever_model("my query")
+        ```
+
+        Use provided chromadb client
+        ```python
+        import chromadb
+        llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        # say you have a chromadb running on a different port
+        client = chromadb.HttpClient(host='localhost', port=8889)
+        retriever_model = ChromadbRM('collection_name', 'db_path', client=client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         # to test the retriever with "my query"
         retriever_model("my query")
@@ -89,7 +103,7 @@ class ChromadbRM(dspy.Retrieve):
         Args:
             collection_name (str): chromadb collection name
             persist_directory (str): chromadb persist directory
-            client (chromadb.Client): A chromadb client provided by user
+            client (chromadb.Client): chromadb client provided by user
 
         Returns: collection per collection_name
         """
