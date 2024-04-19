@@ -32,6 +32,21 @@ You can specify multiple output fields. For the short-form signature, you can li
 
 You can specify the generation of long responses as a `dspy.OutputField`. To ensure comprehensive checks of the content within the long-form generations, you can indicate the inclusion of citations per referenced context. Such constraints such as response length or citation inclusion can be stated through Signature descriptions, or concretely enforced through DSPy Assertions. Check out the [LongFormQA notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/longformqa/longformqa_assertions.ipynb) to learn more about **Generating long-form length responses to answer questions**.
 
+- **How can I ensure that DSPy doesn't strip new line characters from my inputs or outputs?**
+
+DSPy uses [Signatures](https://dspy-docs.vercel.app/docs/deep-dive/signature/understanding-signatures) to format prompts passed into LMs. In order to ensure that new line characters aren't stripped from longer inputs, you must specify `format=str` when creating a field.
+
+```python
+class UnstrippedSignature(dspy.Signature):
+    """Enter some information for the model here."""
+
+    title = dspy.InputField()
+    object = dspy.InputField(format=str)
+    result = dspy.OutputField(format=str)
+```
+
+`object` can now be a multi-line string without issue.
+
 - **How do I define my own metrics? Can metrics return a float?**
 
 You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](https://dspy-docs.vercel.app/docs/building-blocks/metrics) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
