@@ -95,7 +95,7 @@ class ReAct(Module):
             # Handle the case where 'passages' attribute is missing
             output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
 
-        except Exception as e:
+        except Exception:
             output[f"Observation_{hop+1}"] = (
                 "Failed to parse action. Bad formatting or incorrect action name."
             )
