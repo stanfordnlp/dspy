@@ -1,9 +1,11 @@
-from typing import List, Optional
 import os
+from typing import List, Optional
+
+import openai
 
 import dspy
+from dsp.modules.cache_utils import CacheMemory, cache_turn_on
 from dsp.utils import dotdict
-import openai
 
 # Check for necessary libraries and suggest installation if not found.
 try:
@@ -59,16 +61,6 @@ class MyScaleRM(dspy.Retrieve):
         model (str, optional): Specifies the particular OpenAI model to use for embedding generation.
         use_local_model (bool): Flag indicating whether a local model is used for embeddings.
 
-    Examples:
-        Below is a code snippet that shows how to use MyScaleDB as the default retriever:
-        ```python
-        TODO
-        ```
-
-        Below is a code snippet that shows how to use MyScaleDB in the forward() function of a module
-        ```python
-        TODO
-        ```
     """
 
     def __init__(self,
@@ -113,12 +105,16 @@ class MyScaleRM(dspy.Retrieve):
             from transformers import AutoModel, AutoTokenizer
         except ImportError as exc:
             raise ModuleNotFoundError(
-                "You need to install PyTorch and Hugging Face's transformers library to use a local embedding model.",
+                """You need to install PyTorch and Hugging Face's transformers library to use a local embedding model. 
+                Install the pytorch using `pip install torch` and transformers using `pip install transformers` """,
             ) from exc
 
-        self._local_embed_model = AutoModel.from_pretrained(model_name)
-        self._local_tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.use_local_model = True
+        try:
+            self._local_embed_model = AutoModel.from_pretrained(model_name)
+            self._local_tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.use_local_model = True
+        except Exception as e:
+            raise ValueError(f"Failed to load model or tokenizer. Error: {str(e)}")
 
         if torch.cuda.is_available():
             self.device = torch.device('cuda:0')
@@ -128,8 +124,14 @@ class MyScaleRM(dspy.Retrieve):
             self.device = torch.device('cpu')
 
         self._local_embed_model.to(self.device)
-
+    
     def get_embeddings(self, queries: List[str]) -> List[List[float]]:
+        if cache_turn_on:
+            return CacheMemory.cache(self._get_embeddings)(queries)
+        else:
+            return self._get_embeddings(queries)
+
+    def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
         """
         Determines the appropriate source (OpenAI or local model) for embedding generation based on class configuration,
         and retrieves embeddings for the provided queries.
@@ -160,6 +162,7 @@ class MyScaleRM(dspy.Retrieve):
         Returns:
             A list of lists, where each inner list contains the embedding of a query.
         """
+
         response = openai.embeddings.create(
         model=self.model,
         input=queries)
