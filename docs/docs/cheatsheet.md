@@ -177,7 +177,7 @@ print(f"Question: {question}")
 print(f"Final Predicted Answer (after ReAct process): {result.answer}")
 ```
 
-### dspy.Retreive
+### dspy.Retrieve
 
 ```python
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
@@ -374,7 +374,7 @@ compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_prog
 ```python
 from dspy.teleprompt import MIPRO
 
-teleprompter = MIPRO(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, n=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
+teleprompter = MIPRO(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, num_candidates=num_new_prompts_generated, init_temperature=prompt_generation_temperature)
 
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 
