@@ -57,7 +57,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: poetry install --no-interaction --extras fastembed
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
