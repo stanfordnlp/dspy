@@ -82,7 +82,7 @@ Now we have the baseline pipeline ready to use, so let's try using the `COPRO` t
 Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `validate_context_and_answer` imported and used above:
 
 ```python
-from dspy.teleprompt import COPRP
+from dspy.teleprompt import COPRO
 
 teleprompter = COPRO(
     metric=validate_context_and_answer,
