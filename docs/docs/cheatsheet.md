@@ -177,7 +177,7 @@ print(f"Question: {question}")
 print(f"Final Predicted Answer (after ReAct process): {result.answer}")
 ```
 
-### dspy.Retreive
+### dspy.Retrieve
 
 ```python
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
