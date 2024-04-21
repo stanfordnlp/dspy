@@ -8,6 +8,8 @@ from .predict import Predict
 # TODO: Simplify a lot.
 # TODO: Divide Action and Action Input like langchain does for ReAct.
 
+# TODO: There's a lot of value in having a stopping condition in the LM calls at `\n\nObservation:`
+
 
 class ReAct(Module):
     def __init__(self, signature, max_iters=5, num_results=3, tools=None):
