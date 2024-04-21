@@ -202,12 +202,12 @@ class HFClientVLLM(HFModel):
                 raise Exception("Received invalid JSON response from server")
 
 
-@CacheMemory.cache
+@CacheMemory.cache(ignore=['arg'])
 def send_hfvllm_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 
-@CacheMemory.cache
+@CacheMemory.cache(ignore=['arg'])
 def send_hfvllm_chat_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
