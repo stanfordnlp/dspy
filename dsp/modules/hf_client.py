@@ -127,7 +127,7 @@ class HFClientVLLM(HFModel):
 
         else:
             raise ValueError(
-                f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}."
+                f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.",
             )
 
         self.urls_const = tuple(self.urls)
@@ -140,7 +140,7 @@ class HFClientVLLM(HFModel):
             {
                 "port": port,
                 "url": self.urls_const,
-            }
+            },
         )
 
     def _generate(self, prompt, **kwargs):
