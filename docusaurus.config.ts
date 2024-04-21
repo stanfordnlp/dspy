@@ -121,16 +121,8 @@ const config: Config = {
           title: 'Community',
           items: [
             {
-              label: 'Omar Khattab',
-              href: 'https://twitter.com/lateinteraction',
-            },
-            {
-              label: 'Herumb Shandilya',
-              href: 'https://twitter.com/krypticmouse',
-            },
-            {
-              label: 'Arnav Singhvi',
-              href: 'https://twitter.com/arnav_thebigman',
+              label: 'See all 130+ contributors on GitHub',
+              href: 'https://github.com/stanfordnlp/dspy',
             },
           ],
         },
