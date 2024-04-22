@@ -5,6 +5,7 @@ import typing as t
 
 import pandas as pd
 import tqdm
+from pydantic import BaseModel, ConfigDict, Field
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
@@ -32,32 +33,29 @@ we print the number of failures, the first N examples that failed, and the first
 Metric = t.Callable[[Example, Prediction, ...], bool]
 
 
-class Evaluate:
+class Evaluate(BaseModel):
+    # Example is not yet Pydantic valid
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    devset: list[Example]
+    metric: t.Optional[Metric] = Field(default=None)
+    num_threads: int = Field(default=1)
+    display_progress: bool = Field(default=False)
+    display_table: bool = Field(default=False)
+    max_errors: int = Field(default=5)
+    return_outputs: bool = Field(default=False)
+
     def __init__(
         self,
-        devset: list[Example],
-        metric: t.Optional[Metric] = None,
-        num_threads: int = 1,
-        display_progress: bool = False,
-        display_table: bool = False,
-        max_errors: int = 5,
-        return_outputs: bool = False,
-        **_kwargs,
+        **kwargs,
     ):
-        self.devset = devset
-        self.metric = metric
-        self.num_threads = num_threads
-        self.display_progress = display_progress
-        self.display_table = display_table
-        self.max_errors = max_errors
-        self.error_count = 0
-        self.error_lock = threading.Lock()
-        self.return_outputs = return_outputs
-
-        if "display" in _kwargs:
+        if "display" in kwargs:
             dspy.logger.warning(
                 "DeprecationWarning: 'display' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
             )
+            del kwargs["display"]
+
+        super().__init__(**kwargs)
 
     def _execute_single_thread(
         self,
@@ -272,7 +270,6 @@ def configure_dataframe_display(df, metric_name):
     # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
     # df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
     df[metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x else str(x))
-
 
     # Return styled DataFrame
     return df.style.set_table_styles(

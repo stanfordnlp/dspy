@@ -1,46 +1,25 @@
-import re
-import string
-import unicodedata
 from collections import Counter
 
 import dspy
-from dspy.evaluate.dpr import DPR_normalize
+from dspy.evaluate.dpr import DPR_normalize, has_answer
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Prediction
+from dspy.utils import normalize_text
 
 
-def normalize_text(s):
-    s = unicodedata.normalize("NFD", s)
-
-    def remove_articles(text):
-        return re.sub(r"\b(a|an|the)\b", " ", text)
-
-    def white_space_fix(text):
-        return " ".join(text.split())
-
-    def remove_punc(text):
-        exclude = set(string.punctuation)
-        return "".join(ch for ch in text if ch not in exclude)
-
-    def lower(text):
-        return text.lower()
-
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
-
-
-def EM(prediction, answers_list):
+def em(prediction: str, answers_list: list[str]) -> bool:
     return max(em_score(prediction, ans) for ans in answers_list)
 
 
-def F1(prediction, answers_list):
+def f1(prediction: str, answers_list: list[str]) -> float:
     return max(f1_score(prediction, ans) for ans in answers_list)
 
 
-def em_score(prediction, ground_truth):
+def em_score(prediction: str, ground_truth: str) -> bool:
     return normalize_text(prediction) == normalize_text(ground_truth)
 
 
-def f1_score(prediction, ground_truth):
+def f1_score(prediction: str, ground_truth: str) -> float:
     prediction_tokens = normalize_text(prediction).split()
     ground_truth_tokens = normalize_text(ground_truth).split()
 
@@ -56,19 +35,17 @@ def f1_score(prediction, ground_truth):
 
     precision = 1.0 * num_same / len(prediction_tokens)
     recall = 1.0 * num_same / len(ground_truth_tokens)
-    f1 = (2 * precision * recall) / (precision + recall)
-
-    return f1
+    return (2 * precision * recall) / (precision + recall)
 
 
-def answer_match(prediction, answers, frac=1.0):
+def answer_match(prediction: str, answers: list[str], frac: float = 0.9) -> bool:
     if frac >= 1.0:
-        EM(prediction, answers)
+        return em(prediction, answers)
 
-    return F1(prediction, answers) >= frac
+    return f1(prediction, answers) >= frac
 
 
-def passage_match(passages, answers):
+def passage_match(passages: str, answers: list[str]) -> bool:
     return any(passage_has_answers(psg, answers) for psg in passages)
 
 
@@ -79,22 +56,21 @@ def passage_has_answers(passage: str, answers: list[str]) -> bool:
     )
 
 
-def answer_exact_match(example: Example, pred: Prediction, trace=None, frac: float = 1.0):
-    assert type(example.answer) is str or type(example.answer) is list
+def answer_exact_match(example: Example, pred: Prediction, frac: float = 0.90, *_args, **_kwargs) -> bool:
+    if not isinstance(example.answer, (str, list)):
+        raise ValueError("example.answer must be str or list")
 
-    if type(example.answer) is str:
+    if isinstance(example.answer, str):
         return answer_match(pred.answer, [example.answer], frac=frac)
-    else:  # type(example.answer) is list
-        return answer_match(pred.answer, example.answer, frac=frac)
+
+    return answer_match(pred.answer, example.answer, frac=frac)
 
 
-answer_exact_match_str = answer_match
+def answer_passage_match(example: Example, pred: Prediction, *_args, **_kwargs):
+    if not isinstance(example.answer, (str, list)):
+        raise ValueError("example.answer must be str or list")
 
-
-def answer_passage_match(example: Example, pred: Prediction, trace=None):
-    assert type(example.answer) is str or type(example.answer) is list
-
-    if type(example.answer) is str:
+    if isinstance(example.answer, str):
         return passage_match(pred.context, [example.answer])
-    else:  # type(example.answer) is list
-        return passage_match(pred.context, example.answer)
+
+    return passage_match(pred.context, example.answer)
