@@ -12,7 +12,6 @@ except ImportError:
     groq_api_error = Exception
 
 
-import dsp
 from dsp.modules.lm import LM
 
 
@@ -68,7 +67,7 @@ class GroqLM(LM):
         usage_data = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
-            logging.info(f"{total_tokens}")
+            logging.debug(f"Groq Total Tokens Response Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -132,8 +131,7 @@ class GroqLM(LM):
         assert return_sorted is False, "for now"
         response = self.request(prompt, **kwargs)
 
-        if dsp.settings.log_openai_usage:
-            self.log_usage(response)
+        self.log_usage(response)
 
         choices = response.choices
 
