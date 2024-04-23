@@ -1,84 +1,54 @@
-import random
-
-import tqdm
 from datasets import load_dataset
 
+from dspy.primitives.example import Example
 
-class GSM8K:
-    def __init__(self) -> None:
-        super().__init__()
-        self.do_shuffle = False
+from .dataset import Dataset
 
-        dataset = load_dataset("gsm8k", 'main')
 
-        hf_official_train = dataset['train']
-        hf_official_test = dataset['test']
-        official_train = []
-        official_test = []
+class GSM8K(Dataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-        for example in tqdm.tqdm(hf_official_train):
-            question = example['question']
+        self.load()
 
-            answer = example['answer'].strip().split()
-            assert answer[-2] == '####'
-            
-            gold_reasoning = ' '.join(answer[:-2])
-            answer = str(int(answer[-1].replace(',', '')))
+    def load(self) -> None:
+        # Load dataset from HuggingFace
+        train_ds, test_ds = load_dataset("gsm8k", "main", split=["train", "test"])
 
-            official_train.append(dict(question=question, gold_reasoning=gold_reasoning, answer=answer))
+        # Process Samples into Examples
+        def process_sample(sample) -> Example:
+            question = sample["question"]
+            answer = sample["answer"].strip().split()
 
-        for example in tqdm.tqdm(hf_official_test):
-            question = example['question']
+            gold_reasoning = " ".join(answer[:-2])
+            answer = str(int(answer[-1].replace(",", "")))
 
-            answer = example['answer'].strip().split()
-            assert answer[-2] == '####'
-            
-            gold_reasoning = ' '.join(answer[:-2])
-            answer = str(int(answer[-1].replace(',', '')))
+            return Example(question=question, gold_reasoning=gold_reasoning, answer=answer).with_inputs("question")
 
-            official_test.append(dict(question=question, gold_reasoning=gold_reasoning, answer=answer))
+        train_examples = [process_sample(sample) for sample in train_ds]
+        test_examples = [process_sample(sample) for sample in test_ds]
 
-        rng = random.Random(0)
-        rng.shuffle(official_train)
-
-        rng = random.Random(0)
-        rng.shuffle(official_test)
-
-        trainset = official_train[:200]
-        devset = official_train[200:500]
-        testset = official_test[:]
-
-        import dspy
-
-        trainset = [dspy.Example(**x).with_inputs('question') for x in trainset]
-        devset = [dspy.Example(**x).with_inputs('question') for x in devset]
-        testset = [dspy.Example(**x).with_inputs('question') for x in testset]
-
-        # print(f"Trainset size: {len(trainset)}")
-        # print(f"Devset size: {len(devset)}")
-        # print(f"Testset size: {len(testset)}")
-
-        self.train = trainset
-        self.dev = devset
-        self.test = testset
-
+        # Split Data
+        self._train = train_examples[:200]
+        self._dev = train_examples[200:500]
+        self._test = test_examples
 
 
 def parse_integer_answer(answer, only_first_line=True):
     try:
         if only_first_line:
-            answer = answer.strip().split('\n')[0]
+            answer = answer.strip().split("\n")[0]
 
         # find the last token that has a number in it
         answer = [token for token in answer.split() if any(c.isdigit() for c in token)][-1]
-        answer = answer.split('.')[0]
-        answer = ''.join([c for c in answer if c.isdigit()])
+        answer = answer.split(".")[0]
+        answer = "".join([c for c in answer if c.isdigit()])
         answer = int(answer)
 
     except (ValueError, IndexError):
         # print(answer)
         answer = 0
-    
+
     return answer
 
 
