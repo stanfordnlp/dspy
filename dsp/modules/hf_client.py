@@ -130,13 +130,15 @@ class HFClientVLLM(HFModel):
         else:
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
+        self.urls_const = tuple(self.urls)
+        self.port = port
         self.model_type = model_type
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
         # kwargs needs to have model, port and url for the lm.copy() to work properly
         self.kwargs.update({
             'port': port,
-            'url': url,
+            'url': self.urls_const,
         })
 
 
@@ -157,8 +159,10 @@ class HFClientVLLM(HFModel):
                 "messages": messages,
                 **kwargs,
             }
-            response = send_hfvllm_chat_request_v00(
+            response = send_hfvllm_request_v01_wrapped(
                 f"{url}/v1/chat/completions",
+                url=self.urls_const,
+                port=self.port,
                 json=payload,
                 headers=self.headers,
             )
@@ -181,9 +185,11 @@ class HFClientVLLM(HFModel):
                 "prompt": prompt,
                 **kwargs,
             }
-            
-            response = send_hfvllm_request_v00(
+
+            response = send_hfvllm_request_v01_wrapped(
                 f"{url}/v1/completions",
+                url=self.urls_const,
+                port=self.port,
                 json=payload,
                 headers=self.headers,
             )
@@ -201,11 +207,18 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
 
+@CacheMemory.cache(ignore=['arg'])
+def send_hfvllm_request_v01(arg, url, port, **kwargs):
+    return requests.post(arg, **kwargs)
+
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache(ignore=['arg'])
+def send_hfvllm_request_v01_wrapped(arg, url, port, **kwargs):
+    return send_hftgi_request_v01(arg, url, port, **kwargs)
 
 @CacheMemory.cache
 def send_hfvllm_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
-
 
 @CacheMemory.cache
 def send_hfvllm_chat_request_v00(arg, **kwargs):
