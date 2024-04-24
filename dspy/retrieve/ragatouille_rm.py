@@ -59,4 +59,4 @@ class RAGatouilleRM(dspy.Retrieve):
         for query in queries:
             results = self.model.search(query=query, k=k)
             passages.extend(dotdict({"long_text": d["content"]}) for d in results)
-        return dspy.Prediction(passages=passages)
+        return dspy.Prediction(passages=passages).passages
