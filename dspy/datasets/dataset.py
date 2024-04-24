@@ -1,6 +1,7 @@
 import random
 import typing as t
 from functools import cached_property
+from abc import abstractmethod, ABC
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,7 +9,7 @@ import dspy
 from dspy import Example
 
 
-class Dataset(BaseModel):
+class Dataset(BaseModel, ABC):
     # Example is not yet Pydantic Valid
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -16,9 +17,16 @@ class Dataset(BaseModel):
     dev_seed: int = Field(default=0)
     test_seed: int = Field(default=0)
     do_shuffle: bool = Field(default=True)
-    _train: t.Optional[list[Example]] = Field(default=None)
-    _dev: t.Optional[list[Example]] = Field(default=None)
-    _test: t.Optional[list[Example]] = Field(default=None)
+    train_examples: t.Optional[list[Example]] = Field(default=None)
+    dev_examples: t.Optional[list[Example]] = Field(default=None)
+    test_examples: t.Optional[list[Example]] = Field(default=None)
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.load()
+
+    @abstractmethod
+    def load(self) -> None: ...
 
     @property
     def name(self) -> str:
@@ -34,39 +42,41 @@ class Dataset(BaseModel):
         self.dev_seed = dev_seed if dev_seed is not None else self.dev_seed
         self.test_seed = test_seed if test_seed is not None else self.test_seed
 
-        self._train = None
-        self._dev = None
-        self._test = None
+        self.train_examples = None
+        self.dev_examples = None
+        self.test_examples = None
 
     @cached_property
     def train(self) -> list[Example]:
-        if self._train is None:
+        if self.train_examples is None:
             raise ValueError("Train data is not available")
 
         if self.do_shuffle:
-            return self._shuffle(dataset=self._train, seed=self.train_seed, sample_size=len(self._train))
+            return self._shuffle(
+                dataset=self.train_examples, seed=self.train_seed, sample_size=len(self.train_examples)
+            )
 
-        return self._train
+        return self.train_examples
 
     @cached_property
     def dev(self) -> list[Example]:
-        if self._dev is None:
+        if self.dev_examples is None:
             raise ValueError("Dev data is not available")
 
         if self.do_shuffle:
-            return self._shuffle(dataset=self._dev, seed=self.dev_seed, sample_size=len(self._dev))
+            return self._shuffle(dataset=self.dev_examples, seed=self.dev_seed, sample_size=len(self.dev_examples))
 
-        return self._dev
+        return self.dev_examples
 
     @cached_property
     def test(self) -> list[Example]:
-        if self._test is None:
+        if self.test_examples is None:
             raise ValueError("Test data is not available")
 
         if self.do_shuffle:
-            return self._shuffle(dataset=self._test, seed=self.test_seed, sample_size=len(self._test))
+            return self._shuffle(dataset=self.test_examples, seed=self.test_seed, sample_size=len(self.test_examples))
 
-        return self._test
+        return self.test_examples
 
     @staticmethod
     def _shuffle(dataset: list[Example], seed: int, sample_size: int) -> list[Example]:

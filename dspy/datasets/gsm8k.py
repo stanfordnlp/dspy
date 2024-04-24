@@ -6,11 +6,6 @@ from .dataset import Dataset
 
 
 class GSM8K(Dataset):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.load()
-
     def load(self) -> None:
         # Load dataset from HuggingFace
         train_ds, test_ds = load_dataset("gsm8k", "main", split=["train", "test"])
@@ -29,9 +24,9 @@ class GSM8K(Dataset):
         test_examples = [process_sample(sample) for sample in test_ds]
 
         # Split Data
-        self._train = train_examples[:200]
-        self._dev = train_examples[200:500]
-        self._test = test_examples
+        self.train_examples = train_examples[:200]
+        self.dev_examples = train_examples[200:500]
+        self.test_examples = test_examples
 
 
 def parse_integer_answer(answer, only_first_line=True):
