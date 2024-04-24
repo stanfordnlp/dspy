@@ -21,12 +21,21 @@ class Dataset(BaseModel, ABC):
     dev_examples: t.Optional[list[Example]] = Field(default=None)
     test_examples: t.Optional[list[Example]] = Field(default=None)
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.load()
+    @classmethod
+    def load(
+        cls,
+        train: t.Optional[list[Example]] = None,
+        dev: t.Optional[list[Example]] = None,
+        test: t.Optional[list[Example]] = None,
+    ):
+        if train:
+            self.train_examples = train
 
-    @abstractmethod
-    def load(self) -> None: ...
+        if dev:
+            self.dev_examples = dev
+
+        if test:
+            self.test_examples = test
 
     @property
     def name(self) -> str:

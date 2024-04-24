@@ -9,8 +9,12 @@ from pydantic import Field
 
 
 class HotPotQA(Dataset):
-    keep_details: t.Literal["true", "dev_titles", "false"] = Field(default="dev_titles")
+    keep_details: t.Literal["true", "dev_titles", "false"] = Field(default="true")
     unofficial_dev: bool = Field(default=True)
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.load()
 
     def load(self) -> None:
         train_ds, dev_ds = load_dataset("hotpot_qa", "fullwiki", split=["train", "validation"])

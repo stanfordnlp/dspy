@@ -6,6 +6,10 @@ from .dataset import Dataset
 
 
 class GSM8K(Dataset):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.load()
+
     def load(self) -> None:
         # Load dataset from HuggingFace
         train_ds, test_ds = load_dataset("gsm8k", "main", split=["train", "test"])
