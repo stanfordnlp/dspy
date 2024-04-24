@@ -64,9 +64,9 @@ class GroqLM(LM):
 
     def log_usage(self, response):
         """Log the total tokens from the Groq API response."""
-        usage_data = response.get("usage")
+        usage_data = response.usage  # Directly accessing the 'usage' attribute
         if usage_data:
-            total_tokens = usage_data.get("total_tokens")
+            total_tokens = usage_data.total_tokens
             logging.debug(f"Groq Total Tokens Response Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
