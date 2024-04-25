@@ -4,6 +4,7 @@ from functools import cached_property
 from abc import abstractmethod, ABC
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Self
 
 import dspy
 from dspy import Example
@@ -27,15 +28,18 @@ class Dataset(BaseModel, ABC):
         train: t.Optional[list[Example]] = None,
         dev: t.Optional[list[Example]] = None,
         test: t.Optional[list[Example]] = None,
-    ):
+    ) -> Self:
+        dataset = cls()
         if train:
-            self.train_examples = train
+            dataset.train_examples = train
 
         if dev:
-            self.dev_examples = dev
+            dataset.dev_examples = dev
 
         if test:
-            self.test_examples = test
+            dataset.test_examples = test
+
+        return dataset
 
     @property
     def name(self) -> str:

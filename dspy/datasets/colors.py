@@ -149,6 +149,10 @@ _all_colors = [
 class Colors(Dataset):
     sort_by_suffix: bool = Field(default=True)
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.load()
+
     def load(self) -> None:
         if self.sort_by_suffix:
             colors = self.sort_by_suffix(_all_colors)
