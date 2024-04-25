@@ -12,44 +12,41 @@ from dspy.datasets.dataset import Dataset
 class DataLoader:
     @staticmethod
     def from_dataset(
-        dataset: datasets.Dataset | datasets.DatasetDict | datasets.IterableDataset | datasets.IterableDatasetDict,
+        dataset: datasets.Dataset
+        | datasets.DatasetDict
+        | datasets.IterableDataset
+        | datasets.IterableDatasetDict
+        | dict,
         input_keys: Tuple[str],
         fields: Optional[Tuple[str]],
-        split: list[str],
     ) -> Dataset:
-        if isinstance(dataset, list):
-            dataset = {split_name: dataset[idx] for idx, split_name in enumerate(split)}
+        # If dataset is a DatasetDict, there is a key for each split
+        # if only a dataset is returned, assume it is a single train split
+        if not isinstance(dataset, datasets.DatasetDict):
+            dataset = {"train": dataset}
 
         try:
             examples = {"train": [], "test": [], "dev": []}
-            for split_name in dataset:
+            for split, rows in dataset.items():
+                # If we provide fields only take those fields
+                # otherwise, assume we are using all fields
                 if fields:
-                    if split_name in examples:
-                        examples[split_name] = [
-                            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
-                            for row in dataset[split_name]
+                    if split in examples:
+                        examples[split] = [
+                            dspy.Example(**{field: row[field] for field in fields}).with_inputs(*input_keys)
+                            for row in rows
                         ]
                 else:
-                    if split_name in examples:
-                        examples[split_name] = [
-                            dspy.Example({field: row[field] for field in row}).with_inputs(*input_keys)
-                            for row in dataset[split_name]
+                    if split in examples:
+                        examples[split] = [
+                            dspy.Example(**{field: row[field] for field in row}).with_inputs(*input_keys)
+                            for row in rows
                         ]
 
             return Dataset.load(**examples)
-        except AttributeError:
-            # If there are no splits, everything goes to train
-            if fields:
-                return Dataset.load(
-                    train=[
-                        dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
-                        for row in dataset
-                    ],
-                )
 
-            return Dataset.load(
-                train=[dspy.Example({field: row[field] for field in row}).with_inputs(*input_keys) for row in dataset],
-            )
+        except AttributeError:
+            raise NotImplementedError()
 
     def from_huggingface(
         self,
@@ -60,7 +57,7 @@ class DataLoader:
         **kwargs,
     ) -> Dataset:
         if split is None:
-            split = ["train"]
+            split = ["train", "test"]
 
         dataset = load_dataset(dataset_name, **kwargs)
         return DataLoader.from_dataset(dataset=dataset, input_keys=input_keys, fields=fields, split=split)
