@@ -94,7 +94,7 @@ class Cohere(LM):
                 "response": response,
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
-            }
+            },
         )
 
         return response
