@@ -6,7 +6,6 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
-
     cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
