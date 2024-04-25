@@ -26,7 +26,7 @@ class ChainOfThought(Predict):
 
 **Parameters:**
 - `signature` (_Any_): Signature of predictive model.
-- `rationale_type` (_dsp.OutputField_, _optional_): Rationale type for reasoning steps. Defaults to `None`.
+- `rationale_type` (_dspy.OutputField_, _optional_): Rationale type for reasoning steps. Defaults to `None`.
 - `activated` (_bool_, _optional_): Flag for activated chain of thought processing. Defaults to `True`.
 - `**config` (_dict_): Additional configuration parameters for model.
 
@@ -62,7 +62,7 @@ print(f"Question: {question}")
 print(f"Predicted Answer: {pred.answer}")
 ```
 
-The following example shows how to specify your custom rationale.
+The following example shows how to specify your custom rationale. Here `answer` corresponds to the last key to produce, it may be different in your case. 
 
 ```python
 #define a custom rationale
