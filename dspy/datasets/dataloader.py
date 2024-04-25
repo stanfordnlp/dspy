@@ -12,41 +12,50 @@ from dspy.datasets.dataset import Dataset
 class DataLoader:
     @staticmethod
     def from_dataset(
-        dataset: datasets.Dataset
-        | datasets.DatasetDict
-        | datasets.IterableDataset
-        | datasets.IterableDatasetDict
-        | dict,
+        dataset: Union[
+            datasets.Dataset,
+            datasets.DatasetDict,
+            datasets.IterableDataset,
+            datasets.IterableDatasetDict,
+            dict,
+            list,
+        ],
         input_keys: Tuple[str],
         fields: Optional[Tuple[str]],
+        split: list[str],
+        dev_percentage: float = 0.6,
     ) -> Dataset:
         # If dataset is a DatasetDict, there is a key for each split
         # if only a dataset is returned, assume it is a single train split
-        if not isinstance(dataset, datasets.DatasetDict):
+        if isinstance(dataset, list):
+            dataset = {split_name: dataset[idx] for idx, split_name in enumerate(split)}
+        elif isinstance(dataset, (datasets.Dataset, datasets.IterableDataset)):
+            # If it is a dataset of iterable dataset, assume it is the train split
             dataset = {"train": dataset}
 
-        try:
-            examples = {"train": [], "test": [], "dev": []}
-            for split, rows in dataset.items():
-                # If we provide fields only take those fields
-                # otherwise, assume we are using all fields
-                if fields:
-                    if split in examples:
-                        examples[split] = [
-                            dspy.Example(**{field: row[field] for field in fields}).with_inputs(*input_keys)
-                            for row in rows
-                        ]
-                else:
-                    if split in examples:
-                        examples[split] = [
-                            dspy.Example(**{field: row[field] for field in row}).with_inputs(*input_keys)
-                            for row in rows
-                        ]
+        # If Fields is None, assume we are keeping all features
+        if fields is None:
+            fields = tuple(dataset[split[0]].features)
 
-            return Dataset.load(**examples)
+        examples = {"train": [], "test": [], "dev": []}
+        for split, rows in dataset.items():
+            if split == "train" and dev_percentage > 0.0:
+                train_size = int((1 - dev_percentage) * len(rows))
 
-        except AttributeError:
-            raise NotImplementedError()
+                examples["train"] = [
+                    dspy.Example(**{field: rows[row_idx][field] for field in fields}).with_inputs(*input_keys)
+                    for row_idx in range(0, train_size)
+                ]
+                examples["dev"] = [
+                    dspy.Example(**{field: rows[row_idx][field] for field in fields}).with_inputs(*input_keys)
+                    for row_idx in range(train_size, len(rows))
+                ]
+            else:
+                examples["test"] = [
+                    dspy.Example(**{field: row[field] for field in fields}).with_inputs(*input_keys) for row in rows
+                ]
+
+        return Dataset.load(**examples)
 
     def from_huggingface(
         self,
@@ -59,7 +68,7 @@ class DataLoader:
         if split is None:
             split = ["train", "test"]
 
-        dataset = load_dataset(dataset_name, **kwargs)
+        dataset = load_dataset(dataset_name, split=split, **kwargs)
         return DataLoader.from_dataset(dataset=dataset, input_keys=input_keys, fields=fields, split=split)
 
     def from_csv(
@@ -71,9 +80,9 @@ class DataLoader:
         **kwargs,
     ) -> Dataset:
         if split is None:
-            split = ["train"]
+            split = ["train", "test"]
 
-        dataset = load_dataset("csv", data_fields=file_path, **kwargs)
+        dataset = load_dataset("csv", split=split, data_fields=file_path, **kwargs)
         return DataLoader.from_dataset(dataset=dataset, input_keys=input_keys, fields=fields, split=split)
 
     def from_json(
@@ -85,9 +94,9 @@ class DataLoader:
         **kwargs,
     ) -> Dataset:
         if split is None:
-            split = ["train"]
+            split = ["train", "test"]
 
-        dataset = load_dataset("json", data_files=file_path, **kwargs)
+        dataset = load_dataset("json", split=split, data_files=file_path, **kwargs)
         return DataLoader.from_dataset(dataset=dataset, input_keys=input_keys, fields=fields, split=split)
 
     def from_parquet(
@@ -99,9 +108,9 @@ class DataLoader:
         **kwargs,
     ) -> Dataset:
         if split is None:
-            split = ["train"]
+            split = ["train", "test"]
 
-        dataset = load_dataset("parquet", data_files=file_path, **kwargs)
+        dataset = load_dataset("parquet", split=split, data_files=file_path, **kwargs)
         return DataLoader.from_dataset(dataset=dataset, input_keys=input_keys, fields=fields, split=split)
 
     # def sample(
