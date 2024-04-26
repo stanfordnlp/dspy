@@ -27,6 +27,7 @@ class DataLoader:
     ) -> Dataset:
         # If dataset is a DatasetDict, there is a key for each split
         # if only a dataset is returned, assume it is a single train split
+        split = [s.split("[")[0] if "[" in s else s for s in split]
         if isinstance(dataset, list):
             dataset = {split_name: dataset[idx] for idx, split_name in enumerate(split)}
         elif isinstance(dataset, (datasets.Dataset, datasets.IterableDataset)):
