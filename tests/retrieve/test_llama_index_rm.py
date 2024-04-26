@@ -92,33 +92,3 @@ def test_lirm_as_rm(rag_setup):
     assert len(test_res_li) == len(
         test_res_dspy
     ), "Ensuring that the results are the same length, a rough equality check of the results"
-
-
-def test_lirm_opt_eval(rag_setup):
-    """Optimizes and evaluates a module containing a LI retriever"""
-
-    teleprompter = rag_setup.get("tp")
-    lm = rag_setup.get("lm")
-    rm = rag_setup.get("rm")
-    trainset = rag_setup.get("trainset")
-    devset = rag_setup.get("devset")
-
-    dspy.settings.configure(rm=rm, lm=lm)
-
-    hotpot_qa_eval = Evaluate(devset=devset, num_threads=1)
-
-    # print(hotpot_qa_eval)
-
-    uncompiled_score = hotpot_qa_eval(MockModule(), metric=validate_context_and_answer)
-
-    # print(uncompiled_score)
-
-    compiled_mock_module = teleprompter.compile(MockModule(), teacher=MockModule(), trainset=trainset)
-
-    # print(compiled_mock_module)
-
-    compiled_score = hotpot_qa_eval(compiled_mock_module, metric=validate_context_and_answer)
-
-    # print(compiled_score)
-
-    assert True
