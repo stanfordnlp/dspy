@@ -12,34 +12,6 @@ from dspy.retrieve.llama_index_rm import LlamaIndexRM
 from dspy.teleprompt import BootstrapFinetune
 
 
-class MockQnA(dspy.Signature):
-    """Answer questions from given context"""
-
-    context = dspy.InputField(desc="Context to answer questions with")
-    question = dspy.InputField(desc="Question to answer")
-    answer = dspy.OutputField(desc="Answer to the question")
-
-
-class MockModule(dspy.Module):
-    """Mock pipeline for testing"""
-
-    def __init__(self):
-        super().__init__()
-
-        self.retrieve = dspy.Retrieve()
-        self.generate_answer = dspy.Predict(MockQnA)
-
-    def forward(self, question) -> dspy.Example:
-        context = self.retrieve(question).passages
-
-        answer = self.generate_answer(
-            context=context,
-            question=question,
-        ).answer
-
-        return dspy.Prediction(context=context, question=question, answer=answer)
-
-
 def validate_context_and_answer(example, pred, trace=None):
     """Copied this from the intro.ipynb"""
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
@@ -62,14 +34,11 @@ def rag_setup() -> dict:
     retriever = index.as_retriever()
     rm = LlamaIndexRM(retriever)
 
-    tp = BootstrapFinetune(metric=validate_context_and_answer)
-
     return {
         "index": index,
         "retriever": retriever,
         "rm": rm,
         "lm": DummyLM(answers=dummyset),
-        "tp": tp,
         "trainset": trainset,
         "devset": devset,
     }
