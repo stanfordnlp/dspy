@@ -7,6 +7,7 @@ from .aws_providers import Bedrock, Sagemaker
 from .azure_openai import AzureOpenAI
 from .cache_utils import *
 from .clarifai import *
+from .cloudflare import *
 from .cohere import *
 from .colbertv2 import ColBERTv2
 from .databricks import *
