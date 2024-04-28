@@ -9,7 +9,7 @@ import dspy
 from dspy.predict.parameter import Parameter
 from dspy.predict.predict import Predict
 from dspy.primitives.prediction import Prediction
-from dspy.signatures.field import InputField, OutputField
+from dspy.signatures.field import OldInputField as InputField, OldOutputField as OutputField
 from dspy.signatures.signature import infer_prefix
 
 # TODO: This class is currently hard to test, because it hardcodes gpt-4 usage:
