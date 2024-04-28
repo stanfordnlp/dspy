@@ -62,11 +62,11 @@ class Databricks(GPT3):
         if self.model_type == "chat":
             kwargs["messages"] = [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": prompt}]
             kwargs = {"stringify_request": json.dumps(kwargs)}
-            response = custom_client_chat_request(**kwargs).json()
+            response = chat_request(self.client, **kwargs).json()
             response = json.loads(response)
         else:
             kwargs["prompt"] = prompt
-            response = custom_client_completions_request(**kwargs).json()    
+            response = completions_request(self.client, **kwargs).json()    
             response = json.loads(response)
         
         history = {
@@ -85,7 +85,7 @@ class Databricks(GPT3):
         kwargs.pop('max_tokens', None)
         kwargs.pop('top_p', None)
         kwargs.pop('n', None)
-        response = custom_client_embeddings_request(**kwargs).json()    
+        response = embeddings_request(self.client, **kwargs).json()    
         response = json.loads(response)
         embeddings = [cur_obj['embedding'] for cur_obj in response['data']][0]
         return embeddings
@@ -96,50 +96,44 @@ class Databricks(GPT3):
         else:
             return super().__call__(prompt, **kwargs)
 
-def create_custom_client():
-    from openai import OpenAI
-    
-    client = OpenAI(api_key=openai.api_key, base_url=openai.base_url)
-    return client
 
-def custom_client_chat_request(**kwargs):
-    return cached_custom_client_chat_request_v2_wrapped(**kwargs)
+def chat_request(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_chat_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_chat_request(**kwargs):
+            if "stringify_request" in kwargs:
+                kwargs = json.loads(kwargs["stringify_request"])
+            return client.chat.completions.create(**kwargs)
 
-def custom_client_embeddings_request(**kwargs):
-    return cached_custom_client_embeddings_request_v2_wrapped(**kwargs)
+        return cached_chat_request(**kwargs)
 
-def custom_client_completions_request(**kwargs):
-    return cached_custom_client_completions_request_v2_wrapped(**kwargs)
+    return cached_chat_request_wrapped(**kwargs)
 
 
-@CacheMemory.cache
-def cached_custom_client_chat_request_v2(**kwargs):
-    client = create_custom_client()
-    return client.chat.completions.create(**kwargs)
+def completions_request(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_completions_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_completions_request(**kwargs):
+            return client.completions.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_custom_client_chat_request_v2_wrapped(**kwargs):
-    if "stringify_request" in kwargs:
-        kwargs = json.loads(kwargs["stringify_request"])
-    return cached_custom_client_chat_request_v2(**kwargs)
+        return cached_completions_request(**kwargs)
 
-@CacheMemory.cache
-def cached_custom_client_completions_request_v2(**kwargs):
-    client = create_custom_client()
-    return client.completions.create(**kwargs)
+    return cached_completions_request_wrapped(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_custom_client_completions_request_v2_wrapped(**kwargs):
-    return cached_custom_client_completions_request_v2(**kwargs)
 
-@CacheMemory.cache
-def cached_custom_client_embeddings_request_v2(**kwargs):
-    client = create_custom_client()
-    return client.embeddings.create(**kwargs)
+def embeddings_request(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_embedding_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_embeddings_request(**kwargs):
+            return client.embeddings.create(**kwargs)
 
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_custom_client_embeddings_request_v2_wrapped(**kwargs):
-    return cached_custom_client_embeddings_request_v2(**kwargs)
+        return cached_embeddings_request(**kwargs)
+
+    return cached_embedding_request_wrapped(**kwargs)
+
