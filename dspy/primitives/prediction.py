@@ -1,5 +1,4 @@
 import typing as t
-from collections import Counter
 
 from pydantic import BaseModel, ConfigDict
 
@@ -138,26 +137,6 @@ class Prediction(Example):
 
         self._completions = None
 
-    def get_majority(
-        self,
-        field: t.Optional[str] = None,
-        normalize: t.Callable[[str], t.Optional[str]] = default_normalize,
-    ):
-        if normalize is None:
-            normalize = lambda x: x
-
-        if field is None:
-            field = list(self._completions.signature.output_fields.keys())[-1]
-
-        predictions = [normalize(completion[field]) for completion in self._completions]
-        predictions = Counter([x for x in predictions if x is not None])
-
-        majority_class = list(predictions.keys())[0]
-
-        pred = Prediction.from_completions(self._completions)
-        pred._completions.filter(field, majority_class)
-
-        return pred
     @classmethod
     def from_completions(cls, completions: Completions):
         obj = cls()

@@ -8,7 +8,7 @@ def test_majority_with_prediction():
     completions = make_dummy_completions(DummySignature, [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     prediction = Prediction.from_completions(completions)
 
-    result = prediction.get_majority()
+    result = majority(prediction)
     assert result.completions[0]["answer"] == "2"
 
 
