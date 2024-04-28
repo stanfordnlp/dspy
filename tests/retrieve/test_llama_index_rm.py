@@ -7,16 +7,7 @@ from llama_index.core.readers.string_iterable import StringIterableReader
 import dspy
 from dsp.modules.dummy_lm import DummyLM
 from dspy.datasets import HotPotQA
-from dspy.evaluate import Evaluate
 from dspy.retrieve.llama_index_rm import LlamaIndexRM
-from dspy.teleprompt import BootstrapFinetune
-
-
-def validate_context_and_answer(example, pred, trace=None):
-    """Copied this from the intro.ipynb"""
-    answer_EM = dspy.evaluate.answer_exact_match(example, pred)
-    answer_PM = dspy.evaluate.answer_passage_match(example, pred)
-    return answer_EM and answer_PM
 
 
 @pytest.fixture()
@@ -58,6 +49,4 @@ def test_lirm_as_rm(rag_setup):
     assert isinstance(rm, dspy.Retrieve), "Ensuring the RM is a retriever object from dspy"
     assert isinstance(test_res_dspy, list), "Ensuring the results are a list from the DSPy retriever"
 
-    assert len(test_res_li) == len(
-        test_res_dspy
-    ), "Ensuring that the results are the same length, a rough equality check of the results"
+    assert len(test_res_li) == len(test_res_dspy), "Rough equality check of the results"

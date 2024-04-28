@@ -1,3 +1,6 @@
+import logging
+from typing import Optional
+
 import dspy
 
 try:
@@ -5,6 +8,8 @@ try:
 except ImportError:
     err = "The 'llama_index' package is required to use LlamaIndexRM. Install it with 'pip install llama_index'."
     raise ImportError(err) from None
+
+NO_TOP_K_WARNING = "The underlying LlamaIndex retriever does not support top k retrieval. Ignoring k value."
 
 
 class LlamaIndexRM(dspy.Retrieve):
@@ -19,6 +24,9 @@ class LlamaIndexRM(dspy.Retrieve):
 
     Args:
         retriever (BaseRetriever): A LlamaIndex retriever object - text based only
+        k (int): Optional; the number of examples to retrieve (similarity_top_k)
+
+        If the underlying LI retriever does not have the property similarity_top_k, k will be ignored.
 
     Returns:
         DSPy RM Object - this is a retriever object that can be used in DSPy
@@ -26,32 +34,55 @@ class LlamaIndexRM(dspy.Retrieve):
 
     retriever: BaseRetriever
 
-    def __init__(self, retriever: BaseRetriever):
+    def __init__(
+        self,
+        retriever: BaseRetriever,
+        k: Optional[int] = 3,
+    ):
         self.retriever = retriever
 
+        if hasattr(self.retriever, "similarity_top_k"):
+            self.retriever.similarity_top_k = k
+        else:
+            logging.warning(NO_TOP_K_WARNING)
+
     @property
-    def similarity_top_k(self) -> int:
-        """Return similarity top k of retriever."""
+    def k(self) -> int:
+        """Get similarity top k of retriever."""
+        if not hasattr(self.retriever, "similarity_top_k"):
+            logging.warning(NO_TOP_K_WARNING)
+            return None
+
         return self.retriever.similarity_top_k
 
-    @similarity_top_k.setter
-    def similarity_top_k(self, k: int) -> None:
+    @k.setter
+    def k(self, k: int) -> None:
         """Set similarity top k of retriever."""
-        self.retriever.similarity_top_k = k
+        if hasattr(self.retriever, "similarity_top_k"):
+            self.retriever.similarity_top_k = k
+        else:
+            logging.warning(NO_TOP_K_WARNING)
 
-    def forward(self, query: str) -> list[dspy.Example]:
+    def forward(self, query: str, k: Optional[int] = None) -> list[dspy.Example]:
         """Forward function for the LI retriever.
 
         This is the function that is called to retrieve the top k examples for a given query.
-
         Top k is set via the setter similarity_top_k or at LI instantiation.
 
         Args:
             query (str): The query to retrieve examples for
+            k (int): Optional; the number of examples to retrieve (similarity_top_k)
+
+            If the underlying LI retriever does not have the property similarity_top_k, k will be ignored.
 
         Returns:
             List[dspy.Example]: A list of examples retrieved by the retriever
         """
+        if hasattr(self.retriever, "similarity_top_k") and k:
+            self.retriever.similarity_top_k = k
+        else:
+            logging.warning(NO_TOP_K_WARNING)
+
         raw = self.retriever.retrieve(query)
 
         return [
