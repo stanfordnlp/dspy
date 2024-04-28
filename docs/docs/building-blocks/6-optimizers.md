@@ -38,7 +38,7 @@ All of these can be accessed via `from dspy.teleprompt import *`.
 
 1. **`LabeledFewShot`**: Simply constructs few-shot examples from provided labeled Q/A pairs.
 
-2. **`BootstrapFewShot`**: Uses your program to self-generate complete demonstrations for every stage of your program. Will simply use the generated demonstrations (if they pass the metric) without any further optimization. Advanced: Supports using a teacher program (a different DSPy program that has compatible structure) and a teacher LM, for harder tasks.
+2. **`BootstrapFewShot`**: Uses your program to self-generate complete demonstrations for every stage of your program. Will simply use the generated demonstrations (if they pass the metric) without any further optimization. You can use weights & biases logging of the metric values per bootstrapped examples with the `wandb_enabled` flag in calls to `compile`. Advanced: Supports using a teacher program (a different DSPy program that has compatible structure) and a teacher LM, for harder tasks.
 
 3. **`BootstrapFewShotWithRandomSearch`**: Applies `BootstrapFewShot` several times with random search over generated demonstrations, and selects the best program.
 
