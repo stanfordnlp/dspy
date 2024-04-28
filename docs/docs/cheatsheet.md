@@ -233,7 +233,7 @@ class FactJudge(dspy.Signature):
     context = dspy.InputField(desc="Context for the prediciton")
     question = dspy.InputField(desc="Question to be answered")
     answer = dspy.InputField(desc="Answer for the question")
-    factually_correct = dspy.OutputField(desc="Is the answer factually correct based on the context?", prefix="Facual[Yes/No]:")
+    factually_correct = dspy.OutputField(desc="Is the answer factually correct based on the context?", prefix="Factual[Yes/No]:")
 
 judge = dspy.ChainOfThought(FactJudge)
 

@@ -24,9 +24,6 @@ try:
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
 except ImportError:
-    chromadb = None
-
-if chromadb is None:
     raise ImportError(
         "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
     )
@@ -44,6 +41,7 @@ class ChromadbRM(dspy.Retrieve):
         persist_directory (str): chromadb persist directory
         embedding_function (Optional[EmbeddingFunction[Embeddable]]): Optional function to use to embed documents. Defaults to DefaultEmbeddingFunction.
         k (int, optional): The number of top passages to retrieve. Defaults to 7.
+        client(Optional[chromadb.Client]): Optional chromadb client provided by user, default to None
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
@@ -52,7 +50,21 @@ class ChromadbRM(dspy.Retrieve):
         Below is a code snippet that shows how to use this as the default retriever:
         ```python
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        # using default chromadb client
         retriever_model = ChromadbRM("collection_name", "db_path")
+        dspy.settings.configure(lm=llm, rm=retriever_model)
+        # to test the retriever with "my query"
+        retriever_model("my query")
+        ```
+
+        Use provided chromadb client
+        ```python
+        import chromadb
+
+        llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        # say you have a chromadb running on a different port
+        client = chromadb.HttpClient(host="localhost", port=8889)
+        retriever_model = ChromadbRM("collection_name", "db_path", client=client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         # to test the retriever with "my query"
         retriever_model("my query")
@@ -69,9 +81,10 @@ class ChromadbRM(dspy.Retrieve):
         collection_name: str,
         persist_directory: str,
         embedding_function: Optional[EmbeddingFunction[Embeddable]] = ef.DefaultEmbeddingFunction(),
+        client: Optional[chromadb.Client] = None,
         k: int = 7,
     ):
-        self._init_chromadb(collection_name, persist_directory)
+        self._init_chromadb(collection_name, persist_directory, client=client)
         self.ef = embedding_function
 
         super().__init__(k=k)
@@ -80,23 +93,27 @@ class ChromadbRM(dspy.Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
+        client: Optional[chromadb.Client] = None,
     ) -> chromadb.Collection:
         """Initialize chromadb and return the loaded index.
 
         Args:
             collection_name (str): chromadb collection name
             persist_directory (str): chromadb persist directory
+            client (chromadb.Client): chromadb client provided by user
 
-
-        Returns:
+        Returns: collection per collection_name
         """
 
-        self._chromadb_client = chromadb.Client(
-            Settings(
-                persist_directory=persist_directory,
-                is_persistent=True,
-            ),
-        )
+        if client:
+            self._chromadb_client = client
+        else:
+            self._chromadb_client = chromadb.Client(
+                Settings(
+                    persist_directory=persist_directory,
+                    is_persistent=True,
+                ),
+            )
         self._chromadb_collection = self._chromadb_client.get_or_create_collection(
             name=collection_name,
         )
@@ -118,7 +135,10 @@ class ChromadbRM(dspy.Retrieve):
         return self.ef(queries)
 
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs,
+        self,
+        query_or_queries: Union[str, List[str]],
+        k: Optional[int] = None,
+        **kwargs,
     ) -> dspy.Prediction:
         """Search with db for self.k top passages for query
 
@@ -134,13 +154,16 @@ class ChromadbRM(dspy.Retrieve):
 
         k = self.k if k is None else k
         results = self._chromadb_collection.query(
-            query_embeddings=embeddings, n_results=k,**kwargs,
+            query_embeddings=embeddings,
+            n_results=k,
+            **kwargs,
         )
 
         zipped_results = zip(
-            results["ids"][0],
-            results["distances"][0],
-            results["documents"][0],
-            results["metadatas"][0])
-        results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
+            results["ids"][0], results["distances"][0], results["documents"][0], results["metadatas"][0]
+        )
+        results = [
+            dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta})
+            for id, dist, doc, meta in zipped_results
+        ]
         return results
