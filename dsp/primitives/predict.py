@@ -63,13 +63,9 @@ def _generate(template: Template, **kwargs) -> Callable:
 
     def extend_generation(completion: Example, field_names: list[str], stage:str, max_depth: int, original_example:Example):
         """If the required fields are not present in the completion, extend the generation."""
+
         # remove content of last field to avoid half-completed content
-        for field_idx, key in enumerate(field_names):
-            if key not in completion:
-                break
-            if completion[key] is None or completion[key] == "":
-                break
-        completion[field_names[field_idx]] = ""
+        completion[get_last_field(completion, field_names)] = ""
 
         # Recurse with greedy decoding and a shorter length.
         max_tokens = (kwargs.get("max_tokens") or 
@@ -165,6 +161,12 @@ def _generate(template: Template, **kwargs) -> Callable:
 
     return do_generate
 
+def get_last_field(completion, field_names):
+    for key in field_names:
+        if key not in completion:
+            return key
+        if completion[key] is None or completion[key] == "":
+            return key
 
 def generate_sc(
     example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs,
