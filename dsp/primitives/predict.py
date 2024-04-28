@@ -161,7 +161,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
     return do_generate
 
-def get_last_field(completion, field_names):
+def get_last_field(completion: Example, field_names: list[str]):
     for key in field_names:
         if key not in completion:
             return key
