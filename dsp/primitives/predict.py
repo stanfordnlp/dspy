@@ -63,6 +63,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
     def extend_generation(completion: Example, field_names: list[str], stage:str, max_depth: int, original_example:Example):
         """If the required fields are not present in the completion, extend the generation."""
+        assert max_depth > 0, "Max depth exceeded - failed to complete in one pass - increase max_tokens"
         # remove content of last field to avoid half-completed content
         for field_name in get_all_fields_following_missing_field(completion, field_names):
             completion.pop(field_name, None)
@@ -86,7 +87,6 @@ def _generate(template: Template, **kwargs) -> Callable:
             "temperature": 0.0,
         }
 
-        assert max_depth > 0, "Max depth exceeded - failed to complete in one pass - increase max_tokens"
         _, finished_completion = generate(template, **new_kwargs)(
             completion,
             stage=stage,
@@ -117,11 +117,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         finished_completions = []
         for completion in completions:
-            all_keys_valid = all(
-                (completion.get(key, None) is not None) and 
-                (completion.get(key, None) !="") for key in field_names
-            )
-            if all_keys_valid:
+            if all((completion.get(key, "") != "") for key in field_names):
                 finished_completions.append(completion)
                 continue
             finished_completions.append(
