@@ -32,7 +32,6 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details),
     )
 
-
 class GPT3(LM):
     """Wrapper around OpenAI's GPT API.
 
@@ -56,7 +55,19 @@ class GPT3(LM):
     ):
         super().__init__(model)
         self.provider = "openai"
-        openai.api_type = api_provider
+
+        if OPENAI_LEGACY:
+            openai.api_type = api_provider
+            openai.api_base = api_base
+            openai.api_key = api_key
+
+            self.client = None
+
+        else:
+            self.client = openai.OpenAI(
+                base_url = api_base,
+                api_key = api_key
+            )
 
         self.system_prompt = system_prompt
 
@@ -70,15 +81,6 @@ class GPT3(LM):
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type
-
-        if api_key:
-            openai.api_key = api_key
-
-        if api_base:
-            if OPENAI_LEGACY:
-                openai.api_base = api_base
-            else:
-                openai.base_url = api_base
 
         self.kwargs = {
             "temperature": 0.0,
@@ -94,7 +96,10 @@ class GPT3(LM):
         self.history: list[dict[str, Any]] = []
 
     def _openai_client(self):
-        return openai
+        if OPENAI_LEGACY:
+            return openai
+
+        return self.client
 
     def log_usage(self, response):
         """Log the total tokens from the OpenAI API response."""
@@ -114,11 +119,11 @@ class GPT3(LM):
                 messages.insert(0, {"role": "system", "content": self.system_prompt})
             kwargs["messages"] = messages
             kwargs = {"stringify_request": json.dumps(kwargs)}
-            response = chat_request(**kwargs)
+            response = chat_request(self.client, **kwargs)
 
         else:
             kwargs["prompt"] = prompt
-            response = completions_request(**kwargs)
+            response = completions_request(self.client, **kwargs)
 
         history = {
             "prompt": prompt,
@@ -208,63 +213,72 @@ class GPT3(LM):
         return completions
 
 
-@CacheMemory.cache
-def cached_gpt3_request_v2(**kwargs):
-    return openai.Completion.create(**kwargs)
-
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def cached_gpt3_request_v2_wrapped(**kwargs):
-    return cached_gpt3_request_v2(**kwargs)
-
-
-@CacheMemory.cache
-def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
-    if "stringify_request" in kwargs:
-        kwargs = json.loads(kwargs["stringify_request"])
-    return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
-
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
-    return _cached_gpt3_turbo_request_v2(**kwargs)
-
-
-@CacheMemory.cache
-def v1_cached_gpt3_request_v2(**kwargs):
-    return openai.completions.create(**kwargs)
-
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def v1_cached_gpt3_request_v2_wrapped(**kwargs):
-    return v1_cached_gpt3_request_v2(**kwargs)
-
-
-@CacheMemory.cache
-def v1_cached_gpt3_turbo_request_v2(**kwargs):
-    if "stringify_request" in kwargs:
-        kwargs = json.loads(kwargs["stringify_request"])
-    return openai.chat.completions.create(**kwargs)
-
-
-@functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache
-def v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs):
-    return v1_cached_gpt3_turbo_request_v2(**kwargs)
-
-
-def chat_request(**kwargs):
+def chat_request(client, **kwargs):
     if OPENAI_LEGACY:
-        return _cached_gpt3_turbo_request_v2_wrapped(**kwargs)
+        return legacy_chat_request_wrapped(**kwargs)
 
-    return v1_cached_gpt3_turbo_request_v2_wrapped(**kwargs).model_dump()
+    return chat_request_wrapped(client, **kwargs)
 
 
-def completions_request(**kwargs):
+def completions_request(client, **kwargs):
     if OPENAI_LEGACY:
-        return cached_gpt3_request_v2_wrapped(**kwargs)
+        return legacy_completions_request_wrapped(**kwargs)
 
-    return v1_cached_gpt3_request_v2_wrapped(**kwargs).model_dump()
+    return completions_requerst_wrapped(client, **kwargs)
+
+
+def chat_request_wrapped(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_chat_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_chat_request(**kwargs):
+            if "stringify_request" in kwargs:
+                kwargs = json.loads(kwargs["stringify_request"])
+            return client.chat.completions.create(**kwargs)
+
+        return cached_chat_request(**kwargs)
+
+    return cached_chat_request_wrapped(**kwargs).model_dump()
+
+
+def completions_requerst_wrapped(client, **kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_completions_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_completions_request(**kwargs):
+            return client.completions.create(**kwargs)
+
+        return cached_completions_request(**kwargs)
+
+    return cached_completions_request_wrapped(**kwargs).model_dump()
+
+
+def legacy_chat_request_wrapped(**kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_legacy_chat_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_legacy_chat_request(**kwargs):
+            if "stringify_request" in kwargs:
+                kwargs = json.loads(kwargs["stringify_request"])
+            return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
+
+        return cached_legacy_chat_request(**kwargs)
+
+    return cached_legacy_chat_request_wrapped(**kwargs)
+
+
+def legacy_completions_request_wrapped(**kwargs):
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def cached_legacy_completions_request_wrapped(**kwargs):
+        @CacheMemory.cache
+        def cached_legacy_completions_request(**kwargs):
+            return openai.Completion.create(**kwargs)
+
+        return cached_legacy_completions_request(**kwargs)
+    
+    return cached_legacy_completions_request_wrapped(**kwargs)
+
