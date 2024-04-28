@@ -65,7 +65,7 @@ def _generate(template: Template, **kwargs) -> Callable:
         """If the required fields are not present in the completion, extend the generation."""
         # remove content of last field to avoid half-completed content
         for field_name in get_all_fields_following_missing_field(completion, field_names):
-            completion[field_name] = ""
+            completion.pop(field_name, None)
 
         # Recurse with greedy decoding and a shorter length.
         max_tokens = (kwargs.get("max_tokens") or 
