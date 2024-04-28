@@ -1,6 +1,6 @@
 import random
 from collections.abc import Mapping
-from typing import List, Tuple, Union, Optional
+from typing import Tuple, Union, Optional
 
 import datasets
 from datasets import load_dataset

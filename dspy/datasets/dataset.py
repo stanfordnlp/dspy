@@ -14,50 +14,28 @@ class Dataset(BaseModel, ABC):
     # Example is not yet Pydantic Valid
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    train_seed: int = Field(default=0)
-    dev_seed: int = Field(default=0)
-    test_seed: int = Field(default=0)
     do_shuffle: bool = Field(default=True)
-    train_examples: t.Optional[list[Example]] = Field(default=None)
-    dev_examples: t.Optional[list[Example]] = Field(default=None)
-    test_examples: t.Optional[list[Example]] = Field(default=None)
-
-    @classmethod
-    def load(
-        cls,
-        train: t.Optional[list[Example]] = None,
-        dev: t.Optional[list[Example]] = None,
-        test: t.Optional[list[Example]] = None,
-    ) -> Self:
-        dataset = cls()
-        if train:
-            dataset.train_examples = train
-
-        if dev:
-            dataset.dev_examples = dev
-
-        if test:
-            dataset.test_examples = test
-
-        return dataset
+    data: dict[str, list[Example]] = Field(default_factory=dict)
 
     @property
     def name(self) -> str:
         return self.__class__.__name__
 
-    def reset_seeds(
-        self,
-        train_seed: t.Optional[int] = None,
-        dev_seed: t.Optional[int] = None,
-        test_seed: t.Optional[int] = None,
-    ) -> None:
-        self.train_seed = train_seed if train_seed is not None else self.train_seed
-        self.dev_seed = dev_seed if dev_seed is not None else self.dev_seed
-        self.test_seed = test_seed if test_seed is not None else self.test_seed
+    def get_split(self, name: str, seed: int = 0, n: t.Optional[int] = None, shuffle: t.Optional[bool] = None) -> list[Example]:
+        if name not in self.data:
+            raise ValueError(f"{name} split not found in Dataset. Splits available: {self.splits.keys()}")
 
-        self.train_examples = None
-        self.dev_examples = None
-        self.test_examples = None
+        data = self.data[name]
+
+
+    def __getattr__(self, name: str):
+        if hasattr(self, name):
+            return self.__getattribute__(name)
+
+            return self.data[name]
+        if name in self.data:
+
+        raise AttributeError(f"{name} not found in Dataset")
 
     @cached_property
     def train(self) -> list[Example]:
