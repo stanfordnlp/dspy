@@ -112,7 +112,6 @@ def _generate(template: Template, **kwargs) -> Callable:
             new_kwargs = {
                 **kwargs,
                 max_tokens_key: max_tokens,
-                "n": 1,
                 "temperature": 0.0,
             }
 
