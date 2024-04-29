@@ -6,7 +6,6 @@ from typing import Any, Literal, Optional, cast
 import backoff
 import openai
 
-import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -57,10 +56,13 @@ class AzureOpenAI(LM):
         model: str = "gpt-3.5-turbo-instruct",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
+        system_prompt: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
+
+        self.system_prompt = system_prompt
 
         # Define Client
         if OPENAI_LEGACY:
@@ -125,7 +127,7 @@ class AzureOpenAI(LM):
         usage_data = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
-            logging.info(f"{total_tokens}")
+            logging.debug(f"Azure OpenAI Total Token Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -133,7 +135,11 @@ class AzureOpenAI(LM):
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+
+            kwargs["messages"] = messages
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(self.client, **kwargs)
 
@@ -192,8 +198,7 @@ class AzureOpenAI(LM):
 
         response = self.request(prompt, **kwargs)
 
-        if dsp.settings.log_openai_usage:
-            self.log_usage(response)
+        self.log_usage(response)
 
         choices = response["choices"]
 
@@ -223,17 +228,17 @@ class AzureOpenAI(LM):
             completions = [c for _, c in scored_completions]
 
         return completions
-    
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop("model")
 
         return self.__class__(
-            model=model, 
-            api_key=self.api_key, 
-            api_version=self.api_version, 
-            api_base=self.api_base, 
+            model=model,
+            api_key=self.api_key,
+            api_version=self.api_version,
+            api_base=self.api_base,
             **kwargs,
         )
 
