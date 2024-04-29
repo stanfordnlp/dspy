@@ -55,6 +55,8 @@ class LM(ABC):
                     printed.append((prompt, x["response"].text))
                 elif provider == "mistral":
                     printed.append((prompt, x['response'].choices))
+                elif provider == "ibm":
+                    printed.append((prompt, x))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -84,6 +86,8 @@ class LM(ABC):
                 text = choices[0].parts[0].text
             elif provider == "mistral":
                 text = choices[0].message.content
+            elif provider == "ibm":
+                text = choices
             else:
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="")
