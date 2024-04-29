@@ -59,7 +59,6 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     assert len(compiled_student.predictor.demos) == 1
     assert compiled_student.predictor.demos[0].input == trainset[0].input
     assert compiled_student.predictor.demos[0].output == trainset[0].output
-
     # Simulate a query that is similar to one of the training examples
     output = compiled_student.forward(input="What is the capital of Spain?").output
 
