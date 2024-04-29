@@ -1,6 +1,7 @@
 backoff
 datasets
 joblib<=1.3.2
+llama-index>=0.10.30
 openai>=0.28.1,<2.0.0
 optuna
 pandas

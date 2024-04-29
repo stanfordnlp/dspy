@@ -37,17 +37,15 @@ class LlamaIndexRM(dspy.Retrieve):
     def __init__(
         self,
         retriever: BaseRetriever,
-        k: Optional[int] = 3,
+        k: Optional[int] = None,
     ):
         self.retriever = retriever
 
-        if hasattr(self.retriever, "similarity_top_k"):
-            self.retriever.similarity_top_k = k
-        else:
-            logging.warning(NO_TOP_K_WARNING)
+        if k:
+            self.k = k
 
     @property
-    def k(self) -> int:
+    def k(self) -> Optional[int]:
         """Get similarity top k of retriever."""
         if not hasattr(self.retriever, "similarity_top_k"):
             logging.warning(NO_TOP_K_WARNING)
@@ -78,10 +76,8 @@ class LlamaIndexRM(dspy.Retrieve):
         Returns:
             List[dspy.Example]: A list of examples retrieved by the retriever
         """
-        if hasattr(self.retriever, "similarity_top_k") and k:
-            self.retriever.similarity_top_k = k
-        else:
-            logging.warning(NO_TOP_K_WARNING)
+        if k:
+            self.k = k
 
         raw = self.retriever.retrieve(query)
 
