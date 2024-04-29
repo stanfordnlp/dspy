@@ -5,6 +5,7 @@ import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 
+
 def single_query_passage(passages):
     passages_dict = {key:[] for key in list(passages[0].keys())}
     for docs in passages:
