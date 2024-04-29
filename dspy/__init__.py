@@ -41,5 +41,7 @@ AWSMistral = dsp.AWSMistral
 AWSAnthropic = dsp.AWSAnthropic
 AWSMeta = dsp.AWSMeta
 
+Watsonx = dsp.Watsonx
+
 configure = settings.configure
 context = settings.context
