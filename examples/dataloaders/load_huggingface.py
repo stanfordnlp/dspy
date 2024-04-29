@@ -22,5 +22,3 @@ if __name__ == "__main__":
             print(f"{dataset_name}: {e}")
 
         print(f"Correct/Total: {correct/total}, {correct}/{total}")
-
-        break
