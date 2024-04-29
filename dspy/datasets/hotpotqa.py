@@ -41,11 +41,9 @@ class HotPotQA(Dataset):
         random.shuffle(train_examples)
 
         sep_idx = len(train_examples) * 75 // 100
-        self.train_examples = train_examples[:sep_idx]
+        self.data["train"] = train_examples[:sep_idx]
 
         if self.unofficial_dev:
-            self.dev_examples = train_examples[sep_idx:]
-        else:
-            self.dev_examples = None
+            self.data["dev"] = train_examples[sep_idx:]
 
-        self.test_examples = test_examples
+        self.data["test"] = test_examples

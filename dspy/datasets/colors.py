@@ -160,8 +160,8 @@ class Colors(Dataset):
             colors = _all_colors
 
         train_size = int(len(colors) * 0.6)
-        self.train_examples = [Example(color=color) for color in colors[:train_size]]
-        self.dev_examples = [Example(color=color) for color in colors[train_size:]]
+        self.data["train"] = [Example(color=color) for color in colors[:train_size]]
+        self.data["dev"] = [Example(color=color) for color in colors[train_size:]]
 
     def sorted_by_suffix(self, colors):
         if not self.sort_by_suffix:

@@ -28,9 +28,9 @@ class GSM8K(Dataset):
         test_examples = [process_sample(sample) for sample in test_ds]
 
         # Split Data
-        self.train_examples = train_examples[:200]
-        self.dev_examples = train_examples[200:500]
-        self.test_examples = test_examples
+        self.data["train"] = train_examples[:200]
+        self.data["dev"] = train_examples[200:500]
+        self.data["test"] = test_examples
 
 
 def parse_integer_answer(answer, only_first_line=True):
