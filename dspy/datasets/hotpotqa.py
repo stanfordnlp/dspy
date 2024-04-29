@@ -1,11 +1,12 @@
 import random
-
 import typing as t
+
 from datasets import load_dataset
+from pydantic import Field
+
 from dspy.primitives.example import Example
 
 from .dataset import Dataset
-from pydantic import Field
 
 
 class HotPotQA(Dataset):

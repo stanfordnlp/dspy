@@ -1,8 +1,9 @@
-import random
+
+from pydantic import Field
+
+from dspy.primitives.example import Example
 
 from .dataset import Dataset
-from dspy.primitives.example import Example
-from pydantic import Field
 
 ### A bunch of colors, originally from matplotlib
 _all_colors = [
