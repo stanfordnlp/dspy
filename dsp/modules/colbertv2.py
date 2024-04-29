@@ -147,7 +147,7 @@ class ColBERTv2RetrieverLocal:
             searcher_results = self.searcher.search(query, k=k)
         results = []
         for pid,rank,score in zip(*searcher_results):
-            results.append(dotdict({'long_text':self.searcher.collection[pid],'pid':pid}))
+            results.append(dotdict({'long_text':self.searcher.collection[pid],'score':score,'pid':pid}))
         return results
 
 class ColBERTv2RerankerLocal:
