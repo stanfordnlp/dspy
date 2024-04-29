@@ -4,17 +4,48 @@ from collections.abc import Generator
 
 import ujson
 
+# NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
+# named_sub_modules for the time being.
 
 class BaseModule:
     def __init__(self):
         pass
 
     def named_parameters(self):
-        """Unlike PyTorch, handles lists of parameters too."""
+        """
+        Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        """
+
+        import dspy
         from dspy.predict.parameter import Parameter
 
-        # Remove the 'self.' prefix from the names
-        return [(name[5:], param) for name, param in self.named_sub_modules(Parameter)]
+        visited = set()
+        named_parameters = []
+
+        def add_parameter(param_name, param_value):
+            if isinstance(param_value, Parameter) and id(param_value) not in visited:
+                visited.add(id(param_value))
+                named_parameters.append((param_name, param_value))
+
+        for name, value in self.__dict__.items():
+            if isinstance(value, Parameter):
+                add_parameter(name, value)
+            
+            elif isinstance(value, dspy.Module):
+                # When a sub-module is pre-compiled, keep it frozen.
+                if not getattr(value, "_compiled", False):
+                    for sub_name, param in value.named_parameters():
+                        add_parameter(f"{name}.{sub_name}", param)
+
+            elif isinstance(value, (list, tuple)):
+                for idx, item in enumerate(value):
+                    add_parameter(f"{name}[{idx}]", item)
+
+            elif isinstance(value, dict):
+                for key, item in value.items():
+                    add_parameter(f"{name}['{key}']", item)
+
+        return named_parameters
 
     def named_sub_modules(self, type_=None, skip_compiled=False) -> Generator[tuple[str, "BaseModule"], None, None]:
         """Find all sub-modules in the module, as well as their names.
