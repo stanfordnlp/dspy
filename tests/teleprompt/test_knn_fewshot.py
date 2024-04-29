@@ -1,6 +1,5 @@
 import pytest
 import dsp, dspy
-from dspy.predict.knn import KNN
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.utils.dummies import DummyLM, DummyVectorizer
 
@@ -19,7 +18,7 @@ def setup_knn_few_shot():
         mock_example("What is 2+2?", "4"),
     ]
     dsp.SentenceTransformersVectorizer = DummyVectorizer
-    knn_few_shot = KNNFewShot(KNN, k=2, trainset=trainset)
+    knn_few_shot = KNNFewShot(k=2, trainset=trainset)
     return knn_few_shot
 
 
@@ -60,9 +59,9 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     assert len(compiled_student.predictor.demos) == 1
     assert compiled_student.predictor.demos[0].input == trainset[0].input
     assert compiled_student.predictor.demos[0].output == trainset[0].output
-    
+
     # Simulate a query that is similar to one of the training examples
-    output = compiled_student.forward(input = "What is the capital of Spain?").output
+    output = compiled_student.forward(input="What is the capital of Spain?").output
 
     print("CONVO")
     print(lm.get_convo(-1))
