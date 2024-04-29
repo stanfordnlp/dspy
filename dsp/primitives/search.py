@@ -65,7 +65,7 @@ def retrieveRerankEnsemble(queries: list[str], k: int, **kwargs) -> list[str]:
         passages = []
         retrieved_passages = dsp.settings.rm(query, k=k * 3, **kwargs)
         passages_cs_scores = dsp.settings.reranker(
-            query, passages=[psg["long_text"] for psg in retrieved_passages]
+            query, passages=[psg["long_text"] for psg in retrieved_passages],
         )
         for idx in np.argsort(passages_cs_scores)[::-1][:k]:
             curr_passage = retrieved_passages[idx]
@@ -107,7 +107,7 @@ def retrieveRerankEnsemble(queries: list[str], k: int, **kwargs) -> list[str]:
 
 #     return passages
 def retrieveEnsemble(
-    queries: list[str], k: int, by_prob: bool = True, **kwargs
+    queries: list[str], k: int, by_prob: bool = True, **kwargs,
 ) -> list[str]:
     """Retrieves passages from the RM for each query in queries and returns the top k passages
     based on the probability or score.
@@ -117,7 +117,7 @@ def retrieveEnsemble(
         raise AssertionError("No RM is loaded.")
     if not dsp.settings.reranker:
         logger.warn(
-            "DeprecationWarning: 'dspy.Retrieve' for reranking has been deprecated, please use dspy.RetrieveThenRerank. The reranking is ignored here. In the future this will raise an error."
+            "DeprecationWarning: 'dspy.Retrieve' for reranking has been deprecated, please use dspy.RetrieveThenRerank. The reranking is ignored here. In the future this will raise an error.",
         )
 
     queries = [q for q in queries if q]
