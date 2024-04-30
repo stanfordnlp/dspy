@@ -61,7 +61,7 @@ config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
 
 # Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
 teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset, valset=gsm8k_devset)
+optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
 ```
 
 ## Evaluate
