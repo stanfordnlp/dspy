@@ -20,7 +20,6 @@ from .teleprompt import Teleprompter
 
 if os.environ.get("DSP_NOTEBOOK_CACHEDIR"):
     training_data_directory = os.path.join(os.environ.get("DSP_NOTEBOOK_CACHEDIR"), "compiler")
-    print(training_data_directory)
 else:
     training_data_directory = "local_cache/compiler"
 
