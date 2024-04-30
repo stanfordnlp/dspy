@@ -15,12 +15,12 @@ from dspy import Example, Prediction
 
 try:
     # noinspection PyPackageRequirements
-    from IPython.display import HTML # type: ignore
+    from IPython.display import HTML  # type: ignore
     # noinspection PyPackageRequirements
-    from IPython.display import display as ipython_display # type: ignore
+    from IPython.display import display as ipython_display  # type: ignore
 except ImportError:
     ipython_display = print
-    def HTML(x):
+    def HTML(x): # noqa - linters dislike upper case function name
         return x
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -202,7 +202,7 @@ class Evaluate:
     def __call__(
             self,
             program,
-            metric: Optional[Callable]=None,
+            metric: Optional[Callable] = None,
             devset: Optional[Iterable] = None,  # Needs more specific type, if possible
             num_threads: Optional[int] = None,
             display_progress: Optional[bool] = None,
@@ -275,7 +275,7 @@ class Evaluate:
 
         devset = list(enumerate(devset))  # This actually changes the type of `devset`
         # noinspection PyProtectedMember
-        tqdm.tqdm._instances.clear() # type: ignore
+        tqdm.tqdm._instances.clear()  # type: ignore
 
         if num_threads == 1:
             reordered_devset, ncorrect, ntotal = self._execute_single_thread(
@@ -314,7 +314,7 @@ class Evaluate:
         ):  # DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0
             df = df.map(truncate_cell)
         else:
-            df = df.applymap(truncate_cell) # type: ignore
+            df = df.applymap(truncate_cell)  # type: ignore
 
         # Rename the 'correct' column to the name of the metric object
         metric_name = (
