@@ -2,7 +2,7 @@ import sys
 import threading
 import types
 from collections.abc import Callable
-from typing import Literal, List, Tuple, Optional, Iterable, overload, Union
+from typing import Literal, List, Tuple, Optional, Iterable, overload, Union, Any
 
 # noinspection PyUnresolvedReferences
 import pandas as pd
@@ -11,15 +11,15 @@ import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
-from dspy import Example
+from dspy import Example, Prediction
 
 try:
-    from IPython.display import HTML
-    from IPython.display import display as ipython_display
+    # noinspection PyPackageRequirements
+    from IPython.display import HTML # type: ignore
+    # noinspection PyPackageRequirements
+    from IPython.display import display as ipython_display # type: ignore
 except ImportError:
     ipython_display = print
-
-
     def HTML(x):
         return x
 
@@ -181,6 +181,20 @@ class Evaluate:
             display_progress: Optional[bool] = ...,
             display_table: Union[bool, int, None] = ...,
             return_all_scores: Literal[False] = ...,
+            return_outputs: Literal[True] = ...,
+    ) -> Tuple[float, List[Tuple[Example, Prediction, Any]]]:
+        ...
+
+    @overload
+    def __call__(
+            self,
+            program,
+            metric=...,
+            devset: Optional[Iterable] = ...,  # Needs more specific type, if possible
+            num_threads: Optional[int] = ...,
+            display_progress: Optional[bool] = ...,
+            display_table: Union[bool, int, None] = ...,
+            return_all_scores: Literal[False] = ...,
             return_outputs: Literal[False] = ...,
     ) -> float:
         ...
@@ -261,7 +275,7 @@ class Evaluate:
 
         devset = list(enumerate(devset))  # This actually changes the type of `devset`
         # noinspection PyProtectedMember
-        tqdm.tqdm._instances.clear()
+        tqdm.tqdm._instances.clear() # type: ignore
 
         if num_threads == 1:
             reordered_devset, ncorrect, ntotal = self._execute_single_thread(
@@ -300,7 +314,7 @@ class Evaluate:
         ):  # DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0
             df = df.map(truncate_cell)
         else:
-            df = df.applymap(truncate_cell)
+            df = df.applymap(truncate_cell) # type: ignore
 
         # Rename the 'correct' column to the name of the metric object
         metric_name = (
