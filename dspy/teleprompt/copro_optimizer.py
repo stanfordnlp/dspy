@@ -126,7 +126,23 @@ class COPRO(Teleprompter):
             predictor.signature = updated_signature
 
     def compile(self, student, *, trainset, eval_kwargs):
-        """student is a program that needs to be optimized, note that it may be zero-shot or already pre-optimized for demos != []"""
+        """
+        Optimize the `signature` of `student`.
+        `student` is a program that needs to be optimized, note that it may be zero-shot or already pre-optimized
+        (the demos are already chosen).
+
+        Parameters
+        ==========
+        student:
+           The program to optimize. Will not be modified.
+        trainset: iterable of `Example`s
+        eval_kwargs: optional, dict
+           Additional keywords to go into `Evaluate` for the metric.
+
+        Returns
+        =======
+        Optimized version of `student`.
+        """
         module = student.deepcopy()
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0

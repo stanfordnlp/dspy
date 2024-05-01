@@ -52,6 +52,8 @@ class BootstrapFewShotWithOptuna(Teleprompter):
             display_table=False,
             display_progress=True,
         )
+        # FIXME: this should have return_all_scores=False and then need only score,
+        # since only one value will be returned. - rpg
         score, _ = evaluate(program2, return_all_scores=True)
         trial.set_user_attr("program", program2)
         return score
