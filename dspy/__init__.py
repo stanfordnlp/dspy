@@ -5,10 +5,10 @@ from .predict import *
 from .primitives import *
 from .retrieve import *
 from .signatures import *
+from .utils.logging import logger, set_log_output
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
-from .utils.logging import logger, set_log_output
 
 settings = dsp.settings
 
@@ -25,6 +25,7 @@ Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google
 GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
+Claude = dsp.Claude
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
