@@ -63,6 +63,8 @@ class COPRO(Teleprompter):
         depth=3,
         init_temperature=1.4,
         track_stats=False,
+        basic_generate_instruction=None,
+        generate_instruction_given_attempts=None,
         **_kwargs,
     ):
         if breadth <= 1:
@@ -73,6 +75,8 @@ class COPRO(Teleprompter):
         self.init_temperature = init_temperature
         self.prompt_model = prompt_model
         self.track_stats = track_stats
+        self.basic_generate_instruction = basic_generate_instruction or BasicGenerateInstruction
+        self.generate_instruction_given_attempts = generate_instruction_given_attempts or GenerateInstructionGivenAttempts
 
         if "verbose" in _kwargs:
             dspy.logger.warning("DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.")
@@ -153,13 +157,13 @@ class COPRO(Teleprompter):
             if self.prompt_model:
                 with dspy.settings.context(lm=self.prompt_model):
                     instruct = dspy.Predict(
-                        BasicGenerateInstruction,
+                        self.basic_generate_instruction,
                         n=self.breadth - 1,
                         temperature=self.init_temperature,
                     )(basic_instruction=basic_instruction)
             else:
                 instruct = dspy.Predict(
-                    BasicGenerateInstruction,
+                    self.basic_generate_instruction,
                     n=self.breadth - 1,
                     temperature=self.init_temperature,
                 )(basic_instruction=basic_instruction)
@@ -299,13 +303,13 @@ class COPRO(Teleprompter):
                 if self.prompt_model:
                     with dspy.settings.context(lm=self.prompt_model):
                         instr = dspy.Predict(
-                            GenerateInstructionGivenAttempts,
+                            self.generate_instruction_given_attempts,
                             n=self.breadth,
                             temperature=self.init_temperature,
                         )(attempted_instructions=attempts)
                 else:
                     instr = dspy.Predict(
-                        GenerateInstructionGivenAttempts,
+                        self.generate_instruction_given_attempts,
                         n=self.breadth,
                         temperature=self.init_temperature,
                     )(attempted_instructions=attempts)
