@@ -51,6 +51,7 @@ class Evaluate:
     display_table: Union[bool, int], optional
         This is either a boolean indicating whether or not to display a table of
         results or an integer indicating how many rows of results to display.
+        If `True`, all rows will be displayed.
     max_errors: int, optional
     return_outputs: bool, optional
         Whether or not to return the predictions.
