@@ -152,8 +152,9 @@ class Evaluate:
             num_threads: Optional[int] = ...,
             display_progress: Optional[bool] = ...,
             display_table: Union[bool, int, None] = ...,
-            return_all_scores: Literal[True] = ...,
-            return_outputs: Literal[True] = ...,
+            *,
+            return_all_scores: Literal[True],
+            return_outputs: Literal[True],
     ) -> Tuple[float, List, List[float]]:
         ...
 
@@ -166,8 +167,9 @@ class Evaluate:
             num_threads: Optional[int] = ...,
             display_progress: Optional[bool] = ...,
             display_table: Union[bool, int, None] = ...,
-            return_all_scores: Literal[True] = ...,
-            return_outputs: Literal[False] = ...,
+            *,
+            return_all_scores: Literal[True],
+            return_outputs: Literal[False],
     ) -> Tuple[float, List[float]]:
         ...
 
@@ -180,8 +182,9 @@ class Evaluate:
             num_threads: Optional[int] = ...,
             display_progress: Optional[bool] = ...,
             display_table: Union[bool, int, None] = ...,
-            return_all_scores: Literal[False] = ...,
-            return_outputs: Literal[True] = ...,
+            *,
+            return_all_scores: Literal[False],
+            return_outputs: Literal[True],
     ) -> Tuple[float, List[Tuple[Example, Prediction, Any]]]:
         ...
 
@@ -194,8 +197,9 @@ class Evaluate:
             num_threads: Optional[int] = ...,
             display_progress: Optional[bool] = ...,
             display_table: Union[bool, int, None] = ...,
-            return_all_scores: Literal[False] = ...,
-            return_outputs: Literal[False] = ...,
+            *,
+            return_all_scores: Literal[False],
+            return_outputs: Literal[False],
     ) -> float:
         ...
 
