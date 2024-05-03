@@ -10,7 +10,7 @@ Let's first make sure you can set up your language model. DSPy support clients f
 
 ## Setting up the LM client.
 
-You can just call the constructor that connects to the LM. Then, use `dspy.configure` to declare this as the dexfault LM.
+You can just call the constructor that connects to the LM. Then, use `dspy.configure` to declare this as the default LM.
 
 For example, to use OpenAI language models, you can do it as follows.
 
