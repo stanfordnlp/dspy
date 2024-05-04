@@ -52,9 +52,8 @@ class BootstrapFewShot(Teleprompter):
         self.error_count = 0
         self.error_lock = threading.Lock()
 
-    def compile(self, student, *, teacher=None, trainset, valset=None):
+    def compile(self, student, *, teacher=None, trainset):
         self.trainset = trainset
-        self.valset = valset
 
         self._prepare_student_and_teacher(student, teacher)
         self._prepare_predictor_mappings()
@@ -133,7 +132,7 @@ class BootstrapFewShot(Teleprompter):
         self.validation = [x for idx, x in enumerate(self.trainset) if idx not in bootstrapped]
         random.Random(0).shuffle(self.validation)
 
-        self.validation = self.valset or self.validation
+        self.validation = self.validation
 
         # NOTE: Can't yet use evaluate because we need to trace *per example*
         # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
