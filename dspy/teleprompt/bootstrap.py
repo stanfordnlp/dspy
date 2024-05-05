@@ -32,11 +32,6 @@ from .vanilla import LabeledFewShot
 
 # TODO: Add baselines=[...]
 
-# QUESTION: What is the meaning of self.validation and self.valset?  Why is it that valset
-# overrides validation if it is supplied? What is the relationship between the `valset`
-# parameter to `compile` and the `trainset` parameter?  I note that none of the examples in the
-# docs seem to use this parameter.
-
 class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
@@ -50,30 +45,28 @@ class BootstrapFewShot(Teleprompter):
     ):
         """
         A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
-        These demos come from a combination of labeled examples in the training set, and newly-generated
-        bootstrap demos.
+        These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
 
         Parameters
         ----------
         metric: Callable
-            A function that should be called on an `Example` and a `Prediction` and yield a value,
-            which may be a `bool` or a number.
+            A function that compares an expected value and predicted value, outputting the result of that comparison. 
         metric_threshold: optional float, default `None`
             If the metric yields a numerical value, then check it against this threshold when
             deciding whether or not to accept a bootstrap example.
         teacher_settings: dict, optional
-            Settings to go to the `teacher` model.
+            Settings for the `teacher` model.
         max_bootstrapped_demos: int, default 4
+            Maximum number of bootstrapped demonstrations to include
         max_labeled_demos: int, default 16
+            Maximum number of labeled demonstrations to include.
         max_rounds: int, default 1
-            This parameter controls the bootstrap-generation process.  If one iteration through the
-            training set is not enough to generate all the required bootstrap traces, then keep trying
-            for `max_rounds` iterations, then give up.
+            Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
         max_errors: int, default 5
+            Maximum number of errors until program ends.
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
-        ## linters didn't like having mutable arg as default value.
         self.teacher_settings = {} if teacher_settings is None else teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
@@ -100,17 +93,13 @@ class BootstrapFewShot(Teleprompter):
 
         return self.student
 
-    ### Set self.student to a fresh copy of the student, and set teacher
-    ### to a supplied value or to a copy of the student.
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
         self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
 
-        assert getattr(self.student, "_compiled", False) is False, "Student must not be compiled."
+        assert getattr(self.student, "_compiled", False) is False, "Student must be uncompiled."
 
         if self.max_labeled_demos and getattr(self.teacher, "_compiled", False) is False:
-            ## if we do not have a pretrained teacher, then we make a teacher by seeding the
-            ## teacher (probably just a copy of the student) with a set of randomly-chosen demos.
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
 
@@ -131,9 +120,6 @@ class BootstrapFewShot(Teleprompter):
                 )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
-            ## FIXME: this seems very odd. `name2predictor` is a map from names to None.
-            ## its only use seems to be getting iterated over, so I *think* it could be a
-            ## set instead of a dict. - rpg
             name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
             predictor2name[id(predictor1)] = name1
 
