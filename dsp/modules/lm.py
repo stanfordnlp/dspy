@@ -76,8 +76,8 @@ class LM(ABC):
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = ' ' + self._get_choice_text(choices[0]).strip()
-            elif provider == "clarifai" or provider == "claude" :
-                text=choices
+            elif provider == "clarifai" or provider == "claude":
+                text = choices
             elif provider == "groq":
                 text = ' ' + choices
             elif provider == "google":
@@ -88,7 +88,7 @@ class LM(ABC):
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="")
 
-            if len(choices) > 1:
+            if len(choices) > 1 and isinstance(choices, list):
                 printing_value += self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
 
             printing_value += "\n\n\n"
