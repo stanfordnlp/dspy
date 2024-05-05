@@ -51,7 +51,7 @@ class ModuleGraph:
             'ChainOfThought': '__ChainOfThought',
             'ProgramOfThought': '__ProgramOfThought',
             'MultiChainComparison': '__MultiChainComparison',
-            'majority': '__majority'
+            'majority': '__majority',
         }
 
         for key, suffix in type_map.items():
