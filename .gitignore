@@ -47,3 +47,5 @@ assertion.log
 *.log
 *.db
 /.devcontainer/.personalization.sh
+
+.mypy_cache

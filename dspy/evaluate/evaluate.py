@@ -1,3 +1,5 @@
+import contextlib
+import signal
 import sys
 import threading
 import types
@@ -14,18 +16,14 @@ try:
 except ImportError:
     ipython_display = print
 
-    def HTML(x):
+    def HTML(x) -> str:  # noqa: N802
         return x
 
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from dsp.evaluation.utils import *
-
-"""
-TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
-we print the number of failures, the first N examples that failed, and the first N exceptions raised.
-"""
+# TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
+# we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 
 
 class Evaluate:
@@ -49,11 +47,13 @@ class Evaluate:
         self.max_errors = max_errors
         self.error_count = 0
         self.error_lock = threading.Lock()
+        self.cancel_jobs = threading.Event()
         self.return_outputs = return_outputs
 
         if "display" in _kwargs:
             dspy.logger.warning(
-                "DeprecationWarning: 'display' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
+                "DeprecationWarning: 'display' has been deprecated. To see all information for debugging,"
+                " use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
             )
 
     def _execute_single_thread(self, wrapped_program, devset, display_progress):
@@ -78,18 +78,51 @@ class Evaluate:
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
+        job_cancelled = "cancelled"
 
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {executor.submit(wrapped_program, idx, arg) for idx, arg in devset}
+        # context manger to handle sigint
+        @contextlib.contextmanager
+        def interrupt_handler_manager():
+            """Sets the cancel_jobs event when a SIGINT is received."""
+            default_handler = signal.getsignal(signal.SIGINT)
+
+            def interrupt_handler(sig, frame):
+                self.cancel_jobs.set()
+                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
+                default_handler(sig, frame)
+
+            signal.signal(signal.SIGINT, interrupt_handler)
+            yield
+            # reset to the default handler
+            signal.signal(signal.SIGINT, default_handler)
+
+        def cancellable_wrapped_program(idx, arg):
+            # If the cancel_jobs event is set, return the cancelled_job literal
+            if self.cancel_jobs.is_set():
+                return None, None, job_cancelled, None
+            return wrapped_program(idx, arg)
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor, interrupt_handler_manager():
+            futures = {executor.submit(cancellable_wrapped_program, idx, arg) for idx, arg in devset}
             pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
 
             for future in as_completed(futures):
                 example_idx, example, prediction, score = future.result()
+
+                # use the cancelled_job literal to check if the job was cancelled - use "is" not "=="
+                # in case the prediction is "cancelled" for some reason.
+                if prediction is job_cancelled:
+                    continue
+
                 reordered_devset.append((example_idx, example, prediction, score))
                 ncorrect += score
                 ntotal += 1
                 self._update_progress(pbar, ncorrect, ntotal)
             pbar.close()
+
+        if self.cancel_jobs.is_set():
+            dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
+            raise KeyboardInterrupt
 
         return reordered_devset, ncorrect, ntotal
 
@@ -175,24 +208,21 @@ class Evaluate:
             merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
         ]
 
-        df = pd.DataFrame(data)
+        result_df = pd.DataFrame(data)
 
-        # Truncate every cell in the DataFrame
-        if hasattr(df, "map"):  # DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0
-            df = df.map(truncate_cell)
-        else:
-            df = df.applymap(truncate_cell)
+        # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
+        result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
         metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-        df.rename(columns={"correct": metric_name}, inplace=True)
+        result_df = result_df.rename(columns={"correct": metric_name})
 
         if display_table:
             if isinstance(display_table, int):
-                df_to_display = df.head(display_table).copy()
-                truncated_rows = len(df) - display_table
+                df_to_display = result_df.head(display_table).copy()
+                truncated_rows = len(result_df) - display_table
             else:
-                df_to_display = df.copy()
+                df_to_display = result_df.copy()
                 truncated_rows = 0
 
             styled_df = configure_dataframe_display(df_to_display, metric_name)
@@ -215,15 +245,15 @@ class Evaluate:
 
         if return_all_scores and return_outputs:
             return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in predicted_devset]
-        elif return_all_scores:
+        if return_all_scores:
             return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
-        elif return_outputs:
+        if return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
 
 
-def merge_dicts(d1, d2):
+def merge_dicts(d1, d2) -> dict:
     merged = {}
     for k, v in d1.items():
         if k in d2:
@@ -240,7 +270,7 @@ def merge_dicts(d1, d2):
     return merged
 
 
-def truncate_cell(content):
+def truncate_cell(content) -> str:
     """Truncate content of a cell to 25 words."""
     words = str(content).split()
     if len(words) > 25:
@@ -248,16 +278,13 @@ def truncate_cell(content):
     return content
 
 
-def configure_dataframe_display(df, metric_name):
+def configure_dataframe_display(df, metric_name) -> pd.DataFrame:
     """Set various pandas display options for DataFrame."""
     pd.options.display.max_colwidth = None
     pd.set_option("display.max_colwidth", 20)  # Adjust the number as needed
     pd.set_option("display.width", 400)  # Adjust
 
-    # df[metric_name] = df[metric_name].apply(lambda x: f'✔️ [{x}]' if x is True else f'❌ [{x}]')
-    # df.loc[:, metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x is True else f"{x}")
     df[metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x else str(x))
-
 
     # Return styled DataFrame
     return df.style.set_table_styles(
@@ -276,4 +303,5 @@ def configure_dataframe_display(df, metric_name):
 
 
 # FIXME: TODO: The merge_dicts stuff above is way too quick and dirty.
-# TODO: the display_table can't handle False but can handle 0! Not sure how it works with True exactly, probably fails too.
+# TODO: the display_table can't handle False but can handle 0!
+# Not sure how it works with True exactly, probably fails too.
