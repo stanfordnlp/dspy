@@ -75,26 +75,31 @@ class COPRO(Teleprompter):
         self.init_temperature = init_temperature
         self.prompt_model = prompt_model
         self.track_stats = track_stats
+        self._additional_instructions = additional_instructions
 
-        self.basic_generate_instruction = (
-            self._get_signature(BasicGenerateInstruction).with_instructions(
-                " ".join([BasicGenerateInstruction.instructions, additional_instructions])
-            )
-            if additional_instructions
-            else BasicGenerateInstruction
-        )
-        self.generate_instruction_given_attempts = (
-            self._get_signature(GenerateInstructionGivenAttempts).with_instructions(
-                " ".join([GenerateInstructionGivenAttempts.instructions, additional_instructions])
-            )
-            if additional_instructions
-            else GenerateInstructionGivenAttempts
-        )
 
         if "verbose" in _kwargs:
             dspy.logger.warning(
                 "DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error."
             )
+
+    @property
+    def basic_generate_instruction(self):
+        return (self._get_signature(BasicGenerateInstruction).with_instructions(
+                " ".join([BasicGenerateInstruction.instructions, self._additional_instructions])
+            )
+            if self._additional_instructions
+            else BasicGenerateInstruction)
+
+    @property
+    def generate_instruction_given_attempts(self):
+        return (
+            self._get_signature(GenerateInstructionGivenAttempts).with_instructions(
+                " ".join([GenerateInstructionGivenAttempts.instructions, self._additional_instructions])
+            )
+            if self._additional_instructions
+            else GenerateInstructionGivenAttempts
+        )
 
     def _check_candidates_equal(self, candidate1, candidate2):
         for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):

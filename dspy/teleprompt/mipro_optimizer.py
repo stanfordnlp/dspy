@@ -154,38 +154,46 @@ class MIPRO(Teleprompter):
         self.track_stats = track_stats
         self.teacher_settings = teacher_settings
         self.view_data_batch_size = view_data_batch_size
+        self._additional_instructions = additional_instructions
 
-        self.basic_generate_instruction = (
-            self._get_signature(BasicGenerateInstruction).with_instructions(
-                " ".join([BasicGenerateInstruction.instructions, additional_instructions])
-            )
-            if additional_instructions
-            else BasicGenerateInstruction
+    @property
+    def basic_generate_instruction(self):
+        return (self._get_signature(BasicGenerateInstruction).with_instructions(
+            " ".join([BasicGenerateInstruction.instructions, self._additional_instructions])
         )
+                if self._additional_instructions
+                else BasicGenerateInstruction)
 
-        self.generate_instruction_with_data_observations = (
+    @property
+    def generate_instruction_with_data_observations(self):
+        return (
             self._get_signature(BasicGenerateInstructionWithDataObservations).with_instructions(
-                " ".join([BasicGenerateInstructionWithDataObservations.instructions, additional_instructions])
+                " ".join([BasicGenerateInstructionWithDataObservations.instructions, self._additional_instructions])
             )
-            if additional_instructions
+            if self._additional_instructions
             else BasicGenerateInstructionWithDataObservations
         )
 
-        self.generate_instruction_with_examples = (
+    @property
+    def generate_instruction_with_examples(self):
+        return (
             self._get_signature(BasicGenerateInstructionWithExamples).with_instructions(
-                " ".join([BasicGenerateInstructionWithExamples.instructions, additional_instructions])
+                " ".join([BasicGenerateInstructionWithExamples.instructions, self._additional_instructions])
             )
-            if additional_instructions
+            if self._additional_instructions
             else BasicGenerateInstructionWithExamples
         )
 
-        self.generate_instruction_with_examples_and_observations = (
+    @property
+    def generate_instruction_with_examples_and_observations(self):
+        return (
             self._get_signature(BasicGenerateInstructionWithExamplesAndDataObservations).with_instructions(
-                " ".join([BasicGenerateInstructionWithExamplesAndDataObservations.instructions, additional_instructions])
+                " ".join([BasicGenerateInstructionWithExamplesAndDataObservations.instructions, self._additional_instructions])
             )
-            if additional_instructions
+            if self._additional_instructions
             else BasicGenerateInstructionWithExamplesAndDataObservations
         )
+
 
     def _print_full_program(self, program):
         for i, predictor in enumerate(program.predictors()):
