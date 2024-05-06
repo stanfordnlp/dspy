@@ -54,7 +54,7 @@ class Evaluate:
         If `True`, all rows will be displayed.
     max_errors: int, optional: default 5
     return_outputs: bool, optional
-        Whether or not to return the predictions.
+        Whether or not to return individual (per-`Example`) metrics.
 
     Notes
     =====
