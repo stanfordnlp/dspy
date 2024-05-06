@@ -68,6 +68,7 @@ class Snowflake(LM):
 
         self.client = self._init_cortex(credentials=credentials)
         self.provider = "Snowflake"
+        self.history: list[dict[str, Any]] = []
         self.kwargs = {
             **self.kwargs,
             "temperature": 0.7,
