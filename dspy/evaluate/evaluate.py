@@ -286,18 +286,18 @@ class Evaluate:
                 if creating_new_thread:
                     del thread_stacks[threading.get_ident()]
 
-        devset = list(enumerate(devset))  # This actually changes the type of `devset`
+        ndevset: List[int, Example] = list(enumerate(devset))
         # noinspection PyProtectedMember
         tqdm.tqdm._instances.clear()  # type: ignore
 
         if num_threads == 1:
             reordered_devset, ncorrect, ntotal = self._execute_single_thread(
-                wrapped_program, devset, display_progress
+                wrapped_program, ndevset, display_progress
             )
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
                 wrapped_program,
-                devset,
+                ndevset,
                 num_threads,
                 display_progress,
             )
