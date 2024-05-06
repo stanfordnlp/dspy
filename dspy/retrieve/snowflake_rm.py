@@ -93,7 +93,7 @@ class SnowflakeRM(dspy.Retrieve):
                     lit(query_embeddings).cast(VectorType(float, len(query_embeddings))),
                 ).as_("dist"),
             )
-            .sort("dist")
+            .sort("dist",ascending=False)
             .limit(k)
         )
 
