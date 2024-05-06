@@ -11,8 +11,7 @@ try:
 
 except ImportError:
     raise ImportError(
-        "The 'snowflake' extra is required to use SnowflakeCortexRM.:"
-        "Install it with `pip install snowflake-snowpark-python`",
+        "The snowflake-snowpark-python library is required to use SnowflakeRM. Install it with dspy-ai[snowflake]"
     )
 
 
