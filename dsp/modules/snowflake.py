@@ -34,7 +34,7 @@ def giveup_hdlr(details) -> bool:
 class Snowflake(LM):
     """Wrapper around Snowflake's CortexAPI.
 
-    Currently supported models include 'mistral-large','reka-flash','mixtral-8x7b',
+    Currently supported models include 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b',
     'llama2-70b-chat','mistral-7b','gemma-7b'.
     """
 
@@ -44,7 +44,7 @@ class Snowflake(LM):
         ----------
         model : str
             Which pre-trained model from Snowflake to use?
-            Choices are 'mistral-large','reka-flash','mixtral-8x7b','llama2-70b-chat','mistral-7b','gemma-7b'
+            Choices are 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b','llama2-70b-chat','mistral-7b','gemma-7b'
             Full list of supported models is available here: https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions#complete
         **kwargs: dict
             Additional arguments to pass to the API provider.
@@ -52,7 +52,7 @@ class Snowflake(LM):
         super().__init__(model)
 
         self.model = model
-        cortex_models = ["mistral-large", "reka-flash", "mixtral-8x7b", "llama2-70b-chat", "mistral-7b", "gemma-7b"]
+        cortex_models = ["snowflake-arctic","mistral-large", "reka-flash", "mixtral-8x7b", "llama2-70b-chat", "mistral-7b", "gemma-7b"]
 
         if model in cortex_models:
             self.available_args = {
