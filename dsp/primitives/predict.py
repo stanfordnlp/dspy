@@ -121,7 +121,7 @@ def _generate(template: Template, **kwargs) -> Callable:
                 finished_completions.append(completion)
                 continue
             finished_completions.append(
-                extend_generation(completion, field_names, stage, max_depth, original_example)
+                extend_generation(completion, field_names, stage, max_depth, original_example),
             )
 
         completions = Completions(finished_completions, template=template)
