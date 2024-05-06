@@ -49,7 +49,7 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
     if dsp.settings.reranker:
-        return retrieveRerankEnsemble(queries, k)
+        return retrieveRerankEnsemble(queries, k, **kwargs)
     
     queries = [q for q in queries if q]
 
