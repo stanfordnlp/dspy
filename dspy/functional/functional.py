@@ -22,7 +22,7 @@ def predictor(*args, **kwargs):
         return _StripOutput(TypedPredictor(signature, **kwargs), output_key)
 
     # if we have only a single callable argument, the decorator was invoked with no key word arguments
-    #  so we just return the wrapped function 
+    #  so we just return the wrapped function
     if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
         return _predictor(args[0])
     return _predictor
@@ -36,7 +36,7 @@ def cot(*args, **kwargs):
         return _StripOutput(TypedChainOfThought(signature, **kwargs), output_key)
 
     # if we have only a single callable argument, the decorator was invoked with no key word arguments
-    #  so we just return the wrapped function 
+    #  so we just return the wrapped function
     if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
         return _cot(args[0])
     return _cot
@@ -217,7 +217,7 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=parse,
                     )
-                elif type_ in (str, int, float, bool):
+                elif type_ in (str, int, float):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")

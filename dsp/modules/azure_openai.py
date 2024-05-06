@@ -56,10 +56,13 @@ class AzureOpenAI(LM):
         model: str = "gpt-3.5-turbo-instruct",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
+        system_prompt: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
+
+        self.system_prompt = system_prompt
 
         # Define Client
         if OPENAI_LEGACY:
@@ -132,7 +135,11 @@ class AzureOpenAI(LM):
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
-            kwargs["messages"] = [{"role": "user", "content": prompt}]
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+
+            kwargs["messages"] = messages
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(self.client, **kwargs)
 
