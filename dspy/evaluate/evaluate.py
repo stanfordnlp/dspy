@@ -20,7 +20,7 @@ try:
     from IPython.display import display as ipython_display  # type: ignore
 except ImportError:
     ipython_display = print
-    def HTML(x): # noqa - linters dislike upper case function name
+    def HTML(x): # noqa
         return x
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
