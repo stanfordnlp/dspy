@@ -53,13 +53,12 @@ These optimizers extend the signature by automatically generating and including 
 
 4. **`BootstrapFewShotWithOptuna`**: Applies `BootstrapFewShot` through Optuna hyperparameter optimization across demonstration sets, running trials to maximize evaluation metrics and selecting the best demonstrations. 
 
-5. **`KNNFewShot`**. Selects demonstrations through k-Nearest Neighbors algorithm.  Vectorizes the examples, and then clusters them, using cluster centers with `BootstrapFewShot` for bootstrapping/selection process. 
-
+5. **`KNNFewShot`**. Selects demonstrations through k-Nearest Neighbors algorithm to pick a diverse set of examples from different clusters.  Vectorizes the examples, and then clusters them, using cluster centers with `BootstrapFewShot` for bootstrapping/selection process.  This will be  useful when there's a lot of data over random spaces: using KNN helps optimize the `trainset`  for `BootstrapFewShot`.  See [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/knn.ipynb) for an example.
 
 
 #### Automatic Instruction Optimization
 
-These optimizers serve to produce optimal instructions for the prompt, in addition to optimized few-shot demonstrations.
+These optimizers produce optimal instructions for the prompt and, in the case of MIPRO also optimize the set of few-shot demonstrations.
 
 6. **`COPRO`**: Generates and refines new instructions for each step, and optimizes them with coordinate ascent (hill-climbing using the metric function and the `trainset`). Parameters include `depth` which is the number of iterations of prompt improvement the optimizer runs over.
 
