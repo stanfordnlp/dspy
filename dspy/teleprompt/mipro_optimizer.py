@@ -42,6 +42,7 @@ Note that this teleprompter takes in the following parameters:
                     * score: the last average evaluated score for the program
                     * pruned: whether or not this program was pruned
                 This information will be returned as attributes of the best program.
+* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric. 
 """
 
 
@@ -142,6 +143,7 @@ class MIPRO(Teleprompter):
         verbose=False,
         track_stats=True,
         view_data_batch_size=10,
+        additional_instructions=None
     ):
         self.num_candidates = num_candidates
         self.metric = metric
@@ -152,6 +154,38 @@ class MIPRO(Teleprompter):
         self.track_stats = track_stats
         self.teacher_settings = teacher_settings
         self.view_data_batch_size = view_data_batch_size
+
+        self.basic_generate_instruction = (
+            self._get_signature(BasicGenerateInstruction).with_instructions(
+                " ".join([BasicGenerateInstruction.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else BasicGenerateInstruction
+        )
+
+        self.generate_instruction_with_data_observations = (
+            self._get_signature(BasicGenerateInstructionWithDataObservations).with_instructions(
+                " ".join([BasicGenerateInstructionWithDataObservations.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else BasicGenerateInstructionWithDataObservations
+        )
+
+        self.generate_instruction_with_examples = (
+            self._get_signature(BasicGenerateInstructionWithExamples).with_instructions(
+                " ".join([BasicGenerateInstructionWithExamples.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else BasicGenerateInstructionWithExamples
+        )
+
+        self.generate_instruction_with_examples_and_observations = (
+            self._get_signature(BasicGenerateInstructionWithExamplesAndDataObservations).with_instructions(
+                " ".join([BasicGenerateInstructionWithExamplesAndDataObservations.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else BasicGenerateInstructionWithExamplesAndDataObservations
+        )
 
     def _print_full_program(self, program):
         for i, predictor in enumerate(program.predictors()):
@@ -282,7 +316,7 @@ class MIPRO(Teleprompter):
                     instruct = None
                     for i in range(1, self.num_candidates):
                         new_instruct = dspy.Predict(
-                            BasicGenerateInstructionWithExamplesAndDataObservations,
+                            self.generate_instruction_with_examples_and_observations,
                             n=1,
                             temperature=self.init_temperature,
                         )(
@@ -302,7 +336,7 @@ class MIPRO(Teleprompter):
                 # Just data
                 elif view_data:
                     instruct = dspy.Predict(
-                        BasicGenerateInstructionWithDataObservations,
+                        self.generate_instruction_with_data_observations,
                         n=N - 1,
                         temperature=self.init_temperature,
                     )(basic_instruction=basic_instruction, observations=self.observations)
@@ -311,7 +345,7 @@ class MIPRO(Teleprompter):
                     instruct = None
                     for i in range(1, self.num_candidates):  # Note: skip over the first example set which is empty
                         new_instruct = dspy.Predict(
-                            BasicGenerateInstructionWithExamples,
+                            self.generate_instruction_with_examples,
                             n=1,
                             temperature=self.init_temperature,
                         )(
@@ -329,7 +363,7 @@ class MIPRO(Teleprompter):
                             )
                 # Neither
                 else:
-                    instruct = dspy.Predict(BasicGenerateInstruction, n=N - 1, temperature=self.init_temperature)(
+                    instruct = dspy.Predict(self.basic_generate_instruction, n=N - 1, temperature=self.init_temperature)(
                         basic_instruction=basic_instruction,
                     )
 

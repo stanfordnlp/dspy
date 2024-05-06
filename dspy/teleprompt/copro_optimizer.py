@@ -29,6 +29,7 @@ Note that this teleprompter takes in the following parameters:
                     * results_latest: The min,max,avg,stddev of newest prompt scores for each predictor at each depth.
                     * total_calls: The total number of calls to the task metric.
                 These statistics will be returned as attributes of the best program.
+* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric. 
 """
 
 
@@ -63,8 +64,7 @@ class COPRO(Teleprompter):
         depth=3,
         init_temperature=1.4,
         track_stats=False,
-        basic_generate_instruction=None,
-        generate_instruction_given_attempts=None,
+        additional_instructions=None,
         **_kwargs,
     ):
         if breadth <= 1:
@@ -75,11 +75,26 @@ class COPRO(Teleprompter):
         self.init_temperature = init_temperature
         self.prompt_model = prompt_model
         self.track_stats = track_stats
-        self.basic_generate_instruction = basic_generate_instruction or BasicGenerateInstruction
-        self.generate_instruction_given_attempts = generate_instruction_given_attempts or GenerateInstructionGivenAttempts
+
+        self.basic_generate_instruction = (
+            self._get_signature(BasicGenerateInstruction).with_instructions(
+                " ".join([BasicGenerateInstruction.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else BasicGenerateInstruction
+        )
+        self.generate_instruction_given_attempts = (
+            self._get_signature(GenerateInstructionGivenAttempts).with_instructions(
+                " ".join([GenerateInstructionGivenAttempts.instructions, additional_instructions])
+            )
+            if additional_instructions
+            else GenerateInstructionGivenAttempts
+        )
 
         if "verbose" in _kwargs:
-            dspy.logger.warning("DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.")
+            dspy.logger.warning(
+                "DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error."
+            )
 
     def _check_candidates_equal(self, candidate1, candidate2):
         for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
@@ -315,7 +330,9 @@ class COPRO(Teleprompter):
                     )(attempted_instructions=attempts)
 
                 if self.prompt_model:
-                    dspy.logger.debug(f"(self.prompt_model.inspect_history(n=1)) {self.prompt_model.inspect_history(n=1)}")
+                    dspy.logger.debug(
+                        f"(self.prompt_model.inspect_history(n=1)) {self.prompt_model.inspect_history(n=1)}"
+                    )
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions
                 all_candidates[id(p_base)].proposed_instruction.extend(instr.completions.proposed_instruction)
