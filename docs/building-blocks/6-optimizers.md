@@ -51,7 +51,7 @@ These optimizers extend the signature by automatically generating and including 
 
 3. **`BootstrapFewShotWithRandomSearch`**: Applies `BootstrapFewShot` several times with random search over generated demonstrations, and selects the best program over the optimization. Parameters mirror those of `BootstrapFewShot`, with the addition of `num_candidate_programs`, which specifies the number of random programs evaluated over the optimization, including candidates of the uncompiled program, `LabeledFewShot` optimized program, `BootstrapFewShot` compiled program with unshuffled examples and `num_candidate_programs` of `BootstrapFewShot` compiled programs with randomized example sets. 
 
-4. **`BootstrapFewShotWithOptuna`**: Applies `BootstrapFewShot` through Optuna hyperparameter optimization across demonstration sets, running trials to maximize evaluation metrics and selecting the best demonstrations. 
+4. **`BootstrapFewShotWithOptuna`**: Applies `BootstrapFewShot` with Optuna optimization across demonstration sets, running trials to maximize evaluation metrics and selecting the best demonstrations. 
 
 5. **`KNNFewShot`**. Selects demonstrations through k-Nearest Neighbors algorithm to pick a diverse set of examples from different clusters.  Vectorizes the examples, and then clusters them, using cluster centers with `BootstrapFewShot` for bootstrapping/selection process.  This will be  useful when there's a lot of data over random spaces: using KNN helps optimize the `trainset`  for `BootstrapFewShot`.  See [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/knn.ipynb) for an example.
 
