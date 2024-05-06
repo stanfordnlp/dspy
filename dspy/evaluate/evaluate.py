@@ -35,8 +35,7 @@ we print the number of failures, the first N examples that failed, and the first
 
 class Evaluate:
     """
-    Reification of the process of evaluating a model.  Invoked using its
-    `__call__` method.
+    Reification of the process of evaluating a DSPy program.
 
     Parameters
     ==========
@@ -45,16 +44,21 @@ class Evaluate:
     metric: Callable, optional
        A function that takes an Example and a Prediction and keyword args as arguments
        and returns a boolean
-    num_threads: int, optional
-       How many
+    num_threads: int, optional: default 1
+       How many threads to use for simultaneous evaluation of different examples.
     display_progress: bool, optional
+       Display a progress bar?
     display_table: Union[bool, int], optional
         This is either a boolean indicating whether or not to display a table of
         results or an integer indicating how many rows of results to display.
         If `True`, all rows will be displayed.
-    max_errors: int, optional
+    max_errors: int, optional: default 5
     return_outputs: bool, optional
         Whether or not to return the predictions.
+
+    Notes
+    =====
+      Invoked using its `__call__` method.
     """
 
     def __init__(
