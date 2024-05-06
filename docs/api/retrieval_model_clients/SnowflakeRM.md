@@ -23,16 +23,15 @@ SnowflakeRM(
 - `snowflake_table_name (str)`: The name of the Snowflake table containing embeddings.
 - `snowflake_credentials (dict)`: The connection parameters needed to initialize a Snowflake Snowpark Session.
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
-- `embeddings_field (str)`: The name of the column in the snowflake table containing the embeddings.
-- `embeddings_text_field (str)`: The function to convert a list of text to embeddings.
-    The embedding function should take a list of text strings as input and output a list of embeddings.
-    Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY and use OpenAI's embedding model "text-embedding-3-small" with the default dimension.
+- `embeddings_field (str)`: The name of the column in the Snowflake table containing the embeddings.
+- `embeddings_text_field (str)`: The name of the column in the Snowflake table containing the passages.
+- `embeddings_model (str)`: The model to be used to convert text to embeddings
 
 ### Methods
 
 #### `forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction`
 
-Search the Milvus collection for the top `k` passages matching the given query or queries, using embeddings generated via the default `e5-base-v2` model or the specified `embedding_function`.
+Search the Snowflake table for the top `k` passages matching the given query or queries, using embeddings generated via the default `e5-base-v2` model or the specified `embedding_model`.
 
 **Parameters:**
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
