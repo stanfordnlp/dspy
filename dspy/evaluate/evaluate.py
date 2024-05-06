@@ -222,17 +222,21 @@ class Evaluate:
         """
         Returns
         =======
-        score: float, results: list of Prediction, all_scores: list of scores
-            if `return_all_scores` and `return_outputs` are both True.
+        score: float, results: list of `Prediction`, all_scores: list of scores
+            if `return_all_scores` and `return_outputs` are both `True`.
         score: float, all_scores: list of scores
-            if `return_all_scores` is True and `return_outputs` is True.
-        score: float, results: list of Prediction
-            if `return_all_scores` is False and `return_outputs` is True.
+            if `return_all_scores` is `True` and `return_outputs` is `False`.
+        score: float, results: list of `Prediction`
+            if `return_all_scores` is `False` and `return_outputs` is `True`.
         score: float
-            if both flags are false
+            `return_all_scores` and `return_outputs` are both `False`.
         """
         metric = metric if metric is not None else self.metric
+        if metric is None:
+            raise ValueError("metric is required for Evaluation")
         devset = devset if devset is not None else self.devset
+        if devset is None:
+            raise ValueError("devset is required for Evaluation")
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = (
             display_progress if display_progress is not None else self.display_progress
