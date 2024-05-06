@@ -22,10 +22,10 @@ class SnowflakeRM(dspy.Retrieve):
         - content: The text of the passage
 
     Args:
-        snowflake_credentials: connection parameters for initializing Snowlfake client.
+        snowflake_credentials: connection parameters for initializing Snowflake client.
         snowflake_table_name (str): The name of the Snowflake table containing document embeddings.
-        embeddings_field (str): The field in the snowlake table with the content embeddings
-        embeddings_text_field (str): The field in the snowlake table with the content.
+        embeddings_field (str): The field in the Snowflake table with the content embeddings
+        embeddings_text_field (str): The field in the Snowflake table with the content.
         k (int, optional): The default number of top passages to retrieve. Defaults to 3.
     """
 
