@@ -10,7 +10,7 @@ with open('requirements.txt', encoding='utf-8') as f:
 
 setup(	
     name="dspy-ai",	
-    version="2.4.3",	
+    version="2.4.9",	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	
@@ -31,6 +31,7 @@ setup(
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "fastembed": ["fastembed"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	

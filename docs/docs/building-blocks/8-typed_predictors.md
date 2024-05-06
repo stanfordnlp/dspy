@@ -67,8 +67,8 @@ prediction = predictor(input=doc_query_pair)
 Let's see the output and its type.
 
 ```python
-answer = prediction.answer
-confidence_score = prediction.confidence
+answer = prediction.output.answer
+confidence_score = prediction.output.confidence
 
 print(f"Prediction: {prediction}\n\n")
 print(f"Answer: {answer}, Answer Type: {type(answer)}")
