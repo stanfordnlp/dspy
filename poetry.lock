@@ -1298,23 +1298,26 @@ uvicorn = {version = ">=0.29.0", extras = ["standard"]}
 
 [[package]]
 name = "fastembed"
-version = "0.2.6"
+version = "0.2.7"
 description = "Fast, light, accurate library built for retrieval embedding generation"
 optional = true
 python-versions = "<3.13,>=3.8.0"
 files = [
-    {file = "fastembed-0.2.6-py3-none-any.whl", hash = "sha256:3e18633291722087abebccccd7fcdffafef643cb22d203370d7fad4fa83c10fb"},
-    {file = "fastembed-0.2.6.tar.gz", hash = "sha256:adaed5b46e19cc1bbe5f98f2b3ffecfc4d2a48d27512e28ff5bfe92a42649a66"},
+    {file = "fastembed-0.2.7-py3-none-any.whl", hash = "sha256:8f21e65e6d5d06bd8727488906c6c4eda8eb86d81be8879a54846dfe8a23c9d3"},
+    {file = "fastembed-0.2.7.tar.gz", hash = "sha256:f5537e3680694afcd3d806c19dd4514030fdc3144e7e9a9db0dfece771922503"},
 ]
 
 [package.dependencies]
 huggingface-hub = ">=0.20,<0.21"
 loguru = ">=0.7.2,<0.8.0"
-numpy = {version = ">=1.21", markers = "python_version < \"3.12\""}
+numpy = [
+    {version = ">=1.21", markers = "python_version < \"3.12\""},
+    {version = ">=1.26", markers = "python_version >= \"3.12\""},
+]
 onnx = ">=1.15.0,<2.0.0"
 onnxruntime = ">=1.17.0,<2.0.0"
 requests = ">=2.31,<3.0"
-tokenizers = ">=0.15.1,<0.16.0"
+tokenizers = ">=0.15,<0.16"
 tqdm = ">=4.66,<5.0"
 
 [[package]]
@@ -7150,4 +7153,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "e7017f09f5b734938e639d670fe3a5dca65201bae445004b89e691728eb3574d"
+content-hash = "dfb44251298e064041c90ee3a63a1cf5baaf2c6ce5c4bbaa4a036247c74852a8"
