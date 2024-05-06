@@ -23,3 +23,4 @@ from .ollama import *
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
+from .watsonx import *
