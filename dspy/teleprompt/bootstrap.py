@@ -1,6 +1,6 @@
 import random
 import threading
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import tqdm
 
