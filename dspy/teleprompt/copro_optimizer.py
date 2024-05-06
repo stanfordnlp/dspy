@@ -29,7 +29,7 @@ Note that this teleprompter takes in the following parameters:
                     * results_latest: The min,max,avg,stddev of newest prompt scores for each predictor at each depth.
                     * total_calls: The total number of calls to the task metric.
                 These statistics will be returned as attributes of the best program.
-* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric. 
+* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric.
 """
 
 
@@ -77,26 +77,28 @@ class COPRO(Teleprompter):
         self.track_stats = track_stats
         self._additional_instructions = additional_instructions
 
-
         if "verbose" in _kwargs:
             dspy.logger.warning(
-                "DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error."
+                "DeprecationWarning: 'verbose' has been deprecated. To see all information for debugging, use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
             )
+
+    def append_instructions(self, base_signature, additional_instructions):
+        return self._get_signature(base_signature).with_instructions(
+            " ".join([base_signature.instructions, additional_instructions]),
+        )
 
     @property
     def basic_generate_instruction(self):
-        return (self._get_signature(BasicGenerateInstruction).with_instructions(
-                " ".join([BasicGenerateInstruction.instructions, self._additional_instructions])
-            )
+        return (
+            self.append_instructions(BasicGenerateInstruction, self._additional_instructions)
             if self._additional_instructions
-            else BasicGenerateInstruction)
+            else BasicGenerateInstruction
+        )
 
     @property
     def generate_instruction_given_attempts(self):
         return (
-            self._get_signature(GenerateInstructionGivenAttempts).with_instructions(
-                " ".join([GenerateInstructionGivenAttempts.instructions, self._additional_instructions])
-            )
+            self.append_instructions(GenerateInstructionGivenAttempts, self._additional_instructions)
             if self._additional_instructions
             else GenerateInstructionGivenAttempts
         )
@@ -336,7 +338,7 @@ class COPRO(Teleprompter):
 
                 if self.prompt_model:
                     dspy.logger.debug(
-                        f"(self.prompt_model.inspect_history(n=1)) {self.prompt_model.inspect_history(n=1)}"
+                        f"(self.prompt_model.inspect_history(n=1)) {self.prompt_model.inspect_history(n=1)}",
                     )
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions

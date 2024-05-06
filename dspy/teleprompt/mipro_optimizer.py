@@ -36,13 +36,13 @@ Note that this teleprompter takes in the following parameters:
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
-                If True, the method will track a dictionary with a key corresponding to the trial number, 
+                If True, the method will track a dictionary with a key corresponding to the trial number,
                 and a value containing a dict with the following keys:
                     * program: the program being evaluated at a given trial
                     * score: the last average evaluated score for the program
                     * pruned: whether or not this program was pruned
                 This information will be returned as attributes of the best program.
-* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric. 
+* additional_instructions: Instructions appended to the generation signatures. Can be used to provide explicit details on the optimization metric.
 """
 
 
@@ -143,7 +143,7 @@ class MIPRO(Teleprompter):
         verbose=False,
         track_stats=True,
         view_data_batch_size=10,
-        additional_instructions=None
+        additional_instructions=None,
     ):
         self.num_candidates = num_candidates
         self.metric = metric
@@ -156,20 +156,23 @@ class MIPRO(Teleprompter):
         self.view_data_batch_size = view_data_batch_size
         self._additional_instructions = additional_instructions
 
+    def append_instructions(self, base_signature, additional_instructions):
+        return self._get_signature(base_signature).with_instructions(
+            " ".join([base_signature.instructions, additional_instructions]),
+        )
+
     @property
     def basic_generate_instruction(self):
-        return (self._get_signature(BasicGenerateInstruction).with_instructions(
-            " ".join([BasicGenerateInstruction.instructions, self._additional_instructions])
+        return (
+            self.append_instructions(BasicGenerateInstruction, self._additional_instructions)
+            if self._additional_instructions
+            else BasicGenerateInstruction
         )
-                if self._additional_instructions
-                else BasicGenerateInstruction)
 
     @property
     def generate_instruction_with_data_observations(self):
         return (
-            self._get_signature(BasicGenerateInstructionWithDataObservations).with_instructions(
-                " ".join([BasicGenerateInstructionWithDataObservations.instructions, self._additional_instructions])
-            )
+            self.append_instructions(BasicGenerateInstructionWithDataObservations, self._additional_instructions)
             if self._additional_instructions
             else BasicGenerateInstructionWithDataObservations
         )
@@ -177,9 +180,7 @@ class MIPRO(Teleprompter):
     @property
     def generate_instruction_with_examples(self):
         return (
-            self._get_signature(BasicGenerateInstructionWithExamples).with_instructions(
-                " ".join([BasicGenerateInstructionWithExamples.instructions, self._additional_instructions])
-            )
+            self.append_instructions(BasicGenerateInstructionWithExamples, self._additional_instructions)
             if self._additional_instructions
             else BasicGenerateInstructionWithExamples
         )
@@ -187,13 +188,12 @@ class MIPRO(Teleprompter):
     @property
     def generate_instruction_with_examples_and_observations(self):
         return (
-            self._get_signature(BasicGenerateInstructionWithExamplesAndDataObservations).with_instructions(
-                " ".join([BasicGenerateInstructionWithExamplesAndDataObservations.instructions, self._additional_instructions])
+            self.append_instructions(
+                BasicGenerateInstructionWithExamplesAndDataObservations, self._additional_instructions
             )
             if self._additional_instructions
             else BasicGenerateInstructionWithExamplesAndDataObservations
         )
-
 
     def _print_full_program(self, program):
         for i, predictor in enumerate(program.predictors()):
@@ -371,7 +371,11 @@ class MIPRO(Teleprompter):
                             )
                 # Neither
                 else:
-                    instruct = dspy.Predict(self.basic_generate_instruction, n=N - 1, temperature=self.init_temperature)(
+                    instruct = dspy.Predict(
+                        self.basic_generate_instruction,
+                        n=N - 1,
+                        temperature=self.init_temperature,
+                    )(
                         basic_instruction=basic_instruction,
                     )
 
@@ -413,7 +417,8 @@ class MIPRO(Teleprompter):
             student.predictors(),
         )  # num data summary calls + N * P
 
-        user_message = textwrap.dedent(f"""\
+        user_message = textwrap.dedent(
+            f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
 
             Please be advised that based on the parameters you have set, the maximum number of LM calls is projected as follows:
@@ -423,22 +428,25 @@ class MIPRO(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of calls to prompt model * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
             and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
 
             {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
-            {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}""")
+            {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}""",
+        )
 
-        user_confirmation_message = textwrap.dedent(f"""\
+        user_confirmation_message = textwrap.dedent(
+            f"""\
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
 
             If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False`.{ENDC}
 
             {YELLOW}Awaiting your input...{ENDC}
-        """)
+        """,
+        )
 
         print(user_message)
 
