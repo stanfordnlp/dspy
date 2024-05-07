@@ -6,7 +6,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 # BootstrapFewShot
 
-When compiling a DSPy program, we generally invoke a teleprompter, which is an optimizer that takes the program, a training set, and a metric—and returns a new optimized program. Different teleprompters apply different strategies for optimization. This family of teleprompters is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use teleprompter to optimizes it.
+When compiling a DSPy program, we generally invoke an optimizer, which takes the program, a training set, and a metric—and returns a new optimized program. This family of optimizers is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use optimizers.
 
 ## Setting up a Sample Pipeline
 
@@ -57,16 +57,16 @@ cot_baseline = CoT()
 evaluate(cot_baseline, devset=devset[:])
 ```
 
-Now we have the baseline pipeline ready to use, so let's try using the `BootstrapFewShot` teleprompter and optimizing our pipeline to make it even better!
+Now we have the baseline pipeline ready to use, so let's try using the `BootstrapFewShot` optimizer to make it even better!
 
 ## Using `BootstrapFewShot`
 
-Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `gsm8k_metric` imported and used above:
+Let's start by importing and initializing our optimizer, for the metric we'll be using the same `gsm8k_metric` imported and used above:
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
-teleprompter = BootstrapFewShotWithRandomSearch(
+optimizer = BootstrapFewShotWithRandomSearch(
     metric=gsm8k_metric, 
     max_bootstrapped_demos=8, 
     max_labeled_demos=8,
@@ -82,12 +82,12 @@ teleprompter = BootstrapFewShotWithRandomSearch(
 | **Data Source**       | Pre-existing dataset of manually labeled examples.   | Generated during the training process, often using outputs from a teacher module. |
 | **Influence on Training** | Higher quality and reliability, assuming labels are accurate. | Provides more data but may introduce noise or inaccuracies. |
 
-This teleprompter augments any necessary field even if you data doesn't have it, for example we don't have rationale for labelling however you'll see the rationale for each few shot example in the prompt that this teleprompter curated, how? By generating them all via a `teacher` module which is an optional parameter, since we didn't pass it the teleprompted creates a teacher from the module we are training or the `student` module. 
+This optimizer augments any necessary field even if you data doesn't have it, for example we don't have rationale for labelling however you'll see the rationale for each few shot example in the prompt that this optimizer curated, how? By generating them all via a `teacher` module which is an optional parameter, since we didn't pass it the optimizer creates a teacher from the module we are training or the `student` module. 
 
-In the next section, we'll seen this process step by step but for now let's start optimizing our `CoT` module by calling the `compile` method in the teleprompter:
+In the next section, we'll seen this process step by step but for now let's start optimizing our `CoT` module by calling the `compile` method in the optimizer:
 
 ```python
-cot_compiled = teleprompter.compile(CoT(), trainset=trainset, valset=devset)
+cot_compiled = optimizer.compile(CoT(), trainset=trainset, valset=devset)
 ```
 
 Once the training is done you'll have a more optimized module that you can save or load again for use anytime:
@@ -102,12 +102,12 @@ cot_compiled.save('turbo_gsm8k.json')
 
 ## How `BootstrapFewShot` works?
 
-`LabeledFewShot` is the most vanilla teleprompter that takes a training set as input and it assigns subsets of the trainset in each student's predictor's demos attribute. You can think of it as basically adding few shot examples to the prompt.
+`LabeledFewShot` is the most vanilla optimizer that takes a training set as input and it assigns subsets of the trainset in each student's predictor's demos attribute. You can think of it as basically adding few shot examples to the prompt.
 
 `BootStrapFewShot` starts by doing this only, it starts by:
 1. Initializing a student program which which is the one we are optimizing and a teacher program which unless specified otherwise is a clone of the student.
 
-2. Then to the teacher it add the demos by using `LabeledFewShot` teleprompter.
+2. Then to the teacher it add the demos by using `LabeledFewShot` optimizer.
 
 3. Mappings are created between the names of predictors and their corresponding instances in both student and teacher models.
 
