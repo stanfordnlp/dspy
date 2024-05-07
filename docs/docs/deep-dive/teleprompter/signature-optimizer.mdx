@@ -6,7 +6,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 # Signature Optimizer
 
-`COPRO` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This teleprompter is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and unrefined prompt.
+`COPRO` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This optimizer is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and unrefined prompt.
 
 ## Setting up a Sample Pipeline
 
@@ -75,27 +75,27 @@ devset_with_input = [dspy.Example({"question": r["question"], "answer": r["answe
 evaluate(cot_baseline, devset=devset_with_input)
 ```
 
-Now we have the baseline pipeline ready to use, so let's try using the `COPRO` teleprompter and optimizing our pipeline to make it even better!
+Now we have the baseline pipeline ready to use, so let's try using the `COPRO` optimizer and optimizing our pipeline to make it even better!
 
 ## Using `COPRO`
 
-Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `validate_context_and_answer` imported and used above:
+Let's start by importing and initializing our optimizer, for the metric we'll be using the same `validate_context_and_answer` imported and used above:
 
 ```python
 from dspy.teleprompt import COPRO
 
-teleprompter = COPRO(
+optimizer = COPRO(
     metric=validate_context_and_answer,
     verbose=True,
 )
 ```
 
-In this teleprompter there is a breadth and depth argument that defines the number of instruction/prefix candidate and number of iterations in the optimization step. We'll understand this in depth in the next section. This teleprompter comes up with better instruction candidates for the signature and better prefix candidates for the output fields of the signature. Let's start optimizing our `CoT` module by calling the `compile` method in the teleprompter:
+In this optimizer there is a breadth and depth argument that defines the number of instruction/prefix candidate and number of iterations in the optimization step. We'll understand this in depth in the next section. This optimizer comes up with better instruction candidates for the signature and better prefix candidates for the output fields of the signature. Let's start optimizing our `CoT` module by calling the `compile` method in the optimizer:
 
 ```python
 kwargs = dict(num_threads=64, display_progress=True, display_table=0) # Used in Evaluate class in the optimization process
 
-compiled_prompt_opt = teleprompter.compile(cot, trainset=devset, eval_kwargs=kwargs)
+compiled_prompt_opt = optimizer.compile(cot, trainset=devset, eval_kwargs=kwargs)
 ```
 
 Once the training is done you'll have better instructions and prefixes that you'll need to edit in signature manually. So let's say the output during optimization is like:
@@ -160,7 +160,7 @@ Let's break down the process stepwise:
     - Propose new, more optimized instructions and prefixes based on the evaluation.
 4. **Outcome:** After m iterations, the system ideally converges to a set of highly optimized instructions and corresponding prefixes that lead to better performance of the language model on the given task.
 
-This iterative approach allows for continuous refinement of instructions and prefixes, leveraging the strengths of the teleprompter and improving task performance over time.
+This iterative approach allows for continuous refinement of instructions and prefixes, leveraging the strengths of the optimizer and improving task performance over time.
 
 ***
 
