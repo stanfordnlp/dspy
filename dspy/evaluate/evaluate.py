@@ -218,12 +218,12 @@ class Evaluate:
         result_df = result_df.rename(columns={"correct": metric_name})
 
         if display_table:
-            if isinstance(display_table, int):
-                df_to_display = result_df.head(display_table).copy()
-                truncated_rows = len(result_df) - display_table
-            else:
+            if isinstance(display_table, bool):
                 df_to_display = result_df.copy()
                 truncated_rows = 0
+            else:
+                df_to_display = result_df.head(display_table).copy()
+                truncated_rows = len(result_df) - display_table
 
             styled_df = configure_dataframe_display(df_to_display, metric_name)
 
