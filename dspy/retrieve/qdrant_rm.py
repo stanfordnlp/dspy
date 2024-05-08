@@ -118,4 +118,4 @@ class QdrantRM(dspy.Retrieve):
         first_vector_name = list(vectors.keys())[0]
 
         # The collection has multiple vectors. Could also include the falsy unnamed vector - Empty string("")
-        return first_vector_name if first_vector_name else None
+        return first_vector_name or None
