@@ -26,6 +26,7 @@ Clarifai = dsp.ClarifaiLLM
 Google = dsp.Google
 GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
+Claude = dsp.Claude
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
@@ -41,6 +42,8 @@ AWSModel = dsp.AWSModel
 AWSMistral = dsp.AWSMistral
 AWSAnthropic = dsp.AWSAnthropic
 AWSMeta = dsp.AWSMeta
+
+Watsonx = dsp.Watsonx
 
 configure = settings.configure
 context = settings.context

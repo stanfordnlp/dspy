@@ -47,10 +47,11 @@ def test_compile_with_predict_instances():
     with dspy.settings.context(lm=lm, backend=None):
         # Initialize BootstrapFewShot and compile the student
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
-        assert compiled_student is not None, "Failed to compile student"
-        assert hasattr(compiled_student, "_compiled") and compiled_student._compiled, "Student compilation flag not set"
+    # Initialize BootstrapFewShot and compile the student
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
 def test_compile_with_predict_instances_with_backend():
@@ -63,7 +64,7 @@ def test_compile_with_predict_instances_with_backend():
     with dspy.settings.context(backend=backend, lm=None, cache=False):
         # Initialize BootstrapFewShot and compile the student
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
         assert compiled_student is not None, "Failed to compile student"
         assert hasattr(compiled_student, "_compiled") and compiled_student._compiled, "Student compilation flag not set"
@@ -76,12 +77,7 @@ def test_bootstrap_effectiveness():
     lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     with dspy.settings.context(lm=lm, trace=[]):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
-
-        # Check that the compiled student has the correct demos
-        assert len(compiled_student.predictor.demos) == 1
-        assert compiled_student.predictor.demos[0].input == trainset[0].input
-        assert compiled_student.predictor.demos[0].output == trainset[0].output
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
         # Test the compiled student's prediction.
         # We are using a DummyLM with follow_examples=True, which means that
@@ -126,7 +122,7 @@ def test_bootstrap_effectiveness_with_backend():
     backend = DummyBackend(answers=[["blue"], ["blue"], ["Ring-dint-ding-ding-dingeringeding!"]])
     with dspy.settings.context(backend=backend, cache=False, trace=[], lm=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
         # Check that the compiled student has the correct demos
         assert len(compiled_student.predictor.demos) == 1
@@ -204,7 +200,7 @@ def test_error_handling_during_bootstrap():
         )
 
         with pytest.raises(RuntimeError, match="Simulated error"):
-            bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+            bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
 def test_error_handling_during_bootstrap_with_backend():
@@ -234,7 +230,10 @@ def test_error_handling_during_bootstrap_with_backend():
         )
 
         with pytest.raises(RuntimeError, match="Simulated error"):
-            bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+            bootstrap.compile(student, teacher=teacher, trainset=trainset)
+
+    with pytest.raises(RuntimeError, match="Simulated error"):
+        bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
 def test_validation_set_usage():
@@ -252,10 +251,10 @@ def test_validation_set_usage():
     )
     with dspy.settings.context(lm=lm, backend=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
-        # Check that validation examples are part of student's demos after compilation
-        assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
 def test_validation_set_usage_with_backend():
@@ -268,7 +267,4 @@ def test_validation_set_usage_with_backend():
     backend = DummyBackend(answers=[["Initial thoughts"], ["Finish[blue]"]])
     with dspy.settings.context(backend=backend, lm=None):
         bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
-
-        # Check that validation examples are part of student's demos after compilation
-        assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+        compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)

@@ -217,7 +217,7 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=parse,
                     )
-                elif type_ in (str, int, float, bool):
+                elif type_ in (str, int, float):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
