@@ -185,7 +185,6 @@ class GPT3(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        # if logprobs:
         if kwargs.get("logprobs", False):
             completions = [{'text': self._get_choice_text(c), 'logprobs': c["logprobs"]} for c in choices]
         else:
