@@ -6,7 +6,7 @@ from dsp.utils import dotdict
 try:
     from snowflake.snowpark import Session
     from snowflake.snowpark import functions as snow_fn
-    from snowflake.snowpark.functions import lit, vector_cosine_distance
+    from snowflake.snowpark.functions import lit, vector_cosine_similarity
     from snowflake.snowpark.types import VectorType
 
 except ImportError:
@@ -88,7 +88,7 @@ class SnowflakeRM(dspy.Retrieve):
             doc_embeddings.select(
                 doc_table_value,
                 doc_table_key,
-                vector_cosine_distance(
+                vector_cosine_similarity(
                     doc_embeddings.col(doc_table_value),
                     lit(query_embeddings).cast(VectorType(float, len(query_embeddings))),
                 ).as_("dist"),
