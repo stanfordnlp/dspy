@@ -49,6 +49,9 @@ class AWSModel(LM):
         self._max_context_size: int = max_context_size
         self._max_new_tokens: int = max_new_tokens
 
+        # make it consistent with equivalent LM::max_token
+        self.kwargs["max_tokens"] = max_new_tokens
+
         self.kwargs = {
             **self.kwargs,
             **kwargs,
@@ -63,7 +66,7 @@ class AWSModel(LM):
         """Call model, get generated input without the formatted prompt."""
 
     def _estimate_tokens(self, text: str) -> int:
-        return len(text)/CHARS2TOKENS
+        return len(text) / CHARS2TOKENS
 
     def _extract_input_parameters(
         self,

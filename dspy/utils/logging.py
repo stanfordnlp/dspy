@@ -42,7 +42,10 @@ class LogSettings:
         )
 
     def set_log_output(
-        self, method: t.Optional[str] = None, file_name: t.Optional[str] = None, output_type: t.Optional[str] = None,
+        self,
+        method: t.Optional[str] = None,
+        file_name: t.Optional[str] = None,
+        output_type: t.Optional[str] = None,
     ):
         if method is not None and method not in ["console", "file"]:
             raise ValueError("method provided can only be 'console', 'file'")
@@ -78,12 +81,19 @@ class LogSettings:
 
 level = os.environ.get("LOG_LEVEL", "info").upper()
 
+
 # Set Defaults
-logging.basicConfig(
-    format="%(message)s",
-    stream=sys.stdout,
-    level=level,
-)
+def show_logging(level: str = level) -> None:
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=level,
+    )
+
+    # 'backoff' is used by OpenAI, and defaults their log level to INFO.
+    # this can clobber up dspy relevant logging for users
+    # this silences there logs.
+    logging.getLogger("backoff").setLevel(logging.WARNING)
 
 
 settings = LogSettings(output_type="str", method="console", file_name=None)

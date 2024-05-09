@@ -87,7 +87,7 @@ class DatabricksRM(dspy.Retrieve):
         self.docs_id_column_name = docs_id_column_name
         self.text_column_name = text_column_name
 
-    def forward(self, query: Union[str, List[float]], query_type: str = 'text') -> dspy.Prediction:
+    def forward(self, query: Union[str, List[float]], query_type: str = 'text', filters_json: str = None) -> dspy.Prediction:
         """Search with Databricks Vector Search Client for self.k top results for query
 
         Args:
@@ -115,8 +115,9 @@ class DatabricksRM(dspy.Retrieve):
             payload["query_text"] = query
         else:
             raise ValueError("Invalid query type specified. Use 'vector' or 'text'.")
-        if self.filters_json:
-            payload["filters_json"] = self.filters_json     
+
+        payload["filters_json"] = filters_json if filters_json else self.filters_json
+
         response = requests.post(
             f"{self.databricks_endpoint}/api/2.0/vector-search/indexes/{self.databricks_index_name}/query",
             json=payload,
