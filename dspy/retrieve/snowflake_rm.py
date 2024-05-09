@@ -6,7 +6,7 @@ from dsp.utils import dotdict
 try:
     from snowflake.snowpark import Session
     from snowflake.snowpark import functions as snow_fn
-    from snowflake.snowpark.functions import lit, vector_cosine_similarity
+    from snowflake.snowpark.functions import lit
     from snowflake.snowpark.types import VectorType
 
 except ImportError:
