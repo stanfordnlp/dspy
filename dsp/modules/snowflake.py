@@ -35,10 +35,10 @@ class Snowflake(LM):
     """Wrapper around Snowflake's CortexAPI.
 
     Currently supported models include 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b',
-    'llama2-70b-chat','mistral-7b','gemma-7b'.
+    'llama2-70b-chat','mistral-7b','gemma-7b','llama3-8b','llama3-70b','reka-core'.
     """
 
-    def __init__(self, model: str = "mistral-large", credentials=None, **kwargs):
+    def __init__(self, model: str = "mixtral-8x7b", credentials=None, **kwargs):
         """Parameters
 
         ----------
@@ -52,7 +52,8 @@ class Snowflake(LM):
         super().__init__(model)
 
         self.model = model
-        cortex_models = ["snowflake-arctic","mistral-large", "reka-flash", "mixtral-8x7b", "llama2-70b-chat", "mistral-7b", "gemma-7b"]
+        cortex_models = ["llama3-8b","llama3-70b","reka-core","snowflake-arctic","mistral-large", "reka-flash", "mixtral-8x7b", 
+                         "llama2-70b-chat", "mistral-7b", "gemma-7b"]
 
         if model in cortex_models:
             self.available_args = {
@@ -80,7 +81,11 @@ class Snowflake(LM):
 
     @classmethod
     def _init_cortex(cls, credentials: dict) -> None:
-        return Session.builder.configs(credentials).create()
+        
+        session = Session.builder.configs(credentials).create()
+        session.query_tag = {"origin":"sf_sit", "name":"dspy", "version":{"major":1, "minor":0}}
+
+        return session
 
     def _prepare_params(
         self,
