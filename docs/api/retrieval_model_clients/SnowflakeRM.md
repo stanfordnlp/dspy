@@ -6,7 +6,7 @@ sidebar_position:
 
 ### Constructor
 
-Initialize an instance of the `SnowflakeRM` class, with the option to use `e5-base-v2` embeddings or any Snowflake Cortex supported embeddings model.
+Initialize an instance of the `SnowflakeRM` class, with the option to use `e5-base-v2` or `snowflake-arctic-embed-m` embeddings or any other Snowflake Cortex supported embeddings model.
 
 ```python
 SnowflakeRM(

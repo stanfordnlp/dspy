@@ -42,7 +42,7 @@ class SnowflakeRM(dspy.Retrieve):
         self.embeddings_field = embeddings_field
         self.embeddings_text_field = embeddings_text_field
         self.embeddings_model = embeddings_model
-        self.client = Session.builder.configs(snowflake_credentials).create()
+        self.client = self._init_cortex(credentials=snowflake_credentials)
 
         super().__init__(k=k)
 
@@ -98,6 +98,14 @@ class SnowflakeRM(dspy.Retrieve):
         )
 
         return top_k.select(doc_table_key).to_pandas().values
+
+    @classmethod
+    def _init_cortex(cls, credentials: dict) -> None:
+        
+        session = Session.builder.configs(credentials).create()
+        session.query_tag = {"origin":"sf_sit", "name":"dspy", "version":{"major":1, "minor":0}}
+
+        return session
 
     def _get_embeddings(self, query: str) -> list[float]:
         # create embeddings for the query
