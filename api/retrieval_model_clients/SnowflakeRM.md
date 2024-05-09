@@ -1,5 +1,5 @@
 ---
-sidebar_position: 
+sidebar_position:
 ---
 
 # retrieve.SnowflakeRM
@@ -20,6 +20,7 @@ SnowflakeRM(
 ```
 
 **Parameters:**
+
 - `snowflake_table_name (str)`: The name of the Snowflake table containing embeddings.
 - `snowflake_credentials (dict)`: The connection parameters needed to initialize a Snowflake Snowpark Session.
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
@@ -34,10 +35,12 @@ SnowflakeRM(
 Search the Snowflake table for the top `k` passages matching the given query or queries, using embeddings generated via the default `e5-base-v2` model or the specified `embedding_model`.
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"id": str, "score": float, "long_text": str, "metadatas": dict }]`
 
 ### Quickstart
@@ -53,14 +56,14 @@ from dspy.retrieve.snowflake_rm import SnowflakeRM
 import os
 
 connection_parameters = {
-    
+
     "account": os.getenv('SNOWFLAKE_ACCOUNT'),
     "user": os.getenv('SNOWFLAKE_USER'),
     "password": os.getenv('SNOWFLAKE_PASSWORD'),
     "role": os.getenv('SNOWFLAKE_ROLE'),
     "warehouse": os.getenv('SNOWFLAKE_WAREHOUSE'),
     "database": os.getenv('SNOWFLAKE_DATABASE'),
-    "schema": os.getenv('SNOWFLAKE_SCHEMA')}  
+    "schema": os.getenv('SNOWFLAKE_SCHEMA')}
 
 retriever_model = SnowflakeRM(
     snowflake_table_name="<YOUR_SNOWFLAKE_TABLE_NAME>",
@@ -74,4 +77,3 @@ results = retriever_model("Explore the meaning of life", k=5)
 for result in results:
     print("Document:", result.long_text, "\n")
 ```
-
