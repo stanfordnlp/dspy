@@ -26,7 +26,7 @@ def test_retry_simple():
     print(lm.get_convo(-1))
     assert lm.get_convo(-1).endswith(
         "Question: What color is the sky?\n\n"
-        "Past Answer: red\n\n"
+        "Previous Answer: red\n\n"
         "Instructions: Try harder\n\n"
         "Answer: blue"
     )
@@ -61,7 +61,7 @@ def test_retry_forward_with_feedback():
     print(lm.get_convo(-1))
     assert lm.get_convo(-1).endswith(
         "Question: What color is the sky?\n\n"
-        "Past Answer: red\n\n"
+        "Previous Answer: red\n\n"
         "Instructions: Please think harder\n\n"
         "Answer: blue"
     )
@@ -105,7 +105,7 @@ def test_retry_forward_with_typed_predictor():
     assert result.answer == "blue"
     assert lm.get_convo(-1).endswith(
         'Input: {"question":"What color is the sky?"}\n\n'
-        'Past Output: {"answer":"red"}\n\n'
+        'Previous Output: {"answer":"red"}\n\n'
         'Instructions: Please think harder\n\n'
         'Output: {"answer":"blue"}'
     )
