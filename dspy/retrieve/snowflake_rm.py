@@ -11,7 +11,7 @@ try:
 
 except ImportError:
     raise ImportError(
-        "The snowflake-snowpark-python library is required to use SnowflakeRM. Install it with dspy-ai[snowflake]"
+        "The snowflake-snowpark-python library is required to use SnowflakeRM. Install it with dspy-ai[snowflake]",
     )
 
 
@@ -93,7 +93,7 @@ class SnowflakeRM(dspy.Retrieve):
                     lit(query_embeddings).cast(VectorType(float, len(query_embeddings))),
                 ).as_("dist"),
             )
-            .sort("dist",ascending=False)
+            .sort("dist", ascending=False)
             .limit(k)
         )
 
@@ -101,15 +101,14 @@ class SnowflakeRM(dspy.Retrieve):
 
     @classmethod
     def _init_cortex(cls, credentials: dict) -> None:
-        
         session = Session.builder.configs(credentials).create()
-        session.query_tag = {"origin":"sf_sit", "name":"dspy", "version":{"major":1, "minor":0}}
+        session.query_tag = {"origin": "sf_sit", "name": "dspy", "version": {"major": 1, "minor": 0}}
 
         return session
 
     def _get_embeddings(self, query: str) -> list[float]:
         # create embeddings for the query
-        embed = snow_fn.builtin("snowflake.cortex.embed_text")
+        embed = snow_fn.builtin("snowflake.cortex.embed_text_768")
         cortex_embed_args = embed(snow_fn.lit(self.embeddings_model), snow_fn.lit(query))
 
         return self.client.range(1).withColumn("complete_cal", cortex_embed_args).collect()[0].COMPLETE_CAL
