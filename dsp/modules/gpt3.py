@@ -185,7 +185,12 @@ class GPT3(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [self._get_choice_text(c) for c in choices]
+        # if logprobs:
+        if kwargs.get("logprobs", False):
+            completions = [{'text': self._get_choice_text(c), 'logprobs': c["logprobs"]} for c in choices]
+        else:
+            completions = [self._get_choice_text(c) for c in choices]
+
         if return_sorted and kwargs.get("n", 1) > 1:
             scored_completions = []
 
@@ -200,10 +205,12 @@ class GPT3(LM):
                     tokens, logprobs = tokens[:index], logprobs[:index]
 
                 avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, self._get_choice_text(c)))
-
+                scored_completions.append((avglog, self._get_choice_text(c), logprobs))
             scored_completions = sorted(scored_completions, reverse=True)
-            completions = [c for _, c in scored_completions]
+            if logprobs:
+                completions = [{'text': c, 'logprobs': lp} for _, c, lp in scored_completions]
+            else:
+                completions = [c for _, c in scored_completions]
 
         return completions
 
