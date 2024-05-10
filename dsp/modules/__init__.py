@@ -19,6 +19,7 @@ from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
 from .mistral import *
 from .ollama import *
+from .premai import PremAI
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
