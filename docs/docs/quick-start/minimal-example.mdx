@@ -12,7 +12,7 @@ We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and th
 
 ## Setup
 
-Before we delve into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
+Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
 
 ```python
 import dspy
@@ -33,7 +33,7 @@ Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
 print(gsm8k_trainset)
 ```
 
-The `gsm8k_trainset` and `gsm8k_devset` datasets contain a list of Examples with each example having `question` and `answer` field. We'll use these datasets to train and evaluate our model.
+The `gsm8k_trainset` and `gsm8k_devset` datasets contain a list of Examples with each example having `question` and `answer` field.
 
 ## Define the Module
 
@@ -51,7 +51,7 @@ class CoT(dspy.Module):
 
 ## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to optimizing it using the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
+With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
 
 ```python
 from dspy.teleprompt import BootstrapFewShot
@@ -61,8 +61,10 @@ config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
 
 # Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
 teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset, valset=gsm8k_devset)
+optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
 ```
+
+Note that BootstrapFewShot is not an optimizing teleprompter, i.e. it simple creates and validates examples for steps of the pipeline (in this case, the chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
 
 ## Evaluate
 
