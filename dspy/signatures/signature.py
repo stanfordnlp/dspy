@@ -281,14 +281,10 @@ def _parse_signature(signature: str) -> Tuple[Type, Field]:
 
     inputs_str, outputs_str = signature.split("->")
 
-    print(f"INPUTS: {inputs_str}, OUTPUTS: {outputs_str}")
-
     fields = {}
     for name, type_ in _parse_arg_string(inputs_str):
-        print(name, type_)
         fields[name] = (type_, InputField())
     for name, type_ in _parse_arg_string(outputs_str):
-        print(name, type_)
         fields[name] = (type_, OutputField())
 
     return fields
