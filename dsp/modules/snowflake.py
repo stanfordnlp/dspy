@@ -52,8 +52,18 @@ class Snowflake(LM):
         super().__init__(model)
 
         self.model = model
-        cortex_models = ["llama3-8b","llama3-70b","reka-core","snowflake-arctic","mistral-large", "reka-flash", "mixtral-8x7b", 
-                         "llama2-70b-chat", "mistral-7b", "gemma-7b"]
+        cortex_models = [
+            "llama3-8b",
+            "llama3-70b",
+            "reka-core",
+            "snowflake-arctic",
+            "mistral-large",
+            "reka-flash",
+            "mixtral-8x7b",
+            "llama2-70b-chat",
+            "mistral-7b",
+            "gemma-7b",
+        ]
 
         if model in cortex_models:
             self.available_args = {
@@ -81,9 +91,8 @@ class Snowflake(LM):
 
     @classmethod
     def _init_cortex(cls, credentials: dict) -> None:
-        
         session = Session.builder.configs(credentials).create()
-        session.query_tag = {"origin":"sf_sit", "name":"dspy", "version":{"major":1, "minor":0}}
+        session.query_tag = {"origin": "sf_sit", "name": "dspy", "version": {"major": 1, "minor": 0}}
 
         return session
 
@@ -103,9 +112,13 @@ class Snowflake(LM):
             snow_func.lit([{"role": "user", "content": prompt}]),
             snow_func.lit(kwargs),
         )
-        raw_response = self.client.range(1).withColumn("complete_cal", cortex_complete_args).collect()[0].COMPLETE_CAL
+        raw_response = self.client.range(1).withColumn("complete_cal", cortex_complete_args).collect()
 
-        return json.loads(raw_response)
+        if len(raw_response) > 0:
+            return json.loads(raw_response[0].COMPLETE_CAL)
+
+        else:
+            return json.loads('{"choices": [{"messages": "None"}]}')
 
     def basic_request(self, prompt: str, **kwargs) -> list:
         raw_kwargs = kwargs
