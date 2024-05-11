@@ -36,6 +36,7 @@ In many cases, we found that compiling leads to better prompts than human writin
 <!-- 1. Running symilar on the teleprompter module to extract the python hierarchy as a Graphviz dot file -->
 <!-- 2. Hand-editing the resulting dot file to remove classes that are not teleprompters/optimizers (e.g., classes for data structures manipulated by optimizers). -->
 <!-- 3. Using dot to compile the `.dot` file into a PNG -->
+<!-- Robert Goldman [2024/05/11:rpg] -->
 
 [Subclasses of Teleprompter](figures/teleprompter-classes.png)
 
