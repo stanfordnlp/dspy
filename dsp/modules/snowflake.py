@@ -46,6 +46,9 @@ class Snowflake(LM):
             Which pre-trained model from Snowflake to use?
             Choices are 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b','llama2-70b-chat','mistral-7b','gemma-7b'
             Full list of supported models is available here: https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions#complete
+        credentials: dict
+            Snowflake credentials required to initialize the session. 
+            Full list of requirements can be found here: https://docs.snowflake.com/en/developer-guide/snowpark/reference/python/latest/api/snowflake.snowpark.Session
         **kwargs: dict
             Additional arguments to pass to the API provider.
         """

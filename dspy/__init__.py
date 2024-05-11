@@ -7,7 +7,6 @@ from .retrieve import *
 from .signatures import *
 from .utils.logging import logger, set_log_output
 
-
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
 

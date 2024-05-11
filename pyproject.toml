@@ -120,7 +120,7 @@ rich = "^13.7.1"
 psycopg2 = { version = "^2.9.9", optional = true }
 pgvector = { version = "^0.2.5", optional = true }
 structlog = "^24.1.0"
-snowflake-snowpark-python = { version = "*",optional=true}
+snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
 
 

@@ -6,7 +6,7 @@ from dsp.utils import dotdict
 try:
     from snowflake.snowpark import Session
     from snowflake.snowpark import functions as snow_fn
-    from snowflake.snowpark.functions import lit, function, col
+    from snowflake.snowpark.functions import col, function, lit
     from snowflake.snowpark.types import VectorType
 
 except ImportError:
