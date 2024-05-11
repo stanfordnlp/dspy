@@ -7,6 +7,19 @@ sidebar_position:
 ### Usage
 
 ```python
+import dspy
+import os
+
+connection_parameters = {
+
+    "account": os.getenv('SNOWFLAKE_ACCOUNT'),
+    "user": os.getenv('SNOWFLAKE_USER'),
+    "password": os.getenv('SNOWFLAKE_PASSWORD'),
+    "role": os.getenv('SNOWFLAKE_ROLE'),
+    "warehouse": os.getenv('SNOWFLAKE_WAREHOUSE'),
+    "database": os.getenv('SNOWFLAKE_DATABASE'),
+    "schema": os.getenv('SNOWFLAKE_SCHEMA')}
+
 lm = dspy.Snowflake(model="mixtral-8x7b",credentials=connection_parameters)
 ```
 
