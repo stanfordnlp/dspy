@@ -112,11 +112,17 @@ def test_evaluate_call_bad():
     assert score == 0.0
 
 
-def test_evaluate_display_table():
+@pytest.mark.parametrize(
+    "display_table", [True, False, 1]
+)
+def test_evaluate_display_table(display_table):
     devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
     ev = Evaluate(
         devset=devset,
         metric=answer_exact_match,
-        display_table=True,
+        display_table=display_table,
     )
-    assert ev.display_table == True
+    assert ev.display_table == display_table
+
+    ev(program)
