@@ -87,8 +87,7 @@ Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatoui
 
 You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/stanfordnlp/dspy/blob/main/dsp/modules/cache_utils.py#L9) environment variable to `False`, which disables the `cache_turn_on` flag.
 
-Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here.
-Example:
+Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here:
 ```python
 os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
