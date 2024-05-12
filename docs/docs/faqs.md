@@ -89,7 +89,7 @@ You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/s
 
 Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here.
 Example:
-```
+```python
 os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
 
