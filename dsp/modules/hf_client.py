@@ -155,7 +155,7 @@ class HFClientVLLM(HFModel):
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
             kwargs =  {key: val for key, 
-            val in kwargs.items() if key in ["port", "url"]}
+            val in kwargs.items() if key not in ["port", "url"]}
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
@@ -183,7 +183,7 @@ class HFClientVLLM(HFModel):
                 raise Exception("Received invalid JSON response from server")
         else:
             kwargs =  {key: val for key, 
-            val in kwargs.items() if key in ["port", "url"]}
+            val in kwargs.items() if key not in ["port", "url"]}
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
