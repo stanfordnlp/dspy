@@ -1,5 +1,6 @@
 import random
 import threading
+from typing import Dict, Optional
 
 import tqdm
 
@@ -15,7 +16,8 @@ from .vanilla import LabeledFewShot
 
 # TODO: Switch here from dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
 # NOTE: Notice the places where we don't shuffle examples. I do like that this one doesn't shuffle.
-# Other ones that consider options may want to use both unshuffled and then shuffle a few times, when considering candidates.
+# Other ones that consider options may want to use both unshuffled and then shuffle a few times, when
+# considering candidates.
 
 # TODO: the max_rounds via branch_idx to get past the cache, not just temperature.
 # In principle, we can also sample multiple outputs from the final generation step
@@ -25,25 +27,47 @@ from .vanilla import LabeledFewShot
 # won't hurt our "best effort" guarantees.)
 
 # TODO: When this bootstraps for another teleprompter like finetune, we want all demos we gather.
-# But when it's for direct use we may want to sample ONE demo per predictor--example pair. This is important for "multi-use" modules.
+# But when it's for direct use we may want to sample ONE demo per predictor--example pair.
+# This is important for "multi-use" modules.
 
 # TODO: Add baselines=[...]
-
 
 class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings={},
+        teacher_settings: Optional[Dict]=None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
         max_errors=5,
     ):
+        """
+        A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
+        These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
+
+        Parameters
+        ----------
+        metric: Callable
+            A function that compares an expected value and predicted value, outputting the result of that comparison. 
+        metric_threshold: optional float, default `None`
+            If the metric yields a numerical value, then check it against this threshold when
+            deciding whether or not to accept a bootstrap example.
+        teacher_settings: dict, optional
+            Settings for the `teacher` model.
+        max_bootstrapped_demos: int, default 4
+            Maximum number of bootstrapped demonstrations to include
+        max_labeled_demos: int, default 16
+            Maximum number of labeled demonstrations to include.
+        max_rounds: int, default 1
+            Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
+        max_errors: int, default 5
+            Maximum number of errors until program ends.
+        """
         self.metric = metric
         self.metric_threshold = metric_threshold
-        self.teacher_settings = teacher_settings
+        self.teacher_settings = {} if teacher_settings is None else teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
@@ -90,7 +114,9 @@ class BootstrapFewShot(Teleprompter):
             assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
                 predictor2.signature,
-            ), f"Student and teacher must have the same signatures. {type(predictor1.signature)} != {type(predictor2.signature)}"
+            ), (f"Student and teacher must have the same signatures. "
+                f"{type(predictor1.signature)} != {type(predictor2.signature)}"
+                )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
             name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
