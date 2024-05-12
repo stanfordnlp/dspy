@@ -155,8 +155,9 @@ class HFClientVLLM(HFModel):
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
             
-            kwargs.pop("port","False")
-            kwargs.pop("url","False")
+            # Popping extra paramters for vLLM basemodel requirements (#974: https://github.com/stanfordnlp/dspy/issues/974)
+            kwargs.pop("port",None)
+            kwargs.pop("url",None)
             
             payload = {
                 "model": self.kwargs["model"],
@@ -184,8 +185,9 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
         else:
-            kwargs.pop("port","False")
-            kwargs.pop("url","False")
+            # Popping extra paramters for vLLM basemodel requirements (#974: https://github.com/stanfordnlp/dspy/issues/974)
+            kwargs.pop("port",None)
+            kwargs.pop("url",None)
             
             payload = {
                 "model": self.kwargs["model"],
