@@ -67,11 +67,11 @@ class Dataset(BaseModel):
         return examples
 
     def __getattr__(self, name: str):
-        if hasattr(self, name):
-            return self.__getattribute__(name)
-
         if name in self.data:
             return self.data[name]
+
+        if hasattr(self, name):
+            return self.__getattribute__(name)
 
         raise AttributeError(f"{name} not available in Dataset")
 
