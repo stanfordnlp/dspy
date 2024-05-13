@@ -52,6 +52,7 @@ class LM(ABC):
                     or provider == "groq"
                     or provider == "Bedrock"
                     or provider == "Sagemaker"
+                    or provider == "premai"
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
@@ -85,7 +86,7 @@ class LM(ABC):
             if provider == "cohere" or provider == "Bedrock" or provider == "Sagemaker":
                 text = choices
             elif provider == "openai" or provider == "ollama":
-                text = ' ' + self._get_choice_text(choices[0]).strip()
+                text = " " + self._get_choice_text(choices[0]).strip()
             elif provider == "clarifai" or provider == "claude":
                 text = choices
             elif provider == "groq":
@@ -97,6 +98,8 @@ class LM(ABC):
             elif provider == "cloudflare":
                 text = choices[0]
             elif provider == "ibm":
+                text = choices
+            elif provider == "premai":
                 text = choices
             else:
                 text = choices[0]["text"]

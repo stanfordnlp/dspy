@@ -1,8 +1,7 @@
-import logging
-from typing import Optional
+import os
+from typing import Any, Optional
 
 import backoff
-import premai.errors
 
 from dsp.modules.lm import LM
 
@@ -10,13 +9,8 @@ try:
     import premai
 except ImportError as err:
     raise ImportError(
-        "Not loading Mistral AI because it is not installed. Install it with `pip install premai`.",
+        "Not loading Prem AI because it is not installed. Install it with `pip install -U premai`.",
     ) from err
-
-
-# Set up logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class ChatPremAPIError(Exception):
@@ -31,7 +25,7 @@ def backoff_hdlr(details) -> None:
 
     See more at: https://pypi.org/project/backoff/
     """
-    logger.info(
+    print(
         "Backing off {wait:0.1f} seconds after {tries} tries calling function {target} with kwargs {kwargs}".format(
             **details,
         ),
@@ -45,6 +39,16 @@ def giveup_hdlr(details) -> bool:
     return True
 
 
+def get_premai_api_key(api_key: Optional[str] = None) -> str:
+    """Retrieve the PreMAI API key from a passed argument or environment variable."""
+    api_key = api_key or os.environ.get("PREMAI_API_KEY")
+    if api_key is None:
+        raise RuntimeError(
+            "No API key found. See the quick start guide at https://docs.premai.io/introduction to get your API key.",
+        )
+    return api_key
+
+
 class PremAI(LM):
     """Wrapper around Prem AI's API."""
 
@@ -52,8 +56,7 @@ class PremAI(LM):
         self,
         model: str,
         project_id: int,
-        api_key: str,
-        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
         session_id: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -63,9 +66,10 @@ class PremAI(LM):
             The name of model name
         project_id: int
             "The project ID in which the experiments or deployments are carried out. can find all your projects here: https://app.premai.io/projects/"
-        api_key: str
-            Prem AI API key, to connect with the API.
-        session_id: int
+        api_key: Optional[str]
+            Prem AI API key, to connect with the API. If not provided then it will check from env var by the name
+                PREMAI_API_KEY
+        session_id: Optional[int]
             The ID of the session to use. It helps to track the chat history.
         **kwargs: dict
             Additional arguments to pass to the API provider
@@ -76,11 +80,10 @@ class PremAI(LM):
         self.project_id = project_id
         self.session_id = session_id
 
-        if base_url is not None:
-            self.client = premai.Prem(api_key=api_key, base_url=base_url)
-        else:
-            self.client = premai.Prem(api_key=api_key)
+        api_key = get_premai_api_key(api_key=api_key)
+        self.client = premai.Prem(api_key=api_key)
         self.provider = "premai"
+        self.history: list[dict[str, Any]] = []
 
         self.kwargs = {
             "model": model,
@@ -89,7 +92,7 @@ class PremAI(LM):
             **kwargs,
         }
         if session_id is not None:
-            kwargs["sesion_id"] = session_id
+            kwargs["session_id"] = session_id
 
     def _get_all_kwargs(self, **kwargs) -> dict:
         other_kwargs = {
@@ -134,7 +137,12 @@ class PremAI(LM):
         if not response.choices:
             raise ChatPremAPIError("ChatResponse must have at least one candidate")
 
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content
+        output_text = content or ""
+
+        self.history.append({"prompt": prompt, "response": content, "kwargs": all_kwargs, "raw_kwargs": kwargs})
+
+        return output_text
 
     @backoff.on_exception(
         backoff.expo,
