@@ -2,7 +2,6 @@ import pytest
 
 import dsp
 import dspy
-from dspy.predict.knn import KNN
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.utils.dummies import DummyLM, DummyVectorizer
 
@@ -21,7 +20,7 @@ def setup_knn_few_shot():
         mock_example("What is 2+2?", "4"),
     ]
     dsp.SentenceTransformersVectorizer = DummyVectorizer
-    knn_few_shot = KNNFewShot(KNN, k=2, trainset=trainset)
+    knn_few_shot = KNNFewShot(k=2, trainset=trainset)
     return knn_few_shot
 
 

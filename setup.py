@@ -32,6 +32,7 @@ setup(
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
         "litellm": ["litellm", "tenacity"],
+        "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
     },
     classifiers=[

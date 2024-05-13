@@ -185,7 +185,8 @@ def test_insantiating2():
 def test_multiline_instructions():
     class MySignature(Signature):
         """First line
-        Second line"""
+        Second line
+            Third line"""
 
         output = OutputField()
 
@@ -195,18 +196,17 @@ def test_multiline_instructions():
     with dspy.settings.context(lm=lm, backend=None):
         assert predictor().output == "short answer"
 
-        assert lm.get_convo(-1) == textwrap.dedent(
-            """\
-            First line
-                    Second line
-
-            ---
-
-            Follow the following format.
-
-            Output: ${output}
-
-            ---
-
-            Output: short answer"""
-        )
+    assert lm.get_convo(-1) == textwrap.dedent("""\
+        First line
+        Second line
+            Third line
+        
+        ---
+        
+        Follow the following format.
+        
+        Output: ${output}
+        
+        ---
+        
+        Output: short answer""")

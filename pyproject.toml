@@ -123,6 +123,7 @@ structlog = "^24.1.0"
 snoop = "^0.4.3"
 litellm = { version = "^1.26.3", optional = true }
 jinja2 = "^3.1.3"
+snowflake-snowpark-python = { version = "*", optional=true, python = ">=3.9,<3.12" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
