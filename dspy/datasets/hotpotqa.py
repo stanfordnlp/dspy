@@ -28,7 +28,7 @@ class HotPotQA(Dataset):
             keys = ["question", "answer"]
 
         def process_sample(sample, keys) -> Example:
-            example = Example(**{k: sample[k] for k in keys})
+            example = Example(**{k: sample[k] for k in keys}).with_inputs("question")
 
             if "supporting_facts" in example:
                 example["gold_titles"] = set(example["supporting_facts"]["title"])
