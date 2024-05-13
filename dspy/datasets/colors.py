@@ -1,4 +1,4 @@
-
+import random
 from pydantic import Field
 
 from dspy.primitives.example import Example
@@ -163,6 +163,9 @@ class Colors(Dataset):
         train_size = int(len(colors) * 0.6)
         self.data["train"] = [Example(color=color) for color in colors[:train_size]]
         self.data["dev"] = [Example(color=color) for color in colors[train_size:]]
+
+        random.Random(0).shuffle(self.data["train"])
+        random.Random(0).shuffle(self.data["dev"])
 
     def sorted_by_suffix(self, colors):
         if not self.sort_by_suffix:
