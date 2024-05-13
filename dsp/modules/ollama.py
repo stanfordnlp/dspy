@@ -180,3 +180,15 @@ class OllamaLocal(LM):
         completions = [self._get_choice_text(c) for c in choices]
 
         return completions
+    
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.kwargs, **kwargs}
+
+        return self.__class__(
+            model=self.model_name,
+            model_type=self.model_type,
+            base_url=self.base_url,
+            timeout_s=self.timeout_s,
+            **kwargs,
+        )

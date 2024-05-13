@@ -10,6 +10,9 @@ try:
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
+except AttributeError:
+    cohere_api_error = Exception
+
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -84,13 +87,14 @@ class Cohere(LM):
             kwargs.pop("n")
         response = self.co.chat(**kwargs)
 
-
-        self.history.append({
-            "prompt": prompt,
-            "response": response,
-            "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        })
+        self.history.append(
+            {
+                "prompt": prompt,
+                "response": response,
+                "kwargs": kwargs,
+                "raw_kwargs": raw_kwargs,
+            },
+        )
 
         return response
 

@@ -62,7 +62,7 @@ class Claude(LM):
         }
         self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
-        self.client = Anthropic(api_key=api_key)
+        self.client = Anthropic(api_key=api_key, base_url=api_base)
 
     def log_usage(self, response):
         """Log the total tokens from the Anthropic API response."""

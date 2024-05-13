@@ -28,11 +28,16 @@ class ReAct(Module):
         inputs_ = ", ".join([f"`{k}`" for k in self.input_fields.keys()])
         outputs_ = ", ".join([f"`{k}`" for k in self.output_fields.keys()])
 
-        instr = [
+        instr = []
+        
+        if self.signature.instructions is not None:
+            instr.append(f"{self.signature.instructions}\n")
+        
+        instr.extend([
             f"You will be given {inputs_} and you will respond with {outputs_}.\n",
             "To do this, you will interleave Thought, Action, and Observation steps.\n",
             "Thought can reason about the current situation, and Action can be the following types:\n",
-        ]
+        ])
 
         self.tools["Finish"] = dspy.Example(
             name="Finish",

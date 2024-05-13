@@ -46,7 +46,13 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                if provider == "clarifai" or provider == "google" or provider == "groq" or provider == "Bedrock" or provider == "Sagemaker":
+                if (
+                    provider == "clarifai"
+                    or provider == "google"
+                    or provider == "groq"
+                    or provider == "Bedrock"
+                    or provider == "Sagemaker"
+                ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
                     blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
@@ -54,7 +60,11 @@ class LM(ABC):
                 elif provider == "cohere":
                     printed.append((prompt, x["response"].text))
                 elif provider == "mistral":
-                    printed.append((prompt, x['response'].choices))
+                    printed.append((prompt, x["response"].choices))
+                elif provider == "cloudflare":
+                    printed.append((prompt, [x["response"]]))
+                elif provider == "ibm":
+                    printed.append((prompt, x))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -76,19 +86,23 @@ class LM(ABC):
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = ' ' + self._get_choice_text(choices[0]).strip()
-            elif provider == "clarifai" or provider == "claude" :
-                text=choices
+            elif provider == "clarifai" or provider == "claude":
+                text = choices
             elif provider == "groq":
-                text = ' ' + choices
+                text = " " + choices
             elif provider == "google":
                 text = choices[0].parts[0].text
             elif provider == "mistral":
                 text = choices[0].message.content
+            elif provider == "cloudflare":
+                text = choices[0]
+            elif provider == "ibm":
+                text = choices
             else:
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="")
 
-            if len(choices) > 1:
+            if len(choices) > 1 and isinstance(choices, list):
                 printing_value += self.print_red(f" \t (and {len(choices)-1} other completions)", end="")
 
             printing_value += "\n\n\n"

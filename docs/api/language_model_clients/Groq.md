@@ -12,7 +12,7 @@ lm = dspy.GROQ(model='mixtral-8x7b-32768', api_key ="gsk_***" )
 
 ### Constructor
 
-The constructor initializes the base class `LM` and verifies the provided arguments like the `api_key` for GROQ api retriver. The `kwargs` attribute is initialized with default values for relevant text generation parameters needed for communicating with the GPT API, such as `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, and `n`.
+The constructor initializes the base class `LM` and verifies the provided arguments like the `api_key` for GROQ api retriver. The `kwargs` attribute is initialized with default values for relevant text generation parameters needed for communicating with the GROQ API, such as `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, and `n`.
 
 ```python
 class GroqLM(LM):
@@ -42,7 +42,7 @@ Internally, the method handles the specifics of preparing the request prompt and
 After generation, the generated content look like `choice["message"]["content"]`. 
 
 **Parameters:**
-- `prompt` (_str_): Prompt to send to OpenAI.
+- `prompt` (_str_): Prompt to send to GROQ.
 - `only_completed` (_bool_, _optional_): Flag to return only completed responses and ignore completion due to length. Defaults to True.
 - `return_sorted` (_bool_, _optional_): Flag to sort the completion choices using the returned averaged log-probabilities. Defaults to False.
 - `**kwargs`: Additional keyword arguments for completion request.
