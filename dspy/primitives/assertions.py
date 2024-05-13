@@ -54,6 +54,104 @@ class DSPySuggestionError(AssertionError):
         self.is_metric = is_metric
 
 
+#################### NL Assertion Primitives ####################
+
+# NOTE (Shangyint):
+# It is not clear how we should evaluate a NL assertion.
+# Current implementation is essentially useless, because we are not able to parse
+# the environment variables into the prompt. For example, the user could write
+# dspy.NLAssert("The answer should be 42") - but we do not know what the answer is.
+# or dspy.NLAssert("The length of the query should be less than 100"). This is really cool if we are able to do it, but:
+# if we simply replace "query" with the actual query, then the assertion message might get suprisingly long, and the language
+# model might not be confused.
+
+# a really fancy thing would be to somehow access the environment variables and convert it into the prompt.
+
+
+class JudgeStatement(dspy.Signature):
+    """Act as a judge for a textual statement."""
+
+    statement = dspy.InputField(desc="A statement that may be true or false.")
+    result = dspy.OutputField(desc="Whether the statement is true or false. Return a single boolean word.")
+
+
+def parse_result(result: str) -> bool:
+    if any(word in result.lower() for word in ["true", "yes", "correct"]):
+        return True
+    elif any(word in result.lower() for word in ["false", "no", "incorrect"]):
+        return False
+    else:
+        dspy.logger.warning(f"Could not parse result for binary judge (expected boolean): {result}")
+        # if the language model is not confident, we just return False.
+        return False
+
+class LLMJudger(dspy.Module):
+    """A module that judges the truthfulness of a statement."""
+
+    def __init__(self):
+        super().__init__()
+        self.predictor = dspy.ChainOfThought(JudgeStatement)
+
+    def forward(self, statement: str) -> bool:
+        result = self.predictor(statement=statement)
+        return parse_result(result.result)
+    
+
+llm_judger = LLMJudger()
+
+
+class NLConstraint:
+    def __init__(self, msg: str, target_module=None, is_metric: bool = False):
+        self.id = str(uuid.uuid4())
+        self.msg = msg
+        self.target_module = target_module
+        self.is_metric = is_metric
+
+        self.__call__()
+
+
+class NLAssert(NLConstraint):
+    """DSPy Assertion in Natural Language"""
+
+    def __call__(self) -> bool:
+        result = llm_judger(self.msg)
+        if result:
+            return True
+        elif dspy.settings.bypass_assert:
+            dspy.logger.error(f"AssertionError: {self.msg}")
+            return True
+        else:
+            dspy.logger.error(f"AssertionError: {self.msg}")
+            raise DSPyAssertionError(
+                id=self.id,
+                msg=self.msg,
+                target_module=self.target_module,
+                state=dsp.settings.trace,
+                is_metric=self.is_metric,
+            )
+
+
+class NLSuggest(NLConstraint):
+    """DSPy Suggestion in Natural Language"""
+
+    def __call__(self) -> bool:
+        result = llm_judger(self.msg)
+        if result:
+            return True
+        elif dspy.settings.bypass_suggest:
+            dspy.logger.info(f"SuggestionFailed: {self.msg}")
+            return True
+        else:
+            dspy.logger.info(f"SuggestionFailed: {self.msg}")
+            raise DSPySuggestionError(
+                id=self.id,
+                msg=self.msg,
+                target_module=self.target_module,
+                state=dsp.settings.trace,
+                is_metric=self.is_metric,
+            )
+
+
 #################### Assertion Primitives ####################
 
 
