@@ -154,3 +154,16 @@ def test_custom_tools():
         "Thought 3: Even more thoughts\n\n"
         "Action 3: Finish[baz]"
     )
+
+
+def test_signature_instructions():
+    class ExampleSignature(dspy.Signature):
+        """You are going to generate output based on input."""
+
+        input = dspy.InputField()
+        output = dspy.OutputField()
+
+    react = dspy.ReAct(ExampleSignature)
+
+    assert react.react[0].signature.instructions is not None
+    assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")

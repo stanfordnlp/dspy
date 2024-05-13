@@ -22,9 +22,11 @@ Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
+CloudflareAI = dsp.CloudflareAI
 Google = dsp.Google
 GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
+Snowflake = dsp.Snowflake
 Claude = dsp.Claude
 
 HFClientTGI = dsp.HFClientTGI
