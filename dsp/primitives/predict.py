@@ -65,7 +65,7 @@ def _generate(template: Template, **kwargs) -> Callable:
         raise UnsetBackendError("No backend configured.")
 
     def extend_generation(
-        completion: Example, field_names: list[str], stage: str, max_depth: int, original_example: Example
+        completion: Example, field_names: list[str], stage: str, max_depth: int, original_example: Example,
     ):
         """If the required fields are not present in the completion, extend the generation."""
         assert max_depth > 0, "Max depth exceeded - failed to complete in one pass - increase max_tokens"
