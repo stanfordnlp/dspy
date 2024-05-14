@@ -156,8 +156,8 @@ class HFClientVLLM(HFModel):
                 messages.insert(0, {"role": "system", "content": system_prompt})
             
             # Popping extra paramters for vLLM basemodel requirements (#974: https://github.com/stanfordnlp/dspy/issues/974)
-            kwargs.pop("port",None)
-            kwargs.pop("url",None)
+            kwargs.pop("port", None)
+            kwargs.pop("url", None)
             
             payload = {
                 "model": self.kwargs["model"],
