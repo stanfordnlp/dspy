@@ -4,7 +4,8 @@ from typing import List, Optional
 import openai
 
 import dspy
-from dsp.modules.cache_utils import CacheMemory, cache_turn_on
+import functools
+from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.utils import dotdict
 
 # Check for necessary libraries and suggest installation if not found.
@@ -124,14 +125,10 @@ class MyScaleRM(dspy.Retrieve):
             self.device = torch.device('cpu')
 
         self._local_embed_model.to(self.device)
-    
-    def get_embeddings(self, queries: List[str]) -> List[List[float]]:
-        if cache_turn_on:
-            return CacheMemory.cache(self._get_embeddings)(queries)
-        else:
-            return self._get_embeddings(queries)
 
-    def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
+    @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+    @NotebookCacheMemory.cache
+    def get_embeddings(self, queries: List[str]) -> List[List[float]]:
         """
         Determines the appropriate source (OpenAI or local model) for embedding generation based on class configuration,
         and retrieves embeddings for the provided queries.
@@ -151,7 +148,9 @@ class MyScaleRM(dspy.Retrieve):
             return self._get_embedding_from_local_model(queries)
         else:
             raise ValueError("No valid method for obtaining embeddings is configured.")
-
+    
+    #TO DO Add this method as Util method outside MyScaleRM 
+    @CacheMemory.cache
     def _get_embeddings_from_openai(self, queries: List[str]) -> List[List[float]]:
         """
         Uses the OpenAI API to generate embeddings for a list of queries.
@@ -167,7 +166,9 @@ class MyScaleRM(dspy.Retrieve):
         model=self.model,
         input=queries)
         return response.data[0].embedding
-
+    
+    #TO DO Add this method as Util method outside MyScaleRM 
+    @CacheMemory.cache
     def _get_embedding_from_local_model(self, query: str) -> List[float]:
         """
         Generates embeddings for a single query using the configured local model.
