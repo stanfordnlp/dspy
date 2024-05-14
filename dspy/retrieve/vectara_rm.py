@@ -74,20 +74,14 @@ class VectaraRM(dspy.Retrieve):
             query: query string
         """
         # If multiple corpus ids are provided (comma-separated), create a list of corpus keys
-        if ',' in self._vectara_corpus_id:
-            corpus_key = [
-                {
-                    "customerId": self._vectara_customer_id,
-                    "corpusId": corpus_id,
-                    "lexicalInterpolationConfig": {"lambda": 0.025 },
-                } for corpus_id in self._vectara_corpus_id.split(',')
-            ]
-        else:
-            corpus_key = [{
+        # otherwise by default, the `split(',')` is a no-op so retains the single corpus id
+        corpus_key = [
+            {
                 "customerId": self._vectara_customer_id,
-                "corpusId": self._vectara_corpus_id,
+                "corpusId": corpus_id,
                 "lexicalInterpolationConfig": {"lambda": 0.025 },
-            }]
+            } for corpus_id in self._vectara_corpus_id.split(',')
+        ]
 
         data = {
             "query": [
