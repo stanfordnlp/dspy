@@ -186,8 +186,8 @@ class HFClientVLLM(HFModel):
                 raise Exception("Received invalid JSON response from server")
         else:
             # Popping extra paramters for vLLM basemodel requirements (#974: https://github.com/stanfordnlp/dspy/issues/974)
-            kwargs.pop("port",None)
-            kwargs.pop("url",None)
+            kwargs.pop("port", None)
+            kwargs.pop("url", None)
             
             payload = {
                 "model": self.kwargs["model"],
