@@ -154,6 +154,10 @@ class HFClientVLLM(HFModel):
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
+            
+            kwargs.pop("port", None)
+            kwargs.pop("url", None)
+            
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
@@ -180,6 +184,9 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
         else:
+            kwargs.pop("port", None)
+            kwargs.pop("url", None)
+            
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
