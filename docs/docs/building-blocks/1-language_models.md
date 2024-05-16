@@ -137,6 +137,7 @@ lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="..."
 
 4. `dspy.Together` for hosted various open source models.
 
+5. `dspy.PremAI` for hosted best open source and closed source models.
 
 ### Local LMs.
 
