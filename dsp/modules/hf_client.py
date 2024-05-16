@@ -123,13 +123,13 @@ class HFClientVLLM(HFModel):
 
         if isinstance(url, list):
             self.urls = url
-        
+
         elif isinstance(url, str):
             self.urls = [f'{url}:{port}']
-        
+
         else:
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
-        
+
         self.urls_const = tuple(self.urls)
         self.port = port
         self.model_type = model_type
@@ -144,20 +144,21 @@ class HFClientVLLM(HFModel):
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
-        
+
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-        
+
         if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt",None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
-            
+
+            kwargs.pop("system_prompt", None)
             kwargs.pop("port", None)
             kwargs.pop("url", None)
-            
+
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
@@ -184,9 +185,10 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
         else:
+            kwargs.pop("system_prompt", None)
             kwargs.pop("port", None)
             kwargs.pop("url", None)
-            
+
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
@@ -253,7 +255,7 @@ class HFServerTGI:
                     if f'0.0.0.0:{port}' in port_mapping:
                         subprocess.run(['docker', 'stop', container_id], check=False)
 
-    def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):        
+    def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):
         self.close_server(port)
         if model_path:
             model_file_name = os.path.basename(model_path)
@@ -385,11 +387,11 @@ class Anyscale(HFModel):
 
     def _generate(self, prompt, use_chat_api=False, **kwargs):
         url = f"{self.api_base}/completions"
-        
+
         kwargs = {**self.kwargs, **kwargs}
 
         temperature = kwargs.get("temperature")
-        max_tokens = kwargs.get("max_tokens", 150) 
+        max_tokens = kwargs.get("max_tokens", 150)
 
         if use_chat_api:
             url = f"{self.api_base}/chat/completions"
