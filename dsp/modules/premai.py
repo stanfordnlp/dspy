@@ -7,17 +7,12 @@ from dsp.modules.lm import LM
 
 try:
     import premai
-except ImportError as err:
-    raise ImportError(
-        "Not loading Prem AI because it is not installed. Install it with `pip install -U premai`.",
-    ) from err
 
-
-class ChatPremAPIError(Exception):
-    """Error with the `PremAI` API."""
-
-
-ERROR = ChatPremAPIError
+    premai_error = premai.errors.UnexpectedStatus
+except ImportError:
+    premai_api_error = Exception
+except AttributeError:
+    premai_api_error = Exception
 
 
 def backoff_hdlr(details) -> None:
@@ -75,6 +70,10 @@ class PremAI(LM):
             Additional arguments to pass to the API provider
         """
         super().__init__(model)
+        if premai_api_error == Exception:
+            raise ImportError(
+                "Not loading Prem AI because it is not installed. Install it with `pip install premai`.",
+            )
         self.kwargs = kwargs if kwargs == {} else self.kwargs
 
         self.project_id = project_id
@@ -135,18 +134,28 @@ class PremAI(LM):
             **all_kwargs,
         )
         if not response.choices:
-            raise ChatPremAPIError("ChatResponse must have at least one candidate")
+            raise premai_api_error("ChatResponse must have at least one candidate")
 
         content = response.choices[0].message.content
+        if not content:
+            raise premai_api_error("ChatResponse is none")
+
         output_text = content or ""
 
-        self.history.append({"prompt": prompt, "response": content, "kwargs": all_kwargs, "raw_kwargs": kwargs})
+        self.history.append(
+            {
+                "prompt": prompt,
+                "response": content,
+                "kwargs": all_kwargs,
+                "raw_kwargs": kwargs,
+            },
+        )
 
         return output_text
 
     @backoff.on_exception(
         backoff.expo,
-        (ERROR),
+        (premai_api_error),
         max_time=1000,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
