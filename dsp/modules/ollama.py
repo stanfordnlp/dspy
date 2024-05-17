@@ -53,6 +53,7 @@ class OllamaLocal(LM):
         self.timeout_s = timeout_s
 
         self.kwargs = {
+            "model": model,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "top_p": top_p,
