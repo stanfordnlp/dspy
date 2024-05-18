@@ -206,7 +206,7 @@ class HFClientVLLM(HFModel):
                 completions = json_response["choices"]
                 response = {
                     "prompt": prompt,
-                    "choices": [{"text": c["text"]} for c in completions],
+                    "choices": [{"text": c["text"], "logprobs": c["logprobs"]} if c["logprobs"] else {"text": c["text"]} for c in completions],
                 }
                 return response
 
