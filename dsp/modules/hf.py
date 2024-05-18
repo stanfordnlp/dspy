@@ -188,7 +188,7 @@ class HFModel(LM):
             kwargs["do_sample"] = True
 
         response = self.request(prompt, **kwargs)
-        return [c["text"] for c in response["choices"]]
+        return [{"text": c["text"], "logprobs": c["logprobs"]} if 'logprobs' in c else c["text"] for c in response["choices"]]
 
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
