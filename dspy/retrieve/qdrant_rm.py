@@ -108,7 +108,7 @@ class QdrantRM(dspy.Retrieve):
         # Wrap each sorted passage in a dotdict with 'long_text'
         return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]
 
-    def _get_first_vector_name(self) -> str | None:
+    def _get_first_vector_name(self) -> Optional[str]:
         vectors = self._client.get_collection(self._collection_name).config.params.vectors
 
         if not isinstance(vectors, dict):
