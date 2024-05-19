@@ -1,7 +1,3 @@
----
-sidebar_position: 
----
-
 # dspy.Snowflake
 
 ### Usage
