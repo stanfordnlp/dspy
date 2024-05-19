@@ -148,20 +148,49 @@ class HFClientVLLM(HFModel):
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-        
+     
+        list_of_elements_to_allow = [
+            "n",
+            "best_of",
+            "presence_penalty",
+            "frequency_penalty",
+            "repetition_penalty",
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "seed",
+            "use_beam_search",
+            "length_penalty",
+            "early_stopping",
+            "stop",
+            "stop_token_ids",
+            "include_stop_str_in_output",
+            "ignore_eos",
+            "max_tokens",
+            "min_tokens",
+            "logprobs",
+            "prompt_logprobs",
+            "detokenize",
+            "skip_special_tokens",
+            "spaces_between_special_tokens",
+            "logits_processors",
+            "truncate_prompt_tokens",
+        ]
+        req_kwargs = {
+            k: v for k, v in kwargs.items() if k in list_of_elements_to_allow
+        }
+   
         if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt",None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
             
-            kwargs.pop("port", None)
-            kwargs.pop("url", None)
-            
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
-                **kwargs,
+                **req_kwargs,
             }
             response = send_hfvllm_request_v01_wrapped(
                 f"{url}/v1/chat/completions",
@@ -184,13 +213,10 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
         else:
-            kwargs.pop("port", None)
-            kwargs.pop("url", None)
-            
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
-                **kwargs,
+                **req_kwargs,
             }
 
             response = send_hfvllm_request_v01_wrapped(
