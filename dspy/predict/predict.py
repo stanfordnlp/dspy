@@ -38,8 +38,13 @@ class Predict(Parameter):
         # Cache the signature instructions and the last field's name.
         state["signature_instructions"] = self.signature.instructions
 
-        *_, last_key = self.signature.fields.keys()
-        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
+        field_details = {}
+        for key, field in self.signature.fields.items():
+            field_details[key] = {
+                "prefix": field.json_schema_extra.get("prefix", ""),
+                "desc": field.json_schema_extra.get("desc", "")
+            }
+        state["signature_field_details"] = field_details
 
         return state
 
@@ -52,10 +57,16 @@ class Predict(Parameter):
             instructions = state["signature_instructions"]
             self.signature = self.signature.with_instructions(instructions)
 
-        if "signature_prefix" in state:
-            prefix = state["signature_prefix"]
-            *_, last_key = self.signature.fields.keys()
-            self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+        if "signature_field_details" in state:
+            field_details = state["signature_field_details"]
+            for key, details in field_details.items():
+                prefix = details.get("prefix", "")
+                desc = details.get("desc", "")
+                self.signature = self.signature.with_updated_fields(
+                    key, prefix=prefix, desc=desc
+                )
+
+
 
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
