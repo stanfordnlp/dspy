@@ -1,11 +1,13 @@
 
-import os 
 from typing import Optional, Union, Any 
 
 from dsp.modules.lm import LM 
-from dsp.utils.hf_utils import DeviceConfig
+from dsp.utils.hf_utils import (
+    DeviceConfig, openai_to_hf, tokenize_and_encode, 
+    setup_model_tokenizer_accelerator, _post_setup, model_generate, 
+)
 
-# TODO: Add extra bos token and custom token should be done while doing tokenization 
+# TODO: GEMMA: Add extra bos token and custom token should be done while doing tokenization 
 # TODO: After sometime, we also need to handle is_client case too
 
 def get_kwargs(**kwargs):
@@ -36,9 +38,6 @@ class HFLocalModel(LM):
         try:
             import torch
             import transformers
-            from dsp.utils.hf_utils import (
-                setup_model_tokenizer_accelerator, _post_setup
-            )
         except ImportError as exc:
             raise ModuleNotFoundError(
                 "You need to install the following libraries: ",
@@ -57,8 +56,15 @@ class HFLocalModel(LM):
         self.accelerator = None 
         
         if not isinstance(model, str):
-            self.model, self.device, self.config = model, model.device, model.config 
-            self.device_config = DeviceConfig(device=device, gpu_count=0)
+            if device == "auto":
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.model, self.device, self.config = model, device, model.config 
+            self.device_config = DeviceConfig(
+                device=self.device, 
+                torch_device=torch.device(self.device), 
+                gpu_count=0, 
+                
+            )
 
             if tokenizer:
                 assert isinstance(
@@ -101,11 +107,87 @@ class HFLocalModel(LM):
             parallelize=kwargs["parallelize"]
         )
 
-
+        # TODO: Add history 
         print("=> The model Loaded successfully")
     
-    def basic_request(self, prompt):
-        return prompt 
+
+    def _generate(self, prompt: Union[str, list], **kwargs):
+        # TODO: Need to add log_probs too 
+        default_tokenizer_kwargs = {
+            "left_truncate_len": None, 
+            "add_special_tokens": None, 
+            "add_bos_token": False 
+        }
+
+        default_generation_kwargs = {
+            "temperature": 0.0, 
+            "do_sample": False,  
+            "max_length": None,
+            "num_return_sequences": 1, 
+            "repetition_penalty": 1.0, 
+            "diversity_penalty": 0.0, 
+            "max_new_tokens": 150
+        }
+
+        tokenizer_kwargs, generation_kwargs = dict(), dict()
+
+        for k,v in default_tokenizer_kwargs.items():
+            tokenizer_kwargs[k] = kwargs.get(k, v)
+            if k in kwargs:
+                kwargs.pop(k)
+        stop=True if "stopping_criteria" in kwargs else False     
+
+        # anything else provided will be treated as a generation kwargs 
+        generation_kwargs = {
+            **default_generation_kwargs, **openai_to_hf(**kwargs)
+        }
+
+        # now first tokenize
+        # we will assume that if prompt is a dict then it is a chat mode
+
+        if isinstance(prompt, list):
+            prompt = self.tokenizer.apply_chat_template(prompt, tokenize=False)
+
+        input_ids = tokenize_and_encode(
+            prompt, 
+            config=self.config, 
+            tokenizer=self.tokenizer, 
+            **tokenizer_kwargs
+        ).to(self.device_config.device)
+
+        # Now get the output and decode 
+        output_ids = model_generate(
+            model=self.model, 
+            tokenizer=self.tokenizer, 
+            input_ids=input_ids,
+            stop=stop, 
+            **generation_kwargs
+        )
+        completions = [{"text": c} for c in self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)]
+        completion_dict = {
+            "prompt": prompt, 
+            "response": {
+                "choices": completions, 
+                "generation_kwargs": generation_kwargs, 
+            },
+            "kwargs": kwargs 
+        }
+        return completion_dict
+    
+    def basic_request(self, prompt: Union[str, list], **kwargs):
+        response = self._generate(prompt, **kwargs)
+        self.history.append(response)
+        return response
     
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
-        return prompt 
+        assert only_completed, "for now"
+        assert return_sorted is False, "for now"
+        
+        if kwargs.get("n", 1) > 1 or kwargs.get("temperature", 0.0) > 0.1:
+            kwargs["do_sample"] = True
+        
+        response = self._generate(
+            prompt=prompt,
+            **kwargs
+        )
+        return [c["text"] for c in response["response"]["choices"]]
