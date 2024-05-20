@@ -65,7 +65,12 @@ class Predict(Parameter):
                 self.signature = self.signature.with_updated_fields(
                     key, prefix=prefix, desc=desc
                 )
-
+        else:
+            # Fallback to the previous method
+            if "signature_prefix" in state:
+                prefix = state["signature_prefix"]
+                *_, last_key = self.signature.fields.keys()
+                self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
 
 
     def __call__(self, **kwargs):
