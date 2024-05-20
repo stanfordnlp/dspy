@@ -42,7 +42,7 @@ class Predict(Parameter):
         for key, field in self.signature.fields.items():
             field_details[key] = {
                 "prefix": field.json_schema_extra.get("prefix", ""),
-                "desc": field.json_schema_extra.get("desc", "")
+                "desc": field.json_schema_extra.get("desc", ""),
             }
         state["signature_field_details"] = field_details
 
@@ -63,7 +63,7 @@ class Predict(Parameter):
                 prefix = details.get("prefix", "")
                 desc = details.get("desc", "")
                 self.signature = self.signature.with_updated_fields(
-                    key, prefix=prefix, desc=desc
+                    key, prefix=prefix, desc=desc,
                 )
         else:
             # Fallback to the previous method
