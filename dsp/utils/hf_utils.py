@@ -1,7 +1,7 @@
 import os 
 from packaging import version
 from datetime import timedelta 
-from typing import Optional, Literal, Union, Tuple
+from typing import Optional, Literal, Union, Tuple, List 
 from dataclasses import dataclass 
 
 
@@ -12,11 +12,6 @@ class DeviceConfig:
     gpu_count: int = 0
     rank: Optional[int] = None 
     world_size: Optional[int] = None
-
-def temp_print(msg):
-    print("#"* 5)
-    print(msg)
-    print("*"*7)
 
 def get_accelerate_args(
     device_map_option: Optional[str] = "auto",
@@ -250,7 +245,6 @@ def setup_model(
     
     # Loading model with bitsandbytes quantization
     model_kwargs = _either_keep_bnbconfig_or_kwargs(bnb_config=quantization_config, **model_kwargs)
-    temp_print(model_kwargs)
 
 
     if not autogptq:
@@ -260,12 +254,9 @@ def setup_model(
         model_class = get_model_type(config=config, backend=backend)
         
         if quantization_config is None:
-            temp_print("Starting with quantization without config")
             if model_kwargs.get("load_in_4bit", None):
-                temp_print("got load_in_4bit in kwargs")
                 if model_kwargs.get("bnb_4bit_compute_dtype", None):
                     model_kwargs["bnb_4bit_compute_dtype"] = get_dtype(model_kwargs["bnb_4bit_compute_dtype"])
-                    temp_print("Got bnb_4bit_compute_dtype in kwargs")
             model = model_class.from_pretrained(
                 model_name_or_path,
                 revision=revision,
@@ -275,7 +266,6 @@ def setup_model(
                 **model_kwargs 
             )
         else:
-            temp_print("Starting with quantization with config")
             model = model_class.from_pretrained(
                 model_name_or_path,
                 revision=revision,
@@ -445,3 +435,149 @@ def _post_setup(
         device_config.rank = 0
         device_config.world_size = 1 
     return model, accelerator, device_config
+
+
+## Here comes all the encoding and decoding part for huggingface 
+# Assumption: Right now dspy.LM.__call__ method only takes one prompt so batching is not supported
+# in this version 
+
+def tokenize_and_encode(
+    prompt: str, config: "transformers.AutoConfig", 
+    tokenizer: "transformers.AutoTokenizer", 
+    left_truncate_len: Optional[int]=None, 
+    add_special_tokens:Optional[Union[str, bool]]=None, 
+    add_bos_token: Optional[int]=False
+) -> "torch.tensor":
+    
+    import torch 
+    import transformers 
+    special_tokens_kwargs = {}
+    model_class = get_model_type(config=config, backend="default")
+    
+    if add_special_tokens is None:
+        if model_class == transformers.AutoModelForCausalLM:
+            special_tokens_kwargs = {
+                "add_special_tokens": False or add_bos_token
+            }
+    else:
+        special_tokens_kwargs = {"add_special_tokens": add_special_tokens}
+    encoding = tokenizer.encode(prompt, **special_tokens_kwargs)
+    
+    # left-truncate the encoded context to be at most `left_truncate_len` tokens long
+    if left_truncate_len:
+        encoding = encoding[-left_truncate_len:]
+    encoding = torch.tensor([encoding])
+    return encoding 
+
+def openai_to_hf(**kwargs):
+    hf_kwargs = {}
+    for k, v in kwargs.items():
+        if k == "n":
+            hf_kwargs["num_return_sequences"] = v
+        elif k == "frequency_penalty":
+            hf_kwargs["repetition_penalty"] = 1.0 - v
+        elif k == "presence_penalty":
+            hf_kwargs["diversity_penalty"] = v
+        elif k == "max_tokens":
+            hf_kwargs["max_new_tokens"] = v
+        elif k == "model":
+            pass
+        else:
+            hf_kwargs[k] = v
+
+    return hf_kwargs
+
+
+def stop_sequences_criteria(
+    tokenizer: "transformers.PreTrainedTokenizer",
+    stop_sequences: List[str],
+    initial_decoder_input_length: int,
+    batch_size: int,
+) -> "transformers.StoppingCriteriaList":
+    # Reference: https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/models/huggingface.py 
+    import transformers 
+
+    class MultiTokenEOSCriteria(transformers.StoppingCriteria):
+        """Criteria to stop on the specified multi-token sequence."""
+        # Reference: https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/models/utils.py 
+
+        def __init__(
+            self,
+            sequence: str,
+            tokenizer: "transformers.PreTrainedTokenizer",
+            initial_decoder_input_length: int,
+            batch_size: int,
+        ) -> None:
+            self.initial_decoder_input_length = initial_decoder_input_length
+            self.done_tracker = [False] * batch_size
+            self.sequence = sequence
+            self.sequence_ids = tokenizer.encode(sequence, add_special_tokens=False)
+            # print(sequence, self.sequence_ids)
+            # we look back for 2 more tokens than it takes to encode our stop sequence
+            # because tokenizers suck, and a model might generate `['\n', '\n']` but our `sequence` is `['\n\n']`
+            # and we don't want to mistakenly not stop a generation because our
+            # (string) stop sequence was output in a different tokenization
+
+            # NOTE: there is a minor danger that this will end up looking back 2 tokens into the past, into the inputs to the model,
+            # and stopping generation immediately as a result. With only 2 extra tokens of lookback, this risk is minimized
+            # Additionally, in lookback_ids_batch we should prevent ever looking back into the inputs as described.
+            self.sequence_id_len = len(self.sequence_ids) + 2
+            self.tokenizer = tokenizer
+
+        def __call__(self, input_ids, scores, **kwargs) -> bool:
+            # For efficiency, we compare the last n tokens where n is the number of tokens in the stop_sequence
+            lookback_ids_batch = input_ids[:, self.initial_decoder_input_length :]
+
+            lookback_ids_batch = lookback_ids_batch[:, -self.sequence_id_len :]
+
+            lookback_tokens_batch = self.tokenizer.batch_decode(lookback_ids_batch)
+
+            for i, done in enumerate(self.done_tracker):
+                if not done:
+                    self.done_tracker[i] = self.sequence in lookback_tokens_batch[i]
+            return False not in self.done_tracker
+
+
+    return transformers.StoppingCriteriaList(
+        [
+            *[
+                MultiTokenEOSCriteria(
+                    sequence, tokenizer, initial_decoder_input_length, batch_size
+                )
+                for sequence in stop_sequences
+            ],
+        ]
+    )
+
+def model_generate(
+    model: "transformers.PreTrainedModel", 
+    tokenizer: "transformers.PreTrainedTokenizer", 
+    input_ids: "torch.tensor",  
+    stop: Optional[List[str]]=None, 
+    **generation_kwargs,
+):  
+    # This helps to remove all the warnings 
+
+    generation_kwargs["temperature"] = generation_kwargs.get("temperature", 0.0)
+    do_sample = generation_kwargs.get("do_sample", None)
+
+    if generation_kwargs.get("temperature") == 0.0 and do_sample is None:
+        generation_kwargs["do_sample"] = do_sample = False
+    
+    if do_sample == True or generation_kwargs.get("temperature") == 0.0:
+        # otherwise it throws error 
+        generation_kwargs["temperature"] = generation_kwargs["temperature"] + 0.1
+ 
+    if stop:
+        # For our case, batch size will always be one 
+        stopping_criteria = stop_sequences_criteria(
+            tokenizer, 
+            stop, 
+            input_ids.shape[1], 
+            input_ids.shape[0]
+        )
+        generation_kwargs["stopping_criteria"] = stopping_criteria
+
+    return model.generate(
+        input_ids=input_ids, **generation_kwargs
+    )
