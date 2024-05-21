@@ -138,6 +138,7 @@ pre-commit = "^3.7.0"
 setuptools = "^69.2.0"
 jupyter = "^1.0.0"
 ipykernel = "^6.29.4"
+litellm = "^1.26.3"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
