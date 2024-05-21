@@ -1,0 +1,7 @@
+black==24.2.0
+pre-commit==3.7.0
+pytest==6.2.5
+pytest-mock==3.12.0
+ruff==0.3.0
+torch==2.2.1
+transformers==4.38.2
