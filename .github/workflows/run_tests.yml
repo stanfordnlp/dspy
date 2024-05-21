@@ -69,32 +69,20 @@ jobs:
     name: Run Integration Tests
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        python-version: ["3.9"]
+    matrix:
+      python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "poetry"
       - name: Install dependencies
-        run: poetry install --no-interaction
-      - name: Run lint with tests
-        uses: chartboost/ruff-action@v1
-        with:
-          args: --fix-only
+        run: pip install -r requirements.txt
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
       - name: Run tests with pytest
-        run: poetry run pytest tests_integration/
+        run: pytest tests_integration/
 
   build_poetry:
     name: Build Poetry
