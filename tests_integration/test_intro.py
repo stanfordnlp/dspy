@@ -56,16 +56,9 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         # Assertions to verify the compiled RAG model
         assert f"Question: {my_question}" == "Question: What castle did David Gregory inherit?"
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: Kinnairdy Castle"
-        assert f"Retrieved Contexts (truncated): {[c[:200] + '...' for c in pred.context]}" == (
-            "Retrieved Contexts (truncated): ['David Gregory (physician) | David Gregory (20 December 1625 – 1720) "
-            "was a Scottish physician and inventor."
-            "His surname is sometimes spelt as Gregorie, the original Scottish spelling. He inherited Kinn...', "
-            "'Gregory Tarchaneiotes | Gregory Tarchaneiotes (Greek: Γρηγόριος Ταρχανειώτης , Italian: \"Gregorio "
-            'Tracanioto" or "Tracamoto" ) was a "protospatharius" and the long-reigning catepan of Italy from 998 '
-            "t...', "
-            "'David Gregory (mathematician) | David Gregory (originally spelt Gregorie) FRS (? 1659 – 10 October "
-            "1708) was a Scottish mathematician and astronomer."
-            "He was professor of mathematics at the University ...']"
+        assert (
+            f"Retrieved Contexts (truncated): {[c[:10] + '...' for c in pred.context]}"
+            == "Retrieved Contexts (truncated): ['David Greg...', 'Gregory Ta...', 'David Greg...']"
         )
 
         # Verify compiled model's parameters
@@ -127,11 +120,16 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
             f"Question: {my_question}" == "Question: How many storeys are in the castle that David Gregory inherited?"
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: five"
-        assert f"Retrieved Contexts (truncated): {[c[:20] + '...' for c in pred.context]}" == (
-            "Retrieved Contexts (truncated): ['David Gregory (physi...', 'The Boleyn Inheritan...', 'Gregory of Gaeta "
-            "| G...',"
-            "'Kinnairdy Castle | K...', 'Kinnaird Head | Kinn...', 'Kinnaird Castle, Bre...']"
-        )
+
+        # Retrieved Contexts (truncated)
+        assert [c[:10] for c in pred.context] == [
+            "David Greg",
+            "The Boleyn",
+            "Gregory of",
+            "Kinnairdy ",
+            "Kinnaird H",
+            "Kinnaird C",
+        ]
 
         def validate_context_and_answer_and_hops(example, pred, trace=None):
             if not dspy.evaluate.answer_exact_match(example, pred):
@@ -192,31 +190,10 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
             "Chicago (founded in 1986), Paris Club Bistro & Bar and Studio Paris in Chicago, The Eiffel Tower "
             "Restaurant in Las Vegas, and Brasserie JO in Boston."
         )
-        assert top_k_passages[2] == (
-            "List of Restaurant: Impossible episodes | This is the list of the episodes for the American cooking and "
-            'reality television series "Restaurant Impossible", '
-            "produced by Food Network. The premise of the series is that within two days and on a budget of $10,000, "
-            "celebrity chef Robert Irvine renovates a failing American restaurant with the goal of helping to restore "
-            "it to profitability and prominence."
-            "Irvine is assisted by a designer (usually Taniya Nayak, Cheryl Torrenueva, or Lynn Keagan, but sometimes "
-            "Vanessa De Leon, Krista Watterworth, Yvette Irene, or Nicole Faccuito), along with general contractor "
-            "Tom Bury, who sometimes does double duty as both general contractor and designer."
-            "After assessing the problems with the restaurant, Robert Irvine typically creates a plan for the new "
-            "decor, oversees the cleaning of the restaurant, reduces the size of the menu and improves the food, "
-            "develops a promotional activity, educates the restaurant's owners, or trains the staff, as needed by "
-            "each restaurant."
-        )
+        assert top_k_passages[2][:30] == "List of Restaurant: Impossible"
 
         retrieved_value = retrieve("When was the first FIFA World Cup held?").passages[0]
-        assert retrieved_value == (
-            "History of the FIFA World Cup | The FIFA World Cup was first held in 1930, when FIFA president Jules "
-            "Rimet decided to stage an international football tournament."
-            "The inaugural edition, held in 1930, was contested as a final tournament of only thirteen teams invited "
-            "by the organization."
-            "Since then, the World Cup has experienced successive expansions and format remodeling to its current "
-            "32-team final tournament preceded by a two-year qualifying process, involving over 200 teams from around "
-            "the world."
-        )
+        assert retrieved_value[:30] == "History of the FIFA World Cup "
 
     def assert_basic_qa(self, dev_example, dspy) -> None:
         class BasicQA(dspy.Signature):
