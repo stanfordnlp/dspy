@@ -1,4 +1,5 @@
 import ast
+import inspect
 import re
 import types
 import typing
@@ -88,7 +89,7 @@ class SignatureMeta(type(BaseModel)):
 
     @property
     def instructions(cls) -> str:
-        return getattr(cls, "__doc__", "")
+        return inspect.cleandoc(getattr(cls, "__doc__", ""))
 
     def with_instructions(cls, instructions: str) -> Type["Signature"]:
         return Signature(cls.fields, instructions)
@@ -217,9 +218,9 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 
 def make_signature(
-    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-    instructions: str = None,
-    signature_name: str = "StringSignature",
+        signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
+        instructions: str = None,
+        signature_name: str = "StringSignature",
 ) -> Type[Signature]:
     """Create a new Signature type with the given fields and instructions.
 

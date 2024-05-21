@@ -8,6 +8,8 @@ from .predict import Predict
 # TODO: Simplify a lot.
 # TODO: Divide Action and Action Input like langchain does for ReAct.
 
+# TODO: There's a lot of value in having a stopping condition in the LM calls at `\n\nObservation:`
+
 
 class ReAct(Module):
     def __init__(self, signature, max_iters=5, num_results=3, tools=None):
@@ -26,11 +28,16 @@ class ReAct(Module):
         inputs_ = ", ".join([f"`{k}`" for k in self.input_fields.keys()])
         outputs_ = ", ".join([f"`{k}`" for k in self.output_fields.keys()])
 
-        instr = [
+        instr = []
+        
+        if self.signature.instructions is not None:
+            instr.append(f"{self.signature.instructions}\n")
+        
+        instr.extend([
             f"You will be given {inputs_} and you will respond with {outputs_}.\n",
             "To do this, you will interleave Thought, Action, and Observation steps.\n",
             "Thought can reason about the current situation, and Action can be the following types:\n",
-        ]
+        ])
 
         self.tools["Finish"] = dspy.Example(
             name="Finish",
@@ -91,18 +98,15 @@ class ReAct(Module):
             if action_name == "Finish":
                 return action_val
 
-            try:
-                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val).passages
-            except AttributeError:
-                # Handle the case where 'passages' attribute is missing
-                # TODO: This is a hacky way to handle this. Need to fix this.
-                output[f"Observation_{hop+1}"] = self.tools[action_name](action_val)
+            result = self.tools[action_name](action_val)
+            # Handle the case where 'passages' attribute is missing
+            output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
 
-        except Exception as e:
+        except Exception:
             output[f"Observation_{hop+1}"] = (
                 "Failed to parse action. Bad formatting or incorrect action name."
             )
-            raise e
+            # raise e
 
     def forward(self, **kwargs):
         args = {key: kwargs[key] for key in self.input_fields.keys() if key in kwargs}
@@ -115,5 +119,7 @@ class ReAct(Module):
                 break
             args.update(output)
 
+        observations = [args[key] for key in args if key.startswith("Observation")]
+        
         # assumes only 1 output field for now - TODO: handling for multiple output fields
-        return dspy.Prediction(**{list(self.output_fields.keys())[0]: action_val or ""})
+        return dspy.Prediction(observations=observations, **{list(self.output_fields.keys())[0]: action_val or ""})

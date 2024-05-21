@@ -10,7 +10,7 @@ Let's first make sure you can set up your language model. DSPy support clients f
 
 ## Setting up the LM client.
 
-You can just call the constructor that connects to the LM. Then, use `dspy.configure` to declare this as the dexfault LM.
+You can just call the constructor that connects to the LM. Then, use `dspy.configure` to declare this as the default LM.
 
 For example, to use OpenAI language models, you can do it as follows.
 
@@ -137,6 +137,7 @@ lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="..."
 
 4. `dspy.Together` for hosted various open source models.
 
+5. `dspy.PremAI` for hosted best open source and closed source models.
 
 ### Local LMs.
 
@@ -145,25 +146,25 @@ You need to host these models on your own GPU(s). Below, we include pointers for
 1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/local_models/HFClientTGI)
 
 ```python
-tgi_llama2 = dspy.HFClientTGI(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
+tgi_mistral = dspy.HFClientTGI(model="mistralai/Mistral-7B-Instruct-v0.2", port=8080, url="http://localhost")
 ```
 
 2.  `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/local_models/HFClientVLLM)
 
 ```python
-vllm_llama2 = dspy.HFClientVLLM(model="meta-llama/Llama-2-7b-hf", port=8080, url="http://localhost")
+vllm_mistral = dspy.HFClientVLLM(model="mistralai/Mistral-7B-Instruct-v0.2", port=8080, url="http://localhost")
 ```
 
 3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](https://dspy-docs.vercel.app/api/local_language_model_clients/HFModel)
 
 ```python
-llama = dspy.HFModel(model = 'meta-llama/Llama-2-7b-hf')
+mistral = dspy.HFModel(model = 'mistralai/Mistral-7B-Instruct-v0.2')
 ```
 
 4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](https://dspy-docs.vercel.app/api/local_language_model_clients/Ollama)\n",
 
 ```python
-mistral_ollama = dspy.OllamaLocal(model='mistral')
+ollama_mistral = dspy.OllamaLocal(model='mistral')
 ```
 
 5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](https://dspy-docs.vercel.app/api/local_language_model_clients/MLC)

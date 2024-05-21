@@ -54,7 +54,7 @@ def test_compile_with_predict_instances():
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
     compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset, valset=valset
+        student, teacher=teacher, trainset=trainset
     )
 
     assert compiled_student is not None, "Failed to compile student"
@@ -74,7 +74,7 @@ def test_bootstrap_effectiveness():
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
     compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset, valset=valset
+        student, teacher=teacher, trainset=trainset
     )
 
     # Check that the compiled student has the correct demos
@@ -149,7 +149,7 @@ def test_error_handling_during_bootstrap():
     )
 
     with pytest.raises(RuntimeError, match="Simulated error"):
-        bootstrap.compile(student, teacher=teacher, trainset=trainset, valset=valset)
+        bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
 def test_validation_set_usage():
@@ -171,7 +171,7 @@ def test_validation_set_usage():
         metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
     )
     compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset, valset=valset
+        student, teacher=teacher, trainset=trainset
     )
 
     # Check that validation examples are part of student's demos after compilation

@@ -3,6 +3,31 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
+import backoff
+
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    ERRORS = (ClientError,)
+
+except ImportError:
+    ERRORS = (Exception,)
+
+
+def backoff_hdlr(details):
+    """Handler from https://pypi.org/project/backoff/."""
+    print(
+        "Backing off {wait:0.1f} seconds after {tries} tries "
+        "calling function {target} with kwargs "
+        "{kwargs}".format(**details),
+    )
+
+
+def giveup_hdlr(details):
+    """Wrapper function that decides when to give up on retry."""
+    if "max retries" in details.args[0]:
+        return False
+    return True
 
 class AWSProvider(ABC):
     """This abstract class adds support for AWS model providers such as Bedrock and SageMaker.
@@ -52,6 +77,14 @@ class AWSProvider(ABC):
         return self.__class__.__name__
 
     @abstractmethod
+    @backoff.on_exception(
+        backoff.expo,
+        ERRORS,
+        max_time=1000,
+        max_tries=8,
+        on_backoff=backoff_hdlr,
+        giveup=giveup_hdlr,
+    )
     def call_model(self, model_id: str, body: str) -> str:
         """Call the model and return the response."""
 
@@ -119,6 +152,14 @@ class Sagemaker(AWSProvider):
         """
         super().__init__(region_name, "runtime.sagemaker", profile_name)
 
+    @backoff.on_exception(
+        backoff.expo,
+        ERRORS,
+        max_time=1000,
+        max_tries=8,
+        on_backoff=backoff_hdlr,
+        giveup=giveup_hdlr,
+    )
     def call_model(self, model_id: str, body: str) -> str:
         return self.predictor.invoke_endpoint(
             EndpointName=model_id,

@@ -7,9 +7,11 @@ from .aws_providers import Bedrock, Sagemaker
 from .azure_openai import AzureOpenAI
 from .cache_utils import *
 from .clarifai import *
+from .cloudflare import *
 from .cohere import *
 from .colbertv2 import ColBERTv2
 from .databricks import *
+from .dummy_lm import *
 from .google import *
 from .googlevertexai import *
 from .gpt3 import *
@@ -18,6 +20,10 @@ from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
 from .mistral import *
 from .ollama import *
+from .premai import PremAI
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
+from .snowflake import *
+from .watsonx import *
+
