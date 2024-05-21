@@ -146,25 +146,50 @@ class HFClientVLLM(HFModel):
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
 
-        payload = {
-            "model": self.kwargs["model"],
-            "prompt": prompt,
-            **kwargs,
-        }
-
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
+
+        list_of_elements_to_allow = [
+            "n",
+            "best_of",
+            "presence_penalty",
+            "frequency_penalty",
+            "repetition_penalty",
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "seed",
+            "use_beam_search",
+            "length_penalty",
+            "early_stopping",
+            "stop",
+            "stop_token_ids",
+            "include_stop_str_in_output",
+            "ignore_eos",
+            "max_tokens",
+            "min_tokens",
+            "logprobs",
+            "prompt_logprobs",
+            "detokenize",
+            "skip_special_tokens",
+            "spaces_between_special_tokens",
+            "logits_processors",
+            "truncate_prompt_tokens",
+        ]
+        req_kwargs = {k: v for k, v in kwargs.items() if k in list_of_elements_to_allow}
 
         if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt", None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
+
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
-                **kwargs,
+                **req_kwargs,
             }
             response = send_hfvllm_request_v01_wrapped(
                 f"{url}/v1/chat/completions",
@@ -190,7 +215,7 @@ class HFClientVLLM(HFModel):
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
-                **kwargs,
+                **req_kwargs,
             }
 
             response = send_hfvllm_request_v01_wrapped(
