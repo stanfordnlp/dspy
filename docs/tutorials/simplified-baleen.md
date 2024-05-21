@@ -193,6 +193,14 @@ Let's now define our evaluation function and compare the performance of the unco
 ```python
 from dspy.evaluate.evaluate import Evaluate
 
+# Define metric to check if we retrieved the correct documents
+def gold_passages_retrieved(example, pred, trace=None):
+    gold_titles = set(map(dspy.evaluate.normalize_text, example["gold_titles"]))
+    found_titles = set(
+        map(dspy.evaluate.normalize_text, [c.split(" | ")[0] for c in pred.context])
+    )
+    return gold_titles.issubset(found_titles)
+
 # Set up the `evaluate_on_hotpotqa` function. We'll use this many times below.
 evaluate_on_hotpotqa = Evaluate(devset=devset, num_threads=1, display_progress=True, display_table=5)
 

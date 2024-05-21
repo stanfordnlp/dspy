@@ -8,11 +8,11 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 In this post, we walk you through a minimal working example using the DSPy library. 
 
-We make use of the GSM8K dataset and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
+We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
 
 ## Setup
 
-Before we delve into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
+Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
 
 ```python
 import dspy
@@ -27,9 +27,17 @@ gsm8k = GSM8K()
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 ```
 
+Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
+
+```python
+print(gsm8k_trainset)
+```
+
+The `gsm8k_trainset` and `gsm8k_devset` datasets contain a list of Examples with each example having `question` and `answer` field.
+
 ## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the `ChainOfThought` module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/api/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
 class CoT(dspy.Module):
@@ -43,7 +51,7 @@ class CoT(dspy.Module):
 
 ## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to optimizing it using the `BootstrapFewShotWithRandomSearch` teleprompter:
+With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
 
 ```python
 from dspy.teleprompt import BootstrapFewShot
@@ -53,8 +61,10 @@ config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
 
 # Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
 teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset, valset=gsm8k_devset)
+optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
 ```
+
+Note that BootstrapFewShot is not an optimizing teleprompter, i.e. it simple creates and validates examples for steps of the pipeline (in this case, the chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
 
 ## Evaluate
 
