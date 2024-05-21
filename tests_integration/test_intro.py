@@ -253,7 +253,7 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: British"
 
-    def assert_dataset_loading(self) -> None:
+    def assert_dataset_loading(self) -> tuple:
         from dspy.datasets import HotPotQA
 
         # Load the dataset
