@@ -284,6 +284,8 @@ ignore = [
     "E731",
     # Sometimes we need List and Tuple
     "UP006",
+    # Ignore assert
+    "S101",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
