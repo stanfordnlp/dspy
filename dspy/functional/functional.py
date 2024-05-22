@@ -405,7 +405,7 @@ def _func_to_signature(func):
     return dspy.Signature(fields, instructions)
 
 
-def _unwrap_json(output, native_parser: Callable[[str], dict | pydantic.BaseModel] = None):
+def _unwrap_json(output, native_parser: Callable[[str], Union[dict, pydantic.BaseModel]]):
     try:
         return native_parser(output)
     except (ValueError, pydantic.ValidationError):
