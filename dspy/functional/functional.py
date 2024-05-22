@@ -1,7 +1,6 @@
 import inspect
 import json
 import typing
-from contextlib import suppress
 from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
 import pydantic
@@ -407,15 +406,16 @@ def _func_to_signature(func):
 
 
 def _unwrap_json(output, from_json: Callable[[str], Union[pydantic.BaseModel, str]]):
-    with suppress(ValueError, pydantic.ValidationError, AttributeError):
-        output = from_json(output).model_dump_json()
-    output = output.strip()
-    if output.startswith("```"):
-        if not output.startswith("```json"):
-            raise ValueError("json output should start with ```json") from None
-        if not output.endswith("```"):
-            raise ValueError("Don't write anything after the final json ```") from None
-        output = output[7:-3].strip()
-    if not output.startswith("{") or not output.endswith("}"):
-        raise ValueError("json output should start and end with { and }") from None
-    return ujson.dumps(ujson.loads(output))  # ujson is a bit more robust than the standard json
+    try:
+        return from_json(output).model_dump_json()
+    except (ValueError, pydantic.ValidationError, AttributeError):
+        output = output.strip()
+        if output.startswith("```"):
+            if not output.startswith("```json"):
+                raise ValueError("json output should start with ```json") from None
+            if not output.endswith("```"):
+                raise ValueError("Don't write anything after the final json ```") from None
+            output = output[7:-3].strip()
+        if not output.startswith("{") or not output.endswith("}"):
+            raise ValueError("json output should start and end with { and }") from None
+        return ujson.dumps(ujson.loads(output))  # ujson is a bit more robust than the standard json
