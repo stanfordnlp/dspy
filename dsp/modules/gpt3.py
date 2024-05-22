@@ -6,7 +6,6 @@ from typing import Any, Literal, Optional, cast
 import backoff
 import openai
 
-import dsp
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
 
@@ -19,9 +18,7 @@ try:
     import openai.error
     from openai.openai_object import OpenAIObject
 
-    ERRORS = (
-        openai.error.RateLimitError,
-    )
+    ERRORS = (openai.error.RateLimitError,)
 except Exception:
     ERRORS = (openai.RateLimitError,)
     OpenAIObject = dict
@@ -69,8 +66,7 @@ class GPT3(LM):
 
         default_model_type = (
             "chat"
-            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model)
-            and ("instruct" not in model)
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model) and ("instruct" not in model)
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type
@@ -105,7 +101,7 @@ class GPT3(LM):
         usage_data = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
-            logging.info(f"{total_tokens}")
+            logging.debug(f"OpenAI Response Token Usage: {total_tokens}")
 
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
@@ -181,9 +177,7 @@ class GPT3(LM):
 
         response = self.request(prompt, **kwargs)
 
-        if dsp.settings.log_openai_usage:
-            self.log_usage(response)
-
+        self.log_usage(response)
         choices = response["choices"]
 
         completed_choices = [c for c in choices if c["finish_reason"] != "length"]
@@ -191,7 +185,11 @@ class GPT3(LM):
         if only_completed and len(completed_choices):
             choices = completed_choices
 
-        completions = [self._get_choice_text(c) for c in choices]
+        if kwargs.get("logprobs", False):
+            completions = [{'text': self._get_choice_text(c), 'logprobs': c["logprobs"]} for c in choices]
+        else:
+            completions = [self._get_choice_text(c) for c in choices]
+
         if return_sorted and kwargs.get("n", 1) > 1:
             scored_completions = []
 
@@ -206,10 +204,12 @@ class GPT3(LM):
                     tokens, logprobs = tokens[:index], logprobs[:index]
 
                 avglog = sum(logprobs) / len(logprobs)
-                scored_completions.append((avglog, self._get_choice_text(c)))
-
+                scored_completions.append((avglog, self._get_choice_text(c), logprobs))
             scored_completions = sorted(scored_completions, reverse=True)
-            completions = [c for _, c in scored_completions]
+            if logprobs:
+                completions = [{'text': c, 'logprobs': lp} for _, c, lp in scored_completions]
+            else:
+                completions = [c for _, c in scored_completions]
 
         return completions
 

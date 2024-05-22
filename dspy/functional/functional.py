@@ -22,7 +22,7 @@ def predictor(*args, **kwargs):
         return _StripOutput(TypedPredictor(signature, **kwargs), output_key)
 
     # if we have only a single callable argument, the decorator was invoked with no key word arguments
-    #  so we just return the wrapped function 
+    #  so we just return the wrapped function
     if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
         return _predictor(args[0])
     return _predictor
@@ -36,7 +36,7 @@ def cot(*args, **kwargs):
         return _StripOutput(TypedChainOfThought(signature, **kwargs), output_key)
 
     # if we have only a single callable argument, the decorator was invoked with no key word arguments
-    #  so we just return the wrapped function 
+    #  so we just return the wrapped function
     if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
         return _cot(args[0])
     return _cot
@@ -67,17 +67,21 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, instructions=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
+def TypedChainOfThought(signature, instructions=None, reasoning=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
     """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
     signature = ensure_signature(signature, instructions)
     output_keys = ", ".join(signature.output_fields.keys())
+
+    DEFAULT_RATIONALE = dspy.OutputField(
+        prefix="Reasoning: Let's think step by step in order to",
+        desc="${produce the " + output_keys + "}. We ...",
+    )
+    reasoning = reasoning or DEFAULT_RATIONALE
+
     return TypedPredictor(
         signature.prepend(
             "reasoning",
-            dspy.OutputField(
-                prefix="Reasoning: Let's think step by step in order to",
-                desc="${produce the " + output_keys + "}. We ...",
-            ),
+            reasoning,
         ),
         max_retries=max_retries,
     )
@@ -213,7 +217,7 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=parse,
                     )
-                elif type_ in (str, int, float, bool):
+                elif type_ in (str, int, float):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")

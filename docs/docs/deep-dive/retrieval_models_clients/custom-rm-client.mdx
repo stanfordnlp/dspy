@@ -61,7 +61,7 @@ def __call__(self, query:str, k:int) -> List[str]:
     params = {"query": query, "k": k}
     response = requests.get(self.url, params=params)
 
-    response = response.json()["retreived_passages"]    # List of top-k passages
+    response = response.json()["retrieved_passages"]    # List of top-k passages
     return response
 ```
 

@@ -105,10 +105,10 @@ class Suggest(Constraint):
             if self.result:
                 return True
             elif dspy.settings.bypass_suggest:
-                dspy.logger.error(f"SuggestionFailed: {self.msg}")
+                dspy.logger.info(f"SuggestionFailed: {self.msg}")
                 return True
             else:
-                dspy.logger.error(f"SuggestionFailed: {self.msg}")
+                dspy.logger.info(f"SuggestionFailed: {self.msg}")
                 raise DSPySuggestionError(
                     id=self.id,
                     msg=self.msg,
@@ -241,6 +241,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                     trace_element = dsp.settings.trace[i]
                                     mod = trace_element[0]
                                     if mod.signature == error_target_module:
+                                        error_state = e.state[i]
                                         dspy.settings.backtrack_to = mod
                                         break
                             else:
@@ -256,8 +257,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             ):
                                 dspy.settings.predictor_feedbacks[dspy.settings.backtrack_to].append(error_msg)
 
-                            # assert isinstance(error_state[0].signature, dspy.Signature)
-                            output_fields = error_state[0].signature.output_fields
+                            output_fields = error_state[0].new_signature.output_fields
                             past_outputs = {}
                             for field_name in output_fields.keys():
                                 past_outputs[field_name] = getattr(

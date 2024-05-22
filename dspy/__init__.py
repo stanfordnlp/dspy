@@ -5,10 +5,10 @@ from .predict import *
 from .primitives import *
 from .retrieve import *
 from .signatures import *
+from .utils.logging import logger, set_log_output
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
-from .utils.logging import logger, set_log_level, set_log_output
 
 settings = dsp.settings
 
@@ -22,9 +22,12 @@ Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
 Pyserini = dsp.PyseriniRetriever
 Clarifai = dsp.ClarifaiLLM
+CloudflareAI = dsp.CloudflareAI
 Google = dsp.Google
 GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
+Snowflake = dsp.Snowflake
+Claude = dsp.Claude
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
@@ -40,6 +43,9 @@ AWSModel = dsp.AWSModel
 AWSMistral = dsp.AWSMistral
 AWSAnthropic = dsp.AWSAnthropic
 AWSMeta = dsp.AWSMeta
+
+Watsonx = dsp.Watsonx
+PremAI = dsp.PremAI
 
 configure = settings.configure
 context = settings.context
