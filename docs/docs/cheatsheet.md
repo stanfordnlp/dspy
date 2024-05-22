@@ -254,15 +254,15 @@ evaluate_program(your_dspy_program)
 
 ## DSPy Optimizers
 
-### dspy.LabeledFewShot 
+### LabeledFewShot 
 ```python
 from dspy.teleprompt import LabeledFewShot
 
-labeled_fewshot_optimizer = dspy.LabeledFewShot(k=8)
+labeled_fewshot_optimizer = LabeledFewShot(k=8)
 your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-### dspy.BootstrapFewShot 
+### BootstrapFewShot 
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
@@ -302,7 +302,7 @@ loaded_program = YourProgramClass()
 loaded_program.load(path=save_path)
 ```
 
-### dspy.BootstrapFewShotWithRandomSearch
+### BootstrapFewShotWithRandomSearch
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
@@ -312,10 +312,10 @@ fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric,
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ```
-Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
+Other custom configurations are similar to customizing the `BootstrapFewShot` optimizer. 
 
 
-### dspy.Ensemble
+### Ensemble
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
@@ -329,7 +329,7 @@ programs = [x[-1] for x in your_dspy_program_compiled.candidate_programs]
 your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(programs[:3])
 ```
 
-### dspy.BootstrapFinetune
+### BootstrapFinetune
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch, BootstrapFinetune
@@ -356,7 +356,7 @@ for p in finetune_program.predictors():
     p.activated = False
 ```
 
-### dspy.COPRO
+### COPRO
 
 ```python
 from dspy.teleprompt import COPRO
@@ -368,7 +368,7 @@ copro_teleprompter = COPRO(prompt_model=model_to_generate_prompts, task_model=mo
 compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_program, trainset=trainset, eval_kwargs=eval_kwargs)
 ```
 
-### dspy.MIPRO
+### MIPRO
 
 
 ```python
@@ -395,7 +395,7 @@ compiled_program = optimize_signature(
 ).program
 ```
 
-### dspy.KNNFewShot
+### KNNFewShot
 
 ```python
 from dspy.predict import KNN
@@ -406,7 +406,7 @@ knn_optimizer = KNNFewShot(KNN, k=3, trainset=trainset)
 your_dspy_program_compiled = knn_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
 ```
 
-### dspy.BootstrapFewShotWithOptuna
+### BootstrapFewShotWithOptuna
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithOptuna
