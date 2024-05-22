@@ -1,10 +1,10 @@
+import functools
 import os
 from typing import List, Optional
 
 import openai
 
 import dspy
-import functools
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.utils import dotdict
 
