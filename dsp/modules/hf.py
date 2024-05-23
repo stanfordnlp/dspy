@@ -168,9 +168,8 @@ class HFModel(LM):
                 print("Failed to extract 'content' from the prompt.")
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
-        if 'temperature' in kwargs:
-            if kwargs['temperature'] == 0.0:
-                kwargs['do_sample'] = False
+        if 'temperature' in kwargs and kwargs['temperature'] == 0.0:
+            kwargs['do_sample'] = False
         
         # print(kwargs)
         outputs = self.model.generate(**inputs, **kwargs)
