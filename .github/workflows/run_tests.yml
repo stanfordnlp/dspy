@@ -138,8 +138,6 @@ jobs:
         run: echo "PYTHONPATH=$(python -c 'import sys; print(":".join(sys.path))'):$(pwd)" >> $GITHUB_ENV
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Install dev dependencies
-        run: pip install -r requirements-dev.txt
       - name: Set up cache directory
         run: |
           cd ./cache
