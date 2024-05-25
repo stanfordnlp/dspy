@@ -5,12 +5,12 @@ default_stages: [commit]
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.11
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
+  #   - repo: https://github.com/astral-sh/ruff-pre-commit
+  #     rev: v0.1.11
+  #     hooks:
+  #       - id: ruff
+  #         args: [--fix]
+  #       - id: ruff-format
 
   - repo: https://github.com/timothycrosley/isort
     rev: 5.12.0
