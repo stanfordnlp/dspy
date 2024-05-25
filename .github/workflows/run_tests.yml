@@ -142,8 +142,6 @@ jobs:
       - name: Set up cache directory
         run: |
           ls -la
-          cd ..
-          mkdir -p cache
           echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV
       - name: Run tests with pytest
         run: pytest tests_integration/
