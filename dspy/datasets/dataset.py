@@ -1,114 +1,90 @@
 import random
-import uuid
+import typing as t
+from functools import cached_property
 
-from dsp.utils import dotdict
+from pydantic import BaseModel, ConfigDict, Field
+
+import dspy
 from dspy import Example
 
 
-class Dataset:
-    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None):
-        self.train_size = train_size
-        self.train_seed = train_seed
-        self.dev_size = dev_size
-        self.dev_seed = eval_seed
-        self.test_size = test_size
-        self.test_seed = eval_seed
-        self.do_shuffle = True
+class Dataset(BaseModel):
+    # Example is not yet Pydantic Valid, as such we need to allow arbitrary types
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-        self.name = self.__class__.__name__
-
-    def reset_seeds(self, train_seed=None, train_size=None, eval_seed=None, dev_size=None, test_size=None):
-        self.train_size = train_size if train_size is not None else self.train_size
-        self.train_seed = train_seed if train_seed is not None else self.train_seed
-        self.dev_size = dev_size if dev_size is not None else self.dev_size
-        self.dev_seed = eval_seed if eval_seed is not None else self.dev_seed
-        self.test_size = test_size if test_size is not None else self.test_size
-        self.test_seed = eval_seed if eval_seed is not None else self.test_seed
-
-        if hasattr(self, '_train_'):
-            del self._train_
-        
-        if hasattr(self, '_dev_'):
-            del self._dev_
-        
-        if hasattr(self, '_test_'):
-            del self._test_
+    do_shuffle: bool = Field(default=True)
+    data: dict[str, list[Example]] = Field(default_factory=dict)
 
     @property
-    def train(self):
-        if not hasattr(self, '_train_'):
-            self._train_ = self._shuffle_and_sample('train', self._train, self.train_size, self.train_seed)
+    def name(self) -> str:
+        return self.__class__.__name__
 
-        return self._train_
+    @cached_property
+    def split_names(self) -> list[str]:
+        return list(self.data.keys())
 
-    @property
-    def dev(self):
-        if not hasattr(self, '_dev_'):
-            self._dev_ = self._shuffle_and_sample('dev', self._dev, self.dev_size, self.dev_seed)
+    def split_existing_split(self, source: str, target: str, percentage: float) -> None:
+        if source not in self.data:
+            raise ValueError(f"{source} is not available in Dataset.")
 
-        return self._dev_
-    
-    @property
-    def test(self):
-        if not hasattr(self, '_test_'):
-            self._test_ = self._shuffle_and_sample('test', self._test, self.test_size, self.test_seed)
+        if target not in self.data:
+            raise ValueError(f"{target} is not available in Dataset.")
 
-        return self._test_
+        source_examples = self.data[source]
 
-    def _shuffle_and_sample(self, split, data, size, seed=0):
-        '''
-            The setting (seed=s, size=N) is always a subset
-            of the setting (seed=s, size=M) for N < M.
-        '''
+        source_len = len(source_examples)
+        count = int(source_len * percentage)
+        target_idx = random.sample(list(range(source_len)), k=count)
+        new_split = []
 
-        data = list(data)
+        for i in sorted(target_idx, key=lambda x: -x):
+            new_split.append(source_examples[i])
+            del source_examples[i]
 
-        # Shuffle the data irrespective of the requested size.
-        base_rng = random.Random(seed)
+        self.data[source] = source_examples
+        self.data[target] = new_split
 
-        if self.do_shuffle:
-            base_rng.shuffle(data)
+    def sample_split(
+        self,
+        name: str,
+        seed: int = 0,
+        n: t.Optional[int] = None,
+        shuffle: t.Optional[bool] = None,
+    ) -> list[Example]:
+        # TODO: This function is not currently deterministic
+        # This can likely cause issues, as we are generating copies of data
+        if name not in self.data:
+            raise ValueError(f"{name} split not found in Dataset. Splits available: {self.split_names}")
 
-        data = data[:size]
-        output = []
+        if shuffle is None:
+            shuffle = self.do_shuffle
 
-        for example in data:
-            output.append(Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split=split))
-        
-        # TODO: NOTE: Ideally we use these uuids for dedup internally, for demos and internal train/val splits.
-        # Now, some tasks (like convQA and Colors) have overlapping examples. Here, we should allow the user to give us
-        # a uuid field that would respect this in some way. This means that we need a more refined concept that
-        # uuid (each example is unique) and more like a group_uuid.
+        examples = self.data[name]
 
-        # rng = random.Random(seed)
-        # rng.shuffle(data)
+        if shuffle:
+            return self._shuffle(dataset=examples, seed=seed, sample_size=n)
 
-        return output
-    
-    @classmethod
-    def prepare_by_seed(cls, train_seeds=[1,2,3,4,5], train_size=16, dev_size=1000,
-                        divide_eval_per_seed=True, eval_seed=2023, **kwargs):
-        
-        data_args = dotdict(train_size=train_size, eval_seed=eval_seed, dev_size=dev_size, test_size=0, **kwargs)
-        dataset = cls(**data_args)
+        return examples
 
-        eval_set = dataset.dev
-        eval_sets, train_sets = [], []
+    def __getattr__(self, name: str):
+        if name in self.data:
+            return self.data[name]
 
-        examples_per_seed = dev_size // len(train_seeds) if divide_eval_per_seed else dev_size
-        eval_offset = 0
+        if hasattr(self, name):
+            return self.__getattribute__(name)
 
-        for train_seed in train_seeds:
-            data_args.train_seed = train_seed
-            dataset.reset_seeds(**data_args)
+        raise AttributeError(f"{name} not available in Dataset")
 
-            eval_sets.append(eval_set[eval_offset:eval_offset+examples_per_seed])
-            train_sets.append(dataset.train)
+    @staticmethod
+    def _shuffle(dataset: list[Example], seed: int, sample_size: t.Optional[int] = None) -> list[Example]:
+        if sample_size is None:
+            sample_size = len(dataset)
 
-            assert len(eval_sets[-1]) == examples_per_seed, len(eval_sets[-1])
-            assert len(train_sets[-1]) == train_size, len(train_sets[-1])
-            
-            if divide_eval_per_seed:
-                eval_offset += examples_per_seed
+        elif sample_size > len(dataset):
+            dspy.logger.warning(
+                "Sample size is larger than provided dataset, returning all available samples in dataset.",
+            )
+            sample_size = len(dataset)
 
-        return dotdict(train_sets=train_sets, eval_sets=eval_sets)
+        random.seed(seed)
+        return random.sample(dataset, k=sample_size)
