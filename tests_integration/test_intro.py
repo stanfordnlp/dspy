@@ -1,7 +1,11 @@
 from typing import Any
+import os
 
 from tests_integration.base import BaseIntegrationTestWithCache
+global cache_dir 
+cache_dir = os.getenv("DSP_NOTEBOOK_CACHEDIR")
 
+import dspy
 
 class TestIntroIntegration(BaseIntegrationTestWithCache):
     def test_dspy_workflow(self) -> None:
