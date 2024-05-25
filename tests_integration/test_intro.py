@@ -4,6 +4,21 @@ from typing import Any
 
 import pytest
 
+print("first")
+print(os.environ.get("DSP_NOTEBOOK_CACHEDIR"))
+
+library_dir = Path(__file__).resolve().parent
+base_dir = library_dir.parent
+cache_dir = str(base_dir / "cache")
+os.environ["DSP_NOTEBOOK_CACHEDIR"] = cache_dir
+
+if cache_dir and not Path(cache_dir).exists():
+    Path(cache_dir).mkdir(parents=True)
+
+print("second")
+
+print(os.environ.get("DSP_NOTEBOOK_CACHEDIR"))
+
 import dspy
 
 
@@ -293,4 +308,3 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         turbo = dspy.OpenAI(model="gpt-3.5-turbo")
         colbertv2_wiki17_abstracts = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
         dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
-        return dspy
