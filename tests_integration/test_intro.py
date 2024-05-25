@@ -1,5 +1,6 @@
 from typing import Any
 
+import dspy
 from tests_integration.base import BaseIntegrationTestWithCache
 
 
@@ -9,13 +10,13 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
 
         dev_example, dev_set, training_set = self.assert_dataset_loading()
 
-        self.assert_basic_qa(dev_example, dspy)
+        self.assert_basic_qa(dev_example)
 
-        self.assert_retrieval(dev_example, dspy)
+        self.assert_retrieval(dev_example)
 
-        self.assert_compilation(dev_set, dspy, training_set)
+        self.assert_compilation(dev_set, training_set)
 
-    def assert_compilation(self, devset, dspy, trainset) -> None:
+    def assert_compilation(self, devset, trainset) -> None:
         class GenerateAnswer(dspy.Signature):
             """Answer questions with short factoid answers."""
 
@@ -169,7 +170,7 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         )
         assert compiled_baleen("How many storeys are in the castle that David Gregory inherited?") is not None
 
-    def assert_retrieval(self, dev_example, dspy) -> None:
+    def assert_retrieval(self, dev_example) -> None:
         retrieve = dspy.Retrieve(k=3)
         top_k_passages = retrieve(dev_example.question).passages
 
@@ -195,7 +196,7 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         retrieved_value = retrieve("When was the first FIFA World Cup held?").passages[0]
         assert retrieved_value[:30] == "History of the FIFA World Cup "
 
-    def assert_basic_qa(self, dev_example, dspy) -> None:
+    def assert_basic_qa(self, dev_example) -> None:
         class BasicQA(dspy.Signature):
             """Answer questions with short factoid answers."""
 
@@ -268,8 +269,6 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         return dev_example, devset, trainset
 
     def setup_dspy(self) -> Any:
-        import dspy
-
         turbo = dspy.OpenAI(model="gpt-3.5-turbo")
         colbertv2_wiki17_abstracts = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
         dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
