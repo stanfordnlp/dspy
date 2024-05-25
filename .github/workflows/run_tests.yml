@@ -141,7 +141,7 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Set up cache directory
         run: |
-          ls -la
+          ls -la cache
           echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV
       - name: Run tests with pytest
         run: pytest -c tests_integration/pytest.ini tests_integration/
