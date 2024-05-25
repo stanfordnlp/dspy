@@ -144,4 +144,4 @@ jobs:
           ls -la
           echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV
       - name: Run tests with pytest
-        run: pytest -c tests_integration/pytest.ini tests_integration/
+        run: pytest -c tests_integration/pytest-ci.ini tests_integration/
