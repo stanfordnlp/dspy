@@ -134,7 +134,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
-        run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt
       - name: Add directory to Python path
         run: echo "PYTHONPATH=$(python -c 'import sys; print(":".join(sys.path))'):$(pwd)" >> $GITHUB_ENV
       - name: Set up cache directory
