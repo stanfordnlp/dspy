@@ -167,7 +167,7 @@ def knn(
 
     train_casted_to_vectorize = [cast(cur_elem) for cur_elem in train]
 
-    vectorizer: "BaseSentenceVectorizer" = dsp.settings.vectorizer
+    vectorizer: BaseSentenceVectorizer = dsp.settings.vectorizer
     all_vectors = vectorizer(train_casted_to_vectorize).astype(np.float32)
 
     index = create_faiss_index(
