@@ -23,10 +23,6 @@ class BaseIntegrationTestWithCache:
 
 class TestIntroIntegration(BaseIntegrationTestWithCache):
     def test_dspy_workflow(self) -> None:
-        print("HELLOOOOO CACHEEEE READ MEEEEEEEEE START FILE")
-        print(os.environ.get("DSP_NOTEBOOK_CACHEDIR"))
-        print("HELLOOOOO CACHEEEE READ MEEEEEEEEE START FILE")
-
         self.setup_dspy()
 
         dev_example, dev_set, training_set = self.assert_dataset_loading()
@@ -79,8 +75,8 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         assert f"Question: {my_question}" == "Question: What castle did David Gregory inherit?"
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: Kinnairdy Castle"
         assert (
-                f"Retrieved Contexts (truncated): {[c[:10] + '...' for c in pred.context]}"
-                == "Retrieved Contexts (truncated): ['David Greg...', 'Gregory Ta...', 'David Greg...']"
+            f"Retrieved Contexts (truncated): {[c[:10] + '...' for c in pred.context]}"
+            == "Retrieved Contexts (truncated): ['David Greg...', 'Gregory Ta...', 'David Greg...']"
         )
 
         # Verify compiled model's parameters
@@ -139,7 +135,7 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
 
         # Assertions to verify the SimplifiedBaleen model
         assert (
-                f"Question: {my_question}" == "Question: How many storeys are in the castle that David Gregory inherited?"
+            f"Question: {my_question}" == "Question: How many storeys are in the castle that David Gregory inherited?"
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: five"
 
@@ -164,7 +160,7 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
             if max([len(h) for h in hops]) > 100:
                 return False
             if any(
-                    dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8) for idx in range(2, len(hops))
+                dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8) for idx in range(2, len(hops))
             ):
                 return False
 
@@ -182,12 +178,12 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         # Assertions for the retrieval scores
         assert f"## Retrieval Score for RAG: {compiled_rag_retrieval_score}" == "## Retrieval Score for RAG: 26.0"
         assert (
-                f"## Retrieval Score for uncompiled Baleen: {uncompiled_baleen_retrieval_score}"
-                == "## Retrieval Score for uncompiled Baleen: 36.0"
+            f"## Retrieval Score for uncompiled Baleen: {uncompiled_baleen_retrieval_score}"
+            == "## Retrieval Score for uncompiled Baleen: 36.0"
         )
         assert (
-                f"## Retrieval Score for compiled Baleen: {compiled_baleen_retrieval_score}"
-                == "## Retrieval Score for compiled Baleen: 60.0"
+            f"## Retrieval Score for compiled Baleen: {compiled_baleen_retrieval_score}"
+            == "## Retrieval Score for compiled Baleen: 60.0"
         )
         assert compiled_baleen("How many storeys are in the castle that David Gregory inherited?") is not None
 
@@ -198,19 +194,19 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
         # Assertions to verify the retrieval functionality
         assert retrieve.k == 3
         assert (
-                dev_example.question
-                == "What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
+            dev_example.question
+            == "What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
         )
         assert (
-                top_k_passages[0]
-                == "Restaurant: Impossible | Restaurant: Impossible is an American reality television series, featuring "
-                   "chef and restaurateur Robert Irvine, that aired on Food Network from 2011 to 2016."
+            top_k_passages[0]
+            == "Restaurant: Impossible | Restaurant: Impossible is an American reality television series, featuring "
+            "chef and restaurateur Robert Irvine, that aired on Food Network from 2011 to 2016."
         )
         assert (
-                top_k_passages[1]
-                == "Jean Joho | Jean Joho is a French-American chef and restaurateur. He is chef/proprietor of Everest in "
-                   "Chicago (founded in 1986), Paris Club Bistro & Bar and Studio Paris in Chicago, The Eiffel Tower "
-                   "Restaurant in Las Vegas, and Brasserie JO in Boston."
+            top_k_passages[1]
+            == "Jean Joho | Jean Joho is a French-American chef and restaurateur. He is chef/proprietor of Everest in "
+            "Chicago (founded in 1986), Paris Club Bistro & Bar and Studio Paris in Chicago, The Eiffel Tower "
+            "Restaurant in Las Vegas, and Brasserie JO in Boston."
         )
         assert top_k_passages[2][:30] == "List of Restaurant: Impossible"
 
@@ -231,8 +227,8 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
 
         # Assertions to verify the basic QA functionality
         assert (
-                f"Question: {dev_example.question}"
-                == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
+            f"Question: {dev_example.question}"
+            == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: American"
 
@@ -243,12 +239,12 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
 
         # Assertions to verify the chain of thought functionality
         assert (
-                f"Question: {dev_example.question}"
-                == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
+            f"Question: {dev_example.question}"
+            == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
         )
         assert (
-                f"Thought: {pred.rationale.split('.', 1)[1].strip()}"
-                == "Thought: We know that the chef and restaurateur featured in Restaurant: Impossible is Robert Irvine."
+            f"Thought: {pred.rationale.split('.', 1)[1].strip()}"
+            == "Thought: We know that the chef and restaurateur featured in Restaurant: Impossible is Robert Irvine."
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: British"
 
@@ -265,27 +261,27 @@ class TestIntroIntegration(BaseIntegrationTestWithCache):
 
         # Assertions to verify the dataset loading
         assert (
-                f"Question: {train_example.question}"
-                == "Question: At My Window was released by which American singer-songwriter?"
+            f"Question: {train_example.question}"
+            == "Question: At My Window was released by which American singer-songwriter?"
         )
         assert f"Answer: {train_example.answer}" == "Answer: John Townes Van Zandt"
         dev_example = devset[18]
         assert (
-                f"Question: {dev_example.question}"
-                == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
+            f"Question: {dev_example.question}"
+            == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
         )
         assert f"Answer: {dev_example.answer}" == "Answer: English"
         assert "Restaurant: Impossible" in list(dev_example.gold_titles)
         assert "Robert Irvine" in list(dev_example.gold_titles)
         assert (
-                f"For this dataset, training examples have input keys {train_example.inputs().keys()} and label keys "
-                f"{train_example.labels().keys()}"
-                == "For this dataset, training examples have input keys ['question'] and label keys ['answer']"
+            f"For this dataset, training examples have input keys {train_example.inputs().keys()} and label keys "
+            f"{train_example.labels().keys()}"
+            == "For this dataset, training examples have input keys ['question'] and label keys ['answer']"
         )
         assert (
-                f"For this dataset, dev examples have input keys {dev_example.inputs().keys()} and label keys "
-                f"{dev_example.labels().keys()}"
-                == "For this dataset, dev examples have input keys ['question'] and label keys ['answer', 'gold_titles']"
+            f"For this dataset, dev examples have input keys {dev_example.inputs().keys()} and label keys "
+            f"{dev_example.labels().keys()}"
+            == "For this dataset, dev examples have input keys ['question'] and label keys ['answer', 'gold_titles']"
         )
         return dev_example, devset, trainset
 
