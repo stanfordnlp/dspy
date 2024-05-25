@@ -142,4 +142,4 @@ jobs:
           cd ./cache
           echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)" >> $GITHUB_ENV
       - name: Run tests with pytest
-        run: pytest -c tests_integration/pytest-ci.ini tests_integration/
+        run: pytest -c tests_integration/pytest.ini tests_integration/
