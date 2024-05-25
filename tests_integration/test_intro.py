@@ -1,27 +1,9 @@
-import os
-from pathlib import Path
 from typing import Any
-
-import pytest
 
 import dspy
 
 
-class BaseIntegrationTestWithCache:
-    @pytest.fixture(autouse=True)
-    def setup(self) -> None:
-        return
-        # Base directory for all DSPy modules
-        library_dir = Path(__file__).resolve().parent
-        base_dir = library_dir.parent
-        cache_dir = str(base_dir / "cache")
-        os.environ["DSP_NOTEBOOK_CACHEDIR"] = cache_dir
-
-        if cache_dir and not Path(cache_dir).exists():
-            Path(cache_dir).mkdir(parents=True)
-
-
-class TestIntroIntegration(BaseIntegrationTestWithCache):
+class TestIntroIntegration:
     def test_dspy_workflow(self) -> None:
         self.setup_dspy()
 
