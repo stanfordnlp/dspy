@@ -7,7 +7,6 @@ import pytest
 class BaseIntegrationTestWithCache:
     @pytest.fixture(autouse=True)
     def setup(self) -> None:
-        return
         # Base directory for all DSPy modules
         library_dir = Path(__file__).resolve().parent
         base_dir = library_dir.parent
