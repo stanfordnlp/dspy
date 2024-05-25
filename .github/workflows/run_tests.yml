@@ -23,10 +23,12 @@ jobs:
       - name: Ruff Fix Attempt
         id: ruff_fix
         uses: chartboost/ruff-action@v1
-        with:
-          args: --fix-only --exit-non-zero-on-fix
+        run: |
+          ruff check . --fix-only --exit-non-zero-on-fix | tee output.txt
         continue-on-error: true
-
+      - name: Print Ruff Fix Output
+        run: |
+          cat output.txt
       - name: Fail Workflow if Ruff Fix Failed
         if: steps.ruff_fix.outcome == 'failure'
         run: |
