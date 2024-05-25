@@ -3,21 +3,23 @@ Retriever model for Pinecone
 Author: Dhar Rawal (@drawal1)
 """
 
-import os
-from dsp.utils import dotdict
-from typing import Optional, List, Union, Any
-import dspy
-import backoff
 from abc import ABC, abstractmethod
+from typing import List, Optional, Union
+
+import backoff
+
+import dspy
+from dsp.utils import dotdict
 
 try:
     import pinecone
 except ImportError:
     raise ImportError(
-        "The pinecone library is required to use PineconeRM. Install it with `pip install dspy-ai[pinecone]`"
+        "The pinecone library is required to use PineconeRM. Install it with `pip install dspy-ai[pinecone]`",
     )
 
 import openai
+
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
 except Exception:
@@ -57,11 +59,11 @@ class OpenAIEmbed(CloudEmbedProvider):
     def get_embeddings(self, queries: List[str]) -> List[List[float]]:
         if OPENAI_LEGACY:
             embedding = openai.Embedding.create(
-                input=queries, model=self.model
+                input=queries, model=self.model,
             )
         else:
             embedding = openai.embeddings.create(
-                input=queries, model=self.model
+                input=queries, model=self.model,
             ).model_dump()
         return [embedding["embedding"] for embedding in embedding["data"]]
     
@@ -71,7 +73,7 @@ class CohereEmbed(CloudEmbedProvider):
             import cohere
         except ImportError:
             raise ImportError(
-                "The cohere library is required to use CohereEmbed. Install it with `pip install cohere`"
+                "The cohere library is required to use CohereEmbed. Install it with `pip install cohere`",
             )
         super().__init__(model, api_key)
         self.client = cohere.Client(api_key)
@@ -133,7 +135,7 @@ class PineconeRM(dspy.Retrieve):
                 from transformers import AutoModel, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
-                "You need to install Hugging Face transformers library to use a local embedding model with PineconeRM."
+                "You need to install Hugging Face transformers library to use a local embedding model with PineconeRM.",
             ) from exc
 
             self._local_embed_model = AutoModel.from_pretrained(local_embed_model)
@@ -142,7 +144,7 @@ class PineconeRM(dspy.Retrieve):
             self.device = torch.device(
                 'cuda:0' if torch.cuda.is_available() else
                 'mps' if torch.backends.mps.is_available()
-                else 'cpu'
+                else 'cpu',
             )
 
         elif cloud_emded_provider is not None:
@@ -151,7 +153,7 @@ class PineconeRM(dspy.Retrieve):
         
         else:
             raise ValueError(
-                "Either local_embed_model or cloud_embed_provider must be provided."
+                "Either local_embed_model or cloud_embed_provider must be provided.",
             )
 
         if pinecone_api_key is None:
@@ -167,13 +169,13 @@ class PineconeRM(dspy.Retrieve):
     def _mean_pooling(
             self, 
             model_output, 
-            attention_mask
+            attention_mask,
         ):
         try:
             import torch
         except ImportError as exc:
             raise ModuleNotFoundError(
-                "You need to install torch to use a local embedding model with PineconeRM."
+                "You need to install torch to use a local embedding model with PineconeRM.",
             ) from exc
 
         token_embeddings = model_output[0] # First element of model_output contains all token embeddings
@@ -183,7 +185,7 @@ class PineconeRM(dspy.Retrieve):
 
     def _get_embeddings(
         self, 
-        queries: List[str]
+        queries: List[str],
     ) -> List[List[float]]:
         """Return query vector after creating embedding using OpenAI
 
@@ -200,7 +202,7 @@ class PineconeRM(dspy.Retrieve):
             import torch
         except ImportError as exc:
             raise ModuleNotFoundError(
-                "You need to install torch to use a local embedding model with PineconeRM."
+                "You need to install torch to use a local embedding model with PineconeRM.",
             ) from exc
         
         # Use local model
@@ -236,12 +238,12 @@ class PineconeRM(dspy.Retrieve):
         # For single query, just look up the top k passages
         if len(queries) == 1:
             results_dict = self._pinecone_index.query(
-                vector=embeddings[0], top_k=k, include_metadata=True
+                vector=embeddings[0], top_k=k, include_metadata=True,
             )
 
             # Sort results by score
             sorted_results = sorted(
-                results_dict["matches"], key=lambda x: x.get("scores", 0.0), reverse=True
+                results_dict["matches"], key=lambda x: x.get("scores", 0.0), reverse=True,
             )
             
             passages = [result["metadata"]["text"] for result in sorted_results]
@@ -253,7 +255,7 @@ class PineconeRM(dspy.Retrieve):
         passage_scores = {}
         for embedding in embeddings:
             results_dict = self._pinecone_index.query(
-                vector=embedding, top_k=k * 3, include_metadata=True
+                vector=embedding, top_k=k * 3, include_metadata=True,
             )
             for result in results_dict["matches"]:
                 passage_scores[result["metadata"]["text"]] = (
@@ -262,7 +264,7 @@ class PineconeRM(dspy.Retrieve):
                 )
         
         sorted_passages = sorted(
-            passage_scores.items(), key=lambda x: x[1], reverse=True
+            passage_scores.items(), key=lambda x: x[1], reverse=True,
         )[: k]
         
         passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages]
