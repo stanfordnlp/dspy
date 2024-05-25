@@ -152,6 +152,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+      - name: Install Ruff
+        run: |
+          python -m pip install ruff
       - name: Ruff Fix Attempt
         id: ruff_fix
         uses: chartboost/ruff-action@v1
