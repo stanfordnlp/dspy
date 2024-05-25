@@ -23,7 +23,11 @@ class BaseIntegrationTestWithCache:
 
 class TestIntroIntegration(BaseIntegrationTestWithCache):
     def test_dspy_workflow(self) -> None:
-        dspy = self.setup_dspy()
+        print("HELLOOOOO CACHEEEE READ MEEEEEEEEE START FILE")
+        print(os.environ.get("DSP_NOTEBOOK_CACHEDIR"))
+        print("HELLOOOOO CACHEEEE READ MEEEEEEEEE START FILE")
+
+        self.setup_dspy()
 
         dev_example, dev_set, training_set = self.assert_dataset_loading()
 
