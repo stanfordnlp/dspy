@@ -133,6 +133,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "pip"
       - name: Add directory to Python path
         run: echo "PYTHONPATH=$(python -c 'import sys; print(":".join(sys.path))'):$(pwd)" >> $GITHUB_ENV
       - name: Install dependencies
