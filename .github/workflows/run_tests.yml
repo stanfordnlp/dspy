@@ -165,7 +165,7 @@ jobs:
         if: steps.ruff_fix.outcome == 'failure'
         run: |
           echo "Ruff fix failed. Capturing issues..."
-          ruff check . --exit-zero > ruff_issues.txt
+          ruff check . --fix-only --exit-non-zero-on-fix > ruff_issues.txt
       - name: Echo Ruff Issues
         if: steps.ruff_fix.outcome == 'failure'
         run: |
