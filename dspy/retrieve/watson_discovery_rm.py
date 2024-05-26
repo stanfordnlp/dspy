@@ -69,9 +69,9 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                         "count": k,
                         "characters": 500,
                         "find_answers": False,
-                        "per_document": False
+                        "per_document": False,
                     },
-                    "highlight": False
+                    "highlight": False,
                 })
                 headers = {'Content-Type': 'application/json'}
 
@@ -80,7 +80,7 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                     url=self.query_url, 
                     headers=headers,
                     auth=HTTPBasicAuth("apikey", self.apikey),
-                    data=payload
+                    data=payload,
                 )
                 
                 discovery_results.raise_for_status()
