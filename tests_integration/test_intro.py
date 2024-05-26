@@ -62,9 +62,73 @@ class TestIntroIntegration:
         )
 
         # Verify compiled model's parameters
+        named_predictors_dict = {}
         for name, parameter in compiled_rag.named_predictors():
-            assert name is not None
-            assert parameter.demos[0] is not None
+            named_predictors_dict[name] = {
+                "context": parameter.demos[0].context,
+                "answer": parameter.demos[0].answer,
+                "question": parameter.demos[0].question,
+                "rationale": parameter.demos[0].rationale,
+            }
+
+        assert named_predictors_dict == {
+            "generate_answer": {
+                "context": [
+                    "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of "
+                    "taekwondo, and is published in the United States of America. While the title "
+                    "suggests that it focuses on taekwondo exclusively, the magazine also covers other "
+                    'Korean martial arts. "Tae Kwon Do Times" has published articles by a wide range of '
+                    "authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van "
+                    "Schuyver.",
+                    "Kwon Tae-man | Kwon Tae-man (born 1941) was an early Korean hapkido "
+                    "practitioner and a pioneer of the art, first in Korea and then in the "
+                    "United States. He formed one of the earliest dojang's for hapkido in "
+                    "the United States in Torrance, California, and has been featured in "
+                    "many magazine articles promoting the art.",
+                    "Hee Il Cho | Cho Hee Il "
+                    "(born October 13, "
+                    "1940) is a prominent "
+                    "Korean-American master "
+                    "of taekwondo, "
+                    "holding the rank of 9th "
+                    '"dan" in the martial '
+                    "art. He has written 11 "
+                    "martial art books, "
+                    "produced 70 martial art "
+                    "training videos, "
+                    "and has appeared on more "
+                    "than 70 martial arts "
+                    "magazine covers. Cho won "
+                    "several national and "
+                    "international "
+                    "competitions as a "
+                    "taekwondo competitor, "
+                    "and has appeared in "
+                    "several films, "
+                    'including "Fight to '
+                    'Win", "Best of the '
+                    'Best", "Bloodsport II", '
+                    'and "Bloodsport III". He '
+                    "founded the Action "
+                    "International Martial "
+                    "Arts Association (AIMAA) "
+                    "in 1980, and is its "
+                    "President. Cho is a "
+                    'member of both "Black '
+                    "Belt\" magazine's Hall "
+                    'of Fame and "Tae Kwon Do '
+                    "Times\" magazine's Hall "
+                    "of Fame.",
+                ],
+                "answer": "Tae Kwon Do Times",
+                "question": "Which magazine has published articles by Scott "
+                "Shaw, Tae Kwon Do Times or Southwest Art?",
+                "rationale": 'produce the answer. We know from the context that "Tae Kwon Do Times" is a '
+                "magazine that covers taekwondo and other Korean martial arts. It has published "
+                "articles by authors like Scott Shaw. On the other hand, there is no information "
+                "about Southwest Art magazine in the context.",
+            },
+        }
 
         from dspy.evaluate.evaluate import Evaluate
 
@@ -190,7 +254,22 @@ class TestIntroIntegration:
             "Chicago (founded in 1986), Paris Club Bistro & Bar and Studio Paris in Chicago, The Eiffel Tower "
             "Restaurant in Las Vegas, and Brasserie JO in Boston."
         )
-        assert top_k_passages[2][:30] == "List of Restaurant: Impossible"
+        assert top_k_passages[2] == (
+            "List of Restaurant: Impossible episodes | This is the list of the episodes for "
+            'the American cooking and reality television series "Restaurant Impossible", '
+            "produced by Food Network. The premise of the series is that within two days and "
+            "on a budget of $10,000, celebrity chef Robert Irvine renovates a failing "
+            "American restaurant with the goal of helping to restore it to profitability and "
+            "prominence. Irvine is assisted by a designer (usually Taniya Nayak, "
+            "Cheryl Torrenueva, or Lynn Keagan, but sometimes Vanessa De Leon, "
+            "Krista Watterworth, Yvette Irene, or Nicole Faccuito), along with general "
+            "contractor Tom Bury, who sometimes does double duty as both general contractor "
+            "and designer. After assessing the problems with the restaurant, Robert Irvine "
+            "typically creates a plan for the new decor, oversees the cleaning of the "
+            "restaurant, reduces the size of the menu and improves the food, develops a "
+            "promotional activity, educates the restaurant's owners, or trains the staff, "
+            "as needed by each restaurant."
+        )
 
         retrieved_value = retrieve("When was the first FIFA World Cup held?").passages[0]
         assert retrieved_value[:30] == "History of the FIFA World Cup "
@@ -213,7 +292,12 @@ class TestIntroIntegration:
             == "Question: What is the nationality of the chef and restaurateur featured in Restaurant: Impossible?"
         )
         assert f"Predicted Answer: {pred.answer}" == "Predicted Answer: American"
-
+        assert (
+            self.turbo.inspect_history().strip()
+            == "Answer questions with short factoid answers.\n\n---\n\nFollow the following format.\n\nQuestion: ${"
+            "question}\nAnswer: often between 1 and 5 words\n\n---\n\nQuestion: What is the nationality of the "
+            "chef and restaurateur featured in Restaurant: Impossible?\nAnswer:\x1b[32m American\x1b[0m"
+        )
         # Define the predictor with chain of thought
         generate_answer_with_chain_of_thought = dspy.ChainOfThought(BasicQA)
         # Call the predictor on the same input
@@ -268,6 +352,6 @@ class TestIntroIntegration:
         return dev_example, devset, trainset
 
     def setup_dspy(self) -> Any:
-        turbo = dspy.OpenAI(model="gpt-3.5-turbo")
+        self.turbo = dspy.OpenAI(model="gpt-3.5-turbo")
         colbertv2_wiki17_abstracts = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
-        dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+        dspy.settings.configure(lm=self.turbo, rm=colbertv2_wiki17_abstracts)
