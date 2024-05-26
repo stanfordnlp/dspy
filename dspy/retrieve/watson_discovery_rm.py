@@ -1,14 +1,15 @@
-import requests
 import json
-import dspy
+from typing import Optional, Union
 
-from dsp.utils import dotdict
+import requests
 from requests.auth import HTTPBasicAuth
-from typing import List, Optional, Union
+
+import dspy
+from dsp.utils import dotdict
+
 
 class WatsonDiscoveryRM(dspy.Retrieve):
-    """
-    A retrieval module that uses Watson Discovery to return the top passages for a given query.
+    """A retrieval module that uses Watson Discovery to return the top passages for a given query.
 
     Args:
         apikey (str): apikey for authentication purposes,
@@ -28,9 +29,11 @@ class WatsonDiscoveryRM(dspy.Retrieve):
         url:str,
         version:str,
         project_id:str,
-        collection_ids:list=[],
+        collection_ids:list=None,
         k: int = 5,
     ):
+        if collection_ids is None:
+            collection_ids = []
         self.apikey=apikey
         self.url=url,
         self.version:version
@@ -41,17 +44,16 @@ class WatsonDiscoveryRM(dspy.Retrieve):
         
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]= None) -> dspy.Prediction:
-        """
-        Search with Watson Discovery for self.k top passages for query
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int]= None) -> dspy.Prediction:
+        """Search with Watson Discovery for self.k top passages for query.
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
+            k (int, optional): The number of top passages to retrieve.
 
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
-
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]  # Filter empty queries
         k = self.k if k is None else k
@@ -72,7 +74,7 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                     "highlight": False
                 })
                 headers = {'Content-Type': 'application/json'}
-                
+
                 discovery_results = requests.request(
                     "POST",
                     url=self.query_url, 
@@ -94,6 +96,6 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                         "field": d["field"],
                     }))
 
-        except requests.exceptions.HTTPError as err:
-            raise SystemExit(err)
+        except requests.exceptions.RequestException as err:
+            raise SystemExit(err) from err
         return response

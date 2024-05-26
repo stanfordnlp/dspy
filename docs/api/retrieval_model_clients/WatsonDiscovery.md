@@ -31,12 +31,12 @@ class WatsonDiscoveryRM:
 
 ### Methods
 
-#### `forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]= None) -> dspy.Prediction:`
+#### `forward(self, query_or_queries: Union[str, list[str]], k: Optional[int]= None) -> dspy.Prediction:`
 
 Search the Watson Discovery collection for the top `k` passages matching the given query or queries.
 
 **Parameters:**
-- `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
+- `query_or_queries` (_Union[str, list[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
