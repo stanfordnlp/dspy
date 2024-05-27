@@ -67,16 +67,18 @@ fastembed = ["fastembed>=0.2.0"]
 homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
-name = "dspy"
+name = "dspy-ai"
 version = "2.5.0rc1"
-description = "DSPy"
+description = "DSPy: The framework for programming—not prompting—foundation models"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
+maintainers = ["Cyrus Nouroozi <cyrus@edendaolab.com>"]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 # documentation = "https://dspy-ai.readthedocs.io"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
+packages = [{ include = "dspy" }]
 
 # may be a bit much
 [tool.poetry.dependencies]
