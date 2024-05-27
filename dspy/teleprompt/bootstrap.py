@@ -150,7 +150,7 @@ class BootstrapFewShot(Teleprompter):
                         bootstrapped[example_idx] = True
 
         dspy.logger.info(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples in round {round_idx}.",
         )
 
         # Unbootstrapped training examples
