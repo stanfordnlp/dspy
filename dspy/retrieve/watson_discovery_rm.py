@@ -67,6 +67,7 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                     "passages": {
                         "enabled": True,
                         "count": k,
+                        "fields":["text"],
                         "characters": 500,
                         "find_answers": False,
                         "per_document": False,
@@ -85,9 +86,14 @@ class WatsonDiscoveryRM(dspy.Retrieve):
                 
                 discovery_results.raise_for_status()
 
+                doc_dict={}
+                for d in discovery_results.json()["results"]:
+                    doc_dict[d["document_id"]]=d["title"]
+
                 for d in discovery_results.json()["passages"]:
                     response.append(dotdict({
-                        "long_text": d["passage_text"],
+                        "title":doc_dict[d["document_id"]],
+                        "long_text": doc_dict[d["document_id"]]+" | " + d["passage_text"],
                         "passage_score": d["passage_score"],
                         "document_id": d["document_id"],
                         "collection_id": d["collection_id"],
