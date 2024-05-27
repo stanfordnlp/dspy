@@ -45,6 +45,7 @@ anthropic = ["anthropic~=0.18.0"]
 chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
 marqo = ["marqo"]
+epsilla = ["pyepsilla~=0.3.7"]
 pinecone = ["pinecone-client~=2.2.4"]
 weaviate = ["weaviate-client~=4.5.4"]
 milvus = ["pymilvus~=2.3.7"]
@@ -99,6 +100,7 @@ anthropic = { version = "^0.18.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
+epsilla = {version = "^0.3.7", optional = true}
 qdrant-client = { version = "^1.6.2", optional = true }
 pinecone-client = { version = "^2.2.4", optional = true }
 weaviate-client = { version = "^4.5.4", optional = true }
@@ -140,6 +142,7 @@ ipykernel = "^6.29.4"
 chromadb = ["chromadb"]
 qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
+epsilla = ["pyepsilla"]
 pinecone = ["pinecone-client"]
 weaviate = ["weaviate-client"]
 milvus = ["pymilvus"]
