@@ -128,7 +128,7 @@ class CohereVectorizer(BaseSentenceVectorizer):
         self.embedding_type = embedding_type
 
         import cohere
-        self.client = cohere.Client(api_key)
+        self.client = cohere.Client(api_key, client_name='dspy')
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
