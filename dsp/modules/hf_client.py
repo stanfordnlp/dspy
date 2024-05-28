@@ -401,6 +401,7 @@ class Anyscale(HFModel):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
         self.api_base = os.getenv("ANYSCALE_API_BASE") or api_base
+        assert not self.api_base.endswith("/"), "Anyscale base URL shouldn't end with /"
         self.token = os.getenv("ANYSCALE_API_KEY") or api_key
         self.model = model
         self.kwargs = {
