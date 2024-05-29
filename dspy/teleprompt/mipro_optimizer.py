@@ -38,7 +38,7 @@ Note that this teleprompter takes in the following parameters:
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
-                If True, the method will track a dictionary with a key corresponding to the trial number, 
+                If True, the method will track a dictionary with a key corresponding to the trial number,
                 and a value containing a dict with the following keys:
                     * program: the program being evaluated at a given trial
                     * score: the last average evaluated score for the program
@@ -295,12 +295,10 @@ class MIPRO(Teleprompter):
                         if not instruct:
                             instruct = new_instruct
                         else:
-                            instruct.completions.proposed_instruction.extend(
-                                new_instruct.completions.proposed_instruction,
+                            instruct.completions.extend_examples(
+                                new_instruct.completions.examples,
                             )
-                            instruct.completions.proposed_prefix_for_output_field.extend(
-                                new_instruct.completions.proposed_prefix_for_output_field,
-                            )
+
                 # Just data
                 elif view_data:
                     instruct = dspy.Predict(
@@ -336,8 +334,12 @@ class MIPRO(Teleprompter):
                     )
 
             # Add in our initial prompt as a candidate as well
-            instruct.completions.proposed_instruction.insert(0, basic_instruction)
-            instruct.completions.proposed_prefix_for_output_field.insert(0, basic_prefix)
+            new_example = dspy.Example(
+                basic_instruction=basic_instruction,
+                proposed_instruction=basic_instruction,
+                proposed_prefix_for_output_field=basic_prefix,
+            )
+            instruct.completions.add_example(new_example, 0)
             candidates[id(predictor)] = instruct.completions
             evaluated_candidates[id(predictor)] = {}
 
@@ -373,7 +375,8 @@ class MIPRO(Teleprompter):
             student.predictors(),
         )  # num data summary calls + N * P
 
-        user_message = textwrap.dedent(f"""\
+        user_message = textwrap.dedent(
+            f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
 
             Please be advised that based on the parameters you have set, the maximum number of LM calls is projected as follows:
@@ -383,7 +386,7 @@ class MIPRO(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of calls to prompt model * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
@@ -398,7 +401,8 @@ class MIPRO(Teleprompter):
             If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False` when calling compile.{ENDC}
 
             {YELLOW}Awaiting your input...{ENDC}
-        """)
+        """,
+        )
 
         print(user_message)
 

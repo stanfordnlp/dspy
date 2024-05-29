@@ -10,7 +10,9 @@ class Retry(Predict):
     def __init__(self, module):
         super().__init__(module.signature)
         self.module = module
-        self.original_signature = module.extended_signature if isinstance(module, dspy.ChainOfThought) else module.signature
+        self.original_signature = (
+            module.extended_signature if isinstance(module, dspy.ChainOfThought) else module.signature
+        )
         self.original_forward = module.forward
         self.new_signature = self._create_new_signature(self.original_signature)
 
@@ -18,17 +20,23 @@ class Retry(Predict):
         # Add "Past" input fields for each output field
         for key, value in signature.output_fields.items():
             actual_prefix = value.json_schema_extra["prefix"].split(":")[0] + ":"
-            signature = signature.append(f"past_{key}", dspy.InputField(
-                prefix="Previous " + actual_prefix,
-                desc=f"past {actual_prefix} with errors",
-                format=value.json_schema_extra.get("format"),
-            ))
+            signature = signature.append(
+                f"past_{key}",
+                dspy.InputField(
+                    prefix="Previous " + actual_prefix,
+                    desc=f"past {actual_prefix} with errors",
+                    format=value.json_schema_extra.get("format"),
+                ),
+            )
 
-        signature = signature.append("feedback", dspy.InputField(
-            prefix="Instructions:",
-            desc="Some instructions you must satisfy",
-            format=str,
-        ))
+        signature = signature.append(
+            "feedback",
+            dspy.InputField(
+                prefix="Instructions:",
+                desc="Some instructions you must satisfy",
+                format=str,
+            ),
+        )
 
         return signature
 

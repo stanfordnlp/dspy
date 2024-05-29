@@ -1,6 +1,8 @@
 import warnings
 from typing import Callable, Optional
 
+import openai
+
 import dspy
 
 try:
@@ -62,6 +64,7 @@ class PgVectorRM(dspy.Retrieve):
         self.retrieve = PgVectorRM(db_url, openai_client=openai_client, "paragraphs", fields=["text", "document_id"], k=20)
         ```
     """
+
     def __init__(
             self,
             db_url: str,
@@ -93,7 +96,6 @@ class PgVectorRM(dspy.Retrieve):
 
     def forward(self, query: str):
         """Search with PgVector for self.k top passages for query using cosine similarity
-
         Args:
             query  (str): The query to search for
             include_similarity (bool): Whether or not to include the similarity for each record
@@ -131,9 +133,7 @@ class PgVectorRM(dspy.Retrieve):
 
         with self.conn as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    sql_query,
-                    args)
+                cur.execute(sql_query, args)
                 rows = cur.fetchall()
                 columns = [descrip[0] for descrip in cur.description]
                 for row in rows:

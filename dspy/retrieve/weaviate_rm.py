@@ -35,9 +35,11 @@ class WeaviateRM(dspy.Retrieve):
 
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
         weaviate_client = weaviate.Client("your-path-here")
-        retriever_model = WeaviateRM(weaviate_collection_name="my_collection_name",
-                                     weaviate_collection_text_key="content", 
-                                     weaviate_client=weaviate_client)
+        retriever_model = WeaviateRM(
+            weaviate_collection_name="my_collection_name",
+            weaviate_collection_text_key="content",
+            weaviate_client=weaviate_client,
+        )
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
@@ -47,12 +49,13 @@ class WeaviateRM(dspy.Retrieve):
         ```
     """
 
-    def __init__(self, 
-                 weaviate_collection_name: str, 
-                 weaviate_client: weaviate.WeaviateClient,
-                 k: int = 3,
-                 weaviate_collection_text_key: Optional[str] = "content",
-                 weaviate_alpha: Optional[float] = 0.5,
+    def __init__(
+        self,
+        weaviate_collection_name: str,
+        weaviate_client: weaviate.WeaviateClient,
+        k: int = 3,
+        weaviate_collection_text_key: Optional[str] = "content",
+    weaviate_alpha: Optional[float] = 0.5,
                  weaviate_fusion_type: Optional[HybridFusion] = HybridFusion.RELATIVE_SCORE,
         ):
         self._weaviate_collection_name = weaviate_collection_name
@@ -73,11 +76,7 @@ class WeaviateRM(dspy.Retrieve):
         """
 
         k = k if k is not None else self.k
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]
         passages = []
         for query in queries:

@@ -1,9 +1,7 @@
 import dspy
-from dspy.primitives.program import (
-    Module,
-    set_attribute_by_name,
-)  # Adjust the import based on your file structure
-from dspy.utils import DummyLM
+from dspy.modeling import TextBackend
+from dspy.primitives.program import Module, set_attribute_by_name  # Adjust the import based on your file structure
+from dspy.utils import DummyBackend, DummyLM
 
 
 class HopModule(dspy.Module):
@@ -39,9 +37,18 @@ def test_predictors():
 
 def test_forward():
     program = HopModule()
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "let me check", "let me check": "2"}))
-    result = program(question="What is 1+1?").answer
-    assert result == "2"
+    lm = DummyLM({"What is 1+1?": "let me check", "let me check": "2"})
+    with dspy.settings.context(lm=lm, backend=None):
+        result = program(question="What is 1+1?").answer
+        assert result == "2"
+
+
+def test_forward_with_backend():
+    program = HopModule()
+    backend = DummyBackend(answers=[["let me check"], ["2"]])
+    with dspy.settings.context(backend=backend, cache=False, lm=None):
+        result = program(question="What is 1+1?").answer
+        assert result == "2"
 
 
 def test_nested_named_predictors():
@@ -74,7 +81,11 @@ def test_multiple_levels():
     module = Module()
     module.sub = Module()
     module.sub.subsub = Module()
-    expected = [("self", module), ("self.sub", module.sub), ("self.sub.subsub", module.sub.subsub)]
+    expected = [
+        ("self", module),
+        ("self.sub", module.sub),
+        ("self.sub.subsub", module.sub.subsub),
+    ]
     assert list(module.named_sub_modules()) == expected
 
 
@@ -82,7 +93,11 @@ def test_multiple_sub_modules():
     module = Module()
     module.sub1 = Module()
     module.sub2 = Module()
-    expected = [("self", module), ("self.sub1", module.sub1), ("self.sub2", module.sub2)]
+    expected = [
+        ("self", module),
+        ("self.sub1", module.sub1),
+        ("self.sub2", module.sub2),
+    ]
     assert sorted(list(module.named_sub_modules())) == sorted(expected)
 
 

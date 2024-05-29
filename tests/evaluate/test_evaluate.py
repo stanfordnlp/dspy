@@ -1,14 +1,13 @@
+import dspy
 import signal
 import threading
 
 import pytest
 
-import dsp
-import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLM, DummyBackend
 
 
 def new_example(question, answer):
@@ -33,17 +32,32 @@ def test_evaluate_initialization():
 
 
 def test_evaluate_call():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"}))
-    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
-    program = Predict("question -> answer")
-    assert program(question="What is 1+1?").answer == "2"
-    ev = Evaluate(
-        devset=devset,
-        metric=answer_exact_match,
-        display_progress=False,
-    )
-    score = ev(program)
-    assert score == 100.0
+    lm = DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"})
+    with dspy.settings.context(lm=lm, backend=None, cache=False):
+        devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+        program = Predict("question -> answer")
+        assert program(question="What is 1+1?").answer == "2"
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+        )
+        score = ev(program)
+        assert score == 100.0
+
+
+def test_evaluate_call_with_backend():
+    backend = DummyBackend(answers=[[" 2"], [" 4"]])
+    with dspy.settings.context(backend=backend, lm=None, cache=False):
+        devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+        program = Predict("question -> answer")
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+        )
+        score = ev(program)
+        assert score == 100.0
 
 
 def test_multithread_evaluate_call():
@@ -100,16 +114,31 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
 
 
 def test_evaluate_call_bad():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"}))
-    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
-    program = Predict("question -> answer")
-    ev = Evaluate(
-        devset=devset,
-        metric=answer_exact_match,
-        display_progress=False,
-    )
-    score = ev(program)
-    assert score == 0.0
+    lm = DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"})
+    with dspy.settings.context(backend=None, lm=lm):
+        devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+        program = Predict("question -> answer")
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+        )
+        score = ev(program)
+        assert score == 0.0
+
+
+def test_evaluate_call_bad_with_backend():
+    backend = DummyBackend(answers=[[" 0"], [" 0"]])
+    with dspy.settings.context(backend=backend, lm=None, cache=False):
+        devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+        program = Predict("question -> answer")
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+        )
+        score = ev(program)
+        assert score == 0.0
 
 
 @pytest.mark.parametrize(

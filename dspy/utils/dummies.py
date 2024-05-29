@@ -1,11 +1,17 @@
 import random
 import re
+import typing as t
 from typing import Union
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from dsp.modules import LM
 from dsp.utils.utils import dotdict
+from dspy.modeling.backends.text import TextBackend
+from dspy.primitives.example import Example
+from dspy.primitives.prediction import Completions
+from dspy.signatures.signature import InputField, OutputField, Signature
 
 
 class DummyLM(LM):
@@ -41,13 +47,18 @@ class DummyLM(LM):
                     # We take the last answer, as the first one is just from
                     # the "Follow the following format" section.
                     answer = possible_answers[-1]
-                    print(f"DummyLM got found previous example for {prefix} with value {answer=}")
+                    print(
+                        f"DummyLM got found previous example for {prefix} with value {answer=}",
+                    )
                 else:
                     print(f"DummyLM couldn't find previous example for {prefix=}")
 
             if answer is None:
                 if isinstance(self.answers, dict):
-                    answer = next((v for k, v in self.answers.items() if k in prompt), None)
+                    answer = next(
+                        (v for k, v in self.answers.items() if k in prompt),
+                        None,
+                    )
                 else:
                     if len(self.answers) > 0:
                         answer = self.answers[0]
@@ -147,3 +158,44 @@ class DummyVectorizer:
         vecs -= np.mean(vecs, axis=1, keepdims=True)
         vecs /= np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10  # Added epsilon to avoid division by zero
         return vecs
+
+
+class DummySignature(Signature):
+    """Produce the answer given the question"""
+
+    question = InputField()
+    answer = OutputField()
+
+
+def make_dummy_completions(signature, list_of_dicts: list[dict[str, t.Any]]):
+    examples = [Example(**kwargs) for kwargs in list_of_dicts]
+    return Completions(
+        signature=DummySignature,
+        examples=examples,
+        input_kwargs={},
+    )
+
+
+class DummyResponse(BaseModel):
+    choices: list = Field(default_factory=list)
+
+
+class DummyBackend(TextBackend):
+    model: str = Field(default="dummy")
+    answers: list[list[str]] = Field(default_factory=list)
+    step: int = Field(default=0)
+
+    def generate(self, signature: Signature, demos: list[str], config: dict[str, t.Any], **kwargs) -> Completions:
+        example = Example(demos=demos, **kwargs)
+
+        model_kwargs = self.prepare_request(signature, example, config)
+
+        if len(self.answers) <= self.step:
+            raise ValueError("not enough answers provided")
+
+        response = DummyResponse(
+            choices=[{"message": {"content": c}, "finish_reason": "done"} for c in self.answers[self.step]],
+        )
+        self.step += 1
+
+        return self.process_response(signature, example, response, input_kwargs=model_kwargs)

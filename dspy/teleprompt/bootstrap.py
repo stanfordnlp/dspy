@@ -32,12 +32,13 @@ from .vanilla import LabeledFewShot
 
 # TODO: Add baselines=[...]
 
+
 class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict]=None,
+        teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -50,7 +51,7 @@ class BootstrapFewShot(Teleprompter):
         Parameters
         ----------
         metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison. 
+            A function that compares an expected value and predicted value, outputting the result of that comparison.
         metric_threshold: optional float, default `None`
             If the metric yields a numerical value, then check it against this threshold when
             deciding whether or not to accept a bootstrap example.
@@ -100,7 +101,10 @@ class BootstrapFewShot(Teleprompter):
 
         if self.max_labeled_demos and getattr(self.teacher, "_compiled", False) is False:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
-            self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
+            self.teacher = teleprompter.compile(
+                self.teacher.reset_copy(),
+                trainset=self.trainset,
+            )
 
     def _prepare_predictor_mappings(self):
         name2predictor, predictor2name = {}, {}
@@ -110,13 +114,17 @@ class BootstrapFewShot(Teleprompter):
             teacher.predictors(),
         ), "Student and teacher must have the same number of predictors."
 
-        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
+        for (name1, predictor1), (name2, predictor2) in zip(
+            student.named_predictors(),
+            teacher.named_predictors(),
+        ):
             assert name1 == name2, "Student and teacher must have the same program structure."
             assert predictor1.signature.equals(
                 predictor2.signature,
-            ), (f"Student and teacher must have the same signatures. "
+            ), (
+                f"Student and teacher must have the same signatures. "
                 f"{type(predictor1.signature)} != {type(predictor2.signature)}"
-                )
+            )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
             name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
@@ -208,10 +216,18 @@ class BootstrapFewShot(Teleprompter):
                 predictor, inputs, outputs = step
 
                 if "dspy_uuid" in example:
-                    demo = Example(augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs)
+                    demo = Example(
+                        augmented=True,
+                        dspy_uuid=example.dspy_uuid,
+                        **inputs,
+                        **outputs,
+                    )
                 else:
                     # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
-                    demo = Example(augmented=True, **inputs, **outputs)
+                    # The predictor, now adds the input into the output Prediction directly
+                    # therefore we have to dedupe this before creating the example
+                    inputs.update(**outputs)
+                    demo = Example(augmented=True, **inputs)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
@@ -239,7 +255,10 @@ class BootstrapFewShot(Teleprompter):
         for name, predictor in self.student.named_predictors():
             augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
 
-            sample_size = min(self.max_labeled_demos - len(augmented_demos), len(raw_demos))
+            sample_size = min(
+                self.max_labeled_demos - len(augmented_demos),
+                len(raw_demos),
+            )
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)

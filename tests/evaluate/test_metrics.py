@@ -1,8 +1,9 @@
 # FILEPATH: /Users/ahle/repos/dspy/tests/evaluate/test_metrics.py
 
-import dsp, dspy
+import dspy
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
+
 
 def test_answer_exact_match_string():
     example = dspy.Example(
@@ -13,6 +14,7 @@ def test_answer_exact_match_string():
     pred.answer = "2"
     assert answer_exact_match(example, pred)
 
+
 def test_answer_exact_match_list():
     example = dspy.Example(
         question="What is 1+1?",
@@ -21,6 +23,7 @@ def test_answer_exact_match_list():
     pred = Predict("question -> answer")
     pred.answer = "2"
     assert answer_exact_match(example, pred)
+
 
 def test_answer_exact_match_no_match():
     example = dspy.Example(

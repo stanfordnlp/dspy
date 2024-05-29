@@ -10,7 +10,7 @@ from pydantic.fields import FieldInfo
 
 import dspy
 from dsp.templates import passages2text
-from dspy.primitives.prediction import Prediction
+from dspy.primitives.prediction import Completions, Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
@@ -310,7 +310,6 @@ class TypedPredictor(dspy.Module):
                             value,
                             lm_explain=try_i + 1 < self.max_retries,
                         )
-
                         # If we can, we add an example to the error message
                         current_desc = field.json_schema_extra.get("desc", "")
                         i = current_desc.find("JSON Schema: ")
@@ -345,6 +344,7 @@ class TypedPredictor(dspy.Module):
                         ),
                         lm_explain=try_i + 1 < self.max_retries,
                     )
+
             if errors:
                 # Add new fields for each error
                 for name, error in errors.items():
@@ -363,9 +363,26 @@ class TypedPredictor(dspy.Module):
                     )
             else:
                 # If there are no errors, we return the parsed results
-                return Prediction.from_completions(
-                    {key: [r[key] for r in parsed_results] for key in signature.output_fields},
+                examples = []
+                for r in parsed_results:
+                    example = dspy.Example()
+                    for key in signature.output_fields:
+                        example[key] = r[key]
+
+                    examples.append(example)
+
+                # TODO: Completions objects, are now tracking input args to provide a robust history.
+                # when constructed outside the general generation sense, we will need a way to construct
+                # partial completions
+                completions = Completions(
+                    signature=signature,
+                    examples=examples,
+                    input_kwargs={},
                 )
+
+                pred = Prediction.from_completions(completions)
+                return pred
+
         raise ValueError(
             "Too many retries trying to get the correct output format. " + "Try simplifying the requirements.",
             errors,

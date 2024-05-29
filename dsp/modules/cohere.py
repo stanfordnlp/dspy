@@ -1,3 +1,4 @@
+import math
 from typing import Any, Optional
 
 import backoff
@@ -6,6 +7,7 @@ from dsp.modules.lm import LM
 
 try:
     import cohere
+
     cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
@@ -112,7 +114,36 @@ class Cohere(LM):
     def __call__(
         self,
         prompt: str,
+        only_completed: bool = True,
+        return_sorted: bool = False,
         **kwargs,
     ):
-        response = self.request(prompt, **kwargs)
-        return [response.text]
+        assert only_completed, "for now"
+        assert return_sorted is False, "for now"
+
+        # Cohere uses 'num_generations' whereas dsp.generate() uses 'n'
+        n = kwargs.pop("n", 1)
+
+        # Cohere can generate upto self.max_num_generations completions at a time
+        choices = []
+        num_iters = math.ceil(n / self.max_num_generations)
+        remainder = n % self.max_num_generations
+        for i in range(num_iters):
+            if i == (num_iters - 1):
+                kwargs["num_generations"] = remainder if remainder != 0 else self.max_num_generations
+            else:
+                kwargs["num_generations"] = self.max_num_generations
+            response = self.request(prompt, **kwargs)
+            choices.extend(response.generations)
+        completions = [c.text for c in choices]
+
+        if return_sorted and kwargs.get("num_generations", 1) > 1:
+            scored_completions = []
+
+            for c in choices:
+                scored_completions.append((c.likelihood, c.text))
+
+            scored_completions = sorted(scored_completions, reverse=True)
+            completions = [c for _, c in scored_completions]
+
+        return completions

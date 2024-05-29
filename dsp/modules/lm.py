@@ -63,7 +63,7 @@ class LM(ABC):
                     ]
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
-                    printed.append((prompt, x["response"].text))
+                    printed.append((prompt, x["response"].generations))
                 elif provider == "mistral":
                     printed.append((prompt, x["response"].choices))
                 elif provider == "cloudflare":

@@ -3,8 +3,9 @@ import random
 from pydantic import BaseModel
 
 import dsp
+import dspy
 from dspy.predict.parameter import Parameter
-from dspy.primitives.prediction import Prediction
+from dspy.primitives.prediction import Completions, Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 
@@ -16,13 +17,20 @@ class Predict(Parameter):
         self.reset()
 
     def reset(self):
-        self.lm = None
+        if dspy.settings.get("backend", None) is not None:
+            self.backend = None
+        else:
+            self.lm = None
+
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train"]
+        if dspy.settings.get("backend", None) is not None:
+            state_keys = ["backend", "traces", "train", "demos"]
+        else:
+            state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
         state["demos"] = []
@@ -62,52 +70,73 @@ class Predict(Parameter):
 
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
-        new_signature = ensure_signature(kwargs.pop("new_signature", None))
-        signature = ensure_signature(kwargs.pop("signature", self.signature))
+        signature = kwargs.pop("new_signature", kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
-        # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
-        assert lm is not None, "No LM is loaded."
+        # Check if we should use backend
+        backend = dspy.settings.get("backend", None)
 
-        # If temperature is 0.0 but its n > 1, set temperature to 0.7.
-        temperature = config.get("temperature")
-        temperature = lm.kwargs["temperature"] if temperature is None else temperature
+        if backend is not None:
+            if not all(k in kwargs for k in signature.input_fields):
+                present = [k for k in signature.input_fields if k in kwargs]
+                missing = [k for k in signature.input_fields if k not in kwargs]
+                dspy.logger.warning(
+                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
+                )
 
-        num_generations = config.get("n")
-        if num_generations is None:
-            num_generations = lm.kwargs.get("n", lm.kwargs.get("num_generations", 1))
+            completions = backend(signature, demos=demos, config=config, **kwargs)
 
-        if (temperature is None or temperature <= 0.15) and num_generations > 1:
-            config["temperature"] = 0.7
-            # print(f"#> Setting temperature to 0.7 since n={num_generations} and prior temperature={temperature}.")
+            pred = Prediction.from_completions(completions)
 
-        # All of the other kwargs are presumed to fit a prefix of the signature.
-        # That is, they are input variables for the bottom most generation, so
-        # we place them inside the input - x - together with the demos.
-        x = dsp.Example(demos=demos, **kwargs)
+            trace = dspy.settings.get("trace")
+            if trace is not None and kwargs.pop("_trace", True):
+                trace.append((self, {**kwargs}, pred))
 
-        if new_signature is not None:
-            signature = new_signature
+            return pred
 
-        if not all(k in kwargs for k in signature.input_fields):
-            present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
-            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
-
-        # Switch to legacy format for dsp.generate
-        template = signature_to_template(signature)
-
-        if self.lm is None:
-            x, C = dsp.generate(template, **config)(x, stage=self.stage)
         else:
-            # Note: query_only=True means the instructions and examples are not included.
-            # I'm not really sure why we'd want to do that, but it's there.
-            with dsp.settings.context(lm=self.lm, query_only=True):
-                x, C = dsp.generate(template, **config)(x, stage=self.stage)
+            lm = kwargs.pop("lm", self.lm) or dspy.settings.get("lm", None)
+            assert lm is not None, "No LM is loaded."
 
-        assert self.stage in x, "The generated (input, output) example was not stored"
+            # If temperature is 0.0 but its n > 1, set temperature to 0.7
+            temperature = config.get("temperature")
+            temperature = lm.kwargs["temperature"] if temperature is None else temperature
+
+            num_generations = config.get("n")
+            if num_generations is None:
+                num_generations = lm.kwargs.get(
+                    "n",
+                    lm.kwargs.get("num_generations", None),
+                )
+
+            if (temperature is None or temperature <= 0.15) and num_generations > 1:
+                config["temperature"] = 0.7
+
+            # All of the other kwargs are presumed to fit a prefix of the signature.
+            # That is, they are input variables for the bottom most generation, so
+            # we place them inside the input - x - together with the demos.
+            x = dsp.Example(demos=demos, **kwargs)
+
+            if not all(k in kwargs for k in signature.input_fields):
+                present = [k for k in signature.input_fields if k in kwargs]
+                missing = [k for k in signature.input_fields if k not in kwargs]
+                dspy.logger.warning(
+                    f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.",
+                )
+
+            # Switch to legacy format for dsp.generate
+            template = signature_to_template(signature)
+
+            if self.lm is None:
+                x, C = dsp.generate(template, **config)(x, stage=self.stage)
+            else:
+                # Note: query_only=True means the instructions and examples are not included.
+                # I'm not really sure why we'd want to do that, but it's there.
+                with dsp.settings.context(lm=self.lm, query_only=True):
+                    x, C = dsp.generate(template, **config)(x, stage=self.stage)
+
+            assert self.stage in x, "The generated (input, output) example was not stored"
 
         completions = []
 
@@ -119,14 +148,31 @@ class Predict(Parameter):
                         c,
                         field.output_variable,
                     )
+            examples = []
+            for c in C:
+                example = dspy.Example()
+                for name in self.signature.input_fields:
+                    if name in kwargs.keys():
+                        example[name] = kwargs[name]
 
-        pred = Prediction.from_completions(completions, signature=signature)
+                for name in self.signature.output_fields:
+                    example[name] = getattr(c, name)
 
-        if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
-            trace = dsp.settings.trace
-            trace.append((self, {**kwargs}, pred))
+                examples.append(example)
 
-        return pred
+            completions = Completions(
+                signature=self.signature,
+                examples=examples,
+                input_kwargs=config,
+            )
+
+            pred = Prediction.from_completions(completions)
+
+            if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
+                trace = dsp.settings.trace
+                trace.append((self, {**kwargs}, pred))
+
+            return pred
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

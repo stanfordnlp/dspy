@@ -1,5 +1,6 @@
 /experiments/
 /checkpoints/
+.cache/
 # /data/
 /logs/
 /mlruns/

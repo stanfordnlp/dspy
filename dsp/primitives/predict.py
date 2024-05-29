@@ -54,14 +54,19 @@ def generate(template: Template, **kwargs) -> Callable:
         return dsp.predict._generate(template, **kwargs)
 
 
+class UnsetBackendError(AssertionError):
+    """Raised when no backend is configured."""
+
+
 def _generate(template: Template, **kwargs) -> Callable:
     """Returns a callable function that generates completions for a given example using the provided template."""
-    if not dsp.settings.lm:
-        raise AssertionError("No LM is loaded.")
-
     generator = dsp.settings.lm
+    if not generator:
+        raise UnsetBackendError("No backend configured.")
 
-    def extend_generation(completion: Example, field_names: list[str], stage:str, max_depth: int, original_example:Example):
+    def extend_generation(
+        completion: Example, field_names: list[str], stage: str, max_depth: int, original_example: Example,
+    ):
         """If the required fields are not present in the completion, extend the generation."""
         assert max_depth > 0, "Max depth exceeded - failed to complete in one pass - increase max_tokens"
         # remove content of last field to avoid half-completed content
@@ -69,16 +74,17 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion.pop(field_name, None)
 
         # Recurse with greedy decoding and a shorter length.
-        max_tokens = (kwargs.get("max_tokens") or 
-                    kwargs.get("max_output_tokens") or
-                    dsp.settings.lm.kwargs.get("max_tokens") or 
-                    dsp.settings.lm.kwargs.get('max_output_tokens'))
-
+        max_tokens = (
+            kwargs.get("max_tokens")
+            or kwargs.get("max_output_tokens")
+            or dsp.settings.lm.kwargs.get("max_tokens")
+            or dsp.settings.lm.kwargs.get("max_output_tokens")
+        )
 
         if max_tokens is None:
             raise ValueError("Required 'max_tokens' or 'max_output_tokens' not specified in settings.")
         max_tokens = min(max(75, max_tokens // 2), max_tokens)
-        keys = list(kwargs.keys()) + list(dsp.settings.lm.kwargs.keys()) 
+        keys = list(kwargs.keys()) + list(dsp.settings.lm.kwargs.keys())
         max_tokens_key = "max_tokens" if "max_tokens" in keys else "max_output_tokens"
         new_kwargs = {
             **kwargs,
@@ -94,13 +100,15 @@ def _generate(template: Template, **kwargs) -> Callable:
             original_example=original_example,
         )
         return finished_completion.data[0]
-        
 
     def do_generate(
-        example: Example, stage: str, max_depth: int = 2, original_example=None,
+        example: Example,
+        stage: str,
+        max_depth: int = 2,
+        original_example=None,
     ):
         if not dsp.settings.lm:
-            raise AssertionError("No LM is loaded.")
+            raise AssertionError("No LM or backend is loaded.")
         original_example = original_example or example
         assert stage is not None
 
@@ -133,16 +141,8 @@ def _generate(template: Template, **kwargs) -> Callable:
 
             if dsp.settings.compiling:
                 inputs_ = set(original_example.keys())
-                inputs = [
-                    f.input_variable
-                    for f in template.fields
-                    if f.input_variable in inputs_
-                ]
-                outputs = [
-                    f.output_variable
-                    for f in template.fields
-                    if f.input_variable not in inputs_
-                ]
+                inputs = [f.input_variable for f in template.fields if f.input_variable in inputs_]
+                outputs = [f.output_variable for f in template.fields if f.input_variable not in inputs_]
 
                 example.compiling_stages = example.get("compiling_stages", [])
                 example.compiling_stages.append(
@@ -161,6 +161,7 @@ def _generate(template: Template, **kwargs) -> Callable:
 
     return do_generate
 
+
 def get_all_fields_following_missing_field(completion: Example, field_names: list[str]) -> list[str]:
     """Returns every field following the first missing field"""
     for i, field_name in enumerate(field_names):
@@ -172,7 +173,12 @@ def get_all_fields_following_missing_field(completion: Example, field_names: lis
 
 
 def generate_sc(
-    example, prompt, normalize=True, extract=None, prediction_field=None, **kwargs,
+    example,
+    prompt,
+    normalize=True,
+    extract=None,
+    prediction_field=None,
+    **kwargs,
 ):
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
@@ -181,7 +187,9 @@ def generate_sc(
     completions = dsp.settings.lm(prompt, **kwargs)
     completions = extract_final_answer(example, completions, extract=extract)
     return majority_vote_(
-        completions, normalize=normalize, prediction_field=prediction_field,
+        completions,
+        normalize=normalize,
+        prediction_field=prediction_field,
     )
 
 
@@ -191,9 +199,7 @@ def extract_final_answer(example, completions, extract=None):
     if extract:
         completions = [extract(example, p) for p in completions]
     else:
-        completions = [
-            p.strip().split("\n")[-1].split(":", 1)[-1].strip() for p in completions
-        ]
+        completions = [p.strip().split("\n")[-1].split(":", 1)[-1].strip() for p in completions]
 
     # TODO: make thread-safe?
     dsp.settings.lm.history.append(
@@ -204,7 +210,9 @@ def extract_final_answer(example, completions, extract=None):
 
 
 def majority(
-    completions: Completions, normalize: bool = True, field: Optional[str] = None,
+    completions: Completions,
+    normalize: bool = True,
+    field: Optional[str] = None,
 ):
     """Returns the most common completion for the target field or the last field in the template."""
     field = completions.template.fields[-1].output_variable if field is None else field

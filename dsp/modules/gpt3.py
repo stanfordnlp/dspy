@@ -154,7 +154,7 @@ class GPT3(LM):
         only_completed: bool = True,
         return_sorted: bool = False,
         **kwargs,
-    ) -> list[dict[str, Any]]:
+    ) -> list[str]:
         """Retrieves completions from GPT-3.
 
         Args:

@@ -15,7 +15,7 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
         # TODO: we should unify the type signatures of dspy.Retriever
         passages = [passages]
     passages = [psg.long_text for psg in passages]
-    
+
     if dsp.settings.reranker:
         passages_cs_scores = dsp.settings.reranker(query, passages)
         passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1]
@@ -24,13 +24,13 @@ def retrieve(query: str, k: int, **kwargs) -> list[str]:
     return passages
 
 
-def retrieveRerankEnsemble(queries: list[str], k: int,**kwargs) -> list[str]:
+def retrieveRerankEnsemble(queries: list[str], k: int, **kwargs) -> list[str]:
     if not (dsp.settings.rm and dsp.settings.reranker):
         raise AssertionError("Both RM and Reranker are needed to retrieve & re-rank.")
     queries = [q for q in queries if q]
     passages = {}
     for query in queries:
-        retrieved_passages = dsp.settings.rm(query, k=k*3,**kwargs)
+        retrieved_passages = dsp.settings.rm(query, k=k * 3, **kwargs)
         passages_cs_scores = dsp.settings.reranker(query, [psg.long_text for psg in retrieved_passages])
         for idx in np.argsort(passages_cs_scores)[::-1]:
             psg = retrieved_passages[idx]
@@ -42,7 +42,7 @@ def retrieveRerankEnsemble(queries: list[str], k: int,**kwargs) -> list[str]:
     return [text for _, text in sorted(passages, reverse=True)[:k]]
 
 
-def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) -> list[str]:
+def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True, **kwargs) -> list[str]:
     """Retrieves passages from the RM for each query in queries and returns the top k passages
     based on the probability or score.
     """
@@ -50,7 +50,7 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
         raise AssertionError("No RM is loaded.")
     if dsp.settings.reranker:
         return retrieveRerankEnsemble(queries, k, **kwargs)
-    
+
     queries = [q for q in queries if q]
 
     if len(queries) == 1:
@@ -58,7 +58,7 @@ def retrieveEnsemble(queries: list[str], k: int, by_prob: bool = True,**kwargs) 
 
     passages = {}
     for q in queries:
-        for psg in dsp.settings.rm(q, k=k * 3,**kwargs):
+        for psg in dsp.settings.rm(q, k=k * 3, **kwargs):
             if by_prob:
                 passages[psg.long_text] = passages.get(psg.long_text, 0.0) + psg.prob
             else:

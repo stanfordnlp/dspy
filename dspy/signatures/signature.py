@@ -298,6 +298,15 @@ def _parse_arg_string(string: str, names=None) -> Dict[str, str]:
     return zip(names, types)
 
 
+def _parse_named_type_node(node, names=None) -> Any:
+    parts = node.split(":")
+    if len(parts) == 1:
+        return parts[0], str
+    name, type_str = parts
+    type_ = _parse_type_node(ast.parse(type_str), names)
+    return name, type_
+
+
 def _parse_type_node(node, names=None) -> Any:
     """Recursively parse an AST node representing a type annotation.
 

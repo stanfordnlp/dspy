@@ -101,10 +101,7 @@ class ProgramOfThought(Module):
 
     def _generate_instruction(self, mode):
         mode_inputs = ", ".join(
-            [
-                f"`{field_name}`"
-                for field_name in self._generate_signature(mode).input_fields
-            ],
+            [f"`{field_name}`" for field_name in self._generate_signature(mode).input_fields],
         )
         mode_outputs = f"`{self.output_field_name}`"
         if mode == "generate":
@@ -127,9 +124,7 @@ class ProgramOfThought(Module):
 
 
     def parse_code(self, code_data):
-        code = (
-            code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
-        )
+        code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
         code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
         if not code_block:
@@ -142,10 +137,14 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         else:
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)", r"\1\n", code_block,
+                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
+                r"\1\n",
+                code_block,
             )
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$", r"\1\n\2", code_block,
+                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
+                r"\1\n\2",
+                code_block,
             )
         return code_block, None
 

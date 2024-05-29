@@ -38,12 +38,13 @@ class Claude(LM):
 
     def __init__(
         self,
-        model: str = "claude-3-opus-20240229",
+        model: str = "claude-instant-1.2",
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(model)
+
         try:
             from anthropic import Anthropic
         except ImportError as err:
@@ -115,6 +116,7 @@ class Claude(LM):
         # per eg here: https://docs.anthropic.com/claude/reference/messages-examples
         # max tokens can be used as a proxy to return smaller responses
         # so this cannot be a proper indicator for incomplete response unless it isnt the user-intent.
+
         n = kwargs.pop("n", 1)
         completions = []
         for _ in range(n):

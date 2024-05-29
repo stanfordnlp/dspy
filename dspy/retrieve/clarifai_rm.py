@@ -40,12 +40,13 @@ class ClarifaiRM(dspy.Retrieve):
     ):
         self.app_id = clarfiai_app_id
         self.user_id = clarifai_user_id
-        self.pat = (
-            clarifai_pat if clarifai_pat is not None else os.environ["CLARIFAI_PAT"]
-        )
+        self.pat = clarifai_pat if clarifai_pat is not None else os.environ["CLARIFAI_PAT"]
         self.k = k
         self.clarifai_search = Search(
-            user_id=self.user_id, app_id=self.app_id, top_k=k, pat=self.pat,
+            user_id=self.user_id,
+            app_id=self.app_id,
+            top_k=k,
+            pat=self.pat,
         )
         super().__init__(k=k)
 
@@ -71,16 +72,15 @@ class ClarifaiRM(dspy.Retrieve):
         Below is a code snippet that shows how to use Marqo as the default retriver:
          ```python
          import clarifai
+
          llm = dspy.Clarifai(model=MODEL_URL, api_key="YOUR CLARIFAI_PAT")
-         retriever_model = ClarifaiRM(clarifai_user_id="USER_ID", clarfiai_app_id="APP_ID", clarifai_pat="YOUR CLARIFAI_PAT")
+         retriever_model = ClarifaiRM(
+             clarifai_user_id="USER_ID", clarfiai_app_id="APP_ID", clarifai_pat="YOUR CLARIFAI_PAT"
+         )
          dspy.settings.configure(lm=llm, rm=retriever_model)
          ```
         """
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         passages = []
         queries = [q for q in queries if q]
 
