@@ -304,9 +304,14 @@ def test_regex():
 
 
 def test_custom_model_validate_json():
+    class Airport(BaseModel):
+        code: str = Field(pattern=r"^[A-Z]{3}$")
+        lat: float
+        lon: float
+
     class TravelInformation(BaseModel):
-        origin: str = Field(pattern=r"^[A-Z]{3}$")
-        destination: str = Field(pattern=r"^[A-Z]{3}$")
+        origin: Airport
+        destination: Airport
         date: datetime.date
 
         @classmethod
@@ -343,13 +348,21 @@ def test_custom_model_validate_json():
     lm = DummyLM(
         [
             # Example with a bad origin code.
-            'Here is your json: {"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+            (
+                "Here is your json: "
+                "{"
+                '"origin": {"code":"JFK", "lat":40.6446, "lon":-73.7797}, '
+                '"destination": {"code":"LAX", "lat":33.942791, "lon":-118.410042}, '
+                '"date": "2022-12-25"}'
+            ),
         ]
     )
     dspy.settings.configure(lm=lm)
 
     assert flight_information(email=email) == TravelInformation(
-        origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
+        origin={"code": "JFK", "lat": 40.6446, "lon": -73.7797},
+        destination={"code": "LAX", "lat": 33.942791, "lon": -118.410042},
+        date=datetime.date(2022, 12, 25),
     )
 
 
