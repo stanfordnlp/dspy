@@ -1,1 +1,1 @@
-from .backends import JSONBackend, TextBackend
+from .backends import ChatBackend, JSONBackend, TextBackend

@@ -664,7 +664,7 @@ def test_field_validator_with_backend():
 
     # Keep making the mistake (lower case name) until we run
     # out of retries.
-    backend = DummyBackend(answers=[['{"name": "lower case name", "age": 25}']] * 10, default_params={"num_retries": 1})
+    backend = DummyBackend(answers=[['{"name": "lower case name", "age": 25}']] * 10, params={"num_retries": 1})
     with dspy.settings.context(backend=backend, cache=True, lm=None):
         with pytest.raises(ValueError):
             get_user_details()
