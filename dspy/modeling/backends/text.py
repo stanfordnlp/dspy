@@ -14,8 +14,10 @@ litellm_logger = logging.getLogger("LiteLLM")
 litellm_logger.setLevel(logging.WARNING)
 
 try:
+    import litellm
     from litellm import completion
 
+    litellm.drop_params = True
     _missing_litellm = False
 except ImportError:
     _missing_litellm = True
@@ -69,7 +71,9 @@ class TextBackend(BaseBackend):
     }
 
     model: str
-    default_params: dict[str, t.Any] = Field(default_factory=dict)
+    api_key: t.Optional[str] = Field(default=None)
+    api_base: t.Optional[str] = Field(default=None)
+    params: dict[str, t.Any] = Field(default_factory=dict)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -99,7 +103,7 @@ class TextBackend(BaseBackend):
         if is_demo:
             for name in signature.output_fields:
                 if name not in example:
-                    raise Exception(f"Example missing necessary input field: {name}")
+                    raise Exception(f"Example missing necessary output field: {name}")
 
         result = []
 
@@ -160,7 +164,7 @@ class TextBackend(BaseBackend):
         return example
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
-        options = {**self.STANDARD_PARAMS, **config}
+        options = {**self.STANDARD_PARAMS, **self.params, **config}
 
         # Set up Format Handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS
@@ -193,7 +197,7 @@ class TextBackend(BaseBackend):
         return options
 
     def make_request(self, **kwargs) -> t.Any:
-        return completion(model=self.model, **kwargs)
+        return completion(model=self.model, api_key=self.api_key, api_base=self.api_base, **kwargs)
 
     def process_response(
         self,
