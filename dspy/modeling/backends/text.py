@@ -58,19 +58,20 @@ DEFAULT_FORMAT_HANDLERS = {
 }
 
 
+DEFAULT_PARAMS = {
+    "temperature": 0.5,
+    "max_tokens": 500,
+    "top_p": 1,
+    "frequency_penalty": 0,
+    "presence_penalty": 0,
+    "num_retries": 3,
+}
+
+
 class TextBackend(BaseBackend):
     """TextBackend takes a signature, its params, and predicts structured outputs leveraging LiteLLM."""
 
-    STANDARD_PARAMS: dict[str, t.Any] = {
-        "temperature": 0.5,
-        "max_tokens": 500,
-        "top_p": 1,
-        "frequency_penalty": 0,
-        "presence_penalty": 0,
-        "num_retries": 3,
-    }
-
-    model: str
+    model: str = Field()
     api_key: t.Optional[str] = Field(default=None)
     api_base: t.Optional[str] = Field(default=None)
     params: dict[str, t.Any] = Field(default_factory=dict)
@@ -164,7 +165,7 @@ class TextBackend(BaseBackend):
         return example
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
-        options = {**self.STANDARD_PARAMS, **self.params, **config}
+        options = {**DEFAULT_PARAMS, **self.params, **config}
 
         # Set up Format Handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS

@@ -6,7 +6,7 @@ from pydantic import Field
 from dspy.primitives import Completions, Example
 from dspy.signatures.signature import Signature, SignatureMeta
 
-from .text import DEFAULT_FORMAT_HANDLERS, TextBackend, default_format_handler
+from .text import DEFAULT_FORMAT_HANDLERS, DEFAULT_PARAMS, TextBackend, default_format_handler
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class ChatBackend(TextBackend):
         return "\n\n".join(input), "\n\n".join(output)
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
-        options = {**self.STANDARD_PARAMS, **self.params, **config}
+        options = {**DEFAULT_PARAMS, **self.params, **config}
 
         # Set up format handlers
         format_handlers = DEFAULT_FORMAT_HANDLERS
