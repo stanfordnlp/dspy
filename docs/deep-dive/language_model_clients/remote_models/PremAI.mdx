@@ -70,9 +70,9 @@ print(response)
 
 ### Native RAG Support
 
-Prem Repositories which allows users to upload documents (.txt, .pdf etc) and connect those repositories to the LLMs. You can think Prem repositories as native RAG, where each repository can be considered as a vector database. You can connect multiple repositories. You can learn more about repositories [here](https://docs.premai.io/get-started/repositories).
+PremAI Repositories allow users to upload documents (.txt, .pdf, etc.) and connect those repositories to the LLMs to serve as vector databases and support native RAG. You can learn more about PremAI repositories [here](https://docs.premai.io/get-started/repositories).
 
-Repositories are also supported in dspy premai. Here is how you can do it. 
+Repositories are also supported through the dspy-premai integration. Here is how you can use this workflow: 
 
 ```python
 query = "what is the diameter of individual Galaxy"
@@ -84,11 +84,11 @@ repositories = dict(
 )
 ```
 
-First we start by defining our repository with some repository ids. Make sure that the ids are valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
+First, we start by defining our repository with some valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
 
-> Please note: Similar like `model` when you invoke the argument `repositories`, then you are potentially overriding the repositories connected in the launchpad. 
+> Note: This is similar to LM integrations where now you are overriding the repositories connected in the launchpad when you invoke the argument' repositories'. 
 
-Now, we connect the repository with our chat object to invoke RAG based generations. 
+Now, we connect the repository with our chat object to invoke RAG-based generations. 
 
 ```python 
 response = premai_client(prompt=query, max_tokens=100, repositories=repositories)
