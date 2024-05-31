@@ -120,7 +120,7 @@ class ModuleGraph:
 # dspy.settings.configure(lm=llm, rm=colbertv2_wiki)
 
 # class GenerateAnswer(dspy.Signature):
-#   "Answer with long and detailled answers"
+#   "Answer with long and detailed answers"
 #   context = dspy.InputField(desc="may content relevant facts")
 #   question = dspy.InputField()
 #   answer = dspy.OutputField(desc="often between 10 and 50 words")
