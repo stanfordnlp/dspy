@@ -13,7 +13,6 @@ The constructor initializes the base class `LM` to support prompting requests to
 - `model` (_str_): Models supported by PremAI. Example: `mistral-tiny`. We recommend using the model selected in [project launchpad](https://docs.premai.io/get-started/launchpad).
 - `project_id` (_int_): The [project id](https://docs.premai.io/get-started/projects) which contains the model of choice.
 - `api_key` (_Optional[str]_, _optional_): API provider from PremAI. Defaults to None.
-- `session_id` (_Optional[int]_, _optional_): The ID of the session to use. It helps to track the chat history.
 - `**kwargs`: Additional language model arguments will be passed to the API provider.
 
 Example of PremAI constructor:
@@ -37,7 +36,7 @@ class PremAI(LM):
 
 **Parameters:**
 - `prompt` (_str_): Prompt to send to PremAI.
-- `**kwargs`: Additional keyword arguments for completion request.
+- `**kwargs`: Additional keyword arguments for completion request. You can find all the additional kwargs [here](https://docs.premai.io/get-started/sdk#optional-parameters).
 
 **Returns:**
 - `str`: Completions string from the chosen LLM provider 
@@ -67,4 +66,34 @@ print(response.answer)
 ```python
 response = premai_client(prompt='What is the capital of Paris?')
 print(response)
+```
+
+### Native RAG Support
+
+PremAI Repositories allow users to upload documents (.txt, .pdf, etc.) and connect those repositories to the LLMs to serve as vector databases and support native RAG. You can learn more about PremAI repositories [here](https://docs.premai.io/get-started/repositories).
+
+Repositories are also supported through the dspy-premai integration. Here is how you can use this workflow: 
+
+```python
+query = "what is the diameter of individual Galaxy"
+repository_ids = [1991, ]
+repositories = dict(
+    ids=repository_ids,
+    similarity_threshold=0.3,
+    limit=3
+)
+```
+
+First, we start by defining our repository with some valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
+
+> Note: This is similar to LM integrations where now you are overriding the repositories connected in the launchpad when you invoke the argument' repositories'. 
+
+Now, we connect the repository with our chat object to invoke RAG-based generations. 
+
+```python 
+response = premai_client(prompt=query, max_tokens=100, repositories=repositories)
+
+print(response)
+print("---")
+print(json.dumps(premai_client.history, indent=4))
 ```
