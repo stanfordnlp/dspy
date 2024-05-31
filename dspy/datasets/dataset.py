@@ -6,13 +6,15 @@ from dspy import Example
 
 
 class Dataset:
-    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None):
+    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None, input_keys=[]):
         self.train_size = train_size
         self.train_seed = train_seed
         self.dev_size = dev_size
         self.dev_seed = eval_seed
         self.test_size = test_size
         self.test_seed = eval_seed
+        self.input_keys = input_keys
+
         self.do_shuffle = True
 
         self.name = self.__class__.__name__
@@ -73,16 +75,11 @@ class Dataset:
         output = []
 
         for example in data:
-            output.append(Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split=split))
-        
-        # TODO: NOTE: Ideally we use these uuids for dedup internally, for demos and internal train/val splits.
-        # Now, some tasks (like convQA and Colors) have overlapping examples. Here, we should allow the user to give us
-        # a uuid field that would respect this in some way. This means that we need a more refined concept that
-        # uuid (each example is unique) and more like a group_uuid.
-
-        # rng = random.Random(seed)
-        # rng.shuffle(data)
-
+            example_obj = Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split=split)
+            if self.input_keys:
+                example_obj = example_obj.with_inputs(*self.input_keys)
+            output.append(example_obj)
+                
         return output
     
     @classmethod
