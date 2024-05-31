@@ -79,7 +79,14 @@ class Dataset:
             if self.input_keys:
                 example_obj = example_obj.with_inputs(*self.input_keys)
             output.append(example_obj)
-                
+        # TODO: NOTE: Ideally we use these uuids for dedup internally, for demos and internal train/val splits.
+        # Now, some tasks (like convQA and Colors) have overlapping examples. Here, we should allow the user to give us
+        # a uuid field that would respect this in some way. This means that we need a more refined concept that
+        # uuid (each example is unique) and more like a group_uuid.
+
+        # rng = random.Random(seed)
+        # rng.shuffle(data)
+
         return output
     
     @classmethod
