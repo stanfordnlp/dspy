@@ -189,7 +189,7 @@ class MIPRO(Teleprompter):
     def generate_instruction_with_examples_and_observations(self):
         return (
             self.append_instructions(
-                BasicGenerateInstructionWithExamplesAndDataObservations, self._additional_instructions
+                BasicGenerateInstructionWithExamplesAndDataObservations, self._additional_instructions,
             )
             if self._additional_instructions
             else BasicGenerateInstructionWithExamplesAndDataObservations
