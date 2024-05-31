@@ -100,7 +100,7 @@ anthropic = { version = "^0.18.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
-epsilla = {version = "^0.3.7", optional = true}
+pyepsilla = {version = "^0.3.7", optional = true}
 qdrant-client = { version = "^1.6.2", optional = true }
 pinecone-client = { version = "^2.2.4", optional = true }
 weaviate-client = { version = "^4.5.4", optional = true }
