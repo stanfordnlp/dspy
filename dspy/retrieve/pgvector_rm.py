@@ -75,7 +75,7 @@ class PgVectorRM(dspy.Retrieve):
         k: int = 20,
         embedding_field: str = "embedding",
         fields: Optional[list[str]] = None,
-        content_filed: str = "text",
+        content_field: str = "text",
         embedding_model: str = "text-embedding-ada-002",
         include_similarity: bool = False,
     ):
@@ -92,7 +92,7 @@ class PgVectorRM(dspy.Retrieve):
         register_vector(self.conn)
         self.pg_table_name = pg_table_name
         self.fields = fields or ["text"]
-        self.content_filed = content_filed
+        self.content_field = content_field
         self.embedding_field = embedding_field
         self.embedding_model = embedding_model
         self.include_similarity = include_similarity
@@ -138,7 +138,7 @@ class PgVectorRM(dspy.Retrieve):
                 columns = [descrip[0] for descrip in cur.description]
                 for row in rows:
                     data = dict(zip(columns, row))
-                    data["long_text"] = data[self.content_filed]
+                    data["long_text"] = data[self.content_field]
                     retrieved_docs.append(dspy.Example(**data))
         # Return Prediction
         return retrieved_docs
