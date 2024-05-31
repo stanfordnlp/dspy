@@ -71,6 +71,8 @@ class JSONBackend(TextBackend):
         return example
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
+        options = {**self.STANDARD_PARAMS, **self.params, **config}
+
         prompt_spans = []
 
         # Start by getting the instructions
@@ -88,9 +90,9 @@ class JSONBackend(TextBackend):
 
         content = "\n\n---\n\n".join(prompt_spans)
 
-        config.update({"messages": [{"role": "user", "content": content}]})
+        options.update({"messages": [{"role": "user", "content": content}]})
 
-        return config
+        return options
 
     def process_response(
         self,
