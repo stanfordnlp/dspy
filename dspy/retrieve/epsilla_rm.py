@@ -1,5 +1,5 @@
-from collections import defaultdict
-from typing import List, Union  # noqa: UP035
+from collections import defaultdict  # noqa: F401
+from typing import Dict, List, Union  # noqa: UP035
 
 import dspy
 from dsp.utils import dotdict
@@ -34,19 +34,9 @@ class EpsillaRM(dspy.Retrieve):
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]
         limit = k if k else self.k
-        all_query_results = []
+        all_query_results: list = []
 
-        for query in queries:
-            query_results = self._epsilla_client.query(
-                table_name=self.table_name,
-                query_text=query,
-                limit=limit,
-                with_distance=True,
-            )
-            if query_results[0] == 200:
-                all_query_results.append(query_results[1]["result"])
-
-        passages = defaultdict(float)
+        passages: Dict = defaultdict(float)
 
         for result_dict in all_query_results:
             for result in result_dict:
