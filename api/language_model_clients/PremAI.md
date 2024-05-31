@@ -68,9 +68,9 @@ Internally, the method handles the specifics of preparing the request prompt and
 
 ### Native RAG Support
 
-Prem Repositories which allows users to upload documents (.txt, .pdf etc) and connect those repositories to the LLMs. You can think Prem repositories as native RAG, where each repository can be considered as a vector database. You can connect multiple repositories. You can learn more about repositories [here](https://docs.premai.io/get-started/repositories).
+PremAI Repositories allow users to upload documents (.txt, .pdf, etc.) and connect those repositories to the LLMs to serve as vector databases and support native RAG. You can learn more about PremAI repositories [here](https://docs.premai.io/get-started/repositories).
 
-Repositories are also supported in dspy premai. Here is how you can do it. 
+Repositories are also supported through the dspy-premai integration. Here is how you can use this workflow: 
 
 ```python
 query = "what is the diameter of individual Galaxy"
@@ -82,11 +82,11 @@ repositories = dict(
 )
 ```
 
-First we start by defining our repository with some repository ids. Make sure that the ids are valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
+First, we start by defining our repository with some valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
 
-> Please note: Similar like `model` when you invoke the argument `repositories`, then you are potentially overriding the repositories connected in the launchpad. 
+> Note: This is similar to LM integrations where now you are overriding the repositories connected in the launchpad when you invoke the argument' repositories'. 
 
-Now, we connect the repository with our chat object to invoke RAG based generations. 
+Now, we connect the repository with our chat object to invoke RAG-based generations. 
 
 ```python 
 response = llm(query, max_tokens=100, repositories=repositories)
@@ -96,7 +96,7 @@ print("---")
 print(json.dumps(llm.history, indent=4))
 ```
 
-Here is how an example generation would look like with Prem Repositories. 
+Here is what an example generation would look like with PremAI Repositories. 
 
 ```bash
 'The diameters of individual galaxies range from 80,000-150,000 light-years.'
@@ -155,6 +155,6 @@ Here is how an example generation would look like with Prem Repositories.
 ]
 ```
 
-So, this also means that you do not need to make your own RAG pipeline when using the Prem Platform. Prem uses it's own RAG technology to deliver best in class performance for Retrieval Augmented Generations.
+So this also means that you do not need to create your own RAG pipeline when using the PremAI Platform and can instead take advantage of its local RAG technology to deliver best-in-class performance for Retrieval Augmented Generations.
 
-> Ideally, you do not need to connect Repository IDs here to get Retrieval Augmented Generations. You can still get the same result if you have connected the repositories in prem platform. 
+> Ideally, you do not need to connect Repository IDs here to get Retrieval Augmented Generations. You can still get the same result if you have connected the repositories in PremAI platform. 
