@@ -100,8 +100,24 @@ class ModuleGraph:
         self.graph.render(filename)
 
 
-
 # Example usage of the ModuleGraph class:
+# import dspy
+# import os
+# from dotenv import load_dotenv
+# from dspy.experimental import ModuleGraph
+
+# load_dotenv()
+
+# # Configuration of dspy models
+# llm = dspy.OpenAI(
+#     model='gpt-3.5-turbo',
+#     api_key=os.environ['OPENAI_API_KEY'],
+#     max_tokens=100
+# )
+
+# colbertv2_wiki = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+
+# dspy.settings.configure(lm=llm, rm=colbertv2_wiki)
 
 # class GenerateAnswer(dspy.Signature):
 #   "Answer with long and detailled answers"
@@ -122,6 +138,5 @@ class ModuleGraph:
 
 # rag_system = RAG()
 # graph = ModuleGraph("RAG", rag_system)
-
 
 # graph.render_graph()
