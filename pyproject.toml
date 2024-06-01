@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspy-ai"
-version = "2.5.0rc2"
+version = "2.5.0rc3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -68,7 +68,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy-ai"
-version = "2.5.0rc2"
+version = "2.5.0rc3"
 description = "DSPy: The framework for programming—not prompting—foundation models"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 maintainers = ["Cyrus Nouroozi <cyrus@edendaolab.com>"]
@@ -78,7 +78,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 # documentation = "https://dspy-ai.readthedocs.io"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
-packages = [{ include = "dspy" }]
+packages = [{ include = "dspy" }, { include = "dsp" }]
 
 # may be a bit much
 [tool.poetry.dependencies]
