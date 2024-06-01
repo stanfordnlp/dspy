@@ -3,6 +3,7 @@ import inspect
 import re
 import types
 import typing
+from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
 
@@ -78,7 +79,8 @@ class SignatureMeta(type(BaseModel)):
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField. {field.json_schema_extra=}",
+                    f"Field '{name}' in '{cls.__name__}' must be declared with "
+                    "InputField or OutputField. {field.json_schema_extra=}",
                 )
 
     @property
@@ -206,6 +208,18 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     # for any signature that doesn't define it's own instructions.
     pass
 
+    @classmethod
+    @contextmanager
+    def replace(cls, new_signature: Type["Signature"]) -> typing.Generator[None, None, None]:
+        """Replace the signature with an updated version.
+
+        This is useful for updating the internal signatures of dspy
+        """
+        old_signature = cls
+        setattr(inspect.getmodule(cls), cls.__name__, new_signature)
+        yield
+        setattr(inspect.getmodule(cls), cls.__name__, old_signature)
+
 
 def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
     if signature is None:
@@ -218,9 +232,9 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 
 def make_signature(
-        signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-        instructions: str = None,
-        signature_name: str = "StringSignature",
+    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
+    instructions: str = None,
+    signature_name: str = "StringSignature",
 ) -> Type[Signature]:
     """Create a new Signature type with the given fields and instructions.
 
@@ -334,11 +348,10 @@ def _parse_type_node(node, names=None) -> Any:
         elts = node.elts
         return tuple(_parse_type_node(elt, names) for elt in elts)
 
-    if isinstance(node, ast.Call):
-        if node.func.id == "Field":
-            keys = [kw.arg for kw in node.keywords]
-            values = [kw.value.value for kw in node.keywords]
-            return Field(**dict(zip(keys, values)))
+    if isinstance(node, ast.Call) and node.func.id == "Field":
+        keys = [kw.arg for kw in node.keywords]
+        values = [kw.value.value for kw in node.keywords]
+        return Field(**dict(zip(keys, values)))
 
     raise ValueError(f"Code is not syntactically valid: {node}")
 
