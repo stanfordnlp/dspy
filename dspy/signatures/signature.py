@@ -201,7 +201,6 @@ class SignatureMeta(type(BaseModel)):
 #
 # For compatibility with the legacy dsp format, you can use the signature_to_template function.
 #
-T_co = typing.TypeVar("T_co", bound="Signature", covariant=True)
 
 
 class Signature(BaseModel, metaclass=SignatureMeta):
@@ -214,8 +213,8 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     @contextmanager
     def replace(
-        cls: T_co,
-        new_signature: T_co,
+        cls: "Signature",
+        new_signature: "Signature",
         validate_new_signiture: bool = True,
     ) -> typing.Generator[None, None, None]:
         """Replace the signature with an updated version.
@@ -234,12 +233,20 @@ class Signature(BaseModel, metaclass=SignatureMeta):
                         f"Field '{field}' is missing from the updated signiture '{new_signature.__class__}.",
                     )
 
-        old_signature = cls
-        setattr(inspect.getmodule(cls), cls.__name__, new_signature)
+        class OldSignature(cls, Signature):
+            pass
+
+        replace_fields = ["__doc__", "model_fields", "model_extra", "model_config"]
+        for field in replace_fields:
+            setattr(cls, field, getattr(new_signature, field))
+        cls.model_rebuild(force=True)
         yield
-        setattr(inspect.getmodule(cls), cls.__name__, old_signature)
+        for field in replace_fields:
+            setattr(cls, field, getattr(OldSignature, field))
+        cls.model_rebuild(force=True)
 
 
+@contextmanager
 def update_signatures(
     signature_map: Dict[Type[Signature], Type[Signature]],
     validate_new_signiture: bool = True,
