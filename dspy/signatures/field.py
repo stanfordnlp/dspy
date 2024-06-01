@@ -3,7 +3,7 @@ import pydantic
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
-DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
+DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "is_image", "parser", "__dspy_field_type"]
 
 
 def move_kwargs(**kwargs):
@@ -39,16 +39,18 @@ def new_to_old_field(field):
         prefix=field.json_schema_extra["prefix"],
         desc=field.json_schema_extra["desc"],
         format=field.json_schema_extra.get("format"),
+        is_image=field.json_schema_extra.get("is_image"),
     )
 
 
 class OldField:
     """A more ergonomic datatype that infers prefix and desc if omitted."""
 
-    def __init__(self, *, prefix=None, desc=None, input, format=None):
+    def __init__(self, *, prefix=None, desc=None, input, format=None, is_image=False):
         self.prefix = prefix  # This can be None initially and set later
         self.desc = desc
         self.format = format
+        self.is_image = is_image
 
     def finalize(self, key, inferred_prefix):
         """Set the prefix if it's not provided explicitly."""
@@ -66,10 +68,10 @@ class OldField:
 
 
 class OldInputField(OldField):
-    def __init__(self, *, prefix=None, desc=None, format=None):
-        super().__init__(prefix=prefix, desc=desc, input=True, format=format)
+    def __init__(self, *, prefix=None, desc=None, format=None, is_image=False):
+        super().__init__(prefix=prefix, desc=desc, input=True, format=format, is_image=is_image)
 
 
 class OldOutputField(OldField):
-    def __init__(self, *, prefix=None, desc=None, format=None):
-        super().__init__(prefix=prefix, desc=desc, input=False, format=format)
+    def __init__(self, *, prefix=None, desc=None, format=None, is_image=False):
+        super().__init__(prefix=prefix, desc=desc, input=False, format=format, is_image=is_image)

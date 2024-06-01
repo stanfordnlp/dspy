@@ -3,12 +3,13 @@ import random
 import sys
 import textwrap
 from collections import defaultdict
-from typing import Any
+from typing import Any, Callable, Optional
 
 import optuna
 
 import dsp
 import dspy
+from dsp.templates.template_v2 import Field
 from dspy.evaluate.evaluate import Evaluate
 from dspy.signatures import Signature
 from dspy.signatures.signature import signature_to_template
@@ -38,7 +39,7 @@ Note that this teleprompter takes in the following parameters:
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 * verbose: Tells the method whether or not to print intermediate steps.
 * track_stats: Tells the method whether or not to track statistics about the optimization process.
-                If True, the method will track a dictionary with a key corresponding to the trial number, 
+                If True, the method will track a dictionary with a key corresponding to the trial number,
                 and a value containing a dict with the following keys:
                     * program: the program being evaluated at a given trial
                     * score: the last average evaluated score for the program
@@ -131,6 +132,8 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
         desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add",
     )
 
+ExampleStringifyFn = Callable[[dsp.Example, list[str]], str]
+
 
 class MIPRO(Teleprompter):
     def __init__(
@@ -144,6 +147,7 @@ class MIPRO(Teleprompter):
         verbose=False,
         track_stats=True,
         view_data_batch_size=10,
+        example_stringify_fn: Optional[ExampleStringifyFn] = None,
     ):
         self.num_candidates = num_candidates
         self.metric = metric
@@ -154,6 +158,7 @@ class MIPRO(Teleprompter):
         self.track_stats = track_stats
         self.teacher_settings = teacher_settings
         self.view_data_batch_size = view_data_batch_size
+        self.example_stringify_fn = example_stringify_fn
 
     def _print_full_program(self, program):
         for i, predictor in enumerate(program.predictors()):
@@ -174,7 +179,12 @@ class MIPRO(Teleprompter):
 
     def _observe_data(self, trainset, max_iterations=10):
         upper_lim = min(len(trainset), self.view_data_batch_size)
-        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=(trainset[0:upper_lim].__repr__()))
+        example_stringify_fn = self.example_stringify_fn
+        if example_stringify_fn is None:
+            example_stringify_fn = lambda e: repr(e)
+        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=(
+            "\n".join([example_stringify_fn(e) for e in trainset[0:upper_lim]])
+        ))
         observations = observation["observations"]
 
         skips = 0
@@ -183,7 +193,7 @@ class MIPRO(Teleprompter):
             upper_lim = min(len(trainset), b + self.view_data_batch_size)
             output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(
                 prior_observations=observations,
-                examples=(trainset[b:upper_lim].__repr__()),
+                examples="\n".join([example_stringify_fn(e) for e in trainset[0:upper_lim]]),
             )
             iterations += 1
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
@@ -199,8 +209,13 @@ class MIPRO(Teleprompter):
 
         return summary.summary
 
-    def _create_example_string(self, fields, example):
+    def _create_example_string(self, fields:list[Field], example: dsp.Example) -> str:
         # Building the output string
+
+        if self.example_stringify_fn is not None:
+            field_names = [field.input_variable for field in fields]
+            return self.example_stringify_fn(example, field_names)
+
         output = []
         for field in fields:
             name = field.name
@@ -383,7 +398,7 @@ class MIPRO(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of calls to prompt model * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task

@@ -44,13 +44,13 @@ class Template(TemplateV2):
                 input_variable=key,
                 output_variable=key,
                 separator=separator,
+                is_image=bool(value.is_image),
             )
             self.fields.append(field)
 
             if value.format:
                 self.format_handlers[key] = value.format
-        
-    
+
     # equality
     def __eq__(self, other):
         if set(self.kwargs.keys()) != set(other.kwargs.keys()):
@@ -62,7 +62,7 @@ class Template(TemplateV2):
             if not v1 == v2:
                 print(k, v1, v2)
 
-            
+
         # print("here?", self.instructions == other.instructions, self.kwargs == other.kwargs)
         return self.instructions == other.instructions and self.kwargs == other.kwargs
 
@@ -71,4 +71,4 @@ class Template(TemplateV2):
         field_names = [field.name for field in self.fields]
 
         return f"Template({self.instructions}, {field_names})"
-    
+

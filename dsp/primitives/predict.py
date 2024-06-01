@@ -2,6 +2,7 @@ from collections import Counter
 from typing import Any, Callable, Optional
 
 import dsp
+from dsp.modules.lm import IMG_DATA_KEY
 from dsp.primitives.demonstrate import Example
 from dsp.templates.template_v3 import Template
 from dsp.utils import normalize_text, zipstar
@@ -69,16 +70,16 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion.pop(field_name, None)
 
         # Recurse with greedy decoding and a shorter length.
-        max_tokens = (kwargs.get("max_tokens") or 
+        max_tokens = (kwargs.get("max_tokens") or
                     kwargs.get("max_output_tokens") or
-                    dsp.settings.lm.kwargs.get("max_tokens") or 
+                    dsp.settings.lm.kwargs.get("max_tokens") or
                     dsp.settings.lm.kwargs.get('max_output_tokens'))
 
 
         if max_tokens is None:
             raise ValueError("Required 'max_tokens' or 'max_output_tokens' not specified in settings.")
         max_tokens = min(max(75, max_tokens // 2), max_tokens)
-        keys = list(kwargs.keys()) + list(dsp.settings.lm.kwargs.keys()) 
+        keys = list(kwargs.keys()) + list(dsp.settings.lm.kwargs.keys())
         max_tokens_key = "max_tokens" if "max_tokens" in keys else "max_output_tokens"
         new_kwargs = {
             **kwargs,
@@ -94,7 +95,7 @@ def _generate(template: Template, **kwargs) -> Callable:
             original_example=original_example,
         )
         return finished_completion.data[0]
-        
+
 
     def do_generate(
         example: Example, stage: str, max_depth: int = 2, original_example=None,
@@ -109,6 +110,14 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
+
+        # For image data, we need to embed that in the kwargs to be passed
+        # to the generator and the LM.
+        for field in template.fields:
+            if field.is_image:
+                kwargs[IMG_DATA_KEY] = example[field.input_variable]
+                break
+
         completions: list[dict[str, Any]] = generator(prompt, **kwargs)
         completions: list[Example] = [template.extract(example, p) for p in completions]
 

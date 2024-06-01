@@ -7,7 +7,7 @@ from dsp.primitives.demonstrate import Example
 
 from .utils import format_answers, passages2text
 
-Field = namedtuple("Field", "name separator input_variable output_variable description")
+Field = namedtuple("Field", "name separator input_variable output_variable description is_image")
 
 # TODO: de-duplicate with dsp/templates/template.py
 
@@ -63,6 +63,8 @@ class TemplateV2:
                     input_variable=input_variable,
                     output_variable=output_variable,
                     description=description,
+                    # See template_v3 for handling image fields
+                    is_image=False,
                 ),
             )
 
@@ -94,6 +96,11 @@ class TemplateV2:
 
         for field in self.fields:
             if field.input_variable in example and example[field.input_variable] is not None:
+                if field.is_image:
+                    # For image fields, we do not include this in the prompt
+                    # since we want to pass this straight to the LM
+                    continue
+
                 if field.input_variable in self.format_handlers:
                     format_handler = self.format_handlers[field.input_variable]
                 else:
