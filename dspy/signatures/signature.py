@@ -3,7 +3,7 @@ import inspect
 import re
 import types
 import typing
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
 
@@ -201,6 +201,9 @@ class SignatureMeta(type(BaseModel)):
 #
 # For compatibility with the legacy dsp format, you can use the signature_to_template function.
 #
+T_co = typing.TypeVar("T_co", bound="Signature", covariant=True)
+
+
 class Signature(BaseModel, metaclass=SignatureMeta):
     ""  # noqa: D419
 
@@ -210,15 +213,42 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     @contextmanager
-    def replace(cls, new_signature: Type["Signature"]) -> typing.Generator[None, None, None]:
+    def replace(
+        cls: T_co,
+        new_signature: T_co,
+        validate_new_signiture: bool = True,
+    ) -> typing.Generator[None, None, None]:
         """Replace the signature with an updated version.
 
         This is useful for updating the internal signatures of dspy
+
+        Args:
+            new_signature: The new signature to replace the old one with.
+            validate_new_signiture: Whether to validate the new signature against the old one
+                to ensure that no fields are missing.
         """
+        if validate_new_signiture:
+            for field in cls.model_fields:
+                if field not in new_signature.model_fields:
+                    raise ValueError(
+                        f"Field '{field}' is missing from the updated signiture '{new_signature.__class__}.",
+                    )
+
         old_signature = cls
         setattr(inspect.getmodule(cls), cls.__name__, new_signature)
         yield
         setattr(inspect.getmodule(cls), cls.__name__, old_signature)
+
+
+def update_signatures(
+    signature_map: Dict[Type[Signature], Type[Signature]],
+    validate_new_signiture: bool = True,
+) -> typing.Generator[None, None, None]:
+    """Replace multiple signatures with updated versions, according to a mapping between the old and new signatures."""
+    with ExitStack() as stack:
+        for old_signature, new_signature in signature_map.items():
+            stack.enter_context(old_signature.replace(new_signature, validate_new_signiture=validate_new_signiture))
+        yield
 
 
 def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
