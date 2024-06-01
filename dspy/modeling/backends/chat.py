@@ -14,48 +14,39 @@ logger = logging.getLogger(__name__)
 class ChatBackend(TextBackend):
     system_prompt: t.Optional[str] = Field(default=None)
 
-    def _query(
+    def _build_example(
         self,
         signature: Signature,
         example: Example,
         is_demo: bool,
-        format_handlers: t.Dict[str, t.Callable],
     ) -> t.Tuple[str, str]:
-        if is_demo:
-            for name in signature.output_fields:
-                if name not in example:
-                    raise Exception(f"Example missing necessary output field: {name}")
+        inputs = []
+        for field, info in signature.input_fields.items():
+            if is_demo and field not in example:
+                continue
 
-        input = []
-        for name, field in signature.input_fields.items():
-            format_handler = format_handlers.get(name, default_format_handler)
-
-            input.append(
-                f"{field.json_schema_extra['prefix']} {format_handler(example[name])}",
+            format_handler = (
+                info.json_schema_extra.get("format") or DEFAULT_FORMAT_HANDLERS.get(field) or default_format_handler
             )
+            inputs.append(f"{info.json_schema_extra['prefix']} {format_handler(example[field])}")
 
-        output = []
-        for name, field in signature.output_fields.items():
-            format_handler = format_handlers.get(name, default_format_handler)
+        if not is_demo:
+            return "\n\n".join(inputs), ""
 
-            if name not in example and not is_demo:
-                output.append(f"{field.json_schema_extra['prefix']} ")
-                break
+        outputs = []
+        for field, info in signature.output_fields.items():
+            if field not in example:
+                continue
 
-            if name in example:
-                output.append(f"{field.json_schema_extra['prefix']} {format_handler(example[name])}")
+            format_handler = (
+                info.json_schema_extra.get("format") or DEFAULT_FORMAT_HANDLERS.get(field) or default_format_handler
+            )
+            outputs.append(f"{info.json_schema_extra['prefix']} {format_handler(example[field])}")
 
-        return "\n\n".join(input), "\n\n".join(output)
+        return "\n\n".join(inputs), "\n\n".join(outputs)
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
         options = {**DEFAULT_PARAMS, **self.params, **config}
-
-        # Set up format handlers
-        format_handlers = DEFAULT_FORMAT_HANDLERS
-        for name, field in signature.fields.items():
-            fmt = field.json_schema_extra.get("format")
-            if fmt:
-                format_handlers[name] = fmt
 
         messages = []
 
@@ -69,12 +60,12 @@ class ChatBackend(TextBackend):
 
         # Append each demo
         for demo in example.get("demos", []):
-            inputs, outputs = self._query(signature, demo, True, format_handlers)
+            inputs, outputs = self._build_example(signature, demo, True)
             messages.append({"role": "user", "content": inputs.strip()})
             messages.append({"role": "assistant", "content": outputs.strip()})
 
-        # Append empty demo (actual input) to coerce generation
-        inputs, _ = self._query(signature, example, False, format_handlers)
+        # Append actual input to coerce generation
+        inputs, _ = self._build_example(signature, example, False)
         messages.append({"role": "user", "content": inputs.strip()})
 
         options["messages"] = messages
