@@ -157,6 +157,31 @@ def test_config_management():
     assert "new_key" in config and config["new_key"] == "value"
 
 
+def test_single_output():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM(["my answer"]))
+    results = program(question="What is 1+1?")
+    assert results.completions.answer[0] == "my answer"
+
+
+def test_single_output_with_prefix():
+    """Text for when prefix for answer is included (e.g Gemini)."""
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM(["Answer: my answer"]))
+    results = program(question="What is 1+1?")
+    assert results.completions.answer[0] == "my answer"
+
+
+def test_single_output_with_noise():
+    """Sometimes we see question was also listed as an output."""
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([
+        "Question: What is 1+1?\nAnswer: my answer"
+    ]))
+    results = program(question="What is 1+1?")
+    assert results.completions.answer[0] == "my answer"
+
+
 def test_multi_output():
     program = Predict("question -> answer", n=2)
     dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
