@@ -40,7 +40,7 @@ Search the Watson Discovery collection for the top `k` passages matching the giv
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
-- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"long_text": str, "passage_score": float, "document_id": str, "collection_id": str, "start_offset": int, "end_offset": int, "field": str}]`
+- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"title":str, "long_text": str, "passage_score": float, "document_id": str, "collection_id": str, "start_offset": int, "end_offset": int, "field": str}]`
 
 ### Quickstart
 
