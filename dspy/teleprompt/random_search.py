@@ -28,7 +28,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        teacher_settings={},
+        teacher_settings=None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -39,7 +39,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         metric_threshold=None,
     ):
         self.metric = metric
-        self.teacher_settings = teacher_settings
+
+        if teacher_settings is None:
+            self.teacher_settings = {}
+        else:
+            self.teacher_settings = teacher_settings
+
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
@@ -67,6 +72,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         scores = []
         all_subscores = []
         score_data = []
+
+        if teacher:
+            if hasattr(teacher, "candidate_programs"):
+                teacher.candidate_programs = teacher.candidate_programs[:1]
+            elif hasattr(teacher, "programs"):
+                teacher = teacher.programs[0]
 
         for seed in range(-3, self.num_candidate_sets):
             if (restrict is not None) and (seed not in restrict):
