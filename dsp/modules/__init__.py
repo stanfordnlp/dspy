@@ -26,4 +26,4 @@ from .sbert import *
 from .sentence_vectorizer import *
 from .snowflake import *
 from .watsonx import *
-
+from .you import YouLM
