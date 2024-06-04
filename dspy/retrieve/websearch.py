@@ -1,10 +1,12 @@
-from typing import Any, Dict, List, Optional
 import os
-from sentence_transformers import SentenceTransformer
-import dspy
-import requests
 from collections import Counter
+from typing import Any, Dict, List, Optional
+
+import requests
 import torch.nn.functional as F
+from sentence_transformers import SentenceTransformer
+
+import dspy
 
 
 class BingSearch(dspy.Retrieve):
@@ -13,7 +15,7 @@ class BingSearch(dspy.Retrieve):
     DEFAULT_SEARCH_COUNT = 10
 
     def __init__(
-        self, api_key: Optional[str] = None, endpoint: Optional[str] = None
+        self, api_key: Optional[str] = None, endpoint: Optional[str] = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("BING_SEARCH_V7_SUBSCRIPTION_KEY")
@@ -85,10 +87,10 @@ class BingSearch(dspy.Retrieve):
         snips = snippets.copy()
 
         query_embeddings = self.model.encode(
-            queries, convert_to_tensor=True, show_progress_bar=False
+            queries, convert_to_tensor=True, show_progress_bar=False,
         )
         snip_embeddings = self.model.encode(
-            snips, convert_to_tensor=True, show_progress_bar=False
+            snips, convert_to_tensor=True, show_progress_bar=False,
         )
 
         cos_sims = F.cosine_similarity(query_embeddings, snip_embeddings, dim=1)
