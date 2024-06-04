@@ -42,7 +42,7 @@ class MultiChainComparison(Module):
                 f"«I'm trying to {rationale} I'm not sure but my prediction is {answer}»",
             )
 
-        assert len(attempts) == self.M, len(attempts), f"The number of attempts ({len(attempts)}) doesn't match the expected number M ({self.M}). Please set the correct value for M when initializing MultiChainComparison."
+        assert len(attempts) == self.M, f"The number of attempts ({len(attempts)}) doesn't match the expected number M ({self.M}). Please set the correct value for M when initializing MultiChainComparison."
 
         kwargs = {
             **{
