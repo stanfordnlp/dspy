@@ -25,6 +25,7 @@ jobs:
         uses: chartboost/ruff-action@v1
         with:
           args: --fix-only --exit-non-zero-on-fix
+          changed-files: 'true'
         continue-on-error: true
 
       - name: Fail Workflow if Ruff Fix Failed
