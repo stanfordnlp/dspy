@@ -120,21 +120,21 @@ class BaseBackend(BaseModel, ABC):
         """Index into the backend historical completions, and pretty print all details."""
 
         # Print Input Kwargs
-        print("===INPUT KWARGS===")
+        print("===INPUT KWARGS===")  # noqa:T201
 
         pp = pprint.PrettyPrinter(indent=2)
         pp.pprint(self.history[element]["input_kwargs"])
 
         # Print Completions
-        print("\n===COMPLETIONS===")
-        print(self.history[-1])
+        print("\n===COMPLETIONS===")  # noqa:T201
+        print(self.history[-1])  # noqa:T201
 
 
 def cached_request(cls: BaseBackend, **kwargs) -> Completions:
     hashed = joblib.hash(cls.model_dump_json())
 
     @_cache_memory.cache(ignore=["cls"])
-    def _cache_call(cls: BaseBackend, hashed: str, **kwargs):
+    def _cache_call(cls: BaseBackend, hashed: str, **kwargs):  # noqa:ARG001
         return cls.make_request(**kwargs)
 
     return _cache_call(cls=cls, hashed=hashed, **kwargs)

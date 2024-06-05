@@ -259,6 +259,8 @@ ignore = [
     "D101",
     "D104",
     "D106",
+    # No blank lines allowed after function docstring
+    "D202",
     # missing-type-self
     "ANN101",
     # missing-type-cls
