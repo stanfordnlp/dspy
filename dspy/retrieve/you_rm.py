@@ -15,14 +15,15 @@ class YouRM(dspy.Retrieve):
 
     Args:
         ydc_api_key: you.com API key, if `YDC_API_KEY` is not set in the environment
-        k: If ``endpoint_type="search"``, the max snippets to return per search hit.
-           If ``endpoint_type="news"``, the max articles to return.
-        endpoint_type: you.com endpoints
+        k: If ``endpoint="search"``, the max snippets to return per search hit.
+           If ``endpoint="news"``, the max articles to return.
+        endpoint: you.com endpoints
         num_web_results: The max number of web results to return, must be under 20
         safesearch: Safesearch settings, one of "off", "moderate", "strict", defaults to moderate
         country: Country code, ex: 'US' for United States, see API reference for more info
         search_lang: (News API) Language codes, ex: 'en' for English, see API reference for more info
-        ui_lang: (News API) User interface language for the response, ex: 'en' for English, see API reference for more info
+        ui_lang: (News API) User interface language for the response, ex: 'en' for English.
+                            See API reference for more info
         spellcheck: (News API) Whether to spell check query or not, defaults to True
     """
 
@@ -30,7 +31,7 @@ class YouRM(dspy.Retrieve):
         self,
         ydc_api_key: Optional[str] = None,
         k: int = 3,
-        endpoint_type: Literal["search", "news"] = "search",
+        endpoint: Literal["search", "news"] = "search",
         num_web_results: Optional[int] = None,
         safesearch: Optional[Literal["off", "moderate", "strict"]] = None,
         country: Optional[str] = None,
@@ -44,25 +45,24 @@ class YouRM(dspy.Retrieve):
         if not ydc_api_key and not os.environ.get("YDC_API_KEY"):
             raise RuntimeError('You must supply `ydc_api_key` or set environment variable "YDC_API_KEY"')
 
-        if endpoint_type not in ("search", "news"):
-            raise ValueError('`endpoint_type` must be either "search" or "news"')
+        if endpoint not in ("search", "news"):
+            raise ValueError('`endpoint` must be either "search" or "news"')
 
-        # Raise warning if News API-specific fields are set but endpoint_type is not "news"
-        if endpoint_type != "news":
+        # Raise warning if News API-specific fields are set but endpoint is not "news"
+        if endpoint != "news":
             news_api_fields = (search_lang, ui_lang, spellcheck)
             for field in news_api_fields:
                 if field:
                     warnings.warn(
                         (
-                            f"News API-specific field '{field}' is set but "
-                            f'`endpoint_type="{endpoint_type}"`. '
+                            f"News API-specific field '{field}' is set but `{endpoint=}`. "
                             "This will have no effect."
                         ),
                         UserWarning,
                     )
 
         self.ydc_api_key = ydc_api_key or os.environ.get("YDC_API_KEY")
-        self.endpoint_type = endpoint_type
+        self.endpoint = endpoint
         self.num_web_results = num_web_results
         self.safesearch = safesearch
         self.country = country
@@ -73,12 +73,12 @@ class YouRM(dspy.Retrieve):
     def _generate_params(self, query: str) -> dict[str, Any]:
         params = {"safesearch": self.safesearch, "country": self.country}
 
-        if self.endpoint_type == "search":
+        if self.endpoint == "search":
             params.update(
                 query=query,
                 num_web_results=self.num_web_results,
             )
-        elif self.endpoint_type == "news":
+        elif self.endpoint == "news":
             params.update(
                 q=query,
                 count=self.num_web_results,
@@ -100,15 +100,15 @@ class YouRM(dspy.Retrieve):
             headers = {"X-API-Key": self.ydc_api_key}
             params = self._generate_params(query)
             response = requests.get(
-                f"https://api.ydc-index.io/{self.endpoint_type}",
+                f"https://api.ydc-index.io/{self.endpoint}",
                 params=params,
                 headers=headers,
             )
             response.raise_for_status()
             results = response.json()
 
-            if self.endpoint_type == "search":
+            if self.endpoint == "search":
                 docs = [snippet for hits in results["hits"][:k] for snippet in hits["snippets"]]
-            elif self.endpoint_type == "news":
+            elif self.endpoint == "news":
                 docs = [article["description"] for article in results["news"]["results"][:k]]
         return [dotdict({"long_text": document}) for document in docs]
