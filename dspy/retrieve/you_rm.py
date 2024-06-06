@@ -9,6 +9,23 @@ from dsp.utils import dotdict
 
 
 class YouRM(dspy.Retrieve):
+    """Retriever for You.com's Search and News API.
+
+    [API reference](https://documentation.you.com/api-reference/)
+
+    Args:
+        ydc_api_key: you.com API key, if `YDC_API_KEY` is not set in the environment
+        k: If ``endpoint_type="search"``, the max snippets to return per search hit.
+           If ``endpoint_type="news"``, the max articles to return.
+        endpoint_type: you.com endpoints
+        num_web_results: The max number of web results to return, must be under 20
+        safesearch: Safesearch settings, one of "off", "moderate", "strict", defaults to moderate
+        country: Country code, ex: 'US' for United States, see API reference for more info
+        search_lang: (News API) Language codes, ex: 'en' for English, see API reference for more info
+        ui_lang: (News API) User interface language for the response, ex: 'en' for English, see API reference for more info
+        spellcheck: (News API) Whether to spell check query or not, defaults to True
+    """
+
     def __init__(
         self,
         ydc_api_key: Optional[str] = None,
@@ -75,16 +92,6 @@ class YouRM(dspy.Retrieve):
         return params
 
     def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
-        """Search with You.com for self.k top passages for query or queries
-
-        Args:
-            query_or_queries (Union[str, list[str]]): The query or queries to search for.
-            k (Optional[int]): The number of context strings to return, if not already specified in self.k  # TODO: Clarify
-
-        Returns:
-            dspy.Prediction: An object containing the retrieved passages.
-        """
-
         k = k if k is not None else self.k
 
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
