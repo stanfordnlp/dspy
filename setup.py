@@ -34,6 +34,7 @@ setup(
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
+        "groq": ["groq~=0.8.0"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
