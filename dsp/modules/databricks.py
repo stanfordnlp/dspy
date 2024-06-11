@@ -41,6 +41,7 @@ class Databricks(GPT3):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text", "embeddings"] = None,
+        system_prompt: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(
@@ -49,6 +50,7 @@ class Databricks(GPT3):
             api_provider="openai",
             api_base=api_base,
             model_type=model_type,
+            system_prompt=system_prompt,
             **kwargs,
         )
 
@@ -60,7 +62,11 @@ class Databricks(GPT3):
 
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
-            kwargs["messages"] = [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": prompt}]
+            # caching mechanism requires hashable kwargs
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+            kwargs["messages"] = messages            
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = custom_client_chat_request(**kwargs).json()
             response = json.loads(response)
