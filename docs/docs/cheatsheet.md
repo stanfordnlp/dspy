@@ -280,7 +280,7 @@ fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrappe
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-#### Compiling a compiled program - bootstrapping a bootstraped program
+#### Compiling a compiled program - bootstrapping a bootstrapped program
 
 ```python
 your_dspy_program_compiledx2 = teleprompter.compile(
