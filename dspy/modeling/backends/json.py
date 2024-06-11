@@ -7,7 +7,7 @@ from dspy.primitives.example import Example
 from dspy.primitives.prediction import Completions
 from dspy.signatures.signature import Signature
 
-from .text import TextBackend
+from .text import DEFAULT_PARAMS, TextBackend
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,8 @@ class JSONBackend(TextBackend):
         return example
 
     def prepare_request(self, signature: Signature, example: Example, config: dict, **_kwargs) -> dict:
+        options = {**DEFAULT_PARAMS, **self.params, **config}
+
         prompt_spans = []
 
         # Start by getting the instructions
@@ -88,9 +90,9 @@ class JSONBackend(TextBackend):
 
         content = "\n\n---\n\n".join(prompt_spans)
 
-        config.update({"messages": [{"role": "user", "content": content}]})
+        options.update({"messages": [{"role": "user", "content": content}]})
 
-        return config
+        return options
 
     def process_response(
         self,
