@@ -280,7 +280,7 @@ fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrappe
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-#### Compiling a compiled program - bootstrapping a bootstraped program
+#### Compiling a compiled program - bootstrapping a bootstrapped program
 
 ```python
 your_dspy_program_compiledx2 = teleprompter.compile(
@@ -363,7 +363,7 @@ from dspy.teleprompt import COPRO
 
 eval_kwargs = dict(num_threads=16, display_progress=True, display_table=0)
 
-copro_teleprompter = COPRO(prompt_model=model_to_generate_prompts, task_model=model_that_solves_task, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False, log_dir=logging_directory)
+copro_teleprompter = COPRO(prompt_model=model_to_generate_prompts, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False)
 
 compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_program, trainset=trainset, eval_kwargs=eval_kwargs)
 ```

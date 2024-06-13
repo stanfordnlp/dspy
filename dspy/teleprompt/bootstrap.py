@@ -112,10 +112,17 @@ class BootstrapFewShot(Teleprompter):
 
         for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
             assert name1 == name2, "Student and teacher must have the same program structure."
-            assert predictor1.signature.equals(
-                predictor2.signature,
-            ), (f"Student and teacher must have the same signatures. "
-                f"{type(predictor1.signature)} != {type(predictor2.signature)}"
+            if hasattr(predictor1.signature, "equals"):
+                assert predictor1.signature.equals(
+                    predictor2.signature,
+                ), (f"Student and teacher must have the same signatures. "
+                    f"{type(predictor1.signature)} != {type(predictor2.signature)}"
+                    )
+            else:
+                # fallback in case if .equals is not implemented (e.g. dsp.Prompt)
+                assert predictor1.signature == predictor2.signature, (
+                    f"Student and teacher must have the same signatures. "
+                    f"{type(predictor1.signature)} != {type(predictor2.signature)}"
                 )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 

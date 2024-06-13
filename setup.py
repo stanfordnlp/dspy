@@ -37,6 +37,7 @@ setup(
         "fastembed": ["fastembed"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
         "myscale":["clickhouse-connect"],
+        "groq": ["groq~=0.8.0"],
     },	
     classifiers=[	
         "Development Status :: 3 - Alpha",	
