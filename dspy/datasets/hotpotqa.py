@@ -1,6 +1,7 @@
 import random
 
 from datasets import load_dataset
+
 from dspy.datasets.dataset import Dataset
 
 
@@ -17,7 +18,7 @@ class HotPotQA(Dataset):
         for raw_example in hf_official_train:
             if raw_example['level'] == 'hard':
                 if keep_details is True:
-                    keys = ['id', 'question', 'answer', 'type', 'supporting_facts']
+                    keys = ['id', 'question', 'answer', 'type', 'supporting_facts', 'context']
                 elif keep_details == 'dev_titles':
                     keys = ['question', 'answer', 'supporting_facts']
                 else:

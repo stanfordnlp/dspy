@@ -1,13 +1,15 @@
-from collections import defaultdict
-from typing import List, Union
+from typing import List, Optional, Union
+
 import dspy
-from typing import Optional
+from dsp.utils import dotdict
 
 try:
     import weaviate
+    import weaviate.classes as wvc
+    from weaviate.collections.classes.grpc import HybridFusion
 except ImportError:
     raise ImportError(
-        "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`"
+        "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`",
     )
 
 
@@ -22,6 +24,9 @@ class WeaviateRM(dspy.Retrieve):
         weaviate_collection_name (str): The name of the Weaviate collection.
         weaviate_client (WeaviateClient): An instance of the Weaviate client.
         k (int, optional): The default number of top passages to retrieve. Defaults to 3.
+        weaviate_collection_text_key (str, optional): The key in the collection with the content. Defaults to content.
+        weaviate_alpha (float, optional): The alpha value for the hybrid query. Defaults to 0.5.
+        weaviate_fusion_type (wvc.HybridFusion, optional): The fusion type for the query. Defaults to RELATIVE_SCORE.
 
     Examples:
         Below is a code snippet that shows how to use Weaviate as the default retriver:
@@ -30,7 +35,9 @@ class WeaviateRM(dspy.Retrieve):
 
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
         weaviate_client = weaviate.Client("your-path-here")
-        retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
+        retriever_model = WeaviateRM(weaviate_collection_name="my_collection_name",
+                                     weaviate_collection_text_key="content", 
+                                     weaviate_client=weaviate_client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
@@ -42,15 +49,20 @@ class WeaviateRM(dspy.Retrieve):
 
     def __init__(self, 
                  weaviate_collection_name: str, 
-                 weaviate_client: weaviate.Client, 
-                 k: int = 3
+                 weaviate_client: weaviate.WeaviateClient,
+                 k: int = 3,
+                 weaviate_collection_text_key: Optional[str] = "content",
+                 weaviate_alpha: Optional[float] = 0.5,
+                 weaviate_fusion_type: Optional[HybridFusion] = HybridFusion.RELATIVE_SCORE,
         ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
-
+        self._weaviate_collection_text_key = weaviate_collection_text_key
+        self._weaviate_alpha = weaviate_alpha
+        self._weaviate_fusion_type = weaviate_fusion_type
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs) -> dspy.Prediction:
         """Search with Weaviate for self.k top passages for query
 
         Args:
@@ -69,14 +81,18 @@ class WeaviateRM(dspy.Retrieve):
         queries = [q for q in queries if q]
         passages = []
         for query in queries:
-            results = self._weaviate_client.query\
-                .get(self._weaviate_collection_name, ["content"])\
-                .with_hybrid(query=query)\
-                .with_limit(k)\
-                .do()
+            collection = self._weaviate_client.collections.get(self._weaviate_collection_name)
+            results = collection.query.hybrid(query=query,
+                                              limit=k,
+                                              alpha=self._weaviate_alpha,
+                                              fusion_type=self._weaviate_fusion_type,
+                                              return_metadata=wvc.query.MetadataQuery(
+                                                  distance=True, score=True),
+                                              **kwargs,
+                                              )
 
-            results = results["data"]["Get"][self._weaviate_collection_name]
-            parsed_results = [result["content"] for result in results]
-            passages.extend(parsed_results)
+            parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]
+            passages.extend(dotdict({"long_text": d}) for d in parsed_results)
 
-        return dspy.Prediction(passages=passages)
+        # Return type not changed, needs to be a Prediction object. But other code will break if we change it.
+        return passages

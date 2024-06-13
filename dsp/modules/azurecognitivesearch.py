@@ -1,15 +1,20 @@
-from typing import Optional, Union, Any
+from typing import Any, Union
 
 from dsp.utils import dotdict
+
 try:
     from azure.core.credentials import AzureKeyCredential
     from azure.search.documents import SearchClient
     from azure.search.documents._paging import SearchItemPaged
-except ImportError as e:
+except ImportError:
     raise ImportError(
         "You need to install azure-search-documents library"
-        "Please use the command: pip install azure-search-documents"
+        "Please use the command: pip install azure-search-documents",
     )
+
+# Deprecated: This module is scheduled for removal in future releases.
+# Please use the AzureAISearchRM class from dspy.retrieve.azureaisearch_rm instead.
+# For more information, refer to the updated documentation.
 
 class AzureCognitiveSearch:
     """Wrapper for the Azure Cognitive Search Retrieval."""
@@ -36,9 +41,12 @@ class AzureCognitiveSearch:
                         credential=self.credential)
 
     def __call__(self, query: str, k: int = 10) -> Union[list[str], list[dotdict]]:
-        
+        print("""# Deprecated: This module is scheduled for removal in future releases.
+                Please use the AzureAISearchRM class from dspy.retrieve.azureaisearch_rm instead.
+                For more information, refer to the updated documentation.""")
+
         topk: list[dict[str, Any]] = azure_search_request(self.field_text, self.field_score, self.client, query, k)
-        topk = [{**d, "long_text": d["text"]} for d in topk]            
+        topk = [{**d, "long_text": d["text"]} for d in topk]
 
         return [dotdict(psg) for psg in topk]
 
@@ -64,6 +72,6 @@ def process_azure_result(results:SearchItemPaged, content_key:str, content_score
             elif(key == content_score):
                 tmp["score"] = value
             else:
-                tmp[key] = value            
+                tmp[key] = value
         res.append(tmp)
-    return res 
+    return res

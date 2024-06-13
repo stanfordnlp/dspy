@@ -1,11 +1,14 @@
-import dspy
-from dspy.datasets import HotPotQA
-from .base_task import BaseTask
-from dspy.evaluate import Evaluate
+import os
 from functools import lru_cache
+
 import openai
 from dotenv import load_dotenv
-import os
+
+import dspy
+from dspy.datasets import HotPotQA
+
+from .base_task import BaseTask
+
 
 class TweetSignature(dspy.Signature):
     ("""Given context and a question, answer with a tweet""")
@@ -36,7 +39,7 @@ class MultiHopTweet(dspy.Module):
             context += self.retrieve(query).passages
         return dspy.Prediction(context=context, answer=self.generate_answer(context = context , question = question).answer)
 
-# Define the signature for autoamtic assessments.
+# Define the signature for automatic assessments.
 class Assess(dspy.Signature):
     """Assess the quality of a tweet along the specified dimension."""
 
@@ -45,7 +48,7 @@ class Assess(dspy.Signature):
     assessment_question = dspy.InputField()
     assessment_answer = dspy.OutputField(desc="Yes or No")
 
-@lru_cache()
+@lru_cache
 def load_models():
     load_dotenv()  # This will load the .env file's variables
 
@@ -74,7 +77,7 @@ def metric(gold, pred, trace=None):
         correct =  dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=correct)
         engaging = dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=engaging)
 
-    correct, engaging, faithful = [m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful]]
+    correct, engaging, faithful = (m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful])
     score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
     if METRIC is not None:

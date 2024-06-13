@@ -1,9 +1,10 @@
-from contextlib import contextmanager
-from dsp.utils.utils import dotdict
 import threading
+from contextlib import contextmanager
+
+from dsp.utils.utils import dotdict
 
 
-class Settings(object):
+class Settings:
     """DSP configuration settings."""
 
     _instance = None
@@ -19,9 +20,7 @@ class Settings(object):
             cls._instance.main_tid = threading.get_ident()
             cls._instance.main_stack = []
             cls._instance.stack_by_thread = {}
-            cls._instance.stack_by_thread[
-                threading.get_ident()
-            ] = cls._instance.main_stack
+            cls._instance.stack_by_thread[threading.get_ident()] = cls._instance.main_stack
 
             #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
             #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
@@ -35,11 +34,13 @@ class Settings(object):
                 force_reuse_cached_compilation=False,
                 compiling=False,
                 skip_logprobs=False,
-                trace=None,
+                trace=[],
                 release=0,
                 bypass_assert=False,
                 bypass_suggest=False,
-                langchain_history=[]
+                assert_failures=0,
+                suggest_failures=0,
+                langchain_history=[],
             )
             cls._instance.__append(config)
 

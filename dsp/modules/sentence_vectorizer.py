@@ -30,8 +30,8 @@ class BaseSentenceVectorizer(abc.ABC):
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
     '''
-    Vectorizer bsaed on `SentenceTransformers` models. You can pick any model from this link:
-    https://huggingface.co/sentence-transformers
+    Vectorizer based on `SentenceTransformers` models. You can pick any model from this link:
+    https://huggingface.co/models?library=sentence-transformers
     More details about models:
     https://www.sbert.net/docs/pretrained_models.html
     '''
@@ -40,7 +40,7 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         model_name_or_path: str = 'all-MiniLM-L6-v2',
         vectorize_bs: int = 256,
         max_gpu_devices: int = 1,
-        normalize_embeddings: bool = False
+        normalize_embeddings: bool = False,
     ):
         # this isn't a good practice, but with top-level import the whole DSP
         # module import will be slow (>5 sec), because SentenceTransformer is doing
@@ -48,11 +48,11 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         
         try:
             from sentence_transformers import SentenceTransformer
-        except ImportError as e:
+        except ImportError:
             raise ImportError(
                 "You need to install sentence_transformers library to use pretrained embedders. "
                 "Please check the official doc https://www.sbert.net/ "
-                "or simply run `pip install sentence-transformers"
+                "or simply run `pip install sentence-transformers",
             )
         from dsp.utils.ann_utils import determine_devices
         
@@ -75,7 +75,7 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
             emb = self.model.encode_multi_process(
                 sentences=text_to_vectorize,
                 pool=pool,
-                batch_size=self.vectorize_bs
+                batch_size=self.vectorize_bs,
             )
             self.model.stop_multi_process_pool(pool)
             # for some reason, multi-GPU setup doesn't accept normalize_embeddings parameter
@@ -87,7 +87,7 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
             emb = self.model.encode(
                 sentences=text_to_vectorize,
                 batch_size=self.vectorize_bs,
-                normalize_embeddings=self.normalize_embeddings
+                normalize_embeddings=self.normalize_embeddings,
             )
             return emb
 
@@ -109,6 +109,50 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
         return embeddings
 
 
+class CohereVectorizer(BaseSentenceVectorizer):
+    '''
+    This vectorizer uses the Cohere API to convert texts to embeddings.
+    More about the available models: https://docs.cohere.com/reference/embed
+    `api_key` should be passed as an argument and can be retrieved
+    from https://dashboard.cohere.com/api-keys
+    '''
+    def __init__(
+        self,
+        api_key: str,
+        model: str = 'embed-english-v3.0',
+        embed_batch_size: int = 96,
+        embedding_type: str = 'search_document',  # for details check Cohere embed docs
+    ):
+        self.model = model
+        self.embed_batch_size = embed_batch_size
+        self.embedding_type = embedding_type
+
+        import cohere
+        self.client = cohere.Client(api_key, client_name='dspy')
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+
+        embeddings_list = []
+
+        n_batches = (len(text_to_vectorize) - 1) // self.embed_batch_size + 1
+        for cur_batch_idx in range(n_batches):
+            start_idx = cur_batch_idx * self.embed_batch_size
+            end_idx = (cur_batch_idx + 1) * self.embed_batch_size
+            cur_batch = text_to_vectorize[start_idx: end_idx]
+
+            response = self.client.embed(
+                texts=cur_batch,
+                model=self.model,
+                input_type=self.embedding_type,
+            )
+
+            embeddings_list.extend(response.embeddings)
+
+        embeddings = np.array(embeddings_list, dtype=np.float32)
+        return embeddings
+
+
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
 except Exception:
@@ -125,7 +169,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
         self,
         model: str = 'text-embedding-ada-002',
         embed_batch_size: int = 1024,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ):
         self.model = model
         self.embed_batch_size = embed_batch_size
@@ -151,7 +195,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
             # OpenAI API call:
             response = self.Embedding.create(
                 model=self.model,
-                input=cur_batch
+                input=cur_batch,
             )
 
             cur_batch_embeddings = [cur_obj['embedding'] for cur_obj in response['data']]
@@ -159,3 +203,48 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
         return embeddings
+
+class FastEmbedVectorizer(BaseSentenceVectorizer):
+    """Sentence vectorizer implementaion using FastEmbed - https://qdrant.github.io/fastembed."""
+
+    def __init__(
+        self,
+        model_name: str = "BAAI/bge-small-en-v1.5",
+        batch_size: int = 256,
+        cache_dir: Optional[str] = None,
+        threads: Optional[int] = None,
+        parallel: Optional[int] = None,
+        **kwargs,
+    ):
+        """Initialize fastembed.TextEmbedding.
+
+        Args:
+            model_name (str): The name of the model to use. Defaults to `"BAAI/bge-small-en-v1.5"`.
+            batch_size (int): Batch size for encoding. Higher values will use more memory, but be faster.\
+                                        Defaults to 256.
+            cache_dir (str, optional): The path to the model cache directory.\
+                                       Can also be set using the `FASTEMBED_CACHE_PATH` env variable.
+            threads (int, optional): The number of threads single onnxruntime session can use.
+            parallel (int, optional): If `>1`, data-parallel encoding will be used, recommended for large datasets.\
+                                      If `0`, use all available cores.\
+                                      If `None`, don't use data-parallel processing, use default onnxruntime threading.\
+                                      Defaults to None.
+            **kwargs: Additional options to pass to fastembed.TextEmbedding
+        Raises:
+            ValueError: If the model_name is not in the format <org>/<model> e.g. BAAI/bge-small-en-v1.5.
+        """
+        try:
+            from fastembed import TextEmbedding
+        except ImportError as e:
+            raise ValueError(
+                "The 'fastembed' package is not installed. Please install it with `pip install fastembed`",
+            ) from e
+        self._batch_size = batch_size
+        self._parallel = parallel
+        self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir, threads=threads, **kwargs)
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        texts_to_vectorize = self._extract_text_from_examples(inp_examples)
+        embeddings = self._model.embed(texts_to_vectorize, batch_size=self._batch_size, parallel=self._parallel)
+
+        return np.array([embedding.tolist() for embedding in embeddings], dtype=np.float32)

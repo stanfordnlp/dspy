@@ -1,32 +1,34 @@
-from typing import List, Optional, Union, Any
-import dspy
 import os
+from typing import Any, List
+
+import backoff
 from openai import (
-    OpenAI,
     APITimeoutError,
     InternalServerError,
+    OpenAI,
     RateLimitError,
     UnprocessableEntityError,
 )
-import backoff
+
+import dspy
 
 try:
     from pymongo import MongoClient
     from pymongo.errors import (
-        ConnectionFailure,
         ConfigurationError,
-        ServerSelectionTimeoutError,
+        ConnectionFailure,
         InvalidURI,
         OperationFailure,
+        ServerSelectionTimeoutError,
     )
 except ImportError:
     raise ImportError(
-        "Please install the pymongo package by running `pip install dspy-ai[mongodb]`"
+        "Please install the pymongo package by running `pip install dspy-ai[mongodb]`",
     )
 
 
 def build_vector_search_pipeline(
-    index_name: str, query_vector: List[float], num_candidates: int, limit: int
+    index_name: str, query_vector: List[float], num_candidates: int, limit: int,
 ) -> List[dict[str, Any]]:
     return [
         {
@@ -36,7 +38,7 @@ def build_vector_search_pipeline(
                 "queryVector": query_vector,
                 "numCandidates": num_candidates,
                 "limit": limit,
-            }
+            },
         },
         {"$project": {"_id": 0, "text": 1, "score": {"$meta": "vectorSearchScore"}}},
     ]
@@ -92,7 +94,7 @@ class MongoDBAtlasRM(dspy.Retrieve):
         try:
             self.client = MongoClient(
                 f"mongodb+srv://{self.username}:{self.password}@{self.cluster_url}/{self.db_name}"
-                "?retryWrites=true&w=majority"
+                "?retryWrites=true&w=majority",
             )
         except (
             InvalidURI,

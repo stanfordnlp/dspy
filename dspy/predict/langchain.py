@@ -1,18 +1,19 @@
 import copy
 import random
 
-import dsp
-import dspy
-
-from dspy.predict.parameter import Parameter
-from dspy.predict.predict import Predict
-from dspy.primitives.prediction import Prediction
-from dspy.signatures.field import InputField, OutputField
-from dspy.signatures.signature import infer_prefix
-
 from langchain_core.pydantic_v1 import Extra
 from langchain_core.runnables import Runnable
 
+import dsp
+import dspy
+from dspy.predict.parameter import Parameter
+from dspy.predict.predict import Predict
+from dspy.primitives.prediction import Prediction
+from dspy.signatures.field import OldInputField, OldOutputField
+from dspy.signatures.signature import infer_prefix
+
+# TODO: This class is currently hard to test, because it hardcodes gpt-4 usage:
+# gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=4000, model_type='chat')
 
 class Template2Signature(dspy.Signature):
     """You are a processor for prompts. I will give you a prompt template (Python f-string) for an arbitrary task for other LMs.
@@ -72,8 +73,8 @@ class LangChainPredict(Predict, Runnable): #, RunnableBinding):
 
         with dspy.context(lm=gpt4T): parts = dspy.Predict(Template2Signature)(template=template)
 
-        inputs = {k.strip(): InputField() for k in parts.input_keys.split(',')}
-        outputs = {k.strip(): OutputField() for k in parts.output_key.split(',')}
+        inputs = {k.strip(): OldInputField() for k in parts.input_keys.split(',')}
+        outputs = {k.strip(): OldOutputField() for k in parts.output_key.split(',')}
 
         for k, v in inputs.items():
             v.finalize(k, infer_prefix(k))  # TODO: Generate from the template at dspy.Predict(Template2Signature)

@@ -10,7 +10,7 @@ devset = [x.without('id', 'type').with_inputs('question') for x in dataset.dev]
 valset, devset = devset[:50], devset[50:]
 
 
-# Define the signature for autoamtic assessments.
+# Define the signature for automatic assessments.
 class Assess(dspy.Signature):
     """Assess the quality of a tweet along the specified dimension."""
 
@@ -38,7 +38,7 @@ def metric(gold, pred, trace=None):
         correct =  dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=correct)
         engaging = dspy.Predict(Assess)(context='N/A', assessed_text=tweet, assessment_question=engaging)
 
-    correct, engaging, faithful = [m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful]]
+    correct, engaging, faithful = (m.assessment_answer.split()[0].lower() == 'yes' for m in [correct, engaging, faithful])
     score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
     if METRIC is not None:
