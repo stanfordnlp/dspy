@@ -32,8 +32,11 @@ setup(
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "myscale":["clickhouse-connect"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
+        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
+        "myscale":["clickhouse-connect"],
         "groq": ["groq~=0.8.0"],
     },	
     classifiers=[	
