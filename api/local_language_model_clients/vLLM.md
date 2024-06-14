@@ -20,7 +20,7 @@ This will launch the vLLM server.
 
 After setting up the vLLM server and ensuring that it displays "Connected" when it's running, you can interact with it using the `HFClientVLLM`.
 
-Initialize the `OpenAI` within your program with the desired parameters as the vLLM using OpenAI API server as show above. Here is an example call:
+Initialize the `OpenAI` within your program with the desired parameters as the vLLM using OpenAI API server as shown above. Here is an example call:
 
 ```python
    lm = dspy.OpenAI(model="mosaicml/mpt-7b", api_base="http://localhost:8000/v1/", api_key="EMPTY")
