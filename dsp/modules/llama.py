@@ -1,18 +1,24 @@
 try:
+    import llama_cpp
     from llama_cpp import Llama
 except ImportError as exc:
     raise ModuleNotFoundError(
-        "You need to install llama_cpp library to use gguf models."
+        """You need to install llama_cpp library to use gguf models.
+        CPU - pip install llama-cpp-python
+        CUDA - pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/<cuda-version> e.g. cu121 for CUDA 12.1
+        METAL(Mac) - pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal
+        others: https://pypi.org/project/llama-cpp-python/""",
     ) from exc
 
-from dsp.modules.lm import LM
 from typing import Any, Literal
+
+from dsp.modules.lm import LM
 
 
 class LlamaCpp(LM):
     def __init__(
             self,
-            model: str,
+            model: str, # "llama" or the actual model name
             llama_model: Llama,
             model_type: Literal["chat", "text"] = None,
             **kwargs,
