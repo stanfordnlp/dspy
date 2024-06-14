@@ -1,11 +1,14 @@
-from typing import Any, Optional, Literal
-import backoff
 import datetime
 import hashlib
+from typing import Any, Literal, Optional
+
+import backoff
+
 from dsp.modules.lm import LM
 
 try:
     import cohere
+
     cohere_api_error = cohere.errors.UnauthorizedError
 except ImportError:
     cohere_api_error = Exception
@@ -30,6 +33,7 @@ def post_request_metadata(model_name, prompt):
     hashlib.sha1().update(id_string.encode("utf-8"))
     id_hash = hashlib.sha1().hexdigest()
     return {"id": f"chatcmpl-{id_hash}", "object": "chat.completion", "created": int(timestamp), "model": model_name}
+
 
 def giveup_hdlr(details):
     """wrapper function that decides when to give up on retry"""
@@ -109,10 +113,12 @@ class Cohere(LM):
             kwargs.pop("n")
         response = self.co.chat(**kwargs)
         request_info = post_request_metadata(kwargs.get("model"), prompt)
-        request_info["choices"] = [{
+        request_info["choices"] = [
+            {
                 "index": 0,
                 "text": response.text,
-            }]
+            }
+        ]
         self.history.append(
             {
                 "prompt": prompt,
