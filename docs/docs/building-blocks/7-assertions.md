@@ -30,7 +30,7 @@ Specifically, when a constraint is not met:
     - Past Output: your model's past output that did not pass the validation_fn
     - Instruction: your user-defined feedback message on what went wrong and what possibly to fix
 
-If the error continues past the `max_backtracking_attempts`, then `dspy.Assert` will halt the pipeline execution, altering you with an `dspy.AssertionError`. This ensures your program doesn't continue executing with “bad” LM behavior and immediately highlights sample failure outputs for user assessment. 
+If the error continues past the `max_backtracking_attempts`, then `dspy.Assert` will halt the pipeline execution, alerting you with an `dspy.AssertionError`. This ensures your program doesn't continue executing with “bad” LM behavior and immediately highlights sample failure outputs for user assessment.
 
 - **dspy.Suggest vs. dspy.Assert**: `dspy.Suggest` on the other hand offers a softer approach. It maintains the same retry backtracking as `dspy.Assert` but instead serves as a gentle nudger. If the model outputs cannot pass the model constraints after the `max_backtracking_attempts`, `dspy.Suggest` will log the persistent failure and continue execution of the program on the rest of the data. This ensures the LM pipeline works in a "best-effort" manner without halting execution. 
 

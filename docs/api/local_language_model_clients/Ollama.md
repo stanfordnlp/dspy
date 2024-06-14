@@ -29,7 +29,7 @@ Here is the list of other models you can download:
 
 Run model: `ollama run`
 
-You can test a model by running the model with the `ollama run` command.
+You need to start the model server with the `ollama run` command.
 
 ```bash
 # run mistral
