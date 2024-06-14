@@ -66,6 +66,30 @@ Internally, the method handles the specifics of preparing the request prompt and
 - `prompt` (_str_): Prompt to send to PremAI.
 - `**kwargs`: Additional keyword arguments for completion request. Example: parameters like `temperature`, `max_tokens` etc. You can find all the additional kwargs [here](https://docs.premai.io/get-started/sdk#optional-parameters).
 
+### Prem Templates
+
+Writing Prompt Templates can be super messy. Prompt templates are long, hard to manage, and must be continuously tweaked to improve and keep the same throughout the application.
+
+With **Prem**, writing and managing prompts can be super easy. The **_Templates_** tab inside the [launchpad](https://docs.premai.io/get-started/launchpad) helps you write as many prompts you need and use it inside the SDK to make your application running using those prompts. You can read more about Prompt Templates [here](https://docs.premai.io/get-started/prem-templates).
+
+Using templates in DsPY is quite easy. First, here is an example of a prompt template which you store / re-iterate inside Prem.
+
+```text
+Say hello to my name and say a feel-good quote
+from my age. My name is: {name} and age is {age}
+```
+
+Assuming this prompt template is stored under a template with id: `78069ce8-xxxxx-xxxxx-xxxx-xxx` then this is how you will be using it.
+
+```python
+from dspy import PremAI
+
+client = PremAI(project_id=1234)
+template_id = "78069ce8-xxxxx-xxxxx-xxxx-xxx"
+
+response = c
+```
+
 ### Native RAG Support
 
 PremAI Repositories allow users to upload documents (.txt, .pdf, etc.) and connect those repositories to the LLMs to serve as vector databases and support native RAG. You can learn more about PremAI repositories [here](https://docs.premai.io/get-started/repositories).
