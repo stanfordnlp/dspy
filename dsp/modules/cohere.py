@@ -1,7 +1,7 @@
-from typing import Any, Optional
-
+from typing import Any, Optional, Literal
 import backoff
-
+import datetime
+import hashlib
 from dsp.modules.lm import LM
 
 try:
@@ -23,6 +23,14 @@ def backoff_hdlr(details):
     )
 
 
+def post_request_metadata(model_name, prompt):
+    """Creates a serialized request object for the Ollama API."""
+    timestamp = datetime.datetime.now().timestamp()
+    id_string = str(timestamp) + model_name + prompt
+    hashlib.sha1().update(id_string.encode("utf-8"))
+    id_hash = hashlib.sha1().hexdigest()
+    return {"id": f"chatcmpl-{id_hash}", "object": "chat.completion", "created": int(timestamp), "model": model_name}
+
 def giveup_hdlr(details):
     """wrapper function that decides when to give up on retry"""
     if "rate limits" in details.message:
@@ -41,6 +49,8 @@ class Cohere(LM):
         model: str = "command-r",
         api_key: Optional[str] = None,
         stop_sequences: list[str] = [],
+        provider: Literal["cohere", "bedrock", "sagemaker"] = "cohere",
+        region_name: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -54,17 +64,29 @@ class Cohere(LM):
             It can be obtained from https://dashboard.cohere.ai/register.
         stop_sequences : list of str
             Additional stop tokens to end generation.
+        provider : str
+            Which Cohere provider to use?
+            Choices are ["cohere", "bedrock", "sagemaker"]
+            If "cohere", the API key is required.
+            Other, the region name is required. Also, the AWS credentials must be set in the environment.
+        region_name : str
+            The region name for the AWS provider.
         **kwargs: dict
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        self.co = cohere.Client(api_key, client_name='dspy')
-        self.provider = "cohere"
+        self.provider = provider
+        if provider == "cohere":
+            self.co = cohere.Client(api_key)
+        elif provider == "bedrock":
+            self.co = cohere.BedrockClient(aws_region=region_name)
+        else:
+            self.co = cohere.SagemakerClient(aws_region=region_name)
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
             "max_tokens": 2000,
-            "p": 1,
+            "p": 0.99,
             "num_generations": 1,
             **kwargs,
         }
@@ -86,11 +108,15 @@ class Cohere(LM):
         if "n" in kwargs.keys():
             kwargs.pop("n")
         response = self.co.chat(**kwargs)
-
+        request_info = post_request_metadata(kwargs.get("model"), prompt)
+        request_info["choices"] = [{
+                "index": 0,
+                "text": response.text,
+            }]
         self.history.append(
             {
                 "prompt": prompt,
-                "response": response,
+                "response": request_info,
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
             },
