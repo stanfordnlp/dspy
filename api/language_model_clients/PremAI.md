@@ -74,10 +74,14 @@ With **Prem**, writing and managing prompts can be super easy. The **_Templates_
 
 Using templates in DsPY is quite easy. First, here is an example of a prompt template which you store / re-iterate inside Prem.
 
-```text
-Say hello to my name and say a feel-good quote
-from my age. My name is: {name} and age is {age}
+```python
+template = """
+Summarize the following content by creating a bullet point list and return it in json
+${content}
+"""
 ```
+
+**Please note:** This prompt template is something you do not define in your python code. This is an example of template which will be present in the Platform. All you need is a template id associated with the template.
 
 Assuming this prompt template is stored under a template with id: `78069ce8-xxxxx-xxxxx-xxxx-xxx` then this is how you will be using it.
 
@@ -87,8 +91,22 @@ from dspy import PremAI
 client = PremAI(project_id=1234)
 template_id = "78069ce8-xxxxx-xxxxx-xxxx-xxx"
 
-response = c
+msg = """
+I am playing in a garden on a fine sunday
+evening. I then went to my friend Tara's place
+and then went for movies in the city center mall.
+"""
+
+response = client(
+    prompt="some-random-dummy-text",
+    template_id=template_id,
+    params={"content": msg}
+)
+
+print(response)
 ```
+
+When you use templates, there is no need to place `msg` / prompt inside the `prompt` argument. DsPY only accepts string prompts to conduct LLM requests, but we might require multiple string inputs when using templates. Hence, provide those in the `params` argument, which should be mapped with the template variable. Our example template had one variable `content`, so our params become: `{"content": msg}`. You can provide multiple keys and values.
 
 ### Native RAG Support
 
