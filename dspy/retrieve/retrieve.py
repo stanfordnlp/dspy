@@ -70,7 +70,7 @@ class Retrieve(Parameter):
             return Prediction(passages=passages)
         else:
             passages = dsp.retrieveEnsemblewithMetadata(
-                queries, k=k, by_prob=by_prob, **kwargs
+                queries, k=k, by_prob=by_prob, **kwargs,
             )
             if isinstance(passages[0], List):
                 pred_returns = []
