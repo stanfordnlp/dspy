@@ -70,9 +70,9 @@ Internally, the method handles the specifics of preparing the request prompt and
 
 Writing Prompt Templates can be super messy. Prompt templates are long, hard to manage, and must be continuously tweaked to improve and keep the same throughout the application.
 
-With **Prem**, writing and managing prompts can be super easy. The **_Templates_** tab inside the [launchpad](https://docs.premai.io/get-started/launchpad) helps you write as many prompts you need and use it inside the SDK to make your application running using those prompts. You can read more about Prompt Templates [here](https://docs.premai.io/get-started/prem-templates).
+With **Prem**, writing and managing prompts can be super easy. The **_Templates_** tab inside the [launchpad](https://docs.premai.io/get-started/launchpad) helps you write as many prompts as you need and use it inside the SDK to make your application run using those prompts. You can read more about Prompt Templates [here](https://docs.premai.io/get-started/prem-templates).
 
-Using templates in DsPY is quite easy. First, here is an example of a prompt template which you store / re-iterate inside Prem.
+Using templates in DSPy is quite easy. First, here is an example of a prompt template that you store / re-iterate inside Prem.
 
 ```python
 template = """
@@ -81,9 +81,9 @@ ${content}
 """
 ```
 
-**Please note:** This prompt template is something you do not define in your python code. This is an example of template which will be present in the Platform. All you need is a template id associated with the template.
+**Please note:** Prompt templates are not defined in Python code. Here is an example of a Template, which has an associated template id.
 
-Assuming this prompt template is stored under a template with id: `78069ce8-xxxxx-xxxxx-xxxx-xxx` then this is how you will be using it.
+Assuming this prompt template is stored under a template with id: `78069ce8-xxxxx-xxxxx-xxxx-xxx`:
 
 ```python
 from dspy import PremAI
@@ -106,7 +106,7 @@ response = client(
 print(response)
 ```
 
-When you use templates, there is no need to place `msg` / prompt inside the `prompt` argument. DsPY only accepts string prompts to conduct LLM requests, but we might require multiple string inputs when using templates. Hence, provide those in the `params` argument, which should be mapped with the template variable. Our example template had one variable `content`, so our params become: `{"content": msg}`. You can provide multiple keys and values.
+When you use templates, there is no need to place `msg` / prompt inside the `prompt` argument. DSPy only accepts string prompts to conduct LLM requests, but we might require multiple string inputs when using templates. Templates allow you to provide additional inputs (key:value pairs) within the `params` argument, which should be mapped with the template variable. Our example template had one variable `content`, so our params become: `{"content": msg}`.
 
 ### Native RAG Support
 
