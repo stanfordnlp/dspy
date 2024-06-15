@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import dspy
 from dsp.utils import dotdict
@@ -61,7 +61,7 @@ class WeaviateRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None, **kwargs) -> Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs) -> Prediction:
         """Search with Weaviate for self.k top passages for query or queries.
 
         Args:
