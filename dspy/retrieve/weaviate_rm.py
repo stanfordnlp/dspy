@@ -28,7 +28,7 @@ class WeaviateRM(dspy.Retrieve):
         ```python
         import weaviate
 
-        llm = dspy.OpenAI(model="gpt-3.5-turbo")
+        llm = dspy.Cohere(model="command-r-plus", api_key=api_key)
         weaviate_client = weaviate.connect_to_[local, wcs, custom, embedded]("your-path-here")
         retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
