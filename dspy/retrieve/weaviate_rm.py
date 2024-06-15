@@ -51,7 +51,7 @@ class WeaviateRM(dspy.Retrieve):
         self._weaviate_client = weaviate_client
         self._weaviate_collection_text_key = weaviate_collection_text_key
 
-        # Check the type of weaviate_client
+        # Check the type of weaviate_client (this is added to support v3 and v4)
         if hasattr(weaviate_client, "collections"):
             self._client_type = "WeaviateClient"
         elif hasattr(weaviate_client, "query"):
