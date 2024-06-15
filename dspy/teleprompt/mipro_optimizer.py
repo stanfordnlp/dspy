@@ -193,7 +193,7 @@ class MIPRO(Teleprompter):
             upper_lim = min(len(trainset), b + self.view_data_batch_size)
             output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(
                 prior_observations=observations,
-                examples="\n".join([example_stringify_fn(e) for e in trainset[0:upper_lim]]),
+                examples="\n".join([example_stringify_fn(e) for e in trainset[b:upper_lim]]),
             )
             iterations += 1
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
