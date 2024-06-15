@@ -7,7 +7,7 @@ import backoff
 import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
-from dsp.modules.lm import LM
+from dsp.modules.lm import IMG_DATA_KEY, LM
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -134,8 +134,23 @@ class AzureOpenAI(LM):
 
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
-            # caching mechanism requires hashable kwargs
-            messages = [{"role": "user", "content": prompt}]
+            content = prompt
+            # Add image data if provided in kwargs
+            if IMG_DATA_KEY in kwargs:
+                img_data = kwargs.pop(IMG_DATA_KEY)
+                content = [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{img_data}",
+                        },
+                    },
+                ]
+            messages = [{"role": "user", "content": content}]
             if self.system_prompt:
                 messages.insert(0, {"role": "system", "content": self.system_prompt})
 
