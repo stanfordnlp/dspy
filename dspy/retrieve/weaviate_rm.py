@@ -81,7 +81,7 @@ class WeaviateRM(dspy.Retrieve):
                 results = self._weaviate_client.collections.get(self._weaviate_collection_name).query.hybrid(
                     query=query,
                     limit=k,
-                    **kwargs
+                    **kwargs,
                 )
 
                 parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]
@@ -90,7 +90,7 @@ class WeaviateRM(dspy.Retrieve):
                 results = (
                     self._weaviate_client.query.get(
                         self._weaviate_collection_name,
-                        [self._weaviate_collection_text_key]
+                        [self._weaviate_collection_text_key],
                     )
                     .with_hybrid(query=query)
                     .with_limit(k)
