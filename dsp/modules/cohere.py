@@ -58,12 +58,12 @@ class Cohere(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        self.co = cohere.Client(api_key)
+        self.co = cohere.Client(api_key, client_name='dspy')
         self.provider = "cohere"
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": 2000,
             "p": 1,
             "num_generations": 1,
             **kwargs,

@@ -148,16 +148,49 @@ class HFClientVLLM(HFModel):
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-        
+     
+        list_of_elements_to_allow = [
+            "n",
+            "best_of",
+            "presence_penalty",
+            "frequency_penalty",
+            "repetition_penalty",
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "seed",
+            "use_beam_search",
+            "length_penalty",
+            "early_stopping",
+            "stop",
+            "stop_token_ids",
+            "include_stop_str_in_output",
+            "ignore_eos",
+            "max_tokens",
+            "min_tokens",
+            "logprobs",
+            "prompt_logprobs",
+            "detokenize",
+            "skip_special_tokens",
+            "spaces_between_special_tokens",
+            "logits_processors",
+            "truncate_prompt_tokens",
+        ]
+        req_kwargs = {
+            k: v for k, v in kwargs.items() if k in list_of_elements_to_allow
+        }
+   
         if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt",None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
+            
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
-                **kwargs,
+                **req_kwargs,
             }
             response = send_hfvllm_request_v01_wrapped(
                 f"{url}/v1/chat/completions",
@@ -183,7 +216,7 @@ class HFClientVLLM(HFModel):
             payload = {
                 "model": self.kwargs["model"],
                 "prompt": prompt,
-                **kwargs,
+                **req_kwargs,
             }
 
             response = send_hfvllm_request_v01_wrapped(
@@ -274,11 +307,13 @@ class HFServerTGI:
         docker_process.wait()
 
 class Together(HFModel):
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, api_base="https://api.together.xyz/v1", api_key=None, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = os.getenv("TOGETHER_API_BASE")
-        self.token = os.getenv("TOGETHER_API_KEY")
+        self.api_base = os.getenv("TOGETHER_API_BASE") or api_base
+        assert not self.api_base.endswith("/"), "Together base URL shouldn't end with /"
+        self.token = os.getenv("TOGETHER_API_KEY") or api_key
+
         self.model = model
 
         self.use_inst_template = False
@@ -305,8 +340,6 @@ class Together(HFModel):
         on_backoff=backoff_hdlr,
     )
     def _generate(self, prompt, use_chat_api=False, **kwargs):
-        url = f"{self.api_base}"
-
         kwargs = {**self.kwargs, **kwargs}
 
         stop = kwargs.get("stop")
@@ -334,6 +367,7 @@ class Together(HFModel):
                 "stop": stop,
             }
         else:
+            url = f"{self.api_base}/completions"
             body = {
                 "model": self.model,
                 "prompt": prompt,
@@ -351,9 +385,9 @@ class Together(HFModel):
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
                 if use_chat_api:
-                    completions = [resp_json['output'].get('choices', [])[0].get('message', {}).get('content', "")]
+                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
                 else:
-                    completions = [resp_json['output'].get('choices', [])[0].get('text', "")]
+                    completions = [resp_json.get('choices', [])[0].get('text', "")]
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
         except Exception as e:
@@ -364,11 +398,12 @@ class Together(HFModel):
 
 
 class Anyscale(HFModel):
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, api_base="https://api.endpoints.anyscale.com/v1", api_key=None, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = os.getenv("ANYSCALE_API_BASE")
-        self.token = os.getenv("ANYSCALE_API_KEY")
+        self.api_base = os.getenv("ANYSCALE_API_BASE") or api_base
+        assert not self.api_base.endswith("/"), "Anyscale base URL shouldn't end with /"
+        self.token = os.getenv("ANYSCALE_API_KEY") or api_key
         self.model = model
         self.kwargs = {
             "temperature": 0.0,

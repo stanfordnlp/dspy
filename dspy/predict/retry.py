@@ -10,16 +10,17 @@ class Retry(Predict):
     def __init__(self, module):
         super().__init__(module.signature)
         self.module = module
-        self.original_signature = module.signature
+        self.original_signature = module.extended_signature if isinstance(module, dspy.ChainOfThought) else module.signature
         self.original_forward = module.forward
         self.new_signature = self._create_new_signature(self.original_signature)
 
     def _create_new_signature(self, signature):
         # Add "Past" input fields for each output field
         for key, value in signature.output_fields.items():
+            actual_prefix = value.json_schema_extra["prefix"].split(":")[0] + ":"
             signature = signature.append(f"past_{key}", dspy.InputField(
-                prefix="Past " + value.json_schema_extra["prefix"],
-                desc="past output with errors",
+                prefix="Previous " + actual_prefix,
+                desc=f"past {actual_prefix} with errors",
                 format=value.json_schema_extra.get("format"),
             ))
 

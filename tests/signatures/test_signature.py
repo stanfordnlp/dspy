@@ -183,7 +183,8 @@ def test_insantiating2():
 def test_multiline_instructions():
     class MySignature(Signature):
         """First line
-        Second line"""
+        Second line
+            Third line"""
 
         output = OutputField()
 
@@ -195,7 +196,8 @@ def test_multiline_instructions():
 
     assert lm.get_convo(-1) == textwrap.dedent("""\
         First line
-                Second line
+        Second line
+            Third line
         
         ---
         
