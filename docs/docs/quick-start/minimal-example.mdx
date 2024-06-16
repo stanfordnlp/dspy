@@ -18,11 +18,11 @@ Before we jump into the example, let's ensure our environment is properly config
 import dspy
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
-# Set up the LM
+# Set up the LM.
 turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
 dspy.settings.configure(lm=turbo)
 
-# Load math questions from the GSM8K dataset
+# Load math questions from the GSM8K dataset.
 gsm8k = GSM8K()
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 ```
@@ -33,7 +33,7 @@ Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
 print(gsm8k_trainset)
 ```
 
-The `gsm8k_trainset` and `gsm8k_devset` datasets contain a list of Examples with each example having `question` and `answer` field.
+The `gsm8k_trainset` and `gsm8k_devset` datasets contain lists of examples, with each example having `question` and `answer` field.
 
 ## Define the Module
 
@@ -64,7 +64,7 @@ teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
 optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
 ```
 
-Note that BootstrapFewShot is not an optimizing teleprompter, i.e. it simple creates and validates examples for steps of the pipeline (in this case, the chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
+Note that `BootstrapFewShot` is not an optimizing teleprompter, i.e. it simply creates and validates examples for steps of the pipeline (in this case, chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
 
 ## Evaluate
 
