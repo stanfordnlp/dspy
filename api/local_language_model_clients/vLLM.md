@@ -20,12 +20,21 @@ This will launch the vLLM server.
 
 After setting up the vLLM server and ensuring that it displays "Connected" when it's running, you can interact with it using the `HFClientVLLM`.
 
-Initialize the `OpenAI` within your program with the desired parameters as the vLLM using OpenAI API server as shown above. Here is an example call:
+Initialize the `HFClientVLLM` within your program with the desired parameters. Here is an example call:
+
+```python
+   lm = dspy.HFClientVLLM(model="mosaicml/mpt-7b", port=8000, url="http://localhost")
+```
+Customize the `model`, `port`, `url`, and `max_tokens` according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
+
+Please refer to the [official vLLM repository](https://github.com/vllm-project/vllm) for more detailed information and documentation.
+
+### Sending requests to the server through API similar to OpenAI with vLLM
+
+Initialize the `OpenAI` within your program with the desired parameters if the vLLM using OpenAI API server as shown above. Here is an example call:
 
 ```python
    lm = dspy.OpenAI(model="mosaicml/mpt-7b", api_base="http://localhost:8000/v1/", api_key="EMPTY")
 ```
 
-Customize the `model`, `port`, `url`, and `max_tokens` according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
-
-Please refer to the [official vLLM repository](https://github.com/vllm-project/vllm) for more detailed information and documentation.
+Similarly, customize the `model`, `port`, `url`, and `max_tokens` according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
