@@ -29,12 +29,12 @@ Customize the `model`, `port`, `url`, and `max_tokens` according to your require
 
 Please refer to the [official vLLM repository](https://github.com/vllm-project/vllm) for more detailed information and documentation.
 
-### Sending requests to the server through API similar to OpenAI with vLLM
+### Sending requests to vLLM server using [dspy.OpenAI](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI)
 
-Initialize the `OpenAI` within your program with the desired parameters if the vLLM using OpenAI API server as shown above. Here is an example call:
+Query the vLLM server using OpenAI SDK through [`dspy.OpenAI`](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI) with your desired parameters. Here is an example call:
 
 ```python
    lm = dspy.OpenAI(model="mosaicml/mpt-7b", api_base="http://localhost:8000/v1/", api_key="EMPTY")
 ```
 
-Similarly, customize the `model`, `port`, `url`, and `max_tokens` according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
+Similarly, customize the `model`, `port`, `url` (vLLM arguments), along with the remaining OpenAI client arguments according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
