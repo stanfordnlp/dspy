@@ -1,8 +1,8 @@
 ---
-sidebar_position: 5
+sidebar_position: 8
 ---
 
-# dspy.RAGatouilleRM
+# retrieve.RAGatouilleRM
 
 ### Constructor
 

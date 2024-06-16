@@ -1,8 +1,9 @@
 ---
-sidebar_position: 8
+sidebar_position: 6
 ---
 
 # retrieve.MyScaleRM
+
 ## Constructor
 
 Initializes an instance of the `MyScaleRM` class, which is designed to use MyScaleDB (a ClickHouse fork optimized for vector similarity and full-text search) to retrieve documents based on query embeddings. This class supports embedding generation using either local models or OpenAI's API and manages database interactions efficiently.

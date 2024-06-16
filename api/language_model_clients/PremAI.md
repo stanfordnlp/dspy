@@ -2,7 +2,7 @@
 sidebar_position: 5
 ---
 
-# dsp.PremAI
+# dspy.PremAI
 
 [PremAI](https://app.premai.io)  is an all-in-one platform that simplifies the process of creating robust, production-ready applications powered by Generative AI. By streamlining the development process, PremAI allows you to concentrate on enhancing user experience and driving overall growth for your application.
 
@@ -18,7 +18,7 @@ Please make sure you have premai python sdk installed. Otherwise you can do it u
 pip install -U premai
 ```
 
-Here is a quick example on how to use premai python sdk with dspy
+Here is a quick example on how to use premai python sdk with DSPy
 
 ```python
 from dspy import PremAI
