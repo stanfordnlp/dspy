@@ -25,7 +25,16 @@ Initialize the `HFClientVLLM` within your program with the desired parameters. H
 ```python
    lm = dspy.HFClientVLLM(model="mosaicml/mpt-7b", port=8000, url="http://localhost")
 ```
-
 Customize the `model`, `port`, `url`, and `max_tokens` according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.
 
 Please refer to the [official vLLM repository](https://github.com/vllm-project/vllm) for more detailed information and documentation.
+
+### Sending requests to vLLM server using [dspy.OpenAI](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI)
+
+Query the vLLM server using OpenAI SDK through [`dspy.OpenAI`](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI) with your desired parameters. Here is an example call:
+
+```python
+   lm = dspy.OpenAI(model="mosaicml/mpt-7b", api_base="http://localhost:8000/v1/", api_key="EMPTY")
+```
+
+Similarly, customize the `model`, `port`, `url` (vLLM arguments), along with the remaining OpenAI client arguments according to your requirements. The `model` parameter should be set to the specific Hugging Face model ID you wish to use.

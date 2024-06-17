@@ -1,4 +1,8 @@
-# Watsonx Usage Guide
+---
+sidebar_position: 12
+---
+
+# dspy.Watsonx
 
 This guide provides instructions on how to use the `Watsonx` class to interact with  IBM Watsonx.ai API for text and code generation.
 
