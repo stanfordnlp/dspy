@@ -1,10 +1,11 @@
 import textwrap
-import pytest
-import pydantic
-from dspy import Signature, infer_prefix, InputField, OutputField
 from typing import List
 
+import pydantic
+import pytest
+
 import dspy
+from dspy import InputField, OutputField, Signature, infer_prefix
 from dspy.utils.dummies import DummyLM
 
 
@@ -194,17 +195,63 @@ def test_multiline_instructions():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
         First line
         Second line
             Third line
-        
+
         ---
-        
+
         Follow the following format.
-        
+
         Output: ${output}
-        
+
         ---
-        
-        Output: short answer""")
+
+        Output: short answer"""
+    )
+
+
+def test_replaced_by_replace_context_manager():
+    class SignatureOne(Signature):
+        input1 = InputField()
+        output = OutputField()
+
+    class SignatureTwo(Signature):
+        input2 = InputField()
+        output = OutputField()
+
+    with SignatureOne.replace(SignatureTwo, validate_new_signature=False):
+        # assert SignatureOne.input_fields has been replaced with SignatureTwo.input_fields
+        assert "input2" in SignatureOne.input_fields
+    # after the context manager, the original input_fields should be restored
+    assert SignatureOne.input_fields["input1"].json_schema_extra["prefix"] == "Input 1:"
+
+
+def test_multiple_replaced_by_update_signatures():
+    class SignatureOne(Signature):
+        input1 = InputField()
+        output = OutputField()
+
+    class SignatureTwo(Signature):
+        input2 = InputField()
+        output = OutputField()
+
+    class SignatureThree(Signature):
+        input3 = InputField()
+        output = OutputField()
+
+    class SignatureFour(Signature):
+        input4 = InputField()
+        output = OutputField()
+
+    signature_map = {
+        SignatureOne: SignatureThree,
+        SignatureTwo: SignatureFour,
+    }
+    with dspy.update_signatures(signature_map, validate_new_signature=False):
+        assert "input3" in SignatureOne.input_fields
+        assert "input4" in SignatureTwo.input_fields
+    assert "input1" in SignatureOne.input_fields
+    assert "input2" in SignatureTwo.input_fields
