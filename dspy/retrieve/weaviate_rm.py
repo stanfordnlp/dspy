@@ -32,6 +32,9 @@ class WeaviateRM(dspy.Retrieve):
         weaviate_client = weaviate.connect_to_[local, wcs, custom, embedded]("your-path-here")
         retriever_model = WeaviateRM("my_collection_name", weaviate_client=weaviate_client)
         dspy.settings.configure(lm=llm, rm=retriever_model)
+
+        retrieve = dspy.Retrieve(k=1)
+        topK_passages = retrieve("what are the stages in planning, sanctioning and execution of public works").passages
         ```
 
         Below is a code snippet that shows how to use Weaviate in the forward() function of a module
