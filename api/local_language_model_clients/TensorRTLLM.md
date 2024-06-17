@@ -1,17 +1,17 @@
 # dspy.TensorRTModel
 
-TensorRT LLM by Nvidia happens to be one of the most optimized inference engines to run open-source Large Language Models locally or in production. 
+TensorRT LLM by Nvidia happens to be one of the most optimized inference engines to run open-source Large Language Models locally or in production.
 
 ### Prerequisites
 
-Install TensorRT LLM by the following instructions [here](https://nvidia.github.io/TensorRT-LLM/installation/linux.html). You need to install `dspy` inside the same Docker environment in which `tensorrt` is installed. 
+Install TensorRT LLM by the following instructions [here](https://nvidia.github.io/TensorRT-LLM/installation/linux.html). You need to install `dspy` inside the same Docker environment in which `tensorrt` is installed.
 
 In order to use this module, you should have the model weights file in engine format. To understand how we convert weights in torch (from HuggingFace models) to TensorRT engine format, you can check out [this documentation](https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/llama#build-tensorrt-engines).
 
 ### Running TensorRT model inside dspy
 
 ```python
-from dsp.modules.tensorrt import TensorRTModel
+from dspy import TensorRTModel
 
 engine_dir = "<your-path-to-engine-dir>"
 model_name_or_path = "<hf-model-id-or-path-to-tokenizer>"
@@ -35,9 +35,7 @@ If `use_py_session` is set to `False`, the following kwargs are supported (This 
 - **max_attention_window_size** (`int`, optional): The attention window size that controls the sliding window attention / cyclic KV cache behavior. Defaults to `None`.
 - **sink_token_length** (`int`, optional): The sink token length. Defaults to `1`.
 
-
 > Please note that you need to complete the build processes properly before applying these customizations, because a lot of customization depends on how the model engine was built. You can learn more [here](https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/llama#build-tensorrt-engines).
-
 
 Now to run the model, we need to add the following code:
 
@@ -61,6 +59,7 @@ print(response)
 ```
 
 Output:
+
 ```
 [" Hello! It's nice to meet you. Is there something I can help you with or would you like to chat?"]
 ```
