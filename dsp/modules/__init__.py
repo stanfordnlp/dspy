@@ -9,7 +9,7 @@ from .cache_utils import *
 from .clarifai import *
 from .cloudflare import *
 from .cohere import *
-from .colbertv2 import ColBERTv2
+from .colbertv2 import ColBERTv2, ColBERTv2RerankerLocal, ColBERTv2RetrieverLocal
 from .databricks import *
 from .dummy_lm import *
 from .google import *

@@ -8,7 +8,7 @@ sidebar_position: 4
 
 #### `def cot(func) -> dspy.Module`
 
-The `@cot` decorator is used to create a Chain of Thoughts module based on the provided function. It automatically generates a `dspy.TypedPredictor` and from the function's type annotations and docstring. Similar to predictor, but adds a "Reasoning" output field to capture the model's step-by-step thinking.
+The `@cot` decorator is used to create a Chain of Thoughts module based on the provided function. It automatically generates a `dspy.TypedPredictor` from the function's type annotations and docstring. Similar to predictor, but adds a "Reasoning" output field to capture the model's step-by-step thinking.
 
 * **Input**: Function with input parameters and return type annotation.
 * **Output**: A dspy.Module instance capable of making predictions.
