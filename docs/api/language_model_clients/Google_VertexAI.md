@@ -1,4 +1,8 @@
-# GoogleVertexAI Usage Guide
+---
+sidebar_position: 11
+---
+
+# dspy.GoogleVertexAI
 
 This guide provides instructions on how to use the `GoogleVertexAI` class to interact with Google Vertex AI's API for text and code generation.
 
