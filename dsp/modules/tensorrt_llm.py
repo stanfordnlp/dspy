@@ -132,7 +132,7 @@ class TensorRTModel(LM):
         self.runner, self._runner_kwargs = load_tensorrt_model(engine_dir=self.engine_dir, **engine_kwargs)
         self.history: list[dict[str, Any]] = []
 
-    def _generate(self, prompt: Union[list[dict[str, str]], str], **kwargs) -> list[str]:
+    def _generate(self, prompt: Union[list[dict[str, str]], str], **kwargs: dict) -> tuple[list[str], dict]:
         import torch
 
         input_ids = tokenize(prompt=prompt, tokenizer=self.tokenizer, **kwargs)
@@ -173,7 +173,7 @@ class TensorRTModel(LM):
         output_ids, sequence_lengths = outputs["output_ids"], outputs["sequence_lengths"]
 
         # In case of current version of dspy it will always stay as 1
-        batch_size, num_beams, _ = output_ids.size()
+        _, num_beams, _ = output_ids.size()
         batch_idx, beams = 0, []
 
         for beam in range(num_beams):
@@ -185,7 +185,7 @@ class TensorRTModel(LM):
 
         return beams, run_kwargs
 
-    def basic_request(self, prompt, **kwargs) -> list[str]:
+    def basic_request(self, prompt, **kwargs: dict) -> list[str]:
         raw_kwargs = kwargs
         response, all_kwargs = self._generate(prompt, **kwargs)
         history = {
