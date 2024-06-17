@@ -6,7 +6,7 @@ sidebar_position: 11
 
 ### Constructor
 
-Initialize an instance of the `YouRM` class that calls the [You.com APIs](https://documentation.you.com/api-reference/) for web-based document retrieval. Options available are the "Search" and "News" APIs.
+Initialize an instance of the `YouRM` class that calls the [You.com APIs](https://documentation.you.com/api-reference/search) for web-based document retrieval. Options available are the "Search" and "News" APIs.
 
 ```python
 YouRM(
