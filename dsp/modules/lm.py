@@ -48,7 +48,7 @@ class LM(ABC):
             if prompt != last_prompt:
                 if provider in (
                     "clarifai",
-                    "cloudflare"
+                    "cloudflare",
                     "google",
                     "groq",
                     "Bedrock",
