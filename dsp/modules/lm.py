@@ -54,6 +54,7 @@ class LM(ABC):
                     "Bedrock",
                     "Sagemaker",
                     "premai",
+                    "tensorrt_llm"
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
@@ -86,7 +87,7 @@ class LM(ABC):
             printing_value += prompt
 
             text = ""
-            if provider in ("cohere", "Bedrock", "Sagemaker", "clarifai", "claude", "ibm", "premai"):
+            if provider in ("cohere", "Bedrock", "Sagemaker", "clarifai", "claude", "ibm", "premai", "tensorrt_llm"):
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
