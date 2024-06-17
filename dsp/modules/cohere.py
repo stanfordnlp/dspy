@@ -63,7 +63,7 @@ class Cohere(LM):
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": 2000,
             "p": 1,
             "num_generations": 1,
             **kwargs,

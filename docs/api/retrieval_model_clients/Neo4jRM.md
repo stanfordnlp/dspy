@@ -1,3 +1,6 @@
+---
+sidebar_position: 7
+---
 
 # retrieve.neo4j_rm
 
