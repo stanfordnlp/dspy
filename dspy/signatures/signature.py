@@ -3,6 +3,7 @@ import inspect
 import re
 import types
 import typing
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
 
@@ -78,7 +79,8 @@ class SignatureMeta(type(BaseModel)):
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field '{name}' in '{cls.__name__}' must be declared with InputField or OutputField. {field.json_schema_extra=}",
+                    f"Field '{name}' in '{cls.__name__}' must be declared with "
+                    "InputField or OutputField. {field.json_schema_extra=}",
                 )
 
     @property
@@ -199,12 +201,61 @@ class SignatureMeta(type(BaseModel)):
 #
 # For compatibility with the legacy dsp format, you can use the signature_to_template function.
 #
+
+
 class Signature(BaseModel, metaclass=SignatureMeta):
     ""  # noqa: D419
 
     # Note: Don't put a docstring here, as it will become the default instructions
     # for any signature that doesn't define it's own instructions.
     pass
+
+    @classmethod
+    @contextmanager
+    def replace(
+        cls: "Signature",
+        new_signature: "Signature",
+        validate_new_signature: bool = True,
+    ) -> typing.Generator[None, None, None]:
+        """Replace the signature with an updated version.
+
+        This is useful for updating the internal signatures of dspy
+
+        Args:
+            new_signature: The new signature to replace the old one with.
+            validate_new_signature: Whether to validate the new signature against the old one
+                to ensure that no fields are missing.
+        """
+        if validate_new_signature:
+            for field in cls.model_fields:
+                if field not in new_signature.model_fields:
+                    raise ValueError(
+                        f"Field '{field}' is missing from the updated signature '{new_signature.__class__}.",
+                    )
+
+        class OldSignature(cls, Signature):
+            pass
+
+        replace_fields = ["__doc__", "model_fields", "model_extra", "model_config"]
+        for field in replace_fields:
+            setattr(cls, field, getattr(new_signature, field))
+        cls.model_rebuild(force=True)
+        yield
+        for field in replace_fields:
+            setattr(cls, field, getattr(OldSignature, field))
+        cls.model_rebuild(force=True)
+
+
+@contextmanager
+def update_signatures(
+    signature_map: Dict[Type[Signature], Type[Signature]],
+    validate_new_signature: bool = True,
+) -> typing.Generator[None, None, None]:
+    """Replace multiple signatures with updated versions, according to a mapping between the old and new signatures."""
+    with ExitStack() as stack:
+        for old_signature, new_signature in signature_map.items():
+            stack.enter_context(old_signature.replace(new_signature, validate_new_signature=validate_new_signature))
+        yield
 
 
 def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
@@ -218,9 +269,9 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 
 def make_signature(
-        signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-        instructions: str = None,
-        signature_name: str = "StringSignature",
+    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
+    instructions: str = None,
+    signature_name: str = "StringSignature",
 ) -> Type[Signature]:
     """Create a new Signature type with the given fields and instructions.
 
@@ -334,11 +385,10 @@ def _parse_type_node(node, names=None) -> Any:
         elts = node.elts
         return tuple(_parse_type_node(elt, names) for elt in elts)
 
-    if isinstance(node, ast.Call):
-        if node.func.id == "Field":
-            keys = [kw.arg for kw in node.keywords]
-            values = [kw.value.value for kw in node.keywords]
-            return Field(**dict(zip(keys, values)))
+    if isinstance(node, ast.Call) and node.func.id == "Field":
+        keys = [kw.arg for kw in node.keywords]
+        values = [kw.value.value for kw in node.keywords]
+        return Field(**dict(zip(keys, values)))
 
     raise ValueError(f"Code is not syntactically valid: {node}")
 

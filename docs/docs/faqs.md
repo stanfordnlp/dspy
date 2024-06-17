@@ -81,13 +81,16 @@ Exporting DSPy programs is simply saving them as highlighted above!
 
 - **How do I search my own data?**
 
-Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embdeed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
+Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
 
 - **How do I turn off the cache? How do I export the cache?**
 
 You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/stanfordnlp/dspy/blob/main/dsp/modules/cache_utils.py#L9) environment variable to `False`, which disables the `cache_turn_on` flag.
 
-Your local cache will be saved to the global env directory `os.environ["DSP_NOTEBOOK_CACHEDIR"]` which you can usually set to `os.path.join(repo_path, 'cache')` and export this cache from here.
+Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here:
+```python
+os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
+```
 
 
 ## Advanced Usage
