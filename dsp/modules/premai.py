@@ -143,6 +143,9 @@ class PremAI(LM):
                     "params": params,
                 },
             ]
+            kwargs["template_id"] = all_kwargs.get("template_id", None)
+            kwargs["params"] = all_kwargs.get("params", None)
+
             all_kwargs.pop("template_id")
             all_kwargs.pop("params")
 
