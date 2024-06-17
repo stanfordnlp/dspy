@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # dspy.PremAI
 
-[PremAI](https://app.premai.io)  is an all-in-one platform that simplifies the process of creating robust, production-ready applications powered by Generative AI. By streamlining the development process, PremAI allows you to concentrate on enhancing user experience and driving overall growth for your application.
+[PremAI](https://app.premai.io) is an all-in-one platform that simplifies the process of creating robust, production-ready applications powered by Generative AI. By streamlining the development process, PremAI allows you to concentrate on enhancing user experience and driving overall growth for your application.
 
 ### Prerequisites
 
@@ -66,11 +66,53 @@ Internally, the method handles the specifics of preparing the request prompt and
 - `prompt` (_str_): Prompt to send to PremAI.
 - `**kwargs`: Additional keyword arguments for completion request. Example: parameters like `temperature`, `max_tokens` etc. You can find all the additional kwargs [here](https://docs.premai.io/get-started/sdk#optional-parameters).
 
+### Prem Templates
+
+Writing Prompt Templates can be super messy. Prompt templates are long, hard to manage, and must be continuously tweaked to improve and keep the same throughout the application.
+
+With **Prem**, writing and managing prompts can be super easy. The **_Templates_** tab inside the [launchpad](https://docs.premai.io/get-started/launchpad) helps you write as many prompts as you need and use it inside the SDK to make your application run using those prompts. You can read more about Prompt Templates [here](https://docs.premai.io/get-started/prem-templates).
+
+Using templates in DSPy is quite easy. First, here is an example of a prompt template that you store / re-iterate inside Prem.
+
+```python
+template = """
+Summarize the following content by creating a bullet point list and return it in json
+${content}
+"""
+```
+
+**Please note:** Prompt templates are not defined in Python code. Here is an example of a Template, which has an associated template id.
+
+Assuming this prompt template is stored under a template with id: `78069ce8-xxxxx-xxxxx-xxxx-xxx`:
+
+```python
+from dspy import PremAI
+
+client = PremAI(project_id=1234)
+template_id = "78069ce8-xxxxx-xxxxx-xxxx-xxx"
+
+msg = """
+I am playing in a garden on a fine sunday
+evening. I then went to my friend Tara's place
+and then went for movies in the city center mall.
+"""
+
+response = client(
+    prompt="some-random-dummy-text",
+    template_id=template_id,
+    params={"content": msg}
+)
+
+print(response)
+```
+
+When you use templates, there is no need to place `msg` / prompt inside the `prompt` argument. DSPy only accepts string prompts to conduct LLM requests, but we might require multiple string inputs when using templates. Templates allow you to provide additional inputs (key:value pairs) within the `params` argument, which should be mapped with the template variable. Our example template had one variable `content`, so our params become: `{"content": msg}`.
+
 ### Native RAG Support
 
 PremAI Repositories allow users to upload documents (.txt, .pdf, etc.) and connect those repositories to the LLMs to serve as vector databases and support native RAG. You can learn more about PremAI repositories [here](https://docs.premai.io/get-started/repositories).
 
-Repositories are also supported through the dspy-premai integration. Here is how you can use this workflow: 
+Repositories are also supported through the dspy-premai integration. Here is how you can use this workflow:
 
 ```python
 query = "what is the diameter of individual Galaxy"
@@ -82,13 +124,13 @@ repositories = dict(
 )
 ```
 
-First, we start by defining our repository with some valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories). 
+First, we start by defining our repository with some valid repository ids. You can learn more about how to get the repository id [here](https://docs.premai.io/get-started/repositories).
 
-> Note: This is similar to LM integrations where now you are overriding the repositories connected in the launchpad when you invoke the argument' repositories'. 
+> Note: This is similar to LM integrations where now you are overriding the repositories connected in the launchpad when you invoke the argument' repositories'.
 
-Now, we connect the repository with our chat object to invoke RAG-based generations. 
+Now, we connect the repository with our chat object to invoke RAG-based generations.
 
-```python 
+```python
 response = llm(query, max_tokens=100, repositories=repositories)
 
 print(response)
@@ -96,7 +138,7 @@ print("---")
 print(json.dumps(llm.history, indent=4))
 ```
 
-Here is what an example generation would look like with PremAI Repositories. 
+Here is what an example generation would look like with PremAI Repositories.
 
 ```bash
 'The diameters of individual galaxies range from 80,000-150,000 light-years.'
@@ -113,23 +155,7 @@ Here is what an example generation would look like with PremAI Repositories.
                 "document_name": "Kegy 202 Chapter 2",
                 "similarity_score": 0.586126983165741,
                 "content": "n thousands\n                                                                                                                                               of           light-years. The diameters of individual\n                                                                                                                                               galaxies range from 80,000-150,000 light\n                                                                                                                       "
-            },
-            {
-                "repository_id": 1991,
-                "document_id": 1307,
-                "chunk_id": 173925,
-                "document_name": "Kegy 202 Chapter 2",
-                "similarity_score": 0.4815782308578491,
-                "content": "                                                for development of galaxies. A galaxy contains\n                                                                                                                                               a large number of stars. Galaxies spread over\n                                                                                                                                               vast distances that are measured in thousands\n                                       "
-            },
-            {
-                "repository_id": 1991,
-                "document_id": 1307,
-                "chunk_id": 173916,
-                "document_name": "Kegy 202 Chapter 2",
-                "similarity_score": 0.38112708926200867,
-                "content": " was separated from the               from each other as the balloon expands.\n  solar surface. As the passing star moved away,             Similarly, the distance between the galaxies is\n  the material separated from the solar surface\n  continued to revolve around the sun and it\n  slowly condensed into planets. Sir James Jeans\n  and later Sir Harold Jeffrey supported thisnot to be republishedalso found to be increasing and thereby, the\n                                                             universe is"
-            }
+            },`
         ],
         "kwargs": {
             "max_tokens": 100,
@@ -157,4 +183,4 @@ Here is what an example generation would look like with PremAI Repositories.
 
 So this also means that you do not need to create your own RAG pipeline when using the PremAI Platform and can instead take advantage of its local RAG technology to deliver best-in-class performance for Retrieval Augmented Generations.
 
-> Ideally, you do not need to connect Repository IDs here to get Retrieval Augmented Generations. You can still get the same result if you have connected the repositories in PremAI platform. 
+> Ideally, you do not need to connect Repository IDs here to get Retrieval Augmented Generations. You can still get the same result if you have connected the repositories in PremAI platform.
