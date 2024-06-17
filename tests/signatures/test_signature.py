@@ -222,7 +222,7 @@ def test_replaced_by_replace_context_manager():
         input2 = InputField()
         output = OutputField()
 
-    with SignatureOne.replace(SignatureTwo, validate_new_signiture=False):
+    with SignatureOne.replace(SignatureTwo, validate_new_signature=False):
         # assert SignatureOne.input_fields has been replaced with SignatureTwo.input_fields
         assert "input2" in SignatureOne.input_fields
     # after the context manager, the original input_fields should be restored
@@ -250,7 +250,7 @@ def test_multiple_replaced_by_update_signatures():
         SignatureOne: SignatureThree,
         SignatureTwo: SignatureFour,
     }
-    with dspy.update_signatures(signature_map, validate_new_signiture=False):
+    with dspy.update_signatures(signature_map, validate_new_signature=False):
         assert "input3" in SignatureOne.input_fields
         assert "input4" in SignatureTwo.input_fields
     assert "input1" in SignatureOne.input_fields
