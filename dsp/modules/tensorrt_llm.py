@@ -130,7 +130,7 @@ class TensorRTModel(LM):
         # Configure TensorRT
         self.runtime_rank = tensorrt_llm.mpi_rank()
         self.runner, self._runner_kwargs = load_tensorrt_model(engine_dir=self.engine_dir, **engine_kwargs)
-        self.history = []
+        self.history: list[dict[str, Any]] = []
 
     def _generate(self, prompt: Union[list[dict[str, str]], str], **kwargs) -> list[str]:
         import torch
