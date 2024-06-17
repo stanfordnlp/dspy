@@ -1,9 +1,15 @@
 import abc
 from typing import List, Optional
-import boto3
 import numpy as np
 import openai
 
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    ERRORS = (ClientError,)
+
+except ImportError:
+    ERRORS = (Exception,)
 
 class BaseSentenceVectorizer(abc.ABC):
     '''
@@ -310,7 +316,7 @@ class AmazonBedrockVectorizer(BaseSentenceVectorizer):
                     "input_type": "search_document"
                 })
             else:
-                raise Exception("How did you even get here?")
+                raise Exception(f"Unexpected state: model_id '{self.model_id}' is not properly handled. Please check the implementation for supported models.")
                 
             
             # Invoke Bedrock API
@@ -327,7 +333,7 @@ class AmazonBedrockVectorizer(BaseSentenceVectorizer):
             elif self.model_id.startswith("amazon.titan-embed-text"):
                 cur_batch_embeddings = response_body['embedding']
             else:
-                raise Exception(f"Not implemented yet! Check the format of response for model {self.model_id}from the Amazon Bedrock documentation: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters.html")
+                raise Exception(f"Unexpected response format for model {self.model_id}. Check the Amazon Bedrock documentation for the correct response structure.")
             embeddings_list.extend(cur_batch_embeddings)
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
