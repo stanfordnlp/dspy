@@ -215,7 +215,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def replace(
         cls: "Signature",
         new_signature: "Signature",
-        validate_new_signiture: bool = True,
+        validate_new_signature: bool = True,
     ) -> typing.Generator[None, None, None]:
         """Replace the signature with an updated version.
 
@@ -223,14 +223,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Args:
             new_signature: The new signature to replace the old one with.
-            validate_new_signiture: Whether to validate the new signature against the old one
+            validate_new_signature: Whether to validate the new signature against the old one
                 to ensure that no fields are missing.
         """
-        if validate_new_signiture:
+        if validate_new_signature:
             for field in cls.model_fields:
                 if field not in new_signature.model_fields:
                     raise ValueError(
-                        f"Field '{field}' is missing from the updated signiture '{new_signature.__class__}.",
+                        f"Field '{field}' is missing from the updated signature '{new_signature.__class__}.",
                     )
 
         class OldSignature(cls, Signature):
@@ -249,12 +249,12 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 @contextmanager
 def update_signatures(
     signature_map: Dict[Type[Signature], Type[Signature]],
-    validate_new_signiture: bool = True,
+    validate_new_signature: bool = True,
 ) -> typing.Generator[None, None, None]:
     """Replace multiple signatures with updated versions, according to a mapping between the old and new signatures."""
     with ExitStack() as stack:
         for old_signature, new_signature in signature_map.items():
-            stack.enter_context(old_signature.replace(new_signature, validate_new_signiture=validate_new_signiture))
+            stack.enter_context(old_signature.replace(new_signature, validate_new_signature=validate_new_signature))
         yield
 
 
