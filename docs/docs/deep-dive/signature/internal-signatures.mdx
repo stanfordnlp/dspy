@@ -12,7 +12,7 @@ Sometimes, you may want to update the signature of a task to include instruction
 
 ## Updating Signatures
 
-To update a signature, you can use the `dspy.Signature.replace` context manager. This context manager allows you to replace the signature of a task with a new one. Here's an example of updating one of the signatures used in the Copro optimizer, to add additional instructions:
+To update a signature, you can use the `dspy.Signature.replace` context manager. This context manager allows you to replace the signature of a task with a new one. Here's an example of updating one of the signatures used in the Copro optimizer to add additional instructions:
 
 ```python
 from dspy.teleprompt import copro_optimizer
@@ -37,11 +37,11 @@ with mipro_optimizer.BasicGenerateInstruction.replace(MyBasicGenerateInstruction
 
 ```
 
-Which will now update the signature of the `BasicGenerateInstruction` task in the Copro optimizer to include the new `basic_instruction` field.
+This will now update the signature of the `BasicGenerateInstruction` task in the Copro optimizer to include the new `basic_instruction` field.
 
-You can replace any signature in DSPy using this method, and it will be used so long as the context manager is active.
+You can replace any signature in DSPy using this method, which will be used as long as the context manager is active.
 
-There is also a helper function `dspy.update_signatures` that can be used to update multiple signatures at once. This function takes a dictionary of signatures to update, with the key being the signature to update and the value being the new signature class.
+There is also a helper function `dspy.update_signatures` that can update multiple signatures at once. This function takes a dictionary of signatures to update, with the key being the signature to update and the value being the new signature class.
 
 ```python
 
