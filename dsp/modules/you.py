@@ -5,8 +5,8 @@ import requests
 
 from dsp.modules.lm import LM
 
-SMART_ENDPOINT = ""  # TODO: Update before submitting PR
-RESEARCH_ENDPOINT = ""  # TODO: Update before submitting PR
+SMART_ENDPOINT = "https://chat-api.you.com/smart"
+RESEARCH_ENDPOINT = "https://chat-api.you.com/research"
 
 
 class You(LM):
@@ -17,11 +17,7 @@ class You(LM):
         api_key: Optional[str] = None,
     ):
         super().__init__(model="you.com")
-
-        if not api_key:
-            api_key = os.environ["YDC_API_KEY"]
-
-        self.api_key = api_key
+        self.api_key = api_key or os.environ["YDC_API_KEY"]
         self.mode = mode
 
         # Mandatory DSPy attributes to inspect LLM call history
@@ -32,7 +28,7 @@ class You(LM):
         headers = {"x-api-key": self.api_key}
         params = {"query": prompt}  # DSPy `kwargs` are ignored as they are not supported by the API
 
-        response = requests.get(self.endpoint, headers=headers, params=params)
+        response = requests.post(self.endpoint, headers=headers, json=params)
         response.raise_for_status()
 
         data = response.json()
@@ -48,6 +44,6 @@ class You(LM):
             return SMART_ENDPOINT
         return RESEARCH_ENDPOINT
 
-    def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs) -> list[str]:
+    def __call__(self, prompt, only_completed: bool = True, return_sorted: bool = False, **kwargs) -> list[str]:
         response = self.request(prompt, **kwargs)
         return [response["answer"]]
