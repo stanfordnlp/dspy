@@ -9,8 +9,7 @@ SMART_ENDPOINT = ""  # TODO: Update before submitting PR
 RESEARCH_ENDPOINT = ""  # TODO: Update before submitting PR
 
 
-class YouLM(LM):  # TODO: Should this be `You` instead?
-    """# TODO[DOCME]"""
+class You(LM):
 
     def __init__(
         self,

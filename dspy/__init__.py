@@ -47,7 +47,7 @@ AWSMeta = dsp.AWSMeta
 Watsonx = dsp.Watsonx
 PremAI = dsp.PremAI
 
-YouLM = dsp.YouLM
+You = dsp.You
 
 configure = settings.configure
 context = settings.context
