@@ -16,7 +16,7 @@ class KNNFewShot(Teleprompter):
     def compile(self, student, *, teacher=None, trainset=None, valset=None):
         student_copy = student.reset_copy()
 
-        def forward_pass(_, *args, **kwargs):
+        def forward_pass(_, **kwargs):
             knn_trainset = self.KNN(**kwargs)
             few_shot_bootstrap = BootstrapFewShot(**self.few_shot_bootstrap_args)
             compiled_program = few_shot_bootstrap.compile(
