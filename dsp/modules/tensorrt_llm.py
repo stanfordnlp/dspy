@@ -108,7 +108,8 @@ class TensorRTModel(LM):
             from transformers import AutoTokenizer
         except ImportError as exc:
             raise ModuleNotFoundError(
-                "You need to install torch and transformers",
+                "You need to install torch and transformers ",
+                "pip install transformers==4.38.2",
             ) from exc
 
         # Configure tokenizer
