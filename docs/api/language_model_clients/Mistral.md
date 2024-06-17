@@ -2,12 +2,12 @@
 sidebar_position: 9
 ---
 
-# dsp.Mistral
+# dspy.Mistral
 
 ### Usage
 
 ```python
-lm = dsp.Mistral(model='mistral-medium-latest', api_key="your-mistralai-api-key")
+lm = dspy.Mistral(model='mistral-medium-latest', api_key="your-mistralai-api-key")
 ```
 
 ### Constructor
@@ -31,4 +31,4 @@ class Mistral(LM):
 
 ### Methods
 
-Refer to [`dspy.Mistral`](#) documentation.
+Refer to [`dspy.OpenAI`](https://dspy-docs.vercel.app/api/language_model_clients/OpenAI) documentation.

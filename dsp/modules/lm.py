@@ -46,13 +46,14 @@ class LM(ABC):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
-                if (
-                    provider == "clarifai"
-                    or provider == "google"
-                    or provider == "groq"
-                    or provider == "Bedrock"
-                    or provider == "Sagemaker"
-                    or provider == "premai"
+                if provider in (
+                    "clarifai",
+                    "cloudflare"
+                    "google",
+                    "groq",
+                    "Bedrock",
+                    "Sagemaker",
+                    "premai",
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
@@ -66,8 +67,6 @@ class LM(ABC):
                     printed.append((prompt, x["response"].text))
                 elif provider == "mistral":
                     printed.append((prompt, x["response"].choices))
-                elif provider == "cloudflare":
-                    printed.append((prompt, [x["response"]]))
                 elif provider == "ibm":
                     printed.append((prompt, x))
                 elif provider == "you.com":
@@ -89,12 +88,10 @@ class LM(ABC):
             printing_value += prompt
 
             text = ""
-            if provider == "cohere" or provider == "Bedrock" or provider == "Sagemaker" or provider == "you.com":
+            if provider in ("cohere", "Bedrock", "Sagemaker", "clarifai", "claude", "ibm", "premai", "you.com"):
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
-            elif provider == "clarifai" or provider == "claude":
-                text = choices
             elif provider == "groq":
                 text = " " + choices
             elif provider == "google":
@@ -103,8 +100,6 @@ class LM(ABC):
                 text = choices[0].message.content
             elif provider == "cloudflare":
                 text = choices[0]
-            elif provider == "ibm" or provider == "premai":
-                text = choices
             else:
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="")

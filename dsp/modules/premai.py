@@ -1,5 +1,6 @@
 import os
-from typing import Any, Dict, Optional
+import warnings
+from typing import Any, Optional
 
 import backoff
 
@@ -20,7 +21,7 @@ def backoff_hdlr(details) -> None:
 
     See more at: https://pypi.org/project/backoff/
     """
-    print(
+    print(  # noqa: T201
         "Backing off {wait:0.1f} seconds after {tries} tries calling function {target} with kwargs {kwargs}".format(
             **details,
         ),
@@ -52,7 +53,6 @@ class PremAI(LM):
         project_id: int,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
-        **kwargs,
     ) -> None:
         """Parameters
 
@@ -63,8 +63,6 @@ class PremAI(LM):
         api_key: Optional[str]
             Prem AI API key, to connect with the API. If not provided then it will check from env var by the name
                 PREMAI_API_KEY
-        **kwargs: dict
-            Additional arguments to pass to the API provider
         """
         self.model = "default" if model is None else model
         super().__init__(self.model)
@@ -81,20 +79,20 @@ class PremAI(LM):
         self.history: list[dict[str, Any]] = []
 
     @property
-    def _default_params(self) -> Dict[str, Any]:
+    def _default_params(self) -> dict[str, Any]:
         default_kwargs = {
-            "temperature": None, 
-            "max_tokens": None, 
-            "system_prompt": None, 
-            "repositories": None, 
+            "temperature": None,
+            "max_tokens": None,
+            "system_prompt": None,
+            "repositories": None,
         }
 
         if self.model != "default":
-            default_kwargs["model_name"] = self.model 
+            default_kwargs["model_name"] = self.model
 
         return default_kwargs
 
-    def _get_all_kwargs(self, **kwargs) -> Dict[str, Any]:
+    def _get_all_kwargs(self, **kwargs) -> dict[str, Any]:
         kwargs_to_ignore = [
             "top_p",
             "tools",
@@ -107,7 +105,7 @@ class PremAI(LM):
         keys_to_remove = []
         for key in kwargs:
             if key in kwargs_to_ignore:
-                print(f"WARNING: Parameter {key} is not supported in kwargs.")
+                warnings.warn(f"WARNING: Parameter {key} is not supported in kwargs.", stacklevel=2)
                 keys_to_remove.append(key)
 
         for key in keys_to_remove:
@@ -122,9 +120,36 @@ class PremAI(LM):
     def basic_request(self, prompt, **kwargs) -> str:
         """Handles retrieval of completions from Prem AI whilst handling API errors."""
         all_kwargs = self._get_all_kwargs(**kwargs)
-        messages = []        
-        messages.append({"role": "user", "content": prompt})
 
+        if "template_id" not in all_kwargs:
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            template_id = all_kwargs["template_id"]
+            if (template_id is None) or (template_id == ""):
+                raise ValueError("Templates can not be None or ''")
+            if "params" not in all_kwargs:
+                raise KeyError(
+                    "Keyword argument: params must be present if template_id is present",
+                )
+
+            params = all_kwargs["params"]
+            if not isinstance(params, dict):
+                raise TypeError("params must be a dictionary")
+
+            messages = [
+                {
+                    "role": "user",
+                    "template_id": template_id,
+                    "params": params,
+                },
+            ]
+            kwargs["template_id"] = all_kwargs.get("template_id", None)
+            kwargs["params"] = all_kwargs.get("params", None)
+
+            all_kwargs.pop("template_id")
+            all_kwargs.pop("params")
+
+        kwargs = {**kwargs, **all_kwargs}
         response = self.client.chat.completions.create(
             project_id=self.project_id,
             messages=messages,
@@ -138,17 +163,16 @@ class PremAI(LM):
             raise premai_api_error("ChatResponse is none")
 
         output_text = content or ""
-        document_chunks = None if response.document_chunks is None else [
-            chunk.to_dict() for chunk in response.document_chunks
-        ]
+        document_chunks = (
+            None if response.document_chunks is None else [chunk.to_dict() for chunk in response.document_chunks]
+        )
 
         self.history.append(
             {
                 "prompt": prompt,
                 "response": content,
-                "document_chunks": document_chunks, 
-                "kwargs": all_kwargs,
-                "raw_kwargs": kwargs,
+                "document_chunks": document_chunks,
+                "kwargs": kwargs,
             },
         )
 
