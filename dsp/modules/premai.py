@@ -149,6 +149,7 @@ class PremAI(LM):
             all_kwargs.pop("template_id")
             all_kwargs.pop("params")
 
+        kwargs = {**kwargs, **all_kwargs}
         response = self.client.chat.completions.create(
             project_id=self.project_id,
             messages=messages,
@@ -171,8 +172,7 @@ class PremAI(LM):
                 "prompt": prompt,
                 "response": content,
                 "document_chunks": document_chunks,
-                "kwargs": all_kwargs,
-                "raw_kwargs": kwargs,
+                "kwargs": kwargs,
             },
         )
 
