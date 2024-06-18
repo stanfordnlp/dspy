@@ -58,7 +58,7 @@ class You(LM):
         data = response.json()
 
         # Update history
-        self.history.append({"prompt": prompt, "response": data, "mode": self.endpoint})
+        self.history.append({"prompt": prompt, "response": data, "endpoint": self.endpoint})
 
         return data
 
