@@ -1,10 +1,12 @@
-from .propose_base import Proposer
-import dspy
-import re
-from dspy.teleprompt.utils import get_signature
-from dspy.propose.utils import strip_prefix, create_example_string, create_predictor_level_history_string
-from dspy.propose.dataset_summary_generator import create_dataset_summary
 import random
+import re
+
+import dspy
+from dspy.propose.dataset_summary_generator import create_dataset_summary
+from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix
+from dspy.teleprompt.utils import get_signature
+
+from .propose_base import Proposer
 
 # Hardcoded variables (TODO: update)
 MAX_INSTRUCT_IN_HISTORY = 5  # 10
@@ -59,7 +61,7 @@ class DescribeModule(dspy.Signature):
         prefix="SUMMARY OF PROGRAM ABOVE:",
     )
     module = dspy.InputField(
-        desc="The module in the program that we want to describe.", prefix="MODULE:"
+        desc="The module in the program that we want to describe.", prefix="MODULE:",
     )
     module_description = dspy.OutputField(
         desc="Description of the module's role in the broader program.",
@@ -94,7 +96,7 @@ def generate_instruction_class(
                 prefix="PROGRAM DESCRIPTION:",
             )
             module = dspy.InputField(
-                desc="The module to create an instruction for.", prefix="MODULE:"
+                desc="The module to create an instruction for.", prefix="MODULE:",
             )
         task_demos = dspy.InputField(
             format=str,
@@ -108,7 +110,7 @@ def generate_instruction_class(
                 prefix="PREVIOUS INSTRUCTIONS:",
             )
         basic_instruction = dspy.InputField(
-            format=str, desc="Basic instruction.", prefix="BASIC INSTRUCTION:"
+            format=str, desc="Basic instruction.", prefix="BASIC INSTRUCTION:",
         )
         if use_tip:
             tip = dspy.InputField(
@@ -194,8 +196,8 @@ class GenerateModuleInstruction(dspy.Module):
         if self.program_aware:
             program_description = strip_prefix(
                 self.describe_program(
-                    program_code=self.program_code_string, program_example=task_demos
-                ).program_description
+                    program_code=self.program_code_string, program_example=task_demos,
+                ).program_description,
             )
             print(f"PROGRAM DESCRIPTION: {program_description}")
 
@@ -265,7 +267,7 @@ class GroundedProposer(Proposer):
         self.prompt_model = prompt_model
         self.program_code_string = program_code_string
         self.data_summary = create_dataset_summary(
-            trainset=trainset, view_data_batch_size=10, prompt_model=prompt_model
+            trainset=trainset, view_data_batch_size=10, prompt_model=prompt_model,
         )
         print(f"DATA SUMMARY: {self.data_summary}")
 
@@ -285,12 +287,12 @@ class GroundedProposer(Proposer):
         proposed_instructions = {}
 
         if self.set_tip_randomly:
-            print(f"Using a randomly generated configuration for our grounded proposer.")
+            print("Using a randomly generated configuration for our grounded proposer.")
             # Randomly select the tip
             selected_tip_key = random.choice(list(TIPS.keys()))
             selected_tip = TIPS[selected_tip_key]
             self.use_tip = bool(
-                selected_tip
+                selected_tip,
             )
             print(f"Selected tip: {selected_tip_key}")        
 
@@ -316,7 +318,7 @@ class GroundedProposer(Proposer):
                         demo_set_i=demo_set_i,
                         trial_logs=trial_logs,
                         tip=selected_tip,
-                    )
+                    ),
                 )
         return proposed_instructions
 
@@ -336,7 +338,7 @@ class GroundedProposer(Proposer):
 
         # Create an instruction history string for our predictor
         instruction_history = create_predictor_level_history_string(
-            program, pred_i, trial_logs, MAX_INSTRUCT_IN_HISTORY
+            program, pred_i, trial_logs, MAX_INSTRUCT_IN_HISTORY,
         )
 
         # Create our instruction generator class (given specific criteria for this round of proposal)

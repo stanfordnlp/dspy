@@ -1,9 +1,7 @@
-from dspy.propose.dataset_summary_generator import observe_data
-from dspy.teleprompt.utils import get_signature
-from dspy.signatures import Signature
 import dsp
 import dspy
-from collections import defaultdict
+from dspy.signatures import Signature
+
 
 class BasicGenerateInstruction(dspy.Signature):
         ("""You are an instruction optimizer for large language models. I will give you a ``signature`` of fields (inputs and outputs) in English. Specifically, I will provide you with one or more ``example instruction(s)`` that were previously attempted for this task.

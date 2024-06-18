@@ -1,16 +1,30 @@
-from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.evaluate.evaluate import Evaluate
-from dspy.propose import GroundedProposer
-import random
 import logging
 import os
 import pickle
-import optuna
-from dspy.teleprompt.utils import get_dspy_source_code, setup_logging, save_file_to_log_dir, get_signature, set_signature, print_full_program, eval_candidate_program, save_candidate_program, get_program_with_highest_avg_score, print_full_program, create_n_fewshot_demo_sets, get_task_model_history_for_full_example
-from collections import defaultdict
-import numpy as np
+import random
 import sys
 import textwrap
+from collections import defaultdict
+
+import numpy as np
+import optuna
+
+from dspy.evaluate.evaluate import Evaluate
+from dspy.propose import GroundedProposer
+from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.teleprompt.utils import (
+    create_n_fewshot_demo_sets,
+    eval_candidate_program,
+    get_dspy_source_code,
+    get_program_with_highest_avg_score,
+    get_signature,
+    get_task_model_history_for_full_example,
+    print_full_program,
+    save_candidate_program,
+    save_file_to_log_dir,
+    set_signature,
+    setup_logging,
+)
 
 try:
     import wandb
@@ -332,7 +346,7 @@ class MIPRO(Teleprompter):
                         chosen_params.append(instruction_idx)
                         if demo_candidates:
                             demos_idx = trial.suggest_categorical(
-                                f"{i}_predictor_demos", range(len(p_demo_candidates))
+                                f"{i}_predictor_demos", range(len(p_demo_candidates)),
                             )
                             chosen_params.append(demo_candidates)
 
@@ -350,7 +364,7 @@ class MIPRO(Teleprompter):
                         # Set the instruction
                         selected_instruction = p_instruction_candidates[instruction_idx]
                         updated_signature = get_signature(p_new).with_instructions(
-                            selected_instruction
+                            selected_instruction,
                         )
                         set_signature(p_new, updated_signature)
 
@@ -359,13 +373,13 @@ class MIPRO(Teleprompter):
                             p_new.demos = p_demo_candidates[demos_idx]
 
                     # Log assembled program
-                    print(f"CANDIDATE PROGRAM:")
+                    print("CANDIDATE PROGRAM:")
                     print_full_program(candidate_program)
-                    print(f"...")
+                    print("...")
 
                     # Save the candidate program
                     trial_logs[trial.number]["program_path"] = save_candidate_program(
-                        candidate_program, self.log_dir, trial.number
+                        candidate_program, self.log_dir, trial.number,
                     )
 
                     trial_logs[trial.number]["num_eval_calls"] = 0
@@ -373,21 +387,21 @@ class MIPRO(Teleprompter):
                     # Evaluate the candidate program with relevant batch size
                     batch_size = self._get_batch_size(minibatch, trainset)
                     score = eval_candidate_program(
-                        batch_size, trainset, candidate_program, evaluate
+                        batch_size, trainset, candidate_program, evaluate,
                     )
 
                     # Print out a full trace of the program in use
-                    print(f"FULL TRACE")
+                    print("FULL TRACE")
                     full_trace = get_task_model_history_for_full_example(
-                        candidate_program, self.task_model, trainset, evaluate
+                        candidate_program, self.task_model, trainset, evaluate,
                     )
-                    print(f"...")
+                    print("...")
 
                     # Log relevant information
                     print(f"Score {score}")                
                     categorical_key = ",".join(map(str, chosen_params))
                     param_score_dict[categorical_key].append(
-                        (score, candidate_program)
+                        (score, candidate_program),
                     )
                     trial_logs[trial.number]["num_eval_calls"] = batch_size
                     trial_logs[trial.number]["full_eval"] = batch_size >= len(trainset)
@@ -403,7 +417,7 @@ class MIPRO(Teleprompter):
                                 "score": score,
                                 "num_eval_calls": trial_logs[trial.number]["num_eval_calls"],
                                 "total_eval_calls": total_eval_calls,
-                            }
+                            },
                         )
 
                     # Update the best program if the current score is better, and if we're not using minibatching
@@ -425,7 +439,7 @@ class MIPRO(Teleprompter):
                         # Identify our best program (based on mean of scores so far, and do a full eval on it)
                         highest_mean_program, combo_key = get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_combos)
                         full_train_score = eval_candidate_program(
-                            len(trainset), trainset, highest_mean_program, evaluate
+                            len(trainset), trainset, highest_mean_program, evaluate,
                         )
 
                         # Log relevant information
@@ -434,7 +448,7 @@ class MIPRO(Teleprompter):
                         trial_logs[trial.number]["total_eval_calls_so_far"] = total_eval_calls
                         trial_logs[trial.number]["full_eval"] = True
                         trial_logs[trial.number]["program_path"] = save_candidate_program(
-                            program=highest_mean_program, log_dir=self.log_dir, trial_num=trial.number, note="full_eval"
+                            program=highest_mean_program, log_dir=self.log_dir, trial_num=trial.number, note="full_eval",
                         )
                         trial_logs[trial.number]["score"] = full_train_score
                         
@@ -456,7 +470,7 @@ class MIPRO(Teleprompter):
                                 {
                                     "best_prog_so_far_train_score": best_score,
                                     "best_prog_so_far_dev_score": full_dev_score,
-                                }
+                                },
                             )
 
                     return score
@@ -465,7 +479,7 @@ class MIPRO(Teleprompter):
 
             # Run the trial
             objective_function = create_objective(
-                program, instruction_candidates, demo_candidates, evaluate, trainset
+                program, instruction_candidates, demo_candidates, evaluate, trainset,
             )
 
             # if minibatch:

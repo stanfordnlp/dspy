@@ -1,6 +1,8 @@
-import re
 import json
+import re
+
 from dspy.teleprompt.utils import get_signature
+
 
 def strip_prefix(text):
     pattern = r'^[\*\s]*(([\w\'\-]+\s+){0,4}[\w\'\-]+):\s*'
@@ -16,7 +18,7 @@ def create_instruction_set_history_string(base_program, trial_logs, top_n):
             trial_program.load(trial["program_path"])
             program_history.append({
                 "program": trial_program,
-                "score": trial["score"]
+                "score": trial["score"],
             })
 
     # Deduplicate program history based on the program's instruction set
@@ -91,7 +93,7 @@ def create_predictor_level_history_string(base_program, predictor_i, trial_logs,
             trial_program.load(trial["program_path"])
             instruction_history.append({
                 "program": trial_program,
-                "score": trial["score"]
+                "score": trial["score"],
             })
 
     # Aggregate scores for each instruction

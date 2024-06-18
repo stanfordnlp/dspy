@@ -1,18 +1,18 @@
-import dspy
-import random
-import numpy as np
+import inspect
 import logging
-import os
 import math
+import os
+import random
 import shutil
+import sys
+
 import numpy as np
+from IPython.core.magics.code import extract_symbols
+
+import dspy
+from dspy.predict.parameter import Parameter
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
 from dspy.teleprompt.hard_bootstrap import BootstrapHardFewShot
-from dspy.predict.parameter import Parameter
-
-import inspect
-import sys
-from IPython.core.magics.code import extract_symbols
 
 """
 This file consists of helper functions for our variety of optimizers.
@@ -53,7 +53,7 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate):
 
 
 def eval_candidate_program_with_pruning(
-    trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100
+    trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,
 ):
     """Evaluation of candidate_program with pruning implemented"""
 
@@ -67,7 +67,7 @@ def eval_candidate_program_with_pruning(
         end_index = min((i + 1) * batch_size, len(trainset))
         split_trainset = trainset[start_index:end_index]
         split_score = evaluate(
-            candidate_program, devset=split_trainset, display_table=0
+            candidate_program, devset=split_trainset, display_table=0,
         )
         print(f"{i}st split score: {split_score}")
         total_eval_size += len(split_trainset)
@@ -125,7 +125,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
 
 
 def calculate_last_n_proposed_quality(
-    base_program, trial_logs, evaluate, trainset, devset, n
+    base_program, trial_logs, evaluate, trainset, devset, n,
 ):
     """
     Calculate the average and best quality of the last n programs proposed. This is useful for seeing if our proposals
@@ -144,7 +144,7 @@ def calculate_last_n_proposed_quality(
         full_eval = trial_logs[trial_num]["full_eval"]
         if not full_eval:
             raise NotImplementedError(
-                "Still need to implement non full eval handling in calculate_last_n_proposed_quality"
+                "Still need to implement non full eval handling in calculate_last_n_proposed_quality",
             )
         train_score = trial_logs[trial_num]["score"]
         program = base_program.deepcopy()
@@ -165,7 +165,7 @@ def calculate_last_n_proposed_quality(
 
 
 def get_task_model_history_for_full_example(
-    candidate_program, task_model, devset, evaluate
+    candidate_program, task_model, devset, evaluate,
 ):
     """Get a full trace of the task model's history for a given candidate program."""
     _ = evaluate(candidate_program, devset=devset[:1])
@@ -187,7 +187,7 @@ def save_candidate_program(program, log_dir, trial_num, note=None):
     """Save the candidate program to the log directory."""
 
     if log_dir is None:
-        return
+        return None
 
     # Ensure the directory exists
     eval_programs_dir = os.path.join(log_dir, "evaluated_programs")
@@ -307,7 +307,7 @@ def create_n_fewshot_demo_sets(
             # labels only
             teleprompter = LabeledFewShot(k=max_labeled_demos)
             program2 = teleprompter.compile(
-                student, trainset=trainset2, sample=labeled_sample
+                student, trainset=trainset2, sample=labeled_sample,
             )
 
         elif seed == -1:
@@ -336,7 +336,7 @@ def create_n_fewshot_demo_sets(
             )
 
             program2 = teleprompter.compile(
-                student, teacher=teacher, trainset=trainset2
+                student, teacher=teacher, trainset=trainset2,
             )
 
         for i, _ in enumerate(student.predictors()):
@@ -372,7 +372,7 @@ def create_demo_candidates(program, n, devset, metric, max_bootstrapped_demos, m
 
         # Store the candidate demos
         for j, candidate_p in enumerate(candidate_program.predictors()):
-            if j not in demo_candidates.keys():
+            if j not in demo_candidates:
                 demo_candidates[j] = []
             demo_candidates[j].append(candidate_p.demos)
     return demo_candidates
@@ -391,8 +391,7 @@ def new_getfile(object, _old_getfile=inspect.getfile):
     for name, member in inspect.getmembers(object):
         if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:
             return inspect.getfile(member)
-    else:
-        raise TypeError('Source for {!r} not found'.format(object))
+    raise TypeError(f'Source for {object!r} not found')
     
 inspect.getfile = new_getfile
 

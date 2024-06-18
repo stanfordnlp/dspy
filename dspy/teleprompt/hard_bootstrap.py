@@ -1,15 +1,14 @@
-import dsp
-import tqdm
 import random
 import threading
-from dspy.predict.retry import Retry
 
+import tqdm
+
+import dsp
+from dspy.predict.retry import Retry
 from dspy.primitives import Example
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
-
-from dspy.evaluate.evaluate import Evaluate
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -135,7 +134,7 @@ class BootstrapHardFewShot(Teleprompter):
                     print(f"Found {len(bootstrapped)}/{max_bootsraps} hard example(s).")
             
                 if len(bootstrapped) >= max_bootsraps:
-                    print(f"Bootstrapping complete!")
+                    print("Bootstrapping complete!")
                     break
 
             # hard_examples.append(example)
