@@ -8,6 +8,10 @@
 /docs/downloads/
 /docs/experiments/
 
+/examples/qa/hotpot/MIPRO_notebook_cache/
+/examples/nli/scone/MIPRO_notebook_cache/
+/ScoNe/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
