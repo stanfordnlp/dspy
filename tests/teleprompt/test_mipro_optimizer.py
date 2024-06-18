@@ -118,7 +118,7 @@ def test_bayesian_signature_optimizer_initialization():
         metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
-    assert optimizer.n == 10, "Incorrect 'num_candidates' parameter initialization"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
     assert (
         optimizer.init_temperature == 1.4
     ), "Initial temperature not correctly initialized"
@@ -154,7 +154,7 @@ def test_signature_optimizer_optimization_process():
     optimized_student = optimizer.compile(
         student=student,
         trainset=trainset,
-        num_batches=10,
+        num_trials=10,
         max_bootstrapped_demos=3,
         max_labeled_demos=5,
         eval_kwargs={"num_threads": 1, "display_progress": False},
@@ -184,7 +184,7 @@ def test_signature_optimizer_bad_lm():
         _optimized_student = optimizer.compile(
             student=student,
             trainset=trainset,
-            num_batches=10,
+            num_trials=10,
             max_bootstrapped_demos=3,
             max_labeled_demos=5,
             eval_kwargs={"num_threads": 1, "display_progress": False},
@@ -212,7 +212,7 @@ def test_optimization_and_output_verification():
     optimized_student = optimizer.compile(
         student=student,
         trainset=trainset,
-        num_batches=4,
+        num_trials=4,
         max_bootstrapped_demos=2,
         max_labeled_demos=3,
         eval_kwargs={"num_threads": 1, "display_progress": False},
