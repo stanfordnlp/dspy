@@ -71,7 +71,7 @@ class LM(ABC):
                 elif provider == "ibm":
                     printed.append((prompt, x))
                 elif provider == "you.com":
-                    printed.append((prompt, x['response']['answer']))
+                    printed.append((prompt, x["response"]["answer"]))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -89,7 +89,17 @@ class LM(ABC):
             printing_value += prompt
 
             text = ""
-            if provider in ("cohere", "Bedrock", "Sagemaker", "clarifai", "claude", "ibm", "premai", "you.com", "tensorrt_llm"):
+            if provider in (
+                "cohere",
+                "Bedrock",
+                "Sagemaker",
+                "clarifai",
+                "claude",
+                "ibm",
+                "premai",
+                "you.com",
+                "tensorrt_llm",
+            ):
                 text = choices
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
