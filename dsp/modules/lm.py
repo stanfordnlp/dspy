@@ -54,7 +54,7 @@ class LM(ABC):
                     "Bedrock",
                     "Sagemaker",
                     "premai",
-                    "tensorrt_llm"
+                    "tensorrt_llm",
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
