@@ -1,3 +1,7 @@
+---
+sidebar_position: 13
+---
+
 # dspy.You
 Wrapper around [You.com's conversational Smart and Research APIs](https://documentation.you.com/api-reference/).
 
