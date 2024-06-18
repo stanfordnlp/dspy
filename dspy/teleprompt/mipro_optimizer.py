@@ -132,7 +132,7 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     )
 
 
-class MIPRO_DEPRECATED(Teleprompter):
+class MIPRO(Teleprompter):
     def __init__(
         self,
         metric,
