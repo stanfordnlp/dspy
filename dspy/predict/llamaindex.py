@@ -190,9 +190,6 @@ class DSPyComponent(QueryComponent):
             predict_module=predict_module,
             predict_template=signature_to_template(predict_module.signature),
         )
-        # self.predict_module = predict_module
-        # self.predict_template = signature_to_template(predict_module.signature)
-        # super().__init__()
 
     @classmethod
     def from_prompt(
@@ -230,10 +227,6 @@ class DSPyComponent(QueryComponent):
         # TODO: no async predict module yet
         return self._run_component(**kwargs)
 
-    # def forward(self, *args: Any, **kwargs: Any) -> Any:
-    #     """Forward."""
-    #     return self._run_component(*args, **kwargs)[self.output_key]
-
     @property
     def input_keys(self) -> InputKeys:
         """Input keys."""
@@ -247,11 +240,6 @@ class DSPyComponent(QueryComponent):
         return OutputKeys.from_keys(output_keys)
 
 
-class LlamaIndexModuleMeta(ProgramMeta, type(BaseModel)):
-    pass
-
-
-# class LlamaIndexModule(dspy.Module, QueryComponent, metaclass=LlamaIndexModuleMeta):
 class LlamaIndexModule(dspy.Module):
     """A module for LlamaIndex.
 
@@ -277,28 +265,3 @@ class LlamaIndexModule(dspy.Module):
         output_dict = self.query_pipeline.run(**kwargs, return_values_direct=False)
         return dspy.Prediction(**output_dict)
     
-    # def set_callback_manager(self, callback_manager: CallbackManager) -> None:
-    #     """Set callback manager."""
-    #     self.query_pipeline.set_callback_manager(callback_manager)
-
-    # def _validate_component_inputs(self, input: Dict[str, Any]) -> Dict[str, Any]:
-    #     """Validate component inputs during run_component."""
-    #     return self.query_pipeline.validate_component_inputs(input)
-
-    # def _run_component(self, **kwargs: Any) -> Dict:
-    #     """Run component."""
-    #     return self.query_pipeline.run_component(**kwargs)
-
-    # async def _arun_component(self, **kwargs: Any) -> Any:
-    #     """Run component (async)."""
-    #     return await self.query_pipeline.arun_component(**kwargs)
-
-    # @property
-    # def input_keys(self) -> InputKeys:
-    #     """Input keys."""
-    #     return self.query_pipeline.input_keys
-
-    # @property
-    # def output_keys(self) -> OutputKeys:
-    #     """Output keys."""
-    #     return self.query_pipeline.output_keys
