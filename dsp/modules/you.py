@@ -31,40 +31,40 @@ class You(LM):
     https://documentation.you.com/api-reference/.
 
     Args:
-        mode: You.com conversational endpoints. Choose from "smart" or "research"
+        endpoint: You.com conversational endpoints. Choose from "smart" or "research"
         api_key: You.com API key, if `YDC_API_KEY` is not set in the environment
     """
 
     def __init__(
         self,
-        mode: Literal["smart", "research"] = "smart",
-        api_key: Optional[str] = None,
+        endpoint: Literal["smart", "research"] = "smart",
+        ydc_api_key: Optional[str] = None,
     ):
         super().__init__(model="you.com")
-        self.api_key = api_key or os.environ["YDC_API_KEY"]
-        self.mode = mode
+        self.ydc_api_key = ydc_api_key or os.environ["YDC_API_KEY"]
+        self.endpoint = endpoint
 
         # Mandatory DSPy attributes to inspect LLM call history
         self.history = []
         self.provider = "you.com"
 
     def basic_request(self, prompt, **kwargs) -> dict[str, Any]:
-        headers = {"x-api-key": self.api_key}
+        headers = {"x-api-key": self.ydc_api_key}
         params = {"query": prompt}  # DSPy `kwargs` are ignored as they are not supported by the API
 
-        response = requests.post(self.endpoint, headers=headers, json=params)
+        response = requests.post(self.request_endpoint, headers=headers, json=params)
         response.raise_for_status()
 
         data = response.json()
 
         # Update history
-        self.history.append({"prompt": prompt, "response": data, "mode": self.mode})
+        self.history.append({"prompt": prompt, "response": data, "mode": self.endpoint})
 
         return data
 
     @property
-    def endpoint(self) -> str:
-        if self.mode == "smart":
+    def request_endpoint(self) -> str:
+        if self.endpoint == "smart":
             return SMART_ENDPOINT
         return RESEARCH_ENDPOINT
 

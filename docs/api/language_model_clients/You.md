@@ -24,14 +24,14 @@ https://documentation.you.com/api-reference/.
 ### Constructor
 ```python
 You(
-    mode: Literal["smart", "research"] = "smart",
-    api_key: Optional[str] = None,
+    endpoint: Literal["smart", "research"] = "smart",
+    ydc_api_key: Optional[str] = None,
 )
 ```
 
 **Parameters:**
-- `mode`: You.com conversational endpoints. Choose from "smart" or "research"
-- `api_key`: You.com API key, if `YDC_API_KEY` is not set in the environment
+- `endpoint`: You.com conversational endpoints. Choose from "smart" or "research"
+- `ydc_api_key`: You.com API key, if `YDC_API_KEY` is not set in the environment
 
 ### Usage
 Obtain a You.com API key from https://api.you.com/.
@@ -42,5 +42,5 @@ Export this key to an environment variable `YDC_API_KEY`.
 import dspy
 
 # The API key is inferred from the `YDC_API_KEY` environment variable
-lm = dspy.You(mode="smart")
+lm = dspy.You(endpoint="smart")
 ```
