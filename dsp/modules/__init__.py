@@ -25,5 +25,6 @@ from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
 from .snowflake import *
+from .tensorrt_llm import TensorRTModel
 from .watsonx import *
 from .you import You
