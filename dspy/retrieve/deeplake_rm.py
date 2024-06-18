@@ -78,7 +78,7 @@ class DeeplakeRM(dspy.Retrieve):
         return [data.embedding for data in openai.embeddings.create(input = texts, model=model).data]
     
     def forward(
-        self, query_or_queries: Union[str, List[str]], k: Optional[int],
+        self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs
     ) -> dspy.Prediction:
         
         """Search with DeepLake for self.k top passages for query
@@ -102,7 +102,7 @@ class DeeplakeRM(dspy.Retrieve):
         passages = defaultdict(float)
         #deeplake doesn't support batch querying, manually querying each query and storing them
         for query in queries:
-            results = self._deeplake_client.search(query, k=k)
+            results = self._deeplake_client.search(query, k=k, **kwargs)
 
             for score,text in zip(results.get('score',0.0),results.get('text',"")):
                 passages[text] += score
