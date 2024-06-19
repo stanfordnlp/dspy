@@ -11,9 +11,6 @@ dummy_data = """content,question,answer
 "This is content 2","What is that?","This is answer 2"
 """
 
-with open("dummy.csv", "w") as file:
-    file.write(dummy_data)
-
 
 class CSVDataset(Dataset):
     def __init__(self, file_path, input_keys=None, *args, **kwargs) -> None:
@@ -46,4 +43,6 @@ class TestCSVDataset(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    with open("dummy.csv", "w") as file:
+        file.write(dummy_data)
     unittest.main()
