@@ -242,7 +242,6 @@ def sandwich_idea_signature():
 
 
 def test_extend_generation(SandwichIdea):
-    # test that the completion is extended correctly
     lm = DummyLM(
         [
             " whole wheat\n\nProtein: turkey\n\nFat: avocado",
@@ -260,7 +259,6 @@ def test_extend_generation(SandwichIdea):
 
 
 def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
-    # test the completion is rolled back when a field is skipped
     lm = DummyLM(
         [
             " white\n\nFat: butter\n\nGarish: lettuce\n\nSauce: mayo",
@@ -278,7 +276,6 @@ def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
 
 
 def test_extend_generation_with_empty_field(SandwichIdea):
-    # test the completion is extended if the field is empty
     lm = DummyLM(
         [
             " white\n\nProtein: \n\nFat: butter\n\nGarish: lettuce",
