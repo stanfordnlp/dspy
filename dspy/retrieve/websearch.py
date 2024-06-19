@@ -7,11 +7,8 @@ import requests
 import torch.nn.functional as F
 from sentence_transformers import SentenceTransformer
 
-from dsp.modules.cache_utils import CacheMemory, cache_turn_on
 import dspy
-
-import json
-
+from dsp.modules.cache_utils import CacheMemory, cache_turn_on
 from dspy.primitives.prediction import Prediction
 
 
