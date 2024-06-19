@@ -46,13 +46,12 @@ def get_premai_api_key(api_key: Optional[str] = None) -> str:
 
 
 class PremAI(LM):
-    """Wrapper around Prem AI's API."""
-
     def __init__(
         self,
         project_id: int,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
+        **kwargs: dict,
     ) -> None:
         """Parameters
 
@@ -63,6 +62,7 @@ class PremAI(LM):
         api_key: Optional[str]
             Prem AI API key, to connect with the API. If not provided then it will check from env var by the name
                 PREMAI_API_KEY
+        kwargs: Optional[dict] For any additional paramters
         """
         self.model = "default" if model is None else model
         super().__init__(self.model)
@@ -77,6 +77,7 @@ class PremAI(LM):
         self.client = premai.Prem(api_key=api_key)
         self.provider = "premai"
         self.history: list[dict[str, Any]] = []
+        self.kwargs = kwargs if kwargs else {}
 
     @property
     def _default_params(self) -> dict[str, Any]:
@@ -103,6 +104,8 @@ class PremAI(LM):
             "seed",
         ]
         keys_to_remove = []
+        kwargs = {**kwargs, **self.kwargs}
+
         for key in kwargs:
             if key in kwargs_to_ignore:
                 warnings.warn(f"WARNING: Parameter {key} is not supported in kwargs.", stacklevel=2)
@@ -117,10 +120,9 @@ class PremAI(LM):
                 all_kwargs.pop(key, None)
         return all_kwargs
 
-    def basic_request(self, prompt, **kwargs) -> str:
+    def basic_request(self, prompt, **kwargs) -> list[str]:
         """Handles retrieval of completions from Prem AI whilst handling API errors."""
         all_kwargs = self._get_all_kwargs(**kwargs)
-
         if "template_id" not in all_kwargs:
             messages = [{"role": "user", "content": prompt}]
         else:
@@ -155,9 +157,6 @@ class PremAI(LM):
             messages=messages,
             **all_kwargs,
         )
-        if not response.choices:
-            raise premai_api_error("ChatResponse must have at least one candidate")
-
         content = response.choices[0].message.content
         if not content:
             raise premai_api_error("ChatResponse is none")
@@ -175,8 +174,7 @@ class PremAI(LM):
                 "kwargs": kwargs,
             },
         )
-
-        return output_text
+        return [output_text]
 
     @backoff.on_exception(
         backoff.expo,
