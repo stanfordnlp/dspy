@@ -1,10 +1,13 @@
+import copy
+import textwrap
+
+import pydantic
+import pytest
+import ujson
+
 import dspy
 from dspy import Predict, Signature, TypedPredictor
 from dspy.utils.dummies import DummyLM
-import copy
-import textwrap
-import pydantic
-import ujson
 
 
 def test_initialization_with_string_signature():
@@ -209,14 +212,84 @@ def test_output_only():
     assert lm.get_convo(-1) == textwrap.dedent(
         """\
         Given the fields , produce the fields `output`.
-        
+
         ---
-        
+
         Follow the following format.
-        
+
         Output: ${output}
-        
+
         ---
-        
+
         Output: short answer"""
     )
+
+
+@pytest.fixture(name="SandwichIdea")
+def sandwich_idea_signature():
+    class SandwichIdea(dspy.Signature):
+        """Based on the meal and dietary requirements, suggest a sandwich idea."""
+
+        meal: str = dspy.InputField()
+        dietary_requiements: str = dspy.InputField()
+        bread: str = dspy.OutputField()
+        protein: str = dspy.OutputField()
+        fat: str = dspy.OutputField()
+        garnish: str = dspy.OutputField()
+        sauce: str = dspy.OutputField()
+
+    return SandwichIdea
+
+
+def test_extend_generation(SandwichIdea):
+    # test that the completion is extended correctly
+    lm = DummyLM(
+        [
+            " whole wheat\n\nProtein: turkey\n\nFat: avocado",
+            " tomato\n\nSauce: mustard",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    prediction = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+    assert prediction.bread == "whole wheat"
+    assert prediction.protein == "turkey"
+    assert prediction.fat == "avocado"
+    assert prediction.garnish == "tomato"
+    assert prediction.sauce == "mustard"
+
+
+def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
+    # test the completion is rolled back when a field is skipped
+    lm = DummyLM(
+        [
+            " white\n\nFat: butter\n\nGarish: lettuce\n\nSauce: mayo",
+            " ham\n\nFat: butter\n\nGarish: lettuce\n\nSauce: mayo",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+    assert predictor.bread == "white"
+    assert predictor.protein == "ham"
+    assert predictor.fat == "butter"
+    assert predictor.garnish == "lettuce"
+    assert predictor.sauce == "mayo"
+
+
+def test_extend_generation_with_empty_field(SandwichIdea):
+    # test the completion is extended if the field is empty
+    lm = DummyLM(
+        [
+            " white\n\nProtein: \n\nFat: butter\n\nGarish: lettuce",
+            " mayo",
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+    assert predictor.bread == "white"
+    assert predictor.protein == ""
+    assert predictor.fat == "butter"
+    assert predictor.garnish == "lettuce"
+    assert predictor.sauce == "mayo"
