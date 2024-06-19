@@ -45,15 +45,6 @@ def create_instruction_set_history_string(base_program, trial_logs, top_n):
     
     return instruction_set_history_string
 
-# def parse_list_of_instructions(instruction_string):
-#     # Convert the string representation of a list to an actual list
-#     try:
-#         instructions = json.loads(instruction_string)
-#     except json.JSONDecodeError as e:
-#         print(f"Error decoding JSON: {e}")
-#         return []
-
-#     return instructions
 def parse_list_of_instructions(instruction_string):
     # Try to convert the string representation of a list to an actual list using JSON
     try:
@@ -65,13 +56,6 @@ def parse_list_of_instructions(instruction_string):
     # If JSON decoding fails, extract strings within quotes
     instructions = re.findall(r'"([^"]*)"', instruction_string)
     return instructions
-
-# def get_program_instruction_set_string(program):
-#     instruction_set_dict = {}
-#     for i, pred in enumerate(program.predictors()):
-#         pred_instructions = get_signature(pred).instructions
-#         instruction_set_dict[f"Module {i} Instruction"] = pred_instructions
-#     return '\n'.join(f"{key}: {value}" for key, value in instruction_set_dict.items())
 
 def get_program_instruction_set_string(program):
     instruction_list = []
@@ -148,53 +132,3 @@ def create_example_string(fields, example):
 
     # Joining all the field strings
     return '\n'.join(output)
-
-# def create_predictor_level_history_string(base_program, predictor_i, trial_logs, top_n):
-#     instruction_aggregate = {}
-
-#     instruction_history = []
-#     for trial_num in trial_logs:
-#         trial = trial_logs[trial_num]
-#         if "program_path" in trial:
-#             trial_program = base_program.deepcopy()
-#             trial_program.load(trial["program_path"])
-#             instruction_history.append({
-#                 "program": trial_program,
-#                 "score": trial["score"]
-#             })
-
-#     for history_item in instruction_history:
-#         predictor = history_item["program"].predictors()[predictor_i]
-#         instruction = get_signature(predictor).instructions
-#         score = history_item["score"]
-        
-#         if instruction in instruction_aggregate:
-#             instruction_aggregate[instruction]['total_score'] += score
-#             instruction_aggregate[instruction]['count'] += 1
-#         else:
-#             instruction_aggregate[instruction] = {'total_score': score, 'count': 1}
-    
-#     # # Calculate average score for each instruction and prepare for sorting
-#     # predictor_history = []
-#     # for instruction, data in instruction_aggregate.items():
-#     #     average_score = data['total_score'] / data['count']
-#     #     predictor_history.append((instruction, average_score))
-#     # Calculate average score for each instruction and prepare for sorting
-#     predictor_history = []
-#     seen_instructions = set()
-#     for instruction, data in instruction_aggregate.items():
-#         if instruction not in seen_instructions:
-#             seen_instructions.add(instruction)
-#             average_score = data['total_score'] / data['count']
-#             predictor_history.append((instruction, average_score))
-    
-#     # Sort by average score and select top N
-#     top_instructions = sorted(predictor_history, key=lambda x: x[1], reverse=True)[:top_n]
-#     top_instructions.reverse()
-    
-#     # Create formatted history string
-#     predictor_history_string = ""
-#     for instruction, score in top_instructions:
-#         predictor_history_string += instruction + f" | Score: {score}\n\n"
-    
-#     return predictor_history_string

@@ -482,9 +482,6 @@ class MIPROv2(Teleprompter):
                 program, instruction_candidates, demo_candidates, evaluate, trainset,
             )
 
-            # if minibatch:
-            #     num_batches = int(num_batches*len(trainset)/(self.minibatch_size + len(trainset)/self.minibatch_full_eval_steps))
-
             sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
             study = optuna.create_study(direction="maximize", sampler=sampler)
             score = study.optimize(objective_function, n_trials=num_batches)

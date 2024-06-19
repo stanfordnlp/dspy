@@ -170,17 +170,7 @@ class GenerateModuleInstruction(dspy.Module):
         task_demos = ""
         basic_instruction = get_signature(program.predictors()[pred_i]).instructions
         curr_demos_num = 0
-        # if self.program_aware: # Use full program demo
-        #     for pred_key in demo_candidates.keys(): # Go through each predictor
-        #         for example in demo_candidates[pred_key][demo_set_i]:
-        #             if "augmented" in example.keys():
-        #                 fields_to_use = get_signature(program.predictors()[pred_key]).fields
-        #                 example_string = create_example_string(fields_to_use, example)
-        #                 task_demos += f"{example_string}\n"
-        #                 curr_demos_num+=1
-        #                 if curr_demos_num>=max_demos:
-        #                     break
-        # else:
+        
         for example in demo_candidates[pred_i][demo_set_i]:
             if "augmented" in example.keys():
                 fields_to_use = get_signature(program.predictors()[pred_i]).fields

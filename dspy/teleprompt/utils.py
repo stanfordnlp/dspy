@@ -7,12 +7,16 @@ import shutil
 import sys
 
 import numpy as np
-from IPython.core.magics.code import extract_symbols
+
+try:
+    from IPython.core.magics.code import extract_symbols
+except ImportError:
+    # Won't be able to read code from juptyer notebooks
+    extract_symbols = None
 
 import dspy
 from dspy.predict.parameter import Parameter
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
-from dspy.teleprompt.hard_bootstrap import BootstrapHardFewShot
 
 """
 This file consists of helper functions for our variety of optimizers.
@@ -342,39 +346,6 @@ def create_n_fewshot_demo_sets(
         for i, _ in enumerate(student.predictors()):
             demo_candidates[i].append(program2.predictors()[i].demos)
 
-    return demo_candidates
-
-def create_demo_candidates(program, n, devset, metric, max_bootstrapped_demos, max_labeled_demos, teacher_settings = {}, hard_fewshot=False, seed=0):
-    demo_candidates = {}
-    # if not program_aware:
-    for i in range(n):
-        # if i == 0: # Story empty set of demos as default
-        #     for j, module_p in enumerate(program.predictors()):
-        #         if j not in demo_candidates.keys():
-        #             demo_candidates[j] = []
-        #         demo_candidates[j].append([])
-        # else: # Create and set bootstrapped examples
-        logging.info(f"Creating basic bootstrap {i+1}/{n}")
-
-        # Create a new basic bootstrap few - shot program .
-        rng = random.Random(i+seed)
-        shuffled_devset = devset[:]  # Create a copy of devset
-        rng.shuffle(shuffled_devset)  # Shuffle the copy
-
-        if hard_fewshot:
-            logging.info(f"Creating hard bootstrap {i+1}/{n}")
-            tp = BootstrapHardFewShot(metric = metric, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, teacher_settings=teacher_settings)
-        else:
-            logging.info(f"Creating basic bootstrap {i+1}/{n}")
-            tp = BootstrapFewShot(metric = metric, max_bootstrapped_demos=max_bootstrapped_demos, max_labeled_demos=max_labeled_demos, teacher_settings=teacher_settings)
-
-        candidate_program = tp.compile(student=program.deepcopy(), trainset=shuffled_devset)
-
-        # Store the candidate demos
-        for j, candidate_p in enumerate(candidate_program.predictors()):
-            if j not in demo_candidates:
-                demo_candidates[j] = []
-            demo_candidates[j].append(candidate_p.demos)
     return demo_candidates
 
 def new_getfile(object, _old_getfile=inspect.getfile):
