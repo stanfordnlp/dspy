@@ -1,3 +1,4 @@
+import functools
 import os
 from collections import Counter
 from typing import Any, Dict, List, Optional
@@ -6,7 +7,12 @@ import requests
 import torch.nn.functional as F
 from sentence_transformers import SentenceTransformer
 
+from dsp.modules.cache_utils import CacheMemory, cache_turn_on
 import dspy
+
+import json
+
+from dspy.primitives.prediction import Prediction
 
 
 class BingSearch(dspy.Retrieve):
@@ -125,3 +131,56 @@ class BingSearch(dspy.Retrieve):
 
         return word_counts
 
+
+class BraveSearch(dspy.Retrieve):
+    """Set API key in BRAVE_SEARCH_API_KEY"""
+    api_key: str
+    base_url: str = "https://api.search.brave.com/res/v1/web/search"
+
+    def __init__(self, api_key=None) -> None:
+        if api_key is None:
+            api_key = os.environ.get("BRAVE_SEARCH_API_KEY")
+            if api_key is None:
+                raise ValueError("BRAVE_SEARCH_API_KEY is not set")
+
+    def forward(self, query: str, count=10) -> Prediction:
+        web_search_results = self._search_request(query=query, count=count)
+        final_results = [
+            {
+                "title": item.get("title"),
+                "link": item.get("url"),
+                "snippet": item.get("description"),
+            }
+            for item in web_search_results
+        ]
+        return Prediction(passages=final_results)
+
+
+    # Credit to LangChain
+    def _search_request(self, query: str, **kwargs) -> List[dict]:
+        headers = {
+            "X-Subscription-Token": self.api_key,
+            "Accept": "application/json",
+        }
+        req = requests.PreparedRequest()
+        params = {**kwargs, **{"q": query}}
+        req.prepare_url(self.base_url, params)
+        if req.url is None:
+            raise ValueError("prepared url is None, this should not happen")
+
+        response = cached_brave_search_request_wrapped(req.url, headers)
+        if not response.ok:
+            raise Exception(f"HTTP error {response.status_code}")
+
+        return response.json().get("web", {}).get("results", [])
+
+
+@CacheMemory.cache
+def cached_brave_search_request(url, header):
+    response = requests.get(url, headers=header)
+    return response
+
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+def cached_brave_search_request_wrapped(url, header):
+    return cached_brave_search_request(url, header)
