@@ -254,77 +254,44 @@ def test_extend_generation(SandwichIdea):
     dspy.settings.configure(lm=lm)
 
     prediction = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
-
-    # The logged conversation:
+    # The logged conversation (additional newlines removed, [..] indicates the generation):
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
-    # Bread: whole wheat
-
+    # Bread: [whole wheat
     # Protein: turkey
-
-    # Fat: avocado
+    # Fat: avocado]
     # ===
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
     # Bread: whole wheat
-
     # Protein: turkey
-
     # Fat: avocado
-
-    # Garnish: tomato
-
-    # Sauce: mustard
+    # Garnish: [tomato
+    # Sauce: mustard]
     # ===
 
     assert prediction.bread == "whole wheat"
@@ -342,79 +309,45 @@ def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
         ]
     )
     dspy.settings.configure(lm=lm)
-
-    # The logged conversation:
+    # The logged conversation (additional newlines removed, [..] indicates the generation):
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
-    # Bread: white
-
+    # Bread:[ white
     # Fat: butter
-
     # Garnish: lettuce
-
-    # Sauce: mayo
+    # Sauce: mayo]
     # ===
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
     # Bread: white Fat: butter Garnish: lettuce Sauce: mayo
-
-    # Protein: ham
-
+    # Protein:[ ham
     # Fat: butter
-
     # Garnish: lettuce
-
-    # Sauce: mayo
+    # Sauce: mayo]
     # ===
 
     predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
@@ -433,76 +366,44 @@ def test_extend_generation_with_empty_field(SandwichIdea):
         ]
     )
     dspy.settings.configure(lm=lm)
-    # The logged conversation:
+    # The logged conversation (additional newlines removed, [..] indicates the generation):
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
-    # Bread: white
-
+    # Bread:[ white
     # Protein:
-
     # Fat: butter
-
-    # Garnish: lettuce
+    # Garnish: lettuce]
     # ===
     # === DummyLM ===
     # Based on the meal and dietary requirements, suggest a sandwich idea.
-
     # ---
-
     # Follow the following format.
-
     # Meal: ${meal}
-
     # Dietary Requiements: ${dietary_requiements}
-
     # Bread: ${bread}
-
     # Protein: ${protein}
-
     # Fat: ${fat}
-
     # Garnish: ${garnish}
-
     # Sauce: ${sauce}
-
     # ---
-
     # Meal: lunch
-
     # Dietary Requiements: N/A
-
     # Bread: white
-
     # Protein: Fat: butter Garnish: lettuce
-
-    # Fat: lettuce
-
-    # Sauce: mayo
+    # Fat:[ lettuce
+    # Sauce: mayo]
     # ===
 
     predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
