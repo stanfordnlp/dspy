@@ -429,7 +429,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to
 
 **DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
 
-Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Cyrus Nouroozi**, **Kyle Caverly**, **Amir Mehr**, **Karel D'Oosterlinck**, **Shangyin Tan**, **Manish Shetty**, **Herumb Shandilya**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
+Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Cyrus Nouroozi**, **Kyle Caverly**, **Amir Mehr**, **Josh Purtell**, **Shangyin Tan**, **Manish Shetty**, **Herumb Shandilya**, **Karel D'Oosterlinck**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
 
 **DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
 
