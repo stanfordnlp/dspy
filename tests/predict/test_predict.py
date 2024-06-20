@@ -245,32 +245,182 @@ def test_extend_generation(SandwichIdea):
     lm = DummyLM(
         [
             " whole wheat\n\nProtein: turkey\n\nFat: avocado",
-            " tomato\n\nSauce: mustard",
+            # Incomplete generation leads to tomato field being assigned as an
+            # empty string ("") in dsp.primitives.predict l98 the generation
+            # therefores continues with the next field.
+            " tomato \n\nSauce: mustard",
         ]
     )
     dspy.settings.configure(lm=lm)
 
     prediction = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+
+    # The logged conversation:
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: whole wheat
+
+    # Protein: turkey
+
+    # Fat: avocado
+    # ===
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: whole wheat
+
+    # Protein: turkey
+
+    # Fat: avocado
+
+    # Garnish: tomato
+
+    # Sauce: mustard
+    # ===
+
     assert prediction.bread == "whole wheat"
     assert prediction.protein == "turkey"
     assert prediction.fat == "avocado"
-    assert prediction.garnish == "tomato"
-    assert prediction.sauce == "mustard"
+    assert prediction.garnish == ""  # This field is assigned as "" when the generation is extended
+    assert prediction.sauce == "tomato \n\nSauce: mustard"
 
 
 def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
     lm = DummyLM(
         [
-            " white\n\nFat: butter\n\nGarish: lettuce\n\nSauce: mayo",
-            " ham\n\nFat: butter\n\nGarish: lettuce\n\nSauce: mayo",
+            " white\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo",
+            " ham\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo",
         ]
     )
     dspy.settings.configure(lm=lm)
 
+    # The logged conversation:
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: white
+
+    # Fat: butter
+
+    # Garnish: lettuce
+
+    # Sauce: mayo
+    # ===
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: white Fat: butter Garnish: lettuce Sauce: mayo
+
+    # Protein: ham
+
+    # Fat: butter
+
+    # Garnish: lettuce
+
+    # Sauce: mayo
+    # ===
+
     predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
-    assert predictor.bread == "white"
-    assert predictor.protein == "ham"
-    assert predictor.fat == "butter"
+    assert predictor.bread == "white\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo"
+    assert predictor.protein == ""
+    assert predictor.fat == "ham\n\nFat: butter"
     assert predictor.garnish == "lettuce"
     assert predictor.sauce == "mayo"
 
@@ -278,15 +428,86 @@ def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
 def test_extend_generation_with_empty_field(SandwichIdea):
     lm = DummyLM(
         [
-            " white\n\nProtein: \n\nFat: butter\n\nGarish: lettuce",
-            " mayo",
+            " white\n\nProtein: \n\nFat: butter\n\nGarnish: lettuce",
+            " lettuce \n\nSauce: mayo",
         ]
     )
     dspy.settings.configure(lm=lm)
+    # The logged conversation:
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: white
+
+    # Protein:
+
+    # Fat: butter
+
+    # Garnish: lettuce
+    # ===
+    # === DummyLM ===
+    # Based on the meal and dietary requirements, suggest a sandwich idea.
+
+    # ---
+
+    # Follow the following format.
+
+    # Meal: ${meal}
+
+    # Dietary Requiements: ${dietary_requiements}
+
+    # Bread: ${bread}
+
+    # Protein: ${protein}
+
+    # Fat: ${fat}
+
+    # Garnish: ${garnish}
+
+    # Sauce: ${sauce}
+
+    # ---
+
+    # Meal: lunch
+
+    # Dietary Requiements: N/A
+
+    # Bread: white
+
+    # Protein: Fat: butter Garnish: lettuce
+
+    # Fat: lettuce
+
+    # Sauce: mayo
+    # ===
 
     predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
     assert predictor.bread == "white"
-    assert predictor.protein == ""
-    assert predictor.fat == "butter"
+    assert predictor.protein == "Fat: butter\n\nGarnish: lettuce"
+    assert predictor.fat == ""
     assert predictor.garnish == "lettuce"
     assert predictor.sauce == "mayo"
