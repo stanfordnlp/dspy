@@ -50,8 +50,8 @@ def _input_keys_from_template(template: dsp.Template) -> InputKeys:
     ]
 
 def _output_keys_from_template(template: dsp.Template) -> InputKeys:
-    """Get input keys from template."""
-    # get only fields that are marked OldInputField and NOT OldOutputField
+    """Get output keys from template."""
+    # get only fields that are marked OldOutputField and NOT OldInputField
     # template_vars = list(template.kwargs.keys())
     return [
         k for k, v in template.kwargs.items() if isinstance(v, dspy.signatures.OldOutputField)
