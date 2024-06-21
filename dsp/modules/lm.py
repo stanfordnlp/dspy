@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 
+# The key used to pass image data to the language model.
+# TODO: maybe change the basic_request signature to do this?
+IMG_DATA_KEY = "img_data"
 
 class LM(ABC):
     """Abstract class for language models."""

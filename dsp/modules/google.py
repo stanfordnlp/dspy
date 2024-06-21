@@ -1,10 +1,11 @@
+import base64
 import os
 from collections.abc import Iterable
 from typing import Any, Optional
 
 import backoff
 
-from dsp.modules.lm import LM
+from dsp.modules.lm import IMG_DATA_KEY, LM
 
 try:
     import google.generativeai as genai
@@ -118,10 +119,21 @@ class Google(LM):
         if n is not None and n > 1 and kwargs['temperature'] == 0.0:
             kwargs['temperature'] = 0.7
 
-        response = self.llm.generate_content(prompt, generation_config=kwargs)
+        content = [prompt]
+        base64_data = ""
+        if IMG_DATA_KEY in kwargs:
+            base64_data = kwargs.pop(IMG_DATA_KEY)
+            # convert base64 string to bytes
+            content.append({
+                "mime_type": "image/jpeg",
+                "data": base64.b64decode(base64_data),
+            })
+
+        response = self.llm.generate_content(content, generation_config=kwargs)
 
         history = {
             "prompt": prompt,
+            "image": base64_data,
             "response": [response],
             "kwargs": kwargs,
             "raw_kwargs": raw_kwargs,
