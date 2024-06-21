@@ -361,6 +361,7 @@ class MIPRO(Teleprompter):
         requires_permission_to_run=True,
     ) -> dspy.Program:
         # Define ANSI escape codes for colors
+        RED = "\033[91m"
         YELLOW = "\033[93m"
         BLUE = "\033[94m"
         BOLD = "\033[1m"
@@ -400,6 +401,7 @@ class MIPRO(Teleprompter):
             {YELLOW}Awaiting your input...{ENDC}
         """)
 
+        print(f"""{RED}{BOLD}WARNING: MIPRO has been deprecated and replaced with MIPROv2.  MIPRO will be removed in a future release. {ENDC}""")
         print(user_message)
 
         sys.stdout.flush()  # Flush the output buffer to force the message to print
