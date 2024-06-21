@@ -51,5 +51,8 @@ PremAI = dsp.PremAI
 
 You = dsp.You
 
+# attribute Unify to class Unify
+Unify = dsp.Unify
+
 configure = settings.configure
 context = settings.context
