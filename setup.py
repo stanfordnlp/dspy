@@ -38,7 +38,8 @@ setup(
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
         "myscale":["clickhouse-connect"],
         "groq": ["groq~=0.8.0"],
-    },	
+        "langfuse": ["langfuse~=2.36.1"]
+    },
     classifiers=[	
         "Development Status :: 3 - Alpha",	
         "Intended Audience :: Science/Research",	

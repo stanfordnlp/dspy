@@ -2,9 +2,20 @@ import functools
 import json
 import logging
 from typing import Any, Literal, Optional, cast
-
 import backoff
-import openai
+
+try:
+    """
+    langfuse has made it compatible for us.
+    If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
+    """
+    import langfuse
+    from langfuse.openai import openai
+    logging.info(f"You are using Langfuse,version{langfuse.__version__}")
+except:
+    import openai
+    logging.info(f"You are using openai,version{openai.version.__version__}")
+
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
