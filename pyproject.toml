@@ -3,8 +3,8 @@ requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dspy-ai"
-version = "2.4.10"
+name = "{{PACKAGE_NAME_PLACEHOLDER}}"
+version = "{{VERSION_PLACEHOLDER}}"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
