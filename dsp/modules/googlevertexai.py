@@ -20,7 +20,7 @@ def backoff_hdlr(details):
     print(
         f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
         f"calling function {details['target']} with kwargs "
-        f"{details['kwargs']}"
+        f"{details['kwargs']}",
     )
 
 
@@ -94,7 +94,7 @@ class GoogleVertexAI(LM):
             )
         if self._is_gemini:
             self.client = model_cls(
-                model_name=model, safety_settings=kwargs.get("safety_settings")
+                model_name=model, safety_settings=kwargs.get("safety_settings"),
             )  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
         else:
             self.client = model_cls.from_pretrained(model)
@@ -129,7 +129,7 @@ class GoogleVertexAI(LM):
         if self._is_gemini:
             if "candidate_count" in params and params["candidate_count"] != 1:
                 print(
-                    f"As of now, Gemini only supports `candidate_count == 1` (see also https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini#parameters). The current value for candidate_count of {params['candidate_count']} will be overridden."
+                    f"As of now, Gemini only supports `candidate_count == 1` (see also https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini#parameters). The current value for candidate_count of {params['candidate_count']} will be overridden.",
                 )
                 params["candidate_count"] = 1
 
