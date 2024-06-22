@@ -146,11 +146,10 @@ class OllamaLocal(LM):
             langfuse.trace(
                 name="Ollama request",
                 user_id=str(uuid.uuid4()),
-                metadata=settings_dict['options'],
+                metadata={**settings_dict['options'], **request_info["usage"]},
                 input=prompt,
                 output=request_info['choices']
             )
-        #  测试下ollama能不能接入并上报，得找找托管版本的地址
         return request_info
 
     def request(self, prompt: str, **kwargs):
