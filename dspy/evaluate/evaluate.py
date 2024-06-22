@@ -197,12 +197,18 @@ class Evaluate:
                 display_progress,
             )
 
-        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
-
+        if ntotal == 0:
+            dspy.logger.warning("No examples were processed. The devset may be empty.")
+            average_metric = 0.0
+        else:
+            average_metric = 100 * ncorrect / ntotal
+            dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(average_metric, 1)}%)")
+        
         predicted_devset = sorted(reordered_devset)
 
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
+        
 
         data = [
             merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
@@ -244,14 +250,13 @@ class Evaluate:
                 ipython_display(HTML(message))
 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in predicted_devset]
+            return round(average_metric, 2), results, [score for *_, score in predicted_devset]
         if return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
+            return round(average_metric, 2), [score for *_, score in predicted_devset]
         if return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results
+            return round(average_metric, 2), results
 
-        return round(100 * ncorrect / ntotal, 2)
-
+        return round(average_metric, 2)
 
 def merge_dicts(d1, d2) -> dict:
     merged = {}
