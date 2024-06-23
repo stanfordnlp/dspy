@@ -118,6 +118,7 @@ class GPT3(LM):
 
         else:
             kwargs["prompt"] = prompt
+            kwargs = {"stringify_request": json.dumps(kwargs)}
             response = completions_request(**kwargs)
 
         history = {
@@ -216,6 +217,8 @@ class GPT3(LM):
 
 @CacheMemory.cache
 def cached_gpt3_request_v2(**kwargs):
+    if "stringify_request" in kwargs:
+        kwargs = json.loads(kwargs["stringify_request"])
     return openai.Completion.create(**kwargs)
 
 
@@ -240,6 +243,8 @@ def _cached_gpt3_turbo_request_v2_wrapped(**kwargs) -> OpenAIObject:
 
 @CacheMemory.cache
 def v1_cached_gpt3_request_v2(**kwargs):
+    if "stringify_request" in kwargs:
+        kwargs = json.loads(kwargs["stringify_request"])
     return openai.completions.create(**kwargs)
 
 
