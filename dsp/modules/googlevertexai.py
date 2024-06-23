@@ -1,5 +1,6 @@
 """Module for interacting with Google Vertex AI."""
-from typing import Any, Dict
+
+from typing import Any, Dict, Optional
 
 import backoff
 from pydantic_core import PydanticCustomError
@@ -9,16 +10,18 @@ from dsp.modules.lm import LM
 try:
     import vertexai  # type: ignore[import-untyped]
     from vertexai.language_models import CodeGenerationModel, TextGenerationModel
-    from vertexai.preview.generative_models import GenerativeModel
+    from vertexai.preview.generative_models import GenerativeModel, Part
 except ImportError:
     pass
 
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
-    print(f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
-          f"calling function {details['target']} with kwargs "
-          f"{details['kwargs']}")
+    print(
+        f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
+        f"calling function {details['target']} with kwargs "
+        f"{details['kwargs']}"
+    )
 
 
 def giveup_hdlr(details):
@@ -27,6 +30,7 @@ def giveup_hdlr(details):
         return False
     return True
 
+
 class GoogleVertexAI(LM):
     """Wrapper around GoogleVertexAI's API.
 
@@ -34,7 +38,9 @@ class GoogleVertexAI(LM):
     """
 
     def __init__(
-        self, model: str = "text-bison@002", **kwargs,
+        self,
+        model: str = "text-bison@002",
+        **kwargs,
     ):
         """
         Parameters
@@ -50,44 +56,47 @@ class GoogleVertexAI(LM):
         """
         super().__init__(model)
         self._is_gemini = "gemini" in model
+        self.is_multimodal = "vision" in model
         self._init_vertexai(kwargs)
         if "code" in model:
             model_cls = CodeGenerationModel
             self.available_args = {
-                'suffix',
-                'max_output_tokens',
-                'temperature',
-                'stop_sequences',
-                'candidate_count',
+                "suffix",
+                "max_output_tokens",
+                "temperature",
+                "stop_sequences",
+                "candidate_count",
             }
         elif "gemini" in model:
             model_cls = GenerativeModel
             self.available_args = {
-                'max_output_tokens',
-                'temperature',
-                'top_k',
-                'top_p',
-                'stop_sequences',
-                'candidate_count',
+                "max_output_tokens",
+                "temperature",
+                "top_k",
+                "top_p",
+                "stop_sequences",
+                "candidate_count",
             }
-        elif 'text' in model:
+        elif "text" in model:
             model_cls = TextGenerationModel
             self.available_args = {
-                'max_output_tokens',
-                'temperature',
-                'top_k',
-                'top_p',
-                'stop_sequences',
-                'candidate_count',
+                "max_output_tokens",
+                "temperature",
+                "top_k",
+                "top_p",
+                "stop_sequences",
+                "candidate_count",
             }
         else:
             raise PydanticCustomError(
-                'model',
+                "model",
                 'model name is not valid, got "{model_name}"',
                 dict(wrong_value=model),
             )
         if self._is_gemini:
-            self.client = model_cls(model_name=model, safety_settings=kwargs.get('safety_settings')) # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
+            self.client = model_cls(
+                model_name=model, safety_settings=kwargs.get("safety_settings")
+            )  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
         else:
             self.client = model_cls.from_pretrained(model)
         self.provider = "googlevertexai"
@@ -113,16 +122,16 @@ class GoogleVertexAI(LM):
         self,
         parameters: Any,
     ) -> dict:
-        stop_sequences = parameters.get('stop')
-        params_mapping = {"n": "candidate_count", 'max_tokens':'max_output_tokens'}
+        stop_sequences = parameters.get("stop")
+        params_mapping = {"n": "candidate_count", "max_tokens": "max_output_tokens"}
         params = {params_mapping.get(k, k): v for k, v in parameters.items()}
         params = {**self.kwargs, "stop_sequences": stop_sequences, **params}
         return {k: params[k] for k in set(params.keys()) & self.available_args}
 
-    def basic_request(self, prompt: str, **kwargs):
+    def basic_request(self, prompt: str, image: Optional[Part] = None, **kwargs):
         raw_kwargs = kwargs
         kwargs = self._prepare_params(raw_kwargs)
-        if self._is_gemini:
+        if self._is_gemini and not self.is_multimodal:
             response = self.client.generate_content(
                 [prompt],
                 generation_config=kwargs,
@@ -131,11 +140,38 @@ class GoogleVertexAI(LM):
                 "prompt": prompt,
                 "response": {
                     "prompt": prompt,
-                    "choices": [{
-                        "text": '\n'.join(v.text for v in c.content.parts),
-                        'safetyAttributes': {v.category: v.probability for v in c.safety_ratings},
+                    "choices": [
+                        {
+                            "text": "\n".join(v.text for v in c.content.parts),
+                            "safetyAttributes": {
+                                v.category: v.probability for v in c.safety_ratings
+                            },
                         }
-                        for c in response.candidates],
+                        for c in response.candidates
+                    ],
+                },
+                "kwargs": kwargs,
+                "raw_kwargs": raw_kwargs,
+            }
+        elif self._is_gemini and self.is_multimodal and image is not None:
+            response = self.client.generate_content(
+                [image, prompt],
+                generation_config=kwargs,
+            )
+            history = {
+                "prompt": prompt,
+                "image": image,
+                "response": {
+                    "prompt": prompt,
+                    "choices": [
+                        {
+                            "text": "\n".join(v.text for v in c.content.parts),
+                            "safetyAttributes": {
+                                v.category: v.probability for v in c.safety_ratings
+                            },
+                        }
+                        for c in response.candidates
+                    ],
                 },
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
@@ -146,15 +182,20 @@ class GoogleVertexAI(LM):
                 "prompt": prompt,
                 "response": {
                     "prompt": prompt,
-                    "choices": [{"text": c["content"], 'safetyAttributes': c['safetyAttributes']}
-                                for c in response.predictions],
+                    "choices": [
+                        {
+                            "text": c["content"],
+                            "safetyAttributes": c["safetyAttributes"],
+                        }
+                        for c in response.predictions
+                    ],
                 },
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
             }
         self.history.append(history)
 
-        return [i['text'] for i in history['response']['choices']]
+        return [i["text"] for i in history["response"]["choices"]]
 
     @backoff.on_exception(
         backoff.expo,
