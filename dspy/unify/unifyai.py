@@ -4,25 +4,15 @@ import json
 from dspy import LM
 
 class UnifyAI(LM):
-    def __init__(self, model_or_router="auto", api_key=None):
-        # Initialize API key and base URL
+    def __init__(self, model_or_router="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03", api_key=None):
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
         self.api_base = "https://api.unify.ai/v0"
-        
-        # Set the model or router
         self.set_model_or_router(model_or_router)
-        
-        # Initialize the base LM class with the selected model
         super().__init__(model=self.model)
 
     def set_model_or_router(self, model_or_router):
         """Set the model or router based on the input."""
-        if model_or_router == "auto":
-            self.model = "router@auto"
-        elif model_or_router.startswith("router@"):
-            self.model = model_or_router
-        else:
-            self.model = model_or_router
+        self.model = model_or_router
 
     def basic_request(self, prompt, **kwargs):
         """
@@ -41,11 +31,8 @@ class UnifyAI(LM):
         }
         
         try:
-            # Send POST request to the API
             response = requests.post(f"{self.api_base}/chat/completions", headers=headers, json=data)
             response.raise_for_status()
-            
-            # Extract and return the generated content
             return response.json()["choices"][0]["message"]["content"]
         except requests.RequestException as e:
             print(f"API request failed: {e}")
@@ -92,15 +79,58 @@ class UnifyAI(LM):
                 print(f"Response content: {e.response.text}")
             return []
 
+    def get_credit_balance(self):
+        """Get the current credit balance."""
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        try:
+            response = requests.get(f"{self.api_base}/get_credits", headers=headers)
+            response.raise_for_status()
+            return response.json()["credits"]
+        except requests.RequestException as e:
+            print(f"Failed to get credit balance: {e}")
+            return None
+
+# ... (previous code remains the same)
+
 # Usage example
 if __name__ == "__main__":
-    # Initialize the UnifyAI instance
-    unify_lm = UnifyAI()
+    # Initialize the UnifyAI instance with a specific model and fallback
+    unify_lm = UnifyAI(model_or_router="llama-3-8b-chat@fireworks-ai->gpt-3.5-turbo@openai")
     
+    # Check credit balance
+    credit_balance = unify_lm.get_credit_balance()
+    print(f"Current credit balance: {credit_balance}")
+
     # List available models
     print("Available models:")
-    print(unify_lm.list_available_models())
+    models = unify_lm.list_available_models()
+    for model in models:
+        print(f"- {model}")
+
+    # Generate a response
+    prompt = "Translate 'Hello, world!' to French."
+    print(f"\nGenerating response for prompt: '{prompt}'")
+    responses = unify_lm.generate(prompt, max_tokens=50, temperature=0.7, n=1)
     
-    print("\nGenerating response:")
-    response = unify_lm.generate("Translate 'Hello, world!' to French.", max_tokens=50)
-    print("Generated response:", response)
+    if responses:
+        print("Generated response:")
+        for response in responses:
+            print(response)
+    else:
+        print("Failed to generate any responses.")
+
+    # Example with router
+    router_lm = UnifyAI(model_or_router="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03")
+    print("\nUsing router for generation:")
+    router_responses = router_lm.generate("What is the capital of France?", max_tokens=50)
+    if router_responses:
+        print("Router-generated response:")
+        for response in router_responses:
+            print(response)
+    else:
+        print("Router failed to generate any responses.")
+
+    # Example with custom endpoint (if applicable)
+    # custom_lm = UnifyAI(model_or_router="my-custom-model@custom")
+    # custom_response = custom_lm.generate("Custom model prompt", max_tokens=50)
+    # print("\nCustom model response:", custom_response)
