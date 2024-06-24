@@ -1,10 +1,8 @@
-from abc import ABC, abstractmethod
 
-
-class BaseTracker(ABC):
+class BaseTracker:
     def __init__(self):
         pass
 
-    @abstractmethod
-    def call(self, **kwargs):
+    @classmethod
+    def call(cls, **kwargs):
         pass
