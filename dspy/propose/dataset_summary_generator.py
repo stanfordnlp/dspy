@@ -73,7 +73,8 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
                 continue
             observations += output["observations"]
             
-            log_file.write(f"observations {observations}\n")
+            if log_file: 
+                log_file.write(f"observations {observations}\n")
     except Exception as e:
         print(f"e {e}. using observations from past round for a summary.")
 
