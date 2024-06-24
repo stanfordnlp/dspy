@@ -6,7 +6,6 @@ import backoff
 
 try:
     """
-    langfuse has made it compatible for us.
     If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
     """
     import langfuse

@@ -1,18 +1,9 @@
 import datetime
 import hashlib
-import uuid
 from typing import Any, Literal
-
 import requests
-
 from dsp.modules.lm import LM
-
-try:
-    from langfuse import Langfuse
-    # If you need higher performance, set the "thread" value
-    langfuse = Langfuse(max_retries=2)
-except:
-    LANGFUSE = False
+from dsp.trackers.base import BaseTracker
 
 
 def post_request_metadata(model_name, prompt):
@@ -142,14 +133,6 @@ class OllamaLocal(LM):
             "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
-        if LANGFUSE:
-            langfuse.trace(
-                name="Ollama request",
-                user_id=str(uuid.uuid4()),
-                metadata={**settings_dict['options'], **request_info["usage"]},
-                input=prompt,
-                output=request_info['choices']
-            )
         return request_info
 
     def request(self, prompt: str, **kwargs):
@@ -167,6 +150,7 @@ class OllamaLocal(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
+        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ) -> list[dict[str, Any]]:
         """Retrieves completions from Ollama.
@@ -193,6 +177,8 @@ class OllamaLocal(LM):
             choices = completed_choices
 
         completions = [self._get_choice_text(c) for c in choices]
+
+        tracker.call(input=prompt, output=choices, **kwargs)
 
         return completions
     
