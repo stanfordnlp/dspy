@@ -163,7 +163,7 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 
 TODO: Add links to the state-of-the-art results by the University of Toronto on Clinical NLP, on Theory of Mind (ToM) by Plastic Labs, and the DSPy pipeline from Replit.
 
-There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
+There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/llm-frameworks/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
 
 ## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
 
