@@ -127,7 +127,7 @@ class LM(ABC):
         return printing_value
 
     @abstractmethod
-    def __call__(self, prompt, only_completed=True, return_sorted=False, tracker=BaseTracker, **kwargs):
+    def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
         pass
 
     def copy(self, **kwargs):

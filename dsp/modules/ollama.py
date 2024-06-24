@@ -41,6 +41,7 @@ class OllamaLocal(LM):
         presence_penalty: float = 0,
         n: int = 1,
         num_ctx: int = 1024,
+        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ):
         super().__init__(model)
@@ -50,6 +51,7 @@ class OllamaLocal(LM):
         self.base_url = base_url
         self.model_name = model
         self.timeout_s = timeout_s
+        self.tracker = tracker
 
         self.kwargs = {
             "temperature": temperature,
@@ -150,7 +152,6 @@ class OllamaLocal(LM):
         prompt: str,
         only_completed: bool = True,
         return_sorted: bool = False,
-        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ) -> list[dict[str, Any]]:
         """Retrieves completions from Ollama.
@@ -178,7 +179,7 @@ class OllamaLocal(LM):
 
         completions = [self._get_choice_text(c) for c in choices]
 
-        tracker.call(input=prompt, output=choices, **kwargs)
+        self.tracker.call(input=prompt, output=choices, **kwargs)
 
         return completions
     
