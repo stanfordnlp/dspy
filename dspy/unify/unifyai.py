@@ -4,15 +4,15 @@ import json
 from dspy import LM
 
 class UnifyAI(LM):
-    def __init__(self, model_or_router="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03", api_key=None):
+    def __init__(self, endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03", api_key=None):
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
         self.api_base = "https://api.unify.ai/v0"
-        self.set_model_or_router(model_or_router)
+        self.set_model_or_router(endpoint)
         super().__init__(model=self.model)
 
-    def set_model_or_router(self, model_or_router):
+    def set_model_or_router(self, endpoint):
         """Set the model or router based on the input."""
-        self.model = model_or_router
+        self.model = endpoint
 
     def basic_request(self, prompt, **kwargs):
         """
@@ -95,7 +95,7 @@ class UnifyAI(LM):
 # Usage example
 if __name__ == "__main__":
     # Initialize the UnifyAI instance with a specific model and fallback
-    unify_lm = UnifyAI(model_or_router="llama-3-8b-chat@fireworks-ai->gpt-3.5-turbo@openai")
+    unify_lm = UnifyAI(endpoint="llama-3-8b-chat@fireworks-ai->gpt-3.5-turbo@openai")
     
     # Check credit balance
     credit_balance = unify_lm.get_credit_balance()
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         print("Failed to generate any responses.")
 
     # Example with router
-    router_lm = UnifyAI(model_or_router="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03")
+    router_lm = UnifyAI(endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03")
     print("\nUsing router for generation:")
     router_responses = router_lm.generate("What is the capital of France?", max_tokens=50)
     if router_responses:
