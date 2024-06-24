@@ -212,6 +212,8 @@ class MIPROv2(Teleprompter):
                     print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
                     self.program_code_string = None
                     program_aware_proposer = False
+            else:
+                self.program_code_string = None
 
             # Setup our proposer 
             proposer = GroundedProposer(
