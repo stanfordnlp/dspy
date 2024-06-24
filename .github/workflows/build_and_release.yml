@@ -1,0 +1,111 @@
+---
+name: Publish Python 🐍 distributions 📦 to PyPI
+on:
+  push:
+    tags:
+      - "*"
+jobs:
+
+  extract-tag:  
+    runs-on: ubuntu-latest  
+    outputs:  
+      version: ${{ steps.extract_tag.outputs.tag }}  
+    steps:  
+      - uses: actions/checkout@v2  
+      - id: extract_tag  
+        name: Extract tag name  
+        run: echo "::set-output name=tag::$(echo $GITHUB_REF | cut -d / -f 3)"  
+
+  build-and-publish-test-pypi:
+    needs: extract-tag
+    runs-on: ubuntu-latest
+    environment: 
+      name: pypi
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    steps:
+      - uses: actions/checkout@master
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"
+      - name: Install dependencies
+        run: python3 -m pip install setuptools wheel twine semver packaging
+      - name: Get correct version for TestPyPI release  
+        id: check_version  
+        run: |  
+          VERSION=${{ needs.extract-tag.outputs.version }}  
+          PACKAGE_NAME="dspy-ai-test"
+          echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
+          NEW_VERSION=$(python3 build_utils/test_version.py $PACKAGE_NAME $VERSION)  
+          echo "Version to be used for TestPyPI release: $NEW_VERSION"  
+          echo "::set-output name=version::$NEW_VERSION"  
+      - name: Update version in setup.py
+        run: sed -i "s/{{VERSION_PLACEHOLDER}}/${{ steps.check_version.outputs.version }}/g" setup.py
+      - name: Update version in pyproject.toml
+        run: sed -i "s/{{VERSION_PLACEHOLDER}}/${{ steps.check_version.outputs.version }}/g" pyproject.toml
+      - name: Update package name in setup.py
+        run: sed -i "s/{{PACKAGE_NAME_PLACEHOLDER}}/dspy-ai-test/g" setup.py
+      - name: Update package name in pyproject.toml
+        run: sed -i "s/{{PACKAGE_NAME_PLACEHOLDER}}/dspy-ai-test/g" pyproject.toml
+      - name: Build a binary wheel
+        run: python3 setup.py sdist bdist_wheel
+      - name: Publish distribution 📦 to test-PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        with: 
+          repository-url: https://test.pypi.org/legacy/
+
+  test-intro-script: 
+    needs: [extract-tag, build-and-publish-test-pypi]
+    runs-on: ubuntu-latest
+    steps:  
+      - uses: actions/checkout@v4 
+      - name: Set up Python 3.9  
+        uses: actions/setup-python@v5
+        with:  
+          python-version: "3.9"  
+          cache: "pip"
+      - name: Install package from TestPyPI
+        run: |
+          .github/workflow_scripts/install_testpypi_pkg.sh ${{ needs.extract-tag.outputs.version }}
+      - name: Install other dependencies
+        run: |  
+          python3 -m pip install Jinja2
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install -r requirements-dev.txt
+          python3 -m pip install openai==0.28.1
+      - name: Set up cache directory  
+        run: | 
+          mkdir -p cache  
+          echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV  
+      - name: Run Python script  
+        run: |    
+          pytest -c tests_integration/pytest.ini tests_integration/
+
+  build-and-publish-pypi:
+    needs: [extract-tag, build-and-publish-test-pypi, test-intro-script]
+    runs-on: ubuntu-latest
+    environment: 
+      name: pypi
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    steps:
+      - uses: actions/checkout@master
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"
+      - name: Install dependencies
+        run: python3 -m pip install setuptools wheel twine
+      - name: Update version in setup.py
+        run: sed -i "s/{{VERSION_PLACEHOLDER}}/${{ needs.extract-tag.outputs.version }}/g" setup.py
+      - name: Update version in pyproject.toml
+        run: sed -i "s/{{VERSION_PLACEHOLDER}}/${{ needs.extract-tag.outputs.version }}/g" pyproject.toml
+      - name: Update package name in setup.py  
+        run: sed -i "s/{{PACKAGE_NAME_PLACEHOLDER}}/dspy-ai/g" setup.py
+      - name: Update package name in pyproject.toml
+        run: sed -i "s/{{PACKAGE_NAME_PLACEHOLDER}}/dspy-ai/g" pyproject.toml
+      - name: Build a binary wheel
+        run: python3 setup.py sdist bdist_wheel
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
