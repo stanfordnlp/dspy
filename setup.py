@@ -28,7 +28,7 @@ setup(
         "marqo": ["marqo~=3.1.0"],
         "mongodb": ["pymongo~=3.12.0"],
         "pinecone": ["pinecone-client~=2.2.4"],
-        "weaviate": ["weaviate-client~=3.26.1"],
+        "weaviate": ["weaviate-client~=4.6.5"],
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
