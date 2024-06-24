@@ -1,6 +1,6 @@
 # Build & Release Workflow Implementation
 
-The [build_and_release](../../../.github/workflows/build_and_release.yml) workflow automates deployments of dspy-ai to pypi. For a guide to triggering a release using the workflow, refer to [release checklist](release-checklist.md).
+The [build_and_release](https://github.com/stanfordnlp/dspy/blob/main/.github/workflows/build_and_release.yml) workflow automates deployments of dspy-ai to pypi. For a guide to triggering a release using the workflow, refer to [release checklist](release-checklist.md).
 
 ## Overview
 
@@ -26,15 +26,15 @@ Extracts the tag pushed to the commit. This tag is expected to be the version of
 
 #### build-and-publish-test-pypi
 Builds and publishes the package to test-pypi.
-1. Determines the version that should be deployed to test-pypi. There may be an existing deployment with the version specified by the tag in the case that a deployment failed and the maintainer made some changes and pushed the same tag again (which is the intended usage). The following logic is implemented [test_version.py](../../../build_utils/test_version.py)
+1. Determines the version that should be deployed to test-pypi. There may be an existing deployment with the version specified by the tag in the case that a deployment failed and the maintainer made some changes and pushed the same tag again (which is the intended usage). The following logic is implemented [test_version.py](https://github.com/stanfordnlp/dspy/blob/main/build_utils/test_version.py)
     1. Load the releases on test-pypi
     1. Check if there is a release matching our current tag
         1. If not, create a release with the current tag
         1. If it exists, oad the latest published version (this will either be the version with the tag itself, or the tag + a pre-release version). In either case, increment the pre-release version.
-1. Updates the version placeholder in [setup.py](../../../setup.py) to the version obtained in step 1.
-1. Updates the version placeholder in [pyproject.toml](../../../pyproject.toml) to the version obtained in step 1.
-1. Updates the package name placeholder in [setup.py](../../../setup.py) to  `dspy-ai-test`*
-1. Updates the package name placeholder in [pyproject.toml](../../../pyproject.toml) to `dspy-ai-test`*
+1. Updates the version placeholder in [setup.py](https://github.com/stanfordnlp/dspy/blob/main/setup.py) to the version obtained in step 1.
+1. Updates the version placeholder in [pyproject.toml](https://github.com/stanfordnlp/dspy/blob/main/pyproject.toml) to the version obtained in step 1.
+1. Updates the package name placeholder in [setup.py](https://github.com/stanfordnlp/dspy/blob/main/setup.py) to  `dspy-ai-test`*
+1. Updates the package name placeholder in [pyproject.toml](https://github.com/stanfordnlp/dspy/blob/main/pyproject.toml) to `dspy-ai-test`*
 1. Builds the binary wheel
 1. Publishes the package to test-pypi. 
 
@@ -48,10 +48,10 @@ Runs the pytest containing the intro script as an integration test using the pac
 #### build-and-publish-pypi
 Builds and publishes the package to pypi.
 
-1. Updates the version placeholder in [setup.py](../../../setup.py) to the version obtained in step 1.
-1. Updates the version placeholder in [pyproject.toml](../../../pyproject.toml) to the version obtained in step 1.
-1. Updates the package name placeholder in [setup.py](../../../setup.py) to  `dspy-ai`*
-1. Updates the package name placeholder in [pyproject.toml](../../../pyproject.toml) to `dspy-ai`*
+1. Updates the version placeholder in [setup.py](https://github.com/stanfordnlp/dspy/blob/main/setup.py) to the version obtained in step 1.
+1. Updates the version placeholder in [pyproject.toml](https://github.com/stanfordnlp/dspy/blob/main/pyproject.toml) to the version obtained in step 1.
+1. Updates the package name placeholder in [setup.py](https://github.com/stanfordnlp/dspy/blob/main/setup.py) to  `dspy-ai`*
+1. Updates the package name placeholder in [pyproject.toml](https://github.com/stanfordnlp/dspy/blob/main/pyproject.toml) to `dspy-ai`*
 1. Builds the binary wheel
 1. Publishes the package to pypi.
 
