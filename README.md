@@ -91,6 +91,7 @@ Just write the environment variables and langfuse will automatically read them.[
 import dspy
 from dsp.trackers.langfuse_tracker import LangfuseTracker
 
+# Assuming the environment variables have been set
 langfuse = LangfuseTracker()
 dspy.OllamaLocal(model="llama2", tracker=langfuse)
 ```
