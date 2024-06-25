@@ -9,8 +9,10 @@ with open("requirements.txt", encoding="utf-8") as f:
     requirements = f.read().splitlines()
 
 setup(	
-    name="{{PACKAGE_NAME_PLACEHOLDER}}",
-    version="{{VERSION_PLACEHOLDER}}", 	
+    #replace_package_name_marker
+    name="dspy-ai",
+    #replace_package_version_marker
+    version="2.4.10", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type='text/markdown',	
