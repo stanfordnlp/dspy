@@ -41,13 +41,13 @@ jobs:
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "::set-output name=version::$NEW_VERSION"  
       - name: Update version in setup.py
-        run: sed -i '/#replace_package_version_marker/{n;s/version = "[^"]*"/version = "${{ steps.check_version.outputs.version }}"/;}' setup.py
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' setup.py
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version = "[^"]*"/version = "${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
       - name: Update package name in setup.py
-        run: sed -i '/#replace_package_name_marker/{n;s/name = "[^"]*"/name = "dspy-ai-test"/;}' setup.py
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' setup.py
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name = "[^"]*"/name = "dspy-ai-test"/;}' pyproject.toml  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
         run: python3 setup.py sdist bdist_wheel
       - name: Publish distribution 📦 to test-PyPI
@@ -98,13 +98,13 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install setuptools wheel twine
       - name: Update version in setup.py
-        run: sed -i '/#replace_package_version_marker/{n;s/version = "[^"]*"/version = "${{ needs.extract-tag.outputs.version }}"/;}' setup.py
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' setup.py
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version = "[^"]*"/version = "${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
       - name: Update package name in setup.py  
-        run: ssed -i '/#replace_package_name_marker/{n;s/name = "[^"]*"/name = "dspy-ai-hmoazam"/;}' setup.py
+        run: ssed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-hmoazam"/;}' setup.py
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name = "[^"]*"/name = "dspy-ai-hmoazam"/;}' pyproject.toml 
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-hmoazam"/;}' pyproject.toml 
       - name: Build a binary wheel
         run: python3 setup.py sdist bdist_wheel
       - name: Publish distribution 📦 to PyPI
