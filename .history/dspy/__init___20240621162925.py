@@ -1,11 +1,10 @@
 import dsp
-from dsp.modules.hf_client import ChatModuleClient, HFClientSGLang, HFClientVLLM, HFServerTGI
+from dsp.modules.hf_client import HFClientVLLM
 
 from .predict import *
 from .primitives import *
 from .retrieve import *
 from .signatures import *
-from .utils.logging import logger, set_log_output
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
