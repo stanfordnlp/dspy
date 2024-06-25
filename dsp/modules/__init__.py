@@ -26,6 +26,6 @@ from .sbert import *
 from .sentence_vectorizer import *
 from .snowflake import *
 from .tensorrt_llm import TensorRTModel
+from .unify import *
 from .watsonx import *
 from .you import You
-from .unify import *
