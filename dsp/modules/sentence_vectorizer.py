@@ -264,3 +264,50 @@ def get_premai_api_key(api_key: Optional[str] = None) -> str:
             "See the quick start guide at https://docs.premai.io/introduction to get your API key.",
         )
     return api_key
+
+
+class PremAIVectorizer(BaseSentenceVectorizer):
+    """The PremAIVectorizer class utilizes the PremAI Embeddings API to convert text into embeddings.This vectorizer leverages various models provided by PremAI. For detailed information on the supported models, visit: https://docs.premai.io/get-started/supported-models.
+
+    The `project_id` is a mandatory argument, while `api_key` and `model_name` are optional. The `api_key`
+    can be supplied either as an argument or through an environment variable. By default, the `model_name`
+    is set to "text-embedding-3-large", unless specified otherwise.
+
+    To learn more about getting started with PremAI, visit: https://docs.premai.io/introduction.
+    """
+
+    def __init__(
+        self,
+        project_id: str,
+        api_key: Optional[str] = None,
+        model_name: Optional[str] = "text-embedding-3-large",
+        embed_batch_size: int = 32,
+    ):
+        self.model_name, self.project_id = model_name, project_id
+        self.embed_batch_size = embed_batch_size
+        api_key = get_premai_api_key(api_key=api_key)
+
+        try:
+            from premai import Prem
+
+            self.client = Prem(api_key=api_key)
+        except ImportError as error:
+            raise ImportError("Please install premai package using: pip install premai")
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+        embedding_list = []
+
+        n_batches = (len(text_to_vectorize) - 1) // self.embed_batch_size + 1
+        for cur_batch_idx in range(n_batches):
+            start_idx = cur_batch_idx * self.embed_batch_size
+            end_idx = (cur_batch_idx + 1) * self.embed_batch_size
+            current_batch = text_to_vectorize[start_idx:end_idx]
+            embeddings = self.client.embeddings.create(
+                project_id=self.project_id, model=self.model_name, input=current_batch
+            ).data
+            current_batch_embeddings = [embedding.embedding for embedding in embeddings]
+            embedding_list.extend(current_batch_embeddings)
+
+        embeddings = np.array(embedding_list, dtype=np.float32)
+        return embeddings
