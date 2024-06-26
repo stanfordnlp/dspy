@@ -5,8 +5,9 @@ import json
 import requests
 from typing import AsyncGenerator, Dict, Generator, List, Optional, Union
 import openai
-from unify.clients import Unify as UnifyClient
 from dsp.modules.lm import LM
+from unify.clients import Unify
+
 
 class Unify(LM):
     def __init__(
