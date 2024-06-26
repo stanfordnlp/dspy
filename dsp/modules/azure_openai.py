@@ -1,7 +1,8 @@
 import functools
 import json
 import logging
-from typing import Any, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional, cast
+
 import backoff
 
 try:
@@ -47,6 +48,9 @@ def backoff_hdlr(details):
     )
 
 
+AzureADTokenProvider = Callable[[], str]
+
+
 class AzureOpenAI(LM):
     """Wrapper around Azure's API for OpenAI.
 
@@ -67,6 +71,7 @@ class AzureOpenAI(LM):
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
         system_prompt: Optional[str] = None,
+        azure_ad_token_provider: Optional[AzureADTokenProvider] = None,
         **kwargs,
     ):
         super().__init__(model)
@@ -85,6 +90,7 @@ class AzureOpenAI(LM):
             openai.api_key = api_key
             openai.api_type = "azure"
             openai.api_version = api_version
+            openai.azure_ad_token_provider = azure_ad_token_provider
 
             self.client = None
 
@@ -93,6 +99,7 @@ class AzureOpenAI(LM):
                 azure_endpoint=api_base,
                 api_key=api_key,
                 api_version=api_version,
+                azure_ad_token_provider=azure_ad_token_provider,
             )
 
             self.client = client
