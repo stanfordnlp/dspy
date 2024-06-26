@@ -292,7 +292,7 @@ class PremAIVectorizer(BaseSentenceVectorizer):
 
             self.client = Prem(api_key=api_key)
         except ImportError as error:
-            raise ImportError("Please install premai package using: pip install premai")
+            raise ImportError("Please install premai package using: pip install premai") from error
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
