@@ -23,7 +23,27 @@ class Unify:
         api_key: Optional[str] = None,
     ) -> None:  # noqa: DAR101, DAR401
     
-        
+        """Initialize the Unify client.
+
+            Args:
+                endpoint (str, optional): Endpoint name in OpenAI API format:
+                    <uploaded_by>/<model_name>@<provider_name>
+                    Defaults to None.
+
+                model (str, optional): Name of the model. If None,
+                endpoint must be provided.
+
+                provider (str, optional): Name of the provider. If None,
+                endpoint must be provided.
+
+                api_key (str, optional): API key for accessing the Unify API.
+                    If None, it attempts to retrieve the API key from the
+                    environment variable UNIFY_KEY.
+                    Defaults to None.
+
+            Raises:
+                UnifyError: If the API key is missing.
+        """
         self._api_key = _validate_api_key(api_key)
         self._endpoint, self._model, self._provider = _validate_endpoint(  # noqa:WPS414
             endpoint,
@@ -40,11 +60,21 @@ class Unify:
 
     @property
     def model(self) -> str:
-        
+        """
+        Get the model name.  # noqa: DAR201.
+
+        Returns:
+            str: The model name.
+        """
         return self._model
 
     def set_model(self, value: str) -> None:
-        
+        """
+        Set the model name.  # noqa: DAR101.
+
+        Args:
+            value (str): The model name.
+        """
         self._model = value
         if self._provider:
             self._endpoint = "@".join([value, self._provider])
@@ -54,21 +84,41 @@ class Unify:
 
     @property
     def provider(self) -> Optional[str]:
-       
+        """
+        Get the provider name.  # noqa :DAR201.
+
+        Returns:
+            str: The provider name.
+        """
         return self._provider
 
     def set_provider(self, value: str) -> None:
-        
+        """
+        Set the provider name.  # noqa: DAR101.
+
+        Args:
+            value (str): The provider name.
+        """
         self._provider = value
         self._endpoint = "@".join([self._model, value])
 
     @property
     def endpoint(self) -> str:
-        
+        """
+        Get the endpoint name.  # noqa: DAR201.
+
+        Returns:
+            str: The endpoint name.
+        """
         return self._endpoint
 
     def set_endpoint(self, value: str) -> None:
-        
+        """
+        Set the model name.  # noqa: DAR101.
+
+        Args:
+            value (str): The endpoint name.
+        """
         self._endpoint = value
         self._model, self._provider = value.split("@")  # noqa: WPS414
         if self._provider in _available_dynamic_modes:
@@ -140,7 +190,16 @@ class Unify:
 
     def get_credit_balance(self) -> float:
         # noqa: DAR201, DAR401
-        
+        """
+        Get the remaining credits left on your account.
+
+        Returns:
+            int or None: The remaining credits on the account
+            if successful, otherwise None.
+        Raises:
+            BadRequestError: If there was an HTTP error.
+            ValueError: If there was an error parsing the JSON response.
+        """
         url = "https://api.unify.ai/v0/get_credits"
         headers = {
             "accept": "application/json",
@@ -257,12 +316,21 @@ class AsyncUnify:
 
     @property
     def model(self) -> str:
-        
-        
+        """
+        Get the model name.  # noqa: DAR201.
+
+        Returns:
+            str: The model name.
+        """
         return self._model
 
     def set_model(self, value: str) -> None:
-       
+        """
+        Set the model name.  # noqa: DAR101.
+
+        Args:
+            value (str): The model name.
+        """
         self._model = value
         if self._provider:
             self._endpoint = "@".join([value, self._provider])
