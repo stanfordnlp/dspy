@@ -3,18 +3,16 @@ import requests
 import json
 from dspy import LM
 
-class UnifyAI(LM):
+class Unify(LM):
     def __init__(self, endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03", api_key=None):
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
         self.api_base = "https://api.unify.ai/v0"
-        self.set_model_or_router(endpoint)
+        self.model = endpoint
         super().__init__(model=self.model)
 
-    def set_model_or_router(self, endpoint):
-        """Set the model or router based on the input."""
-        self.model = endpoint
 
     def basic_request(self, prompt, **kwargs):
+        
         """
         Send a basic request to the Unify AI API.
         This method is required by the LM base class.
