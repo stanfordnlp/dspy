@@ -10,6 +10,7 @@ from unify.clients import Unify
 
 
 class Unify(LM):
+    from dsp.modules.lm import LM
     def __init__(
         self, 
         endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03", 
