@@ -267,7 +267,10 @@ def get_premai_api_key(api_key: Optional[str] = None) -> str:
 
 
 class PremAIVectorizer(BaseSentenceVectorizer):
-    """The PremAIVectorizer class utilizes the PremAI Embeddings API to convert text into embeddings.This vectorizer leverages various models provided by PremAI. For detailed information on the supported models, visit: https://docs.premai.io/get-started/supported-models.
+    """The PremAIVectorizer class utilizes the PremAI Embeddings API to convert text into embeddings.
+    This vectorizer leverages various models provided by PremAI.
+
+    For detailed information on the supported models, visit: https://docs.premai.io/get-started/supported-models.
 
     The `project_id` is a mandatory argument, while `api_key` and `model_name` are optional. The `api_key`
     can be supplied either as an argument or through an environment variable. By default, the `model_name`
