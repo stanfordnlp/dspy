@@ -3,8 +3,10 @@ requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dspy-ai"
-version = "2.4.9"
+#replace_package_name_marker
+name="dspy-ai"
+#replace_package_version_marker
+version="2.4.10"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -289,6 +291,8 @@ ignore = [
     "E731",
     # Sometimes we need List and Tuple
     "UP006",
+    # Ignore assert
+    "S101",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.

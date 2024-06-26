@@ -17,9 +17,11 @@ CHARS2TOKENS: int = 4
 
 class AWSModel(LM):
     """This class adds support for an AWS model.
+
     It is an abstract class and should not be instantiated directly.
     Instead, use one of the subclasses - AWSMistral, AWSAnthropic, or AWSMeta.
-    The subclasses implement the abstract methods _create_body and _call_model and work in conjunction with the AWSProvider classes Bedrock and Sagemaker.
+    The subclasses implement the abstract methods _create_body and _call_model
+    and work in conjunction with the AWSProvider classes Bedrock and Sagemaker.
     Usage Example:
         bedrock = dspy.Bedrock(region_name="us-west-2")
         bedrock_mixtral = dspy.AWSMistral(bedrock, "mistral.mixtral-8x7b-instruct-v0:1", **kwargs)
@@ -43,6 +45,7 @@ class AWSModel(LM):
             model (str, optional): An LM name, e.g., a bedrock name or an AWS endpoint.
             max_context_size (int): The maximum context size in tokens.
             max_new_tokens (int): The maximum number of tokens to be sampled from the LM.
+            **kwargs: Additional arguments.
         """
         super().__init__(model=model)
         self._model_name: str = model
@@ -117,8 +120,10 @@ class AWSModel(LM):
         There is only support for only_completed=True and return_sorted=False
         right now.
         """
-        assert only_completed, "for now"
-        assert return_sorted is False, "for now"
+        if not only_completed:
+            raise ValueError("only_completed must be True for now")
+        if return_sorted:
+            raise ValueError("return_sorted must be False for now")
 
         generated = self.basic_request(prompt, **kwargs)
         return [generated]
@@ -182,8 +187,7 @@ class AWSMistral(AWSModel):
         else:
             raise ValueError("Error - provider not recognized")
 
-        completion = completion.split(self.kwargs["stop"])[0]
-        return completion
+        return completion.split(self.kwargs["stop"])[0]
 
 
 class AWSAnthropic(AWSModel):
@@ -247,12 +251,11 @@ class AWSAnthropic(AWSModel):
             body=body,
         )
         response_body = json.loads(response["body"].read())
-        completion = response_body["content"][0]["text"]
-        return completion
+        return response_body["content"][0]["text"]
 
 
 class AWSMeta(AWSModel):
-    """Llama2 family of models."""
+    """Llama3 family of models."""
 
     def __init__(
         self,
@@ -275,10 +278,15 @@ class AWSMeta(AWSModel):
         for k, v in kwargs.items():
             self.kwargs[k] = v
 
-        self.kwargs["max_gen_len"] = self.kwargs.pop("max_tokens")
+    def _format_prompt(self, raw_prompt: str) -> str:
+        return (
+            "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+            + raw_prompt
+            + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        )
 
     def _create_body(self, prompt: str, **kwargs) -> tuple[int, dict[str, str | float]]:
-        base_args: dict[str, Any] = self.kwargs
+        base_args: dict[str, Any] = self.kwargs.copy()
         for k, v in kwargs.items():
             base_args[k] = v
 
@@ -290,6 +298,10 @@ class AWSMeta(AWSModel):
         query_args.pop("presence_penalty", None)
         query_args.pop("model", None)
 
+        max_tokens = query_args.pop("max_tokens", None)
+        if max_tokens:
+            query_args["max_gen_len"] = max_tokens
+
         query_args["prompt"] = prompt
         return (n, query_args)
 
@@ -299,9 +311,4 @@ class AWSMeta(AWSModel):
             body=body,
         )
         response_body = json.loads(response["body"].read())
-        completion = response_body["generation"]
-
-        stop = "\n\n"
-        completion = completion.split(stop)[0]
-
-        return completion
+        return response_body["generation"]
