@@ -5,6 +5,7 @@ import json
 import requests
 from typing import AsyncGenerator, Dict, Generator, List, Optional, Union
 import openai
+from dsp.modules.lm import LM
 from unify.clients import Unify
 
 
