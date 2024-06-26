@@ -20,7 +20,7 @@ class Retry(Predict):
             actual_prefix = value.json_schema_extra["prefix"].split(":")[0] + ":"
             signature = signature.append(f"past_{key}", dspy.InputField(
                 prefix="Previous " + actual_prefix,
-                desc=f"past {actual_prefix} with errors",
+                desc=f"past {actual_prefix[:-1]} with errors",
                 format=value.json_schema_extra.get("format"),
             ))
 
