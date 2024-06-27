@@ -1,6 +1,6 @@
 import random
 from collections.abc import Mapping
-from typing import Any, Union
+from typing import List, Tuple, Union
 
 import pandas as pd
 from datasets import load_dataset
@@ -68,6 +68,19 @@ class DataLoader(Dataset):
 
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
+    def from_pandas(
+        self,
+        df: pd.DataFrame,
+        fields: list[str] = None,
+        input_keys: tuple[str] = (),
+    ) -> list[dspy.Example]:
+        if fields is None:
+            fields = list(df.columns)
+
+        return [
+            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
+        ]
+
     def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         dataset = load_dataset("json", data_files=file_path)["train"]
 
@@ -83,19 +96,6 @@ class DataLoader(Dataset):
             fields = list(dataset.features)
 
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
-
-    def from_pandas(
-        self,
-        df: pd.DataFrame,
-        fields: list[str] = None,
-        input_keys: tuple[str] = (),
-    ) -> list[dspy.Example]:
-        if fields is None:
-            fields = list(df.columns)
-
-        return [
-            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
-        ]
 
     def sample(
         self,
