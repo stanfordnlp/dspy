@@ -1,5 +1,4 @@
 import abc
-import os
 from typing import List, Optional
 
 import numpy as np
@@ -280,6 +279,7 @@ class PremAIVectorizer(BaseSentenceVectorizer):
 
         try:
             from premai import Prem
+
             from dsp.modules.premai import get_premai_api_key
 
             api_key = get_premai_api_key(api_key=api_key)
