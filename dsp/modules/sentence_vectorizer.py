@@ -307,7 +307,7 @@ class PremAIVectorizer(BaseSentenceVectorizer):
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             current_batch = text_to_vectorize[start_idx:end_idx]
             embeddings = self.client.embeddings.create(
-                project_id=self.project_id, model=self.model_name, input=current_batch
+                project_id=self.project_id, model=self.model_name, input=current_batch,
             ).data
             current_batch_embeddings = [embedding.embedding for embedding in embeddings]
             embedding_list.extend(current_batch_embeddings)
