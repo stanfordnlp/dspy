@@ -255,17 +255,6 @@ class FastEmbedVectorizer(BaseSentenceVectorizer):
         return np.array([embedding.tolist() for embedding in embeddings], dtype=np.float32)
 
 
-def get_premai_api_key(api_key: Optional[str] = None) -> str:
-    """Retrieve the PreMAI API key from a passed argument or environment variable."""
-    api_key = api_key or os.environ.get("PREMAI_API_KEY")
-    if api_key is None:
-        raise RuntimeError(
-            "No API key found\n",
-            "See the quick start guide at https://docs.premai.io/introduction to get your API key.",
-        )
-    return api_key
-
-
 class PremAIVectorizer(BaseSentenceVectorizer):
     """The PremAIVectorizer class utilizes the PremAI Embeddings API to convert text into embeddings.
     This vectorizer leverages various models provided by PremAI.
@@ -288,11 +277,12 @@ class PremAIVectorizer(BaseSentenceVectorizer):
     ):
         self.model_name, self.project_id = model_name, project_id
         self.embed_batch_size = embed_batch_size
-        api_key = get_premai_api_key(api_key=api_key)
 
         try:
             from premai import Prem
+            from dsp.modules.premai import get_premai_api_key
 
+            api_key = get_premai_api_key(api_key=api_key)
             self.client = Prem(api_key=api_key)
         except ImportError as error:
             raise ImportError("Please install premai package using: pip install premai") from error
@@ -307,7 +297,9 @@ class PremAIVectorizer(BaseSentenceVectorizer):
             end_idx = (cur_batch_idx + 1) * self.embed_batch_size
             current_batch = text_to_vectorize[start_idx:end_idx]
             embeddings = self.client.embeddings.create(
-                project_id=self.project_id, model=self.model_name, input=current_batch,
+                project_id=self.project_id,
+                model=self.model_name,
+                input=current_batch,
             ).data
             current_batch_embeddings = [embedding.embedding for embedding in embeddings]
             embedding_list.extend(current_batch_embeddings)
