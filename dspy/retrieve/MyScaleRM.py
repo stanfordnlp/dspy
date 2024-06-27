@@ -5,9 +5,9 @@ from typing import List, Optional
 import openai
 
 import dspy
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.cache_utils import NotebookCacheMemory, cache_turn_on
 from dsp.utils import dotdict
-from typing import Dict, List, Optional
+
 # Check for necessary libraries and suggest installation if not found.
 try:
     import clickhouse_connect
