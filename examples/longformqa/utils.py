@@ -1,8 +1,8 @@
 import nltk
 import regex as re
 
-nltk.download('punkt')
 from nltk.tokenize import sent_tokenize
+nltk.download('punkt')
 
 
 def extract_text_by_citation(paragraph):
