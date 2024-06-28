@@ -159,7 +159,19 @@ class TemplateV2:
 
         import dspy
 
+        # This should point at the first output field.
+        # So we can start truncating raw_pred from this point.
         idx = min(idx, len(self.fields) - 1)
+
+        # Before that, truncate raw_pred to the output prefix - sometimes
+        # we see the input fields was also included in the completion.
+        # see test_predict.py:test_single_output_with_noise tests
+        next_field_regex = "^" + re.escape(self.fields[idx].name)
+        match = re.search(next_field_regex, raw_pred, flags=re.MULTILINE)
+        if match:
+            end_offset = match.end()
+            raw_pred = raw_pred[end_offset:].strip()
+
         while raw_pred != "" and idx < len(self.fields):
             if idx < len(self.fields) - 1:
                 next_field_name = "\n" + self.fields[idx + 1].name
