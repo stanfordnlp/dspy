@@ -24,7 +24,7 @@ jobs:
         id: ruff_fix
         uses: chartboost/ruff-action@v1
         with:
-          args: --fix-only --exit-non-zero-on-fix
+          args: check --fix-only --exit-non-zero-on-fix
         continue-on-error: true
       - name: Fail Workflow if Ruff Fix Failed
         if: steps.ruff_fix.outcome == 'failure'
@@ -60,7 +60,7 @@ jobs:
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
-          args: --fix-only
+          args: check --fix-only
       - name: Run tests with pytest
         run: poetry run pytest tests/
 

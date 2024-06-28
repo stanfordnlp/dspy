@@ -30,7 +30,7 @@ class BootstrapFewShot(Teleprompter):
 
 ### Method
 
-#### `compile(self, student, *, teacher=None, trainset, valset=None)`
+#### `compile(self, student, *, teacher=None, trainset)`
 
 This method compiles the BootstrapFewShot instance by performing bootstrapping to refine the student predictor.
 
@@ -44,7 +44,6 @@ The final stage is performing the bootstrapping iterations.
 - `student` (_Teleprompter_): Student predictor to be compiled.
 - `teacher` (_Teleprompter_, _optional_): Teacher predictor used for bootstrapping. Defaults to `None`.
 - `trainset` (_list_): Training dataset used in bootstrapping.
-- `valset` (_list_, _optional_): Validation dataset used in compilation. Defaults to `None`.
 
 **Returns:**
 - The compiled `student` predictor after bootstrapping with refined demonstrations.

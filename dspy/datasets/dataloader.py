@@ -2,6 +2,7 @@ import random
 from collections.abc import Mapping
 from typing import List, Tuple, Union
 
+import pandas as pd
 from datasets import load_dataset
 
 import dspy
@@ -9,7 +10,9 @@ from dspy.datasets.dataset import Dataset
 
 
 class DataLoader(Dataset):
-    def __init__(self,):
+    def __init__(
+        self,
+    ):
         pass
 
     def from_huggingface(
@@ -27,40 +30,64 @@ class DataLoader(Dataset):
             raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
 
         dataset = load_dataset(dataset_name, *args, **kwargs)
-        
+
         if isinstance(dataset, list) and isinstance(kwargs["split"], list):
-            dataset = {split_name:dataset[idx] for idx, split_name in enumerate(kwargs["split"])}
+            dataset = {split_name: dataset[idx] for idx, split_name in enumerate(kwargs["split"])}
 
         try:
             returned_split = {}
             for split_name in dataset.keys():
                 if fields:
-                    returned_split[split_name] = [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset[split_name]]
+                    returned_split[split_name] = [
+                        dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+                        for row in dataset[split_name]
+                    ]
                 else:
-                    returned_split[split_name] = [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(*input_keys) for row in dataset[split_name]]
+                    returned_split[split_name] = [
+                        dspy.Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys)
+                        for row in dataset[split_name]
+                    ]
 
             return returned_split
         except AttributeError:
             if fields:
-                return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+                return [
+                    dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset
+                ]
             else:
-                return [dspy.Example({field:row[field] for field in row.keys()}).with_inputs(*input_keys) for row in dataset]
+                return [
+                    dspy.Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys)
+                    for row in dataset
+                ]
 
-    def from_csv(self, file_path:str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+    def from_csv(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         dataset = load_dataset("csv", data_files=file_path)["train"]
-        
-        if not fields:
-            fields = list(dataset.features)
-        
-        return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
-    def from_json(self, file_path:str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
-        dataset = load_dataset("json", data_files=file_path)["train"]
-        
         if not fields:
             fields = list(dataset.features)
-        
-        return [dspy.Example({field:row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+
+        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+
+    def from_pandas(
+        self,
+        df: pd.DataFrame,
+        fields: list[str] = None,
+        input_keys: tuple[str] = (),
+    ) -> list[dspy.Example]:
+        if fields is None:
+            fields = list(df.columns)
+
+        return [
+            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
+        ]
+
+    def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        dataset = load_dataset("json", data_files=file_path)["train"]
+
+        if not fields:
+            fields = list(dataset.features)
+
+        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         dataset = load_dataset("parquet", data_files=file_path)["train"]
@@ -79,7 +106,7 @@ class DataLoader(Dataset):
     ) -> List[dspy.Example]:
         if not isinstance(dataset, list):
             raise ValueError(f"Invalid dataset provided of type {type(dataset)}. Please provide a list of examples.")
-        
+
         return random.sample(dataset, n, *args, **kwargs)
 
     def train_test_split(
@@ -115,6 +142,6 @@ class DataLoader(Dataset):
             test_end = len(dataset_shuffled) - train_end
 
         train_dataset = dataset_shuffled[:train_end]
-        test_dataset = dataset_shuffled[train_end:train_end + test_end]
+        test_dataset = dataset_shuffled[train_end : train_end + test_end]
 
-        return {'train': train_dataset, 'test': test_dataset}
+        return {"train": train_dataset, "test": test_dataset}
