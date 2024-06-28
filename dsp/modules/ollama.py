@@ -1,10 +1,9 @@
 import datetime
 import hashlib
 from typing import Any, Literal
-
 import requests
-
 from dsp.modules.lm import LM
+from dsp.trackers.base import BaseTracker
 
 
 def post_request_metadata(model_name, prompt):
@@ -42,6 +41,7 @@ class OllamaLocal(LM):
         presence_penalty: float = 0,
         n: int = 1,
         num_ctx: int = 1024,
+        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ):
         super().__init__(model)
@@ -51,6 +51,7 @@ class OllamaLocal(LM):
         self.base_url = base_url
         self.model_name = model
         self.timeout_s = timeout_s
+        self.tracker = tracker
 
         self.kwargs = {
             "temperature": temperature,
@@ -134,7 +135,6 @@ class OllamaLocal(LM):
             "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
-
         return request_info
 
     def request(self, prompt: str, **kwargs):
@@ -178,6 +178,8 @@ class OllamaLocal(LM):
             choices = completed_choices
 
         completions = [self._get_choice_text(c) for c in choices]
+
+        self.tracker.call(input=prompt, output=choices, **kwargs)
 
         return completions
     

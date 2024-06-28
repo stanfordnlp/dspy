@@ -10,3 +10,4 @@ requests
 structlog
 tqdm
 ujson
+httpx
