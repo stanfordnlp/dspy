@@ -101,8 +101,11 @@ class LM(ABC):
                 "tensorrt_llm",
             ):
                 text = choices
-            elif provider == "openai" or provider == "ollama":
-                text = " " + self._get_choice_text(choices[0]).strip()
+            elif provider == "openai" or provider == "ollama" or provider == "llama":
+                text = ' ' + self._get_choice_text(choices[0]).strip()
+            elif provider == "clarifai" or provider == "claude" :
+                text=choices
+
             elif provider == "groq":
                 text = " " + choices
             elif provider == "google":

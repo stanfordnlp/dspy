@@ -38,6 +38,7 @@ Anyscale = dsp.Anyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
+LlamaCpp = dsp.LlamaCpp
 
 Bedrock = dsp.Bedrock
 Sagemaker = dsp.Sagemaker
