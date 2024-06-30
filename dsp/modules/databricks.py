@@ -32,6 +32,7 @@ class Databricks(GPT3):
         api_key (Optional[str], optional): Databricks authentication token. Defaults to None.
         api_base (Optional[str], optional): Databricks model serving endpoint. Defaults to None.
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
+        system_prompt (str, optional): System prompt to use for each call, if None the endpoint will use it's own default. Defaults to "You are a helpful assistant."
         **kwargs: Additional arguments to pass to the OpenAI API provider.
     """
 
@@ -41,6 +42,7 @@ class Databricks(GPT3):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         model_type: Literal["chat", "text", "embeddings"] = None,
+        system_prompt: Optional[str] = "You are a helpful assistant.",
         **kwargs,
     ):
         super().__init__(
@@ -49,6 +51,7 @@ class Databricks(GPT3):
             api_provider="openai",
             api_base=api_base,
             model_type=model_type,
+            system_prompt=system_prompt,
             **kwargs,
         )
 
@@ -60,7 +63,11 @@ class Databricks(GPT3):
 
         kwargs = {**self.kwargs, **kwargs}
         if self.model_type == "chat":
-            kwargs["messages"] = [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": prompt}]
+            # caching mechanism requires hashable kwargs
+            messages = [{"role": "user", "content": prompt}]
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+            kwargs["messages"] = messages            
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = custom_client_chat_request(**kwargs).json()
             response = json.loads(response)
