@@ -25,6 +25,9 @@ const FeatureList: FeatureItem[] = [
   },
   {
     name: 'Prajapati Harishkumar Kishorkumar'
+  }, 
+  {
+    name: 'Michael Jones'
   }
 ];
 

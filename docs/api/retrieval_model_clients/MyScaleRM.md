@@ -43,7 +43,7 @@ def forward(self, user_query: str, k: Optional[int] = None) -> dspy.Prediction
 ```
 
 ## Parameters
-- `user_query` (_str_): The query or list of queries for which to retrieve matching passages.
+- `user_query` (_str_): The query to retrieve matching passages.
 - `k` (_Optional[int], optional_): The number of top matches to retrieve. If not provided, it defaults to the `k` value set during class initialization.
 
 ## Returns
