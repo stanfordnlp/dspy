@@ -2,9 +2,10 @@ import random
 
 import tqdm
 from datasets import load_dataset
+from dspy.datasets.dataset import Dataset
 
 
-class GSM8K:
+class GSM8K(Dataset):
     def __init__(self) -> None:
         super().__init__()
         self.do_shuffle = False
