@@ -24,7 +24,7 @@ class Unify(LM):
     ):
         self.endpoint = endpoint
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
-        # self.api_provider: Literal["unify"] = "unify"
+
         self.api_base = "https://api.unify.ai/v0"
         self.model = endpoint
         super().__init__(model=self.model)
