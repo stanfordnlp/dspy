@@ -24,7 +24,7 @@ class Unify(LM):
     ):
         self.endpoint = endpoint
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
-        # self.api_provider: Literal["unify"] = "unify"
+
         self.api_base = "https://api.unify.ai/v0"
         self.model = endpoint
         super().__init__(model=self.model)
@@ -45,10 +45,7 @@ class Unify(LM):
         self.history: list[dict[str, Any]] = []
 
     def basic_request(self, prompt: str, **kwargs):
-        """
-        Send request to the Unify AI API.
-        This method is required by the LM base class.
-        """
+        """Send request to the Unify AI API."""
         raw_kwargs = kwargs
         kwargs = {**self.kwargs, **kwargs}
 
@@ -67,9 +64,7 @@ class Unify(LM):
         return response
 
     def _call_generate(self, settings_dict):
-        """
-        Call the generate method from the unify client.
-        """
+        """Call the generate method from the unify client."""
         unify_instance = Unify()
         unify_instance.generate()
 
