@@ -27,6 +27,7 @@ class Unify(LM):
 
         self.api_base = "https://api.unify.ai/v0"
         self.model = endpoint
+        
         super().__init__(model=self.model)
         self.system_prompt = system_prompt
         self.model_type = model_type
@@ -41,7 +42,6 @@ class Unify(LM):
             "num_ctx": 1024,
             **kwargs,
         }
-
         self.history: list[dict[str, Any]] = []
 
     def basic_request(self, prompt: str, **kwargs):
@@ -59,9 +59,22 @@ class Unify(LM):
         else:
             settings_dict["prompt"] = prompt
 
-        # Call the generate method
         response = self._call_generate(settings_dict)
         return response
+    
+    @backoff.on_exception(
+        backoff.expo,
+        ERRORS,
+        max_time=1000,
+        on_backoff=backoff_hdlr,
+    )
+    
+    def request(self, prompt: str, **kwargs):
+        """Handles retreival of model completions whilst handling rate limiting and caching."""
+        if "model_type" in kwargs:
+            del kwargs["model_type"]
+        
+        return self.basic_request(prompt, **kwargs)
 
     def _call_generate(self, settings_dict):
         """Call the generate method from the unify client."""
