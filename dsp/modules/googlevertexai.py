@@ -1,4 +1,5 @@
 """Module for interacting with Google Vertex AI."""
+
 from typing import Any, Dict
 
 import backoff
@@ -16,9 +17,11 @@ except ImportError:
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
-    print(f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
-          f"calling function {details['target']} with kwargs "
-          f"{details['kwargs']}")
+    print(
+        f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
+        f"calling function {details['target']} with kwargs "
+        f"{details['kwargs']}",
+    )
 
 
 def giveup_hdlr(details):
@@ -27,6 +30,7 @@ def giveup_hdlr(details):
         return False
     return True
 
+
 class GoogleVertexAI(LM):
     """Wrapper around GoogleVertexAI's API.
 
@@ -34,7 +38,9 @@ class GoogleVertexAI(LM):
     """
 
     def __init__(
-        self, model: str = "text-bison@002", **kwargs,
+        self,
+        model: str = "text-bison@002",
+        **kwargs,
     ):
         """
         Parameters
@@ -54,40 +60,42 @@ class GoogleVertexAI(LM):
         if "code" in model:
             model_cls = CodeGenerationModel
             self.available_args = {
-                'suffix',
-                'max_output_tokens',
-                'temperature',
-                'stop_sequences',
-                'candidate_count',
+                "suffix",
+                "max_output_tokens",
+                "temperature",
+                "stop_sequences",
+                "candidate_count",
             }
         elif "gemini" in model:
             model_cls = GenerativeModel
             self.available_args = {
-                'max_output_tokens',
-                'temperature',
-                'top_k',
-                'top_p',
-                'stop_sequences',
-                'candidate_count',
+                "max_output_tokens",
+                "temperature",
+                "top_k",
+                "top_p",
+                "stop_sequences",
+                "candidate_count",
             }
-        elif 'text' in model:
+        elif "text" in model:
             model_cls = TextGenerationModel
             self.available_args = {
-                'max_output_tokens',
-                'temperature',
-                'top_k',
-                'top_p',
-                'stop_sequences',
-                'candidate_count',
+                "max_output_tokens",
+                "temperature",
+                "top_k",
+                "top_p",
+                "stop_sequences",
+                "candidate_count",
             }
         else:
             raise PydanticCustomError(
-                'model',
+                "model",
                 'model name is not valid, got "{model_name}"',
                 dict(wrong_value=model),
             )
         if self._is_gemini:
-            self.client = model_cls(model_name=model, safety_settings=kwargs.get('safety_settings')) # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
+            self.client = model_cls(
+                model_name=model, safety_settings=kwargs.get("safety_settings"),
+            )  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
         else:
             self.client = model_cls.from_pretrained(model)
         self.provider = "googlevertexai"
@@ -113,10 +121,18 @@ class GoogleVertexAI(LM):
         self,
         parameters: Any,
     ) -> dict:
-        stop_sequences = parameters.get('stop')
-        params_mapping = {"n": "candidate_count", 'max_tokens':'max_output_tokens'}
+        stop_sequences = parameters.get("stop")
+        params_mapping = {"n": "candidate_count", "max_tokens": "max_output_tokens"}
         params = {params_mapping.get(k, k): v for k, v in parameters.items()}
         params = {**self.kwargs, "stop_sequences": stop_sequences, **params}
+
+        if self._is_gemini:
+            if "candidate_count" in params and params["candidate_count"] != 1:
+                print(
+                    f"As of now, Gemini only supports `candidate_count == 1` (see also https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini#parameters). The current value for candidate_count of {params['candidate_count']} will be overridden.",
+                )
+                params["candidate_count"] = 1
+
         return {k: params[k] for k in set(params.keys()) & self.available_args}
 
     def basic_request(self, prompt: str, **kwargs):
@@ -131,11 +147,15 @@ class GoogleVertexAI(LM):
                 "prompt": prompt,
                 "response": {
                     "prompt": prompt,
-                    "choices": [{
-                        "text": '\n'.join(v.text for v in c.content.parts),
-                        'safetyAttributes': {v.category: v.probability for v in c.safety_ratings},
+                    "choices": [
+                        {
+                            "text": "\n".join(v.text for v in c.content.parts),
+                            "safetyAttributes": {
+                                v.category: v.probability for v in c.safety_ratings
+                            },
                         }
-                        for c in response.candidates],
+                        for c in response.candidates
+                    ],
                 },
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
@@ -146,15 +166,20 @@ class GoogleVertexAI(LM):
                 "prompt": prompt,
                 "response": {
                     "prompt": prompt,
-                    "choices": [{"text": c["content"], 'safetyAttributes': c['safetyAttributes']}
-                                for c in response.predictions],
+                    "choices": [
+                        {
+                            "text": c["content"],
+                            "safetyAttributes": c["safetyAttributes"],
+                        }
+                        for c in response.predictions
+                    ],
                 },
                 "kwargs": kwargs,
                 "raw_kwargs": raw_kwargs,
             }
         self.history.append(history)
 
-        return [i['text'] for i in history['response']['choices']]
+        return [i["text"] for i in history["response"]["choices"]]
 
     @backoff.on_exception(
         backoff.expo,

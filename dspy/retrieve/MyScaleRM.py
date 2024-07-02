@@ -5,7 +5,7 @@ from typing import List, Optional
 import openai
 
 import dspy
-from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
+from dsp.modules.cache_utils import NotebookCacheMemory, cache_turn_on
 from dsp.utils import dotdict
 
 # Check for necessary libraries and suggest installation if not found.
@@ -128,47 +128,44 @@ class MyScaleRM(dspy.Retrieve):
 
     @functools.lru_cache(maxsize=None if cache_turn_on else 0)
     @NotebookCacheMemory.cache
-    def get_embeddings(self, queries: List[str]) -> List[List[float]]:
+    def get_embeddings(self, query: str) -> List[float]:
         """
         Determines the appropriate source (OpenAI or local model) for embedding generation based on class configuration,
         and retrieves embeddings for the provided queries.
 
         Args:
-            queries: A list of text queries to generate embeddings for.
+            query: A query to generate embeddings for.
 
         Returns:
-            A list of embeddings, each corresponding to a query in the input list.
+            A list of embeddings corresponding to the query in the input list.
 
         Raises:
             ValueError: If neither an OpenAI API key nor a local model has been configured.
         """
         if self.openai_api_key and self.model:
-            return self._get_embeddings_from_openai(queries)
+            return self._get_embeddings_from_openai(query)
         elif self.use_local_model:
-            return self._get_embedding_from_local_model(queries)
+            return self._get_embedding_from_local_model(query)
         else:
             raise ValueError("No valid method for obtaining embeddings is configured.")
     
     #TO DO Add this method as Util method outside MyScaleRM 
-    @CacheMemory.cache
-    def _get_embeddings_from_openai(self, queries: List[str]) -> List[List[float]]:
+    def _get_embeddings_from_openai(self, query: str) -> List[float]:
         """
-        Uses the OpenAI API to generate embeddings for a list of queries.
+        Uses the OpenAI API to generate embeddings for the given query.
 
         Args:
-            queries: A list of strings for which to generate embeddings.
+            query: A string for which to generate embeddings.
 
         Returns:
-            A list of lists, where each inner list contains the embedding of a query.
+            A list containing the embedding of a query.
         """
-
         response = openai.embeddings.create(
         model=self.model,
-        input=queries)
+        input=query)
         return response.data[0].embedding
     
     #TO DO Add this method as Util method outside MyScaleRM 
-    @CacheMemory.cache
     def _get_embedding_from_local_model(self, query: str) -> List[float]:
         """
         Generates embeddings for a single query using the configured local model.
@@ -177,7 +174,7 @@ class MyScaleRM(dspy.Retrieve):
             query: The text query to generate an embedding for.
 
         Returns:
-            A list of floats representing the query's embedding.
+            A list representing the query's embedding.
         """
         import torch
         self._local_embed_model.eval()  # Ensure the model is in evaluation mode
@@ -185,11 +182,10 @@ class MyScaleRM(dspy.Retrieve):
         inputs = self._local_tokenizer(query, return_tensors="pt", padding=True, truncation=True).to(self.device)
         with torch.no_grad():
             output = self._local_embed_model(**inputs)
-        embedding = output.last_hidden_state.mean(dim=1).cpu().numpy().tolist()[0]
 
-        return embedding
-
-    def forward(self, user_query: str, k: Optional[int] = None) -> dspy.Prediction:
+        return output.last_hidden_state.mean(dim=1).squeeze().numpy().tolist()
+    
+    def forward(self, user_query: str, k: Optional[int] = None) -> List[dotdict]:
         """
         Executes a retrieval operation based on a user's query and returns the top k relevant results.
 
@@ -198,7 +194,7 @@ class MyScaleRM(dspy.Retrieve):
             k: Optional; The number of top matches to return. Defaults to the class's configured k value.
 
         Returns:
-            A dspy.Prediction object containing the formatted retrieval results.
+            A list of dotdict objects containing the formatted retrieval results.
 
         Raises:
             ValueError: If the user_query is None.
@@ -206,14 +202,14 @@ class MyScaleRM(dspy.Retrieve):
         if user_query is None:
             raise ValueError("Query is required")
         k = k if k is not None else self.k
-        embeddings = self.get_embeddings([user_query])
+        embeddings = self.get_embeddings(user_query)
         columns_string = ', '.join(self.metadata_columns)
         result = self.client.query(f"""
         SELECT {columns_string},
         distance({self.vector_column}, {embeddings}) as dist FROM {self.database}.{self.table} ORDER BY dist LIMIT {k}
         """)
 
-        # We convert the metadata into strings to pass to dspy.Prediction
+        # Convert the metadata into strings to pass to dspy.Prediction
         results = []
         for row in result.named_results():
             if len(self.metadata_columns) == 1:
@@ -223,4 +219,6 @@ class MyScaleRM(dspy.Retrieve):
                 row_string = "\n".join(row_strings)  # Combine formatted data
                 results.append(row_string)  # Append to results
 
-        return dspy.Prediction(passages=[dotdict({"long_text": passage}) for passage in results])  # Return results as Prediction
+        passages = [dotdict({"long_text": passage}) for passage in results]
+
+        return passages  # Return list of dotdict 
