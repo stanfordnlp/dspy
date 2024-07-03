@@ -62,7 +62,7 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None, filter: Optional[models.Filter]=None) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query.
 
         Args:
@@ -90,6 +90,7 @@ class QdrantRM(dspy.Retrieve):
                 vector=vector,
                 limit=k or self.k,
                 with_payload=[self._document_field],
+                filter=filter,
             )
             for vector in vectors
         ]
