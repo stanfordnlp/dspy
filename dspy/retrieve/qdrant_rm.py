@@ -68,6 +68,7 @@ class QdrantRM(dspy.Retrieve):
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+            filter (Optional["Filter"]): "Look only for points which satisfies this conditions". Default: None.
 
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
