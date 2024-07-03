@@ -1,16 +1,8 @@
+import logging
 import os
 from typing import Any, Literal, Optional
 
 from dsp.modules.lm import LM
-
-
-def backoff_hdlr(details):
-    """Handler from https://pypi.org/project/backoff/"""
-    print(
-        "Backing off {wait:0.1f} seconds after {tries} tries "
-        "calling function {target} with kwargs "
-        "{kwargs}".format(**details),
-    )
 
 
 class Unify(LM):
@@ -22,12 +14,11 @@ class Unify(LM):
         api_key=None,
         **kwargs,  # Added to accept additional keyword arguments
     ):
-        self.endpoint = endpoint
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
-
         self.api_base = "https://api.unify.ai/v0"
+
         self.model = endpoint
-        
+
         super().__init__(model=self.model)
         self.system_prompt = system_prompt
         self.model_type = model_type
@@ -44,9 +35,8 @@ class Unify(LM):
         }
         self.history: list[dict[str, Any]] = []
 
-    def basic_request(self, prompt: str, **kwargs):
+    def basic_request(self, prompt: str, **kwargs) -> Any:
         """Send request to the Unify AI API."""
-        raw_kwargs = kwargs
         kwargs = {**self.kwargs, **kwargs}
 
         settings_dict = {
@@ -59,31 +49,40 @@ class Unify(LM):
         else:
             settings_dict["prompt"] = prompt
 
-        response = self._call_generate(settings_dict)
-        return response
-    
-    @backoff.on_exception(
-        backoff.expo,
-        ERRORS,
-        max_time=1000,
-        on_backoff=backoff_hdlr,
-    )
-    
-    def request(self, prompt: str, **kwargs):
+        return self._call_generate(settings_dict)
+
+    def request(self, prompt: str, **kwargs) -> Any:
         """Handles retreival of model completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
-        
+
         return self.basic_request(prompt, **kwargs)
+
+    def __call__(
+        self,
+        prompt: str,
+        only_completed: bool = True,
+        return_sorted: bool = False,
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        assert only_completed, "for now"
+        assert return_sorted is False, "for now"
+
+        n = kwargs.pop("n", 1)
+
+        completions = []
+        for _ in range(n):
+            response = self.request(prompt, **kwargs)
+            completions.append(response.choices[0].message.content)
+
+        return completions
 
     def _call_generate(self, settings_dict):
         """Call the generate method from the unify client."""
-        unify_instance = Unify()
-        unify_instance.generate()
-
         try:
-            response = unify_instance.generate(settings=settings_dict, api_key=self.api_key)
-            return response
+            return Unify.generate(settings=settings_dict, api_key=self.api_key)
+
         except Exception as e:
-            print(f"An error occurred while calling the generate method: {e}")
+            logging.error(f"An error occurred while calling the generate method: {e}")
+
             return None
