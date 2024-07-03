@@ -64,12 +64,6 @@ class UnifyClient(Unify):
             messages=messages,  # type: ignore[arg-type]
             max_tokens=max_tokens,
             stream=stream,
-            name="Unify-generation",
-            metadata={
-                "model": self.model,
-                "provider": self.provider,  # todo: update trace metadata after call (see set_provider)
-                "endpoint": self.endpoint,
-            },
             **kwargs,
         )
 
@@ -104,7 +98,6 @@ class UnifyClient(Unify):
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> str:
-        print(f"_GENERATE_NON_STREAM: {messages}")  # type: ignore # noqa: T201
         try:
             chat_completion = self.generate_completion(
                 messages=messages,
@@ -214,8 +207,6 @@ class UnifyDSP(LM):
             endpoint=self.endpoint,
             api_key=self.api_key,
         )
-        print(type(prompt), type(self.system_prompt))  # type: ignore # noqa: T201
-        print(f"KWARGS: {kwargs}, {type(kwargs)}")  # type: ignore # noqa: T201
         return unify_client.generate(user_prompt=prompt, system_prompt=self.system_prompt, **kwargs)
 
     def get_credit_balance(self) -> Any:
