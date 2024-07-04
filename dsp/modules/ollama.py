@@ -4,6 +4,7 @@ from typing import Any, Literal
 import requests
 from dsp.modules.lm import LM
 from dsp.trackers.base import BaseTracker
+from dsp.trackers.tracker_decorator import tracker_decorator
 
 
 def post_request_metadata(model_name, prompt):
@@ -147,6 +148,7 @@ class OllamaLocal(LM):
     def _get_choice_text(self, choice: dict[str, Any]) -> str:
         return choice["message"]["content"]
 
+    @tracker_decorator
     def __call__(
         self,
         prompt: str,
@@ -178,8 +180,6 @@ class OllamaLocal(LM):
             choices = completed_choices
 
         completions = [self._get_choice_text(c) for c in choices]
-
-        self.tracker.call(input=prompt, output=choices, **kwargs)
 
         return completions
     
