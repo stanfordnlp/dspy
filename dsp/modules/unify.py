@@ -13,7 +13,7 @@ class Unify(LM):
     def __init__(
         self,
         endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
-        model_type: Literal["chat", "text"] = "text",
+        model_type: Literal["chat", "text"] = "chat",
         system_prompt: Optional[str] = None,
         api_key=None,
         **kwargs,  # Added to accept additional keyword arguments
