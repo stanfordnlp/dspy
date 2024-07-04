@@ -1,10 +1,11 @@
 import dspy
 
 from typing import Mapping
-from pydantic.fields import FieldInfo
 from pydantic import create_model
-from dspy.predict.avatar.models import Action, Tool
+from pydantic.fields import FieldInfo
+
 from dspy.predict.avatar.signatures import Actor
+from dspy.predict.avatar.models import Action, Tool
 from dspy.signatures.signature import ensure_signature
 
 
