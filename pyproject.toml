@@ -211,9 +211,9 @@ exclude_lines = [
 line-length = 120
 indent-width = 4
 target-version = "py39"
-extend-unsafe-fixes = ["D"]
 
 [tool.ruff.lint]
+extend-unsafe-fixes = ["D"]
 # List of rules: https://docs.astral.sh/ruff/rules
 select = [
     # flake8-builtins
@@ -317,5 +317,3 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**/{tests,docs}/*" = ["ALL"]
 "**__init__.py" = ["F401"]
-
-
