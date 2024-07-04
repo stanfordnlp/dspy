@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic~=0.18.0"]
+anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
 qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
 marqo = ["marqo"]
@@ -98,7 +98,7 @@ tqdm = "^4.66.1"
 datasets = "^2.14.6"
 requests = "^2.31.0"
 optuna = "^3.4.0"
-anthropic = { version = "^0.18.0", optional = true }
+anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
