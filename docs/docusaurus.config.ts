@@ -121,16 +121,8 @@ const config: Config = {
           title: 'Community',
           items: [
             {
-              label: 'Omar Khattab',
-              href: 'https://twitter.com/lateinteraction',
-            },
-            {
-              label: 'Herumb Shandilya',
-              href: 'https://twitter.com/krypticmouse',
-            },
-            {
-              label: 'Arnav Singhvi',
-              href: 'https://twitter.com/arnav_thebigman',
+              label: 'See all 130+ contributors on GitHub',
+              href: 'https://github.com/stanfordnlp/dspy',
             },
           ],
         },
@@ -162,6 +154,23 @@ const config: Config = {
         hashed: true,
       }),
     ],
+  ],
+  scripts: [
+    {
+      id: "runllm-widget-script",
+      type: "module",
+      src: "https://cdn.jsdelivr.net/npm/@runllm/search-widget@stable/dist/run-llm-search-widget.es.js",
+      "runllm-server-address": "https://api.runllm.com",
+      "runllm-assistant-id": "132",
+      "runllm-position": "BOTTOM_RIGHT",
+      "runllm-keyboard-shortcut": "Mod+j",
+      version: "stable",
+      "runllm-preset": "docusaurus",
+      "runllm-slack-community-url": "",
+      "runllm-name": "DSPy",
+      "runllm-theme-color": "#005EEC",
+      async: true,
+    },
   ],
 };
 

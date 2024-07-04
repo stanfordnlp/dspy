@@ -11,14 +11,14 @@ class HotPotQA(Dataset):
         assert only_hard_examples, "Care must be taken when adding support for easy examples." \
                                    "Dev must be all hard to match official dev, but training can be flexible."
         
-        hf_official_train = load_dataset("hotpot_qa", 'fullwiki', split='train')
-        hf_official_dev = load_dataset("hotpot_qa", 'fullwiki', split='validation')
+        hf_official_train = load_dataset("hotpot_qa", 'fullwiki', split='train', trust_remote_code=True)
+        hf_official_dev = load_dataset("hotpot_qa", 'fullwiki', split='validation', trust_remote_code=True)
 
         official_train = []
         for raw_example in hf_official_train:
             if raw_example['level'] == 'hard':
                 if keep_details is True:
-                    keys = ['id', 'question', 'answer', 'type', 'supporting_facts']
+                    keys = ['id', 'question', 'answer', 'type', 'supporting_facts', 'context']
                 elif keep_details == 'dev_titles':
                     keys = ['question', 'answer', 'supporting_facts']
                 else:

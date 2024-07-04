@@ -3,6 +3,7 @@ import random
 import re
 import shutil
 import subprocess
+from typing import Literal
 
 # from dsp.modules.adapter import TurboAdapter, DavinciAdapter, LlamaAdapter
 import backoff
@@ -32,6 +33,9 @@ class HFClientTGI(HFModel):
         self.headers = {"Content-Type": "application/json"}
 
         self.kwargs = {
+            "model": model,
+            "port": port,
+            "url": url,
             "temperature": 0.01,
             "max_tokens": 75,
             "top_p": 0.97,
@@ -114,7 +118,7 @@ def send_hftgi_request_v00(arg, **kwargs):
 
 
 class HFClientVLLM(HFModel):
-    def __init__(self, model, port, url="http://localhost", **kwargs):
+    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", **kwargs):
         super().__init__(model=model, is_client=True)
 
         if isinstance(url, list):
@@ -126,44 +130,131 @@ class HFClientVLLM(HFModel):
         else:
             raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
         
+        self.urls_const = tuple(self.urls)
+        self.port = port
+        self.model_type = model_type
         self.headers = {"Content-Type": "application/json"}
+        self.kwargs |= kwargs
+        # kwargs needs to have model, port and url for the lm.copy() to work properly
+        self.kwargs.update({
+            'port': port,
+            'url': self.urls_const,
+        })
+
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
-
-        payload = {
-            "model": kwargs["model"],
-            "prompt": prompt,
-            "max_tokens": kwargs["max_tokens"],
-            "temperature": kwargs["temperature"],
-        }
         
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-
-        response = send_hfvllm_request_v00(
-            f"{url}/v1/completions",
-            json=payload,
-            headers=self.headers,
-        )
-
-        try:
-            json_response = response.json()
-            completions = json_response["choices"]
-            response = {
-                "prompt": prompt,
-                "choices": [{"text": c["text"]} for c in completions],
+     
+        list_of_elements_to_allow = [
+            "n",
+            "best_of",
+            "presence_penalty",
+            "frequency_penalty",
+            "repetition_penalty",
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "seed",
+            "use_beam_search",
+            "length_penalty",
+            "early_stopping",
+            "stop",
+            "stop_token_ids",
+            "include_stop_str_in_output",
+            "ignore_eos",
+            "max_tokens",
+            "min_tokens",
+            "logprobs",
+            "prompt_logprobs",
+            "detokenize",
+            "skip_special_tokens",
+            "spaces_between_special_tokens",
+            "logits_processors",
+            "truncate_prompt_tokens",
+        ]
+        req_kwargs = {
+            k: v for k, v in kwargs.items() if k in list_of_elements_to_allow
+        }
+   
+        if self.model_type == "chat":
+            system_prompt = kwargs.get("system_prompt",None)
+            messages = [{"role": "user", "content": prompt}]
+            if system_prompt:
+                messages.insert(0, {"role": "system", "content": system_prompt})
+            
+            payload = {
+                "model": self.kwargs["model"],
+                "messages": messages,
+                **req_kwargs,
             }
-            return response
+            response = send_hfvllm_request_v01_wrapped(
+                f"{url}/v1/chat/completions",
+                url=self.urls_const,
+                port=self.port,
+                json=payload,
+                headers=self.headers,
+            )
 
-        except Exception:
-            print("Failed to parse JSON response:", response.text)
-            raise Exception("Received invalid JSON response from server")
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["message"]['content']} for c in completions],
+                }
+                return response
 
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
+        else:
+            payload = {
+                "model": self.kwargs["model"],
+                "prompt": prompt,
+                **req_kwargs,
+            }
+
+            response = send_hfvllm_request_v01_wrapped(
+                f"{url}/v1/completions",
+                url=self.urls_const,
+                port=self.port,
+                json=payload,
+                headers=self.headers,
+            )
+
+            try:
+                json_response = response.json()
+                completions = json_response["choices"]
+                response = {
+                    "prompt": prompt,
+                    "choices": [{"text": c["text"]} for c in completions],
+                }
+                return response
+
+            except Exception:
+                print("Failed to parse JSON response:", response.text)
+                raise Exception("Received invalid JSON response from server")
+
+@CacheMemory.cache(ignore=['arg'])
+def send_hfvllm_request_v01(arg, url, port, **kwargs):
+    return requests.post(arg, **kwargs)
+
+# @functools.lru_cache(maxsize=None if cache_turn_on else 0)
+@NotebookCacheMemory.cache(ignore=['arg'])
+def send_hfvllm_request_v01_wrapped(arg, url, port, **kwargs):
+    return send_hftgi_request_v01(arg, url, port, **kwargs)
 
 @CacheMemory.cache
 def send_hfvllm_request_v00(arg, **kwargs):
+    return requests.post(arg, **kwargs)
+
+@CacheMemory.cache
+def send_hfvllm_chat_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
 
 
@@ -216,11 +307,13 @@ class HFServerTGI:
         docker_process.wait()
 
 class Together(HFModel):
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, api_base="https://api.together.xyz/v1", api_key=None, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = os.getenv("TOGETHER_API_BASE")
-        self.token = os.getenv("TOGETHER_API_KEY")
+        self.api_base = os.getenv("TOGETHER_API_BASE") or api_base
+        assert not self.api_base.endswith("/"), "Together base URL shouldn't end with /"
+        self.token = os.getenv("TOGETHER_API_KEY") or api_key
+
         self.model = model
 
         self.use_inst_template = False
@@ -247,8 +340,6 @@ class Together(HFModel):
         on_backoff=backoff_hdlr,
     )
     def _generate(self, prompt, use_chat_api=False, **kwargs):
-        url = f"{self.api_base}"
-
         kwargs = {**self.kwargs, **kwargs}
 
         stop = kwargs.get("stop")
@@ -276,6 +367,7 @@ class Together(HFModel):
                 "stop": stop,
             }
         else:
+            url = f"{self.api_base}/completions"
             body = {
                 "model": self.model,
                 "prompt": prompt,
@@ -293,9 +385,9 @@ class Together(HFModel):
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
                 if use_chat_api:
-                    completions = [resp_json['output'].get('choices', [])[0].get('message', {}).get('content', "")]
+                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
                 else:
-                    completions = [resp_json['output'].get('choices', [])[0].get('text', "")]
+                    completions = [resp_json.get('choices', [])[0].get('text', "")]
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
         except Exception as e:
@@ -306,11 +398,12 @@ class Together(HFModel):
 
 
 class Anyscale(HFModel):
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, api_base="https://api.endpoints.anyscale.com/v1", api_key=None, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
-        self.api_base = os.getenv("ANYSCALE_API_BASE")
-        self.token = os.getenv("ANYSCALE_API_KEY")
+        self.api_base = os.getenv("ANYSCALE_API_BASE") or api_base
+        assert not self.api_base.endswith("/"), "Anyscale base URL shouldn't end with /"
+        self.token = os.getenv("ANYSCALE_API_KEY") or api_key
         self.model = model
         self.kwargs = {
             "temperature": 0.0,

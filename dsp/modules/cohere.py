@@ -10,6 +10,9 @@ try:
 except ImportError:
     cohere_api_error = Exception
     # print("Not loading Cohere because it is not installed.")
+except AttributeError:
+    cohere_api_error = Exception
+
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -30,7 +33,7 @@ def giveup_hdlr(details):
 class Cohere(LM):
     """Wrapper around Cohere's API.
 
-    Currently supported models include `command`, `command-nightly`, `command-light`, `command-light-nightly`.
+    Currently supported models include `command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`.
     """
 
     def __init__(
@@ -45,7 +48,7 @@ class Cohere(LM):
         ----------
         model : str
             Which pre-trained model from Cohere to use?
-            Choices are [`command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
+            Choices are [`command-r-plus`, `command-r`, `command`, `command-nightly`, `command-light`, `command-light-nightly`]
         api_key : str
             The API key for Cohere.
             It can be obtained from https://dashboard.cohere.ai/register.
@@ -55,12 +58,12 @@ class Cohere(LM):
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
-        self.co = cohere.Client(api_key)
+        self.co = cohere.Client(api_key, client_name='dspy')
         self.provider = "cohere"
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": 2000,
             "p": 1,
             "num_generations": 1,
             **kwargs,
@@ -84,13 +87,14 @@ class Cohere(LM):
             kwargs.pop("n")
         response = self.co.chat(**kwargs)
 
-
-        self.history.append({
-            "prompt": prompt,
-            "response": response,
-            "kwargs": kwargs,
-            "raw_kwargs": raw_kwargs,
-        })
+        self.history.append(
+            {
+                "prompt": prompt,
+                "response": response,
+                "kwargs": kwargs,
+                "raw_kwargs": raw_kwargs,
+            },
+        )
 
         return response
 

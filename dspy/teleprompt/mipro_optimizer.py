@@ -18,19 +18,21 @@ from dspy.teleprompt.teleprompt import Teleprompter
 """
 USAGE SUGGESTIONS:
 
-The following code can be used to compile a optimized signature teleprompter using the MIPRO, and evaluate it on an end task:
+The following code can be used to compile a optimized signature teleprompter using MIPRO, and evaluate it on an end task:
 
+``` python
 from dspy.teleprompt import MIPRO
 
 teleprompter = MIPRO(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
+```
 
 Note that this teleprompter takes in the following parameters:
 
-* prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
-* task_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
+* prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (i.e., dspy.settings.configure(lm=task_model)).
+* task_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (i.e., dspy.settings.configure(lm=task_model)).
 * metric: The task metric used for optimization.
 * num_candidates: The number of new prompts and sets of fewshot examples to generate and evaluate. Default=10.
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
@@ -359,6 +361,7 @@ class MIPRO(Teleprompter):
         requires_permission_to_run=True,
     ) -> dspy.Program:
         # Define ANSI escape codes for colors
+        RED = "\033[91m"
         YELLOW = "\033[93m"
         BLUE = "\033[94m"
         BOLD = "\033[1m"
@@ -393,11 +396,12 @@ class MIPRO(Teleprompter):
         user_confirmation_message = textwrap.dedent(f"""\
             To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
 
-            If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False`.{ENDC}
+            If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False` when calling compile.{ENDC}
 
             {YELLOW}Awaiting your input...{ENDC}
         """)
 
+        print(f"""{RED}{BOLD}WARNING: MIPRO has been deprecated and replaced with MIPROv2.  MIPRO will be removed in a future release. {ENDC}""")
         print(user_message)
 
         sys.stdout.flush()  # Flush the output buffer to force the message to print

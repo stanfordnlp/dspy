@@ -103,7 +103,7 @@ For some advanced tasks, you need more verbose signatures. This is typically to:
 
 Notice how the docstring contains (minimal) instructions, which in this case are necessary to have a fully-defined task.
 
-Some optimizers in DSPy, like `SignatureOptimizer`, can take this simple docstring and then generate more effective variants if needed.
+Some optimizers in DSPy, like `COPRO`, can take this simple docstring and then generate more effective variants if needed.
 
 ```python
 class Emotion(dspy.Signature):

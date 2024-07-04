@@ -1,8 +1,7 @@
 import inspect
 import json
-import textwrap
 import typing
-from typing import Annotated, List, Tuple, Union  # noqa: UP035
+from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
 import pydantic
 import ujson
@@ -14,18 +13,32 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 
 
-def predictor(func) -> dspy.Module:
-    """Decorator that creates a predictor module based on the provided function."""
-    signature = _func_to_signature(func)
-    *_, output_key = signature.output_fields.keys()
-    return _StripOutput(TypedPredictor(signature), output_key)
+def predictor(*args: tuple, **kwargs) -> Callable[..., dspy.Module]:
+    def _predictor(func) -> dspy.Module:
+        """Decorator that creates a predictor module based on the provided function."""
+        signature = _func_to_signature(func)
+        *_, output_key = signature.output_fields.keys()
+        return _StripOutput(TypedPredictor(signature, **kwargs), output_key)
+
+    # if we have only a single callable argument, the decorator was invoked with no key word arguments
+    #  so we just return the wrapped function
+    if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
+        return _predictor(args[0])
+    return _predictor
 
 
-def cot(func) -> dspy.Module:
-    """Decorator that creates a chain of thought module based on the provided function."""
-    signature = _func_to_signature(func)
-    *_, output_key = signature.output_fields.keys()
-    return _StripOutput(TypedChainOfThought(signature), output_key)
+def cot(*args: tuple, **kwargs) -> Callable[..., dspy.Module]:
+    def _cot(func) -> dspy.Module:
+        """Decorator that creates a chain of thought module based on the provided function."""
+        signature = _func_to_signature(func)
+        *_, output_key = signature.output_fields.keys()
+        return _StripOutput(TypedChainOfThought(signature, **kwargs), output_key)
+
+    # if we have only a single callable argument, the decorator was invoked with no key word arguments
+    #  so we just return the wrapped function
+    if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
+        return _cot(args[0])
+    return _cot
 
 
 class _StripOutput(dspy.Module):
@@ -53,17 +66,21 @@ class FunctionalModule(dspy.Module):
                 self.__dict__[name] = attr.copy()
 
 
-def TypedChainOfThought(signature, instructions=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
+def TypedChainOfThought(signature, instructions=None, reasoning=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
     """Just like TypedPredictor, but adds a ChainOfThought OutputField."""
     signature = ensure_signature(signature, instructions)
     output_keys = ", ".join(signature.output_fields.keys())
+
+    default_rationale = dspy.OutputField(
+        prefix="Reasoning: Let's think step by step in order to",
+        desc="${produce the " + output_keys + "}. We ...",
+    )
+    reasoning = reasoning or default_rationale
+
     return TypedPredictor(
         signature.prepend(
             "reasoning",
-            dspy.OutputField(
-                prefix="Reasoning: Let's think step by step in order to",
-                desc="${produce the " + output_keys + "}. We ...",
-            ),
+            reasoning,
         ),
         max_retries=max_retries,
     )
@@ -75,8 +92,10 @@ class TypedPredictor(dspy.Module):
 
         Args:
             signature: The signature of the module. Can use type annotations.
+            instructions: A description of what the model should do.
             max_retries: The number of times to retry the prediction if the output is invalid.
             wrap_json: If True, json objects in the input will be wrapped in ```json ... ```
+            explain_errors: If True, the model will try to explain the errors it encounters.
         """
         super().__init__()
         self.signature = ensure_signature(signature, instructions)
@@ -110,7 +129,7 @@ class TypedPredictor(dspy.Module):
         )(json_schema=schema).json_object
         # We use the model_validate_json method to make sure the example is valid
         try:
-            type_.model_validate_json(_unwrap_json(json_object))
+            type_.model_validate_json(_unwrap_json(json_object, type_.model_validate_json))
         except (pydantic.ValidationError, ValueError):
             return ""  # Unable to make an example
         return json_object
@@ -154,11 +173,10 @@ class TypedPredictor(dspy.Module):
 
     def _make_explanation(self, task_description: str, model_output: str, error: str) -> str:
         class Signature(dspy.Signature):
-            __doc__ = textwrap.dedent(
-                """
-                I gave my language model a task, but it failed. Figure out what went wrong,
-                and write instructions to help it avoid the error next time.""",
-            )
+            """I gave my language model a task, but it failed.
+
+            Figure out what went wrong, and write instructions to help it avoid the error next time.
+            """
 
             task_description: str = dspy.InputField(desc="What I asked the model to do")
             language_model_output: str = dspy.InputField(desc="The output of the model")
@@ -199,7 +217,7 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=parse,
                     )
-                elif type_ in (str, int, float, bool):
+                elif type_ in (str, int, float):
                     signature = signature.with_updated_fields(
                         name,
                         desc=field.json_schema_extra.get("desc", "")
@@ -241,7 +259,7 @@ class TypedPredictor(dspy.Module):
                         desc=field.json_schema_extra.get("desc", "")
                         + (". Respond with a single JSON object. JSON Schema: " + schema),
                         format=lambda x, to_json=to_json: (x if isinstance(x, str) else to_json(x)),
-                        parser=lambda x, from_json=from_json: from_json(_unwrap_json(x)),
+                        parser=lambda x, from_json=from_json: from_json(_unwrap_json(x, from_json)),
                         type_=type_,
                     )
             else:  # If input field
@@ -387,14 +405,17 @@ def _func_to_signature(func):
     return dspy.Signature(fields, instructions)
 
 
-def _unwrap_json(output):
-    output = output.strip()
-    if output.startswith("```"):
-        if not output.startswith("```json"):
-            raise ValueError("json output should start with ```json")
-        if not output.endswith("```"):
-            raise ValueError("Don't write anything after the final json ```")
-        output = output[7:-3].strip()
-    if not output.startswith("{") or not output.endswith("}"):
-        raise ValueError("json output should start and end with { and }")
-    return ujson.dumps(ujson.loads(output))  # ujson is a bit more robust than the standard json
+def _unwrap_json(output, from_json: Callable[[str], Union[pydantic.BaseModel, str]]):
+    try:
+        return from_json(output).model_dump_json()
+    except (ValueError, pydantic.ValidationError, AttributeError):
+        output = output.strip()
+        if output.startswith("```"):
+            if not output.startswith("```json"):
+                raise ValueError("json output should start with ```json") from None
+            if not output.endswith("```"):
+                raise ValueError("Don't write anything after the final json ```") from None
+            output = output[7:-3].strip()
+        if not output.startswith("{") or not output.endswith("}"):
+            raise ValueError("json output should start and end with { and }") from None
+        return ujson.dumps(ujson.loads(output))  # ujson is a bit more robust than the standard json
