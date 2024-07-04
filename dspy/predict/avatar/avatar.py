@@ -1,7 +1,5 @@
 import dspy
 
-from copy import deepcopy
-
 from typing import Mapping
 from pydantic.fields import FieldInfo
 from pydantic import create_model
