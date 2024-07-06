@@ -2,8 +2,8 @@ from typing import Any, Union
 
 import dsp
 from dsp.primitives.demonstrate import Example
-from .base_template import BaseTemplate
 
+from .base_template import BaseTemplate
 
 
 class Template(BaseTemplate):

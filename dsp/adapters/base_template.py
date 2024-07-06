@@ -1,8 +1,7 @@
-from typing import Callable
 from collections import namedtuple
+from typing import Callable
 
 from .utils import format_answers, passages2text
-
 
 Field = namedtuple("Field", "name separator input_variable output_variable description")
 

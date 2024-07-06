@@ -1,6 +1,5 @@
 import random
 
-import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 

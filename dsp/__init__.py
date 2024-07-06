@@ -1,6 +1,6 @@
+from .adapters import *
 from .modules import *
 from .primitives import *
-from .adapters import *
 from .utils import settings
 
 """
