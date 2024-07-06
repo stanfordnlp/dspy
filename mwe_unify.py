@@ -1,6 +1,4 @@
 # minimum working example for DSPy and unify
-import logging
-from typing import Any
 
 import dsp
 import dspy
@@ -8,30 +6,30 @@ from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 from dspy.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 
 
 # Set up the LM.
-class ModelUnify(dsp.Unify):
-    def __call__(self, *args: Any, **kwargs) -> Any:
-        # Implement the method here
-        logging.info("Called with", args, kwargs)
-        return "Result"
+# class ModelUnify(dsp.Unify):
+#     def __call__(self, *args: Any, **kwargs) -> Any:
+#         # Implement the method here
+#         logging.info("Called with", args, kwargs)
+#         return "Result"
 
 
-model = ModelUnify(
-    endpoint="claude-3-haiku@antrophic",
-    max_tokens=250,
+lm = dsp.Unify(
+    endpoint="gpt-4-turbo@openai",
+    max_tokens=150,
     api_key="VYQEXf6CopY2YZahcwUWnMtn61Pnx+rQuRrsEHWAhcw=",
 )
 
-dspy.settings.configure(lm=model)
+dspy.settings.configure(lm=lm)
 
 # Load math questions from the GSM8K dataset.
 gsm8k = GSM8K()
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 
-logging.info(gsm8k_trainset)
+# logging.info(gsm8k_trainset)
 
 
 class CoT(dspy.Module):
@@ -56,4 +54,4 @@ evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, dis
 # Evaluate our `optimized_cot` program.
 evaluate(optimized_cot)
 
-model.inspect_history(n=1)
+lm.inspect_history(n=1)
