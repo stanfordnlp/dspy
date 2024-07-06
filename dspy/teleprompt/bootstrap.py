@@ -156,7 +156,7 @@ class BootstrapFewShot(Teleprompter):
                     if success:
                         bootstrapped[example_idx] = True
 
-        dspy.logger.info(
+        print(
             f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
         )
 

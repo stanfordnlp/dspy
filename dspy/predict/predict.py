@@ -146,6 +146,8 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
 
 
 def new_generate(lm, signature, example, max_depth=6, **kwargs):
+    kwargs['stop'] = tuple(kwargs.get('stop', [])) or ('\n---', )
+
     # Generate and extract the fields.
     template = signature_to_template(signature, adapter=dsp.ExperimentalAdapter)
     prompt = template(example)
