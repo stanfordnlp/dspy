@@ -20,7 +20,7 @@ from dspy.teleprompt import BootstrapFewShot
 lm = dsp.Unify(
     endpoint="gpt-4-turbo@openai",
     max_tokens=150,
-    api_key="VYQEXf6CopY2YZahcwUWnMtn61Pnx+rQuRrsEHWAhcw=",
+    api_key="UNIFY_api_key_here",
 )
 
 dspy.settings.configure(lm=lm)
