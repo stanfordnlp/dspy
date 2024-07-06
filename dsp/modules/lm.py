@@ -29,7 +29,7 @@ class LM(ABC):
         import dspy
 
         if dspy.settings.experimental:
-            return "\n\n" + "\x1b[32m" + str(text) + "\x1b[0m" + end
+            return "\n\n" + "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
         else:
             return "\x1b[32m" + str(text) + "\x1b[0m" + end
 
@@ -118,7 +118,7 @@ class LM(ABC):
                 text = choices[0]
             else:
                 text = choices[0]["text"]
-            printing_value += self.print_green(text.lstrip(), end="")
+            printing_value += self.print_green(text, end="")
 
             if len(choices) > 1 and isinstance(choices, list):
                 printing_value += self.print_red(
