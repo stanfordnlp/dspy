@@ -32,7 +32,7 @@ class Settings:
                 reranker=None,
                 compiled_lm=None,
                 force_reuse_cached_compilation=False,
-                compiling=False,
+                compiling=False,  # TODO: can probably be removed
                 skip_logprobs=False,
                 trace=[],
                 release=0,
@@ -41,6 +41,7 @@ class Settings:
                 assert_failures=0,
                 suggest_failures=0,
                 langchain_history=[],
+                experimental=False
             )
             cls._instance.__append(config)
 
