@@ -1,6 +1,7 @@
 import logging
-import os
 from typing import Any, Literal, Optional
+
+from unify.clients import Unify as UnifyClient
 
 from dsp.modules.lm import LM
 
@@ -8,66 +9,90 @@ from dsp.modules.lm import LM
 class Unify(LM):
     """A class to interact with the Unify AI API."""
 
-    API_BASE = "https://api.unify.ai/v0"
-
     def __init__(
         self,
         endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
+        # model: Optional[str] = None,
+        # provider: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
+        stream: Optional[bool] = False,
+        base_url="https://api.unify.ai/v0",
         system_prompt: Optional[str] = None,
         api_key=None,
-        **kwargs,  # Added to accept additional keyword arguments
+        **kwargs,
     ):
-        self.api_key = api_key or os.getenv("UNIFY_API_KEY")
-        self.model = endpoint
+        self.api_key = api_key
+        # self.model = model
+        # self.provider = provider
+        self.endpoint = endpoint
+        self.stream = stream
+        self.client = UnifyClient(api_key=self.api_key, endpoint=self.endpoint)
 
-        super().__init__(model=self.model)
+        super().__init__(model=self.endpoint)
+
         self.system_prompt = system_prompt
         self.model_type = model_type
         self.kwargs = {
             "temperature": 0.0,
-            "max_tokens": 200,
+            "max_tokens": 150,
             "top_p": 1,
-            "top_k": 20,
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "n": 1,
-            "num_ctx": 1024,
             **kwargs,
         }
-
+        self.kwargs["endpoint"] = endpoint
         self.history: list[dict[str, Any]] = []
 
     def basic_request(self, prompt: str, **kwargs) -> Any:
         """Basic request to the Unify's API."""
         kwargs = {**self.kwargs, **kwargs}
-
         settings_dict = {
-            "model": self.model,
-            "options": {k: v for k, v in kwargs.items() if k not in ["n", "max_tokens"]},
-            "stream": False,
+            "endpoint": self.endpoint,
+            "stream": self.stream,
         }
         if self.model_type == "chat":
-            settings_dict["messages"] = [{"role": "user", "content": prompt}]
+            messages = [{"role": "user", "content": prompt}]
+            settings_dict["messages"] = messages
+            if self.system_prompt:
+                settings_dict["messages"].insert(0, {"role": "system", "content": self.system_prompt})
         else:
             settings_dict["prompt"] = prompt
 
-        return self._call_generate(settings_dict)
+        logging.debug(f"Settings Dict: {settings_dict}")
+
+        if "messages" in settings_dict:
+            response = self.client.generate(
+                messages=settings_dict["messages"],
+                stream=settings_dict["stream"],
+                temperature=kwargs["temperature"],
+                max_tokens=kwargs["max_tokens"],
+            )
+        else:
+            response = self.client.generate(
+                prompt=settings_dict["prompt"],
+                stream=settings_dict["stream"],
+                temperature=kwargs["temperature"],
+                max_tokens=kwargs["max_tokens"],
+            )
+
+        if not response:
+            logging.error("Unexpected response format, not response")
+        elif "choices" not in response:
+            logging.error(f"no choices in response: {response}")
+
+        return response
 
     def request(self, prompt: str, **kwargs) -> Any:
         """Handles retreival of model completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
-
         return self.basic_request(prompt, **kwargs)
 
-    def _call_generate(self, settings_dict) -> Any:
-        """Call the generate method from the unify client."""
-        try:
-            return Unify.generate(settings=settings_dict, api_key=self.api_key)
-        except Exception as e:
-            logging.error(f"An error occurred while calling the generate method: {e}")
-            return None
+    def _get_choice_text(self, choice: dict[str, Any]) -> str:
+        if self.model_type == "chat":
+            return choice["message"]["content"]
+        return choice["text"]
 
     def __call__(
         self,
@@ -80,11 +105,19 @@ class Unify(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-        n = kwargs.pop("n", 1)
+        response = self.request(prompt, **kwargs)
+        
+        if response is None or not isinstance(response, dict) or "choices" not in response:
+            logging.error(f"Invalid response format or 'choices' key missing in response: {response}")
+            return []
 
-        completions = []
-        for _ in range(n):
-            response = self.request(prompt, **kwargs)
-            completions.append(response.choices[0].message.content)
+        choices = response["choices"]
+        
+        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
+        
+        if only_completed and len(completed_choices):
+            choices = completed_choices
 
+        completions = [self._get_choice_text(c) for c in choices]
+        
         return completions
