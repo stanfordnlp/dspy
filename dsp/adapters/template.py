@@ -1,73 +1,12 @@
-import re
-from collections import namedtuple
 from typing import Any, Union
 
 import dsp
 from dsp.primitives.demonstrate import Example
 
-from .utils import format_answers, passages2text
-
-Field = namedtuple("Field", "name separator input_variable output_variable description")
-
-# TODO: de-duplicate with dsp/templates/template.py
+from .base_template import BaseTemplate
 
 
-class TemplateV2:
-    def __init__(
-        self,
-        template,
-        format_handlers={
-            "passages": passages2text,
-            "context": passages2text,
-            "answer": format_answers,
-            "answers": format_answers,
-        },
-    ):
-        self.format_handlers = format_handlers
-
-        template = template.strip()
-
-        self.instructions = re.search("(.*)\n", template).group(1)
-        template = template[len(self.instructions) :].strip()
-
-        self.fields = []
-        while len(template) > 0:
-            match = re.search("(.*)(\s){(.*)}\s(.*\${.*})", template)
-            if match is not None:
-                name = match.group(1)
-                separator = match.group(2)
-                variable = match.group(3)
-                description = match.group(4)
-            else:
-                match = re.search("(.*)(\s){(.*)}", template)
-                if match is not None:
-                    name = match.group(1)
-                    separator = match.group(2)
-                    variable = match.group(3)
-                    description = None
-                else:
-                    raise ValueError("Could not parse template")
-
-            var_match = re.match("(.*) -> (.*)", variable)
-            if var_match is not None:
-                input_variable = var_match.group(1)
-                output_variable = var_match.group(2)
-            else:
-                input_variable = variable
-                output_variable = variable
-
-            self.fields.append(
-                Field(
-                    name=name,
-                    separator=separator,
-                    input_variable=input_variable,
-                    output_variable=output_variable,
-                    description=description,
-                ),
-            )
-
-            template = template[len(match.group(0)) :].strip()
-
+class Template(BaseTemplate):
     def query(self, example: Example, is_demo: bool = False) -> str:
         """Retrieves the input variables from the example and formats them into a query string."""
         result: list[str] = []

@@ -26,7 +26,12 @@ class LM(ABC):
         return self.basic_request(prompt, **kwargs)
 
     def print_green(self, text: str, end: str = "\n"):
-        return "\x1b[32m" + str(text) + "\x1b[0m" + end
+        import dspy
+
+        if dspy.settings.experimental:
+            return "\n\n" + "\x1b[32m" + str(text) + "\x1b[0m" + end
+        else:
+            return "\x1b[32m" + str(text) + "\x1b[0m" + end
 
     def print_red(self, text: str, end: str = "\n"):
         return "\x1b[31m" + str(text) + "\x1b[0m" + end
@@ -113,7 +118,7 @@ class LM(ABC):
                 text = choices[0]
             else:
                 text = choices[0]["text"]
-            printing_value += self.print_green(text, end="")
+            printing_value += self.print_green(text.lstrip(), end="")
 
             if len(choices) > 1 and isinstance(choices, list):
                 printing_value += self.print_red(
