@@ -208,28 +208,27 @@ exclude_lines = [
 [tool.ruff]
 line-length = 120
 indent-width = 4
-target-version = "py38"
+target-version = "py39"
 
 [tool.ruff.lint]
-select = ["E4", "E9", "Q"]
-ignore = []
+# Select a minimal set of rules
+select = [
+    "F",  # Pyflakes
+    "E",  # Pycodestyle
+]
+
+ignore = [
+    "E501",  # Line too long
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
 
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
 [tool.ruff.format]
-docstring-code-format = true
-quote-style = "double"
-# Like Black, indent with spaces, rather than tabs.
-indent-style = "tab"
-# Like Black, respect magic trailing commas.
-skip-magic-trailing-comma = false
-# Like Black, automatically detect the appropriate line ending.
+docstring-code-format = false
+indent-style = "space"
 line-ending = "auto"
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "**/{tests,testing,docs}/*" = ["ALL"]
