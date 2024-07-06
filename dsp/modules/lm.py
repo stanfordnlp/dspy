@@ -28,7 +28,7 @@ class LM(ABC):
     def print_green(self, text: str, end: str = "\n"):
         import dspy
 
-        if dspy.settings.experimntal:
+        if dspy.settings.experimental:
             return "\n\n" + "\x1b[32m" + str(text) + "\x1b[0m" + end
         else:
             return "\x1b[32m" + str(text) + "\x1b[0m" + end
