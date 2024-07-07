@@ -1,6 +1,6 @@
 import dspy
-from copy import deepcopy
 
+from copy import deepcopy
 from pydantic.fields import FieldInfo
 
 from dspy.predict.avatar.signatures import Actor
