@@ -1,21 +1,19 @@
-from pydantic import BaseModel
 from typing import Any, Optional
+from pydantic import BaseModel, Field
 
 
 class Tool(BaseModel):
     tool: Any
     name: str
-    tool_input_query: str
     desc: Optional[str]
 
     def __str__(self) -> str:
-        return f"{self.name}({self.input_variable}): {self.desc}"
+        return f"{self.name}: {self.desc}"
 
     def __repr__(self) -> str:
         return self.__str__()
 
 
 class Action(BaseModel):
-    rationale: str
-    tool_name: str
-    tool_input_query: str
+    tool_name: Any = Field(..., description="Name of the tool to use.")
+    tool_input_query: Any = Field(..., description="Query to pass as input to the tool.")

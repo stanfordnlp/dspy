@@ -1,7 +1,6 @@
 import dspy
+from copy import deepcopy
 
-from typing import Mapping
-from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.predict.avatar.signatures import Actor
@@ -13,9 +12,9 @@ class Avatar(dspy.Module):
     def __init__(
         self,
         signature,
-        knowledge_base,
         tools,
         max_iters=3,
+        verbose=False,
     ):
         self.signature = ensure_signature(signature)
         self.input_fields = self.signature.input_fields
@@ -24,23 +23,24 @@ class Avatar(dspy.Module):
         self.finish_tool = Tool(
             tool=None,
             name="Finish",
-            input_variable=[],
             desc="returns the final output and finishes the task",
         )
 
         self.tools = tools + [self.finish_tool]
         self.actor_signature = Actor
-        self.knowledge_base = knowledge_base
 
         for field in list(self.input_fields.keys())[::-1]:
-            self.actor_signature = self.actor_signature.insert(
-                -2,
+            self.actor_signature = self.actor_signature.append(
                 field,
                 self._get_field(self.input_fields[field]),
+                type_=self.input_fields[field].annotation,
             )
 
+        self.verbose = verbose
         self.max_iters = max_iters
         self.actor = dspy.TypedPredictor(self.actor_signature)
+
+        self.actor_clone = deepcopy(self.actor)
 
 
     def _get_field(self, field_info: FieldInfo):
@@ -62,46 +62,41 @@ class Avatar(dspy.Module):
 
 
     def _update_signature(self, idx: int, omit_action: bool = False):
-        self.actor_signature = self.actor_signature.with_updated_fields(
+        self.actor.signature = self.actor.signature.with_updated_fields(
             f"action_{idx}", 
             Action, 
             __dspy_field_type="input"
         )
 
-        self.actor_signature = self.actor_signature.append(
+        self.actor.signature = self.actor.signature.append(
             f"result_{idx}",
             dspy.InputField(
                 prefix=f"Result {idx}:",
                 desc=f"{idx}th result",
+                type_=str,
             )
         )
         match omit_action:
             case True:
                 for field in list(self.output_fields.keys()):
-                    self.actor_signature = self.actor_signature.append(
+                    self.actor.signature = self.actor.signature.append(
                         field,
                         self._get_field(self.output_fields[field]),
+                        type_=self.output_fields[field].annotation,
                     )
                     
             case False:
-                self.actor_signature = self.actor_signature.append(
+                self.actor.signature = self.actor.signature.append(
                     f"action_{idx+1}",
                     dspy.OutputField(
-                        prefix=f"Action {idx}:",
-                        desc=f"{idx}th action to taken",
+                        prefix=f"Action {idx+1}:",
+                        desc=f"{idx+1}th action to taken",
                     )
                 )
-
-        self.actor = self._get_actor(self.actor_signature.fields)
-
-    
-    def _get_actor(self, fields: Mapping[str, FieldInfo]) -> dspy.Signature:
-        return create_model(
-            "Actor",
-            __base__=dspy.Signature,
-            __doc__=Actor.__doc__,
-            **fields,
-        )
+                self.actor.signature = self.actor.signature.with_updated_fields(
+                    f"action_{idx+1}",
+                    Action,
+                )
 
 
     def _call_tool(self, tool_name: str, tool_input_query: str) -> str:
@@ -111,15 +106,30 @@ class Avatar(dspy.Module):
 
 
     def forward(self, **kwargs):
-        max_iters = None if "max_iters" not in kwargs else kwargs["max_iters"]
-        args = {key: kwargs[key] for key in self.input_fields.keys() if key in kwargs}
+        print("Starting the task...")
+        
+        args = {
+            "goal" : self.signature.__doc__,
+            "tools" : [tool.name for tool in self.tools],
+        }
+        
+        for key in self.input_fields.keys():
+            if key in kwargs:
+                args[key] = kwargs[key]
+        
         idx = 1
+        tool_name = None
+        max_iters = None if "max_iters" not in kwargs else kwargs["max_iters"]
 
         while tool_name != "Finish" and (max_iters > 0 if max_iters else True):
-            action = self.actor(tools=self.tools, **args)
+            actor_output = self.actor(**args)
+            action = getattr(actor_output, f"action_{idx}")
 
             tool_name = action.tool_name
             tool_input_query = action.tool_input_query
+
+            if self.verbose:
+                print(f"Action {idx}: {tool_name} ({tool_input_query})")
 
             if tool_name != "Finish":
                 tool_output = self._call_tool(tool_name, tool_input_query)
@@ -131,6 +141,7 @@ class Avatar(dspy.Module):
                 self._update_signature(idx, omit_action=True)
 
                 args[f"action_{idx}"] = action
+                args[f"result_{idx}"] = "Gathered all information needed to finish the task."
                 break
 
             idx += 1
@@ -138,7 +149,9 @@ class Avatar(dspy.Module):
             if max_iters:
                 max_iters -= 1
 
-        final_answer = self.actor(tools=self.tools, **args)
+        final_answer = self.actor(**args)
+        self.actor = deepcopy(self.actor_clone)
+
         return dspy.Prediction(
             **{key: getattr(final_answer, key) for key in self.output_fields.keys()}
         )
