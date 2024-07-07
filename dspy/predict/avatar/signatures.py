@@ -1,6 +1,6 @@
 import dspy
 
-from dspy.predict.avatar.models import Action, Tool
+from dspy.predict.avatar.models import Action
 
 
 class Actor(dspy.Signature):
