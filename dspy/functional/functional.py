@@ -8,7 +8,7 @@ import ujson
 from pydantic.fields import FieldInfo
 
 import dspy
-from dsp.templates import passages2text
+from dsp.adapters import passages2text
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
 

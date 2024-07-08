@@ -4,11 +4,13 @@ from pydantic import BaseModel
 
 import dsp
 from dspy.predict.parameter import Parameter
+from dspy.primitives.program import Module
+
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 
-class Predict(Parameter):
+class Predict(Module, Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
@@ -36,10 +38,15 @@ class Predict(Parameter):
             state["demos"].append(demo)
 
         # Cache the signature instructions and the last field's name.
-        state["signature_instructions"] = self.signature.instructions
-
         *_, last_key = self.signature.fields.keys()
+        state["signature_instructions"] = self.signature.instructions
         state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
+
+        # Some special stuff for CoT.
+        if hasattr(self, "extended_signature"):
+            # Cache the signature instructions and the last field's name.
+            state["extended_signature_instructions"] = self.extended_signature.instructions
+            state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra['prefix']
 
         return state
 
@@ -56,11 +63,23 @@ class Predict(Parameter):
             prefix = state["signature_prefix"]
             *_, last_key = self.signature.fields.keys()
             self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+        
+        # Some special stuff for CoT.
+        if "extended_signature_instructions" in state:
+            instructions = state["extended_signature_instructions"]
+            self.extended_signature = self.extended_signature.with_instructions(instructions)
+
+        if "extended_signature_prefix" in state:
+            prefix = state["extended_signature_prefix"]
+            *_, last_key = self.extended_signature.fields.keys()
+            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
+        assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
+
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -83,11 +102,6 @@ class Predict(Parameter):
             config["temperature"] = 0.7
             # print(f"#> Setting temperature to 0.7 since n={num_generations} and prior temperature={temperature}.")
 
-        # All of the other kwargs are presumed to fit a prefix of the signature.
-        # That is, they are input variables for the bottom most generation, so
-        # we place them inside the input - x - together with the demos.
-        x = dsp.Example(demos=demos, **kwargs)
-
         if new_signature is not None:
             signature = new_signature
 
@@ -96,29 +110,10 @@ class Predict(Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        # Switch to legacy format for dsp.generate
-        template = signature_to_template(signature)
-
-        if self.lm is None:
-            x, C = dsp.generate(template, **config)(x, stage=self.stage)
+        if dsp.settings.experimental:
+            completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
         else:
-            # Note: query_only=True means the instructions and examples are not included.
-            # I'm not really sure why we'd want to do that, but it's there.
-            with dsp.settings.context(lm=self.lm, query_only=True):
-                x, C = dsp.generate(template, **config)(x, stage=self.stage)
-
-        assert self.stage in x, "The generated (input, output) example was not stored"
-
-        completions = []
-
-        for c in C:
-            completions.append({})
-            for field in template.fields:
-                if field.output_variable not in kwargs.keys():
-                    completions[-1][field.output_variable] = getattr(
-                        c,
-                        field.output_variable,
-                    )
+            completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -136,6 +131,71 @@ class Predict(Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
+
+
+def old_generate(demos, signature, kwargs, config, lm, stage):
+    # Switch to legacy format for dsp.generate
+    x = dsp.Example(demos=demos, **kwargs)
+    template = signature_to_template(signature)
+
+    if lm is None:
+        x, C = dsp.generate(template, **config)(x, stage=stage)
+    else:
+        # Note: query_only=True means the instructions and examples are not included.
+        with dsp.settings.context(lm=lm, query_only=True):
+            x, C = dsp.generate(template, **config)(x, stage=stage)
+
+    # assert stage in x, "The generated (input, output) example was not stored"
+
+    completions = []
+
+    for c in C:
+        completions.append({})
+        for field in template.fields:
+            if field.output_variable not in kwargs.keys():
+                completions[-1][field.output_variable] = getattr(c, field.output_variable)
+
+    return completions
+
+
+def new_generate(lm, signature, example, max_depth=6, **kwargs):
+    kwargs['stop'] = tuple(kwargs.get('stop', [])) or ('\n---', )
+
+    # Generate and extract the fields.
+    template = signature_to_template(signature, adapter=dsp.ExperimentalAdapter)
+    prompt = template(example)
+    completions = lm(prompt, **kwargs)
+    completions = [template.extract(example, p) for p in completions]
+
+    assert all(set(signature.input_fields).issubset(set(c.keys())) for c in completions), "Missing input keys."
+
+    # Find the completions that are most complete.
+    field_names = [field.input_variable for field in template.fields]
+    for field_idx, key in enumerate(field_names):
+        completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
+        completions = completions_ or completions
+        if len(completions_) == 0: break
+
+    # If none of the completions is completed (i.e., none has the final field set).
+    if len(completions_) == 0:
+        # Pick the first completion that has gone farthest.
+        completion = completions[0]
+
+        for field_idx_ in range(field_idx+1, len(field_names)):
+            if field_names[field_idx_] in completion: del completion[field_names[field_idx_]]
+
+        # Recurse with greedy decoding.
+        new_kwargs = {**kwargs, "n": 1, "temperature": 0.0,}
+
+        assert max_depth > 0
+        return new_generate(lm, signature, completion, max_depth=max_depth-1, **new_kwargs)
+    
+    # Keep only output fields.
+    completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
+
+    return completions
+
 
 
 # TODO: get some defaults during init from the context window?

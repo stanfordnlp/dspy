@@ -1,6 +1,5 @@
 import random
 
-import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -55,10 +54,10 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # self.max_bootstrapped_demos = self.max_num_traces
         self.max_labeled_demos = max_labeled_demos
 
-        dspy.logger.info(
+        print(
             "Going to sample between", self.min_num_samples, "and", self.max_num_samples, "traces per predictor.",
         )
-        dspy.logger.info("Will attempt to train", self.num_candidate_sets, "candidate sets.")
+        print("Will attempt to bootstrap", self.num_candidate_sets, "candidate sets.")
 
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
@@ -132,16 +131,16 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 score = 0 if program2._assert_failures > 0 else score
             ######################################################
 
-            dspy.logger.info("Score:", score, "for set:", [len(predictor.demos) for predictor in program2.predictors()])
+            print("Score:", score, "for set:", [len(predictor.demos) for predictor in program2.predictors()])
 
             if len(scores) == 0 or score > max(scores):
-                dspy.logger.info("New best sscore:", score, "for seed", seed)
+                print("New best sscore:", score, "for seed", seed)
                 best_program = program2
 
             scores.append(score)
-            dspy.logger.info(f"Scores so far: {scores}")
+            print(f"Scores so far: {scores}")
 
-            dspy.logger.info("Best score:", max(scores))
+            print("Best score:", max(scores))
 
             score_data.append((score, subscores, seed, program2))
 
@@ -153,17 +152,17 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     transposed_subscores = zip(*[subscores for _, subscores, *_ in top_3_scores if subscores])
                     avg_of_max_per_entry = sum(max(entry) for entry in transposed_subscores) / len(top_3_scores[0][1])
 
-                    dspy.logger.info(f"Average of max per entry across top {k} scores: {avg_of_max_per_entry}")
+                    print(f"Average of max per entry across top {k} scores: {avg_of_max_per_entry}")
 
             if self.stop_at_score is not None and score >= self.stop_at_score:
-                dspy.logger.info(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
+                print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
                 break
 
         # To best program, attach all program candidates in decreasing average score
         best_program.candidate_programs = score_data
         best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x[0], reverse=True)
 
-        dspy.logger.info(f"{len(best_program.candidate_programs)} candidate programs found.")
+        print(f"{len(best_program.candidate_programs)} candidate programs found.")
 
         return best_program
 
