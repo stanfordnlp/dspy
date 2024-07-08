@@ -38,7 +38,7 @@ class QdrantRM(dspy.Retrieve):
 
         Below is a code snippet that shows how to use Qdrant in the forward() function of a module
         ```python
-        self.retrieve = QdrantRM("my_collection_name", qdrant_client=qdrant_client, k=num_passages)
+        self.retrieve = QdrantRM(question, k=num_passages, filter=filter)
         ```
     """
 
