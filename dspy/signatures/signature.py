@@ -14,9 +14,12 @@ import dsp
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
 
-def signature_to_template(signature) -> dsp.Template:
+def signature_to_template(signature, adapter=None) -> dsp.Template:
     """Convert from new to legacy format."""
-    return dsp.Template(
+
+    adapter = adapter or dsp.Template
+
+    return adapter(
         signature.instructions,
         **{name: new_to_old_field(field) for name, field in signature.fields.items()},
     )

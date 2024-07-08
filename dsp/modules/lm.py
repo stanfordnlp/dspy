@@ -26,7 +26,12 @@ class LM(ABC):
         return self.basic_request(prompt, **kwargs)
 
     def print_green(self, text: str, end: str = "\n"):
-        return "\x1b[32m" + str(text) + "\x1b[0m" + end
+        import dspy
+
+        if dspy.settings.experimental:
+            return "\n\n" + "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
+        else:
+            return "\x1b[32m" + str(text) + "\x1b[0m" + end
 
     def print_red(self, text: str, end: str = "\n"):
         return "\x1b[31m" + str(text) + "\x1b[0m" + end
@@ -58,11 +63,7 @@ class LM(ABC):
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
-                    blocks = [
-                        {"text": block.text}
-                        for block in x["response"].content
-                        if block.type == "text"
-                    ]
+                    blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
                     printed.append((prompt, x["response"].text))
@@ -117,7 +118,8 @@ class LM(ABC):
 
             if len(choices) > 1 and isinstance(choices, list):
                 printing_value += self.print_red(
-                    f" \t (and {len(choices)-1} other completions)", end="",
+                    f" \t (and {len(choices)-1} other completions)",
+                    end="",
                 )
 
             printing_value += "\n\n\n"

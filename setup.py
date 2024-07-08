@@ -15,13 +15,13 @@ setup(
     version="2.4.10", 	
     description="DSPy",	
     long_description=long_description,	
-    long_description_content_type='text/markdown',	
+    long_description_content_type="text/markdown",	
     url="https://github.com/stanfordnlp/dsp",	
     author="Omar Khattab",	
     author_email="okhattab@stanford.edu",	
     license="MIT License",	
-    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),	
-    python_requires='>=3.9',	
+    packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),	
+    python_requires=">=3.9",	
     install_requires=requirements,	
 
     extras_require={
@@ -37,8 +37,6 @@ setup(
         "myscale":["clickhouse-connect"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
-        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
-        "myscale":["clickhouse-connect"],
         "groq": ["groq~=0.8.0"],
     },	
     classifiers=[	

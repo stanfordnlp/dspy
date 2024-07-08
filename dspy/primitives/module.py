@@ -23,9 +23,14 @@ class BaseModule:
         named_parameters = []
 
         def add_parameter(param_name, param_value):
+            param_name = postprocess_parameter_name(param_name, param_value)
+
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
                 visited.add(id(param_value))
                 named_parameters.append((param_name, param_value))
+
+        if isinstance(self, Parameter):
+            add_parameter("self", self)
 
         for name, value in self.__dict__.items():
             if isinstance(value, Parameter):
@@ -61,12 +66,15 @@ class BaseModule:
         seen = {id(self)}
 
         def add_to_queue(name, item):
+            name = postprocess_parameter_name(name, item)
+
             if id(item) not in seen:
                 seen.add(id(item))
                 queue.append((name, item))
 
         while queue:
             name, item = queue.popleft()
+
             if isinstance(item, type_):
                 yield name, item
 
@@ -99,11 +107,19 @@ class BaseModule:
         return obj
 
     def dump_state(self):
+        print(self.named_parameters())
         return {name: param.dump_state() for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
             param.load_state(state[name])
+            # try:
+            #     param.load_state(state[name])
+            # except KeyError:
+            #     if name.endswith("._predict"):
+            #         param.load_state(state[name[:-9]])
+            #     else:
+            #         raise
 
     def save(self, path):
         with open(path, "w") as f:
@@ -112,3 +128,17 @@ class BaseModule:
     def load(self, path):
         with open(path) as f:
             self.load_state(ujson.loads(f.read()))
+
+
+def postprocess_parameter_name(name, value):
+    # For ChainOfThought backward compatibility, remove ending ._predict if it's there
+    if name.endswith("._predict"):
+        name = name[:-9]
+    
+    if name.endswith(".self"):
+        name = name[:-5]
+    
+    if name == "_predict":
+        return "self"
+    
+    return name

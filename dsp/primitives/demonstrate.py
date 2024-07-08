@@ -1,4 +1,3 @@
-import random
 from typing import Any, Callable
 
 import numpy as np
@@ -45,62 +44,62 @@ class Example(dotdict):
         return self.copy(demos=demos)
 
 
-def annotate(*transformations):
-    """Returns an Augment function that applies the provided transformations to the Examples"""
+# def annotate(*transformations):
+#     """Returns an Augment function that applies the provided transformations to the Examples"""
 
-    def do_augment(train, k=None, return_all=False):
-        rdemos = []
-        ademos = []
+#     def do_augment(train, k=None, return_all=False):
+#         rdemos = []
+#         ademos = []
 
-        for example in train:  # tqdm.tqdm
-            raw_example = dsp.Example(example)
+#         for example in train:  # tqdm.tqdm
+#             raw_example = dsp.Example(example)
 
-            if (k is not None) and len(ademos) >= k:
-                example = None
+#             if (k is not None) and len(ademos) >= k:
+#                 example = None
 
-            for f in transformations:
-                if example is None:
-                    break
+#             for f in transformations:
+#                 if example is None:
+#                     break
 
-                example = f(example)
+#                 example = f(example)
 
-            if example is not None:
-                example.augmented = True
-                ademos.append(example)
-            else:
-                raw_example.augmented = False
-                rdemos.append(raw_example)
+#             if example is not None:
+#                 example.augmented = True
+#                 ademos.append(example)
+#             else:
+#                 raw_example.augmented = False
+#                 rdemos.append(raw_example)
 
-        if return_all:
-            return ademos + rdemos
+#         if return_all:
+#             return ademos + rdemos
 
-        return ademos
+#         return ademos
 
-    return do_augment
-
-
-def sample(train: list[Example], k: int):
-    """Sample k examples from train."""
-    rng = random.Random(dsp.settings.branch_idx)
-    shuffled_train = [dsp.Example(example) for example in train]
-    rng.shuffle(shuffled_train)
-
-    return shuffled_train[:k]
+#     return do_augment
 
 
-def all_but(train: list[Example], x: Example) -> list[Example]:
-    """Removes the example x from the train set by comparing the question and history."""
+# def sample(train: list[Example], k: int):
+#     """Sample k examples from train."""
+#     rng = random.Random(dsp.settings.branch_idx)
+#     shuffled_train = [dsp.Example(example) for example in train]
+#     rng.shuffle(shuffled_train)
 
-    output = [
-        y
-        for y in train
-        if not set.intersection(
-            set(x.get("history", []) + [x.question]),
-            set(y.get("history", []) + [y.question]),
-        )
-    ]
+#     return shuffled_train[:k]
 
-    return output
+
+# def all_but(train: list[Example], x: Example) -> list[Example]:
+#     """Removes the example x from the train set by comparing the question and history."""
+
+#     output = [
+#         y
+#         for y in train
+#         if not set.intersection(
+#             set(x.get("history", []) + [x.question]),
+#             set(y.get("history", []) + [y.question]),
+#         )
+#     ]
+
+#     return output
 
 
 def passage_match(passages: list[str], answers: list[str]) -> bool:
