@@ -1,4 +1,4 @@
-# minimum working example for DSPy and unify
+import logging
 
 import dsp
 import dspy
@@ -6,30 +6,22 @@ from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 from dspy.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
 
-# logging.basicConfig(level=logging.INFO)
-
-
-# Set up the LM.
-# class ModelUnify(dsp.Unify):
-#     def __call__(self, *args: Any, **kwargs) -> Any:
-#         # Implement the method here
-#         logging.info("Called with", args, kwargs)
-#         return "Result"
-
-
 lm = dsp.Unify(
-    endpoint="gpt-4-turbo@openai",
+    endpoint="llama-2-13b-chat@anyscale",
     max_tokens=150,
-    api_key="UNIFY_api_key_here",
+    api_key="UNIFY_api_key",
 )
 
 dspy.settings.configure(lm=lm)
 
 # Load math questions from the GSM8K dataset.
 gsm8k = GSM8K()
+
+logging.info("Loading GSM8K train and dev sets")
+
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 
-# logging.info(gsm8k_trainset)
+logging.info(f"train set: {gsm8k_trainset}")
 
 
 class CoT(dspy.Module):
@@ -55,3 +47,9 @@ evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, dis
 evaluate(optimized_cot)
 
 lm.inspect_history(n=1)
+
+logging.info(
+    """Done! This example showcases how to set up your environment, define a custom module,
+    compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations.
+    """,
+)
