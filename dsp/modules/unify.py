@@ -71,7 +71,7 @@ class Unify(LM):
             )
         else:
             response = self.client.generate(
-                prompt=settings_dict["prompt"],
+                user_prompt=settings_dict["prompt"],
                 stream=settings_dict["stream"],
                 temperature=kwargs["temperature"],
                 max_tokens=kwargs["max_tokens"],
