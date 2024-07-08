@@ -7,9 +7,10 @@ from dspy.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
 
 lm = dsp.Unify(
-    endpoint="llama-2-13b-chat@anyscale",
+    endpoint="gpt-3.5-turbo@openai",
     max_tokens=150,
-    api_key="UNIFY_api_key",
+    api_key="UNIFY_API_KEY",
+    model_type="text",
 )
 
 dspy.settings.configure(lm=lm)
