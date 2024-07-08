@@ -8,6 +8,17 @@ from dspy.predict.avatar.models import Action, Tool
 from dspy.signatures.signature import ensure_signature
 
 
+def get_number_with_suffix(number: int) -> str:
+    if number == 1:
+        return "1st"
+    elif number == 2:
+        return "2nd"
+    elif number == 3:
+        return "3rd"
+    else:
+        return f"{number}th"
+
+
 class Avatar(dspy.Module):
     def __init__(
         self,
@@ -72,7 +83,7 @@ class Avatar(dspy.Module):
             f"result_{idx}",
             dspy.InputField(
                 prefix=f"Result {idx}:",
-                desc=f"{idx}th result",
+                desc=f"{get_number_with_suffix(idx)} result",
                 type_=str,
             )
         )
@@ -90,7 +101,7 @@ class Avatar(dspy.Module):
                     f"action_{idx+1}",
                     dspy.OutputField(
                         prefix=f"Action {idx+1}:",
-                        desc=f"{idx+1}th action to taken",
+                        desc=f"{get_number_with_suffix(idx+1)} action to taken",
                     )
                 )
                 self.actor.signature = self.actor.signature.with_updated_fields(
