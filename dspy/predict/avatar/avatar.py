@@ -150,7 +150,7 @@ class Avatar(dspy.Module):
                 max_iters -= 1
 
         final_answer = self.actor(**args)
-        self.actor = deepcopy(self.actor_clone)
+        self.actor = self.actor_clone
 
         return dspy.Prediction(
             **{key: getattr(final_answer, key) for key in self.output_fields.keys()}
