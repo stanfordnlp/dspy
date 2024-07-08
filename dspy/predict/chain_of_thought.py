@@ -26,16 +26,24 @@ class ChainOfThought(Module):
 
         rationale_type = rationale_type or dspy.OutputField(prefix=prefix, desc=desc)
 
-        self.extended_signature = signature.prepend("rationale", rationale_type, type_=str)
-        self._predict = dspy.Predict(self.extended_signature, **config)
-        self._predict.extended_signature = self.extended_signature
+        extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        self._predict = dspy.Predict(extended_signature, **config)
+        self._predict.extended_signature = extended_signature
 
     def forward(self, **kwargs):
         assert self.activated in [True, False]
 
-        signature = kwargs.pop("new_signature", self.extended_signature if self.activated else self.signature)
+        signature = kwargs.pop("new_signature", self._predict.extended_signature if self.activated else self.signature)
         return self._predict(signature=signature, **kwargs)
         # return super().forward(signature=signature, **kwargs)
+
+    @property
+    def demos(self):
+        return self._predict.demos
+    
+    @property
+    def extended_signature(self):
+        return self._predict.extended_signature
 
 """
 TODO: In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
