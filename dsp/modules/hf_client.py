@@ -323,6 +323,7 @@ class Together(HFModel):
         stop_default = "\n\n---"
 
         self.kwargs = {
+            "model": model,
             "temperature": 0.0,
             "max_tokens": 512,
             "top_p": 1,
