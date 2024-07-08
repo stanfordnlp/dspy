@@ -220,6 +220,7 @@ class MIPROv2(Teleprompter):
                 trainset=trainset,
                 prompt_model=self.prompt_model,
                 program_code_string=self.program_code_string,
+                view_data_batch_size=self.view_data_batch_size,
                 program_aware=program_aware_proposer,
             )
 
