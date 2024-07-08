@@ -213,12 +213,7 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-
-                if "dspy_uuid" in example:
-                    demo = Example(augmented=True, dspy_uuid=example.dspy_uuid, **inputs, **outputs)
-                else:
-                    # TODO: FIXME: This is a hack. RandomSearch will complain for now in this edge case.
-                    demo = Example(augmented=True, **inputs, **outputs)
+                demo = Example(augmented=True, **inputs, **outputs)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]

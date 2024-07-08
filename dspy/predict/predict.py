@@ -4,11 +4,13 @@ from pydantic import BaseModel
 
 import dsp
 from dspy.predict.parameter import Parameter
+from dspy.primitives.program import Module
+
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 
-class Predict(Parameter):
+class Predict(Module, Parameter):
     def __init__(self, signature, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
@@ -36,10 +38,15 @@ class Predict(Parameter):
             state["demos"].append(demo)
 
         # Cache the signature instructions and the last field's name.
-        state["signature_instructions"] = self.signature.instructions
-
         *_, last_key = self.signature.fields.keys()
+        state["signature_instructions"] = self.signature.instructions
         state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
+
+        # Some special stuff for CoT.
+        if hasattr(self, "extended_signature"):
+            # Cache the signature instructions and the last field's name.
+            state["extended_signature_instructions"] = self.extended_signature.instructions
+            state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra['prefix']
 
         return state
 
@@ -56,6 +63,16 @@ class Predict(Parameter):
             prefix = state["signature_prefix"]
             *_, last_key = self.signature.fields.keys()
             self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+        
+        # Some special stuff for CoT.
+        if "extended_signature_instructions" in state:
+            instructions = state["extended_signature_instructions"]
+            self.extended_signature = self.extended_signature.with_instructions(instructions)
+
+        if "extended_signature_prefix" in state:
+            prefix = state["extended_signature_prefix"]
+            *_, last_key = self.extended_signature.fields.keys()
+            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
@@ -137,10 +154,7 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
         completions.append({})
         for field in template.fields:
             if field.output_variable not in kwargs.keys():
-                completions[-1][field.output_variable] = getattr(
-                    c,
-                    field.output_variable,
-                )
+                completions[-1][field.output_variable] = getattr(c, field.output_variable)
 
     return completions
 
