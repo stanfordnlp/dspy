@@ -237,6 +237,7 @@ class GroundedProposer(Proposer):
         prompt_model,
         trainset,
         program_code_string=None,
+        view_data_batch_size=10,
         use_dataset_summary=True,
         program_aware=True,
         use_task_demos=True,
@@ -257,7 +258,7 @@ class GroundedProposer(Proposer):
         self.prompt_model = prompt_model
         self.program_code_string = program_code_string
         self.data_summary = create_dataset_summary(
-            trainset=trainset, view_data_batch_size=10, prompt_model=prompt_model,
+            trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
         )
         print(f"DATA SUMMARY: {self.data_summary}")
 
