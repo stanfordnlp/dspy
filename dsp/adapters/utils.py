@@ -1,12 +1,12 @@
 from typing import Optional, Union
 
 
-def passages2text(passages: Union[str, list, tuple]) -> str:
+def passages2text(passages: Union[str, list, tuple, dict]) -> str:
     """Formats the given one or more passages into a single structured string."""
     if isinstance(passages, str):
         return passages
 
-    assert type(passages) in [list, tuple]
+    assert type(passages) in [list, tuple, dict]
 
     if len(passages) == 0:
         return "N/A"
