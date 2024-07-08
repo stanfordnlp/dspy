@@ -18,6 +18,7 @@ class Unify(LM):
         stream: Optional[bool] = False,
         base_url="https://api.unify.ai/v0",
         system_prompt: Optional[str] = None,
+        n: int = 1,
         api_key=None,
         **kwargs,
     ):
@@ -38,7 +39,7 @@ class Unify(LM):
             "top_p": 1,
             "frequency_penalty": 0,
             "presence_penalty": 0,
-            "n": 1,
+            "n": n,
             **kwargs,
         }
         self.kwargs["endpoint"] = endpoint
@@ -76,6 +77,8 @@ class Unify(LM):
                 max_tokens=kwargs["max_tokens"],
             )
 
+        response = {"choices": [{"message": {"content": response}}]}  # response with choices
+
         if not response:
             logging.error("Unexpected response format, not response")
         elif "choices" not in response:
@@ -89,11 +92,6 @@ class Unify(LM):
             del kwargs["model_type"]
         return self.basic_request(prompt, **kwargs)
 
-    def _get_choice_text(self, choice: dict[str, Any]) -> str:
-        if self.model_type == "chat":
-            return choice["message"]["content"]
-        return choice["text"]
-
     def __call__(
         self,
         prompt: str,
@@ -105,19 +103,15 @@ class Unify(LM):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
 
-        response = self.request(prompt, **kwargs)
-        
-        if response is None or not isinstance(response, dict) or "choices" not in response:
-            logging.error(f"Invalid response format or 'choices' key missing in response: {response}")
-            return []
+        n = kwargs.pop("n", 1)
+        completions = []
 
-        choices = response["choices"]
-        
-        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
-        
-        if only_completed and len(completed_choices):
-            choices = completed_choices
+        for _ in range(n):
+            response = self.request(prompt, **kwargs)
 
-        completions = [self._get_choice_text(c) for c in choices]
-        
+            if isinstance(response, dict) and "choices" in response:
+                completions.append(response["choices"][0]["message"]["content"])
+            else:
+                raise ValueError("Unexpected response format")
+
         return completions
