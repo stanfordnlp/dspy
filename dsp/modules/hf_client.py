@@ -118,7 +118,7 @@ def send_hftgi_request_v00(arg, **kwargs):
 
 
 class HFClientVLLM(HFModel):
-    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", **kwargs):
+    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", http_request_kwargs=None, **kwargs):
         super().__init__(model=model, is_client=True)
 
         if isinstance(url, list):
@@ -132,6 +132,7 @@ class HFClientVLLM(HFModel):
         
         self.urls_const = tuple(self.urls)
         self.port = port
+        self.http_request_kwargs = http_request_kwargs or {}
         self.model_type = model_type
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
@@ -198,6 +199,7 @@ class HFClientVLLM(HFModel):
                 port=self.port,
                 json=payload,
                 headers=self.headers,
+                **self.http_request_kwargs,
             )
 
             try:
@@ -225,6 +227,7 @@ class HFClientVLLM(HFModel):
                 port=self.port,
                 json=payload,
                 headers=self.headers,
+                **self.http_request_kwargs,
             )
 
             try:
@@ -323,6 +326,7 @@ class Together(HFModel):
         stop_default = "\n\n---"
 
         self.kwargs = {
+            "model": model,
             "temperature": 0.0,
             "max_tokens": 512,
             "top_p": 1,

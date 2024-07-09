@@ -38,7 +38,7 @@ class QdrantRM(dspy.Retrieve):
 
         Below is a code snippet that shows how to use Qdrant in the forward() function of a module
         ```python
-        self.retrieve = QdrantRM("my_collection_name", qdrant_client=qdrant_client, k=num_passages)
+        self.retrieve = QdrantRM(question, k=num_passages, filter=filter)
         ```
     """
 
@@ -62,12 +62,13 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None, filter: Optional[models.Filter]=None) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query.
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+            filter (Optional["Filter"]): "Look only for points which satisfies this conditions". Default: None.
 
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
@@ -90,6 +91,7 @@ class QdrantRM(dspy.Retrieve):
                 vector=vector,
                 limit=k or self.k,
                 with_payload=[self._document_field],
+                filter=filter,
             )
             for vector in vectors
         ]

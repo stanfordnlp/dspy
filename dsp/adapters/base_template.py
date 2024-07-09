@@ -1,6 +1,9 @@
+from collections import namedtuple
 from typing import Callable
 
-from dsp.templates import Field, TemplateV2, format_answers, passages2text
+from .utils import format_answers, passages2text
+
+Field = namedtuple("Field", "name separator input_variable output_variable description")
 
 
 class Type:
@@ -19,7 +22,7 @@ class Type:
         return isinstance(__value, Type) and self.__dict__ == __value.__dict__
 
 
-class Template(TemplateV2):
+class BaseTemplate:
     """A template datatype that represents the structure of communicate with the LM."""
 
     def __init__(self, instructions: str, **kwargs):
@@ -61,9 +64,7 @@ class Template(TemplateV2):
             v1, v2 = self.kwargs[k], other.kwargs[k]
             if not v1 == v2:
                 print(k, v1, v2)
-
             
-        # print("here?", self.instructions == other.instructions, self.kwargs == other.kwargs)
         return self.instructions == other.instructions and self.kwargs == other.kwargs
 
     def __str__(self) -> str:
