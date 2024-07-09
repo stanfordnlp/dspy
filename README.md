@@ -82,12 +82,17 @@ For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-co
 pip install dspy-ai[chromadb] # or [groq] or [marqo] or [milvus] or [mongodb] or [myscale] or [pinecone] or [qdrant] or [snowflake] or [weaviate] or [langfuse]
 ```
 
-### How to integrate langfuse
+### How to make the prompt visible
+We have now integrated langfuse as one of the tracker.
 
-Before you configure langfuse, please manually deploy the langfuse server or use Langfuse Cloud. You will get the corresponding configuration after you create a new project.
-When please configure the relevant environment variables in the project, they are `LANGFUSE_SECRET_KEY`、`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_HOST`.
-Just write the environment variables and langfuse will automatically read them.[langfuse details](https://langfuse.com/docs/deployment/self-host) .
+How to configure langfuse?[langfuse details](https://langfuse.com/docs/deployment/self-host) .
 
+After that, you will get three environment variables, they are `LANGFUSE_SECRET_KEY`、`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_HOST`.
+
+Just write the environment variables and langfuse will automatically read them.
+
+If you are using **openai** or **azure_openai**, then your preparations are now complete.
+Otherwise, you need to configure manually.
 ```python
 import dspy
 from dsp.trackers.langfuse_tracker import LangfuseTracker
