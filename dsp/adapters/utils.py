@@ -17,29 +17,29 @@ def passages2text(passages: Union[str, list, tuple]) -> str:
     return "\n".join([f"[{idx+1}] «{txt}»" for idx, txt in enumerate(passages)])
 
 
-def passages2textV2(passages: Union[str, list, tuple]) -> str:
-    """Formats the given one or more passages into a single structured string."""
-    if isinstance(passages, str):
-        return passages
+# def passages2textV2(passages: Union[str, list, tuple]) -> str:
+#     """Formats the given one or more passages into a single structured string."""
+#     if isinstance(passages, str):
+#         return passages
 
-    assert type(passages) in [list, tuple]
+#     assert type(passages) in [list, tuple]
 
-    def psg2text(psg):
-        try:
-            title, snippet = psg.split("|", 1)
-            return f"Title: {title.strip()} | Snippet: «{snippet.strip()}»"
-        except Exception:
-            pass
+#     def psg2text(psg):
+#         try:
+#             title, snippet = psg.split("|", 1)
+#             return f"Title: {title.strip()} | Snippet: «{snippet.strip()}»"
+#         except Exception:
+#             pass
         
-        return f"«{psg}»"
+#         return f"«{psg}»"
 
-    if len(passages) == 0:
-        return "N/A"
+#     if len(passages) == 0:
+#         return "N/A"
 
-    if len(passages) == 1:
-        return psg2text(passages[0])
+#     if len(passages) == 1:
+#         return psg2text(passages[0])
 
-    return "\n".join([f"[{idx+1}] {psg2text(txt)}" for idx, txt in enumerate(passages)])
+#     return "\n".join([f"[{idx+1}] {psg2text(txt)}" for idx, txt in enumerate(passages)])
 
 
 def format_answers(answers: Union[str, list]) -> Optional[str]:

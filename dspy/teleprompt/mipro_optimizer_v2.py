@@ -124,7 +124,7 @@ class MIPROv2(Teleprompter):
         student,
         *,
         trainset,
-        valset=[],
+        valset=None,
         num_batches=30,
         max_bootstrapped_demos=5,
         max_labeled_demos=2,
@@ -141,7 +141,7 @@ class MIPROv2(Teleprompter):
         ENDC = "\033[0m"  # Resets the color to default
 
         random.seed(seed)
-
+        valset = valset or trainset
         estimated_prompt_model_calls = 10 + self.n * len(
                 student.predictors(),
             ) + (0 if not program_aware_proposer else len(student.predictors()) + 1)  # num data summary calls + N * P + (P + 1)
@@ -212,12 +212,15 @@ class MIPROv2(Teleprompter):
                     print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
                     self.program_code_string = None
                     program_aware_proposer = False
+            else:
+                self.program_code_string = None
 
             # Setup our proposer 
             proposer = GroundedProposer(
                 trainset=trainset,
                 prompt_model=self.prompt_model,
                 program_code_string=self.program_code_string,
+                view_data_batch_size=self.view_data_batch_size,
                 program_aware=program_aware_proposer,
             )
 

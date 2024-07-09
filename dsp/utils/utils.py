@@ -1,10 +1,10 @@
+import os
+import tqdm
+import copy
 import datetime
 import itertools
-import os
+
 from collections import defaultdict
-
-import tqdm
-
 
 def print_message(*s, condition=True, pad=False, sep=None):
     s = " ".join([str(x) for x in s])
@@ -73,9 +73,6 @@ def batch(group, bsize, provide_offset=False):
 #     __getattr__ = dict.__getitem__
 #     __setattr__ = dict.__setitem__
 #     __delattr__ = dict.__delitem__
-
-
-import copy
 
 
 class dotdict(dict):
