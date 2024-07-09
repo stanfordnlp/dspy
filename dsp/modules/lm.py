@@ -7,7 +7,6 @@ class LM(ABC):
     def __init__(self, model, tracker=None):
         self.kwargs = {
             "model": model,
-            "tracker": tracker,
             "temperature": 0.0,
             "max_tokens": 150,
             "top_p": 1,
@@ -16,6 +15,7 @@ class LM(ABC):
             "n": 1,
         }
         self.provider = "default"
+        self.tracker = tracker
 
         self.history = []
 
@@ -139,6 +139,5 @@ class LM(ABC):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop("model")
-        tracker = kwargs.pop("tracker")
 
-        return self.__class__(model=model, tracker=tracker, **kwargs)
+        return self.__class__(model=model, **kwargs)
