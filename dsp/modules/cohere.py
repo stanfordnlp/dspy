@@ -3,6 +3,7 @@ from typing import Any, Optional
 import backoff
 
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
 
 try:
     import cohere
@@ -101,7 +102,7 @@ class Cohere(LM):
     @backoff.on_exception(
         backoff.expo,
         (cohere_api_error),
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )

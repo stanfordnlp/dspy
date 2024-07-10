@@ -6,6 +6,7 @@ import backoff
 from pydantic_core import PydanticCustomError
 
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
 
 try:
     from snowflake.snowpark import Session
@@ -146,7 +147,7 @@ class Snowflake(LM):
     @backoff.on_exception(
         backoff.expo,
         (Exception),
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )
