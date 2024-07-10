@@ -145,7 +145,7 @@ You can configure backoff times for your LM/RM provider by setting `dspy.setting
 dspy.settings.configure(backoff_time = ...)
 ```
 
-Additionally, if you'd like to set individual backoff times for specific providers, you can do through the DSPy context manager: 
+Additionally, if you'd like to set individual backoff times for specific providers, you can do so through the DSPy context manager: 
 
 ```python
 with dspy.context(backoff_time = ..):
