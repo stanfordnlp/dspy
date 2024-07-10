@@ -8,7 +8,7 @@ import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
-import dspy
+from dsp.utils.settings import settings
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -134,7 +134,7 @@ class GPT3(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=dspy.settings.backoff_time,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):

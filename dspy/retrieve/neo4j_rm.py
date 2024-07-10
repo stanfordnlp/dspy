@@ -10,7 +10,7 @@ from openai import (
     UnprocessableEntityError,
 )
 
-import dspy
+from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
 try:
@@ -42,7 +42,7 @@ class Embedder:
             RateLimitError,
             UnprocessableEntityError,
         ),
-        max_time=dspy.settings.backoff_time,
+        max_time=settings.backoff_time,
     )
     def __call__(self, queries) -> Any:
         embedding = self.client.embeddings.create(input=queries, model=self.model)

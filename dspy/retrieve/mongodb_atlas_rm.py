@@ -10,7 +10,7 @@ from openai import (
     UnprocessableEntityError,
 )
 
-import dspy
+from dsp.utils.settings import settings
 
 try:
     from pymongo import MongoClient
@@ -61,7 +61,7 @@ class Embedder:
             RateLimitError,
             UnprocessableEntityError,
         ),
-        max_time=dspy.settings.backoff_time,
+        max_time=settings.backoff_time,
     )
     def __call__(self, queries) -> Any:
         embedding = self.client.embeddings.create(input=queries, model=self.model)

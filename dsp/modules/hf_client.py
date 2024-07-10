@@ -11,7 +11,7 @@ import requests
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.modules.hf import HFModel, openai_to_hf
-import dspy
+from dsp.utils.settings import settings
 
 ERRORS = (Exception)
 
@@ -341,7 +341,7 @@ class Together(HFModel):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=dspy.settings.backoff_time,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def _generate(self, prompt, use_chat_api=False, **kwargs):
