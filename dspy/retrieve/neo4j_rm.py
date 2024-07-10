@@ -42,7 +42,7 @@ class Embedder:
             RateLimitError,
             UnprocessableEntityError,
         ),
-        max_time=15,
+        max_time=dspy.settings.backoff_time,
     )
     def __call__(self, queries) -> Any:
         embedding = self.client.embeddings.create(input=queries, model=self.model)

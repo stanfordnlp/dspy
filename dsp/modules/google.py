@@ -5,6 +5,7 @@ from typing import Any, Optional
 import backoff
 
 from dsp.modules.lm import LM
+import dspy
 
 try:
     import google.generativeai as genai
@@ -133,7 +134,7 @@ class Google(LM):
     @backoff.on_exception(
         backoff.expo,
         (google_api_error),
-        max_time=1000,
+        max_time=dspy.settings.backoff_time,
         max_tries=8,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,

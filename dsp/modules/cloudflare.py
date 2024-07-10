@@ -7,6 +7,7 @@ import requests
 from pydantic import BaseModel, ValidationError
 
 from dsp.modules.lm import LM
+import dspy
 
 
 def backoff_hdlr(details) -> None:
@@ -69,7 +70,7 @@ class CloudflareAI(LM):
     @backoff.on_exception(
         backoff.expo,
         requests.exceptions.RequestException,
-        max_time=1000,
+        max_time=dspy.settings.backoff_time,
         on_backoff=backoff_hdlr,
         on_giveup=giveup_hdlr,
     )

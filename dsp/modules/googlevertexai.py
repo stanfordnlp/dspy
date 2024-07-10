@@ -6,6 +6,7 @@ import backoff
 from pydantic_core import PydanticCustomError
 
 from dsp.modules.lm import LM
+import dspy
 
 try:
     import vertexai  # type: ignore[import-untyped]
@@ -184,7 +185,7 @@ class GoogleVertexAI(LM):
     @backoff.on_exception(
         backoff.expo,
         (Exception),
-        max_time=1000,
+        max_time=dspy.settings.backoff_time,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )
