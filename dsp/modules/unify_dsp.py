@@ -20,6 +20,21 @@ except Exception:
 
 
 class ChatBot(ChatBot):
+    """
+    Extends the Unify ChatBot to handle message generation and interaction.
+
+    This class provides methods to process user input and generate AI responses
+    using the Unify client.
+
+    Methods:
+        __init__(endpoint: Optional[str] = None, model: Optional[str] = None,
+                 provider: Optional[str] = None, api_key: Optional[str] = None) -> None:
+            Initializes the ChatBot instance with the specified parameters.
+
+        generate_completion(inp: str) -> Generator[str, None, None]:
+            Processes the user input to generate an AI response.
+    """
+
     def __init__(
         self,
         endpoint: Optional[str] = None,
@@ -27,13 +42,30 @@ class ChatBot(ChatBot):
         provider: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> None:
+        """
+        Initializes the ChatBot instance with the specified parameters.
+
+        Args:
+            endpoint (Optional[str]): The API endpoint to connect to.
+            model (Optional[str]): The model to use for generating responses.
+            provider (Optional[str]): The provider for the AI model.
+            api_key (Optional[str]): The API key for authenticating with the service.
+        """
         super().__init__(endpoint, model, provider, api_key)
 
     def generate_completion(
         self,
         inp: str,
     ) -> Generator[str, None, None]:
-        """Processes the user input to generate AI response."""
+        """
+        Processes the user input to generate an AI response.
+
+        Args:
+            inp (str): The input from the user.
+
+        Yields:
+            str: Generated AI responses as a generator.
+        """
         self._update_message_history(role="user", content=inp)
         return self._client.generate(
             messages=self._message_history,
@@ -41,7 +73,25 @@ class ChatBot(ChatBot):
         )
 
 
+
 class UnifyClient(Unify):
+    """
+    Extends the Unify class to manage interactions with Unify AI services.
+
+    This class provides methods for generating AI completions and handling
+    communication with the Unify AI platform.
+
+    Methods:
+        __init__(endpoint: Optional[str] = None, model: Optional[str] = None,
+                 provider: Optional[str] = None, api_key: Optional[str] = None) -> None:
+            Initializes the UnifyClient instance with the specified parameters.
+
+        generate_completion(endpoint: str = None, messages: Optional[list[dict[str, str]]] = None,
+                            max_tokens: Optional[int] = 1024, stream: Optional[bool] = True,
+                            **kwargs) -> Any:
+            Generates AI completions using Unify's API.
+    """
+
     def __init__(
         self,
         endpoint: Optional[str] = None,
@@ -49,6 +99,15 @@ class UnifyClient(Unify):
         provider: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> None:
+        """
+        Initializes the UnifyClient instance with the specified parameters.
+
+        Args:
+            endpoint (Optional[str]): The API endpoint to connect to.
+            model (Optional[str]): The model to use for generating responses.
+            provider (Optional[str]): The provider for the AI model.
+            api_key (Optional[str]): The API key for authenticating with the service.
+        """
         super().__init__(endpoint, model, provider, api_key)
 
     def generate_completion(
@@ -59,6 +118,20 @@ class UnifyClient(Unify):
         stream: Optional[bool] = True,
         **kwargs,
     ) -> Any:
+        """
+        Generates AI completions using Unify's API.
+
+        Args:
+            endpoint (str): The API endpoint to use for generating completions.
+            messages (Optional[list[dict[str, str]]]): A list of message dictionaries
+                representing the conversation history.
+            max_tokens (Optional[int]): The maximum number of tokens to generate.
+            stream (Optional[bool]): Whether to stream the response.
+            **kwargs: Additional keyword arguments for the API request.
+
+        Returns:
+            Any: The generated completion response from the Unify API.
+        """
         return self.client.chat.completions.create(
             model=self.endpoint if self.endpoint else endpoint,
             messages=messages,  # type: ignore[arg-type]
@@ -67,6 +140,7 @@ class UnifyClient(Unify):
             **kwargs,
         )
 
+
     def _generate_stream(
         self,
         messages: list[dict[str, str]],
@@ -74,6 +148,26 @@ class UnifyClient(Unify):
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> Generator[str, None, None]:
+        """
+    Generates AI completions in stream mode using Unify's API.
+
+    This method processes the provided messages and streams the AI-generated
+    responses in chunks.
+
+    Args:
+        messages (list[dict[str, str]]): A list of message dictionaries representing
+            the conversation history.
+        endpoint (str): The API endpoint to use for generating completions.
+        max_tokens (Optional[int]): The maximum number of tokens to generate.
+        **kwargs: Additional keyword arguments for the API request.
+
+    Yields:
+        str: Chunks of the generated AI response.
+
+    Raises:
+        openai.APIStatusError: If an API status error occurs, it raises the appropriate
+            status error mapped from Unify's API.
+    """
         try:
             chat_completion = self.generate_completion(
                 messages=messages,
@@ -98,6 +192,26 @@ class UnifyClient(Unify):
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> str:
+        """
+    Generates AI completions in non-stream mode using Unify's API.
+
+    This method processes the provided messages and returns the complete AI-generated
+    response as a single string.
+
+    Args:
+        messages (list[dict[str, str]]): A list of message dictionaries representing
+            the conversation history.
+        endpoint (str): The API endpoint to use for generating completions.
+        max_tokens (Optional[int]): The maximum number of tokens to generate.
+        **kwargs: Additional keyword arguments for the API request.
+
+    Returns:
+        str: The complete generated AI response.
+
+    Raises:
+        openai.APIStatusError: If an API status error occurs, it raises the appropriate
+            status error mapped from Unify's API.
+    """
         try:
             chat_completion = self.generate_completion(
                 messages=messages,
@@ -119,6 +233,24 @@ class UnifyClient(Unify):
 
 
 class UnifyDSP(LM):
+    """
+    UnifyDSP class integrates Unify AI's capabilities with a custom LM (Language Model) implementation.
+
+    This class is designed to interface with Unify AI's models and provides methods
+    for generating AI completions, managing conversation history, and configuring model parameters.
+
+    Attributes:
+        endpoint (str): The API endpoint for the Unify AI model.
+        api_key (str): The API key for authenticating with the Unify AI service.
+        api_provider (Literal["unify"]): The API provider, which is set to "unify".
+        api_base (str): The base URL for the Unify AI API.
+        model (Optional[str]): The model to use for generating responses.
+        provider (Optional[str]): The provider for the AI model.
+        system_prompt (Optional[str]): The system prompt to use for the AI model.
+        model_type (Literal["chat", "text"]): The type of model to use ("chat" or "text").
+        kwargs (dict): Additional keyword arguments for the model configuration.
+        history (list[dict[str, Any]]): The conversation history.
+    """
     def __init__(
         self,
         endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
@@ -129,6 +261,18 @@ class UnifyDSP(LM):
         api_key=None,
         **kwargs,  # Added to accept additional keyword arguments
     ):
+        """
+        Initializes the UnifyDSP instance with the specified parameters.
+
+        Args:
+            endpoint (str): The API endpoint for the Unify AI model. Defaults to a specific router endpoint.
+            model (Optional[str]): The model to use for generating responses.
+            provider (Optional[str]): The provider for the AI model.
+            model_type (Literal["chat", "text"]): The type of model to use ("chat" or "text"). Defaults to "chat".
+            system_prompt (Optional[str]): The system prompt to use for the AI model.
+            api_key (Optional[str]): The API key for authenticating with the Unify AI service. If not provided, it will be retrieved from the environment variable "UNIFY_API_KEY".
+            **kwargs: Additional keyword arguments for the model configuration.
+        """
         self.endpoint = endpoint
         self.api_key = api_key or os.getenv("UNIFY_API_KEY")
         self.api_provider: Literal["unify"] = "unify"
@@ -210,10 +354,27 @@ class UnifyDSP(LM):
         return unify_client.generate(user_prompt=prompt, system_prompt=self.system_prompt, **kwargs)
 
     def get_credit_balance(self) -> Any:
+        """
+    Retrieves the current credit balance for the Unify AI account.
+
+    This method creates a UnifyClient instance with the stored API key and endpoint
+    and calls its get_credit_balance method.
+
+    Returns:
+        Any: The current credit balance.
+    """
         return UnifyClient(api_key=self.api_key, endpoint=self.endpoint).get_credit_balance()
 
     @classmethod
     def list_available_models(cls) -> list:
+        """
+    Lists all available models from Unify AI.
+
+    This method calls the Unify API to retrieve a list of available models.
+
+    Returns:
+        list: A list of available models.
+    """
         return unify.list_models()
 
     def basic_request(self, prompt: str, **kwargs) -> Any:
