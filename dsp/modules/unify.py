@@ -25,7 +25,7 @@ class Unify(LM, UnifyClient):
         self.stream = stream
         # LM.__init__(self, model)
         # UnifyClient.__init__(self, endpoint=endpoint, model=model, provider=provider, api_key=api_key)
-        super(Unify, self).__init__(endpoint=endpoint, model=model, provider=provider, api_key=api_key)
+        super().__init__(endpoint=endpoint, model=model, provider=provider, api_key=api_key)
         self.system_prompt = system_prompt
         self.kwargs = {
             "temperature": 0.0,
