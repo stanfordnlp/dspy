@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from unify.clients import Unify as UnifyClient
 
@@ -14,7 +14,6 @@ class Unify(LM):
         endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
         # model: Optional[str] = None,
         # provider: Optional[str] = None,
-        model_type: Literal["chat", "text"] = "chat",
         stream: Optional[bool] = False,
         base_url="https://api.unify.ai/v0",
         system_prompt: Optional[str] = None,
@@ -32,7 +31,6 @@ class Unify(LM):
         super().__init__(model=self.endpoint)
 
         self.system_prompt = system_prompt
-        self.model_type = model_type
         self.kwargs = {
             "temperature": 0.0,
             "max_tokens": 150,
@@ -77,8 +75,6 @@ class Unify(LM):
 
     def request(self, prompt: str, **kwargs) -> Any:
         """Handles retreival of model completions whilst handling rate limiting and caching."""
-        if "model_type" in kwargs:
-            del kwargs["model_type"]
         return self.basic_request(prompt, **kwargs)
 
     def __call__(
