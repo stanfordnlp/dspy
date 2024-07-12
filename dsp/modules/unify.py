@@ -6,30 +6,28 @@ from unify.clients import Unify as UnifyClient
 from dsp.modules.lm import LM
 
 
-class Unify(LM):
+class Unify(LM, UnifyClient):
     """A class to interact with the Unify AI API."""
 
     def __init__(
         self,
-        endpoint="router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
-        # model: Optional[str] = None,
-        # provider: Optional[str] = None,
-        stream: Optional[bool] = False,
-        base_url="https://api.unify.ai/v0",
-        system_prompt: Optional[str] = None,
-        n: int = 1,
+        endpoint: str = "router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
         api_key=None,
+        stream: Optional[bool] = False,
+        system_prompt: Optional[str] = None,
+        base_url: str = "https://api.unify.ai/v0",
+        n: int = 1,
         **kwargs,
     ):
-        self.api_key = api_key
-        # self.model = model
-        # self.provider = provider
-        self.endpoint = endpoint
+        self.base_url = base_url
         self.stream = stream
-        self.client = UnifyClient(api_key=self.api_key, endpoint=self.endpoint)
-
-        super().__init__(model=self.endpoint)
-
+        LM.__init__(self, model)
+        UnifyClient.__init__(self, endpoint=endpoint, model=model, provider=provider, api_key=api_key)
+        self.model = self._model
+        self.provider = self._provider
+        self.endpoint = self._endpoint
         self.system_prompt = system_prompt
         self.kwargs = {
             "temperature": 0.0,
@@ -57,7 +55,7 @@ class Unify(LM):
 
         logging.debug(f"Settings Dict: {settings_dict}")
 
-        response = self.client.generate(
+        response = self.generate(
             messages=settings_dict["messages"],
             stream=settings_dict["stream"],
             temperature=kwargs["temperature"],
@@ -70,12 +68,15 @@ class Unify(LM):
             logging.error("Unexpected response format, not response")
         elif "choices" not in response:
             logging.error(f"no choices in response: {response}")
-
+        if isinstance(response, dict) and "choices" in response:
+            self.history.append({"prompt": prompt, "response": response})
+        else:
+            raise ValueError("Unexpected response format")
         return response
 
     def __call__(
         self,
-        prompt: str,
+        prompt: Optional[str],
         only_completed: bool = True,
         return_sorted: bool = False,
         **kwargs,
@@ -83,16 +84,6 @@ class Unify(LM):
         """Request completions from the Unify API."""
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
-
-        n = kwargs.pop("n", 1)
-        completions = []
-
-        for _ in range(n):
-            response = self.request(prompt, **kwargs)
-
-            if isinstance(response, dict) and "choices" in response:
-                completions.append(response["choices"][0]["message"]["content"])
-            else:
-                raise ValueError("Unexpected response format")
-
-        return completions
+        n: int = kwargs.get("n") or 1
+        skip: int = kwargs.get("skip") or 0
+        return self.inspect_history(n=n, skip=skip)
