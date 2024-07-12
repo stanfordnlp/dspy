@@ -59,20 +59,12 @@ class Unify(LM):
 
         logging.debug(f"Settings Dict: {settings_dict}")
 
-        if "messages" in settings_dict:
-            response = self.client.generate(
-                messages=settings_dict["messages"],
-                stream=settings_dict["stream"],
-                temperature=kwargs["temperature"],
-                max_tokens=kwargs["max_tokens"],
-            )
-        else:
-            response = self.client.generate(
-                user_prompt=settings_dict["prompt"],
-                stream=settings_dict["stream"],
-                temperature=kwargs["temperature"],
-                max_tokens=kwargs["max_tokens"],
-            )
+        response = self.client.generate(
+            messages=settings_dict["messages"],
+            stream=settings_dict["stream"],
+            temperature=kwargs["temperature"],
+            max_tokens=kwargs["max_tokens"],
+        )
 
         response = {"choices": [{"message": {"content": response}}]}  # response with choices
 
