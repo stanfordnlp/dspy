@@ -73,10 +73,6 @@ class Unify(LM):
 
         return response
 
-    def request(self, prompt: str, **kwargs) -> Any:
-        """Handles retreival of model completions whilst handling rate limiting and caching."""
-        return self.basic_request(prompt, **kwargs)
-
     def __call__(
         self,
         prompt: str,
