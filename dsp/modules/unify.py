@@ -52,13 +52,10 @@ class Unify(LM):
             "endpoint": self.endpoint,
             "stream": self.stream,
         }
-        if self.model_type == "chat":
-            messages = [{"role": "user", "content": prompt}]
-            settings_dict["messages"] = messages
-            if self.system_prompt:
-                settings_dict["messages"].insert(0, {"role": "system", "content": self.system_prompt})
-        else:
-            settings_dict["prompt"] = prompt
+        messages = [{"role": "user", "content": prompt}]
+        settings_dict["messages"] = messages
+        if self.system_prompt:
+            settings_dict["messages"].insert(0, {"role": "system", "content": self.system_prompt})
 
         logging.debug(f"Settings Dict: {settings_dict}")
 
