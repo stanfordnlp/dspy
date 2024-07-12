@@ -10,3 +10,4 @@ requests
 structlog
 tqdm
 ujson
+groq==0.9.0
