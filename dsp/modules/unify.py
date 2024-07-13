@@ -23,9 +23,9 @@ class Unify(LM, UnifyClient):
     ):
         self.base_url = base_url
         self.stream = stream
-        # LM.__init__(self, model)
-        # UnifyClient.__init__(self, endpoint=endpoint, model=model, provider=provider, api_key=api_key)
-        super().__init__(endpoint=endpoint, model=model, provider=provider, api_key=api_key)
+        LM.__init__(self, model)
+        UnifyClient.__init__(self, endpoint=endpoint, model=model, provider=provider, api_key=api_key)
+        # super().__init__(model)
         self.system_prompt = system_prompt
         self.kwargs = {
             "temperature": 0.0,
@@ -38,6 +38,11 @@ class Unify(LM, UnifyClient):
         }
         self.kwargs["endpoint"] = endpoint
         self.history: list[dict[str, Any]] = []
+
+    @UnifyClient.provider.setter
+    def provider(self, value: str) -> None:
+        if value != "default":
+            self.set_provider(value)
 
     def basic_request(self, prompt: str, **kwargs) -> Any:
         """Basic request to the Unify's API."""
