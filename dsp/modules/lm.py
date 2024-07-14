@@ -100,6 +100,7 @@ class LM(ABC):
                 "premai",
                 "you.com",
                 "tensorrt_llm",
+                "unify",
             ):
                 text = choices
             elif provider == "openai" or provider == "ollama":

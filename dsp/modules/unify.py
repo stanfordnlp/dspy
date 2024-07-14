@@ -38,9 +38,22 @@ class Unify(LM, UnifyClient):
         }
         self.kwargs["endpoint"] = endpoint
         self.history: list[dict[str, Any]] = []
+        self._dspy_provider = "unify"
 
-    @UnifyClient.provider.setter
+    @property
+    def provider(self) -> Optional[str]:
+        return self._dspy_provider
+
+    @provider.setattr
     def provider(self, value: str) -> None:
+        self._dspy_provider = value
+
+    @property
+    def unify_provider(self) -> Optional[str]:
+        return UnifyClient.provider()
+
+    @unify_provider.setter
+    def unify_provider(self, value: str) -> None:
         if value != "default":
             self.set_provider(value)
 
