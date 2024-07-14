@@ -89,4 +89,5 @@ class Unify(LM, UnifyClient):
         assert return_sorted is False, "for now"
         n: int = kwargs.get("n") or 1
         skip: int = kwargs.get("skip") or 0
+        self.request(prompt, **kwargs)
         return self.inspect_history(n=n, skip=skip)
