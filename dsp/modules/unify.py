@@ -44,7 +44,7 @@ class Unify(LM, UnifyClient):
     def provider(self) -> Optional[str]:
         return self._dspy_provider
 
-    @provider.setattr
+    @provider.setter
     def provider(self, value: str) -> None:
         self._dspy_provider = value
 
