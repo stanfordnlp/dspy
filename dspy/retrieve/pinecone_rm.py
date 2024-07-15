@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 import backoff
 
-import dspy
+from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
 try:
@@ -178,7 +178,7 @@ class PineconeRM(dspy.Retrieve):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=15,
+        max_time=settings.backoff_time,
     )
     def _get_embeddings(
         self, 

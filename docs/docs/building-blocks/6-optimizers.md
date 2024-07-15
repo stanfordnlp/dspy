@@ -54,7 +54,7 @@ These optimizers extend the signature by automatically generating and including 
 
 4. **`BootstrapFewShotWithOptuna`**: Applies `BootstrapFewShot` with Optuna optimization across demonstration sets, running trials to maximize evaluation metrics and selecting the best demonstrations. 
 
-5. **`KNNFewShot`**. Selects demonstrations through k-Nearest Neighbors algorithm to pick a diverse set of examples from different clusters.  Vectorizes the examples, and then clusters them, using cluster centers with `BootstrapFewShot` for bootstrapping/selection process.  This will be  useful when there's a lot of data over random spaces: using KNN helps optimize the `trainset`  for `BootstrapFewShot`.  See [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/knn.ipynb) for an example.
+5. **`KNNFewShot`**. Selects demonstrations using the k-Nearest Neighbors algorithm. Vectorizes the examples, and finds the nearest neighbors demonstrations for a given input example. See [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/knn.ipynb) for an example.
 
 
 #### Automatic Instruction Optimization

@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 import backoff
 import openai
 
-import dspy
+from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
 try:
@@ -124,7 +124,7 @@ class ChromadbRM(dspy.Retrieve):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=15,
+        max_time=settings.backoff_time,
     )
     def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
         """Return query vector after creating embedding using OpenAI
