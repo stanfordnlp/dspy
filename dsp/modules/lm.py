@@ -101,9 +101,10 @@ class LM(ABC):
                 "premai",
                 "you.com",
                 "tensorrt_llm",
-                "unify",
             ):
                 text = choices
+            elif provider == "unify":
+                text = " " + choices["choices"][0]["message"]["content"]
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
             elif provider == "groq":
