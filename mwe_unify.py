@@ -1,6 +1,5 @@
-test_add_unify_client
-import logging
 import os
+
 from dotenv import load_dotenv
 
 import dsp
@@ -9,11 +8,10 @@ from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 from dspy.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
 
-
 load_dotenv()
 unify_api_key = os.getenv("UNIFY_KEY")
 
-lm = dsp.Unify(
+endpoint = dsp.Unify(
     endpoint="gpt-3.5-turbo@openai",
     max_tokens=150,
     api_key=unify_api_key,
