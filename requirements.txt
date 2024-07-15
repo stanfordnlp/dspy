@@ -1,6 +1,6 @@
 backoff
 datasets
-joblib<=1.3.2
+joblib~=1.3
 openai>=0.28.1,<2.0.0
 optuna
 pandas

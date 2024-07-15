@@ -137,7 +137,25 @@ Firstly, please refer to your LM/RM provider to ensure stable status or sufficie
 
 Additionally, try reducing the number of threads you are testing on as the corresponding servers may get overloaded with requests and trigger a backoff + retry mechanism.
 
-If all variables seem stable, you may be experiencing timeouts or backoff errors due to incorrect payload requests sent to the api providers. Please verify your arguments are compatible with the SDK you are interacting with. At times, DSPy may have hard-coded arguments that are not relevant for your compatible, in which case, please free to open a PR alerting this or comment out these default settings for your usage. 
+If all variables seem stable, you may be experiencing timeouts or backoff errors due to incorrect payload requests sent to the api providers. Please verify your arguments are compatible with the SDK you are interacting with. 
+
+You can configure backoff times for your LM/RM provider by setting `dspy.settings.backoff_time` while configuring your DSPy workflow. 
+
+```python
+dspy.settings.configure(backoff_time = ...)
+```
+
+Additionally, if you'd like to set individual backoff times for specific providers, you can do so through the DSPy context manager: 
+
+```python
+with dspy.context(backoff_time = ..):
+      dspy.OpenAI(...) # example
+
+with dspy.context(backoff_time = ..):
+      dspy.AzureOpenAI(...) # example
+```
+
+At times, DSPy may have hard-coded arguments that are not relevant for your compatible, in which case, please free to open a PR alerting this or comment out these default settings for your usage. 
 
 ## Contributing
 
