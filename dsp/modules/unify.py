@@ -100,7 +100,7 @@ class Unify(LM, UnifyClient):
         """Request completions from the Unify API."""
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
-        n: int = kwargs.get("n") or 1
+        n: int = kwargs.pop("n", 1)
         completions = []
 
         for _ in range(n):
