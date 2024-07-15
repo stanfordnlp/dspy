@@ -23,11 +23,16 @@ class BaseModule:
         named_parameters = []
 
         def add_parameter(param_name, param_value):
-            param_name = postprocess_parameter_name(param_name, param_value)
-
             if isinstance(param_value, Parameter) and id(param_value) not in visited:
                 visited.add(id(param_value))
+                param_name = postprocess_parameter_name(param_name, param_value)
                 named_parameters.append((param_name, param_value))
+            
+            elif isinstance(param_value, dspy.Module):
+                # When a sub-module is pre-compiled, keep it frozen.
+                if not getattr(param_value, "_compiled", False):
+                    for sub_name, param in param_value.named_parameters():
+                        add_parameter(f"{param_name}.{sub_name}", param)
 
         if isinstance(self, Parameter):
             add_parameter("self", self)
