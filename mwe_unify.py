@@ -1,28 +1,26 @@
-import logging
-
 import dsp
 import dspy
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 from dspy.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
 
-lm = dsp.Unify(
+endpoint = dsp.Unify(
     endpoint="gpt-3.5-turbo@openai",
     max_tokens=150,
-    api_key="UNIFY_API_KEY",
+    api_key="QOZDhc54GhdcuUGXkPrDrjxoaySXOOPvq38rUUa+Mpk=",
     model_type="text",
 )
 
-dspy.settings.configure(lm=lm)
+dspy.settings.configure(lm=endpoint)
 
 # Load math questions from the GSM8K dataset.
 gsm8k = GSM8K()
 
-logging.info("Loading GSM8K train and dev sets")
+print("Loading GSM8K train and dev sets")
 
 gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 
-logging.info(f"train set: {gsm8k_trainset}")
+print(f"train set: {gsm8k_trainset}")
 
 
 class CoT(dspy.Module):
@@ -47,9 +45,9 @@ evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, dis
 # Evaluate our `optimized_cot` program.
 evaluate(optimized_cot)
 
-lm.inspect_history(n=1)
+endpoint.inspect_history(n=1)
 
-logging.info(
+print(
     """Done! This example showcases how to set up your environment, define a custom module,
     compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations.
     """,
