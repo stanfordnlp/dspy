@@ -102,8 +102,13 @@ class Unify(LM, UnifyClient):
         assert return_sorted is False, "for now"
         n: int = kwargs.get("n") or 1
         completions = []
+
         for _ in range(n):
             response = self.request(prompt, **kwargs)
-            completions.append(response["choices"][0]["message"]["content"])
+
+            if isinstance(response, dict) and "choices" in response:
+                completions.append(response["choices"][0]["message"]["content"])
+            else:
+                raise ValueError("Unexpected response format")
 
         return completions
