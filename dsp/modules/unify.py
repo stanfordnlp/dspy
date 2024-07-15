@@ -71,22 +71,19 @@ class Unify(LM, UnifyClient):
 
         logging.debug(f"Settings Dict: {settings_dict}")
 
-        response = self.generate(
+        response_string: str = self.generate(
             messages=settings_dict["messages"],
             stream=settings_dict["stream"],
             temperature=kwargs["temperature"],
             max_tokens=kwargs["max_tokens"],
         )
 
-        response = {"choices": [{"message": {"content": response}}]}  # response with choices
+        response: dict = {"choices": [{"message": {"content": response_string}}]}  # response with choices
 
-        if not response:
-            logging.error("Unexpected response format, not response")
-        elif "choices" not in response:
-            logging.error(f"no choices in response: {response}")
-        if isinstance(response, dict) and "choices" in response:
+        if response_string not in [None, "", " "]:
             self.history.append({"prompt": prompt, "response": response})
         else:
+            logging.error("No response")
             raise ValueError("Unexpected response format")
         return response
 
