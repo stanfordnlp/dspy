@@ -101,6 +101,9 @@ class Unify(LM, UnifyClient):
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
         n: int = kwargs.get("n") or 1
-        skip: int = kwargs.get("skip") or 0
-        self.request(prompt, **kwargs)
-        return self.inspect_history(n=n, skip=skip)
+        completions = []
+        for _ in range(n):
+            response = self.request(prompt, **kwargs)
+            completions.append(response["choices"][0]["message"]["content"])
+
+        return completions
