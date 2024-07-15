@@ -60,6 +60,7 @@ class LM(ABC):
                     "Sagemaker",
                     "premai",
                     "tensorrt_llm",
+                    "unify",
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
