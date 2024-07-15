@@ -38,22 +38,22 @@ class Unify(LM, UnifyClient):
         }
         self.kwargs["endpoint"] = endpoint
         self.history: list[dict[str, Any]] = []
-        self._dspy_provider = "unify"
+        self._dspy_integration_provider = "unify"
 
     @property
     def provider(self) -> Optional[str]:
-        return self._dspy_provider
+        return self._dspy_integration_provider
 
     @provider.setter
     def provider(self, value: str) -> None:
-        self._dspy_provider = value
+        self._dspy_integration_provider = value
 
     @property
-    def unify_provider(self) -> Optional[str]:
-        return UnifyClient.provider()
+    def model_provider(self) -> Optional[str]:
+        return UnifyClient.provider(self)
 
-    @unify_provider.setter
-    def unify_provider(self, value: str) -> None:
+    @model_provider.setter
+    def model_provider(self, value: str) -> None:
         if value != "default":
             self.set_provider(value)
 
