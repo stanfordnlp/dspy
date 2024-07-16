@@ -7,6 +7,7 @@ from dspy.teleprompt import BootstrapFewShot
 endpoint = dsp.Unify(
     endpoint="gpt-3.5-turbo@openai",
     max_tokens=150,
+    stream=True,
     api_key="QOZDhc54GhdcuUGXkPrDrjxoaySXOOPvq38rUUa+Mpk=",
     model_type="text",
 )
