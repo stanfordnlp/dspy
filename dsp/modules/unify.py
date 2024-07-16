@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Literal, Optional
 
 from unify.clients import Unify as UnifyClient
@@ -28,7 +27,6 @@ class Unify(LM):
         self.endpoint = endpoint
         self.stream = stream
         self.client = UnifyClient(api_key=self.api_key, endpoint=self.endpoint)
-
         super().__init__(model=self.endpoint)
 
         self.system_prompt = system_prompt
@@ -47,6 +45,7 @@ class Unify(LM):
 
     def basic_request(self, prompt: str, **kwargs) -> Any:
         """Basic request to the Unify's API."""
+        raw_kwargs = kwargs
         kwargs = {**self.kwargs, **kwargs}
         settings_dict = {
             "endpoint": self.endpoint,
@@ -59,8 +58,6 @@ class Unify(LM):
                 settings_dict["messages"].insert(0, {"role": "system", "content": self.system_prompt})
         else:
             settings_dict["prompt"] = prompt
-
-        logging.debug(f"Settings Dict: {settings_dict}")
 
         if "messages" in settings_dict:
             response = self.client.generate(
@@ -77,12 +74,15 @@ class Unify(LM):
                 max_tokens=kwargs["max_tokens"],
             )
 
-        response = {"choices": [{"message": {"content": response}}]}  # response with choices
+        history = {
+            "prompt": prompt,
+            "response": response,
+            "kwargs": kwargs,
+            "raw_kwargs": raw_kwargs,
+        }
+        self.history.append(history)
 
-        if not response:
-            logging.error("Unexpected response format, not response")
-        elif "choices" not in response:
-            logging.error(f"no choices in response: {response}")
+        response = {"choices": [{"message": {"content": response}}]}  # response with choices
 
         return response
 
