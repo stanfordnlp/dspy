@@ -50,6 +50,7 @@ class GPT3(LM):
         api_key: Optional[str] = None,
         api_provider: Literal["openai"] = "openai",
         api_base: Optional[str] = None,
+        base_url: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         system_prompt: Optional[str] = None,
         **kwargs,
@@ -73,7 +74,7 @@ class GPT3(LM):
 
         if api_key:
             openai.api_key = api_key
-
+        api_base = base_url or api_base
         if api_base:
             if OPENAI_LEGACY:
                 openai.api_base = api_base
