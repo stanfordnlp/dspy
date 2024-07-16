@@ -22,16 +22,6 @@ class Unify(LM):
     ):
         """
         Initializes the Unify client with the specified parameters.
-
-        Args:
-            endpoint (str): The endpoint to use for the API.
-            model_type (Literal["chat", "text"]): Type of model, either 'chat' or 'text'.
-            stream (Optional[bool]): Whether to use streaming mode.
-            base_url (str): The base URL for the API.
-            system_prompt (Optional[str]): Optional system prompt for chat models.
-            n (int): Number of completions to generate.
-            api_key: API key for authentication.
-            **kwargs: Additional keyword arguments.
         """
         self.api_key = api_key
         self.endpoint = endpoint
@@ -57,11 +47,6 @@ class Unify(LM):
     def basic_request(self, prompt: str, **kwargs) -> Any:
         """
         Sends a basic request to the Unify API.
-
-        Args:
-            prompt (str): The prompt to send to the API.
-            **kwargs: Additional keyword arguments.
-
         Returns:
             Any: The response from the API.
         """
@@ -108,10 +93,6 @@ class Unify(LM):
         """
         Handles retrieval of model completions while managing rate limiting and caching.
 
-        Args:
-            prompt (str): The prompt to send to the API.
-            **kwargs: Additional keyword arguments.
-
         Returns:
             Any: The response from the API.
         """
@@ -128,12 +109,6 @@ class Unify(LM):
     ) -> list[dict[str, Any]]:
         """
         Requests completions from the Unify API.
-
-        Args:
-            prompt (str): The prompt to send to the API.
-            only_completed (bool): Ensure only completed responses are returned.
-            return_sorted (bool): Return responses sorted.
-            **kwargs: Additional keyword arguments.
 
         Returns:
             list[dict[str, Any]]: A list of completions from the API.
