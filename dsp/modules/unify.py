@@ -10,37 +10,31 @@ class Unify(LM):
 
     def __init__(
         self,
-        endpoint: Optional[str] = None,
         model: Optional[str] = None,
-        model_provider: Optional[str] = None,  # refearing to provider of the model
+        router_model: Optional[str] = None,
+        router_provider: Optional[str] = None,  # refearing to provider of the model
         stream: Optional[bool] = False,  # referring to unify router
         api_key: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        n: int = 1,
         **kwargs,
     ):
+        if model:
+            self.model = model
+        elif router_model and router_provider:
+            self.model = "@".join([router_model, router_provider])
         self.api_key = api_key
-        if endpoint:
-            self.endpoint = endpoint
-        elif model and model_provider:
-            self.endpoint = "@".join([model, model_provider])
+        self.client = UnifyClient(api_key=self.api_key, endpoint=self.model)
 
-        self.client = UnifyClient(
-            api_key=self.api_key,
-            endpoint=self.endpoint,
-        )
-
-        super().__init__(model=self.endpoint)
-
+        super().__init__(model=self.model)
         self.provider = "unify"
         self.stream = stream
         self.system_prompt = system_prompt
         self.kwargs = {
-            "model": self.endpoint,
+            "model": self.model,
             "temperature": 0.0,
             "max_tokens": 150,
             "top_p": 1,
-            "n": n,
+            "n": 1,
             **kwargs,
         }
 
@@ -54,7 +48,6 @@ class Unify(LM):
         """Basic request to the Unify's API."""
         kwargs = {**self.kwargs, **kwargs}
         messages = [{"role": "user", "content": prompt}]
-
         if self.system_prompt:
             messages.insert(0, {"role": "system", "content": self.system_prompt})
 
@@ -64,17 +57,16 @@ class Unify(LM):
             temperature=kwargs["temperature"],
             max_tokens=kwargs["max_tokens"],
         )
-
-        # condition to handle both outputs stream =True or False from Unify generate method
-        response_content = raw_response if isinstance(raw_response, str) else "".join(raw_response)
-        formated_response: dict = {"choices": [{"message": {"content": response_content}}]}  # response with choices
+        response_content = (
+            raw_response if isinstance(raw_response, str) else "".join(raw_response)
+        )  # handle both outputs stream =True or False from Unify generate method
+        formated_response: dict = {"choices": [{"message": {"content": response_content}}]}
 
         history = {
             "prompt": prompt,
             "response": formated_response,
             "kwargs": kwargs,
         }
-
         self.history.append(history)
 
         return formated_response
