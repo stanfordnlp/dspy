@@ -11,13 +11,15 @@ from dspy.teleprompt import BootstrapFewShot
 load_dotenv()
 unify_api_key = os.getenv("UNIFY_KEY")
 
-endpoint = dsp.Unify(
+
+model = dsp.Unify(
     model="gpt-3.5-turbo@openai",
     max_tokens=150,
+    stream=True,
     api_key=unify_api_key,
 )
 
-dspy.settings.configure(lm=endpoint)
+dspy.settings.configure(lm=model)
 
 # Load math questions from the GSM8K dataset.
 gsm8k = GSM8K()
@@ -51,7 +53,7 @@ evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, dis
 # Evaluate our `optimized_cot` program.
 evaluate(optimized_cot)
 
-endpoint.inspect_history(n=1)
+model.inspect_history(n=1)
 
 print(
     """Done! This example showcases how to set up your environment, define a custom module,
