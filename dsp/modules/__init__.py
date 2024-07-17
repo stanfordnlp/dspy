@@ -20,6 +20,7 @@ from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
 from .mistral import *
 from .ollama import *
+from .openai_compatible import OpenAICompatible
 from .premai import PremAI
 from .pyserini import *
 from .sbert import *

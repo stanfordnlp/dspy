@@ -16,6 +16,7 @@ LM = dsp.LM
 
 AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3
+OpenAICompatible = dsp.OpenAICompatible
 Mistral = dsp.Mistral
 Databricks = dsp.Databricks
 Cohere = dsp.Cohere
