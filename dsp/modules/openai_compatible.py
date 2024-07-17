@@ -35,7 +35,7 @@ def backoff_hdlr(details):
 
 
 class OpenAICompatible(LM):
-    """Wrapper around OpenAI's GPT API.
+    """Wrapper around OpenAI Compatible API.
 
     Args:
         model (str): LLM model to use.
