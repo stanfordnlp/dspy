@@ -130,14 +130,17 @@ class BingSearch(dspy.Retrieve):
 
 
 class BraveSearch(dspy.Retrieve):
-    """Set API key in BRAVE_SEARCH_API_KEY"""
+    """Set API key in BRAVE_SEARCH_API_KEY
+    
+    Return result: Prediction(list[dict["title", "link", "snippet"]]) 
+    """
     api_key: str
     base_url: str = "https://api.search.brave.com/res/v1/web/search"
 
     def __init__(self, api_key=None) -> None:
         if api_key is None:
-            api_key = os.environ.get("BRAVE_SEARCH_API_KEY")
-            if api_key is None:
+            self.api_key = os.environ.get("BRAVE_SEARCH_API_KEY")
+            if self.api_key is None:
                 raise ValueError("BRAVE_SEARCH_API_KEY is not set")
 
     def forward(self, query: str, count=10) -> Prediction:
@@ -164,20 +167,31 @@ class BraveSearch(dspy.Retrieve):
         req.prepare_url(self.base_url, params)
         if req.url is None:
             raise ValueError("prepared url is None, this should not happen")
+        
 
-        response = cached_brave_search_request_wrapped(req.url, headers)
-        if not response.ok:
-            raise Exception(f"HTTP error {response.status_code}")
-
-        return response.json().get("web", {}).get("results", [])
+        # Retry 3 times
+        for _ in range(3):
+            response = cached_brave_search_request_wrapped(req.url, **headers)
+            if not response.ok:
+                dspy.logger.error(f"HTTP error: {response.status_code}, {response.text}")
+                headers["Cache-Control"] = "no-cache"
+                dspy.logger.error(f"req.url: {req.url}")
+            else:
+                break
+        
+        try:
+            return response.json().get("web", {}).get("results", [])
+        except Exception as e:
+            dspy.logger.error(f"Error in parsing response: {e}")
+            return []
 
 
 @CacheMemory.cache
-def cached_brave_search_request(url, header):
+def cached_brave_search_request(url, **header):
     response = requests.get(url, headers=header)
     return response
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-def cached_brave_search_request_wrapped(url, header):
-    return cached_brave_search_request(url, header)
+def cached_brave_search_request_wrapped(url, **header):
+    return cached_brave_search_request(url, **header)
