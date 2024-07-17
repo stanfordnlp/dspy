@@ -115,11 +115,11 @@ class AvatarOptimizer(Teleprompter):
 
 
     def compile(self, student, *, trainset, eval_kwargs):
-        feedback = None
         actor = deepcopy(student)
         
+        best_feedback = None
         self.evaluate = Evaluate(actor, metric=self.metric, **eval_kwargs)
-
+        
         best_score = self.evaluate(actor, trainset)
         print(f"Average Unoptimized score: {best_score}")
         
@@ -144,16 +144,21 @@ class AvatarOptimizer(Teleprompter):
             if actor.feedback is None:
                 actor._add_feedback_field()
                 actor.feedback = feedback
+                best_feedback = feedback
             else:
                 if self.metric_order == "max" and self.metric(feedback) > self.metric(actor.feedback):
                     actor.feedback = feedback
+                    best_feedback = feedback
                 elif self.metric_order == "min" and self.metric(feedback) < self.metric(actor.feedback):
                     actor.feedback = feedback
+                    best_feedback = feedback
 
             avg_score = self.evaluate(actor, trainset)
 
             if self.verbose:
                 print(f"Average Score: {avg_score}")
+        
+        print(f"Best Feedback: {best_feedback}")
 
         return actor
             
