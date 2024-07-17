@@ -11,20 +11,16 @@ class Unify(LM, UnifyClient):
 
     def __init__(
         self,
-        endpoint: str = "router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
+        model: str = "router@q:1|c:4.65e-03|t:2.08e-05|i:2.07e-03",
         api_key=None,
         stream: Optional[bool] = False,
         system_prompt: Optional[str] = None,
-        base_url: str = "https://api.unify.ai/v0",
         n: int = 1,
         **kwargs,
     ):
-        self.base_url = base_url
         self.stream = stream
         LM.__init__(self, model)
-        UnifyClient.__init__(self, endpoint=endpoint, model=model, provider=provider, api_key=api_key)
+        UnifyClient.__init__(self, endpoint=model, api_key=api_key)
         # super().__init__(model)
         self.system_prompt = system_prompt
         self.kwargs = {
@@ -36,7 +32,7 @@ class Unify(LM, UnifyClient):
             "n": n,
             **kwargs,
         }
-        self.kwargs["endpoint"] = endpoint
+        self.kwargs["endpoint"] = model
         self.history: list[dict[str, Any]] = []
         self._dspy_integration_provider = "unify"
 

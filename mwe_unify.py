@@ -12,7 +12,7 @@ load_dotenv()
 unify_api_key = os.getenv("UNIFY_KEY")
 
 endpoint = dsp.Unify(
-    endpoint="gpt-3.5-turbo@openai",
+    model="gpt-3.5-turbo@openai",
     max_tokens=150,
     api_key=unify_api_key,
 )
