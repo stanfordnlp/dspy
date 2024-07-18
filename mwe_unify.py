@@ -11,6 +11,8 @@ from dspy.teleprompt import BootstrapFewShot
 load_dotenv()
 unify_api_key = os.getenv("UNIFY_KEY")
 
+if not unify_api_key:
+    raise ValueError("UNIFY_KEY not found in environment variables")
 
 model = dsp.Unify(
     model="gpt-3.5-turbo@openai",
