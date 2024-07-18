@@ -1,8 +1,26 @@
 from typing import Any, Optional
 
-from unify.clients import Unify as UnifyClient
+import backoff
 
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
+
+try:
+    from unify.clients import Unify as UnifyClient
+    from unify.exceptions import AuthenticationError, RateLimitError
+
+    unify_api_error = (AuthenticationError, RateLimitError)
+except ImportError:
+    unify_api_error = Exception
+
+
+def backoff_hdlr(details):
+    """Handler from https://pypi.org/project/backoff/"""
+    print(
+        "Backing off {wait:0.1f} seconds after {tries} tries "
+        "calling function {target} with kwargs "
+        "{kwargs}".format(**details),
+    )
 
 
 class Unify(LM):
@@ -54,7 +72,7 @@ class Unify(LM):
         )
         response_content = (
             raw_response if isinstance(raw_response, str) else "".join(raw_response)
-        )  # handle stream=True or False outputs from Unify generate method
+        )  # to handle stream=True or False output format
         formated_response: dict = {"choices": [{"message": {"content": response_content}}]}
 
         history = {
@@ -66,6 +84,16 @@ class Unify(LM):
         self.history.append(history)
 
         return formated_response
+
+    @backoff.on_exception(
+        backoff.expo,
+        unify_api_error,
+        max_time=settings.backoff_time,
+        on_backoff=backoff_hdlr,
+    )
+    def request(self, prompt: str, **kwargs):
+        """Handles retrieval of completions from Unfify whilst handling API errors."""
+        return self.basic_request(prompt, **kwargs)
 
     def __call__(
         self,
