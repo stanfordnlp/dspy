@@ -58,7 +58,11 @@ evaluate(optimized_cot)
 model.inspect_history(n=1)
 
 print(
-    """Done! This example showcases how to set up your environment, define a custom module,
-    compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations.
+    """Great!!
+    With this example you have done the following:
+        1. set up your environment,
+        2. define a custom module,
+        3. compile a model,
+        4. rigorously evaluate its performance using the provided dataset and teleprompter configurations.
     """,
 )
