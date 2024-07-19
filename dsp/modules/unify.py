@@ -28,29 +28,21 @@ class Unify(LM):
 
     def __init__(
         self,
-        model: Optional[str] = None,
-        stream: Optional[bool] = False,
+        model: str = "llama-3-8b-chat@together-ai",
         api_key: Optional[str] = None,
-        system_prompt: Optional[str] = None,
         **kwargs,
     ):
-        self.model = model
-        self.api_key = api_key
-        self.client = UnifyClient(api_key=self.api_key, endpoint=self.model)
-
-        super().__init__(model=self.model)
+        self.client = UnifyClient(api_key=api_key, endpoint=model)
+        super().__init__(model=model)
         self.provider = "unify"
-        self.stream = stream
-        self.system_prompt = system_prompt
         self.kwargs = {
-            "model": self.model,
+            "model": model,
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": 200,
             "top_p": 1,
             "n": 1,
             **kwargs,
         }
-
         self.history: list[dict[str, Any]] = []
 
     def basic_request(
@@ -61,12 +53,11 @@ class Unify(LM):
         """Basic request to the Unify's API."""
         kwargs = {**self.kwargs, **kwargs}
         messages = [{"role": "user", "content": prompt}]
-        if self.system_prompt:
-            messages.insert(0, {"role": "system", "content": self.system_prompt})
+        if "system_prompt" in kwargs:
+            messages.insert(0, {"role": "system", "content": kwargs["system_prompt"]})
 
         raw_response = self.client.generate(
             messages=messages,
-            stream=self.stream,
             temperature=kwargs["temperature"],
             max_tokens=kwargs["max_tokens"],
         )
@@ -80,7 +71,6 @@ class Unify(LM):
             "response": formated_response,
             "kwargs": kwargs,
         }
-
         self.history.append(history)
 
         return formated_response
@@ -93,6 +83,8 @@ class Unify(LM):
     )
     def request(self, prompt: str, **kwargs):
         """Handles retrieval of completions from Unfify whilst handling API errors."""
+        if "model_type" in kwargs:
+            del kwargs["model_type"]
         return self.basic_request(prompt, **kwargs)
 
     def __call__(
@@ -108,7 +100,6 @@ class Unify(LM):
 
         n: int = kwargs.pop("n", 1)
         completions = []
-
         for _ in range(n):
             response = self.request(prompt, **kwargs)
             completions.append(response["choices"][0]["message"]["content"])
