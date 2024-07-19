@@ -53,8 +53,6 @@ class Unify(LM):
         """Basic request to the Unify's API."""
         kwargs = {**self.kwargs, **kwargs}
         messages = [{"role": "user", "content": prompt}]
-        if "system_prompt" in kwargs:
-            messages.insert(0, {"role": "system", "content": kwargs["system_prompt"]})
 
         raw_response = self.client.generate(
             messages=messages,
@@ -63,7 +61,7 @@ class Unify(LM):
         )
         response_content = (
             raw_response if isinstance(raw_response, str) else "".join(raw_response)
-        )  # to handle stream=True or False output format
+        )  # to handle stream=True or False output format from Unify
         formated_response: dict = {"choices": [{"message": {"content": response_content}}]}
 
         history = {
