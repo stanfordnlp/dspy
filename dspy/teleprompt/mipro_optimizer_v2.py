@@ -67,6 +67,7 @@ Note that this teleprompter takes in the following parameters:
 * view_data_batch_size: The number of examples to view in the data batch when producing the dataset summary. Default=10.
 * minibatch_size: The size of the minibatch to use when evaluating the program if using minibatched evaluations. Default=25.
 * minibatch_full_eval_steps: The number of steps to take before doing a full evaluation of the program if using minibatched evaluations. Default=10.
+* metric_threshold: If the metric yields a numerical value, then check it against this threshold when deciding whether or not to accept a bootstrap example.
 """
 
 BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT = 3
@@ -90,6 +91,7 @@ class MIPROv2(Teleprompter):
         view_data_batch_size=10,
         minibatch_size=MINIBATCH_SIZE,
         minibatch_full_eval_steps=MB_FULL_EVAL_STEPS,
+        metric_threshold=None,
     ):
         self.n = num_candidates
         self.metric = metric
@@ -105,6 +107,7 @@ class MIPROv2(Teleprompter):
         self.total_calls = 0
         self.minibatch_size = minibatch_size
         self.minibatch_full_eval_steps = minibatch_full_eval_steps
+        self.metric_threshold = None
 
         # Check if WANDB_RUN_ID is set in the environment
         self.wandb_run_id = None
@@ -273,6 +276,7 @@ class MIPROv2(Teleprompter):
                     metric=self.metric,
                     teacher_settings=self.teacher_settings,
                     seed=seed,
+                    metric_threshold=metric_threshold,
                 )
             except Exception as e:
                 print(f"Error generating fewshot examples: {e}")
