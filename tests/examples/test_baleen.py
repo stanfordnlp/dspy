@@ -1,4 +1,6 @@
 import pytest
+import os
+from dsp.modules.cache_utils import *
 from dsp.utils import deduplicate
 import dspy.evaluate
 import dspy
@@ -87,8 +89,8 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
     if max([len(h) for h in hops]) > 100:
         return False
     if any(
-        dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
-        for idx in range(2, len(hops))
+            dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
+            for idx in range(2, len(hops))
     ):
         return False
 
@@ -106,7 +108,7 @@ def gold_passages_retrieved(example, pred, trace=None):
 
 # @pytest.mark.slow_test
 # TODO: Find a way to make this test run without the slow hotpotqa dataset
-def _test_compiled_baleen():
+def test_compiled_baleen():
     trainset, devset = load_hotpotqa()
     lm = dspy.OpenAI(model="gpt-3.5-turbo")
     rm = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
