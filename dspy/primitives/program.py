@@ -1,4 +1,3 @@
-import re
 import magicattr
 
 from dspy.primitives.assertions import *
