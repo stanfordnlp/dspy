@@ -141,6 +141,7 @@ ruff = "^0.3.0"
 black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
+semver = "^3.0.2"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]

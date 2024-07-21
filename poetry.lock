@@ -5497,6 +5497,17 @@ testing = ["h5py (>=3.7.0)", "huggingface-hub (>=0.12.1)", "hypothesis (>=6.70.2
 torch = ["safetensors[numpy]", "torch (>=1.10)"]
 
 [[package]]
+name = "semver"
+version = "3.0.2"
+description = "Python helper for Semantic Versioning (https://semver.org)"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "semver-3.0.2-py3-none-any.whl", hash = "sha256:b1ea4686fe70b981f85359eda33199d60c53964284e0cfb4977d243e37cf4bf4"},
+    {file = "semver-3.0.2.tar.gz", hash = "sha256:6253adb39c70f6e51afed2fa7152bcd414c411286088fb4b9effb133885ab4cc"},
+]
+
+[[package]]
 name = "sentry-sdk"
 version = "2.7.1"
 description = "Python client for Sentry (https://sentry.io)"
@@ -7432,4 +7443,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "57e76cecdba4d62109be668bd311fba8a3d747e2f7d0b57e31e71a8d3642291b"
+content-hash = "3e0c99d3cc24175e5bd72ed0a3577a2766ecb7e4da688f78a9462a5dcfa5a457"
