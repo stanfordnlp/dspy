@@ -254,9 +254,9 @@ class MIPROv2(Teleprompter):
             evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
 
             # Determine the number of fewshot examples to use to generate demos for prompt
-            if max_bootstrapped_demos == 0 and max_labeled_demos == 0:
+            if max_bootstrapped_demos == 0:
                 max_bootstrapped_demos_for_candidate_gen = BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT
-                max_labeled_demos_for_candidate_gen = LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT
+                max_labeled_demos_for_candidate_gen = max_labeled_demos
             else:
                 max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos
                 max_labeled_demos_for_candidate_gen = max_labeled_demos
