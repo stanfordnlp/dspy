@@ -4,8 +4,8 @@ from copy import deepcopy
 from pydantic.fields import FieldInfo
 
 from dspy.predict.avatar.signatures import Actor
-from dspy.predict.avatar.models import Action, Tool
 from dspy.signatures.signature import ensure_signature
+from dspy.predict.avatar.models import Action, ActionOutput, Tool
 
 
 def get_number_with_suffix(number: int) -> str:
@@ -130,7 +130,8 @@ class Avatar(dspy.Module):
 
 
     def forward(self, **kwargs):
-        print("Starting the task...")
+        if self.verbose:
+            print("Starting the task...")
         
         args = {
             "goal" : self.signature.__doc__,
@@ -146,6 +147,7 @@ class Avatar(dspy.Module):
         
         idx = 1
         tool_name = None
+        action_results: list[ActionOutput] = []
         max_iters = None if "max_iters" not in kwargs else kwargs["max_iters"]
 
         while tool_name != "Finish" and (max_iters > 0 if max_iters else True):
@@ -160,6 +162,14 @@ class Avatar(dspy.Module):
 
             if tool_name != "Finish":
                 tool_output = self._call_tool(tool_name, tool_input_query)
+                action_results.append(
+                    ActionOutput(
+                        tool_name=tool_name, 
+                        tool_input_query=tool_input_query, 
+                        tool_output=tool_output
+                    )
+                )
+
                 self._update_signature(idx)
 
                 args[f"action_{idx}"] = action
@@ -177,8 +187,9 @@ class Avatar(dspy.Module):
                 max_iters -= 1
 
         final_answer = self.actor(**args)
-        self.actor = self.actor_clone
+        self.actor = deepcopy(self.actor_clone)
 
         return dspy.Prediction(
-            **{key: getattr(final_answer, key) for key in self.output_fields.keys()}
+            **{key: getattr(final_answer, key) for key in self.output_fields.keys()},
+            actions=action_results,
         )
