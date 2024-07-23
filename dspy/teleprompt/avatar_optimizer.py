@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, List, Tuple, Optional
 
-from dspy.teleprompt import Teleprompter
+from .teleprompt import Teleprompter
 from dspy.predict.avatar import ActionOutput
 
 
@@ -77,7 +77,6 @@ class AvatarOptimizer(Teleprompter):
     def __init__(
         self,
         metric: Callable,
-        init_temperature: float = 1.4,
         max_iters: int = 10,
         lower_bound: int = 0,
         upper_bound: int = 1,
@@ -90,7 +89,6 @@ class AvatarOptimizer(Teleprompter):
         self.optimize_for = optimize_for
 
         self.max_iters = max_iters
-        self.init_temperature = init_temperature
 
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
