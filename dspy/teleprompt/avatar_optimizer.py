@@ -50,6 +50,29 @@ Task:
     )
 
 
+class FeedbackBasedInstruction(dspy.Signature):
+    """There is a task that needs to be completed for which one can use multiple tools to achieve the desired outcome. A group's performance was evaluated on a dataset of inputs, the inputs that did well are positive inputs, and the inputs that did not do well are negative inputs.
+
+You received feedback on how they can better use the tools to improve your performance on the negative inputs. You have been provided with the previous instruction, that they followed to use tools to complete the task, and the feedback on your performance.
+
+Your task is to incorporate the feedback and generate a detailed instruction for the group to follow to improve their performance on the task.
+
+Make sure that the new instruction talks about how to use the tools effectively and should be no more than 3 paragraphs long. The previous instruction contains general guidelines that you must retain in the new instruction."""
+
+    previous_instruction: str = dspy.InputField(
+        prefix="Previous Instruction: ",
+        desc="Previous instruction for the actor to execute the task",
+    )
+    feedback: str = dspy.InputField(
+        prefix="Feedback: ",
+        desc="Feedback for the actor to improve the performance of negative inputs",
+    )
+    new_instruction: str = dspy.OutputField(
+        prefix="New Instruction: ",
+        desc="New instruction for the actor to execute the task",
+    )
+
+
 class AvatarOptimizer(Teleprompter):
     def __init__(
         self,
@@ -76,7 +99,7 @@ class AvatarOptimizer(Teleprompter):
         self.max_negative_inputs = max_negative_inputs or DEFAULT_MAX_EXAMPLES
 
         self.comparator = dspy.TypedPredictor(Comparator)
-    
+        self.feedback_instruction = dspy.Predict(FeedbackBasedInstruction)
 
     def process_example(self, actor, example, return_outputs):
         actor = deepcopy(actor)
@@ -130,11 +153,12 @@ class AvatarOptimizer(Teleprompter):
         self, 
         actor: dspy.Module, 
         trainset: List[dspy.Example]
-    ) -> Tuple[List[EvalResult], List[EvalResult]]:
+    ) -> Tuple[float, List[EvalResult], List[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
         
-        _, results = self.multi_thread_executor(trainset, actor, return_outputs=True)
+        avg_score, results = self.multi_thread_executor(trainset, actor, return_outputs=True)
+        print(f"Average Score: {avg_score}")
 
         for example, prediction, score in results:
             if score >= self.upper_bound:
@@ -159,22 +183,18 @@ class AvatarOptimizer(Teleprompter):
         if len(neg_inputs) == 0:
             raise ValueError("No negative examples found, try raising the lower_bound or providing more training data")
         
-        return (pos_inputs, neg_inputs)
+        return (avg_score, pos_inputs, neg_inputs)
     
 
     def compile(self, student, *, trainset):
-        actor = deepcopy(student)
-        
-        best_feedback = None
-        
-        best_score = self.multi_thread_executor(trainset, actor)
-        print(f"Average Unoptimized score: {best_score}")
+        best_actor = deepcopy(student)
+        best_score = -999 if self.optimize_for == "max" else 999
         
         for i in range(self.max_iters):
             print(20*'=')
             print(f"Iteration {i+1}/{self.max_iters}")
 
-            pos_inputs, neg_inputs = self._get_pos_neg_results(actor, trainset)
+            score, pos_inputs, neg_inputs = self._get_pos_neg_results(best_actor, trainset)
             print(f"Positive examples: {len(pos_inputs)}")
             print(f"Negative examples: {len(neg_inputs)}")
             print(f"Sampling {self.max_positive_inputs} positive examples and {self.max_negative_inputs} negative examples")
@@ -186,31 +206,24 @@ class AvatarOptimizer(Teleprompter):
                 neg_inputs = sample(neg_inputs, self.max_negative_inputs)
 
             feedback = self.comparator(
-                instruction=actor.signature.instructions,
-                actions=[str(tool) for tool in actor.tools],
+                instruction=best_actor.actor.signature.instructions,
+                actions=[str(tool) for tool in best_actor.tools],
                 pos_input_with_metrics=pos_inputs,
                 neg_input_with_metrics=neg_inputs
             ).feedback
 
-            print(f"\n\nFeedback for iteration {i+1}: {feedback}\n\n")
+            new_instruction = self.feedback_instruction(
+                previous_instruction=best_actor.actor.signature.instructions,
+                feedback=feedback
+            ).new_instruction
 
-            if actor.feedback is None:
-                actor._add_feedback_field()
-                actor.feedback = feedback
-                best_feedback = feedback
-            else:
-                if self.optimize_for == "max" and self.metric(feedback) > self.metric(actor.feedback):
-                    actor.feedback = feedback
-                    best_feedback = feedback
-                elif self.optimize_for == "min" and self.metric(feedback) < self.metric(actor.feedback):
-                    actor.feedback = feedback
-                    best_feedback = feedback
+            print(f"Generated new instruction: {new_instruction}")
 
-            avg_score = self.multi_thread_executor(trainset, actor)
-
-            print(f"Average Score: {avg_score}")
+            if (self.optimize_for == "max" and best_score < score) or (self.optimize_for == "min" and best_score > score):
+                best_actor.actor.signature = best_actor.actor.signature.with_instructions(new_instruction)
+                best_actor.actor_clone = deepcopy(best_actor.actor)
+                best_score = score
         
-        print(f"Best Feedback: {best_feedback}")
+        print(f"Best Actor: {best_actor}")
 
-        return actor
-            
+        return best_actor

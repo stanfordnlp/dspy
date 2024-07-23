@@ -52,7 +52,6 @@ class Avatar(dspy.Module):
         self.actor = dspy.TypedPredictor(self.actor_signature)
 
         self.actor_clone = deepcopy(self.actor)
-        self.feedback = None
 
 
     def _get_field(self, field_info: FieldInfo):
@@ -115,18 +114,6 @@ class Avatar(dspy.Module):
         for tool in self.tools:
             if tool.name == tool_name:
                 return tool.tool.run(tool_input_query)
-            
-
-    def _add_feedback_field(self):
-        self.actor.signature = self.actor.signature.append(
-            "feedback",
-            dspy.InputField(
-                prefix="Feedback: ",
-                desc="Feedback for the actor to improve action utilization",
-            )
-        )
-
-        self.actor_clone = deepcopy(self.actor)
 
 
     def forward(self, **kwargs):
@@ -137,9 +124,6 @@ class Avatar(dspy.Module):
             "goal" : self.signature.__doc__,
             "tools" : [tool.name for tool in self.tools],
         }
-
-        if self.feedback:
-            args["feedback"] = self.feedback
         
         for key in self.input_fields.keys():
             if key in kwargs:
