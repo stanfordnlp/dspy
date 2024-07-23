@@ -106,20 +106,18 @@ class AvatarOptimizer(Teleprompter):
             prediction = actor(**example.inputs().toDict())
             score = self.metric(example, prediction)
 
-            match return_outputs:
-                case True:
-                    return example, prediction, score
-                case False:
-                    return score
+            if return_outputs:
+                return example, prediction, score
+            else:
+                return score
 
         except Exception as e:
             print(e)
             
-            match return_outputs:
-                case True:
-                    return example, None, 0
-                case False:
-                    return 0
+            if return_outputs:
+                return example, None, 0
+            else:
+                return 0
 
 
     def multi_thread_executor(self, devset, actor, return_outputs=False, num_threads=60):
