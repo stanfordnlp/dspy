@@ -276,7 +276,7 @@ class MIPROv2(Teleprompter):
                     metric=self.metric,
                     teacher_settings=self.teacher_settings,
                     seed=seed,
-                    metric_threshold=metric_threshold,
+                    metric_threshold=self.metric_threshold,
                 )
             except Exception as e:
                 print(f"Error generating fewshot examples: {e}")
