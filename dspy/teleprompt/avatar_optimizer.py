@@ -106,7 +106,7 @@ class AvatarOptimizer(Teleprompter):
 
         try:
             prediction = actor(**example.inputs().toDict())
-            score = metric(example, prediction)
+            score = self.metric(example, prediction)
 
             match return_outputs:
                 case True:
