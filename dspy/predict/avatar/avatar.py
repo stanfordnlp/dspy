@@ -55,21 +55,20 @@ class Avatar(dspy.Module):
 
 
     def _get_field(self, field_info: FieldInfo):
-        match field_info.json_schema_extra['__dspy_field_type']:
-            case 'input':
-                return dspy.InputField(
-                    prefix=field_info.json_schema_extra['prefix'],
-                    desc=field_info.json_schema_extra['desc'],
-                    format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
-                )
-            case 'output':
-                return dspy.OutputField(
-                    prefix=field_info.json_schema_extra['prefix'],
-                    desc=field_info.json_schema_extra['desc'],
-                    format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
-                )
-            case _:
-                raise ValueError(f"Unknown field type: {field_info.json_schema_extra['__dspy_field_type']}") 
+        if field_info.json_schema_extra['__dspy_field_type'] == 'input':
+            return dspy.InputField(
+                prefix=field_info.json_schema_extra['prefix'],
+                desc=field_info.json_schema_extra['desc'],
+                format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
+            )
+        elif field_info.json_schema_extra['__dspy_field_type'] == 'output':
+            return dspy.OutputField(
+                prefix=field_info.json_schema_extra['prefix'],
+                desc=field_info.json_schema_extra['desc'],
+                format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
+            )
+        else:
+            raise ValueError(f"Unknown field type: {field_info.json_schema_extra['__dspy_field_type']}")
 
 
     def _update_signature(self, idx: int, omit_action: bool = False):
@@ -87,27 +86,26 @@ class Avatar(dspy.Module):
                 type_=str,
             )
         )
-        match omit_action:
-            case True:
-                for field in list(self.output_fields.keys()):
-                    self.actor.signature = self.actor.signature.append(
-                        field,
-                        self._get_field(self.output_fields[field]),
-                        type_=self.output_fields[field].annotation,
-                    )
-                    
-            case False:
+        
+        if omit_action:
+            for field in list(self.output_fields.keys()):
                 self.actor.signature = self.actor.signature.append(
-                    f"action_{idx+1}",
-                    dspy.OutputField(
-                        prefix=f"Action {idx+1}:",
-                        desc=f"{get_number_with_suffix(idx+1)} action to taken",
-                    )
+                    field,
+                    self._get_field(self.output_fields[field]),
+                    type_=self.output_fields[field].annotation,
                 )
-                self.actor.signature = self.actor.signature.with_updated_fields(
-                    f"action_{idx+1}",
-                    Action,
+        else:        
+            self.actor.signature = self.actor.signature.append(
+                f"action_{idx+1}",
+                dspy.OutputField(
+                    prefix=f"Action {idx+1}:",
+                    desc=f"{get_number_with_suffix(idx+1)} action to taken",
                 )
+            )
+            self.actor.signature = self.actor.signature.with_updated_fields(
+                f"action_{idx+1}",
+                Action,
+            )
 
 
     def _call_tool(self, tool_name: str, tool_input_query: str) -> str:

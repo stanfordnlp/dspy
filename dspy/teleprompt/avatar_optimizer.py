@@ -120,7 +120,7 @@ class AvatarOptimizer(Teleprompter):
                 return 0
 
 
-    def multi_thread_executor(self, devset, actor, return_outputs=False, num_threads=60):
+    def thread_safe_evaluator(self, devset, actor, return_outputs=False, num_threads=60):
         total_score = 0
         total_examples = len(devset)
         results = []
@@ -153,7 +153,7 @@ class AvatarOptimizer(Teleprompter):
         pos_inputs = []
         neg_inputs = []
         
-        avg_score, results = self.multi_thread_executor(trainset, actor, return_outputs=True)
+        avg_score, results = self.thread_safe_evaluator(trainset, actor, return_outputs=True)
         print(f"Average Score: {avg_score}")
 
         for example, prediction, score in results:
