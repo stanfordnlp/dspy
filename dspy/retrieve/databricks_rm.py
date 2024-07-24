@@ -1,6 +1,5 @@
 import json
 import os
-from collections import defaultdict
 from typing import List, Union, Any, Dict
 import requests
 import dspy
