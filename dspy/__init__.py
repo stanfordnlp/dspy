@@ -34,6 +34,7 @@ Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
 Bedrock = dsp.Bedrock
+GPT4Vision = dsp.GPT4Vision
 
 configure = settings.configure
 context = settings.context

@@ -1,7 +1,8 @@
-import logging
-import requests
 import base64
+import logging
 from typing import Any, List, Optional, Union
+
+import requests
 
 from dsp.modules.lm import LM
 
@@ -34,7 +35,7 @@ class GPT4Vision(LM):
                 if file_extension not in [".png", ".jpeg", ".jpg", ".webp", ".gif"]:
                     raise ValueError(f"Unsupported image format: {file_extension}")
                 return base64.b64encode(image_data).decode('utf-8')
-        except IOError as e:
+        except OSError as e:
             logger.error("Error reading image file: %s", str(e))
             raise e
         except Exception as e:
@@ -124,13 +125,13 @@ class GPT4Vision(LM):
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         data = {
             "model": self.kwargs["model"],
             "messages": prompt,
-            **self.kwargs
+            **self.kwargs,
         }
 
         image_tokens = self.calculate_image_tokens([p["image_url"] for p in prompt if p["type"] == "image_url"])
