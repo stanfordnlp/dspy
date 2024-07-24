@@ -217,7 +217,7 @@ class DatabricksRM(dspy.Retrieve):
             items += [item]
 
         # Sorting results by score in descending order
-        sorted_docs = sorted(items, key=lambda x: x["score"], reverse=True)
+        sorted_docs = sorted(items, key=lambda x: x["score"], reverse=True)[:self.k]
 
         # Returning the prediction
         return Prediction(
