@@ -259,7 +259,7 @@ class GenerateSearchQuery(dspy.Signature):
 self.generate_answer = dspy.ChainOfThought(GenerateSearchQuery)
 ```
 
-You can optionally provide a `prefix` and/or `desc` key for each input or output field to refine or constraint the behavior of modules using your signature. The description of the sub-task itself is specified as the docstring (i.e., `"""Write a simple..."""`).
+You can optionally provide a `prefix` and/or `desc` key for each input or output field to refine or constrain the behavior of modules using your signature. The description of the sub-task itself is specified as the docstring (i.e., `"""Write a simple..."""`).
 
 
 #### 4.b) Asking **DSPy** to automatically optimize your program with `dspy.teleprompt.*`
