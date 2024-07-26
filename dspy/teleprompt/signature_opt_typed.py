@@ -66,7 +66,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
 
     class GenerateInstructionInitial(Signature, Generic[T]):
         # TODO: Can we make textwrap default/automatic in all signatures?
-        __doc__ = textwrap.dedent("""\
+        __doc__ = textwrap.dedent(
+            """\
         You are a creative instruction optimizer for large language models.
 
         I will give you a ``signature`` of fields (inputs and outputs) in English.
@@ -88,7 +89,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
         - This will be fun!
         - Take a deep breath and think carefully.
         - I really need your help!
-        """)
+        """
+        )
 
         basic_signature: T = InputField()
         proposed_signatures: list[T] = OutputField(
@@ -102,7 +104,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
 
 def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signature]:
     class GenerateSignature(dspy.Signature, Generic[T]):
-        __doc__ = textwrap.dedent("""\
+        __doc__ = textwrap.dedent(
+            """\
         You are an instruction optimizer for large language models.
 
         I will give some task instructions I've tried, along with their corresponding validation scores.
@@ -110,7 +113,8 @@ def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signat
         - Your task is to propose a new instruction that will lead a good language model to perform the task even better.
         - Be creative, and think out of the box.
         - Don't repeat instructions, descriptions and prefixes that have already been attempted.
-        """)
+        """
+        )
 
         analysis: str = OutputField(desc="Consider what made the previous instructions good or bad.")
         proposed_signature: T = OutputField(desc="A signature that will likely lead to a high score.")
@@ -230,7 +234,10 @@ def optimize_signature(
 
         # Run evaluator given by user
         score = evaluator(module)
-        scores.append(score)
+        if isinstance(score, tuple):
+            scores.append(score[0])
+        else:
+            scores.append(score)
 
         # If we are still testing initial prompts, continue
         if i + 1 < len(next(iter(candidates.values()))):
