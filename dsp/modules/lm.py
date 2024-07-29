@@ -60,7 +60,6 @@ class LM(ABC):
                     "premai",
                     "tensorrt_llm",
                     "unify",
-                    "unify",
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
@@ -107,8 +106,6 @@ class LM(ABC):
                 text = " " + choices["choices"][0]["message"]["content"]
             elif provider == "openai" or provider == "ollama":
                 text = " " + self._get_choice_text(choices[0]).strip()
-            elif provider == "unify":
-                text = " " + choices["choices"][0]["message"]["content"]
             elif provider == "groq":
                 text = " " + choices
             elif provider == "google":
