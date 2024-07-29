@@ -31,7 +31,10 @@ class ShallowCopyOnly:
     def __deepcopy__(self, memo): return ShallowCopyOnly(copy.copy(self.obj))
 
 
-class LangChainPredict(Predict, Runnable): #, RunnableBinding):
+class LangChainPredictMetaClass(type(Predict), type(Runnable)):
+    pass
+
+class LangChainPredict(Predict, Runnable, metaclass=LangChainPredictMetaClass):
     class Config: extra = Extra.allow  # Allow extra attributes that are not defined in the model
 
     def __init__(self, prompt, llm, **config):
