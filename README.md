@@ -441,7 +441,7 @@ Project Lead: **Omar Khattab**
 
 Project Mentors: **Chris Potts**, **Matei Zaharia**, **Heather Miller**  
 
-Core Library: **Arnav Singhvi**, **Herumb Shandilya**, **Sri Vardhamanan**, with special thanks to **Keshav Santhanam**, **Thomas Ahle**, **Connor Shorten**, **Cyrus Nouroozi**, **Amir Mehr**, **Kyle Caverly**  
+Core Library: **Arnav Singhvi**, **Herumb Shandilya**, **Sri Vardhamanan**,  **Cyrus Nouroozi**, **Amir Mehr**, **Kyle Caverly**, with special thanks to **Keshav Santhanam**, **Thomas Ahle**, **Connor Shorten**
 
 Prompt Optimization: **Krista Opsahl-Ong**, **Michael Ryan**, **Josh Purtell**, with special thanks to **Karel D'Oosterlinck**, **Eric Zhang**
 
