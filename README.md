@@ -435,7 +435,7 @@ poetry run pytest tests/PATH_TO_TEST_SUITE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to DSPy.
 
-## Contributors & Acknowledgements
+## Team, Contributors, & Acknowledgements
 
 Project Lead: **Omar Khattab**  
 
@@ -443,9 +443,9 @@ Project Mentors: **Chris Potts**, **Matei Zaharia**, **Heather Miller**
 
 Core Library: **Arnav Singhvi**, **Herumb Shandilya**, **Sri Vardhamanan**, with special thanks to **Thomas Ahle**, **Connor Shorten**, **Cyrus Nouroozi**, **Amir Mehr**, **Kyle Caverly**  
 
-Prompt Optimization Team: **Krista Opsahl-Ong**, **Michael Ryan**, **Josh Purtell**, with special thanks to **Karel D'Oosterlinck**, **Eric Zhang**
+Prompt Optimization: **Krista Opsahl-Ong**, **Michael Ryan**, **Josh Purtell**, with special thanks to **Karel D'Oosterlinck**, **Eric Zhang**
 
-Finetuning & RL Team: **Dilara Soylu**, **Isaac Miller**, **Souradip Chakraborty**
+Finetuning & RL: **Dilara Soylu**, **Isaac Miller**, **Souradip Chakraborty**
 
 PL Abstractions: **Shangyin Tan**, **Manish Shetty**, **Peter Zhong**  
 
