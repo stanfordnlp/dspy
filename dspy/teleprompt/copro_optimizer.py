@@ -190,7 +190,7 @@ class COPRO(Teleprompter):
         # For each iteration in depth...
         for d in range(
             self.depth,
-        ):  # TODO: fix this so that we eval the new batch of predictors with the new best followoing predictors
+        ):  # TODO: fix this so that we eval the new batch of predictors with the new best following predictors
             dspy.logger.info(f"Iteration Depth: {d+1}/{self.depth}.")
 
             latest_scores = []
