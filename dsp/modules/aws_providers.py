@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import backoff
+from dsp.utils.settings import settings
 
 try:
     import boto3
@@ -80,7 +81,7 @@ class AWSProvider(ABC):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         max_tries=8,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
@@ -155,7 +156,7 @@ class Sagemaker(AWSProvider):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         max_tries=8,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,

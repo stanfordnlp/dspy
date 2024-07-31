@@ -1,6 +1,7 @@
 import datetime
 import hashlib
-from typing import Any, Literal
+from typing import Any, Literal, Optional
+
 import requests
 from dsp.modules.lm import LM
 from dsp.trackers.base import BaseTracker
@@ -25,6 +26,8 @@ class OllamaLocal(LM):
         model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
         base_url (str):  Protocol, host name, and port to the served ollama model. Defaults to "http://localhost:11434" as in ollama docs.
         timeout_s (float): Timeout period (in seconds) for the post request to llm.
+        format (str): The format to return a response in. Currently the only accepted value is `json`
+        system (str): System Prompt to use when running in `text` mode.
         **kwargs: Additional arguments to pass to the API.
     """
 
@@ -42,6 +45,8 @@ class OllamaLocal(LM):
         presence_penalty: float = 0,
         n: int = 1,
         num_ctx: int = 1024,
+        format: Optional[Literal["json"]] = None,
+        system: Optional[str] = None,
         tracker: BaseTracker = BaseTracker,
         **kwargs,
     ):
@@ -52,6 +57,8 @@ class OllamaLocal(LM):
         self.base_url = base_url
         self.model_name = model
         self.timeout_s = timeout_s
+        self.format = format
+        self.system = system
         self.tracker = tracker
 
         self.kwargs = {

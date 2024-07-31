@@ -17,6 +17,7 @@ except:
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -59,6 +60,7 @@ class GPT3(LM):
         api_key: Optional[str] = None,
         api_provider: Literal["openai"] = "openai",
         api_base: Optional[str] = None,
+        base_url: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         system_prompt: Optional[str] = None,
         **kwargs,
@@ -82,7 +84,7 @@ class GPT3(LM):
 
         if api_key:
             openai.api_key = api_key
-
+        api_base = base_url or api_base
         if api_base:
             if OPENAI_LEGACY:
                 openai.api_base = api_base
@@ -142,11 +144,11 @@ class GPT3(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):
-        """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
+        """Handles retrieval of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
 

@@ -136,3 +136,15 @@ def test_complex_module_traversal():
     assert (
         found_names == expected_names
     ), f"Missing or extra modules found. Missing: {expected_names-found_names}, Extra: {found_names-expected_names}"
+
+class DuplicateModule(Module):
+    def __init__(self):
+        super().__init__()
+        self.p0 = dspy.Predict("question -> answer")
+        self.p1 = self.p0
+
+def test_named_parameters_duplicate_references():
+   module = DuplicateModule()
+   # Only testing for whether exceptions are thrown or not
+   # As Module.named_parameters() is recursive, this is mainly for catching infinite recursion
+   module.named_parameters()

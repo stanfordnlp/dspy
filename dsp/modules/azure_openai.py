@@ -19,6 +19,8 @@ except:
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
+
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -177,7 +179,7 @@ class AzureOpenAI(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):
