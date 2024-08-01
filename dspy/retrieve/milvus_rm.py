@@ -104,4 +104,4 @@ class MilvusRM(dspy.Retrieve):
         sorted_passages = sorted(
             passage_scores.items(), key=lambda x: x[1], reverse=True,
         )[:k]
-        return dspy.Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])
+        return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]
