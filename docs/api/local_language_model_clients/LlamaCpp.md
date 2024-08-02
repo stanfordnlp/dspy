@@ -39,4 +39,24 @@ After initializing the Llama model, you can interact with it using the `LlamaCpp
 import dspy
 
 llamalm = dspy.LlamaCpp(model="llama", llama_model=llm,  model_type="chat", temperature=0.4)
+dspy.settings.configure(lm=llamalm)
+
+
+#Define a simple signature for basic question answering
+class BasicQA(dspy.Signature):
+    """Answer questions with short factoid answers."""
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
+
+#Pass signature to Predict module
+generate_answer = dspy.Predict(BasicQA)
+
+# Call the predictor on a particular input.
+question='What is the color of the sky?'
+pred = generate_answer(question=question)
+
+print(f"Question: {question}")
+print(f"Predicted Answer: {pred.answer}")
+
+
 ```
