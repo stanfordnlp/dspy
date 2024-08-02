@@ -455,13 +455,23 @@ poetry run pytest tests/PATH_TO_TEST_SUITE
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for a quickstart guide to contributing to DSPy.
 
-## Contributors & Acknowledgements
+## Team, Contributors, & Acknowledgements
 
-**DSPy** is led by **Omar Khattab** at Stanford NLP with **Chris Potts** and **Matei Zaharia**.
+Project Lead: **Omar Khattab**  
 
-Key contributors and team members include **Arnav Singhvi**, **Krista Opsahl-Ong**, **Michael Ryan**, **Cyrus Nouroozi**, **Kyle Caverly**, **Amir Mehr**, **Josh Purtell**, **Shangyin Tan**, **Manish Shetty**, **Herumb Shandilya**, **Karel D'Oosterlinck**, **Paridhi Maheshwari**, **Keshav Santhanam**, **Sri Vardhamanan**, **Eric Zhang**, **Hanna Moazam**, **Thomas Joshi**, **Saiful Haq**, and **Ashutosh Sharma**.
+Project Mentors: **Chris Potts**, **Matei Zaharia**, **Heather Miller**  
 
-**DSPy** includes important contributions from **Rick Battle** and **Igor Kotenkov**. It reflects discussions with **Peter Zhong**, **Haoze He**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Heather Miller**, **Chris Manning**, **Percy Liang**, and many others.
+Core Library: **Arnav Singhvi**, **Herumb Shandilya**, **Sri Vardhamanan**,  **Cyrus Nouroozi**, **Amir Mehr**, **Kyle Caverly**, with special thanks to **Keshav Santhanam**, **Thomas Ahle**, **Connor Shorten**
+
+Prompt Optimization: **Krista Opsahl-Ong**, **Michael Ryan**, **Josh Purtell**, with special thanks to **Karel D'Oosterlinck**, **Eric Zhang**
+
+Finetuning & RL: **Dilara Soylu**, **Isaac Miller**, **Souradip Chakraborty**
+
+PL Abstractions: **Shangyin Tan**, **Manish Shetty**, **Peter Zhong**  
+
+Applications: **Jasper Xian**, **Saron Samuel**, **Alberto Mancarella**, **Faraz Khoubsirat**, **Saiful Haq**, **Ashutosh Sharma**  
+
+Special thanks to **Rick Battle**, **Dhar Rawal**, **Insop Song**, **Tom Dorr**, **Igor Kotenkov**, **Corey Zumar**, **Lisa Li**, **David Hall**, **Ashwin Paranjape**, **Chris Manning**, **Avi Sil**.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
 

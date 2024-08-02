@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any, Literal, Optional, cast
 import backoff
-
+import httpx
 try:
     """
     If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
@@ -55,15 +55,16 @@ class GPT3(LM):
     """
 
     def __init__(
-        self,
-        model: str = "gpt-3.5-turbo-instruct",
-        api_key: Optional[str] = None,
-        api_provider: Literal["openai"] = "openai",
-        api_base: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model_type: Literal["chat", "text"] = None,
-        system_prompt: Optional[str] = None,
-        **kwargs,
+            self,
+            model: str = "gpt-3.5-turbo-instruct",
+            api_key: Optional[str] = None,
+            api_provider: Literal["openai"] = "openai",
+            api_base: Optional[str] = None,
+            base_url: Optional[str] = None,
+            model_type: Literal["chat", "text"] = None,
+            system_prompt: Optional[str] = None,
+            http_client: Optional[httpx.Client] = None,
+            **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
@@ -72,7 +73,7 @@ class GPT3(LM):
         self.system_prompt = system_prompt
 
         assert (
-            api_provider != "azure"
+                api_provider != "azure"
         ), "Azure functionality with base OpenAI has been deprecated, please use dspy.AzureOpenAI instead."
 
         default_model_type = (
@@ -90,6 +91,8 @@ class GPT3(LM):
                 openai.api_base = api_base
             else:
                 openai.base_url = api_base
+        if http_client:
+            openai.http_client = http_client
 
         self.kwargs = {
             "temperature": 0.0,
@@ -160,11 +163,11 @@ class GPT3(LM):
         return choice["text"]
 
     def __call__(
-        self,
-        prompt: str,
-        only_completed: bool = True,
-        return_sorted: bool = False,
-        **kwargs,
+            self,
+            prompt: str,
+            only_completed: bool = True,
+            return_sorted: bool = False,
+            **kwargs,
     ) -> list[dict[str, Any]]:
         """Retrieves completions from GPT-3.
 
