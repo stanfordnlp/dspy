@@ -7,12 +7,19 @@ sidebar_position: 1
 ### Usage
 
 ```python
-lm = dspy.MultiOpenAI(model='gpt-4o-mini', 
-                      api_key='xxxx',
-                      api_provider='openrouter',
-                      api_base='https://openrouter.ai/api/v1/',
-                      model_type='chat',
-                      )
+openrouter = dspy.MultiOpenAI(model='openai/gpt-4o-mini', 
+                              api_key='xxxx',
+                              api_provider='openrouter',
+                              api_base='https://openrouter.ai/api/v1/',
+                              model_type='chat',
+                              )
+
+siliconflow = dspy.MultiOpenAI(model='zhipuai/glm4-9B-chat', 
+                               api_key='xxxx',
+                               api_provider='siliconflow',
+                               api_base='https://api.siliconflow.cn/v1/',
+                               model_type='chat',
+                               )
 ```
 
 ### Constructor
