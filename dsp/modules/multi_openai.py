@@ -34,7 +34,7 @@ def backoff_hdlr(details):
     )
 
 
-class OpenAICompatible(LM):
+class MultiOpenAI(LM):
     """Wrapper around OpenAI Compatible API.
 
     Args:
