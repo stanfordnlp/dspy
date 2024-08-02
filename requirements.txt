@@ -10,3 +10,4 @@ requests
 structlog
 tqdm
 ujson
+magicattr~=0.1.6

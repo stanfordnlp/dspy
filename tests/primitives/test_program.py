@@ -137,6 +137,29 @@ def test_complex_module_traversal():
         found_names == expected_names
     ), f"Missing or extra modules found. Missing: {expected_names-found_names}, Extra: {found_names-expected_names}"
 
+
+def test_complex_module_set_attribute_by_name():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    same_module = Module()
+    root.sub_module.nested_tuple = (Module(), [same_module, same_module])
+
+    set_attribute_by_name(root, "test_attrib", True)
+    assert root.test_attrib is True
+    set_attribute_by_name(root, "sub_module.test_attrib", True)
+    assert root.sub_module.test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_list[0].test_attrib", True)
+    assert root.sub_module.nested_list[0].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_list[1]['key'].test_attrib", True)
+    assert root.sub_module.nested_list[1]["key"].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_tuple[0].test_attrib", True)
+    assert root.sub_module.nested_tuple[0].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_tuple[1][0].test_attrib", True)
+    assert root.sub_module.nested_tuple[1][0].test_attrib is True
+    assert root.sub_module.nested_tuple[1][1].test_attrib is True
+
+
 class DuplicateModule(Module):
     def __init__(self):
         super().__init__()
