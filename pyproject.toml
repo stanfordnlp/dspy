@@ -126,6 +126,7 @@ pgvector = { version = "^0.2.5", optional = true }
 structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
+llama-cpp-python = { version = "^0.2.82", optional = true }
 jinja2 = "^3.1.3"
 
 
