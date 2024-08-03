@@ -83,5 +83,5 @@ class LangfuseTracker(BaseTracker):
         self.trace: Optional[StatefulTraceClient] = None
         self._task_manager = self.langfuse.task_manager
 
-    def call(self, i, o, **kwargs):
-        self.langfuse.trace(input=i, output=o, metadata=kwargs)
+    def call(self, i, o, name=None, **kwargs):
+        self.langfuse.trace(input=i, output=o, name=name, metadata=kwargs)

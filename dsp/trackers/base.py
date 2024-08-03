@@ -4,5 +4,5 @@ class BaseTracker:
         pass
 
     @classmethod
-    def call(cls, **kwargs):
+    def call(cls, *args, **kwargs):
         pass
