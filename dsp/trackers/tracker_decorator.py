@@ -1,5 +1,5 @@
 
-def tracker_decorator(func):
+def tracker(func):
     def tracker_wrapper(*args, **kwargs):
         completions = func(*args, **kwargs)
         try:

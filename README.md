@@ -94,16 +94,18 @@ Just write the environment variables and langfuse will automatically read them.
 
 If you are using **openai** or **azure_openai**, then your preparations are now complete.
 
-for other modules, you need to configure manually.
+for other modules, you need to manually configure and call.
 ```python
 import dspy
 from dsp.trackers.langfuse_tracker import LangfuseTracker
 # e.g:
 # Assuming the environment variables have been set
 langfuse = LangfuseTracker()
-turbo = dspy.OllamaLocal(model="llama2", tracker=langfuse)
+turbo = dspy.OllamaLocal()
 dspy.settings.configure(lm=turbo)
-# turbo.tracker.call(prompt="your prompt", output='llm answer') # If you are using a module other than OllamaLocal, you will need to call manually. 
+
+completions =  turbo("Hi,how's it going today？")
+turbo.tracker_call(tracker=langfuse)
 ```
 
 ## 2) Documentation
