@@ -7,6 +7,7 @@ from typing import List, Optional, Union
 import backoff
 import openai
 
+from dspy import Retrieve, Prediction
 from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
@@ -31,7 +32,7 @@ except ImportError:
     )
 
 
-class ChromadbRM(dspy.Retrieve):
+class ChromadbRM(Retrieve):
     """
     A retrieval module that uses chromadb to return the top passages for a given query.
 
@@ -139,7 +140,7 @@ class ChromadbRM(dspy.Retrieve):
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs,
-    ) -> dspy.Prediction:
+    ) -> Prediction:
         """Search with db for self.k top passages for query
 
         Args:
