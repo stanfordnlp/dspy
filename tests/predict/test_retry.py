@@ -2,6 +2,7 @@ import functools
 import dspy
 from dspy.utils import DummyLM
 from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+from dspy.teleprompt import BootstrapFewShot
 import pydantic
 
 
@@ -25,10 +26,7 @@ def test_retry_simple():
 
     print(lm.get_convo(-1))
     assert lm.get_convo(-1).endswith(
-        "Question: What color is the sky?\n\n"
-        "Previous Answer: red\n\n"
-        "Instructions: Try harder\n\n"
-        "Answer: blue"
+        "Question: What color is the sky?\n\n" "Previous Answer: red\n\n" "Instructions: Try harder\n\n" "Answer: blue"
     )
 
 
@@ -106,6 +104,39 @@ def test_retry_forward_with_typed_predictor():
     assert lm.get_convo(-1).endswith(
         'Input: {"question":"What color is the sky?"}\n\n'
         'Previous Output: {"answer":"red"}\n\n'
-        'Instructions: Please think harder\n\n'
+        "Instructions: Please think harder\n\n"
         'Output: {"answer":"blue"}'
     )
+
+
+def test_calling_transformed_module_with_bootstrap_few_shot():
+    lm = DummyLM(["answer_dummy"])
+    dspy.settings.configure(lm=lm, trace=[])
+
+    class TransformedModule(dspy.Module):
+        def forward(self):
+            pass
+
+    class SimpleModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = dspy.Predict("question -> answer")
+
+        def forward(self, **kwargs):
+            result = self.predictor(**kwargs)
+            t = assert_transform_module(
+                TransformedModule(),
+                functools.partial(backtrack_handler, max_backtracks=0),
+            )
+            t()
+            return result
+
+    compiled_program = BootstrapFewShot().compile(
+        SimpleModule(),
+        trainset=[dspy.Example(question="question_example", answer="answer_example").with_inputs("question")],
+    )
+    demos = compiled_program.predictor.demos
+
+    assert len(demos) == 1
+    assert demos[0].question == "question_example"
+    assert demos[0].answer == "answer_dummy"
