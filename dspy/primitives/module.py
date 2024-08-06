@@ -126,7 +126,7 @@ class BaseModule:
                 }
                 for field in fields
             ]
-
+        state["intervention_test_flag"] = True
         return state
 
     def load_state(self, state):
