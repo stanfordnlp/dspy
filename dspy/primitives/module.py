@@ -113,8 +113,21 @@ class BaseModule:
         return obj
 
     def dump_state(self):
-        print(self.named_parameters())
-        return {name: param.dump_state() for name, param in self.named_parameters()}
+        state = {name: param.dump_state() for name, param in self.named_parameters()}
+        
+        # Add fields information
+        fields = getattr(self, 'fields', None)
+        if fields:
+            state['fields'] = [
+                {
+                    "type": "InputField" if field.is_input else "OutputField",
+                    "field_name": field.name,
+                    "description": field.description
+                }
+                for field in fields
+            ]
+
+        return state
 
     def load_state(self, state):
         for name, param in self.named_parameters():
