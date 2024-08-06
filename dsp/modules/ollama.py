@@ -133,7 +133,7 @@ class OllamaLocal(LM):
                     "finish_reason": "stop",
                 },
             )
-            tot_eval_tokens += response_json.get("eval_count")
+            tot_eval_tokens += response_json.get("eval_count", self._prev_prompt_eval_count)
         request_info["additional_kwargs"] = {k: v for k, v in response_json.items() if k not in ["response"]}
 
         request_info["usage"] = {
