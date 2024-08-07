@@ -56,11 +56,13 @@ class GPT3(LM):
             model_type: Literal["chat", "text"] = None,
             system_prompt: Optional[str] = None,
             http_client: Optional[httpx.Client] = None,
+            default_headers: Optional[dict[str, str]] = None,
             **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
         openai.api_type = api_provider
+        openai.default_headers = default_headers
 
         self.system_prompt = system_prompt
 
