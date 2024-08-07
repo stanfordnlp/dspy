@@ -87,8 +87,8 @@ class ChromadbRM(dspy.Retrieve):
         client: Optional[chromadb.Client] = None,
         k: int = 7,
     ):
-        self._init_chromadb(collection_name, persist_directory, client=client)
         self.ef = embedding_function
+        self._init_chromadb(collection_name, persist_directory, client=client)
 
         super().__init__(k=k)
 
@@ -119,6 +119,7 @@ class ChromadbRM(dspy.Retrieve):
         )
         self._chromadb_collection = self._chromadb_client.get_or_create_collection(
             name=collection_name,
+            embedding_function=self.ef
         )
 
     @backoff.on_exception(
