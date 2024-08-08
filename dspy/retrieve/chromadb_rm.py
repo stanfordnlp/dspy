@@ -16,20 +16,6 @@ try:
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
-try:
-    import chromadb
-    import chromadb.utils.embedding_functions as ef
-    from chromadb.api.types import (
-        Embeddable,
-        EmbeddingFunction,
-    )
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
-except ImportError:
-    raise ImportError(
-        "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
-    )
-
 
 class ChromadbRM(dspy.Retrieve):
     """
@@ -87,6 +73,19 @@ class ChromadbRM(dspy.Retrieve):
         client: Optional[chromadb.Client] = None,
         k: int = 7,
     ):
+        try:
+            import chromadb
+            import chromadb.utils.embedding_functions as ef
+            from chromadb.api.types import (
+                Embeddable,
+                EmbeddingFunction,
+            )
+            from chromadb.config import Settings
+            from chromadb.utils import embedding_functions
+        except ImportError:
+            raise ImportError(
+                "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
+            )
         self.ef = embedding_function
         self._init_chromadb(collection_name, persist_directory, client=client)
 
