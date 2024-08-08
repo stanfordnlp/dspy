@@ -2,7 +2,7 @@
 Retriever model for chromadb
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 
 import backoff
 import openai
