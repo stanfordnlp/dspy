@@ -98,7 +98,7 @@ class ChromadbRM(dspy.Retrieve):
         collection_name: str,
         persist_directory: str,
         client: Optional[Any] = None,
-    ) -> chromadb.Collection:
+    ) -> Any:
         """Initialize chromadb and return the loaded index.
 
         Args:
