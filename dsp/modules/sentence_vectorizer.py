@@ -306,3 +306,51 @@ class PremAIVectorizer(BaseSentenceVectorizer):
 
         embeddings = np.array(embedding_list, dtype=np.float32)
         return embeddings
+
+class LiteLLMVectorizer(BaseSentenceVectorizer):
+    '''
+    This vectorizer uses LiteLLM API to convert texts to embeddings.
+    '''
+    def __init__(
+        self,
+        model: str = 'text-embedding-ada-002',
+        embed_batch_size: int = 1024,
+        base_url = 'http://0.0.0.0:4000',
+        api_key: Optional[str] = None,
+    ):
+        self.model = model
+        self.embed_batch_size = embed_batch_size
+        
+        if OPENAI_LEGACY:
+            raise NotImplementedError("OPENAI LEGACY is not supported.")
+
+        self.Embedding = openai.OpenAI(
+            base_url = base_url,
+            api_key = api_key,
+        ).embeddings
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+        # maybe it's better to preallocate numpy matrix, but we don't know emb_dim
+        embeddings_list = []
+
+        n_batches = (len(text_to_vectorize) - 1) // self.embed_batch_size + 1
+        for cur_batch_idx in range(n_batches):  # tqdm.tqdm?
+            start_idx = cur_batch_idx * self.embed_batch_size
+            end_idx = (cur_batch_idx + 1) * self.embed_batch_size
+            cur_batch = text_to_vectorize[start_idx: end_idx]
+            # LiteLLM API call:
+            response = self.Embedding.create(
+                model=self.model,
+                input=cur_batch,
+            )
+            
+
+            cur_batch_embeddings = [cur_obj.embedding for cur_obj in response.data]
+            
+            embeddings_list.extend(cur_batch_embeddings)
+            
+
+        embeddings = np.array(embeddings_list, dtype=np.float32)
+        
+        return embeddings
