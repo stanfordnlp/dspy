@@ -6,11 +6,21 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 
 
-def single_query_passage(passages):
+def single_query_passage(passages: list[dict[str, list[str]]]):
+    """Unify the signature of a single query from the :py:class:`dspy.Retriever`.
+    
+    Args:
+        passages (list[dict[str, list[str]]]): The list containing the dictionary corresponding to a single query.
+
+    Returns:
+        dspy.primitives.prediction.Prediction: The uniformed prediction object.
+        """
     passages_dict = {key: [] for key in list(passages[0].keys())}
+
+    # TODO: Check if it should not be only one element.
     for docs in passages:
         for key, value in docs.items():
-            passages_dict[key].append(value)
+            passages_dict[key].append(*value)
     if "long_text" in passages_dict:
         passages_dict["passages"] = passages_dict.pop("long_text")
     return Prediction(**passages_dict)
