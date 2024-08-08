@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterable
+from typing import Union
 
 import numpy as np
 
@@ -7,7 +8,7 @@ import dsp
 
 logger = logging.getLogger(__name__)
 
-def retrieve(query: str, k: int, with_metadata: bool = False, **kwargs) -> list[str] | dict[str, list[str]]:
+def retrieve(query: str, k: int, with_metadata: bool = False, **kwargs) -> Union[list[str], dict[str, list[str]]]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
