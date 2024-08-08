@@ -14,6 +14,7 @@ from .databricks import *
 from .dummy_lm import *
 from .google import *
 from .googlevertexai import *
+from .googlevertexai_anthropic import *
 from .gpt3 import *
 from .groq_client import *
 from .hf import HFModel
