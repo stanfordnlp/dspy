@@ -187,6 +187,8 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
     def wrapper(*args, **kwargs):
         error_msg, result = None, None
         with dspy.settings.lock:
+            prev_trace = dspy.settings.trace.copy()
+
             dspy.settings.backtrack_to = None
             dspy.settings.suggest_failures = 0
             dspy.settings.assert_failures = 0
@@ -277,6 +279,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                 "UNREACHABLE: No trace available, this should not happen. Is this run time?",
                             )
 
+            dsp.settings.trace = prev_trace + dsp.settings.trace
             return result
 
     return wrapper
