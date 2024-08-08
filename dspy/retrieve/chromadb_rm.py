@@ -67,10 +67,8 @@ class ChromadbRM(dspy.Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        embedding_function: Optional[
-            EmbeddingFunction[Embeddable]
-        ] = ef.DefaultEmbeddingFunction(),
-        client: Optional[chromadb.Client] = None,
+        embedding_function: Optional[Any] = None,
+        client: Optional[Any] = None,
         k: int = 7,
     ):
         try:
@@ -86,6 +84,10 @@ class ChromadbRM(dspy.Retrieve):
             raise ImportError(
                 "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
             )
+
+        if embedding_function is None:
+            embedding_function = ef.DefaultEmbeddingFunction()
+            
         self.ef = embedding_function
         self._init_chromadb(collection_name, persist_directory, client=client)
 
