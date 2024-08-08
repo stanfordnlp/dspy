@@ -3,8 +3,8 @@ import hashlib
 from typing import Any, Literal, Optional
 
 import requests
-
 from dsp.modules.lm import LM
+from dsp.trackers.base import BaseTracker
 
 
 def post_request_metadata(model_name, prompt):
@@ -46,6 +46,7 @@ class OllamaLocal(LM):
         num_ctx: int = 1024,
         format: Optional[Literal["json"]] = None,
         system: Optional[str] = None,
+        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ):
         super().__init__(model)
@@ -57,6 +58,7 @@ class OllamaLocal(LM):
         self.timeout_s = timeout_s
         self.format = format
         self.system = system
+        self.tracker = tracker
 
         self.kwargs = {
             "temperature": temperature,
@@ -92,18 +94,9 @@ class OllamaLocal(LM):
             "options": {k: v for k, v in kwargs.items() if k not in ["n", "max_tokens"]},
             "stream": False,
         }
-        
-        # Set the format if it was defined
-        if self.format:
-            settings_dict["format"] = self.format
-            
         if self.model_type == "chat":
             settings_dict["messages"] = [{"role": "user", "content": prompt}]
         else:
-            # Overwrite system prompt defined in modelfile
-            if self.system:
-                settings_dict["system"] = self.system
-    
             settings_dict["prompt"] = prompt
 
         urlstr = f"{self.base_url}/api/chat" if self.model_type == "chat" else f"{self.base_url}/api/generate"
@@ -149,7 +142,6 @@ class OllamaLocal(LM):
             "raw_kwargs": raw_kwargs,
         }
         self.history.append(history)
-
         return request_info
 
     def request(self, prompt: str, **kwargs):

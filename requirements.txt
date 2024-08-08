@@ -10,4 +10,5 @@ requests
 structlog
 tqdm
 ujson
+httpx
 magicattr~=0.1.6

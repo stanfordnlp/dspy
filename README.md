@@ -77,10 +77,35 @@ Or open our intro notebook in Google Colab: [<img align="center" src="https://co
 
 By default, DSPy installs the latest `openai` from pip. However, if you install old version before OpenAI changed their API `openai~=0.28.1`, the library will use that just fine. Both are supported.
 
-For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chroma), [Groq](https://github.com/groq/groq-python), [Marqo](https://github.com/marqo-ai/marqo), [Milvus](https://github.com/milvus-io/milvus), [MongoDB](https://www.mongodb.com), [MyScaleDB](https://github.com/myscale/myscaledb), Pinecone, [Qdrant](https://github.com/qdrant/qdrant), [Snowflake](https://github.com/snowflakedb/snowpark-python), or [Weaviate](https://github.com/weaviate/weaviate) retrieval integration(s), include the extra(s) below:
+For the optional (alphabetically sorted) [Chromadb](https://github.com/chroma-core/chroma), [Groq](https://github.com/groq/groq-python), [Marqo](https://github.com/marqo-ai/marqo), [Milvus](https://github.com/milvus-io/milvus), [MongoDB](https://www.mongodb.com), [MyScaleDB](https://github.com/myscale/myscaledb), Pinecone, [Qdrant](https://github.com/qdrant/qdrant), [Snowflake](https://github.com/snowflakedb/snowpark-python), or [Weaviate](https://github.com/weaviate/weaviate) , [Langfuse](https://langfuse.com/) retrieval integration(s), include the extra(s) below:
 
 ```
-pip install dspy-ai[chromadb] # or [groq] or [marqo] or [milvus] or [mongodb] or [myscale] or [pinecone] or [qdrant] or [snowflake] or [weaviate]
+pip install dspy-ai[chromadb] # or [groq] or [marqo] or [milvus] or [mongodb] or [myscale] or [pinecone] or [qdrant] or [snowflake] or [weaviate] or [langfuse]
+```
+
+### How to make the prompt visible
+We have now integrated langfuse as one of the tracker.
+
+How to configure langfuse?[langfuse details](https://langfuse.com/docs/deployment/self-host) .
+
+After that, you will get three environment variables, they are `LANGFUSE_SECRET_KEY`、`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_HOST`.
+
+Just write the environment variables and langfuse will automatically read them.
+
+If you are using **openai** or **azure_openai**, then your preparations are now complete.
+
+for other modules, you need to manually configure and call.
+```python
+import dspy
+from dsp.trackers.langfuse_tracker import LangfuseTracker
+# e.g:
+# Assuming the environment variables have been set
+langfuse = LangfuseTracker()
+turbo = dspy.OllamaLocal()
+dspy.settings.configure(lm=turbo)
+
+completions =  turbo("Hi,how's it going today？")
+turbo.tracker_call(tracker=langfuse)
 ```
 
 ## 2) Documentation
