@@ -99,31 +99,29 @@ class Module(BaseModule, metaclass=ProgramMeta):
             predictor.lm = None
 
     def _print_lm_information(self):
-        print(f"The LM set in dspy.settings.lm: {dspy.settings.lm}")
+        print(f"The LM set in dspy.settings.lm is {dspy.settings.lm}")
         print("Looping through all predictors in the program:")
         for name, predictor in self.named_predictors():
-            print(f"    Predictor {name} is set to LM: {predictor.lm}")
+            print(f"    Predictor {name} is set to LM {predictor.lm}")
 
     def _assert_lm_consistency(self) -> Optional[AssertionError]:
         """ Check if the module satisfies the LM consistency property.
 
-        Ensures that (1) None of the module predictors have their LMs set (to a same or different LM) when
-        `dspy.settings.lm` is set, and, (2) all predictors in the module have their LMs set when `dspy.settings.lm` is
-        `None`.
+        Ensures that (1) all predictors in the module have their LMs set when `dspy.settings.lm` is `None`, and, (2)
+        none of the module predictors have their LMs set (to a same or different LM) when `dspy.settings.lm` is set.
 
         Raises:
             AssertionError: If the module does not satisfy the LM consistency property.
         """
-        if dspy.settings.lm is not None:
-            err_msg = "LM consistency property violated: LM is set in a module predictor when dspy.settings.lm is set."
-            if not self._is_all_predictor_lms_unset():
-                self._print_lm_information()
-                raise AssertionError(err_msg)
-        else:
+        err_msg = None
+        if dspy.settings.lm is None and not self._is_all_predictor_lms_unset():
             err_msg = "LM consistency property violated: LM is not set in a module predictor when dspy.settings.lm is None."
-            if not self._is_all_predictor_lms_unset():
-                self._print_lm_information()
-                raise AssertionError(err_msg)
+        elif dspy.settings.lm is not None and not self._is_all_predictor_lms_set():
+            err_msg = "LM consistency property violated: LM is set in a module predictor when dspy.settings.lm is set."
+        
+        if err_msg is not None:
+            self._print_lm_information()
+            raise AssertionError(err_msg)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
