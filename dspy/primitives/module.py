@@ -112,9 +112,9 @@ class BaseModule:
 
         return obj
 
-    def dump_state(self):
+    def dump_state(self, save_field_meta):
         print(self.named_parameters())
-        return {name: param.dump_state() for name, param in self.named_parameters()}
+        return {name: param.dump_state(save_field_meta) for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
@@ -127,9 +127,9 @@ class BaseModule:
             #     else:
             #         raise
 
-    def save(self, path):
+    def save(self, path, save_field_meta=False):
         with open(path, "w") as f:
-            f.write(ujson.dumps(self.dump_state(), indent=2))
+            f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2))
 
     def load(self, path):
         with open(path) as f:

@@ -18,8 +18,10 @@ from .gpt3 import *
 from .groq_client import *
 from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
+from .llama import *
 from .mistral import *
 from .ollama import *
+from .multi_openai import MultiOpenAI
 from .premai import PremAI
 from .pyserini import *
 from .sbert import *
