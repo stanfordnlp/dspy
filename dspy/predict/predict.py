@@ -17,6 +17,28 @@ class Predict(Module, Parameter):
         self.config = config
         self.reset()
 
+    def _is_structurally_equivalent(self, other) -> bool:
+        """ Check if two predictors are structurally equivalent by comparing their signatures.
+        
+        Args:
+            other: The predictor to compare with.
+        
+        Returns:
+            bool: `True` if the predictors are structurally equivalent, `False` otherwise.
+        """
+        # Check if the two predictors are instances of the Predictor class
+        if not isinstance(other, self.__class__):
+            return False
+
+        # Check if the predictors have matching signatures
+        err_msg = f"Signatures of the two predictors do not match. {type(self.signature)} != {type(other.signature)}"
+        if hasattr(self.signature, "equals"):
+            return self.signature.equals(other.signature), err_msg
+        elif hasattr(other.signature, "equals"):
+            return other.signature.equals(self.signature), err_msg
+        else:
+            return self.signature == other.signature, err_msg
+
     def reset(self):
         self.lm = None
         self.traces = []
