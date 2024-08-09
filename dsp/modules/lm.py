@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class LM(ABC):
@@ -151,7 +152,7 @@ class FinetuneableLM(LM, ABC):
         pass
 
     @abstractmethod
-    def _load_data(self, data: list[dict[str, str]]) -> str:
+    def _load_data(self, train_path: str, val_path: Optional[str]) -> str:
         pass
 
     @abstractmethod
