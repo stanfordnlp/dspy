@@ -141,3 +141,31 @@ class LM(ABC):
         model = kwargs.pop("model")
 
         return self.__class__(model=model, **kwargs)
+    
+class FinetuneableLM(LM, ABC):
+    def verify_training_arguments(self, training_arguments: dict[str, Any]) -> bool:
+        return True
+
+    @abstractmethod
+    def format_data_for_vanilla_finetuning(self, data: list[dict[str, str]]) -> list[dict[str, str]]:
+        pass
+
+    @abstractmethod
+    def _load_data(self, data: list[dict[str, str]]) -> str:
+        pass
+
+    @abstractmethod
+    def start_training(self, **kwargs) -> None:
+        pass
+
+    @abstractmethod
+    def stop_training(self) -> None:
+        pass
+
+    @abstractmethod
+    def check_training_status(self) -> bool:
+        pass
+
+    @abstractmethod
+    def retrieve_trained_model_client(self) -> LM:
+        pass
