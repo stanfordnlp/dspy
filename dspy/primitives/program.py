@@ -1,5 +1,9 @@
+from __future__ import annotations  # Required for type hints of the class itself, see Module.is_structurally_equivalent
+from typing import Optional
+
 import magicattr
 
+from dsp.modules.lm import LM
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
 
@@ -24,6 +28,101 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    def _is_structurally_equivalent(self, other: Module) -> bool:
+        """ Check if two modules are structurally equivalent by comparing the names and structure of their predictors.
+        
+        Args:
+            other: The module to compare with.
+        
+        Returns:
+            bool: `True` if the modules are structurally equivalent, `False` otherwise.
+        """
+        # Check if the two modules are instances of the Program class
+        if not isinstance(other, self.__class__):
+            return False
+
+        # Check if the two modules have the same number of predictors
+        if len(self.predictors()) != len(other.predictors()):
+            return False
+
+        # Check if the two modules have structurally equivalent predictors
+        for (name1, pred1), (name2, pred2) in zip(self.named_parameters(), other.named_parameters()):
+            if name1 != name2 or not pred1.is_structurally_equivalent(pred2):
+                return False
+
+        return True
+
+    def _has_shared_predictor(self, other: Module) -> bool:
+        """ Check if two modules share a predictor that points to the same Python object.
+        
+        Args:
+            other: The module to compare with.
+        
+        Returns:
+            bool: `True` if the modules share a predictor, `False` otherwise.
+        """
+        for pred1, pred2 in zip(self.predictors(), other.predictors()):
+            if id(pred1) == id(pred2):
+                return True
+        return False
+
+    def _is_all_predictor_lms_set(self) -> bool:
+        """ Check if all predictors in the module have their LMs set.
+        
+        Returns:
+            bool: `True` if all predictors have their LMs set, `False` otherwise.
+        """
+        return all(predictor.lm is not None for predictor in self.predictors())
+
+    def _is_all_predictor_lms_unset(self) -> bool:
+        """ Check if all predictors in the module have their LMs unset.
+        
+        Returns:
+            bool: `True` if all predictors have their LMs unset, `False` otherwise.
+        """
+        return all(predictor.lm is None for predictor in self.predictors())
+
+    def _set_all_predictor_lms(self, lm: LM):
+        """ Set the LM of all predictors in the module.
+        
+        Args:
+            lm: The LM to set.
+        """
+        for predictor in self.predictors():
+            predictor.lm = lm
+
+    def _unset_all_predictor_lms(self):
+        """ Unset the LM of all predictors in the module. """
+        for predictor in self.predictors():
+            predictor.lm = None
+
+    def _print_lm_information(self):
+        print(f"The LM set in dspy.settings.lm: {dspy.settings.lm}")
+        print("Looping through all predictors in the program:")
+        for name, predictor in self.named_predictors():
+            print(f"    Predictor {name} is set to LM: {predictor.lm}")
+
+    def _assert_lm_consistency(self) -> Optional[AssertionError]:
+        """ Check if the module satisfies the LM consistency property.
+
+        Ensures that (1) None of the module predictors have their LMs set (to a same or different LM) when
+        `dspy.settings.lm` is set, and, (2) all predictors in the module have their LMs set when `dspy.settings.lm` is
+        `None`.
+
+        Raises:
+            AssertionError: If the module does not satisfy the LM consistency property.
+        """
+        if dspy.settings.lm is not None:
+            err_msg = "LM consistency property violated: LM is set in a module predictor when dspy.settings.lm is set."
+            if not self.is_all_predictor_lms_unset():
+                self._print_lm_information()
+                raise AssertionError(err_msg)
+        else:
+            err_msg = "LM consistency property violated: LM is not set in a module predictor when dspy.settings.lm is None."
+            if not self.is_all_predictor_lms_unset():
+                self._print_lm_information()
+                raise AssertionError(err_msg)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
