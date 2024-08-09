@@ -1,6 +1,7 @@
 import ast
 import inspect
 import re
+from textwrap import dedent
 import types
 import typing
 from contextlib import ExitStack, contextmanager
@@ -63,6 +64,10 @@ class SignatureMeta(type(BaseModel)):
         # In that case, we should default to the input/output format.
         if cls.__doc__ is None:
             cls.__doc__ = _default_instructions(cls)
+
+        # Trim whitespace from the docstring
+        if cls.__doc__ is not None:
+            cls.__doc__ = dedent(cls.__doc__).strip()
 
         # Ensure all fields are declared with InputField or OutputField
         cls._validate_fields()
