@@ -68,7 +68,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 return True
         return False
 
-    def _is_all_predictor_lms_set(self) -> bool:
+    def _are_all_predictor_lms_set(self) -> bool:
         """ Check if all predictors in the module have their LMs set.
         
         Returns:
@@ -76,7 +76,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         return all(predictor.lm is not None for predictor in self.predictors())
 
-    def _is_all_predictor_lms_unset(self) -> bool:
+    def _are_all_predictor_lms_unset(self) -> bool:
         """ Check if all predictors in the module have their LMs unset.
         
         Returns:
@@ -114,9 +114,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
             AssertionError: If the module does not satisfy the LM consistency property.
         """
         err_msg = None
-        if dspy.settings.lm is None and not self._is_all_predictor_lms_unset():
+        if dspy.settings.lm is None and not self._are_all_predictor_lms_unset():
             err_msg = "LM consistency property violated: LM is not set in a module predictor when dspy.settings.lm is None."
-        elif dspy.settings.lm is not None and not self._is_all_predictor_lms_set():
+        elif dspy.settings.lm is not None and not self._are_all_predictor_lms_set():
             err_msg = "LM consistency property violated: LM is set in a module predictor when dspy.settings.lm is set."
         
         if err_msg is not None:
