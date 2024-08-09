@@ -19,6 +19,7 @@ class ProgramMeta(type):
     #     return obj
 
 
+# TODO: Replace print statements with logging
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
@@ -47,8 +48,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return False
 
         # Check if the two modules have structurally equivalent predictors
-        for (name1, pred1), (name2, pred2) in zip(self.named_parameters(), other.named_parameters()):
-            if name1 != name2 or not pred1.is_structurally_equivalent(pred2):
+        for (name1, pred1), (name2, pred2) in zip(self.named_predictors(), other.named_predictors()):
+            if name1 != name2 or not pred1._is_structurally_equivalent(pred2):
                 return False
 
         return True
@@ -115,12 +116,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         if dspy.settings.lm is not None:
             err_msg = "LM consistency property violated: LM is set in a module predictor when dspy.settings.lm is set."
-            if not self.is_all_predictor_lms_unset():
+            if not self._is_all_predictor_lms_unset():
                 self._print_lm_information()
                 raise AssertionError(err_msg)
         else:
             err_msg = "LM consistency property violated: LM is not set in a module predictor when dspy.settings.lm is None."
-            if not self.is_all_predictor_lms_unset():
+            if not self._is_all_predictor_lms_unset():
                 self._print_lm_information()
                 raise AssertionError(err_msg)
 

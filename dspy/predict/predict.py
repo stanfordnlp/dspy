@@ -31,6 +31,7 @@ class Predict(Module, Parameter):
             return False
 
         # Check if the predictors have matching signatures
+        # TODO: Can we ensure that all the signatures implement the equals method?
         err_msg = f"Signatures of the two predictors do not match. {type(self.signature)} != {type(other.signature)}"
         if hasattr(self.signature, "equals"):
             return self.signature.equals(other.signature), err_msg
