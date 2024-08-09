@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Optional, Literal, Union
 
 import openai
@@ -302,8 +303,6 @@ class OpenAIModel(GPT3, FinetuneableLM):
         #  probably delete the file after training
 
     def stop_training(self) -> None:
-        # TODOSOON: Implement this
-
         for file in self.fine_tuning_file_ids.values():
             openai.files.delete(file)
 
@@ -326,8 +325,11 @@ class OpenAIModel(GPT3, FinetuneableLM):
         elif temp_job.status == "running":
             return False
 
-    def retrieve_trained_model_client(self):
+    def retrieve_trained_model_client(self) -> LM:
         assert self.fine_tuning_job_id is not None, "You must start training before retrieving the model"
         job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
         if job.status == "succeeded":
-            self.kwargs["model"] = job.fine_tuned_model
+            self_copy = deepcopy(self)
+            self_copy.kwargs["model"] = job.fine_tuned_model
+            return self_copy
+

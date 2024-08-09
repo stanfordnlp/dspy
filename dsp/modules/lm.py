@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 
 class LM(ABC):
@@ -144,7 +144,7 @@ class LM(ABC):
         return self.__class__(model=model, **kwargs)
     
 class FinetuneableLM(LM, ABC):
-    def verify_training_arguments(self, training_arguments: dict[str, Any]) -> bool:
+    def verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
         return True
 
     @abstractmethod
