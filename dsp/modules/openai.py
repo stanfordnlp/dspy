@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any, Optional, Literal, Union
 
 import openai
-from dsp.modules.lm import FinetuneableLM
+from dsp.modules.lm import LM, FinetuneableLM
 from dsp.modules.gpt3 import GPT3
 import tiktoken
 
@@ -149,10 +149,6 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details),
     )
 
-# TODOSOON:
-# - Check val file works
-# - Address the comments, clean up
-
 
 class OpenAIModel(GPT3, FinetuneableLM):
     """Wrapper around specifically the OpenAI API to finetune.
@@ -183,13 +179,12 @@ class OpenAIModel(GPT3, FinetuneableLM):
         super().__init__(model, api_key, api_provider,
                          api_base, model_type, system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
-        # Maybe move into abstract class if every fine tuning needs it
         self.fine_tuning_file_ids = fine_tuning_file_ids
         self.fine_tuning_job_id = fine_tuning_job_id
 
-    # https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
     def verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
         """Verify the training arguments before starting training.
+        More information on dataset verification can be found here: https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
         Args:
             dataset: The dataset to be used for training.
@@ -249,10 +244,6 @@ class OpenAIModel(GPT3, FinetuneableLM):
         Returns:
             str: The file id of the data to be used for fine-tuning.
         """
-        #
-        # submit file to OAI API and get a File object back
-        # retain the id for future reference
-        # can one lm be finetuned multiple times?
         datasets = {"train": train_path}
         if val_path:
             datasets["val"] = val_path
@@ -278,7 +269,14 @@ class OpenAIModel(GPT3, FinetuneableLM):
         return job.id
 
     def validate_hyperparameters(self, hyperparameters: dict[str, Any]) -> bool:
-        # https://platform.openai.com/docs/api-reference/fine-tuning/create#fine-tuning-create-hyperparameters
+        """Validate the hyperparameters before starting training. Only checks the hyperparameters that are allowed in the OpenAI API.
+        More information on hyperparameter validation can be found here: https://platform.openai.com/docs/api-reference/fine-tuning/create#fine-tuning-create-hyperparameters
+
+        Args:
+            hyperparameters: The hyperparameters to be used for training.
+
+            Returns:
+                bool: Whether the hyperparameters are valid."""
         def is_positive_number(value, convert_func):
             try:
                 return convert_func(value) > 0
@@ -299,8 +297,6 @@ class OpenAIModel(GPT3, FinetuneableLM):
                 return False
 
         return True
-
-        #  probably delete the file after training
 
     def stop_training(self) -> None:
         for file in self.fine_tuning_file_ids.values():
@@ -326,10 +322,11 @@ class OpenAIModel(GPT3, FinetuneableLM):
             return False
 
     def retrieve_trained_model_client(self) -> LM:
-        assert self.fine_tuning_job_id is not None, "You must start training before retrieving the model"
+        assert self.fine_tuning_job_id is not None, "Start training before retrieving the model"
         job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
         if job.status == "succeeded":
             self_copy = deepcopy(self)
             self_copy.kwargs["model"] = job.fine_tuned_model
             return self_copy
-
+        else:
+            raise RuntimeError("Job not completed yet, cannot retrieve model")
