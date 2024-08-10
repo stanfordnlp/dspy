@@ -3,12 +3,17 @@ import tqdm
 import copy
 import datetime
 import itertools
+from typing import Any
 
 from collections import defaultdict
+from dsp.modules.llm import LLM
+
 
 def print_message(*s, condition=True, pad=False, sep=None):
     s = " ".join([str(x) for x in s])
-    msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s)
+    msg = "[{}] {}".format(
+        datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s
+    )
 
     if condition:
         msg = msg if not pad else f"\n{msg}\n"
@@ -18,7 +23,9 @@ def print_message(*s, condition=True, pad=False, sep=None):
 
 
 def timestamp(daydir=False):
-    format_str = f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
+    format_str = (
+        f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
+    )
     result = datetime.datetime.now().strftime(format_str)
     return result
 
@@ -27,7 +34,8 @@ def file_tqdm(file):
     print(f"#> Reading {file.name}")
 
     with tqdm.tqdm(
-        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB",
+        total=os.path.getsize(file.name) / 1024.0 / 1024.0,
+        unit="MiB",
     ) as pbar:
         for line in file:
             yield line
@@ -76,22 +84,46 @@ def batch(group, bsize, provide_offset=False):
 
 
 class dotdict(dict):
+    """dot.notaion access to dictionary attributes
+    Credit: derek73 @ https://stackoverflow.com/questions/2352181
+    """
+
+    lm: LLM
+    rm: Any  # TODO: abstract and add strong types
+    branch_idx: int
+    reranker: Any  # TODO: abstract and add strong types
+    compiled_lm: LLM  # TODO: Verify if this is correct
+    force_reuse_cached_compilation: bool
+    compiling: bool
+    skip_logprobs: bool
+    trace: list
+    release: int
+    bypass_assert: bool
+    bypass_suggest: bool
+    assert_failures: int
+    suggest_failures: int
+    langchain_history: list
+    experimental: bool
+    backoff_time: int
+
     def __getattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             return super().__getattr__(key)
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{key}'"
+            )
 
     def __setattr__(self, key, value):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__setattr__(key, value)
         else:
             self[key] = value
 
     def __delattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__delattr__(key)
         else:
             del self[key]

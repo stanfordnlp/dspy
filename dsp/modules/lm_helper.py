@@ -1,33 +1,16 @@
-from abc import ABC, abstractmethod
+from abc import ABC
+
+# TODO: this was scoped inside the LM class, check if this causes error.
+import dspy
 
 
-class LM(ABC):
-    """Abstract class for language models."""
+class LLMHelper(ABC):
+    """Abstract class for language models to support auxillary features like history and pretty print."""
 
-    def __init__(self, model):
-        self.kwargs = {
-            "model": model,
-            "temperature": 0.0,
-            "max_tokens": 150,
-            "top_p": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
-            "n": 1,
-        }
-        self.provider = "default"
-
+    def __init__(self):
         self.history = []
 
-    @abstractmethod
-    def basic_request(self, prompt, **kwargs):
-        pass
-
-    def request(self, prompt, **kwargs):
-        return self.basic_request(prompt, **kwargs)
-
     def print_green(self, text: str, end: str = "\n"):
-        import dspy
-
         if dspy.settings.experimental:
             return "\n\n" + "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
         else:
@@ -143,16 +126,3 @@ class LM(ABC):
 
         print(printing_value)
         return printing_value
-
-    @abstractmethod
-    def __call__(
-        self, prompt, only_completed=True, return_sorted=False, **kwargs
-    ):
-        pass
-
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with the same parameters."""
-        kwargs = {**self.kwargs, **kwargs}
-        model = kwargs.pop("model")
-
-        return self.__class__(model=model, **kwargs)

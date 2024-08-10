@@ -27,23 +27,12 @@ LM = dsp.LM
 
 LLM = dsp.LLM
 
-AzureOpenAI = dsp.AzureOpenAI
-OpenAI = dsp.GPT3
-MultiOpenAI = dsp.MultiOpenAI
-Mistral = dsp.Mistral
-Databricks = dsp.Databricks
-Cohere = dsp.Cohere
 ColBERTv2 = dsp.ColBERTv2
 ColBERTv2RerankerLocal = dsp.ColBERTv2RerankerLocal
 ColBERTv2RetrieverLocal = dsp.ColBERTv2RetrieverLocal
+Databricks = dsp.Databricks  # for embeddings call
 Pyserini = dsp.PyseriniRetriever
-Clarifai = dsp.ClarifaiLLM
 CloudflareAI = dsp.CloudflareAI
-Google = dsp.Google
-GoogleVertexAI = dsp.GoogleVertexAI
-GROQ = dsp.GroqLM
-Snowflake = dsp.Snowflake
-Claude = dsp.Claude
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
@@ -51,7 +40,6 @@ HFClientVLLM = HFClientVLLM
 Anyscale = dsp.Anyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
-OllamaLocal = dsp.OllamaLocal
 LlamaCpp = dsp.LlamaCpp
 
 Bedrock = dsp.Bedrock
@@ -60,11 +48,6 @@ AWSModel = dsp.AWSModel
 AWSMistral = dsp.AWSMistral
 AWSAnthropic = dsp.AWSAnthropic
 AWSMeta = dsp.AWSMeta
-
-Watsonx = dsp.Watsonx
-PremAI = dsp.PremAI
-
-You = dsp.You
 
 configure = settings.configure
 context = settings.context

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 # Pydantic data model for the LLM class
 import litellm
@@ -10,6 +10,7 @@ from dsp.modules.schemas import (
     DSPyModelResponse,
     LLMModelParams,
 )
+from dsp.modules.lm_helper import LLMHelper
 
 
 # TODO: should be moved to a centralised logging module
@@ -24,7 +25,22 @@ logging.basicConfig(
 litellm.set_verbose = True
 
 
-class LLM:
+class LLM(LLMHelper):
+    """Wrapper around the LLM API.
+
+    Usage:
+    ```python
+    import dspy
+    from dspy import LLMModelParams
+
+    llm_params = LLMModelParams(
+        model="gpt-4o-mini", api_key=OPENAI_APIKEY
+    )
+    openai_llm = dspy.LLM(llm_params)
+    openai_llm("Hello, how are you?")
+    ```
+    """
+
     llm_params: LLMModelParams
     history: list[dict[str, Any]] = []
 
@@ -62,12 +78,14 @@ class LLM:
         usage_data: Usage = response.get("usage")
         if usage_data:
             total_tokens = usage_data.get("total_tokens")
-            logger.debug(f"OpenAI Response Token Usage: {total_tokens}")
+            logger.debug("OpenAI Response Token Usage: %s", total_tokens)
 
     def filter_only_completed(self, choices: list[Choices]) -> list[Choices]:
         """Filters out incomplete completions by checking if the finish_reason is not 'length'.
         Returns the filtered list of choices only if there are any, otherwise returns the original list.
         """
+        # TODO: This seems provider specific:
+        # Calude uses response.stop_reason == "max_tokens", refer previous code.
         filtered_choices = [c for c in choices if c.finish_reason != "length"]
         if len(filtered_choices):
             return filtered_choices
@@ -135,3 +153,9 @@ class LLM:
         )
 
         return choices
+
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.llm_params.to_json(), **kwargs}
+
+        return self.__class__(llm_params=LLMModelParams(**kwargs), **kwargs)
