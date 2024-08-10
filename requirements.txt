@@ -11,3 +11,4 @@ structlog
 tqdm
 ujson
 magicattr~=0.1.6
+litellm~=1.43.4
