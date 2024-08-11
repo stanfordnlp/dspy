@@ -102,6 +102,15 @@ class LLMModelParams(BaseModel):
     )
     return_sorted: bool = False
 
+    class Config:
+        extra = "allow"
+
+    def __getattr__(self, attr):
+        try:
+            return super().__getattr__(attr)
+        except AttributeError:
+            return None
+
     def to_json(self, exclude_none: bool = False) -> dict[str, Any]:
         return LLMModelParams(**self.model_dump()).model_dump(
             exclude_none=exclude_none
@@ -114,13 +123,16 @@ class LLMModelParams(BaseModel):
 class LLMParams(LLMModelParams):
     provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
-    extra_args: dict[str, Any] = {}
     vertex_credentials: Optional[str] = None
     vertex_project: Optional[str] = None
     vertex_location: Optional[str] = None
     custom_provider: Optional[bool] = None
     decoding_method: Optional[str] = None  # WatsonX - greedy
     project_id: Optional[str] = None  # WatsonX
+
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION_NAME: Optional[str] = None
 
     # Litellm specific
     api_base: Optional[str] = None
@@ -140,24 +152,29 @@ class LLMParams(LLMModelParams):
     )
     drop_params: bool = True
 
+    class Config:
+        extra = "allow"
+
+    def __getattr__(self, attr):
+        try:
+            return super().__getattr__(attr)
+        except AttributeError:
+            return None
+
     def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
-        return {
-            **self.model_dump(
-                exclude=[
-                    "system_prompt",
-                    "prompt",
-                    "only_completed",
-                    "return_sorted",
-                ]
-                + (["api_base"] if ignore_sensitive else [])
-                + [
-                    "extra_args",
-                    "provider",
-                ],  # this should automatically work when drop_params is set to True but it doesn't.
-                exclude_none=True,
-            ),
-            **self.extra_args,
-        }
+        return self.model_dump(
+            exclude=[
+                "system_prompt",
+                "prompt",
+                "only_completed",
+                "return_sorted",
+            ]
+            + (["api_base"] if ignore_sensitive else [])
+            + [
+                "provider",
+            ],  # this should automatically work when drop_params is set to True but it doesn't.
+            exclude_none=True,
+        )
 
     def get_model_params(
         self, return_json: bool = False, exclude_none: bool = False
@@ -167,17 +184,6 @@ class LLMParams(LLMModelParams):
         return super().get_copy()
 
     def __init__(self, **data):
-        # filter extra_kwargs and pass it separately
-        # would have been easier if ConfigDict(allow="extra") worked but doesn't seem to work with custom __init__
-        extra_args = data.get("extra_args", {})
-        to_delete = []
-        for k, v in data.items():
-            if k not in self.__annotations__.keys():
-                extra_args[k] = v
-                to_delete.append(k)
-        for k in to_delete:
-            del data[k]
-
         super().__init__(**data)
         if self.provider is None:
             _, provider, _, _ = litellm.get_llm_provider(self.model)
