@@ -1,9 +1,10 @@
-from typing import Any, Callable
+from typing import cast, Callable
 
 import dsp
 from dsp.adapters import Template
 from dsp.primitives.demonstrate import Example
 from dsp.utils import zipstar
+from dsp.modules.llm import LLM
 
 
 class Completions:
@@ -57,9 +58,11 @@ def _generate(template: Template, **kwargs) -> Callable:
     if not dsp.settings.lm:
         raise AssertionError("No LM is loaded.")
 
-    generator = dsp.settings.lm
+    generator = cast(LLM, dsp.settings.lm)
 
-    def do_generate(example: Example, stage: str, max_depth: int = 2, original_example=None):
+    def do_generate(
+        example: Example, stage: str, max_depth: int = 2, original_example=None
+    ):
         if not dsp.settings.lm:
             raise AssertionError("No LM is loaded.")
         original_example = original_example or example
@@ -70,15 +73,20 @@ def _generate(template: Template, **kwargs) -> Callable:
 
         # Generate and extract the fields.
         prompt = template(example)
-        completions: list[dict[str, Any]] = generator(prompt, **kwargs)
-        completions: list[Example] = [template.extract(example, p) for p in completions]
+        model_completions = generator(prompt, **kwargs)
+
+        completions = [template.extract(example, p) for p in model_completions]
 
         # Find the completions that are most complete.
-        field_names: list[str] = [field.input_variable for field in template.fields]
+        field_names: list[str] = [
+            field.input_variable for field in template.fields
+        ]
 
         last_field_idx = 0
         for field_idx, key in enumerate(field_names):
-            completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
+            completions_ = [
+                c for c in completions if key in c.keys() and c[key] is not None
+            ]
 
             # Filter out completions that are missing fields that are present in at least one completion.
             if len(completions_):
@@ -92,14 +100,24 @@ def _generate(template: Template, **kwargs) -> Callable:
             completion[field_names[last_field_idx]] = ""
 
             # Recurse with greedy decoding and a shorter length.
-            max_tokens = kwargs.get("max_tokens", dsp.settings.lm.kwargs["max_tokens"])
+            max_tokens = kwargs.get(
+                "max_tokens", dsp.settings.lm.kwargs["max_tokens"]
+            )
             max_tokens = min(max(75, max_tokens // 2), max_tokens)
-            new_kwargs = {**kwargs, "max_tokens": max_tokens, "n": 1, "temperature": 0.0,}
+            new_kwargs = {
+                **kwargs,
+                "max_tokens": max_tokens,
+                "n": 1,
+                "temperature": 0.0,
+            }
 
             assert max_depth > 0
-            return generate(template, **new_kwargs)(completion, stage=stage,
-                                                    max_depth=max_depth - 1,
-                                                    original_example=original_example,)
+            return generate(template, **new_kwargs)(
+                completion,
+                stage=stage,
+                max_depth=max_depth - 1,
+                original_example=original_example,
+            )
 
         completions = Completions(completions, template=template)
         example = example.copy(completions=completions)

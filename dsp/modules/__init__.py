@@ -12,7 +12,6 @@ from .colbertv2 import (
 )
 from .databricks import *
 from .dummy_lm import *
-from .gpt3 import *
 from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
 from .llama import *

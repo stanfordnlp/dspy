@@ -67,100 +67,17 @@ class DSPyModelResponse(TypedDict):
 
 
 class LLMModelParams(BaseModel):
-    """
-    This class represents the parameters for any LLM model.
-
-    Attributes:
-    ----------
-    model : str
-        The model to be used, default is "gpt-4o-mini".
-    messages : Optional[list[dict[str, Any]]]
-        The messages to be processed, default is None.
-    provider : str
-        The provider of the model, default is "openai".
-    temperature : float
-        The temperature for the model, default is 0.0.
-    max_tokens : Optional[int]
-        The maximum number of tokens, default is None.
-    top_p : float
-        The top_p value for the model, default is 1.
-    stream : bool
-        Whether to stream the output, default is False.
-    stream_options : Optional[StreamOptions]
-        The stream options, default is None.
-    stop : Optional[Union[str, list[str]]]
-        The stop condition, default is None.
-    n : int
-        The number of outputs, default is 1.
-    presence_penalty : Optional[float]
-        The presence penalty, default is None.
-    frequency_penalty : Optional[float]
-        The frequency penalty, default is None.
-    functions : Optional[list[Functions]]
-        The functions to be used, default is None.
-    function_call : Optional[Union[Optional[str], Functions]]
-        The function call, default is None.
-    logit_bias : Optional[dict[str, float]]
-        The logit bias, default is None.
-    user : Optional[str]
-        The user, default is None.
-    response_format : Optional[str]
-        The response format, default is None.
-    seed : Optional[int]
-        The seed for the random number generator, default is None.
-    tools : Optional[ToolFunction]
-        The tools to be used, default is None.
-    tool_choice : Optional[Union[str, ToolChoice]]
-        The tool choice, default is None.
-    logprobs : Optional[int]
-        The logprobs, default is False.
-    top_logprobs : Optional[int]
-        The top logprobs, default is None.
-    extra_headers : Optional[dict[str, str]]
-        The extra headers, default is None.
-    extra_args : dict[str, Any]
-        The extra arguments, these are automatically added when you pass items not defined here.
-    safety_settings : Optional[dict[str, Any]]
-        The safety settings for google, default is None.
-    api_base : Optional[str]
-        The API base, default is None.
-    api_key : Optional[str]
-        The API key, default is None. Please use this for VertexAI as well.
-    api_version : Optional[str]
-        The API version, default is None.
-    num_retries : Optional[int]
-        The number of retries, default is None.
-    context_window_fallback_dict : Optional[dict[str, Any]]
-        The context window fallback dictionary, default is None.
-    fallbacks : Optional[list[dict[str, Any]]]
-        The fallbacks, default is None.
-    metadata : Optional[dict[str, Any]]
-        The metadata, default is None.
-    system_prompt : Optional[str]
-        The system prompt, default is None.
-    prompt : Optional[str]
-        The prompt, default is None.
-    only_completed : bool
-        Whether to only complete, default is False.
-    return_sorted : bool
-        Whether to return sorted, default is False.
-    drop_params : bool
-    """
-
     model: str = "gpt-4o-mini"
     messages: Optional[list[ChatMessage]] = None
-    provider: Optional[str] = ""
     temperature: float = 0.0
     max_tokens: Optional[int] = (
-        None  # TODO: our previous default was set to 150. Clarify!
+        None  # TODO: our previous default are varied across providers. Clarify!
     )
     top_p: float = 1
-    stream: bool = False  # TODO: can we support this?
-    stream_options: Optional[StreamOptions] = None
-    stop: Optional[Union[str, list[str]]] = None
-    n: int = 1
-    presence_penalty: Optional[float] = None
     frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    n: int = 1
+    stop: Optional[Union[str, list[str]]] = None
     functions: Optional[list[Functions]] = None  # TODO: openai depricated this
     function_call: Optional[Union[Optional[str], Functions]] = (
         None  # TODO: openai depricated this
@@ -174,13 +91,35 @@ class LLMModelParams(BaseModel):
     tool_choice: Optional[Union[str, ToolChoice]] = None
     logprobs: Optional[int] = False
     top_logprobs: Optional[int] = None
+    stream: bool = False  # TODO: can we support this?
+    stream_options: Optional[StreamOptions] = None
+
+    # TODO: Custom parameter: figure out best way to delete these
+    system_prompt: Optional[str] = None
+    prompt: Optional[str] = None
+    only_completed: bool = (
+        False  # TODO: previously set to True, which is counterintuitive. Clarify!
+    )
+    return_sorted: bool = False
+
+    def to_json(self, exclude_none: bool = False) -> dict[str, Any]:
+        return LLMModelParams(**self.model_dump()).model_dump(
+            exclude_none=exclude_none
+        )
+
+    def get_copy(self) -> dict[str, Any]:
+        return LLMModelParams(**self.model_dump())
+
+
+class LLMParams(LLMModelParams):
+    provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
     extra_args: dict[str, Any] = {}
     vertex_credentials: Optional[str] = None
     vertex_project: Optional[str] = None
     vertex_location: Optional[str] = None
-    custom_provider: bool = False
-    decoding_method: Optional[str] = "greedy"  # WatsonX
+    custom_provider: Optional[bool] = None
+    decoding_method: Optional[str] = None  # WatsonX - greedy
     project_id: Optional[str] = None  # WatsonX
 
     # Litellm specific
@@ -201,14 +140,6 @@ class LLMModelParams(BaseModel):
     )
     drop_params: bool = True
 
-    # TODO: Custom parameter: figure out best way to delete these
-    system_prompt: Optional[str] = None
-    prompt: Optional[str] = None
-    only_completed: bool = (
-        False  # TODO: previously set to True, which is counterintuitive. Clarify!
-    )
-    return_sorted: bool = False
-
     def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
         return {
             **self.model_dump(
@@ -227,6 +158,13 @@ class LLMModelParams(BaseModel):
             ),
             **self.extra_args,
         }
+
+    def get_model_params(
+        self, return_json: bool = False, exclude_none: bool = False
+    ) -> Union[dict[str, Any], LLMModelParams]:
+        if return_json:
+            return super().to_json(exclude_none=exclude_none)
+        return super().get_copy()
 
     def __init__(self, **data):
         # filter extra_kwargs and pass it separately

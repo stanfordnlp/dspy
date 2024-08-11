@@ -1,28 +1,19 @@
-import logging
 from typing import Any
 
 # Pydantic data model for the LLM class
 import litellm
 from litellm.types.utils import Choices, ModelResponse, Usage
 
+from dspy.utils.logging import logger
 from dsp.modules.schemas import (
     ChatMessage,
     DSPyModelResponse,
-    LLMModelParams,
+    LLMParams,
 )
 from dsp.modules.lm_helper import LLMHelper
 
-
-# TODO: should be moved to a centralised logging module
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-    datefmt="%m/%d/%Y %H:%M:%S",
-    level=logging.INFO,  # TODO: figure out how to make this customizable
-)
-
-# Only for testing
-litellm.set_verbose = True
+# Use this for development testing
+# litellm.set_verbose = True
 
 
 class LLM(LLMHelper):
@@ -41,12 +32,12 @@ class LLM(LLMHelper):
     ```
     """
 
-    llm_params: LLMModelParams
+    llm_params: LLMParams
     history: list[dict[str, Any]] = []
 
     def __init__(
         self,
-        llm_params: LLMModelParams,
+        llm_params: LLMParams,
     ):
         super().__init__()
         self.llm_params = llm_params
@@ -158,4 +149,4 @@ class LLM(LLMHelper):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.llm_params.to_json(), **kwargs}
 
-        return self.__class__(llm_params=LLMModelParams(**kwargs), **kwargs)
+        return self.__class__(llm_params=LLMParams(**kwargs), **kwargs)

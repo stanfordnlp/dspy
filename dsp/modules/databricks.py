@@ -2,6 +2,7 @@ import json
 import functools
 from typing import Literal, Optional
 
+import openai
 
 from dsp.modules.cache_utils import (
     CacheMemory,

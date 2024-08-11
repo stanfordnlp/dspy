@@ -3,7 +3,7 @@ import tqdm
 import copy
 import datetime
 import itertools
-from typing import Any
+from typing import Any, Optional
 
 from collections import defaultdict
 from dsp.modules.llm import LLM
@@ -88,11 +88,11 @@ class dotdict(dict):
     Credit: derek73 @ https://stackoverflow.com/questions/2352181
     """
 
-    lm: LLM
-    rm: Any  # TODO: abstract and add strong types
+    lm: Optional[LLM]
+    rm: Optional[Any]  # TODO: abstract and add strong types
     branch_idx: int
     reranker: Any  # TODO: abstract and add strong types
-    compiled_lm: LLM  # TODO: Verify if this is correct
+    compiled_lm: Optional[LLM]  # TODO: Verify if this is correct
     force_reuse_cached_compilation: bool
     compiling: bool
     skip_logprobs: bool

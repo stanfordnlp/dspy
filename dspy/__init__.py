@@ -9,7 +9,7 @@ from dsp.modules.hf_client import (
 from dsp.modules.schemas import (
     ChatMessage,
     DSPyModelResponse,
-    LLMModelParams,
+    LLMParams,
 )
 
 from .predict import *
