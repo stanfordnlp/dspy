@@ -8,22 +8,21 @@ with open("README.md", encoding="utf-8") as f:
 with open("requirements.txt", encoding="utf-8") as f:
     requirements = f.read().splitlines()
 
-setup(	
-    #replace_package_name_marker
+setup(
+    # replace_package_name_marker
     name="dspy-ai",
-    #replace_package_version_marker
-    version="2.4.12", 	
-    description="DSPy",	
-    long_description=long_description,	
-    long_description_content_type="text/markdown",	
-    url="https://github.com/stanfordnlp/dsp",	
-    author="Omar Khattab",	
-    author_email="okhattab@stanford.edu",	
-    license="MIT License",	
-    packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),	
-    python_requires=">=3.9",	
-    install_requires=requirements,	
-
+    # replace_package_version_marker
+    version="2.4.12",
+    description="DSPy",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/stanfordnlp/dsp",
+    author="Omar Khattab",
+    author_email="okhattab@stanford.edu",
+    license="MIT License",
+    packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),
+    python_requires=">=3.9",
+    install_requires=requirements,
     extras_require={
         "chromadb": ["chromadb~=0.4.14"],
         "qdrant": ["qdrant-client", "fastembed"],
@@ -34,18 +33,19 @@ setup(
         "faiss-cpu": ["sentence_transformers", "faiss-cpu"],
         "milvus": ["pymilvus~=2.3.7"],
         "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
-        "myscale":["clickhouse-connect"],
+        "vertex-anthropic": ["google-cloud-aiplatform", "anthropic[vertex]"],
+        "myscale": ["clickhouse-connect"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
         "groq": ["groq~=0.8.0"],
-    },	
-    classifiers=[	
-        "Development Status :: 3 - Alpha",	
-        "Intended Audience :: Science/Research",	
-        "License :: OSI Approved :: MIT License",	
-        "Operating System :: POSIX :: Linux",	
-        "Programming Language :: Python :: 3",	
-        "Programming Language :: Python :: 3.8",	
-        "Programming Language :: Python :: 3.9",	
-    ],	
-)	
+    },
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+    ],
+)
