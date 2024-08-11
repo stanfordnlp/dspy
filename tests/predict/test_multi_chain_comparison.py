@@ -1,5 +1,5 @@
 import dspy
-from dspy.utils.dummies import DummyLM
+from dspy.mocks.dummies import DummyLM
 
 
 def test_basic_example():

@@ -1,6 +1,6 @@
 import dspy
 from dspy import Predict, Signature, TypedPredictor
-from dspy.utils.dummies import DummyLM
+from dspy.mocks.dummies import DummyLM
 import copy
 import textwrap
 import pydantic
@@ -10,9 +10,14 @@ import ujson
 def test_initialization_with_string_signature():
     signature_string = "input1, input2 -> output"
     predict = Predict(signature_string)
-    expected_instruction = "Given the fields `input1`, `input2`, produce the fields `output`."
+    expected_instruction = (
+        "Given the fields `input1`, `input2`, produce the fields `output`."
+    )
     assert predict.signature.instructions == expected_instruction
-    assert predict.signature.instructions == Signature(signature_string).instructions
+    assert (
+        predict.signature.instructions
+        == Signature(signature_string).instructions
+    )
 
 
 def test_reset_method():
@@ -56,7 +61,9 @@ def test_call_method():
 
 
 def test_instructions_after_dump_and_load_state():
-    predict_instance = Predict(Signature("input -> output", "original instructions"))
+    predict_instance = Predict(
+        Signature("input -> output", "original instructions")
+    )
     dumped_state = predict_instance.dump_state()
     new_instance = Predict(Signature("input -> output", "new instructions"))
     new_instance.load_state(dumped_state)
@@ -82,7 +89,10 @@ def test_demos_after_dump_and_load_state():
 
     dumped_state = original_instance.dump_state()
     assert len(dumped_state["demos"]) == len(original_instance.demos)
-    assert dumped_state["demos"][0]["content"] == original_instance.demos[0].content
+    assert (
+        dumped_state["demos"][0]["content"]
+        == original_instance.demos[0].content
+    )
 
     saved_state = ujson.dumps(dumped_state)
     loaded_state = ujson.loads(saved_state)
@@ -91,7 +101,9 @@ def test_demos_after_dump_and_load_state():
     new_instance.load_state(loaded_state)
     assert len(new_instance.demos) == len(original_instance.demos)
     # Demos don't need to keep the same types after saving and loading the state.
-    assert new_instance.demos[0]["content"] == original_instance.demos[0].content
+    assert (
+        new_instance.demos[0]["content"] == original_instance.demos[0].content
+    )
 
 
 def test_typed_demos_after_dump_and_load_state():
@@ -123,7 +135,10 @@ def test_typed_demos_after_dump_and_load_state():
 
     dumped_state = original_instance.dump_state()
     assert len(dumped_state["demos"]) == len(original_instance.demos)
-    assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
+    assert (
+        dumped_state["demos"][0]["input"]
+        == original_instance.demos[0].input.model_dump_json()
+    )
 
     saved_state = ujson.dumps(dumped_state)
     loaded_state = ujson.loads(saved_state)
@@ -132,7 +147,10 @@ def test_typed_demos_after_dump_and_load_state():
     new_instance.load_state(loaded_state)
     assert len(new_instance.demos) == len(original_instance.demos)
     # Demos don't need to keep the same types after saving and loading the state.
-    assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
+    assert (
+        new_instance.demos[0]["input"]
+        == original_instance.demos[0].input.model_dump_json()
+    )
 
 
 def test_forward_method():

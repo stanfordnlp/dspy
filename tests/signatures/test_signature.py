@@ -6,7 +6,7 @@ import pytest
 
 import dspy
 from dspy import InputField, OutputField, Signature, infer_prefix
-from dspy.utils.dummies import DummyLM
+from dspy.mocks.dummies import DummyLM
 
 
 def test_field_types_and_custom_attributes():
@@ -44,8 +44,14 @@ def test_all_fields_have_prefix():
         input = InputField(prefix="Modified:")
         output = OutputField()
 
-    assert TestSignature.input_fields["input"].json_schema_extra["prefix"] == "Modified:"
-    assert TestSignature.output_fields["output"].json_schema_extra["prefix"] == "Output:"
+    assert (
+        TestSignature.input_fields["input"].json_schema_extra["prefix"]
+        == "Modified:"
+    )
+    assert (
+        TestSignature.output_fields["output"].json_schema_extra["prefix"]
+        == "Output:"
+    )
 
 
 def test_signature_parsing():
@@ -65,12 +71,21 @@ def test_with_signature():
 def test_with_updated_field():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_updated_fields("input1", prefix="Modified:")
-    assert signature2.input_fields["input1"].json_schema_extra["prefix"] == "Modified:"
-    assert signature1.input_fields["input1"].json_schema_extra["prefix"] == "Input 1:"
+    assert (
+        signature2.input_fields["input1"].json_schema_extra["prefix"]
+        == "Modified:"
+    )
+    assert (
+        signature1.input_fields["input1"].json_schema_extra["prefix"]
+        == "Input 1:"
+    )
     assert signature1 is not signature2, "The type should be immutable"
     for key in signature1.fields.keys():
         if key != "input1":
-            assert signature1.fields[key].json_schema_extra == signature2.fields[key].json_schema_extra
+            assert (
+                signature1.fields[key].json_schema_extra
+                == signature2.fields[key].json_schema_extra
+            )
     assert signature1.instructions == signature2.instructions
 
 
@@ -93,18 +108,33 @@ def test_signature_instructions():
 
 def test_signature_instructions_none():
     sig1 = Signature("a, b -> c")
-    assert sig1.instructions == f"Given the fields `a`, `b`, produce the fields `c`."
+    assert (
+        sig1.instructions
+        == f"Given the fields `a`, `b`, produce the fields `c`."
+    )
 
 
 def test_signature_from_dict():
-    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
+    signature = Signature(
+        {
+            "input1": InputField(),
+            "input2": InputField(),
+            "output": OutputField(),
+        }
+    )
     for k in ["input1", "input2", "output"]:
         assert k in signature.fields
         assert signature.fields[k].annotation == str
 
 
 def test_signature_from_dict():
-    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
+    signature = Signature(
+        {
+            "input1": InputField(),
+            "input2": InputField(),
+            "output": OutputField(),
+        }
+    )
     assert "input1" in signature.input_fields
     assert "input2" in signature.input_fields
     assert "output" in signature.output_fields
@@ -152,7 +182,10 @@ def test_insert_field_at_various_positions():
 
 
 def test_infer_prefix():
-    assert infer_prefix("someAttributeName42IsCool") == "Some Attribute Name 42 Is Cool"
+    assert (
+        infer_prefix("someAttributeName42IsCool")
+        == "Some Attribute Name 42 Is Cool"
+    )
     assert infer_prefix("version2Update") == "Version 2 Update"
     assert infer_prefix("modelT45Enhanced") == "Model T 45 Enhanced"
     assert infer_prefix("someAttributeName") == "Some Attribute Name"
@@ -226,7 +259,10 @@ def test_replaced_by_replace_context_manager():
         # assert SignatureOne.input_fields has been replaced with SignatureTwo.input_fields
         assert "input2" in SignatureOne.input_fields
     # after the context manager, the original input_fields should be restored
-    assert SignatureOne.input_fields["input1"].json_schema_extra["prefix"] == "Input 1:"
+    assert (
+        SignatureOne.input_fields["input1"].json_schema_extra["prefix"]
+        == "Input 1:"
+    )
 
 
 def test_multiple_replaced_by_update_signatures():

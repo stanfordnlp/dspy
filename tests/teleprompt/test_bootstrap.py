@@ -1,7 +1,7 @@
 import pytest
 import dspy
 from dspy.predict import Predict
-from dspy.utils.dummies import DummyLM
+from dspy.mocks.dummies import DummyLM
 from dspy import Example
 from dspy.teleprompt import BootstrapFewShot
 import textwrap
@@ -14,9 +14,12 @@ def simple_metric(example, prediction, trace=None):
 
 
 examples = [
-    Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+    Example(input="What is the color of the sky?", output="blue").with_inputs(
+        "input"
+    ),
     Example(
-        input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"
+        input="What does the fox say?",
+        output="Ring-ding-ding-ding-dingeringeding!",
     ),
 ]
 trainset = [examples[0]]
@@ -67,7 +70,9 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
+    lm = DummyLM(
+        ["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True
+    )
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(

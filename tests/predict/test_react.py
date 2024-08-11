@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import dspy
-from dspy.utils.dummies import dummy_rm
+from dspy.mocks.dummies import dummy_rm
 
 
 def test_example_no_tools():
@@ -166,4 +166,6 @@ def test_signature_instructions():
     react = dspy.ReAct(ExampleSignature)
 
     assert react.react[0].signature.instructions is not None
-    assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")
+    assert react.react[0].signature.instructions.startswith(
+        "You are going to generate output based on input."
+    )
