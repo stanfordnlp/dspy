@@ -28,7 +28,8 @@ class Retrieve(Parameter):
     def reset(self):
         pass
 
-    def dump_state(self):
+    def dump_state(self, save_field_meta=False):
+        """save_field_meta is set as a default argument to support the Parameter interface for dump_state()"""
         state_keys = ["k"]
         return {k: getattr(self, k) for k in state_keys}
 
