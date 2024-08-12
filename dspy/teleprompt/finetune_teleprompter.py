@@ -320,3 +320,32 @@ def bootstrap_data_multiple_rounds(
         dataset = next_round_dataset_callback(dataset, round_data)
 
     return data
+
+class DataCollectionCallback:
+    def __init__(self, num_attempts=0, num_correct=1, max_attempts=1):
+        self.num_attempts = num_attempts
+        self.num_correct = num_correct
+        self.max_attempts = max_attempts
+
+    def move_on_callback_correct_with_max(self, dataset_copy, data):
+        correct_counts = Counter(list(map(lambda x: x["example"], data)))
+        # examples_from_data = map(lambda x: x["example"], data)
+        examples_still_incorrect = [x for x in dataset_copy if correct_counts.get(x, 0) < self.num_correct]
+        self.num_attempts += 1
+        if self.num_attempts >= self.max_attempts:
+            return []
+        return examples_still_incorrect
+
+
+callback = DataCollectionCallback(max_attempts=max_attempts)
+
+dc_kwargs = {
+    "include": None,
+    "exclude_demos":True, 
+    "temperature": base_temp,
+    "temperature_delta":0.0001,
+    "move_on_callback": callback.move_on_callback_correct_with_max,
+    "num_threads": NUM_THREADS,
+}
+
+# results = bootstrap_multiple_prompt_completion_data(program, **kwargs)
