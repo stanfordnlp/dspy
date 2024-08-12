@@ -1,9 +1,10 @@
 import re
+import os
 
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
-
-
+from pydantic import BaseModel, RootModel
+from typing import List, Tuple, Set, Optional, TypeVar, Type, Union, Literal
 class ProgramMeta(type):
     pass
     # def __call__(cls, *args, **kwargs):
@@ -14,6 +15,27 @@ class ProgramMeta(type):
     #         obj._program_init_called = True
     #     return obj
 
+class PredictorDebugInfo(BaseModel):
+    demos : List[dict]
+    signature : dict
+    extended_signature : Optional[dict] = None 
+    type : Literal["PredictorDebugInfo"] = "PredictorDebugInfo"
+
+class RetrieveDebugInfo(BaseModel):
+    k : int 
+    type : Literal["RetrieveDebugInfo"] = "RetrieveDebugInfo"
+
+class ModuleDebugInfo(BaseModel):
+    unique_id : int
+    name : str
+    class_name : str
+    path : str
+    line_num : int
+    parameters: List[Tuple[str, Union[PredictorDebugInfo,RetrieveDebugInfo] ]]
+    invoked_modules : List[tuple[str, int]]
+
+class ModelDebugInfoGraph(RootModel):
+    root : List[ModuleDebugInfo]
 
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
@@ -54,7 +76,77 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         assert_transform_module(self, handler, **handler_args)
         return self
+    
+    def debug_info(module : BaseModule) -> str:
+        from dspy.predict.predict import Predict
+        from dspy.retrieve.retrieve import Retrieve, RetrieveThenRerank
+        from collections import deque
+        from collections.abc import Generator
+        from dspy.predict.parameter import Parameter
+        import itertools
+        T = TypeVar('T')
+        def named_direct_subobjs(obj, type_ : Type[T]) -> Generator[tuple[str, T], None, None]:
+            # this function is very similar to the named_sub_modules 
+            # but is only at the base level and will not recursively go find
+            # inside another attribute
+            queue = deque([])
+            seen = set()
+            def add_to_queue(name, item):
+                if id(item) not in seen:
+                    seen.add(id(item))
+                    queue.append((name, item))
+            for name, item in obj.__dict__.items():
+                add_to_queue(f"{name}", item)
 
+            while queue:
+                name, item = queue.popleft()
+
+                if isinstance(item, type_):
+                    yield name, item
+
+                elif isinstance(item, (list, tuple)):
+                    for i, sub_item in enumerate(item):
+                        add_to_queue(f"{name}[{i}]", sub_item)
+
+                elif isinstance(item, dict):
+                    for key, sub_item in item.items():
+                        add_to_queue(f"{name}[{key}]", sub_item)
+
+        ls = []
+        def debug_info_inner(module : BaseModule, module_sets: Set[int], name: str):
+            unique_id = id(module)
+            class_name = type(module).__name__
+            path =  os.path.abspath(inspect.getfile(module.__class__))
+            line = inspect.findsource(module.__class__)[1]
+            module_sets.add(unique_id)
+            sub_modules = list(named_direct_subobjs(module, BaseModule))
+            non_predict_modules = filter(lambda mod: not isinstance(mod[1], Parameter), sub_modules)
+            submodule_info : List[tuple[str, int]]  = []
+            for sub_module_name, sub_module in non_predict_modules:
+                if id(sub_modules) in module_sets:
+                    continue
+                submodule_info.append((sub_module_name, id(sub_module)))
+                debug_info_inner(sub_module, module_sets, sub_module_name)
+            parameters = list(named_direct_subobjs(module, Parameter))
+            parameters_infos: List[Tuple[str, Union[PredictorDebugInfo,RetrieveDebugInfo]]] = []
+            if isinstance(module, Parameter):
+                parameters = itertools.chain([("self as predictor", module)], parameters)
+            for param_name, parameter in parameters:
+                if isinstance(parameter, Predict):
+                    demos = list(map(lambda demo : demo.toDict(), parameter.demos))
+                    signature = parameter.signature.model_json_schema()
+                    extended_signature =  parameter.extended_signature.model_json_schema() if hasattr(parameter, "extended_signature") else None
+                    info = PredictorDebugInfo(demos = demos, signature=signature, extended_signature=extended_signature)
+                elif isinstance(parameter,  Retrieve) or isinstance(parameter, RetrieveThenRerank):
+                    k = parameter.k
+                    info = RetrieveDebugInfo(k=k)
+                if info:
+                    parameters_infos.append((param_name, info))
+            ls.append(ModuleDebugInfo(unique_id=unique_id, name=name, class_name=class_name, 
+                                    path = path, line_num=line, parameters= parameters_infos,
+                                    invoked_modules = submodule_info))
+        debug_info_inner(module, set(),"current module")
+        return ModelDebugInfoGraph(ls).model_dump_json()
     # def __deepcopy__(self, memo):
     #     # memo is a dict of id's to copies already made during the current call
     #     # Check if the object is already copied
@@ -73,6 +165,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     #     return new_copy
 
+
+
+
+
+
+
+    
 
 # FIXME(Shangyint): This may cause some problems for nested patterns.
 def set_attribute_by_name(obj, name, value):
