@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
-
+@dataclass#(frozen=True) technically should be frozen
 class LM(ABC):
     """Abstract class for language models."""
+    kwargs: dict[str, Any] = field(init=False)
+    provider: str = field(init=False)
+    history: list[dict[str, Any]] = field(init=False)
 
     def __init__(self, model):
-        self.kwargs = {
+        object.__setattr__(self, 'kwargs', {
             "model": model,
             "temperature": 0.0,
             "max_tokens": 150,
@@ -14,10 +18,9 @@ class LM(ABC):
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "n": 1,
-        }
-        self.provider = "default"
-
-        self.history = []
+        })
+        object.__setattr__(self, 'provider', "default")
+        object.__setattr__(self, 'history', [])
 
     @abstractmethod
     def basic_request(self, prompt, **kwargs):

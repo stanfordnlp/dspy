@@ -9,8 +9,6 @@ import tiktoken
 from collections import defaultdict
 
 # These utility functions come from: https://cookbook.openai.com/examples/chat_finetuning_data_prep
-
-
 def openai_data_validation(dataset: dict[str, Any]) -> Union[dict[str, Any], None]:
     """Validate OpenAI data before sending it to the model.
 
