@@ -1,13 +1,28 @@
+from __future__ import annotations  # Used for self type hints
 import random
+from typing import Optional
 
 from pydantic import BaseModel
 
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.program import Module
-
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
+
+#-------------------------------------------------------------------------------
+#    Templates for the user-facing strings used by this module
+#-------------------------------------------------------------------------------
+
+_ERR_MSG_CLASS = """The class of this object does not match the class of the \
+other object: '{sname}' != '{oname}'"""
+
+_ERR_MSG_SIGNATURE = """Structurally equivalent predictors must have the same \
+signature: '{sname}' != '{oname}'"""
+
+#-------------------------------------------------------------------------------
+#    Classes
+#-------------------------------------------------------------------------------
 
 
 class Predict(Module, Parameter):
@@ -16,6 +31,30 @@ class Predict(Module, Parameter):
         self.signature = ensure_signature(signature)
         self.config = config
         self.reset()
+
+    def _assert_structural_equivalency(
+            self,
+            other: Predict
+        ) -> Optional[AssertionError]:
+        """Assert that the predictor is structurally equivalent to another.
+
+        Args:
+            other: The predictor to compare with.
+
+        Raises:
+            AssertionError: If the predictors are not structurally equivalent.
+        """
+        # Assert that the other object is an instance of the same class
+        sname = self.__class__.__name__
+        oname = other.__class__.__name__
+        err_msg = _ERR_MSG_CLASS.format(sname=sname, oname=oname)
+        assert isinstance(other, self.__class__), err_msg
+
+        # Assert that the predictors have equivalent signatures
+        sname = self.signature.signature
+        oname = other.signature.signature
+        err_msg = _ERR_MSG_SIGNATURE.format(sname=sname, oname=oname)
+        assert self.signature.equals(other.signature), err_msg
 
     def reset(self):
         self.lm = None
