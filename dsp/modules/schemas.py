@@ -66,7 +66,15 @@ class DSPyModelResponse(TypedDict):
     logprobs: NotRequired[dict[str, Any]]
 
 
+class DSPyEncoderModelResponse(TypedDict):
+    """Encoder response data model that is trimmed down to the essentials."""
+
+    embedding: list[float]
+
+
 class LLMModelParams(BaseModel):
+    """Pydantic data model for the LLM Model Params."""
+
     model: str = "gpt-4o-mini"
     messages: Optional[list[ChatMessage]] = None
     temperature: float = 0.0
@@ -103,6 +111,8 @@ class LLMModelParams(BaseModel):
     return_sorted: bool = False
 
     class Config:
+        """Allows for extra parameters to be added."""
+
         extra = "allow"
 
     def __getattr__(self, attr):
@@ -121,6 +131,8 @@ class LLMModelParams(BaseModel):
 
 
 class LLMParams(LLMModelParams):
+    """Pydantic data model for the LLM Params."""
+
     provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
     vertex_credentials: Optional[str] = None
@@ -133,6 +145,13 @@ class LLMParams(LLMModelParams):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION_NAME: Optional[str] = None
+
+    CLOUDFLARE_API_KEY: Optional[str] = None
+    CLOUDFLARE_ACCOUNT_ID: Optional[str] = None
+
+    ANYSCALE_API_KEY: Optional[str] = None
+
+    TOGETHERAI_API_KEY: Optional[str] = None
 
     # Litellm specific
     api_base: Optional[str] = None
@@ -153,6 +172,8 @@ class LLMParams(LLMModelParams):
     drop_params: bool = True
 
     class Config:
+        """Allows for extra parameters to be added."""
+
         extra = "allow"
 
     def __getattr__(self, attr):
@@ -162,6 +183,7 @@ class LLMParams(LLMModelParams):
             return None
 
     def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
+        """Converts the LLMParams to a JSON object."""
         return self.model_dump(
             exclude=[
                 "system_prompt",
@@ -179,6 +201,7 @@ class LLMParams(LLMModelParams):
     def get_model_params(
         self, return_json: bool = False, exclude_none: bool = False
     ) -> Union[dict[str, Any], LLMModelParams]:
+        """Returns the model parameters."""
         if return_json:
             return super().to_json(exclude_none=exclude_none)
         return super().get_copy()
@@ -237,3 +260,63 @@ class LLMParams(LLMModelParams):
             self.vertex_location = self.extra_args.get(
                 "vertex_location"
             ) or os.environ.get("VERTEX_LOCATION")
+
+
+class EncoderModelParams(BaseModel):
+    """Pydantic data model for the Encoder Model Params."""
+
+    model: str
+    input: list[str]
+    instructions: str
+    dimension: Optional[int] = None
+
+    class Config:
+        """Allows for extra parameters to be added."""
+
+        extra = "allow"
+
+    def __getattr__(self, attr):
+        try:
+            return super().__getattr__(attr)
+        except AttributeError:
+            return None
+
+
+class EncoderParams(EncoderModelParams):
+    """Pydantic data model for the Encoder Params."""
+
+    provider: Optional[str] = ""
+    custom_provider: Optional[bool] = None
+    DATABRICKS_API_KEY: Optional[str] = None
+    DATABRICKS_API_BASE: Optional[str] = None
+
+    # Litellm specific
+    timeout: int = 600
+    user: Optional[str] = None
+    api_base: Optional[str] = None
+    api_key: Optional[str] = None
+    api_version: Optional[str] = None  # Azure
+    num_retries: Optional[int] = (
+        None  # The number of times to retry the API call if an APIError, TimeoutError or ServiceUnavailableError occurs
+    )
+    metadata: Optional[dict[str, Any]] = (
+        None  # Any additional data you want to be logged when the call is made (sent to logging integrations, eg. promptlayer and accessible via custom callback function)
+    )
+    drop_params: bool = True
+
+    class Config:
+        """Allows for extra parameters to be added."""
+
+        extra = "allow"
+
+    def __getattr__(self, attr):
+        try:
+            return super().__getattr__(attr)
+        except AttributeError:
+            return None
+
+    def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
+        """Converts the EncoderParams to a JSON object."""
+        return self.model_dump(
+            exclude=(["api_base"] if ignore_sensitive else [])
+        )

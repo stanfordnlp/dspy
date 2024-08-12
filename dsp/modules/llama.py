@@ -1,13 +1,14 @@
 from typing import Any, Literal
 from dsp.modules.lm import LM
 
+
 class LlamaCpp(LM):
     def __init__(
-            self,
-            model: str,  # "llama" or the actual model name
-            llama_model: Any = None,
-            model_type: Literal["chat", "text"] = None,
-            **kwargs,
+        self,
+        model: str,  # "llama" or the actual model name
+        llama_model: Any = None,
+        model_type: Literal["chat", "text"] = None,
+        **kwargs,
     ):
         super().__init__(model)
 
@@ -75,11 +76,11 @@ class LlamaCpp(LM):
         return choice["text"]
 
     def __call__(
-            self,
-            prompt: str,
-            only_completed: bool = True,
-            return_sorted: bool = False,
-            **kwargs,
+        self,
+        prompt: str,
+        only_completed: bool = True,
+        return_sorted: bool = False,
+        **kwargs,
     ) -> list[dict[str, Any]]:
         assert only_completed, "for now"
         assert return_sorted is False, "for now"
@@ -87,7 +88,9 @@ class LlamaCpp(LM):
         response = self.request(prompt, **kwargs)
         choices = response["choices"]
 
-        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
+        completed_choices = [
+            c for c in choices if c["finish_reason"] != "length"
+        ]
 
         if only_completed and len(completed_choices):
             choices = completed_choices

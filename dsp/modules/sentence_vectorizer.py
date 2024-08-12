@@ -26,7 +26,10 @@ class BaseSentenceVectorizer(abc.ABC):
     def _extract_text_from_examples(self, inp_examples: List) -> List[str]:
         if isinstance(inp_examples[0], str):
             return inp_examples
-        return [" ".join([example[key] for key in example._input_keys]) for example in inp_examples]
+        return [
+            " ".join([example[key] for key in example._input_keys])
+            for example in inp_examples
+        ]
 
 
 class SentenceTransformersVectorizer(BaseSentenceVectorizer):
@@ -61,7 +64,9 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
         self.num_devices, self.is_gpu = determine_devices(max_gpu_devices)
         self.proxy_device = "cuda" if self.is_gpu else "cpu"
 
-        self.model = SentenceTransformer(model_name_or_path, device=self.proxy_device)
+        self.model = SentenceTransformer(
+            model_name_or_path, device=self.proxy_device
+        )
 
         self.model_name_or_path = model_name_or_path
         self.vectorize_bs = vectorize_bs
@@ -72,7 +77,9 @@ class SentenceTransformersVectorizer(BaseSentenceVectorizer):
 
         if self.is_gpu and self.num_devices > 1:
             target_devices = list(range(self.num_devices))
-            pool = self.model.start_multi_process_pool(target_devices=target_devices)
+            pool = self.model.start_multi_process_pool(
+                target_devices=target_devices
+            )
             # Compute the embeddings using the multi-process pool
             emb = self.model.encode_multi_process(
                 sentences=text_to_vectorize,
@@ -104,7 +111,10 @@ class NaiveGetFieldVectorizer(BaseSentenceVectorizer):
         self.field_with_embedding = field_with_embedding
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
-        embeddings = [getattr(cur_example, self.field_with_embedding).reshape(1, -1) for cur_example in inp_examples]
+        embeddings = [
+            getattr(cur_example, self.field_with_embedding).reshape(1, -1)
+            for cur_example in inp_examples
+        ]
         embeddings = np.concatenate(embeddings, axis=0).astype(np.float32)
         return embeddings
 
@@ -201,7 +211,9 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
                 input=cur_batch,
             )
 
-            cur_batch_embeddings = [cur_obj["embedding"] for cur_obj in response["data"]]
+            cur_batch_embeddings = [
+                cur_obj["embedding"] for cur_obj in response["data"]
+            ]
             embeddings_list.extend(cur_batch_embeddings)
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
@@ -245,13 +257,24 @@ class FastEmbedVectorizer(BaseSentenceVectorizer):
             ) from e
         self._batch_size = batch_size
         self._parallel = parallel
-        self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir, threads=threads, **kwargs)
+        self._model = TextEmbedding(
+            model_name=model_name,
+            cache_dir=cache_dir,
+            threads=threads,
+            **kwargs,
+        )
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         texts_to_vectorize = self._extract_text_from_examples(inp_examples)
-        embeddings = self._model.embed(texts_to_vectorize, batch_size=self._batch_size, parallel=self._parallel)
+        embeddings = self._model.embed(
+            texts_to_vectorize,
+            batch_size=self._batch_size,
+            parallel=self._parallel,
+        )
 
-        return np.array([embedding.tolist() for embedding in embeddings], dtype=np.float32)
+        return np.array(
+            [embedding.tolist() for embedding in embeddings], dtype=np.float32
+        )
 
 
 class PremAIVectorizer(BaseSentenceVectorizer):
@@ -285,7 +308,9 @@ class PremAIVectorizer(BaseSentenceVectorizer):
             api_key = get_premai_api_key(api_key=api_key)
             self.client = Prem(api_key=api_key)
         except ImportError as error:
-            raise ImportError("Please install premai package using: pip install premai") from error
+            raise ImportError(
+                "Please install premai package using: pip install premai"
+            ) from error
 
     def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
         text_to_vectorize = self._extract_text_from_examples(inp_examples)
@@ -301,7 +326,9 @@ class PremAIVectorizer(BaseSentenceVectorizer):
                 model=self.model_name,
                 input=current_batch,
             ).data
-            current_batch_embeddings = [embedding.embedding for embedding in embeddings]
+            current_batch_embeddings = [
+                embedding.embedding for embedding in embeddings
+            ]
             embedding_list.extend(current_batch_embeddings)
 
         embeddings = np.array(embedding_list, dtype=np.float32)

@@ -1,7 +1,7 @@
 import re
 from typing import Union
 
-from dsp.modules import LM
+from .lm import LM
 
 
 # This testing module was moved in PR #735 to patch Arize Phoenix logging
