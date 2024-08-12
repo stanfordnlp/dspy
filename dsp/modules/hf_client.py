@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import random
@@ -373,11 +374,10 @@ class Together(HFModel):
     def log_usage(self, response):
         """Log the total tokens from the Together API response."""
         with self.tracer.start_as_current_span("log_usage") as span:
-            span.set_attribute("response", response)
-            usage_data = response.get("usage", {"total_tokens": 0})
-            span.set_attribute("usage", usage_data)
+            usage_data = response.get("usage", {"prompt_tokens": 0, "completion_token": 0, "total_tokens": 0})
+            span.set_attribute("usage", json.dumps(usage_data))
             if usage_data:
-                total_tokens = usage_data.total_tokens
+                total_tokens = usage_data["total_tokens"]
                 self.logger.debug(f"Together Total Token Response Usage: {total_tokens}")
 
     @backoff.on_exception(
@@ -435,9 +435,9 @@ class Together(HFModel):
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
                 if use_chat_api:
-                    completions = [resp_json.get("choices", [])[0].get("message", {}).get("content", "")]
+                    completions = [resp_json.get("choices", [{}])[0].get("message", {}).get("content", "")]
                 else:
-                    completions = [resp_json.get("choices", [])[0].get("text", "")]
+                    completions = [resp_json.get("choices", [{}])[0].get("text", "")]
                 self.log_usage(resp_json)
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
