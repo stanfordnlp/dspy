@@ -341,7 +341,7 @@ class HFServerTGI:
 
 
 class Together(HFModel):
-    def __init__(self, model, api_base="https://api.together.xyz/v1", api_key=None, **kwargs):
+    def __init__(self, model, api_base="https://api.together.xyz/v1", api_key=None, use_chat_api=False, **kwargs):
         super().__init__(model=model, is_client=True)
         self.session = requests.Session()
         self.api_base = os.getenv("TOGETHER_API_BASE") or api_base
@@ -352,6 +352,8 @@ class Together(HFModel):
         self.tracer = trace_api.get_tracer(class_name)
 
         self.model = model
+
+        self.use_chat_api = use_chat_api
 
         self.use_inst_template = False
         if any(keyword in self.model.lower() for keyword in ["inst", "instruct"]):
@@ -377,7 +379,7 @@ class Together(HFModel):
             usage_data = response.get("usage", {"prompt_tokens": 0, "completion_token": 0, "total_tokens": 0})
             span.set_attribute("usage", json.dumps(usage_data))
             if usage_data:
-                total_tokens = usage_data["total_tokens"]
+                total_tokens = usage_data.get("total_tokens", 0)
                 self.logger.debug(f"Together Total Token Response Usage: {total_tokens}")
 
     @backoff.on_exception(
@@ -386,7 +388,7 @@ class Together(HFModel):
         max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
-    def _generate(self, prompt, use_chat_api=False, **kwargs):
+    def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
 
         stop = kwargs.get("stop")
@@ -397,7 +399,7 @@ class Together(HFModel):
         repetition_penalty = kwargs.get("repetition_penalty", 1)
         prompt = f"[INST]{prompt}[/INST]" if self.use_inst_template else prompt
 
-        if use_chat_api:
+        if self.use_chat_api:
             url = f"{self.api_base}/chat/completions"
             messages = [
                 {
@@ -434,7 +436,7 @@ class Together(HFModel):
         try:
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
-                if use_chat_api:
+                if self.use_chat_api:
                     completions = [resp_json.get("choices", [{}])[0].get("message", {}).get("content", "")]
                 else:
                     completions = [resp_json.get("choices", [{}])[0].get("text", "")]
