@@ -39,7 +39,8 @@ dependencies = [
     "optuna",
     "pydantic~=2.0",
     "structlog",
-    "jinja2"
+    "jinja2",
+    "magicattr~=0.1.6"
 ]
 
 [project.optional-dependencies]
@@ -127,6 +128,7 @@ structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
+magicattr = "^0.1.6"
 
 
 

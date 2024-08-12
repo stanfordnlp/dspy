@@ -4,8 +4,8 @@ from copy import deepcopy
 from pydantic.fields import FieldInfo
 
 from dspy.predict.avatar.signatures import Actor
-from dspy.predict.avatar.models import Action, Tool
 from dspy.signatures.signature import ensure_signature
+from dspy.predict.avatar.models import Action, ActionOutput, Tool
 
 
 def get_number_with_suffix(number: int) -> str:
@@ -55,21 +55,20 @@ class Avatar(dspy.Module):
 
 
     def _get_field(self, field_info: FieldInfo):
-        match field_info.json_schema_extra['__dspy_field_type']:
-            case 'input':
-                return dspy.InputField(
-                    prefix=field_info.json_schema_extra['prefix'],
-                    desc=field_info.json_schema_extra['desc'],
-                    format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
-                )
-            case 'output':
-                return dspy.OutputField(
-                    prefix=field_info.json_schema_extra['prefix'],
-                    desc=field_info.json_schema_extra['desc'],
-                    format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
-                )
-            case _:
-                raise ValueError(f"Unknown field type: {field_info.json_schema_extra['__dspy_field_type']}") 
+        if field_info.json_schema_extra['__dspy_field_type'] == 'input':
+            return dspy.InputField(
+                prefix=field_info.json_schema_extra['prefix'],
+                desc=field_info.json_schema_extra['desc'],
+                format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
+            )
+        elif field_info.json_schema_extra['__dspy_field_type'] == 'output':
+            return dspy.OutputField(
+                prefix=field_info.json_schema_extra['prefix'],
+                desc=field_info.json_schema_extra['desc'],
+                format=field_info.json_schema_extra['format'] if 'format' in field_info.json_schema_extra else None,
+            )
+        else:
+            raise ValueError(f"Unknown field type: {field_info.json_schema_extra['__dspy_field_type']}")
 
 
     def _update_signature(self, idx: int, omit_action: bool = False):
@@ -87,27 +86,26 @@ class Avatar(dspy.Module):
                 type_=str,
             )
         )
-        match omit_action:
-            case True:
-                for field in list(self.output_fields.keys()):
-                    self.actor.signature = self.actor.signature.append(
-                        field,
-                        self._get_field(self.output_fields[field]),
-                        type_=self.output_fields[field].annotation,
-                    )
-                    
-            case False:
+        
+        if omit_action:
+            for field in list(self.output_fields.keys()):
                 self.actor.signature = self.actor.signature.append(
-                    f"action_{idx+1}",
-                    dspy.OutputField(
-                        prefix=f"Action {idx+1}:",
-                        desc=f"{get_number_with_suffix(idx+1)} action to taken",
-                    )
+                    field,
+                    self._get_field(self.output_fields[field]),
+                    type_=self.output_fields[field].annotation,
                 )
-                self.actor.signature = self.actor.signature.with_updated_fields(
-                    f"action_{idx+1}",
-                    Action,
+        else:        
+            self.actor.signature = self.actor.signature.append(
+                f"action_{idx+1}",
+                dspy.OutputField(
+                    prefix=f"Action {idx+1}:",
+                    desc=f"{get_number_with_suffix(idx+1)} action to taken",
                 )
+            )
+            self.actor.signature = self.actor.signature.with_updated_fields(
+                f"action_{idx+1}",
+                Action,
+            )
 
 
     def _call_tool(self, tool_name: str, tool_input_query: str) -> str:
@@ -117,7 +115,8 @@ class Avatar(dspy.Module):
 
 
     def forward(self, **kwargs):
-        print("Starting the task...")
+        if self.verbose:
+            print("Starting the task...")
         
         args = {
             "goal" : self.signature.__doc__,
@@ -130,6 +129,7 @@ class Avatar(dspy.Module):
         
         idx = 1
         tool_name = None
+        action_results: list[ActionOutput] = []
         max_iters = None if "max_iters" not in kwargs else kwargs["max_iters"]
 
         while tool_name != "Finish" and (max_iters > 0 if max_iters else True):
@@ -144,6 +144,14 @@ class Avatar(dspy.Module):
 
             if tool_name != "Finish":
                 tool_output = self._call_tool(tool_name, tool_input_query)
+                action_results.append(
+                    ActionOutput(
+                        tool_name=tool_name, 
+                        tool_input_query=tool_input_query, 
+                        tool_output=tool_output
+                    )
+                )
+
                 self._update_signature(idx)
 
                 args[f"action_{idx}"] = action
@@ -161,8 +169,9 @@ class Avatar(dspy.Module):
                 max_iters -= 1
 
         final_answer = self.actor(**args)
-        self.actor = self.actor_clone
+        self.actor = deepcopy(self.actor_clone)
 
         return dspy.Prediction(
-            **{key: getattr(final_answer, key) for key in self.output_fields.keys()}
+            **{key: getattr(final_answer, key) for key in self.output_fields.keys()},
+            actions=action_results,
         )

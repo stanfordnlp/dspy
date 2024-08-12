@@ -23,7 +23,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, save_field_meta=False):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -37,6 +37,19 @@ class Predict(Module, Parameter):
 
             state["demos"].append(demo)
 
+        # If `save_field_meta` save all field metadata as well.
+        if save_field_meta:
+            fields = []
+            for field_key in self.signature.fields.keys():
+                field_metadata = self.signature.fields[field_key]
+                fields.append({
+                    "name":  field_key,
+                    "field_type": field_metadata.json_schema_extra["__dspy_field_type"],
+                    "description": field_metadata.json_schema_extra["desc"],
+                    "prefix": field_metadata.json_schema_extra["prefix"]
+                })
+            state["fields"] = fields
+        
         # Cache the signature instructions and the last field's name.
         *_, last_key = self.signature.fields.keys()
         state["signature_instructions"] = self.signature.instructions
@@ -195,8 +208,6 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
 
     return completions
-
-
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

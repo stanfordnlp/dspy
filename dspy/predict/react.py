@@ -63,7 +63,9 @@ class ReAct(Module):
             signature_dict[key] = val
 
         for j in range(1, iters + 1):
-            signature_dict[f"Thought_{j}"] = dspy.OutputField(
+            IOField = dspy.OutputField if j == iters else dspy.InputField
+
+            signature_dict[f"Thought_{j}"] = IOField(
                 prefix=f"Thought {j}:",
                 desc="next steps to take based on last observation",
             )
@@ -75,13 +77,13 @@ class ReAct(Module):
                     if tool.name != "Finish"
                 ],
             )
-            signature_dict[f"Action_{j}"] = dspy.OutputField(
+            signature_dict[f"Action_{j}"] = IOField(
                 prefix=f"Action {j}:",
-                desc=f"always either {tool_list} or, when done, Finish[answer]",
+                desc=f"always either {tool_list} or, when done, Finish[<answer>], where <answer> is the answer to the question itself.",
             )
 
             if j < iters:
-                signature_dict[f"Observation_{j}"] = dspy.OutputField(
+                signature_dict[f"Observation_{j}"] = IOField(
                     prefix=f"Observation {j}:",
                     desc="observations based on action",
                     format=dsp.passages2text,
@@ -98,7 +100,7 @@ class ReAct(Module):
             if action_name == "Finish":
                 return action_val
 
-            result = self.tools[action_name](action_val)
+            result = self.tools[action_name](action_val)  #result must be a str, list, or tuple
             # Handle the case where 'passages' attribute is missing
             output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
 
@@ -114,6 +116,7 @@ class ReAct(Module):
         for hop in range(self.max_iters):
             # with dspy.settings.context(show_guidelines=(i <= 2)):
             output = self.react[hop](**args)
+            output[f'Action_{hop + 1}'] = output[f'Action_{hop + 1}'].split('\n')[0]
 
             if action_val := self.act(output, hop):
                 break
