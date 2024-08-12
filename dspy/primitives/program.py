@@ -19,7 +19,6 @@ class ProgramMeta(type):
     #     return obj
 
 
-# TODO: Replace print statements with logging
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
