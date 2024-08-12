@@ -1,11 +1,12 @@
+from __future__ import annotations  # Required for type hints of the class itself, see Predict._is_structurally_equivalent
 import random
+from typing import Optional
 
 from pydantic import BaseModel
 
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.program import Module
-
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
@@ -17,28 +18,22 @@ class Predict(Module, Parameter):
         self.config = config
         self.reset()
 
-    def _is_structurally_equivalent(self, other) -> bool:
-        """ Check if two predictors are structurally equivalent by comparing their signatures.
-        
-        Args:
-            other: The predictor to compare with.
-        
-        Returns:
-            bool: `True` if the predictors are structurally equivalent, `False` otherwise.
-        """
-        # Check if the two predictors are instances of the Predictor class
-        if not isinstance(other, self.__class__):
-            return False
+    def _assert_structural_equivalency(self, other: Predict) -> Optional[AssertionError]:
+        """ Assert that this predict object is structurally equivalent to another predict object.
 
-        # Check if the predictors have matching signatures
-        # TODO: Can we ensure that all the signatures implement the equals method?
-        err_msg = f"Signatures of the two predictors do not match. {type(self.signature)} != {type(other.signature)}"
-        if hasattr(self.signature, "equals"):
-            return self.signature.equals(other.signature), err_msg
-        elif hasattr(other.signature, "equals"):
-            return other.signature.equals(self.signature), err_msg
-        else:
-            return self.signature == other.signature, err_msg
+        Args:
+            other: The predict object to compare with.
+
+        Raises:
+            AssertionError: If the two predict objects are not structurally equivalent.
+        """
+        # Assert that the other object is an instance of the same class
+        err_msg = f"Structural equivalency requires both objects to be instances of the same class: '{self.__class__.__name__}' != '{other.__class__.__name__}'"
+        assert isinstance(other, self.__class__), err_msg
+
+        # Assert that the predictors have equivalent signatures
+        err_msg = f"Structural equivalency requires the same signature: '{self.signature.signature}' != '{other.signature.signature}'"
+        assert self.signature.equals(other.signature), err_msg
 
     def reset(self):
         self.lm = None
