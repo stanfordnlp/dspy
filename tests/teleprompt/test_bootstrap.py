@@ -14,9 +14,7 @@ def simple_metric(example, prediction, trace=None):
 
 
 examples = [
-    Example(input="What is the color of the sky?", output="blue").with_inputs(
-        "input"
-    ),
+    Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
     Example(
         input="What does the fox say?",
         output="Ring-ding-ding-ding-dingeringeding!",
@@ -28,9 +26,7 @@ valset = [examples[1]]
 
 def test_bootstrap_initialization():
     # Initialize BootstrapFewShot with a dummy metric and minimal setup
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     assert bootstrap.metric == simple_metric, "Metric not correctly initialized"
 
 
@@ -53,34 +49,22 @@ def test_compile_with_predict_instances():
     dspy.settings.configure(lm=lm)
 
     # Initialize BootstrapFewShot and compile the student
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     assert compiled_student is not None, "Failed to compile student"
-    assert (
-        hasattr(compiled_student, "_compiled") and compiled_student._compiled
-    ), "Student compilation flag not set"
+    assert hasattr(compiled_student, "_compiled") and compiled_student._compiled, "Student compilation flag not set"
 
 
 def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
-    lm = DummyLM(
-        ["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True
-    )
+    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     # Check that the compiled student has the correct demos
     assert len(compiled_student.predictor.demos) == 1
@@ -172,14 +156,8 @@ def test_validation_set_usage():
     )
     dspy.settings.configure(lm=lm)
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     # Check that validation examples are part of student's demos after compilation
-    assert len(compiled_student.predictor.demos) >= len(
-        valset
-    ), "Validation set not used in compiled student demos"
+    assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"

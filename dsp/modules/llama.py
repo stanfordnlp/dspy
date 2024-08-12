@@ -88,9 +88,7 @@ class LlamaCpp(LM):
         response = self.request(prompt, **kwargs)
         choices = response["choices"]
 
-        completed_choices = [
-            c for c in choices if c["finish_reason"] != "length"
-        ]
+        completed_choices = [c for c in choices if c["finish_reason"] != "length"]
 
         if only_completed and len(completed_choices):
             choices = completed_choices

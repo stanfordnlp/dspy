@@ -45,9 +45,7 @@ class LLM(LLMHelper):
     def basic_request(self, prompt: str, **kwargs) -> ModelResponse:
         self.update_messages_with_prompt(prompt)
 
-        response: ModelResponse = litellm.completion(
-            **self.llm_params.to_json(), **kwargs
-        )
+        response: ModelResponse = litellm.completion(**self.llm_params.to_json(), **kwargs)
 
         self.history.append(
             {
@@ -100,9 +98,7 @@ class LLM(LLMHelper):
             )
             if add_logprobs:
                 # TODO: check if we can strong type this.
-                dspy_choices[-1]["logprobs"] = (
-                    choice.logprobs if choice.logprobs else None
-                )
+                dspy_choices[-1]["logprobs"] = choice.logprobs if choice.logprobs else None
 
         return dspy_choices
 
@@ -111,9 +107,7 @@ class LLM(LLMHelper):
         self.llm_params.prompt = prompt
         if not self.llm_params.messages:
             self.llm_params.messages = []
-        self.llm_params.messages.append(
-            ChatMessage(role="user", content=prompt)
-        )
+        self.llm_params.messages.append(ChatMessage(role="user", content=prompt))
 
     def __call__(
         self,
@@ -133,15 +127,9 @@ class LLM(LLMHelper):
 
         self.log_usage(response)
 
-        choices = (
-            self.filter_only_completed(response.choices)
-            if self.llm_params.only_completed
-            else response.choices
-        )
+        choices = self.filter_only_completed(response.choices) if self.llm_params.only_completed else response.choices
 
-        choices = self.transform_choices_to_dspy_model_response(
-            choices, self.llm_params.logprobs
-        )
+        choices = self.transform_choices_to_dspy_model_response(choices, self.llm_params.logprobs)
 
         return choices
 

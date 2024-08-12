@@ -6,9 +6,7 @@ from dspy.mocks.dummies import DummyLM, DummyVectorizer
 
 def mock_example(question: str, answer: str) -> dsp.Example:
     """Creates a mock DSP example with specified question and answer."""
-    return dspy.Example(question=question, answer=answer).with_inputs(
-        "question"
-    )
+    return dspy.Example(question=question, answer=answer).with_inputs("question")
 
 
 @pytest.fixture
@@ -28,9 +26,7 @@ def test_knn_few_shot_initialization(setup_knn_few_shot):
     """Tests the KNNFewShot initialization."""
     knn_few_shot = setup_knn_few_shot
     assert knn_few_shot.KNN.k == 2, "Incorrect k value for KNN"
-    assert (
-        len(knn_few_shot.KNN.trainset) == 3
-    ), "Incorrect trainset size for KNN"
+    assert len(knn_few_shot.KNN.trainset) == 3, "Incorrect trainset size for KNN"
 
 
 class SimpleModule(dspy.Module):
@@ -50,29 +46,21 @@ class SimpleModule(dspy.Module):
 def _test_knn_few_shot_compile(setup_knn_few_shot):
     """Tests the compile method of KNNFewShot with SimpleModule as student."""
     student = SimpleModule("input -> output")
-    teacher = SimpleModule(
-        "input -> output"
-    )  # Assuming teacher uses the same module type
+    teacher = SimpleModule("input -> output")  # Assuming teacher uses the same module type
 
     # Setup DummyLM with a response for a query similar to one of the training examples
     lm = DummyLM(["Madrid", "10"])
-    dspy.settings.configure(
-        lm=lm
-    )  # Responses for the capital of Spain and the result of 5+5)
+    dspy.settings.configure(lm=lm)  # Responses for the capital of Spain and the result of 5+5)
 
     knn_few_shot = setup_knn_few_shot
     trainset = knn_few_shot.KNN.trainset
-    compiled_student = knn_few_shot.compile(
-        student, teacher=teacher, trainset=trainset, valset=None
-    )
+    compiled_student = knn_few_shot.compile(student, teacher=teacher, trainset=trainset, valset=None)
 
     assert len(compiled_student.predictor.demos) == 1
     assert compiled_student.predictor.demos[0].input == trainset[0].input
     assert compiled_student.predictor.demos[0].output == trainset[0].output
     # Simulate a query that is similar to one of the training examples
-    output = compiled_student.forward(
-        input="What is the capital of Spain?"
-    ).output
+    output = compiled_student.forward(input="What is the capital of Spain?").output
 
     print("CONVO")
     print(lm.get_convo(-1))

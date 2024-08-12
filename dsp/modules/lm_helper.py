@@ -19,9 +19,7 @@ class LLMHelper(ABC):
     def print_red(self, text: str, end: str = "\n"):
         return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
-    def inspect_history(
-        self, n: int = 1, skip: int = 0, color_format: bool = True
-    ):
+    def inspect_history(self, n: int = 1, skip: int = 0, color_format: bool = True):
         """Prints the last n prompts and their completions.
 
         TODO: print the valid choice that contains filled output field instead of the first.
@@ -48,11 +46,7 @@ class LLMHelper(ABC):
                 ):
                     printed.append((prompt, x["response"]))
                 elif provider == "anthropic":
-                    blocks = [
-                        {"text": block.text}
-                        for block in x["response"].content
-                        if block.type == "text"
-                    ]
+                    blocks = [{"text": block.text} for block in x["response"].content if block.type == "text"]
                     printed.append((prompt, blocks))
                 elif provider == "cohere":
                     printed.append((prompt, x["response"].text))
@@ -91,11 +85,7 @@ class LLMHelper(ABC):
                 "tensorrt_llm",
             ):
                 text = choices
-            elif (
-                provider == "openai"
-                or provider == "ollama"
-                or provider == "llama"
-            ):
+            elif provider == "openai" or provider == "ollama" or provider == "llama":
                 text = " " + self._get_choice_text(choices[0]).strip()
             elif provider == "groq":
                 text = " " + choices
@@ -107,9 +97,7 @@ class LLMHelper(ABC):
                 text = choices[0]
             else:
                 text = choices[0]["text"]
-            printing_value += (
-                self.print_green(text, end="") if color_format else text
-            )
+            printing_value += self.print_green(text, end="") if color_format else text
 
             if len(choices) > 1 and isinstance(choices, list):
                 choices_text = f" \t (and {len(choices)-1} other completions)"

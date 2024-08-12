@@ -11,9 +11,7 @@ from dsp.modules.llm import LLM
 
 def print_message(*s, condition=True, pad=False, sep=None):
     s = " ".join([str(x) for x in s])
-    msg = "[{}] {}".format(
-        datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s
-    )
+    msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s)
 
     if condition:
         msg = msg if not pad else f"\n{msg}\n"
@@ -23,9 +21,7 @@ def print_message(*s, condition=True, pad=False, sep=None):
 
 
 def timestamp(daydir=False):
-    format_str = (
-        f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
-    )
+    format_str = f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
     result = datetime.datetime.now().strftime(format_str)
     return result
 
@@ -112,9 +108,7 @@ class dotdict(dict):
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{key}'"
-            )
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
         if key.startswith("__") and key.endswith("__"):
@@ -210,9 +204,7 @@ def process_grouped_by_first_item(lst):
 
         if started and first != last_group:
             yield (last_group, groups[last_group])
-            assert (
-                first not in groups
-            ), f"{first} seen earlier --- violates precondition."
+            assert first not in groups, f"{first} seen earlier --- violates precondition."
 
         groups[first].append(rest)
 

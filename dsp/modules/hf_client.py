@@ -94,14 +94,8 @@ class HFClientTGI(HFModel):
 
             completions = [json_response["generated_text"]]
 
-            if (
-                "details" in json_response
-                and "best_of_sequences" in json_response["details"]
-            ):
-                completions += [
-                    x["generated_text"]
-                    for x in json_response["details"]["best_of_sequences"]
-                ]
+            if "details" in json_response and "best_of_sequences" in json_response["details"]:
+                completions += [x["generated_text"] for x in json_response["details"]["best_of_sequences"]]
 
             response = {
                 "prompt": prompt,
@@ -201,9 +195,7 @@ class HFClientVLLM(HFModel):
             "logits_processors",
             "truncate_prompt_tokens",
         ]
-        req_kwargs = {
-            k: v for k, v in kwargs.items() if k in list_of_elements_to_allow
-        }
+        req_kwargs = {k: v for k, v in kwargs.items() if k in list_of_elements_to_allow}
 
         if self.model_type == "chat":
             system_prompt = kwargs.get("system_prompt", None)
@@ -230,9 +222,7 @@ class HFClientVLLM(HFModel):
                 completions = json_response["choices"]
                 response = {
                     "prompt": prompt,
-                    "choices": [
-                        {"text": c["message"]["content"]} for c in completions
-                    ],
+                    "choices": [{"text": c["message"]["content"]} for c in completions],
                 }
                 return response
 
@@ -292,16 +282,12 @@ def send_hfvllm_chat_request_v00(arg, **kwargs):
 
 class HFServerTGI:
     def __init__(self, user_dir):
-        self.model_weights_dir = os.path.abspath(
-            os.path.join(os.getcwd(), "text-generation-inference", user_dir)
-        )
+        self.model_weights_dir = os.path.abspath(os.path.join(os.getcwd(), "text-generation-inference", user_dir))
         if not os.path.exists(self.model_weights_dir):
             os.makedirs(self.model_weights_dir)
 
     def close_server(self, port):
-        process = subprocess.Popen(
-            ["docker", "ps"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        process = subprocess.Popen(["docker", "ps"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, _ = process.communicate()
         print(stdout)
         if stdout:
@@ -311,17 +297,9 @@ class HFServerTGI:
                 match = re.search(r"^([a-zA-Z0-9]+)", container_id)
                 if match:
                     container_id = match.group(1)
-                    port_mapping = (
-                        subprocess.check_output(
-                            ["docker", "port", container_id]
-                        )
-                        .decode()
-                        .strip()
-                    )
+                    port_mapping = subprocess.check_output(["docker", "port", container_id]).decode().strip()
                     if f"0.0.0.0:{port}" in port_mapping:
-                        subprocess.run(
-                            ["docker", "stop", container_id], check=False
-                        )
+                        subprocess.run(["docker", "stop", container_id], check=False)
 
     def run_server(
         self,
@@ -341,10 +319,7 @@ class HFServerTGI:
             link_path = os.path.join(self.model_weights_dir, model_file_name)
             shutil.copytree(model_path, link_path)
             model_name = (
-                os.path.sep
-                + os.path.basename(self.model_weights_dir)
-                + os.path.sep
-                + os.path.basename(model_path)
+                os.path.sep + os.path.basename(self.model_weights_dir) + os.path.sep + os.path.basename(model_path)
             )
         docker_command = f"docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:1.1.0 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}"
         print(f"Connect Command: {docker_command}")
@@ -392,13 +367,9 @@ class ChatModuleClient(HFModel):
         self.cm = MLCEngine(model=model, model_lib=model_path, mode=mode)
 
     def _generate(self, prompt, **kwargs):
-        output = self.cm.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}], model=self.model
-        )
+        output = self.cm.chat.completions.create(messages=[{"role": "user", "content": prompt}], model=self.model)
         try:
-            completions = [
-                {"text": choice.message.content} for choice in output.choices
-            ]
+            completions = [{"text": choice.message.content} for choice in output.choices]
             response = {"prompt": prompt, "choices": completions}
             return response
         except Exception:

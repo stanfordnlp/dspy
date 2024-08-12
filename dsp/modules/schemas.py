@@ -78,18 +78,14 @@ class LLMModelParams(BaseModel):
     model: str = "gpt-4o-mini"
     messages: Optional[list[ChatMessage]] = None
     temperature: float = 0.0
-    max_tokens: Optional[int] = (
-        None  # TODO: our previous default are varied across providers. Clarify!
-    )
+    max_tokens: Optional[int] = None  # TODO: our previous default are varied across providers. Clarify!
     top_p: float = 1
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     n: int = 1
     stop: Optional[Union[str, list[str]]] = None
     functions: Optional[list[Functions]] = None  # TODO: openai depricated this
-    function_call: Optional[Union[Optional[str], Functions]] = (
-        None  # TODO: openai depricated this
-    )
+    function_call: Optional[Union[Optional[str], Functions]] = None  # TODO: openai depricated this
     safety_settings: Optional[dict[str, Any]] = None
     logit_bias: Optional[dict[str, float]] = None
     user: Optional[str] = None
@@ -105,9 +101,7 @@ class LLMModelParams(BaseModel):
     # TODO: Custom parameter: figure out best way to delete these
     system_prompt: Optional[str] = None
     prompt: Optional[str] = None
-    only_completed: bool = (
-        False  # TODO: previously set to True, which is counterintuitive. Clarify!
-    )
+    only_completed: bool = False  # TODO: previously set to True, which is counterintuitive. Clarify!
     return_sorted: bool = False
 
     class Config:
@@ -122,9 +116,7 @@ class LLMModelParams(BaseModel):
             return None
 
     def to_json(self, exclude_none: bool = False) -> dict[str, Any]:
-        return LLMModelParams(**self.model_dump()).model_dump(
-            exclude_none=exclude_none
-        )
+        return LLMModelParams(**self.model_dump()).model_dump(exclude_none=exclude_none)
 
     def get_copy(self) -> dict[str, Any]:
         return LLMModelParams(**self.model_dump())
@@ -224,9 +216,7 @@ class LLMParams(LLMModelParams):
 
                 if self.api_base is None:
                     self.api_base = "https://chat-api.you.com/"
-                    self.api_base = (
-                        self.api_base + "/" + self.model.split("/")[1]
-                    )
+                    self.api_base = self.api_base + "/" + self.model.split("/")[1]
 
             if self.api_base is None:
                 raise ValueError(
@@ -238,9 +228,7 @@ class LLMParams(LLMModelParams):
                 self.model = "custom/" + self.model
 
         if self.system_prompt:
-            self.messages = [
-                ChatMessage(role="system", content=self.system_prompt)
-            ]
+            self.messages = [ChatMessage(role="system", content=self.system_prompt)]
         if self.prompt:
             if not self.messages:
                 self.messages = []
@@ -250,16 +238,10 @@ class LLMParams(LLMModelParams):
             self.safety_settings = get_google_ai_safety_settings()
 
             self.vertex_credentials = (
-                self.api_key
-                or os.environ.get("VERTEX_CREDENTIALS")
-                or self.extra_args.get("vertex_credentials")
+                self.api_key or os.environ.get("VERTEX_CREDENTIALS") or self.extra_args.get("vertex_credentials")
             )
-            self.vertex_project = self.extra_args.get(
-                "vertex_project"
-            ) or os.environ.get("VERTEX_PROJECT")
-            self.vertex_location = self.extra_args.get(
-                "vertex_location"
-            ) or os.environ.get("VERTEX_LOCATION")
+            self.vertex_project = self.extra_args.get("vertex_project") or os.environ.get("VERTEX_PROJECT")
+            self.vertex_location = self.extra_args.get("vertex_location") or os.environ.get("VERTEX_LOCATION")
 
 
 class EncoderModelParams(BaseModel):
@@ -317,6 +299,4 @@ class EncoderParams(EncoderModelParams):
 
     def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
         """Converts the EncoderParams to a JSON object."""
-        return self.model_dump(
-            exclude=(["api_base"] if ignore_sensitive else [])
-        )
+        return self.model_dump(exclude=(["api_base"] if ignore_sensitive else []))

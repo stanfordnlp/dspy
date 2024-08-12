@@ -32,9 +32,7 @@ def test_example_no_tools():
         print("---")
 
     assert lm.get_convo(-1).endswith(
-        "Question: What is the color of the sky?\n"
-        "Thought 1: Initial thoughts\n"
-        "Action 1: Finish[blue]"
+        "Question: What is the color of the sky?\n" "Thought 1: Initial thoughts\n" "Action 1: Finish[blue]"
     )
 
 
@@ -166,6 +164,4 @@ def test_signature_instructions():
     react = dspy.ReAct(ExampleSignature)
 
     assert react.react[0].signature.instructions is not None
-    assert react.react[0].signature.instructions.startswith(
-        "You are going to generate output based on input."
-    )
+    assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")

@@ -49,11 +49,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(
-        [
-            '{"value": ["What is the speed of light?", "What is the speed of sound?"]}'
-        ]
-    )
+    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -104,9 +100,7 @@ def test_simple_class():
     class Answer(pydantic.BaseModel):
         value: float
         certainty: float
-        comments: List[str] = pydantic.Field(
-            description="At least two comments about the answer"
-        )
+        comments: List[str] = pydantic.Field(description="At least two comments about the answer")
 
     class QA(FunctionalModule):
         @predictor
@@ -114,9 +108,7 @@ def test_simple_class():
             """Think of a hard factual question about a topic. It should be answerable with a number."""
 
         @cot
-        def answer(
-            self, question: Annotated[str, "Question to answer"]
-        ) -> Answer:
+        def answer(self, question: Annotated[str, "Question to answer"]) -> Answer:
             pass
 
         def forward(self, **kwargs):
@@ -242,28 +234,18 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule()
     teacher = SimpleModule()
-    assert student.output.predictor.signature.equals(
-        teacher.output.predictor.signature
-    )
+    assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLM(
-        ["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True
-    )
+    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
-    bootstrap = BootstrapFewShot(
-        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1
-    )
-    compiled_student = bootstrap.compile(
-        student, teacher=teacher, trainset=trainset
-    )
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
     lm.inspect_history(n=2)
 
     # Check that the compiled student has the correct demos
-    _, predict = next(
-        compiled_student.named_sub_modules(Predict, skip_compiled=False)
-    )
+    _, predict = next(compiled_student.named_sub_modules(Predict, skip_compiled=False))
     demos = predict.demos
     assert len(demos) == 1
     assert demos[0].input == trainset[0].input
@@ -355,18 +337,14 @@ def test_custom_model_validate_json():
         ) -> "TravelInformation":
             try:
                 __tracebackhide__ = True
-                return cls.__pydantic_validator__.validate_json(
-                    json_data, strict=strict, context=context
-                )
+                return cls.__pydantic_validator__.validate_json(json_data, strict=strict, context=context)
             except ValidationError:
                 for substring_length in range(len(json_data), 1, -1):
                     for start in range(len(json_data) - substring_length + 1):
                         substring = json_data[start : start + substring_length]
                         try:
                             __tracebackhide__ = True
-                            res = cls.__pydantic_validator__.validate_json(
-                                substring, strict=strict, context=context
-                            )
+                            res = cls.__pydantic_validator__.validate_json(substring, strict=strict, context=context)
                             return res
                         except ValidationError as exc:
                             last_exc = exc
@@ -533,9 +511,7 @@ def test_field_validator():
 
 def test_annotated_field():
     @predictor
-    def test(
-        input: Annotated[str, Field(description="description")]
-    ) -> Annotated[float, Field(gt=0, lt=1)]:
+    def test(input: Annotated[str, Field(description="description")]) -> Annotated[float, Field(gt=0, lt=1)]:
         pass
 
     # First try 0, which fails, then try 0.5, which passes
@@ -639,9 +615,7 @@ def test_fields_on_base_signature():
 def test_synthetic_data_gen():
     class SyntheticFact(BaseModel):
         fact: str = Field(..., description="a statement")
-        varacity: bool = Field(
-            ..., description="is the statement true or false"
-        )
+        varacity: bool = Field(..., description="is the statement true or false")
 
     class ExampleSignature(dspy.Signature):
         """Generate an example of a synthetic fact."""
@@ -664,18 +638,14 @@ def test_synthetic_data_gen():
     examples = generator(config=dict(n=3))
     for ex in examples.completions.fact:
         assert isinstance(ex, SyntheticFact)
-    assert examples.completions.fact[0] == SyntheticFact(
-        fact="The sky is blue", varacity=True
-    )
+    assert examples.completions.fact[0] == SyntheticFact(fact="The sky is blue", varacity=True)
 
     # If you have examples and want more
     existing_examples = [
         dspy.Example(fact="The sky is blue", varacity=True),
         dspy.Example(fact="The sky is green", varacity=False),
     ]
-    trained = LabeledFewShot().compile(
-        student=generator, trainset=existing_examples
-    )
+    trained = LabeledFewShot().compile(student=generator, trainset=existing_examples)
 
     augmented_examples = trained(config=dict(n=3))
     for ex in augmented_examples.completions.fact:
@@ -841,9 +811,7 @@ def test_annotated_validator():
         """What is the next square number after n?"""
 
         n: int = dspy.InputField()
-        next_square: Annotated[int, AfterValidator(is_square)] = (
-            dspy.OutputField()
-        )
+        next_square: Annotated[int, AfterValidator(is_square)] = dspy.OutputField()
 
     lm = DummyLM(["3", "4"])
     dspy.settings.configure(lm=lm)
@@ -975,9 +943,7 @@ def test_conlist2():
         )
     )
 
-    make_numbers = TypedPredictor(
-        "input:str -> output:Annotated[List[int], Field(min_items=2)]"
-    )
+    make_numbers = TypedPredictor("input:str -> output:Annotated[List[int], Field(min_items=2)]")
     assert make_numbers(input="What are the first two numbers?").output == [
         1,
         2,
@@ -1000,7 +966,5 @@ def test_model_validator():
     dspy.settings.configure(lm=lm)
     predictor = TypedPredictor(MySignature)
 
-    pred = predictor(
-        input_data="What is the best animal?", allowed_categories=["cat", "dog"]
-    )
+    pred = predictor(input_data="What is the best animal?", allowed_categories=["cat", "dog"])
     assert pred.category == "dog"

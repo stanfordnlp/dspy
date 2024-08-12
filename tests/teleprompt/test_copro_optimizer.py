@@ -13,9 +13,7 @@ def simple_metric(example, prediction):
 
 # Example training and validation sets
 trainset = [
-    Example(
-        input="Question: What is the color of the sky?", output="blue"
-    ).with_inputs("input"),
+    Example(input="Question: What is the color of the sky?", output="blue").with_inputs("input"),
     Example(
         input="Question: What does the fox say?",
         output="Ring-ding-ding-ding-dingeringeding!",
@@ -24,15 +22,11 @@ trainset = [
 
 
 def test_signature_optimizer_initialization():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
     assert optimizer.breadth == 2, "Breadth not correctly initialized"
     assert optimizer.depth == 1, "Depth not correctly initialized"
-    assert (
-        optimizer.init_temperature == 1.4
-    ), "Initial temperature not correctly initialized"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
 
 
 class SimpleModule(dspy.Module):
@@ -46,12 +40,8 @@ class SimpleModule(dspy.Module):
 
 
 def test_signature_optimizer_optimization_process():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
-    dspy.settings.configure(
-        lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"])
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction 1", "Optimized instruction 2"]))
 
     student = SimpleModule("input -> output")
 
@@ -64,18 +54,14 @@ def test_signature_optimizer_optimization_process():
 
     # Check that the optimized student has been modified from the original
     # This check can be more specific based on how the optimization modifies the student
-    assert (
-        optimized_student is not student
-    ), "Optimization did not modify the student"
+    assert optimized_student is not student, "Optimization did not modify the student"
 
     # Further tests can be added to verify the specifics of the optimization process,
     # such as checking the instructions of the optimized student's predictors.
 
 
 def test_signature_optimizer_statistics_tracking():
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
     dspy.settings.configure(lm=DummyLM(["Optimized instruction"]))
@@ -87,12 +73,8 @@ def test_signature_optimizer_statistics_tracking():
     )
 
     # Verify that statistics have been tracked and attached to the optimized student
-    assert hasattr(
-        optimized_student, "total_calls"
-    ), "Total calls statistic not tracked"
-    assert hasattr(
-        optimized_student, "results_best"
-    ), "Best results statistics not tracked"
+    assert hasattr(optimized_student, "total_calls"), "Total calls statistic not tracked"
+    assert hasattr(optimized_student, "results_best"), "Best results statistics not tracked"
 
 
 # Assuming the setup_signature_optimizer fixture and simple_metric function are defined as before
@@ -106,9 +88,7 @@ def test_optimization_and_output_verification():
         ]
     )
     dspy.settings.configure(lm=lm)
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
 
     student = SimpleModule("input -> output")
 
@@ -148,13 +128,9 @@ def test_optimization_and_output_verification():
 
 
 def test_statistics_tracking_during_optimization():
-    dspy.settings.configure(
-        lm=DummyLM(["Optimized instruction for stats tracking"])
-    )
+    dspy.settings.configure(lm=DummyLM(["Optimized instruction for stats tracking"]))
 
-    optimizer = COPRO(
-        metric=simple_metric, breadth=2, depth=1, init_temperature=1.4
-    )
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
     student = SimpleModule("input -> output")
@@ -165,23 +141,13 @@ def test_statistics_tracking_during_optimization():
     )
 
     # Verify that statistics have been tracked
-    assert hasattr(
-        optimized_student, "total_calls"
-    ), "Optimizer did not track total metric calls"
-    assert (
-        optimized_student.total_calls > 0
-    ), "Optimizer reported no metric calls"
+    assert hasattr(optimized_student, "total_calls"), "Optimizer did not track total metric calls"
+    assert optimized_student.total_calls > 0, "Optimizer reported no metric calls"
 
     # Check if the results_best and results_latest contain valid statistics
-    assert (
-        "results_best" in optimized_student.__dict__
-    ), "Optimizer did not track the best results"
-    assert (
-        "results_latest" in optimized_student.__dict__
-    ), "Optimizer did not track the latest results"
-    assert (
-        len(optimized_student.results_best) > 0
-    ), "Optimizer did not properly populate the best results statistics"
+    assert "results_best" in optimized_student.__dict__, "Optimizer did not track the best results"
+    assert "results_latest" in optimized_student.__dict__, "Optimizer did not track the latest results"
+    assert len(optimized_student.results_best) > 0, "Optimizer did not properly populate the best results statistics"
     assert (
         len(optimized_student.results_latest) > 0
     ), "Optimizer did not properly populate the latest results statistics"

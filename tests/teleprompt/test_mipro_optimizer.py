@@ -31,17 +31,13 @@ extra_capitals = {
 
 # Example training and validation sets
 trainset = [
-    Example(input="What is the color of the sky?", output="blue").with_inputs(
-        "input"
-    ),
+    Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
     Example(
         input="What does the fox say?",
         output="Ring-ding-ding-ding-dingeringeding!",
     ).with_inputs("input"),
 ] + [
-    Example(
-        input=f"What is the capital of {country}?", output=capital
-    ).with_inputs("input")
+    Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input")
     for country, capital in capitals.items()
 ]
 
@@ -74,9 +70,7 @@ class ConditionalLM(LM):
             last = re.search(r"Input: (.*)\nReasoning: (.*)$", prompt)
             current_question = last.group(1)
 
-            if match := re.match(
-                r"What is the capital of (.*?)\?", current_question
-            ):
+            if match := re.match(r"What is the capital of (.*?)\?", current_question):
                 country = match.group(1)
                 # If we had a previous example of a question about a capital, the model
                 # has learned the format, and will answer with question correctly.
@@ -117,19 +111,13 @@ class ConditionalLM(LM):
 
         return dummy_response
 
-    def __call__(
-        self, prompt, only_completed=True, return_sorted=False, **kwargs
-    ):
+    def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
         response = self.basic_request(prompt, **kwargs)
         return [choice["text"] for choice in response["choices"]]
 
     def get_convo(self, index):
         """get the prompt + anwer from the ith message"""
-        return (
-            self.history[index]["prompt"]
-            + " "
-            + self.history[index]["response"]["choices"][0]["text"]
-        )
+        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
 def test_bayesian_signature_optimizer_initialization():
@@ -141,16 +129,10 @@ def test_bayesian_signature_optimizer_initialization():
         track_stats=True,
     )
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
-    assert (
-        optimizer.num_candidates == 10
-    ), "Incorrect 'num_candidates' parameter initialization"
-    assert (
-        optimizer.init_temperature == 1.4
-    ), "Initial temperature not correctly initialized"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
     assert optimizer.verbose is True, "Verbose flag not correctly initialized"
-    assert (
-        optimizer.track_stats is True
-    ), "Track stats flag not correctly initialized"
+    assert optimizer.track_stats is True, "Track stats flag not correctly initialized"
 
 
 class SimpleModule(dspy.Module):
@@ -192,9 +174,7 @@ def test_signature_optimizer_optimization_process():
 
 
 def test_signature_optimizer_bad_lm():
-    dspy.settings.configure(
-        lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
-    )
+    dspy.settings.configure(lm=DummyLM([f"Optimized instruction {i}" for i in range(30)]))
     student = SimpleModule(signature="input -> output")
     optimizer = MIPRO(
         metric=simple_metric,

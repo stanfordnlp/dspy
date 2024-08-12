@@ -28,9 +28,7 @@ class DummyLM(LM):
         self.answers = answers
         self.follow_examples = follow_examples
 
-    def basic_request(
-        self, prompt, n=1, **kwargs
-    ) -> dict[str, list[dict[str, str]]]:
+    def basic_request(self, prompt, n=1, **kwargs) -> dict[str, list[dict[str, str]]]:
         """Generates a dummy response based on the prompt."""
         dummy_response = {"choices": []}
         for _ in range(n):
@@ -38,22 +36,16 @@ class DummyLM(LM):
 
             if self.follow_examples:
                 prefix = prompt.split("\n")[-1]
-                _instructions, _format, *examples, _output = prompt.split(
-                    "\n---\n"
-                )
+                _instructions, _format, *examples, _output = prompt.split("\n---\n")
                 examples_str = "\n".join(examples)
                 possible_answers = re.findall(prefix + r"\s*(.*)", examples_str)
                 if possible_answers:
                     # We take the last answer, as the first one is just from
                     # the "Follow the following format" section.
                     answer = possible_answers[-1]
-                    print(
-                        f"DummyLM got found previous example for {prefix} with value {answer=}"
-                    )
+                    print(f"DummyLM got found previous example for {prefix} with value {answer=}")
                 else:
-                    print(
-                        f"DummyLM couldn't find previous example for {prefix=}"
-                    )
+                    print(f"DummyLM couldn't find previous example for {prefix=}")
 
             if answer is None:
                 if isinstance(self.answers, dict):
@@ -94,9 +86,7 @@ class DummyLM(LM):
 
         return dummy_response
 
-    def __call__(
-        self, prompt, _only_completed=True, _return_sorted=False, **kwargs
-    ):
+    def __call__(self, prompt, _only_completed=True, _return_sorted=False, **kwargs):
         """Retrieves dummy completions."""
         response = self.basic_request(prompt, **kwargs)
         choices = response["choices"]
@@ -106,8 +96,4 @@ class DummyLM(LM):
 
     def get_convo(self, index) -> str:
         """Get the prompt + anwer from the ith message."""
-        return (
-            self.history[index]["prompt"]
-            + " "
-            + self.history[index]["response"]["choices"][0]["text"]
-        )
+        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
