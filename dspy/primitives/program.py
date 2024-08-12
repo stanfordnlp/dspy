@@ -1,4 +1,4 @@
-from __future__ import annotations  # Required for type hints of the class itself, see Module._is_structurally_equivalent
+from __future__ import annotations  # Used for self type hints
 from typing import Optional
 
 import magicattr
@@ -6,6 +6,48 @@ import magicattr
 from dsp.modules.lm import LM
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
+
+
+#-------------------------------------------------------------------------------
+#    Templates for the user-facing strings used by this module
+#-------------------------------------------------------------------------------
+# TODO: It might be good to control all user-facing strings from a central place
+
+_ERR_MSG_SHARED_PREDICTORS = """This module shares the following predictor(s) \
+with the other module: {pred_names}"""
+
+_ERR_MSG_CLASS = """The class of this object does not match the class of the \
+other object: '{sname}' != '{oname}'"""
+
+_ERR_MSG_NUM_PREDICTORS = """Structurally equivalent modules must have the \
+the number of predictors. The number of predictors for this module does not \
+match that of the other module: {snum} != {onum}"""
+
+_ERR_MSG_PREDICTOR_NAMES = """Module predictor names must match at \
+corresponding indices for structural equivalency. The predictor names for this \
+module and the other module do not match at index {ind}: {sname} != {oname}"""
+
+_ERR_MSG_UNSET_DSPY_LM = """LM consistency violated: Expected all predictors' \
+LMs to be set when dspy.settings.lm is set to 'NoneType', but some \
+predictors have 'NoneType' LMs.
+
+{lm_info}"""
+
+_ERR_MSG_SET_DSPY_LM = """LM consistency violated: Expected all predictors' \
+LMs to be 'NoneType' when dspy.settings.lm is set, but some predictors have \
+LMs set.
+
+{lm_info}"""
+
+_INFO_LM_MODULE = """The LM set in dspy.settings.lm is an instance of '{lname}'
+LMs set for the predictors in the module are:{pred_lm_info}"""
+
+_INFO_LM_PRED = """
+    LM for {pname} is an instance of '{lname}'"""
+
+#-------------------------------------------------------------------------------
+#    Classes
+#-------------------------------------------------------------------------------
 
 
 class ProgramMeta(type):
@@ -29,106 +71,128 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def _assert_no_shared_predictor(self, other: Module) -> Optional[AssertionError]:
-        """ Assert that the module does not share any predictors with another module.
+    def _assert_no_shared_predictor(
+            self,
+            other: Module
+        ) -> Optional[AssertionError]:
+        """Assert the module shares no predictor with another module.
 
         Args:
             other: The module to compare with.
 
         Raises:
-            AssertionError: If the two modules have any predictor that points to the same Python object.
+            AssertionError: If the two modules share predictors.
         """
         # Get the names and IDs of the predictors in the two modules
-        self_id_to_name = {id(predictor): name for name, predictor in self.named_predictors()}
-        other_id_to_name = {id(predictor): name for name, predictor in other.named_predictors()}
+        self_id_to_name = {id(p): n for n, p in self.named_predictors()}
+        other_id_to_name = {id(p): n for n, p in other.named_predictors()}
 
         # Find the shared predictors
-        shared_predictors = set(self_id_to_name.keys()) & set(other_id_to_name.keys())
-        if shared_predictors:
-            shared_predictor_self_names = ", ".join(self_id_to_name[id] for id in shared_predictors)
-            err_msg = f"This module shares the following predictor(s) with the other module: {shared_predictor_self_names}"
+        shared_ids = set(self_id_to_name.keys()) & set(other_id_to_name.keys())
+        if shared_ids:
+            pred_names = ", ".join(self_id_to_name[id] for id in shared_ids)
+            err_msg = _ERR_MSG_SHARED_PREDICTORS.format(pred_names=pred_names)
             raise AssertionError(err_msg)
 
-    def _assert_structural_equivalency(self, other: Module) -> Optional[AssertionError]:
-        """ Assert that the module is structurally equivalent to another module.
+    def _assert_structural_equivalency(
+            self,
+            other: Module
+        ) -> Optional[AssertionError]:
+        """Assert that the module is structurally equivalent to another module.
         
         Args:
             other: The module to compare with.
 
         Raises:
-            AssertionError: If the two modules are not structurally equivalent.
+            AssertionError: If the modules are not structurally equivalent.
         """
         # Assert that the other object is an instance of the same class
-        err_msg = f"Modules must be instances of the same class for structural equivalency: '{self.__class__.__name__}' != '{other.__class__.__name__}'"
+        sname = self.__class__.__name__
+        oname = other.__class__.__name__
+        err_msg = _ERR_MSG_CLASS.format(sname=sname, oname=oname)
         assert isinstance(other, self.__class__), err_msg
 
         # Assert that the two modules have the same number of predictors
-        err_msg = f"Structurally equivalent modules must have the same number of predictors. The number of predictors for this module does not match that of the other module: {len(self.predictors())} != {len(other.predictors())}"
-        assert len(self.predictors()) == len(other.predictors()), err_msg
+        snum = len(self.predictors())
+        onum = len(other.predictors())
+        err_msg = _ERR_MSG_NUM_PREDICTORS.format(snum=snum, onum=onum)
+        assert snum == onum, err_msg
 
-        # Assert that the two modules have structurally equivalent predictors sharing the same names
-        for ind, ((self_name, self_pred), (other_name, other_pred)) in enumerate(zip(self.named_predictors(), other.named_predictors())):
-            err_msg = f"Module predictor names must match at corresponding indices for structural equivalency. The predictor names for this module and the other module do not match at index {ind}: {self_name} != {other_name}"
-            assert self_name == other_name, err_msg
+        # Assert that the two modules have structurally equivalent predictors
+        # sharing the same names
+        pzip = zip(self.named_predictors(), other.named_predictors())
+        for ind, ((sname, spred), (oname, opred)) in enumerate(pzip):
+            err_msg = _ERR_MSG_PREDICTOR_NAMES.format(
+                ind=ind, sname=sname, oname=oname
+            )
+            assert sname == oname, err_msg
 
-            self_pred._assert_structural_equivalency(other_pred)
+            spred._assert_structural_equivalency(opred)
 
     def _are_all_predictor_lms_set(self) -> bool:
-        """ Check if all predictors in the module have their LMs set.
+        """Check if all predictors in the module have their LMs set.
         
         Returns:
-            bool: `True` if all predictors have their LMs set, `False` otherwise.
+            bool: True if all predictors have their LMs set, False otherwise.
         """
-        return all(predictor.lm is not None for predictor in self.predictors())
+        return all(pred.lm is not None for pred in self.predictors())
 
     def _are_all_predictor_lms_unset(self) -> bool:
-        """ Check if all predictors in the module have their LMs unset.
+        """Check if all predictors in the module have their LMs unset.
         
         Returns:
-            bool: `True` if all predictors have their LMs unset, `False` otherwise.
+            bool: True if all predictors have their LMs unset, False otherwise.
         """
-        return all(predictor.lm is None for predictor in self.predictors())
+        return all(pred.lm is None for pred in self.predictors())
 
-    def _set_all_predictor_lms(self, lm: LM):
-        """ Set the LM of all predictors in the module.
+    def _set_all_predictor_lms(
+            self,
+            lm: LM
+        ):
+        """Set the LMs of all predictors in the module.
         
         Args:
             lm: The LM to set.
         """
-        for predictor in self.predictors():
-            predictor.lm = lm
+        for pred in self.predictors():
+            pred.lm = lm
 
     def _unset_all_predictor_lms(self):
-        """ Unset the LM of all predictors in the module. """
-        for predictor in self.predictors():
-            predictor.lm = None
+        """Unset the LMs of all predictors in the module."""
+        for pred in self.predictors():
+            pred.lm = None
 
     def _get_lm_info_str(self):
-        """ Get a string representation of the LM information of the module. """
-        info = f"The LM set in 'dspy.settings.lm is' an instance of '{dspy.settings.lm.__class__.__name__}'\n"
-        info += "Looping through all the predictors in the program:\n"
-        for name, predictor in self.named_predictors():
-            info += f"    Predictor {name} is an instance of '{predictor.lm.__class__.__name__}'\n"
+        """Get an informational string about the LMs affecting this module."""
+        pred_lm_info = ""
+        for pname, pred in self.named_predictors():
+            lname = pred.lm.__class__.__name__
+            pred_lm_info += _INFO_LM_PRED.format(pname=pname, lname=lname)
+
+        lname = dspy.settings.lm.__class__.__name__
+        info = _INFO_LM_MODULE.format(lname=lname, pred_lm_info=pred_lm_info)
         return info
 
     def _assert_lm_consistency(self) -> Optional[AssertionError]:
-        """ Check if the module satisfies the LM consistency property.
+        """Assert that the module satisfies the LM consistency property.
 
-        Ensures either that (1) all predictors in the module have their LMs set when `dspy.settings.lm` is `None`, or,
-        (2) none of the module predictors have their LMs set (to a same or different LM) when `dspy.settings.lm` is set.
+        Ensures either that (1) all predictors in the module have their LMs set
+        when dspy.settings.lm is NoneType, or, (2) none of the module predictors
+        have their LMs set when dspy.settings.lm is set.
 
         Raises:
-            AssertionError: If the module does not satisfy the LM consistency property.
+            AssertionError: If the LM consistency property is violated.
         """
         err_msg = None
-        if dspy.settings.lm is None and not self._are_all_predictor_lms_set():
-            err_msg = "LM consistency violated: Expected all predictors' LMs to be set when `dspy.settings.lm` is set to 'NoneType', but some predictors have 'NoneType' LMs."
-        elif dspy.settings.lm is not None and not self._are_all_predictor_lms_unset():
-            err_msg = "LM consistency violated: Expected all predictors' LMs to be 'NoneType' when `dspy.settings.lm` is set, but some predictors have LMs set."
+        global_lm = dspy.settings.lm
+        if global_lm is None and not self._are_all_predictor_lms_set():
+            err_msg = _ERR_MSG_UNSET_DSPY_LM
+        elif global_lm is not None and not self._are_all_predictor_lms_unset():
+            err_msg = _ERR_MSG_SET_DSPY_LM
         
         if err_msg is not None:
-            lm_info_str = self._get_lm_info_str()
-            err_msg = f"{err_msg}\n\n{lm_info_str}"
+            lm_info = self._get_lm_info_str()
+            err_msg = err_msg.format(lm_info=lm_info)
             raise AssertionError(err_msg)
 
     def named_predictors(self):
