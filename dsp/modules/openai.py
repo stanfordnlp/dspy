@@ -3,7 +3,7 @@ import time
 from typing import Any, Optional, Literal, Union
 
 import openai
-from dsp.modules.lm import FinetunableLM
+from dsp.modules.lm import FinetunableLM, FinetuningMethod
 from dsp.modules.gpt3 import GPT3
 
 from collections import defaultdict
@@ -76,7 +76,7 @@ def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
 def num_assistant_tokens_from_messages(messages):
     import tiktoken
     encoding = tiktoken.get_encoding("cl100k_base")
-    
+
     num_tokens = 0
     for message in messages:
         if message["role"] == "assistant":
@@ -150,8 +150,6 @@ def backoff_hdlr(details):
         "calling function {target} with kwargs "
         "{kwargs}".format(**details),
     )
-
-FinetuningMethod = Literal["SFT", "Contrastive"] 
 
 class OpenAIModel(GPT3, FinetunableLM):
     """Wrapper around specifically the OpenAI API to finetune.
