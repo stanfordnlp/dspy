@@ -1,4 +1,5 @@
 import threading
+import json 
 from contextlib import contextmanager
 
 from dsp.utils.utils import dotdict
@@ -99,6 +100,14 @@ class Settings:
 
     def __repr__(self) -> str:
         return repr(self.config)
+    
+    def dump_info_for_field(self, field:str = "lm", ignores: list = ["history"]) -> str:
+        component = self.__getattr__(field)
+        if not component:
+            return "{}"
+        details = {attr: getattr(component, attr) for attr in dir(component)
+                           if not attr.startswith('_') and not callable(getattr(component, attr)) and not attr in ignores}
+        return json.dumps(details)
 
 
 settings = Settings()

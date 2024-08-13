@@ -1,4 +1,5 @@
 import magicattr
+import os
 
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
@@ -19,10 +20,12 @@ class PredictorDebugInfo(BaseModel):
     signature : dict
     extended_signature : Optional[dict] = None 
     type : Literal["PredictorDebugInfo"] = "PredictorDebugInfo"
+    unique_id : int
 
 class RetrieveDebugInfo(BaseModel):
     k : int 
     type : Literal["RetrieveDebugInfo"] = "RetrieveDebugInfo"
+    unique_id : int
 
 class ModuleDebugInfo(BaseModel):
     unique_id : int
@@ -131,14 +134,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
             if isinstance(module, Parameter):
                 parameters = itertools.chain([("self as predictor", module)], parameters)
             for param_name, parameter in parameters:
+                unique_param_id = id(parameter)*10+1
                 if isinstance(parameter, Predict):
                     demos = list(map(lambda demo : demo.toDict(), parameter.demos))
                     signature = parameter.signature.model_json_schema()
                     extended_signature =  parameter.extended_signature.model_json_schema() if hasattr(parameter, "extended_signature") else None
-                    info = PredictorDebugInfo(demos = demos, signature=signature, extended_signature=extended_signature)
+                    info = PredictorDebugInfo(demos = demos, signature=signature, extended_signature=extended_signature, unique_id=unique_param_id)
                 elif isinstance(parameter,  Retrieve) or isinstance(parameter, RetrieveThenRerank):
                     k = parameter.k
-                    info = RetrieveDebugInfo(k=k)
+                    info = RetrieveDebugInfo(k=k, unique_id=unique_param_id)
                 if info:
                     parameters_infos.append((param_name, info))
             ls.append(ModuleDebugInfo(unique_id=unique_id, name=name, class_name=class_name, 
