@@ -114,7 +114,7 @@ class GPT3(LM):
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
 
-        kwargs = {**self.kwargs, **kwargs}
+        kwargs = {**(self.kwargs if self.kwargs else {}), **(kwargs if kwargs else {})}
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             messages = [{"role": "user", "content": prompt}]

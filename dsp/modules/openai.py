@@ -174,8 +174,7 @@ class OpenAIModel(GPT3, FinetuneableLM):
             fine_tuning_job_id: Optional[str] = None,
             **kwargs,
     ):
-        super().__init__(model, api_key, api_provider,
-                         api_base, model_type, system_prompt, **kwargs)
+        super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
         self.fine_tuning_file_ids = fine_tuning_file_ids
         self.fine_tuning_job_id = fine_tuning_job_id
@@ -225,9 +224,9 @@ class OpenAIModel(GPT3, FinetuneableLM):
             messages = [{"role": "user", "content": item["prompt"]}, {
                 "role": "assistant", "content": item["completion"]}]
             # NOTE: System prompt is required for the OpenAI API
-            if messages[0]["role"] != "system":
+            if messages[0]["role"] != "system" and self.system_prompt:
                 messages.insert(
-                    0, {"role": "system", "content": self.system_prompt or "You are a helpful assistant."})
+                    0, {"role": "system", "content": self.system_prompt})
             wrapped_messages = {"messages": messages}
             return wrapped_messages
         return list(map(format_single_item, data))

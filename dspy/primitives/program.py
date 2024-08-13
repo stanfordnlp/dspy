@@ -154,6 +154,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Args:
             lm: The LM to set.
         """
+        # NOTE: Needs experimental to be true
         for pred in self.predictors():
             pred.lm = lm
 

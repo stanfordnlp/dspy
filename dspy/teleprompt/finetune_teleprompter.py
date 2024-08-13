@@ -1,8 +1,8 @@
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
-import dspy.logger as logger
+from dspy.utils.logging import logger
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
@@ -289,15 +289,17 @@ def bootstrap_data_multiple_rounds(
 
     # Ensure that the LM consistency is satisfied, push the global LM to the
     # predictors if dspy.settings.lm is set
-    program.assert_lm_consistency()
+    # print(program(**dataset[0].inputs()))
+    program._assert_lm_consistency()
     if dspy.settings.lm:
-        program.set_all_predictor_lms(dspy.settings.lm)
+        # This line is breaking everything
+        program._set_all_predictor_lms(dspy.settings.lm)
 
     # Collect rounds of data collection with different sampling temperatures
     data = []
     for round_ind in range(num_rounds):
         # Adjust the LM temperatures of the program predictors
-        for pred in program.predictors:
+        for pred in program.predictors():
             # If a None temperature is passed, keep the predictor's temperature
             # as is for the first round
             temp = sampling_temperature_base
@@ -335,17 +337,3 @@ class DataCollectionCallback:
         if self.num_attempts >= self.max_attempts:
             return []
         return examples_still_incorrect
-
-
-callback = DataCollectionCallback(max_attempts=max_attempts)
-
-dc_kwargs = {
-    "include": None,
-    "exclude_demos":True, 
-    "temperature": base_temp,
-    "temperature_delta":0.0001,
-    "move_on_callback": callback.move_on_callback_correct_with_max,
-    "num_threads": NUM_THREADS,
-}
-
-# results = bootstrap_multiple_prompt_completion_data(program, **kwargs)

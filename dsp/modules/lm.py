@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
+from asyncio import Future
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 @dataclass#(frozen=True) technically should be frozen
 class LM(ABC):
@@ -172,4 +175,32 @@ class FinetuneableLM(LM, ABC):
 
     @abstractmethod
     def retrieve_trained_model_client(self) -> LM:
+        pass
+
+FinetuningMethod = Literal["SFT", "Contrastive"] 
+class FinetunableLMFuture(LM, ABC):
+    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['FinetunableLMFuture']:
+        future: Future['FinetunableLMFuture'] = Future()
+
+        def run_finetune(original: 'FinetunableLMFuture'):
+            try:
+                copy = deepcopy(original)
+                result = copy.start_training(train_path, val_path, method, **kwargs)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+        
+        executor = ThreadPoolExecutor(max_workers=1)
+        
+        executor.submit(run_finetune, self)
+        executor.shutdown(wait=False)
+
+        return future
+         
+    @abstractmethod
+    def start_training(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> 'FinetunableLMFuture':
+        pass
+
+    @abstractmethod
+    def check_status(self) -> Optional[str]:
         pass
