@@ -57,7 +57,8 @@ class LangChainPredict(Predict, Runnable, metaclass=LangChainPredictMetaClass):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
+        """save_verbose is set as a default argument to support the inherited Parameter interface for dump_state"""
         state_keys = ["lm", "traces", "train", "demos"]
         return {k: getattr(self, k) for k in state_keys}
 

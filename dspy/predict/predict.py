@@ -23,7 +23,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self, save_field_meta=False):
+    def dump_state(self, save_verbose=False):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -37,8 +37,8 @@ class Predict(Module, Parameter):
 
             state["demos"].append(demo)
 
-        # If `save_field_meta` save all field metadata as well.
-        if save_field_meta:
+        # If `save_verbose` save all field metadata as well.
+        if save_verbose:
             fields = []
             for field_key in self.signature.fields.keys():
                 field_metadata = self.signature.fields[field_key]
