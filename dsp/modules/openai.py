@@ -1,10 +1,9 @@
-from concurrent.futures import Future, ThreadPoolExecutor
-from copy import deepcopy
+from concurrent.futures import Future
 import time
 from typing import Any, Optional, Literal, Union
 
 import openai
-from dsp.modules.lm import LM, FinetunableLM
+from dsp.modules.lm import FinetunableLM
 from dsp.modules.gpt3 import GPT3
 import tiktoken
 
