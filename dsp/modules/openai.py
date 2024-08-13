@@ -342,7 +342,7 @@ class OpenAIModel(GPT3, FinetunableLM):
         try:
             if method != "SFT":
                 raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-            # TODO: Data validation
+            
             traindataset = ujson.load(open(train_path))
             valdataset = ujson.load(open(val_path)) if val_path else None
             self.verify_training_arguments(traindataset, valdataset, kwargs)
@@ -376,6 +376,8 @@ class OpenAIModel(GPT3, FinetunableLM):
             **kwargs: Additional arguments to pass to the API provider.
         """
         job = openai.fine_tuning.jobs.retrieve(job_id)
+        if job.status != "succeeded":
+            raise RuntimeError("Job not completed yet, cannot retrieve model")
         model = OpenAIModel(model=job.fine_tuned_model, **kwargs)
         model.fine_tuning_job_id = job_id
         return model

@@ -134,7 +134,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             print("Score:", score, "for set:", [len(predictor.demos) for predictor in program2.predictors()])
 
             if len(scores) == 0 or score > max(scores):
-                print("New best sscore:", score, "for seed", seed)
+                print("New best score:", score, "for seed", seed)
                 best_program = program2
 
             scores.append(score)
