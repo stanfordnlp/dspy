@@ -4,7 +4,6 @@ from typing import Any, Literal, Optional
 
 import requests
 from dsp.modules.lm import LM
-from dsp.trackers.base import BaseTracker
 
 
 def post_request_metadata(model_name, prompt):
@@ -46,7 +45,6 @@ class OllamaLocal(LM):
         num_ctx: int = 1024,
         format: Optional[Literal["json"]] = None,
         system: Optional[str] = None,
-        tracker: BaseTracker = BaseTracker,
         **kwargs,
     ):
         super().__init__(model)
@@ -58,7 +56,6 @@ class OllamaLocal(LM):
         self.timeout_s = timeout_s
         self.format = format
         self.system = system
-        self.tracker = tracker
 
         self.kwargs = {
             "temperature": temperature,

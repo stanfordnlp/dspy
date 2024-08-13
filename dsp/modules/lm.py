@@ -137,7 +137,7 @@ class LM(ABC):
         pass
 
     def tracker_call(self, tracker, prompt=None, output=None, name=None, **kwargs):
-        from dsp import BaseTracker
+        from dsp.trackers.base import BaseTracker
         assert issubclass(tracker.__class__, BaseTracker), "tracker must be a subclass of BaseTracker"
         assert self.history, "tracker.call() requires a previous request"
 
