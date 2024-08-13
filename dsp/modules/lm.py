@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from enum import Enum
 from typing import Literal, Optional
 
 class LM(ABC):
@@ -144,10 +145,13 @@ class LM(ABC):
 
         return self.__class__(model=model, **kwargs)
 
-FinetuningMethod = Literal["SFT", "Contrastive"]
-class FinetunableLM(LM, ABC):
-    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['FinetunableLM']:
-        future: Future['FinetunableLM'] = Future()
+class TrainingMethod(Enum):
+    SFT = "SFT"
+    Contrastive = "Contrastive"
+    
+class TrainableLM(LM, ABC):
+    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['TrainableLM']:
+        future: Future['TrainableLM'] = Future()
     
         new_lm = deepcopy(self)
 
@@ -159,7 +163,7 @@ class FinetunableLM(LM, ABC):
         return future
          
     @abstractmethod
-    def start_training(self, future: Future['FinetunableLM'], train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs):
+    def start_training(self, future: Future['TrainableLM'], train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs):
         pass
 
     @abstractmethod

@@ -3,7 +3,7 @@ import time
 from typing import Any, List, Optional, Literal, Union
 import ujson
 import openai
-from dsp.modules.lm import FinetunableLM, FinetuningMethod
+from dsp.modules.lm import TrainableLM, FinetuningMethod
 from dsp.modules.gpt3 import GPT3
 
 from collections import defaultdict
@@ -151,7 +151,7 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details),
     )
 
-class OpenAIModel(GPT3, FinetunableLM):
+class TrainableOpenAI(GPT3, TrainableLM):
     """Wrapper around specifically the OpenAI API to finetune.
 
         Args:
@@ -160,8 +160,6 @@ class OpenAIModel(GPT3, FinetunableLM):
             api_provider (Literal["openai"], optional): The API provider to use. Defaults to "openai".
             model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
             system_prompt (Optional[str], optional): The system prompt to use. Defaults to None in init, and "You are a helpful assistant." in format_data_for_vanilla_finetuning.
-            fine_tuning_file_ids (dict, optional): The file ids of the training and validation data. Defaults to {}.
-            fine_tuning_job_id (Optional[str], optional): The job id of the fine-tuning job. Defaults to None. Again, checkpointing is not supported ATM but this would be the place to store it.
             **kwargs: Additional arguments to pass to the API provider.
         """
 
@@ -173,16 +171,12 @@ class OpenAIModel(GPT3, FinetunableLM):
             api_base: Optional[str] = None,
             model_type: Literal["chat", "text"] = None,
             system_prompt: Optional[str] = None,
-            fine_tuning_file_ids: dict = {},
-            fine_tuning_job_id: Optional[str] = None,
             **kwargs,
     ):
         super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
-        self.fine_tuning_file_ids = fine_tuning_file_ids
-        self.fine_tuning_job_id = fine_tuning_job_id
 
-    def verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
+    def _verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
         """Verify the training arguments before starting training.
         More information on dataset verification can be found here: https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
@@ -222,7 +216,7 @@ class OpenAIModel(GPT3, FinetunableLM):
 
         return True
 
-    def format_data_for_vanilla_finetuning(self, data: list[dict[str, str]]) -> list[dict[str, Any]]:
+    def _format_data_for_vanilla_finetuning(self, data: list[dict[str, str]]) -> list[dict[str, Any]]:
         def format_single_item(item):
             messages = [{"role": "user", "content": item["prompt"]}, {
                 "role": "assistant", "content": item["completion"]}]
@@ -255,7 +249,7 @@ class OpenAIModel(GPT3, FinetunableLM):
             self.fine_tuning_file_ids[name] = file.id
 
     # TODO: support OAI wandb integration
-    def start_remote_training(self, **kwargs) -> str:
+    def _start_remote_training(self, **kwargs) -> str:
         assert self.fine_tuning_file_ids["train"] is not None, "You must load data before starting training"
         hyperparameters = kwargs.get("hyperparameters", {})
         job = openai.fine_tuning.jobs.create(
@@ -330,7 +324,7 @@ class OpenAIModel(GPT3, FinetunableLM):
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
     
-    def start_training(self, future: Future['OpenAIModel'], train_path: str, val_path: Optional[str], method: FinetuningMethod = "SFT", **kwargs):
+    def start_training(self, future: Future['TrainableOpenAI'], train_path: str, val_path: Optional[str], method: FinetuningMethod = "SFT", **kwargs):
         """
         Handles the fine-tuning process for an OpenAIModel instance.
 
@@ -345,15 +339,14 @@ class OpenAIModel(GPT3, FinetunableLM):
             
             traindataset = ujson.load(open(train_path))
             valdataset = ujson.load(open(val_path)) if val_path else None
-            self.verify_training_arguments(traindataset, valdataset, kwargs)
+            self._verify_training_arguments(traindataset, valdataset, kwargs)
 
             self._load_data(train_path, val_path)
             # Start the remote training
-            job_id = self.start_remote_training(**kwargs)
+            job_id = self._start_remote_training(**kwargs)
 
             # Wait for the training to complete
-            while not self.check_training_status():
-                time.sleep(60)  # Check every 60 seconds
+            self.wait_for_training()
 
             # Retrieve the trained model and return a copy
             self.retrieve_trained_model_client()
@@ -363,7 +356,6 @@ class OpenAIModel(GPT3, FinetunableLM):
             future.set_exception(e)
 
     def wait_for_training(self):
-        # Wait for the future to complete
         while not self.check_training_status():
             time.sleep(60)
 
@@ -378,6 +370,6 @@ class OpenAIModel(GPT3, FinetunableLM):
         job = openai.fine_tuning.jobs.retrieve(job_id)
         if job.status != "succeeded":
             raise RuntimeError("Job not completed yet, cannot retrieve model")
-        model = OpenAIModel(model=job.fine_tuned_model, **kwargs)
+        model = TrainableOpenAI(model=job.fine_tuned_model, **kwargs)
         model.fine_tuning_job_id = job_id
         return model

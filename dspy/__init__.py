@@ -39,7 +39,7 @@ Anyscale = dsp.Anyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal
-OpenAIModel = dsp.OpenAIModel
+TrainableOpenAI = dsp.TrainableOpenAI
 LlamaCpp = dsp.LlamaCpp
 
 Bedrock = dsp.Bedrock
