@@ -3,7 +3,7 @@ from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from enum import Enum
-from typing import Literal, Optional
+from typing import Optional
 
 class LM(ABC):
     """Abstract class for language models."""
