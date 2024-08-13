@@ -148,9 +148,9 @@ class LM(ABC):
 class TrainingMethod(Enum):
     SFT = "SFT"
     Contrastive = "Contrastive"
-    
+
 class TrainableLM(LM, ABC):
-    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['TrainableLM']:
+    def get_finetune(self, train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs) -> Future['TrainableLM']:
         future: Future['TrainableLM'] = Future()
     
         new_lm = deepcopy(self)
@@ -163,7 +163,7 @@ class TrainableLM(LM, ABC):
         return future
          
     @abstractmethod
-    def start_training(self, future: Future['TrainableLM'], train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs):
+    def start_training(self, future: Future['TrainableLM'], train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs):
         pass
 
     @abstractmethod

@@ -3,7 +3,7 @@ import time
 from typing import Any, List, Optional, Literal, Union
 import ujson
 import openai
-from dsp.modules.lm import TrainableLM, FinetuningMethod
+from dsp.modules.lm import TrainableLM, TrainingMethod
 from dsp.modules.gpt3 import GPT3
 
 from collections import defaultdict
@@ -324,7 +324,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
     
-    def start_training(self, future: Future['TrainableOpenAI'], train_path: str, val_path: Optional[str], method: FinetuningMethod = "SFT", **kwargs):
+    def start_training(self, future: Future['TrainableOpenAI'], train_path: str, val_path: Optional[str], method: TrainingMethod = "SFT", **kwargs):
         """
         Handles the fine-tuning process for an OpenAIModel instance.
 
