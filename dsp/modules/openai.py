@@ -5,7 +5,6 @@ from typing import Any, Optional, Literal, Union
 import openai
 from dsp.modules.lm import FinetunableLM
 from dsp.modules.gpt3 import GPT3
-import tiktoken
 
 from collections import defaultdict
 
@@ -58,10 +57,11 @@ def openai_data_validation(dataset: dict[str, Any]) -> Union[dict[str, Any], Non
         print("No errors found")
 
 
-encoding = tiktoken.get_encoding("cl100k_base")
-
 
 def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+
     num_tokens = 0
     for message in messages:
         num_tokens += tokens_per_message
@@ -74,6 +74,9 @@ def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
 
 
 def num_assistant_tokens_from_messages(messages):
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+    
     num_tokens = 0
     for message in messages:
         if message["role"] == "assistant":
