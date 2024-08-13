@@ -148,59 +148,25 @@ class LM(ABC):
         model = kwargs.pop("model")
 
         return self.__class__(model=model, **kwargs)
+
+FinetuningMethod = Literal["SFT", "Contrastive"]
+class FinetunableLM(LM, ABC):
+    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['FinetunableLM']:
+        future: Future['FinetunableLM'] = Future()
     
-class FinetuneableLM(LM, ABC):
-    def verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
-        return True
+        new_lm = deepcopy(self)
 
-    @abstractmethod
-    def format_data_for_vanilla_finetuning(self, data: list[dict[str, str]]) -> list[dict[str, str]]:
-        pass
-
-    @abstractmethod
-    def _load_data(self, train_path: str, val_path: Optional[str]) -> str:
-        pass
-
-    @abstractmethod
-    def start_training(self, **kwargs) -> None:
-        pass
-
-    @abstractmethod
-    def stop_training(self) -> None:
-        pass
-
-    @abstractmethod
-    def check_training_status(self) -> bool:
-        pass
-
-    @abstractmethod
-    def retrieve_trained_model_client(self) -> LM:
-        pass
-
-FinetuningMethod = Literal["SFT", "Contrastive"] 
-class FinetunableLMFuture(LM, ABC):
-    def get_finetune(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> Future['FinetunableLMFuture']:
-        future: Future['FinetunableLMFuture'] = Future()
-
-        def run_finetune(original: 'FinetunableLMFuture'):
-            try:
-                copy = deepcopy(original)
-                result = copy.start_training(train_path, val_path, method, **kwargs)
-                future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
-        
+        # Capture the current instance in the closure and start the training process asynchronously
         executor = ThreadPoolExecutor(max_workers=1)
-        
-        executor.submit(run_finetune, self)
+        executor.submit(new_lm.start_training, future, train_path=train_path, val_path=val_path, method=method, **kwargs)
         executor.shutdown(wait=False)
 
         return future
          
     @abstractmethod
-    def start_training(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> 'FinetunableLMFuture':
+    def start_training(self, future: Future['FinetunableLM'], train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs):
         pass
 
     @abstractmethod
-    def check_status(self) -> Optional[str]:
+    def stop_training(self) -> None:
         pass

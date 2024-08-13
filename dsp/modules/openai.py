@@ -1,9 +1,10 @@
+from concurrent.futures import Future, ThreadPoolExecutor
 from copy import deepcopy
 import time
 from typing import Any, Optional, Literal, Union
 
 import openai
-from dsp.modules.lm import LM, FinetuneableLM
+from dsp.modules.lm import LM, FinetunableLM
 from dsp.modules.gpt3 import GPT3
 import tiktoken
 
@@ -150,7 +151,7 @@ def backoff_hdlr(details):
 
 FinetuningMethod = Literal["SFT", "Contrastive"] 
 
-class OpenAIModel(GPT3, FinetuneableLM):
+class OpenAIModel(GPT3, FinetunableLM):
     """Wrapper around specifically the OpenAI API to finetune.
 
         Args:
@@ -320,30 +321,57 @@ class OpenAIModel(GPT3, FinetuneableLM):
         elif temp_job.status == "running":
             return False
 
-    def retrieve_trained_model_client(self) -> LM:
+    def retrieve_trained_model_client(self):
         assert self.fine_tuning_job_id is not None, "Start training before retrieving the model"
         job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
         if job.status == "succeeded":
-            self_copy = deepcopy(self)
-            self_copy.kwargs["model"] = job.fine_tuned_model
-            return self_copy
+            # NOTE: Not making a copy here because that is done before the training process starts
+            self.kwargs["model"] = job.fine_tuned_model
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
-        
-    def start_training(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> 'FinetunableLMFuture':
-        # Maybe validate data, hparams here
-        self._load_data(train_path, val_path)
-        if method != "SFT":
-            raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-        self.start_remote_training(**kwargs)
-        self.wait_for_training()
+    
+    def start_training(self, future: Future['OpenAIModel'], train_path: str, val_path: Optional[str], method: FinetuningMethod = "SFT", **kwargs):
+        """
+        Handles the fine-tuning process for an OpenAIModel instance.
 
-        # Return a future that can be used to check the status of the training
+        Args:
+            original_model: The original model instance to be fine-tuned.
+            future: The Future object that will hold the fine-tuned model.
+            **kwargs: Additional arguments for fine-tuning.
+        """
+        try:
+            if method != "SFT":
+                raise NotImplementedError("Only SFT finetuning is supported at the moment.")
+            
+            self._load_data(train_path, val_path)
+            # Start the remote training
+            job_id = self.start_remote_training(**kwargs)
+
+            # Wait for the training to complete
+            while not self.check_training_status():
+                time.sleep(60)  # Check every 60 seconds
+
+            # Retrieve the trained model and return a copy
+            self.retrieve_trained_model_client()
+            future.set_result(self)
+
+        except Exception as e:
+            future.set_exception(e)
 
     def wait_for_training(self):
         # Wait for the future to complete
         while not self.check_training_status():
             time.sleep(60)
 
-    def check_status(self) -> Optional[str]:
-        pass
+    @staticmethod
+    def load_from_job_id(job_id: str, **kwargs):
+        """Load a model from a job id.
+
+        Args:
+            job_id: The job id of the fine-tuning job.
+            **kwargs: Additional arguments to pass to the API provider.
+        """
+        job = openai.fine_tuning.jobs.retrieve(job_id)
+        model = OpenAIModel(model=job.fine_tuned_model, **kwargs)
+        model.fine_tuning_job_id = job_id
+        return model
