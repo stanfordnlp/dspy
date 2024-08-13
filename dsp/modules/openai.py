@@ -1,7 +1,7 @@
 from concurrent.futures import Future
 import time
-from typing import Any, Optional, Literal, Union
-
+from typing import Any, List, Optional, Literal, Union
+import ujson
 import openai
 from dsp.modules.lm import FinetunableLM, FinetuningMethod
 from dsp.modules.gpt3 import GPT3
@@ -9,7 +9,7 @@ from dsp.modules.gpt3 import GPT3
 from collections import defaultdict
 
 # These utility functions come from: https://cookbook.openai.com/examples/chat_finetuning_data_prep
-def openai_data_validation(dataset: dict[str, Any]) -> Union[dict[str, Any], None]:
+def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], None]:
     """Validate OpenAI data before sending it to the model.
 
     Args:
@@ -84,7 +84,7 @@ def num_assistant_tokens_from_messages(messages):
     return num_tokens
 
 
-def check_message_lengths(dataset: dict[str, Any]) -> list[int]:
+def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
     n_missing_system = 0
     n_missing_user = 0
     n_messages = []
@@ -102,7 +102,7 @@ def check_message_lengths(dataset: dict[str, Any]) -> list[int]:
         assistant_message_lens.append(
             num_assistant_tokens_from_messages(messages))
 
-    n_too_long = sum([l > 16385 for l in convo_lens])
+    n_too_long = sum([length > 16385 for length in convo_lens])
     if n_too_long > 0:
         print(f"\n{n_too_long} examples may be over the 16,385 token limit, they will be truncated during fine-tuning")
     if n_missing_system > 0:
@@ -342,7 +342,11 @@ class OpenAIModel(GPT3, FinetunableLM):
         try:
             if method != "SFT":
                 raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-            
+            # TODO: Data validation
+            traindataset = ujson.load(open(train_path))
+            valdataset = ujson.load(open(val_path)) if val_path else None
+            self.verify_training_arguments(traindataset, valdataset, kwargs)
+
             self._load_data(train_path, val_path)
             # Start the remote training
             job_id = self.start_remote_training(**kwargs)

@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 class LM(ABC):
     """Abstract class for language models."""
