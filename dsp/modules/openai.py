@@ -256,12 +256,12 @@ class OpenAIModel(GPT3, FinetuneableLM):
     # TODO: support OAI wandb integration
     def start_remote_training(self, **kwargs) -> str:
         assert self.fine_tuning_file_ids["train"] is not None, "You must load data before starting training"
-
+        hyperparameters = kwargs.get("hyperparameters", {})
         job = openai.fine_tuning.jobs.create(
             training_file=self.fine_tuning_file_ids["train"],
             model=self.kwargs["model"],
             seed=kwargs.get("seed", 0),
-            hyperparameters=hparams,
+            hyperparameters=hyperparameters,
             validation_file=self.fine_tuning_file_ids.get("val", None),
         )
         self.fine_tuning_job_id = job.id
@@ -331,7 +331,7 @@ class OpenAIModel(GPT3, FinetuneableLM):
             raise RuntimeError("Job not completed yet, cannot retrieve model")
         
     def start_training(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> 'FinetunableLMFuture':
-        # Maybe validate data here
+        # Maybe validate data, hparams here
         self._load_data(train_path, val_path)
         if method != "SFT":
             raise NotImplementedError("Only SFT finetuning is supported at the moment.")
