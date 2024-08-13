@@ -1,4 +1,5 @@
 from copy import deepcopy
+import time
 from typing import Any, Optional, Literal, Union
 
 import openai
@@ -147,6 +148,7 @@ def backoff_hdlr(details):
         "{kwargs}".format(**details),
     )
 
+FinetuningMethod = Literal["SFT", "Contrastive"] 
 
 class OpenAIModel(GPT3, FinetuneableLM):
     """Wrapper around specifically the OpenAI API to finetune.
@@ -252,7 +254,7 @@ class OpenAIModel(GPT3, FinetuneableLM):
             self.fine_tuning_file_ids[name] = file.id
 
     # TODO: support OAI wandb integration
-    def start_training(self, **kwargs) -> str:
+    def start_remote_training(self, **kwargs) -> str:
         assert self.fine_tuning_file_ids["train"] is not None, "You must load data before starting training"
 
         job = openai.fine_tuning.jobs.create(
@@ -327,3 +329,21 @@ class OpenAIModel(GPT3, FinetuneableLM):
             return self_copy
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
+        
+    def start_training(self, train_path: str, val_path: Optional[str], method: FinetuningMethod, **kwargs) -> 'FinetunableLMFuture':
+        # Maybe validate data here
+        self._load_data(train_path, val_path)
+        if method != "SFT":
+            raise NotImplementedError("Only SFT finetuning is supported at the moment.")
+        self.start_remote_training(**kwargs)
+        self.wait_for_training()
+
+        # Return a future that can be used to check the status of the training
+
+    def wait_for_training(self):
+        # Wait for the future to complete
+        while not self.check_training_status():
+            time.sleep(60)
+
+    def check_status(self) -> Optional[str]:
+        pass

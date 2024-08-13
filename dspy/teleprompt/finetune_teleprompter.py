@@ -141,7 +141,7 @@ def build_prompt_completion_data_from_trace(
         # add the predictor_name key as well as the lm_kwargs.
         data_dict = dict(prompt=prompt, completion=completion)
         
-        if program:
+        if program and id(pred) in pred_id_to_name:
             pred_name = pred_id_to_name[id(pred)]
             data_dict['predictor_name'] = pred_name
         if record_lm_kwargs:
