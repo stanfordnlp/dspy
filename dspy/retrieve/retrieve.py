@@ -28,7 +28,7 @@ class Retrieve(Parameter):
     def reset(self):
         pass
 
-    def dump_state(self, save_verbose=False):
+    def dump_state(self):
         state_keys = ["k"]
         return {k: getattr(self, k) for k in state_keys}
 
