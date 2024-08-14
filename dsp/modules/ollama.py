@@ -31,22 +31,22 @@ class OllamaLocal(LM):
     """
 
     def __init__(
-            self,
-            model: str = "llama2",
-            model_type: Literal["chat", "text"] = "text",
-            base_url: str = "http://localhost:11434",
-            timeout_s: float = 120,
-            temperature: float = 0.0,
-            max_tokens: int = 150,
-            top_p: int = 1,
-            top_k: int = 20,
-            frequency_penalty: float = 0,
-            presence_penalty: float = 0,
-            n: int = 1,
-            num_ctx: int = 1024,
-            format: Optional[Literal["json"]] = None,
-            system: Optional[str] = None,
-            **kwargs,
+        self,
+        model: str = "llama2",
+        model_type: Literal["chat", "text"] = "text",
+        base_url: str = "http://localhost:11434",
+        timeout_s: float = 120,
+        temperature: float = 0.0,
+        max_tokens: int = 150,
+        top_p: int = 1,
+        top_k: int = 20,
+        frequency_penalty: float = 0,
+        presence_penalty: float = 0,
+        n: int = 1,
+        num_ctx: int = 1024,
+        format: Optional[Literal["json"]] = None,
+        system: Optional[str] = None,
+        **kwargs,
     ):
         super().__init__(model)
 
@@ -163,11 +163,11 @@ class OllamaLocal(LM):
         return choice["message"]["content"]
 
     def __call__(
-            self,
-            prompt: str,
-            only_completed: bool = True,
-            return_sorted: bool = False,
-            **kwargs,
+        self,
+        prompt: str,
+        only_completed: bool = True,
+        return_sorted: bool = False,
+        **kwargs,
     ) -> list[dict[str, Any]]:
         """Retrieves completions from Ollama.
 
