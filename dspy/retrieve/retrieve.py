@@ -28,7 +28,8 @@ class Retrieve(Parameter):
     def reset(self):
         pass
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
+        """save_verbose is set as a default argument to support the inherited Parameter interface for dump_state"""
         state_keys = ["k"]
         return {k: getattr(self, k) for k in state_keys}
 
@@ -109,7 +110,8 @@ class RetrieveThenRerank(Parameter):
     def reset(self):
         pass
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
+        """save_verbose is set as a default argument to support the inherited Parameter interface for dump_state"""
         state_keys = ["k"]
         return {k: getattr(self, k) for k in state_keys}
 

@@ -62,7 +62,7 @@ class GPT3(LM):
         super().__init__(model)
         self.provider = "openai"
         openai.api_type = api_provider
-        openai.default_headers = default_headers
+        openai.default_headers = default_headers or {}
 
         self.system_prompt = system_prompt
 
