@@ -1,4 +1,4 @@
-from concurrent.futures import Future
+from asyncio import Future
 import time
 from typing import Any, List, Optional, Literal, Union
 import ujson
@@ -176,7 +176,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
 
-    def _verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], training_arguments: dict[str, Any]) -> bool:
+    def _verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], **kwargs) -> bool:
         """Verify the training arguments before starting training.
         More information on dataset verification can be found here: https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
@@ -208,8 +208,11 @@ class TrainableOpenAI(GPT3, TrainableLM):
                 return False
 
         valid_hparams = ["n_epochs", "learning_rate_multiplier", "batch_size"]
+        training_arguments = kwargs.get("hyperparameters", {})
         training_arguments = {
-            k: v for k, v in training_arguments.items() if k in valid_hparams}
+            k: v for k, v in training_arguments if k in valid_hparams}
+
+        # NOTE: Not validating seed or suffix or integration
 
         if not self.validate_hyperparameters(training_arguments):
             return False
@@ -258,6 +261,8 @@ class TrainableOpenAI(GPT3, TrainableLM):
             seed=kwargs.get("seed", 0),
             hyperparameters=hyperparameters,
             validation_file=self.fine_tuning_file_ids.get("val", None),
+            integrations=kwargs.get("integrations", None),
+            suffix=kwargs.get("suffix", None),
         )
         self.fine_tuning_job_id = job.id
         return job.id
@@ -373,3 +378,34 @@ class TrainableOpenAI(GPT3, TrainableLM):
         model = TrainableOpenAI(model=job.fine_tuned_model, **kwargs)
         model.fine_tuning_job_id = job_id
         return model
+    
+    def get_finetune(self, train_path: str, val_path: str | None, method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
+        """
+        Does everything required to finetune an OpenAI model.
+
+        This includes:
+        - Convert the data to the required format
+        - Validate the data
+        - Load the data
+        - Start the remote training
+        - Wait for the training to complete
+        - Retrieve the trained model
+
+        Args:
+            train_path: The path to the training data.
+            val_path: The path to the validation data.
+            method: The training method to use.
+            **kwargs: Additional arguments to pass to the API provider.
+            https://platform.openai.com/docs/api-reference/fine-tuning/create
+                The kwargs can contain:
+                    - hyperparameters: The hyperparameters to use for training.
+                        - n_epochs
+                        - learning_rate_multiplier
+                        - batch_size
+                    - seed: The seed to use for training.
+                    - integrations: See https://platform.openai.com/docs/api-reference/fine-tuning/create#fine-tuning-create-integrations
+                    - suffix: A suffix to add to the model name.
+        Returns:
+            Future[TrainableLM]: A Future object that will hold the fine-tuned model
+        """
+        return super().get_finetune(train_path, val_path, method, **kwargs)
