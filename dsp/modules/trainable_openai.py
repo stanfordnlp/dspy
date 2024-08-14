@@ -379,7 +379,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         model.fine_tuning_job_id = job_id
         return model
     
-    def get_finetune(self, train_path: str, val_path: str | None, method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
+    def get_finetune(self, train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
         """
         Does everything required to finetune an OpenAI model.
 
