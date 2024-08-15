@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from asyncio import Future
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 from copy import deepcopy
 from enum import Enum
 from typing import Optional, Union, List
@@ -227,7 +226,7 @@ class TrainableLM(LM, ABC):
         self,
         future: Future['TrainableLM'],
         train_path: str,
-        val_path: Optional[str],
+        eval_path: Optional[str],
         method: TrainingMethod,
         **kwargs):
         # TODO: add docstring

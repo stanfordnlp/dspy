@@ -1,6 +1,6 @@
-from asyncio import Future
+from concurrent.futures import Future
 import time
-from typing import Any, List, Optional, Literal, Union
+from typing import Any, List, Optional, Literal, Tuple, Union
 import ujson
 import openai
 from dsp.modules.lm import TrainableLM, TrainingMethod
@@ -176,8 +176,9 @@ class TrainableOpenAI(GPT3, TrainableLM):
     ):
         super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
+        self.fine_tuning_file_ids = {}
 
-    def _verify_training_arguments(self, dataset: dict[str, Any], valset: Optional[dict[str, Any]], **kwargs) -> bool:
+    def _verify_training_arguments(self, dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]], **kwargs) -> bool:
         """Verify the training arguments before starting training.
         More information on dataset verification can be found here: https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
@@ -211,7 +212,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         valid_hparams = ["n_epochs", "learning_rate_multiplier", "batch_size"]
         training_arguments = kwargs.get("hyperparameters", {})
         training_arguments = {
-            k: v for k, v in training_arguments if k in valid_hparams}
+            k: v for k, v in training_arguments.items() if k in valid_hparams}
 
         # NOTE: Not validating seed or suffix or integration
 
@@ -220,16 +221,22 @@ class TrainableOpenAI(GPT3, TrainableLM):
 
         return True
 
-    def _format_data_for_vanilla_finetuning(self, data: list[dict[str, str]]) -> list[dict[str, Any]]:
+    def _format_data_for_vanilla_finetuning(self, data_path: str) -> List[dict[str, Any]]:
+        """Convert the data from prompt completion to OAI compatible messages."""
+        with open(data_path, "r", encoding="utf-8") as file:
+            data = ujson.load(file)
+        
         def format_single_item(item):
-            messages = [{"role": "user", "content": item["prompt"]}, {
-                "role": "assistant", "content": item["completion"]}]
-            # NOTE: System prompt is required for the OpenAI API
-            if messages[0]["role"] != "system" and self.system_prompt:
-                messages.insert(
-                    0, {"role": "system", "content": self.system_prompt})
-            wrapped_messages = {"messages": messages}
-            return wrapped_messages
+            messages = [
+                {"role": "user", "content": item["prompt"]},
+                {"role": "assistant", "content": item["completion"]}
+            ]
+            # Always prepend the system prompt if available
+            if self.system_prompt:
+                messages.insert(0, {"role": "system", "content": self.system_prompt})
+            
+            return {"messages": messages}
+        
         return list(map(format_single_item, data))
 
     def _submit_data(self, train_path: str, eval_path: Optional[str]):
@@ -251,6 +258,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
                 file=open(f"{path}", "rb"),
                 purpose="fine-tune"
             )
+            print(f"Uploaded {name} data to OpenAI")
             self.fine_tuning_file_ids[name] = file.id
 
     # TODO: support OAI wandb integration
@@ -300,10 +308,11 @@ class TrainableOpenAI(GPT3, TrainableLM):
         return True
 
     def stop_training(self) -> None:
-        for file in self.fine_tuning_file_ids.values():
-            openai.files.delete(file)
+        if self.fine_tuning_file_ids:
+            for file in self.fine_tuning_file_ids.values():
+                openai.files.delete(file)
 
-        self.fine_tuning_file_ids = {}
+            self.fine_tuning_file_ids = {}
 
         if self.fine_tuning_job_id:
             openai.fine_tuning.jobs.cancel(self.fine_tuning_job_id)
@@ -343,10 +352,24 @@ class TrainableOpenAI(GPT3, TrainableLM):
         try:
             if method not in self.SUPPORTED_TRAINING_METHODS:
                 raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
-    
-            traindataset = ujson.load(open(train_path))
-            valdataset = ujson.load(open(eval_path)) if eval_path else None
-            self._verify_training_arguments(traindataset, valdataset, kwargs)
+
+            # Convert the data from prompt completion to OAI compatible messages
+            train_dataset = self._format_data_for_vanilla_finetuning(train_path)
+            val_dataset = self._format_data_for_vanilla_finetuning(eval_path) if eval_path else None
+            
+            if not self._verify_training_arguments(train_dataset, val_dataset, **kwargs):
+                print("Unable to verify arguments")
+                raise RuntimeError("Unable to verify argument")
+            
+            if method != TrainingMethod.SFT:
+                raise NotImplementedError("Only SFT finetuning is supported at the moment.")
+
+            for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
+                if not (path and dataset):
+                    continue
+                with open(path, "w") as f:
+                    for item in dataset:
+                        f.write(ujson.dumps(item) + "\n")
 
             self._submit_data(train_path, eval_path)
 
@@ -364,6 +387,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
             future.set_exception(e)
 
     def wait_for_training(self):
+        print("Waiting for training to complete")
         while not self.check_training_status():
             time.sleep(60)
 
@@ -382,7 +406,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         model.fine_tuning_job_id = job_id
         return model
     
-    def get_finetune(self, train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
+    def get_finetune(self, train_path: str, eval_path: Optional[str], method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
         """
         Does everything required to finetune an OpenAI model.
 
@@ -411,4 +435,4 @@ class TrainableOpenAI(GPT3, TrainableLM):
         Returns:
             Future[TrainableLM]: A Future object that will hold the fine-tuned model
         """
-        return super().get_finetune(train_path, val_path, method, **kwargs)
+        return super().get_finetune(train_path=train_path, eval_path=eval_path, method=method, **kwargs)
