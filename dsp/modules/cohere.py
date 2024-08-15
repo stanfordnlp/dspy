@@ -89,7 +89,6 @@ class Cohere(LM):
         
         if "pop" in kwargs.keys():
             kwargs.pop("pop")
-            
         response = self.co.chat(**kwargs)
 
         self.history.append(
