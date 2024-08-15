@@ -10,6 +10,7 @@ from openai import (
     UnprocessableEntityError,
 )
 
+from dspy import Retrieve, Prediction
 from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
@@ -52,7 +53,7 @@ class Embedder:
 DEFAULT_INDEX_QUERY = "CALL db.index.vector.queryNodes($index, $k, $embedding) YIELD node, score "
 
 
-class Neo4jRM(dspy.Retrieve):
+class Neo4jRM(Retrieve):
     """
     Implements a retriever that utilizes Neo4j for retrieving passages.
     This class manages a connection to a Neo4j database using official Neo4j Python drivers and requires
@@ -137,7 +138,7 @@ class Neo4jRM(dspy.Retrieve):
 
         self.embedder = Embedder(provider=embedding_provider, model=embedding_model)
 
-    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> Prediction:
         if not isinstance(query_or_queries, list):
             query_or_queries = [query_or_queries]
         query_vectors = self.embedder(query_or_queries)
