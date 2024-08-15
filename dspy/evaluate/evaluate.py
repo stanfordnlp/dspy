@@ -36,6 +36,7 @@ class Evaluate:
         display_progress=False,
         display_table=False,
         max_errors=5,
+        return_all_scores=False,
         return_outputs=False,
         **_kwargs,
     ):
@@ -48,6 +49,7 @@ class Evaluate:
         self.error_count = 0
         self.error_lock = threading.Lock()
         self.cancel_jobs = threading.Event()
+        self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
 
         if "display" in _kwargs:
@@ -138,15 +140,16 @@ class Evaluate:
         num_threads=None,
         display_progress=None,
         display_table=None,
-        return_all_scores=False,
-        return_outputs=False,
+        return_all_scores=None,
+        return_outputs=None,
     ):
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
         display_table = display_table if display_table is not None else self.display_table
-        return_outputs = return_outputs if return_outputs is not False else self.return_outputs
+        return_all_scores = return_all_scores if return_all_scores is not None else self.return_all_scores
+        return_outputs = return_outputs if return_outputs is not None else self.return_outputs
         results = []
 
         def wrapped_program(example_idx, example):
