@@ -86,7 +86,6 @@ class Cohere(LM):
         kwargs.pop("num_generations")
         if "n" in kwargs.keys():
             kwargs.pop("n")
-        
         if "stop" in kwargs.keys():
             kwargs.pop("stop")
         response = self.co.chat(**kwargs)
