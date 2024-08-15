@@ -174,9 +174,9 @@ def verify_training_method_data_format(
     expected_keys = TRAINING_METHOD_TO_DATA_KEYS[method]
     data = ujson.load(open(data_path))
     for ind, data_dict in enumerate(data):
-        err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training.\n"
-        err_msg = f"    Expected: {expected_keys}"
-        err_msg = f"    Found: {data_dict.keys()}"
+        err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training."
+        err_msg = f"\n    Expected: {expected_keys}"
+        err_msg = f"\n    Found: {data_dict.keys()}"
         assert all([key in data_dict for key in expected_keys]), err_msg
 
 
@@ -232,10 +232,12 @@ class TrainableLM(LM, ABC):
         **kwargs):
         # TODO: add docstring
         lname = self.__class__.__name__
-        raise NotImplementedError(f"{lname} does not implement the 'start_training' method.")
+        err_msg = f"{lname} does not implement the 'start_training' method."
+        raise NotImplementedError(err_msg)
 
     @abstractmethod
     def stop_training(self):
         # TODO: add docstring
         lname = self.__class__.__name__
-        raise NotImplementedError(f"{lname} does not implement the 'stop_training' method.")
+        err_msg = f"{lname} does not implement the 'stop_training' method."
+        raise NotImplementedError(err_msg)
