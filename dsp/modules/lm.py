@@ -3,7 +3,9 @@ from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union, List
+import ujson
+
 
 class LM(ABC):
     """Abstract class for language models."""
@@ -145,27 +147,95 @@ class LM(ABC):
 
         return self.__class__(model=model, **kwargs)
 
+
+#-------------------------------------------------------------------------------
+#    Classes for finetuning LMs
+#-------------------------------------------------------------------------------
+
+
 class TrainingMethod(Enum):
+    # TODO: add docstring
     SFT = "SFT"
-    Contrastive = "Contrastive"
+    Preference = "Preference"
+
+
+"""Dictionary mapping training methods to the data keys they require."""
+TRAINING_METHOD_TO_DATA_KEYS = {
+    TrainingMethod.SFT: ["prompt", "completion"],
+    TrainingMethod.Preference: ["prompt", "chosen", "rejected"],
+}
+
 
 class TrainableLM(LM, ABC):
-    def get_finetune(self, train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs) -> Future['TrainableLM']:
+    # TODO: add docstring
+
+    """The training methods supported by this class, should be overwritten."""
+    SUPPORTED_TRAINING_METHODS: List[TrainingMethod] = []
+
+    def verify_data_format(
+            self,
+            method: TrainingMethod,
+            data_path: str
+        ) -> Optional[AssertionError]:
+        # TODO: add docstring
+        expected_keys = TRAINING_METHOD_TO_DATA_KEYS[method]
+        data = ujson.load(open(data_path))
+        for ind, data_dict in enumerate(data):
+            err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training.\n"
+            err_msg = f"    Expected: {expected_keys}"
+            err_msg = f"    Found: {data_dict.keys()}"
+            assert all([key in data_dict for key in expected_keys]), err_msg
+
+    def get_finetune(
+            self,
+            method: TrainingMethod, 
+            train_path: str,
+            eval_path: Optional[str], 
+            **kwargs
+        ) -> Union[Future['TrainableLM'], Exception]:
+        # TODO: add docstring
+
+        # Input verification
+        assert method in self.SUPPORTED_TRAINING_METHODS
+        self.verify_data_format(method, data_path=train_path)
+        if eval_path:
+            self.verify_data_format(method, data_path=eval_path)
+
+        # Create new model that will eventually be obtained through
+        # future.result() when its "start_training" method completes its
+        # execution
         future: Future['TrainableLM'] = Future()
-    
         new_lm = deepcopy(self)
 
-        # Capture the current instance in the closure and start the training process asynchronously
+        # Capture the current instance in the closure and start the training
+        # process asynchronously
         executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(new_lm.start_training, future, train_path=train_path, val_path=val_path, method=method, **kwargs)
+        executor.submit(
+            new_lm.start_training,
+            future,
+            method=method,
+            train_path=train_path,
+            eval_path=eval_path,
+            **kwargs
+        )
         executor.shutdown(wait=False)
 
         return future
          
     @abstractmethod
-    def start_training(self, future: Future['TrainableLM'], train_path: str, val_path: Optional[str], method: TrainingMethod, **kwargs):
-        pass
+    def start_training(
+        self,
+        future: Future['TrainableLM'],
+        train_path: str,
+        val_path: Optional[str],
+        method: TrainingMethod,
+        **kwargs):
+        # TODO: add docstring
+        lname = self.__class__.__name__
+        raise NotImplementedError(f"{lname} does not implement the 'start_training' method.")
 
     @abstractmethod
-    def stop_training(self) -> None:
-        pass
+    def stop_training(self):
+        # TODO: add docstring
+        lname = self.__class__.__name__
+        raise NotImplementedError(f"{lname} does not implement the 'stop_training' method.")

@@ -161,7 +161,8 @@ class TrainableOpenAI(GPT3, TrainableLM):
             model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
             system_prompt (Optional[str], optional): The system prompt to use. Defaults to None in init, and "You are a helpful assistant." in format_data_for_vanilla_finetuning.
             **kwargs: Additional arguments to pass to the API provider.
-        """
+    """
+    SUPPORTED_TRAINING_METHODS = [TrainingMethod.SFT]
 
     def __init__(
             self,
@@ -231,19 +232,20 @@ class TrainableOpenAI(GPT3, TrainableLM):
             return wrapped_messages
         return list(map(format_single_item, data))
 
-    def _load_data(self, train_path: str, val_path: Optional[str]):
-        """Load data from a file and submit it to the OpenAI API for fine-tuning.
+    def _submit_data(self, train_path: str, eval_path: Optional[str]):
+        """Submit the data files to OpenAI API to be later used for fine-tuning.
+
         API reference: https://platform.openai.com/docs/api-reference/files/object
 
         Args:
-            data_path (str): The path to the file containing the data.
+            train_data: The path to the file containing the data.
 
         Returns:
             str: The file id of the data to be used for fine-tuning.
         """
         datasets = {"train": train_path}
-        if val_path:
-            datasets["val"] = val_path
+        if eval_path:
+            datasets["val"] = eval_path
         for name, path in datasets.items():
             file = openai.files.create(
                 file=open(f"{path}", "rb"),
@@ -329,7 +331,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
     
-    def start_training(self, future: Future['TrainableOpenAI'], train_path: str, val_path: Optional[str], method: TrainingMethod = "SFT", **kwargs):
+    def start_training(self, future: Future['TrainableOpenAI'], method: TrainingMethod, train_path: str, eval_path: Optional[str], **kwargs):
         """
         Handles the fine-tuning process for an OpenAIModel instance.
 
@@ -339,14 +341,15 @@ class TrainableOpenAI(GPT3, TrainableLM):
             **kwargs: Additional arguments for fine-tuning.
         """
         try:
-            if method != "SFT":
-                raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-            
+            if method not in self.SUPPORTED_TRAINING_METHODS:
+                raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
+    
             traindataset = ujson.load(open(train_path))
-            valdataset = ujson.load(open(val_path)) if val_path else None
+            valdataset = ujson.load(open(eval_path)) if eval_path else None
             self._verify_training_arguments(traindataset, valdataset, kwargs)
 
-            self._load_data(train_path, val_path)
+            self._submit_data(train_path, eval_path)
+
             # Start the remote training
             job_id = self._start_remote_training(**kwargs)
 
