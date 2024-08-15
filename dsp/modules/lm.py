@@ -166,25 +166,25 @@ TRAINING_METHOD_TO_DATA_KEYS = {
 }
 
 
+def verify_training_method_data_format(
+    method: TrainingMethod,
+    data_path: str
+) -> Optional[AssertionError]:
+    # TODO: add docstring
+    expected_keys = TRAINING_METHOD_TO_DATA_KEYS[method]
+    data = ujson.load(open(data_path))
+    for ind, data_dict in enumerate(data):
+        err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training.\n"
+        err_msg = f"    Expected: {expected_keys}"
+        err_msg = f"    Found: {data_dict.keys()}"
+        assert all([key in data_dict for key in expected_keys]), err_msg
+
+
 class TrainableLM(LM, ABC):
     # TODO: add docstring
 
     """The training methods supported by this class, should be overwritten."""
     SUPPORTED_TRAINING_METHODS: List[TrainingMethod] = []
-
-    def verify_data_format(
-            self,
-            method: TrainingMethod,
-            data_path: str
-        ) -> Optional[AssertionError]:
-        # TODO: add docstring
-        expected_keys = TRAINING_METHOD_TO_DATA_KEYS[method]
-        data = ujson.load(open(data_path))
-        for ind, data_dict in enumerate(data):
-            err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training.\n"
-            err_msg = f"    Expected: {expected_keys}"
-            err_msg = f"    Found: {data_dict.keys()}"
-            assert all([key in data_dict for key in expected_keys]), err_msg
 
     def get_finetune(
             self,
@@ -197,9 +197,9 @@ class TrainableLM(LM, ABC):
 
         # Input verification
         assert method in self.SUPPORTED_TRAINING_METHODS
-        self.verify_data_format(method, data_path=train_path)
+        verify_training_method_data_format(method, data_path=train_path)
         if eval_path:
-            self.verify_data_format(method, data_path=eval_path)
+            verify_training_method_data_format(method, data_path=eval_path)
 
         # Create new model that will eventually be obtained through
         # future.result() when its "start_training" method completes its
