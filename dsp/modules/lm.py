@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 class LM(ABC):
     """Abstract class for language models."""
 
-    def __init__(self, model):
+    def __init__(self, model, tracker=None):
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
@@ -15,6 +15,7 @@ class LM(ABC):
             "n": 1,
         }
         self.provider = "default"
+        self.tracker = tracker
 
         self.history = []
 
@@ -134,6 +135,20 @@ class LM(ABC):
     @abstractmethod
     def __call__(self, prompt, only_completed=True, return_sorted=False, **kwargs):
         pass
+
+    def tracker_call(self, tracker, prompt=None, output=None, name=None, **kwargs):
+        from dsp.trackers.base import BaseTracker
+        assert issubclass(tracker.__class__, BaseTracker), "tracker must be a subclass of BaseTracker"
+        assert self.history, "tracker.call() requires a previous request"
+
+        last_req = self.history[-1]
+        if not prompt:
+            prompt = last_req.get('prompt', None)
+        if not output:
+            output = last_req.get('response', None)
+        kwargs = {**self.kwargs, **kwargs}
+        name = name if name else self.__class__.__name__
+        tracker.call(i=prompt, o=output, name=name, **kwargs)
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
