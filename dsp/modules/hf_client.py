@@ -13,7 +13,8 @@ from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
 from dsp.modules.hf import HFModel, openai_to_hf
 from dsp.utils.settings import settings
 
-ERRORS = (Exception)
+ERRORS = Exception
+
 
 def backoff_hdlr(details):
     """Handler from https://pypi.org/project/backoff/"""
@@ -22,6 +23,7 @@ def backoff_hdlr(details):
         "calling function {target} with kwargs "
         "{kwargs}".format(**details),
     )
+
 
 class HFClientTGI(HFModel):
     def __init__(self, model, port, url="http://future-hgx-1", http_request_kwargs=None, **kwargs):
@@ -51,21 +53,22 @@ class HFClientTGI(HFModel):
         kwargs = {**self.kwargs, **kwargs}
 
         payload = {
-        "inputs": prompt,
-        "parameters": {
-            "do_sample": kwargs["n"] > 1,
-            "best_of": kwargs["n"],
-            "details": kwargs["n"] > 1,
-            # "max_new_tokens": kwargs.get('max_tokens', kwargs.get('max_new_tokens', 75)),
-            # "stop": ["\n", "\n\n"],
-            **kwargs,
+            "inputs": prompt,
+            "parameters": {
+                "do_sample": kwargs["n"] > 1,
+                "best_of": kwargs["n"],
+                "details": kwargs["n"] > 1,
+                # "max_new_tokens": kwargs.get('max_tokens', kwargs.get('max_new_tokens', 75)),
+                # "stop": ["\n", "\n\n"],
+                **kwargs,
             },
         }
 
         payload["parameters"] = openai_to_hf(**payload["parameters"])
 
         payload["parameters"]["temperature"] = max(
-            0.1, payload["parameters"]["temperature"],
+            0.1,
+            payload["parameters"]["temperature"],
         )
 
         # print(payload['parameters'])
@@ -87,14 +90,8 @@ class HFClientTGI(HFModel):
 
             completions = [json_response["generated_text"]]
 
-            if (
-                "details" in json_response
-                and "best_of_sequences" in json_response["details"]
-            ):
-                completions += [
-                    x["generated_text"]
-                    for x in json_response["details"]["best_of_sequences"]
-                ]
+            if "details" in json_response and "best_of_sequences" in json_response["details"]:
+                completions += [x["generated_text"] for x in json_response["details"]["best_of_sequences"]]
 
             response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
             return response
@@ -103,12 +100,13 @@ class HFClientTGI(HFModel):
             raise Exception("Received invalid JSON response from server")
 
 
-@CacheMemory.cache(ignore=['arg'])
+@CacheMemory.cache(ignore=["arg"])
 def send_hftgi_request_v01(arg, url, ports, **kwargs):
     return requests.post(arg, **kwargs)
 
+
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache(ignore=['arg'])
+@NotebookCacheMemory.cache(ignore=["arg"])
 def send_hftgi_request_v01_wrapped(arg, url, ports, **kwargs):
     return send_hftgi_request_v01(arg, url, ports, **kwargs)
 
@@ -119,18 +117,28 @@ def send_hftgi_request_v00(arg, **kwargs):
 
 
 class HFClientVLLM(HFModel):
-    def __init__(self, model, port, model_type: Literal['chat', 'text'] = 'text', url="http://localhost", http_request_kwargs=None, **kwargs):
+    def __init__(
+        self,
+        model,
+        port,
+        model_type: Literal["chat", "text"] = "text",
+        url="http://localhost",
+        http_request_kwargs=None,
+        **kwargs,
+    ):
         super().__init__(model=model, is_client=True)
 
         if isinstance(url, list):
             self.urls = url
-        
+
         elif isinstance(url, str):
-            self.urls = [f'{url}:{port}']
-        
+            self.urls = [f"{url}:{port}"]
+
         else:
-            raise ValueError(f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}.")
-        
+            raise ValueError(
+                f"The url provided to `HFClientVLLM` is neither a string nor a list of strings. It is of type {type(url)}."
+            )
+
         self.urls_const = tuple(self.urls)
         self.port = port
         self.http_request_kwargs = http_request_kwargs or {}
@@ -138,19 +146,20 @@ class HFClientVLLM(HFModel):
         self.headers = {"Content-Type": "application/json"}
         self.kwargs |= kwargs
         # kwargs needs to have model, port and url for the lm.copy() to work properly
-        self.kwargs.update({
-            'port': port,
-            'url': self.urls_const,
-        })
-
+        self.kwargs.update(
+            {
+                "port": port,
+                "url": self.urls_const,
+            }
+        )
 
     def _generate(self, prompt, **kwargs):
         kwargs = {**self.kwargs, **kwargs}
-        
+
         # Round robin the urls.
         url = self.urls.pop(0)
         self.urls.append(url)
-     
+
         list_of_elements_to_allow = [
             "n",
             "best_of",
@@ -179,16 +188,14 @@ class HFClientVLLM(HFModel):
             "logits_processors",
             "truncate_prompt_tokens",
         ]
-        req_kwargs = {
-            k: v for k, v in kwargs.items() if k in list_of_elements_to_allow
-        }
-   
+        req_kwargs = {k: v for k, v in kwargs.items() if k in list_of_elements_to_allow}
+
         if self.model_type == "chat":
-            system_prompt = kwargs.get("system_prompt",None)
+            system_prompt = kwargs.get("system_prompt", None)
             messages = [{"role": "user", "content": prompt}]
             if system_prompt:
                 messages.insert(0, {"role": "system", "content": system_prompt})
-            
+
             payload = {
                 "model": self.kwargs["model"],
                 "messages": messages,
@@ -208,7 +215,7 @@ class HFClientVLLM(HFModel):
                 completions = json_response["choices"]
                 response = {
                     "prompt": prompt,
-                    "choices": [{"text": c["message"]['content']} for c in completions],
+                    "choices": [{"text": c["message"]["content"]} for c in completions],
                 }
                 return response
 
@@ -244,18 +251,22 @@ class HFClientVLLM(HFModel):
                 print("Failed to parse JSON response:", response.text)
                 raise Exception("Received invalid JSON response from server")
 
-@CacheMemory.cache(ignore=['arg'])
+
+@CacheMemory.cache(ignore=["arg"])
 def send_hfvllm_request_v01(arg, url, port, **kwargs):
     return requests.post(arg, **kwargs)
 
+
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
-@NotebookCacheMemory.cache(ignore=['arg'])
+@NotebookCacheMemory.cache(ignore=["arg"])
 def send_hfvllm_request_v01_wrapped(arg, url, port, **kwargs):
     return send_hftgi_request_v01(arg, url, port, **kwargs)
+
 
 @CacheMemory.cache
 def send_hfvllm_request_v00(arg, **kwargs):
     return requests.post(arg, **kwargs)
+
 
 @CacheMemory.cache
 def send_hfvllm_chat_request_v00(arg, **kwargs):
@@ -269,30 +280,45 @@ class HFServerTGI:
             os.makedirs(self.model_weights_dir)
 
     def close_server(self, port):
-        process = subprocess.Popen(['docker', 'ps'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(["docker", "ps"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, _ = process.communicate()
         print(stdout)
         if stdout:
-            container_ids = stdout.decode().strip().split('\n')
+            container_ids = stdout.decode().strip().split("\n")
             container_ids = container_ids[1:]
             for container_id in container_ids:
-                match = re.search(r'^([a-zA-Z0-9]+)', container_id)
+                match = re.search(r"^([a-zA-Z0-9]+)", container_id)
                 if match:
                     container_id = match.group(1)
-                    port_mapping = subprocess.check_output(['docker', 'port', container_id]).decode().strip()
-                    if f'0.0.0.0:{port}' in port_mapping:
-                        subprocess.run(['docker', 'stop', container_id], check=False)
+                    port_mapping = subprocess.check_output(["docker", "port", container_id]).decode().strip()
+                    if f"0.0.0.0:{port}" in port_mapping:
+                        subprocess.run(["docker", "stop", container_id], check=False)
 
-    def run_server(self, port, model_name=None, model_path=None, env_variable=None, gpus="all", num_shard=1, max_input_length=4000, max_total_tokens=4096, max_best_of=100):        
+    def run_server(
+        self,
+        port,
+        model_name=None,
+        model_path=None,
+        env_variable=None,
+        gpus="all",
+        num_shard=1,
+        max_input_length=4000,
+        max_total_tokens=4096,
+        max_best_of=100,
+    ):
         self.close_server(port)
         if model_path:
             model_file_name = os.path.basename(model_path)
             link_path = os.path.join(self.model_weights_dir, model_file_name)
             shutil.copytree(model_path, link_path)
-            model_name = os.path.sep + os.path.basename(self.model_weights_dir) + os.path.sep + os.path.basename(model_path)
-        docker_command = f'docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:1.1.0 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}'
+            model_name = (
+                os.path.sep + os.path.basename(self.model_weights_dir) + os.path.sep + os.path.basename(model_path)
+            )
+        docker_command = f"docker run --gpus {gpus} --shm-size 1g -p {port}:80 -v {self.model_weights_dir}:{os.path.sep + os.path.basename(self.model_weights_dir)} -e {env_variable} ghcr.io/huggingface/text-generation-inference:1.1.0 --model-id {model_name} --num-shard {num_shard} --max-input-length {max_input_length} --max-total-tokens {max_total_tokens} --max-best-of {max_best_of}"
         print(f"Connect Command: {docker_command}")
-        docker_process = subprocess.Popen(docker_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        docker_process = subprocess.Popen(
+            docker_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
         connected = False
         output = []
         while True:
@@ -300,7 +326,7 @@ class HFServerTGI:
             if not line:
                 break
             output.append(line.strip())
-            if 'Connected' in line:
+            if "Connected" in line:
                 connected = True
                 break
         if not connected:
@@ -309,6 +335,7 @@ class HFServerTGI:
                 print(line)
             docker_process.terminate()
         docker_process.wait()
+
 
 class Together(HFModel):
     def __init__(self, model, api_base="https://api.together.xyz/v1", api_key=None, **kwargs):
@@ -358,7 +385,10 @@ class Together(HFModel):
         if use_chat_api:
             url = f"{self.api_base}/chat/completions"
             messages = [
-                {"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."},
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections.",
+                },
                 {"role": "user", "content": prompt},
             ]
             body = {
@@ -390,9 +420,9 @@ class Together(HFModel):
             with self.session.post(url, headers=headers, json=body) as resp:
                 resp_json = resp.json()
                 if use_chat_api:
-                    completions = [resp_json.get('choices', [])[0].get('message', {}).get('content', "")]
+                    completions = [resp_json.get("choices", [])[0].get("message", {}).get("content", "")]
                 else:
-                    completions = [resp_json.get('choices', [])[0].get('text', "")]
+                    completions = [resp_json.get("choices", [])[0].get("text", "")]
                 response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
                 return response
         except Exception as e:
@@ -418,16 +448,19 @@ class Anyscale(HFModel):
 
     def _generate(self, prompt, use_chat_api=False, **kwargs):
         url = f"{self.api_base}/completions"
-        
+
         kwargs = {**self.kwargs, **kwargs}
 
         temperature = kwargs.get("temperature")
-        max_tokens = kwargs.get("max_tokens", 150) 
+        max_tokens = kwargs.get("max_tokens", 150)
 
         if use_chat_api:
             url = f"{self.api_base}/chat/completions"
             messages = [
-                {"role": "system", "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections."},
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant. You must continue the user text directly without *any* additional interjections.",
+                },
                 {"role": "user", "content": prompt},
             ]
             body = {
@@ -448,13 +481,13 @@ class Anyscale(HFModel):
 
         try:
             completions = []
-            for i in range(kwargs.get('n', 1)):
+            for i in range(kwargs.get("n", 1)):
                 with self.session.post(url, headers=headers, json=body) as resp:
                     resp_json = resp.json()
                     if use_chat_api:
-                        completions.extend([resp_json.get('choices', [])[0].get('message', {}).get('content', "")])
+                        completions.extend([resp_json.get("choices", [])[0].get("message", {}).get("content", "")])
                     else:
-                        completions.extend([resp_json.get('choices', [])[0].get('text', "")])
+                        completions.extend([resp_json.get("choices", [])[0].get("text", "")])
             response = {"prompt": prompt, "choices": [{"text": c} for c in completions]}
             return response
         except Exception as e:
@@ -463,21 +496,27 @@ class Anyscale(HFModel):
 
 
 class ChatModuleClient(HFModel):
-    def __init__(self, model, model_path):
+    def __init__(self, model, model_path=None, mode="interactive"):
+        """
+        MLC LLM Engine Chat Client
+
+        Args:
+            model (str): HF model identifier to load and use
+            model_path (str, optional): Path to compiled model library (.so/.dylib)
+            mode (str, optional): Mode to run the engine, can be "local", "interactive" or "server"
+        """
         super().__init__(model=model, is_client=True)
 
-        from mlc_chat import ChatConfig, ChatModule
+        from mlc_llm.serve.engine import MLCEngine
 
-        self.cm = ChatModule(
-            model=model, lib_path=model_path, chat_config=ChatConfig(conv_template="LM"),
-        )
+        # MLCEngine also supports EngineConfig and different modes
+        # Default model_lib=None will download the HuggingFace model to ~/.cache/mlc_llm/model_weights/hf/
+        self.cm = MLCEngine(model=model, model_lib=model_path, mode=mode)
 
     def _generate(self, prompt, **kwargs):
-        output = self.cm.generate(
-            prompt=prompt,
-        )
+        output = self.cm.chat.completions.create(messages=[{"role": "user", "content": prompt}], model=self.model)
         try:
-            completions = [{"text": output}]
+            completions = [{"text": choice.message.content} for choice in output.choices]
             response = {"prompt": prompt, "choices": completions}
             return response
         except Exception:

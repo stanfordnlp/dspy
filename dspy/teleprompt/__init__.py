@@ -1,3 +1,4 @@
+from .avatar_optimizer import *
 from .bootstrap import *
 from .copro_optimizer import COPRO
 from .ensemble import *

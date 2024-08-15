@@ -1,4 +1,4 @@
-import re
+import magicattr
 
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
@@ -74,37 +74,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     #     return new_copy
 
 
-# FIXME(Shangyint): This may cause some problems for nested patterns.
 def set_attribute_by_name(obj, name, value):
-    # Regular expressions for different patterns
-    module_pattern = re.compile(r"^([^.]+)\.(.+)$")
-    list_pattern = re.compile(r"^([^\[]+)\[([0-9]+)\]$")
-    dict_pattern = re.compile(r"^([^\[]+)\['([^']+)'\]$")
-
-    # Match for module.attribute pattern
-    module_match = module_pattern.match(name)
-    if module_match:
-        module_name, sub_name = module_match.groups()
-        sub_obj = getattr(obj, module_name)
-        set_attribute_by_name(sub_obj, sub_name, value)
-        return
-
-    # Match for list[index] pattern
-    list_match = list_pattern.match(name)
-    if list_match:
-        list_name, index = list_match.groups()
-        getattr(obj, list_name)[int(index)] = value
-        return
-
-    # Match for dict['key'] pattern
-    dict_match = dict_pattern.match(name)
-    if dict_match:
-        dict_name, key = dict_match.groups()
-        getattr(obj, dict_name)[key] = value
-        return
-
-    # Default case for simple attributes
-    setattr(obj, name, value)
-
+    magicattr.set(obj, name, value)
 
 Program = Module

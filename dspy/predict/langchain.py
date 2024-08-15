@@ -31,7 +31,10 @@ class ShallowCopyOnly:
     def __deepcopy__(self, memo): return ShallowCopyOnly(copy.copy(self.obj))
 
 
-class LangChainPredict(Predict, Runnable): #, RunnableBinding):
+class LangChainPredictMetaClass(type(Predict), type(Runnable)):
+    pass
+
+class LangChainPredict(Predict, Runnable, metaclass=LangChainPredictMetaClass):
     class Config: extra = Extra.allow  # Allow extra attributes that are not defined in the model
 
     def __init__(self, prompt, llm, **config):
@@ -54,7 +57,8 @@ class LangChainPredict(Predict, Runnable): #, RunnableBinding):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
+        """save_verbose is set as a default argument to support the inherited Parameter interface for dump_state"""
         state_keys = ["lm", "traces", "train", "demos"]
         return {k: getattr(self, k) for k in state_keys}
 

@@ -23,10 +23,11 @@ class BaseModule:
         named_parameters = []
 
         def add_parameter(param_name, param_value):
-            if isinstance(param_value, Parameter) and id(param_value) not in visited:
-                visited.add(id(param_value))
-                param_name = postprocess_parameter_name(param_name, param_value)
-                named_parameters.append((param_name, param_value))
+            if isinstance(param_value, Parameter):
+                if id(param_value) not in visited:
+                    visited.add(id(param_value))
+                    param_name = postprocess_parameter_name(param_name, param_value)
+                    named_parameters.append((param_name, param_value))
             
             elif isinstance(param_value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
@@ -111,9 +112,9 @@ class BaseModule:
 
         return obj
 
-    def dump_state(self):
+    def dump_state(self, save_verbose):
         print(self.named_parameters())
-        return {name: param.dump_state() for name, param in self.named_parameters()}
+        return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
@@ -126,9 +127,9 @@ class BaseModule:
             #     else:
             #         raise
 
-    def save(self, path):
+    def save(self, path, save_field_meta=False):
         with open(path, "w") as f:
-            f.write(ujson.dumps(self.dump_state(), indent=2))
+            f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2))
 
     def load(self, path):
         with open(path) as f:
