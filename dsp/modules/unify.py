@@ -28,7 +28,7 @@ class Unify(LM):
 
     def __init__(
         self,
-        model: str = "llama-3-8b-chat@together-ai",
+        model: str = "gpt-4o@openai",
         api_key: Optional[str] = None,
         **kwargs,
     ):
