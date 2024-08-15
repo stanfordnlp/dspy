@@ -1,6 +1,6 @@
 from concurrent.futures import Future
 import time
-from typing import Any, List, Optional, Literal, Tuple, Union
+from typing import Any, List, Optional, Literal, Union
 import ujson
 import openai
 from dsp.modules.lm import TrainableLM, TrainingMethod
