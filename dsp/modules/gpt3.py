@@ -13,7 +13,6 @@ try:
     logging.info(f"You are using Langfuse,version{langfuse.__version__}")
 except:
     import openai
-    logging.info(f"You are using openai,version{openai.version.__version__}")
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
