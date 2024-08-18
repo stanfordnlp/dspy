@@ -19,6 +19,8 @@
 
 **Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
 
+**[Where and how is DSPy used in production:](dspy-production-usecases.md)**
+
 [![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
 
 ----
@@ -28,7 +30,6 @@
 To make this more systematic and much more powerful, **DSPy** does two things. First, it separates the flow of your program (`modules`) from the parameters (LM prompts and weights) of each step. Second, **DSPy** introduces new `optimizers`, which are LM-driven algorithms that can tune the prompts and/or the weights of your LM calls, given a `metric` you want to maximize.
 
 **DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. This is a new paradigm in which LMs and their prompts fade into the background as optimizable pieces of a larger system that can learn from data. **tldr;** less prompting, higher scores, and a more systematic approach to solving hard tasks with LMs.
-
 
 ### Table of Contents
 
@@ -41,7 +42,9 @@ If you need help thinking about your task, we recently created a [Discord server
 1. **[Pydantic Types](#5-pydantic-types)** 
 1. **[FAQ: Is DSPy right for me?](#6-faq-is-dspy-right-for-me)**
 
+#### Helpful External Links
 
+1. **[Documentation]()**
 
 ### Analogy to Neural Networks
 
