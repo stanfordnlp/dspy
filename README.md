@@ -42,10 +42,6 @@ If you need help thinking about your task, we recently created a [Discord server
 1. **[Pydantic Types](#5-pydantic-types)** 
 1. **[FAQ: Is DSPy right for me?](#6-faq-is-dspy-right-for-me)**
 
-#### Helpful External Links
-
-1. **[Documentation]()**
-
 ### Analogy to Neural Networks
 
 When we build neural networks, we don't write manual _for-loops_ over lists of _hand-tuned_ floats. Instead, you might use a framework like [PyTorch](https://pytorch.org/) to compose declarative layers (e.g., `Convolution` or `Dropout`) and then use optimizers (e.g., SGD or Adam) to learn the parameters of the network.
