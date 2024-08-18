@@ -126,7 +126,7 @@ class Predict(Module, Parameter):
         if dsp.settings.experimental:
             completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
         else:
-            completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
+            completions = old_generate(demos, signature, kwargs, config, lm, self.stage)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
