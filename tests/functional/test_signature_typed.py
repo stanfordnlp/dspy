@@ -1,11 +1,10 @@
-from typing import Generic, TypeVar, Any, Optional, Union
+from typing import Any, Optional, Union
 import pytest
 
 import pydantic
 import dspy
-from dspy.evaluate import Evaluate
 from dspy.functional import TypedPredictor
-from dspy.utils import DummyLM
+from dspy.signatures.signature import signature_to_template
 
 def get_field_and_parser(signature:dspy.Signature) -> tuple[Any, Any]:
     module = TypedPredictor(signature)
@@ -15,6 +14,35 @@ def get_field_and_parser(signature:dspy.Signature) -> tuple[Any, Any]:
     parser = field.json_schema_extra.get("parser")
     return field, parser
     
+class Mysubmodel(pydantic.BaseModel):
+    sub_floating: float
+    
+class MyModel(pydantic.BaseModel):
+    floating: float
+    string: str
+    boolean: bool
+    integer: int
+    optional: Optional[str]
+    sequence_of_strings: list[str]
+    union: Union[str, float]
+    submodel: Mysubmodel
+    optional_submodel: Optional[Mysubmodel]
+    optional_existing_submodule: Optional[Mysubmodel]
+    
+def build_model_instance() -> MyModel:
+    return MyModel(
+        floating=3.14,
+        string="foobar",
+        boolean=True,
+        integer=42,
+        optional=None,
+        sequence_of_strings=["foo", "bar"],
+        union=3.14,
+        submodel=Mysubmodel(sub_floating=42.42),
+        optional_submodel=None,
+        optional_existing_submodule=Mysubmodel(sub_floating=42.42),
+    )
+        
 
 @pytest.mark.parametrize("test_type,serialized, expected", [(str, "foo", "foo"), (int, "42", 42), (float, "42.42", 42.42)])
 def test_basic_types(test_type:type, serialized:str, expected:Any):
@@ -38,7 +66,7 @@ def test_boolean():
     assert not parser("false"), f"Parsing 'false' failed"
     
     
-@pytest.mark.parametrize("test_type,serialized, expected", [(list[str], '{"value" : ["foo", "bar"]}', ['foo', 'bar']), (tuple[int, float], '{"value":[42, 3.14]}', (42, 3.14))])
+@pytest.mark.parametrize("test_type,serialized, expected", [(list[str], '["foo", "bar"]', ['foo', 'bar']), (tuple[int, float], '[42, 3.14]', (42, 3.14))])
 def test_sequences(test_type:type, serialized:str, expected:Any):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -50,10 +78,10 @@ def test_sequences(test_type:type, serialized:str, expected:Any):
     assert parser(serialized) == expected, f"Parsing {expected} failed"
     
 @pytest.mark.parametrize("test_type,serialized, expected", [
-    (Optional[str], '{"value": "foobar"}', "foobar"),
-    (Optional[str], '{"value": null}', None),
-    (Union[str, float], '{"value": 3.14}', 3.14),
-    (Union[str, bool], '{"value": true}', True)
+    (Optional[str], '"foobar"', "foobar"),
+    (Optional[str], "null", None),
+    (Union[str, float], "3.14", 3.14),
+    (Union[str, bool], "true", True)
     ])
 def test_unions(test_type:type, serialized:str, expected:Any):
     class MySignature(dspy.Signature):
@@ -66,40 +94,49 @@ def test_unions(test_type:type, serialized:str, expected:Any):
     
     
 def test_pydantic():
-    
-    class Mysubmodel(pydantic.BaseModel):
-        sub_floating: float
-        
-    class MyModel(pydantic.BaseModel):
-        floating: float
-        string: str
-        boolean: bool
-        integer: int
-        optional: Optional[str]
-        sequence_of_strings: list[str]
-        union: Union[str, float]
-        submodel: Mysubmodel
-        optional_submodel: Optional[Mysubmodel]
-        
-        
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: MyModel = dspy.OutputField()
         
     _, parser = get_field_and_parser(MySignature)
     
-    instance = MyModel(
-        floating=3.14,
-        string="foobar",
-        boolean=True,
-        integer=42,
-        optional=None,
-        sequence_of_strings=["foo", "bar"],
-        union=3.14,
-        submodel=Mysubmodel(sub_floating=42.42),
-        optional_submodel=None
-    )
+    instance = build_model_instance()
+    parsed_instance = parser(instance.model_dump_json())
     
-    parser(instance.model_dump_json()) == instance, f"{instance}!= {parser(instance)}"
+    assert parsed_instance == instance, f"{instance} != {parsed_instance}"
     
+def test_optional_pydantic():    
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Optional[MyModel] = dspy.OutputField()
         
+    _, parser = get_field_and_parser(MySignature)
+    
+    instance = build_model_instance()
+    parsed_instance = parser(instance.model_dump_json())
+    assert parsed_instance == instance, f"{instance} != {parsed_instance}"
+    
+    #Check null case
+    parsed_instance = parser("null")
+    assert parsed_instance == None, "Optional[MyModel] should be None" 
+    
+def test_dataclass():
+    
+    from dataclasses import dataclass
+    
+    @dataclass(frozen = True)
+    class MyDataclass:
+        string: str
+        number: int
+        floating: float
+        boolean: bool
+        
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: MyDataclass = dspy.OutputField()
+        
+    _, parser = get_field_and_parser(MySignature)
+    
+    instance = MyDataclass("foobar", 42, 3.14, True)
+    parsed_instance = parser('{"string": "foobar", "number": 42, "floating": 3.14, "boolean": true}')
+    assert parsed_instance == instance, f"{instance} != {parsed_instance}"

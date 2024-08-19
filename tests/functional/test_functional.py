@@ -36,7 +36,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
+    lm = DummyLM(['["What is the speed of light?", "What is the speed of sound?"]'])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -557,7 +557,7 @@ def test_parse_type_string():
 
 
 def test_literal():
-    lm = DummyLM([f'{{"value": "{i}"}}' for i in range(100)])
+    lm = DummyLM([f'"{i}"' for i in range(100)])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -568,7 +568,7 @@ def test_literal():
 
 
 def test_literal_int():
-    lm = DummyLM([f'{{"value": {i}}}' for i in range(100)])
+    lm = DummyLM([f'{i}' for i in range(100)])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -897,7 +897,7 @@ def _test_demos_missing_input():
 
 def test_conlist():
     dspy.settings.configure(
-        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+        lm=DummyLM(['[]', '[1]', '[1, 2]', '[1, 2, 3]'])
     )
 
     @predictor
@@ -909,7 +909,7 @@ def test_conlist():
 
 def test_conlist2():
     dspy.settings.configure(
-        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
+        lm=DummyLM(['[]', '[1]', '[1, 2]', '[1, 2, 3]'])
     )
 
     make_numbers = TypedPredictor("input:str -> output:Annotated[List[int], Field(min_items=2)]")

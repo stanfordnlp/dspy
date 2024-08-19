@@ -109,7 +109,7 @@ def test_opt():
         [
             # Seed prompts
             "some thoughts",
-            '{"value": [{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]}',
+            '[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
         ]
     )
     dspy.settings.configure(lm=qa_model)
