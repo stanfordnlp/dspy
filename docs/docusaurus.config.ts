@@ -84,11 +84,9 @@ const config: Config = {
           position: 'left', // Position in the navbar
           label: 'Documentation', // Label for the navbar item
         },
-        // Navbar item for the API reference, linking to the intro document
         { to: '/docs/category/tutorials', label: 'Tutorials', position: 'left' },
-        // Navbar item for the API reference, linking to the intro document
         { to: '/api/intro', label: 'API References', position: 'left' },
-        // Navbar item for the API reference, linking to the intro document
+        { to: '/docs/dspy-usecases', label: 'DSPy Use Cases', position: 'left' },
         { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'right' },
         // Navbar item for the GitHub repository
         {
