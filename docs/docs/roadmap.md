@@ -21,26 +21,23 @@ To a first approximation, DSPy’s current user-facing language has the minimum 
 
 ## Team & Organization
 
-DSPy is a fairly unusual project in terms of its technical objectives, its contributors, and its audience. While DSPy takes inspiration from PyTorch, a library for building and optimizing DNNs, there is one major difference: PyTorch was introduced well after DNNs were mature ML concepts. In contrast, DSPy has been central to establishing and advancing core LM Programs research: the framework is propelled by constant new research, from programming abstractions (like the original Demonstrate–Search–Predict concepts, DSPy signatures, or LM Assertions) to NLP systems (like STORM and IReRa) to prompt optimizers (like MIPRO) and RL (like BetterTogether), among many other related directions.
+DSPy is fairly unusual in its technical objectives, contributors, and audience. Though DSPy takes inspiration from PyTorch, a library for building and optimizing DNNs, there is one major difference: PyTorch was introduced well after DNNs were mature ML concepts, but DSPy seeks to establish and advance core LM Programs research: the framework is propelled by constant academic research from programming abstractions (like the original [Demonstrate–Search–Predict]() concepts, DSPy [Signatures](), or [LM Assertions]()) to NLP systems (like [STORM]() and [IReRa]()) to prompt optimizers (like [MIPRO]()) and RL (like [BetterTogether]()), among many other related directions.
 
-All of this distinct research composes into a highly concrete, practical library: DSPy is home to dozens of industry contributors, many of whom are deploying apps in production using DSPy. Because of this, DSPy reaches not only of grad students doing research and ML engineers building systems, but also of many non-ML engineers — from “10x engineer” early adopters to hobbyists exploring new ways of using LMs — who learn the workflows of machine learning for the first time through DSPy.
+This research all composes into a concrete, practical library, thanks to dozens of industry contributors, many of whom are deploying apps in production using DSPy. Because of this, DSPy reaches not only of grad students and ML engineers, but also many non-ML engineers, from early adopter SWEs to hobbyists exploring new ways of using LMs. The following team, with help from many folks in the OSS community, is working towards the objectives in this Roadmap.
 
-The following team, with help from many folks in the OSS community, is working towards the objectives above.
+**Project Lead:** Omar Khattab (Stanford & Databricks)
 
+**Project Mentors:** Chris Potts (Stanford), Matei Zaharia (UC Berkeley & Databricks), Heather Miller (CMU & Two Sigma)
 
-**Project Lead:** Omar Khattab
+**Core Library:** Arnav Singhvi (Databricks & Stanford), Herumb Shandilya (Stanford), Hanna Moazam (Databricks), Sri Vardhamanan (Dashworks), Cyrus Nouroozi (Zenbase), Amir Mehr (Zenbase), Kyle Caverly (Modular), with special thanks to Keshav Santhanam (Stanford), Thomas Ahle (Normal Computing), Connor Shorten (Weaviate)
 
-**Project Mentors:** Chris Potts, Matei Zaharia, Heather Miller
+**Prompt Optimization:** Krista Opsahl-Ong (Stanford), Michael Ryan (Stanford), Josh Purtell (Basis), with special thanks to Eric Zhang (Stanford)
 
-**Core Library:** Arnav Singhvi, Herumb Shandilya, Hanna Moazam, Sri Vardhamanan, Cyrus Nouroozi, Amir Mehr, with special thanks to Keshav Santhanam, Thomas Ahle, Connor Shorten, Kyle Caverly
+**Finetuning & RL:** Dilara Soylu (Stanford), Isaac Miller (Anyscale), Karel D'Oosterlinck (Ghent), with special thanks to Paridhi Masehswari (Stanford)
 
-**Prompt Optimization:** Krista Opsahl-Ong, Michael Ryan, Josh Purtell, with special thanks to Karel D'Oosterlinck, Eric Zhang
+**PL Abstractions:** Shangyin Tan (UC Berkeley), Manish Shetty (UC Berkeley), Peter Zhong (CMU)
 
-**Finetuning & RL:** Dilara Soylu, Isaac Miller, with special thanks to Paridhi Masehswari
-
-**PL Abstractions:** Shangyin Tan, Manish Shetty, Peter Zhong
-
-**Applications:** Jasper Xian, Saron Samuel, Alberto Mancarella, Faraz Khoubsirat, Saiful Haq, Ashutosh Sharma
+**Applications:** Jasper Xian (Waterloo), Saron Samuel (Stanford), Alberto Mancarella (Stanford), Faraz Khoubsirat (Waterloo), Saiful Haq (IIT-B), Ashutosh Sharma (UIUC)
 
 
 
