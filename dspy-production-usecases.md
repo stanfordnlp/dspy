@@ -13,6 +13,14 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **PingCAP**        | Building a knowledge graph  | [https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
 | **Plastic Labs**   | Different pipelines within Honcho | [https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art)                                                                       |
 
+TODO: Add
+
+* RadiantLogic AI Data Assistant
+* Starops & Saya
+* Procure.FYI
+* Cybersecurity (Stealth)
+* etc
+
 ## Providers and Integrations
 
 | **Name**           | **Link**                                                                                                                                                  |
@@ -35,8 +43,23 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **DSPy PII Masking Demo by Eric Ness** | PII Masking             | [https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
 | **The Unreasonable Effectiveness of Eccentric Automatic Prompts** | General Prompt Optimization | [https://arxiv.org/abs/2402.10949v2](https://arxiv.org/abs/2402.10949v2)                                                                                           |
 
+TODO: Add
+
+* Palimpzest
+* Agent efficiency optimization from Princeton
+* PATH
+* EDEN
+* etc
+
 ## Blogs/Repos about DSPy
 
 | **Name**                     | **Link**                                                                                                                                                    |
 |------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Why I bet on DSPy**         | [https://blog.isaacbmiller.com/posts/dspy](https://blog.isaacbmiller.com/posts/dspy)                                                                                                             |
+
+TODO: Add
+
+* Stephen Bryan's
+* Content from Weaviate
+* Stanford CS 224U material
+* etc
