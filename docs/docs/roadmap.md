@@ -32,7 +32,7 @@ The following team, with help from many folks in the OSS community, is working t
 
 **Project Mentors:** Chris Potts, Matei Zaharia, Heather Miller
 
-**Core Library:** Arnav Singhvi, Herumb Shandilya, Hanna Moazam, Sri Vardhamanan, with special thanks to Keshav Santhanam, Thomas Ahle, Connor Shorten, Cyrus Nouroozi, Amir Mehr, Kyle Caverly
+**Core Library:** Arnav Singhvi, Herumb Shandilya, Hanna Moazam, Sri Vardhamanan, Cyrus Nouroozi, Amir Mehr, with special thanks to Keshav Santhanam, Thomas Ahle, Connor Shorten, Kyle Caverly
 
 **Prompt Optimization:** Krista Opsahl-Ong, Michael Ryan, Josh Purtell, with special thanks to Karel D'Oosterlinck, Eric Zhang
 
