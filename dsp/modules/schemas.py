@@ -93,7 +93,7 @@ class LLMModelParams(BaseModel):
     seed: Optional[int] = None
     tools: Optional[ToolFunction] = None
     tool_choice: Optional[Union[str, ToolChoice]] = None
-    logprobs: Optional[int] = False
+    logprobs: Optional[bool] = False
     top_logprobs: Optional[int] = None
     stream: bool = False  # TODO: can we support this?
     stream_options: Optional[StreamOptions] = None
@@ -115,16 +115,38 @@ class LLMModelParams(BaseModel):
         except AttributeError:
             return None
 
-    def to_json(self, exclude_none: bool = False) -> dict[str, Any]:
+    def to_json(self, ignore_sensitive: bool = False, exclude_none: bool = False) -> dict[str, Any]:
         return LLMModelParams(**self.model_dump()).model_dump(exclude_none=exclude_none)
 
     def get_copy(self) -> dict[str, Any]:
         return LLMModelParams(**self.model_dump())
 
 
-class LLMParams(LLMModelParams):
+class LiteLLMParams:
+    """Pydantic data model for the Lite LLM Params."""
+
+    # Litellm specific
+    api_base: Optional[str] = None
+    api_version: Optional[str] = None  # Azure
+    num_retries: Optional[int] = (
+        None  # The number of times to retry the API call if an APIError, TimeoutError or ServiceUnavailableError occurs
+    )
+    context_window_fallback_dict: Optional[dict[str, Any]] = (
+        None  # A mapping of model to use if call fails due to context window error
+    )
+    fallbacks: Optional[list[dict[str, Any]]] = (
+        None  # A list of model names + params to be used, in case the initial call fails
+    )
+    metadata: Optional[dict[str, Any]] = (
+        None  # Any additional data you want to be logged when the call is made (sent to logging integrations, eg. promptlayer and accessible via custom callback function)
+    )
+    drop_params: bool = True
+
+
+class LLMParams(LLMModelParams, LiteLLMParams):
     """Pydantic data model for the LLM Params."""
 
+    api_key: Optional[str] = None
     provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
     vertex_credentials: Optional[str] = None
@@ -144,24 +166,8 @@ class LLMParams(LLMModelParams):
     ANYSCALE_API_KEY: Optional[str] = None
 
     TOGETHERAI_API_KEY: Optional[str] = None
-
-    # Litellm specific
-    api_base: Optional[str] = None
-    api_key: Optional[str] = None
-    api_version: Optional[str] = None  # Azure
-    num_retries: Optional[int] = (
-        None  # The number of times to retry the API call if an APIError, TimeoutError or ServiceUnavailableError occurs
-    )
-    context_window_fallback_dict: Optional[dict[str, Any]] = (
-        None  # A mapping of model to use if call fails due to context window error
-    )
-    fallbacks: Optional[list[dict[str, Any]]] = (
-        None  # A list of model names + params to be used, in case the initial call fails
-    )
-    metadata: Optional[dict[str, Any]] = (
-        None  # Any additional data you want to be logged when the call is made (sent to logging integrations, eg. promptlayer and accessible via custom callback function)
-    )
-    drop_params: bool = True
+    model_all_params: Optional[list[str]] = None
+    litellm_model: Optional[str] = None
 
     class Config:
         """Allows for extra parameters to be added."""
@@ -174,20 +180,12 @@ class LLMParams(LLMModelParams):
         except AttributeError:
             return None
 
-    def to_json(self, ignore_sensitive: bool = False) -> dict[str, Any]:
+    def to_json(self, ignore_sensitive: bool = False, exclude_none: bool = True) -> dict[str, Any]:
         """Converts the LLMParams to a JSON object."""
         return self.model_dump(
-            exclude=[
-                "system_prompt",
-                "prompt",
-                "only_completed",
-                "return_sorted",
-            ]
-            + (["api_base"] if ignore_sensitive else [])
-            + [
-                "provider",
-            ],  # this should automatically work when drop_params is set to True but it doesn't.
-            exclude_none=True,
+            include=self.model_all_params,
+            exclude=["api_base"] if ignore_sensitive else [],
+            exclude_none=exclude_none,
         )
 
     def get_model_params(
@@ -227,6 +225,8 @@ class LLMParams(LLMModelParams):
             if "/" in self.model.split("/")[0]:
                 self.model = "custom/" + self.model
 
+        self.litellm_model = f"{self.provider}/{self.model}"
+
         if self.system_prompt:
             self.messages = [ChatMessage(role="system", content=self.system_prompt)]
         if self.prompt:
@@ -242,6 +242,13 @@ class LLMParams(LLMModelParams):
             )
             self.vertex_project = self.extra_args.get("vertex_project") or os.environ.get("VERTEX_PROJECT")
             self.vertex_location = self.extra_args.get("vertex_location") or os.environ.get("VERTEX_LOCATION")
+
+        self.model_all_params = (
+            litellm.get_supported_openai_params(self.litellm_model)
+            + list(LiteLLMParams.__annotations__.keys())
+            + ["model", "messages"]
+        )
+        print(self.model_all_params)
 
 
 class EncoderModelParams(BaseModel):
