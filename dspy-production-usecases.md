@@ -1,6 +1,6 @@
 # DSPy Production usecases
 
-This list is ever expanding! If you would like to add your company to the list, please make a PR.
+This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your company to the list, please make a PR.
 
 ## Company Usecases
 
