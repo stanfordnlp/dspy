@@ -19,7 +19,7 @@
 
 **Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
 
-**How is DSPy used in production:** [Production Usecases](dspy-production-usecases.md)
+**How is DSPy used in production:** [Production Usecases](https://dspy-docs.vercel.app/)
 
 [![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
 
