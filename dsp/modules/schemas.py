@@ -127,6 +127,7 @@ class LiteLLMParams:
 
     # Litellm specific
     api_base: Optional[str] = None
+    api_key: Optional[str] = None
     api_version: Optional[str] = None  # Azure
     num_retries: Optional[int] = (
         None  # The number of times to retry the API call if an APIError, TimeoutError or ServiceUnavailableError occurs
@@ -146,7 +147,6 @@ class LiteLLMParams:
 class LLMParams(LLMModelParams, LiteLLMParams):
     """Pydantic data model for the LLM Params."""
 
-    api_key: Optional[str] = None
     provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
     vertex_credentials: Optional[str] = None
@@ -182,11 +182,12 @@ class LLMParams(LLMModelParams, LiteLLMParams):
 
     def to_json(self, ignore_sensitive: bool = False, exclude_none: bool = True) -> dict[str, Any]:
         """Converts the LLMParams to a JSON object."""
-        return self.model_dump(
+        param_json = self.model_dump(
             include=self.model_all_params,
             exclude=["api_base"] if ignore_sensitive else [],
             exclude_none=exclude_none,
         )
+        return param_json
 
     def get_model_params(
         self, return_json: bool = False, exclude_none: bool = False
@@ -248,7 +249,6 @@ class LLMParams(LLMModelParams, LiteLLMParams):
             + list(LiteLLMParams.__annotations__.keys())
             + ["model", "messages"]
         )
-        print(self.model_all_params)
 
 
 class EncoderModelParams(BaseModel):
