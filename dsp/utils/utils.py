@@ -101,6 +101,7 @@ class dotdict(dict):
     langchain_history: list
     experimental: bool
     backoff_time: int
+    enable_cache: bool
 
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):

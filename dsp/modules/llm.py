@@ -1,8 +1,12 @@
+import os
 from typing import Any
+
+import dspy
 
 # Pydantic data model for the LLM class
 import litellm
 from litellm.types.utils import Choices, ModelResponse, Usage
+from litellm.caching import Cache
 
 from dspy.utils.logging import logger
 from dsp.modules.schemas import (
@@ -12,9 +16,11 @@ from dsp.modules.schemas import (
 )
 from dsp.modules.lm_helper import LLMHelper
 
-# Use this for development testing
-# litellm.set_verbose = True
 
+litellm.cache = Cache(type="disk")
+
+# Use this for development testing
+litellm.set_verbose = True
 
 class LLM(LLMHelper):
     """Wrapper around the LLM API.
@@ -58,8 +64,15 @@ class LLM(LLMHelper):
 
         return response
 
-    # TODO: enable caching
     def request(self, prompt: str, **kwargs) -> ModelResponse:
+        enable_cache = dspy.settings.enable_cache
+        if "enable_cache" in kwargs:
+            # caching passed in by request takes precedence over settings
+            enable_cache = kwargs["cache"]
+        if enable_cache:
+            kwargs['cache'] = {"no-cache": False, "no-store": False}
+        else:
+            kwargs['cache'] = {"no-cache": True, "no-store": True}
         return self.basic_request(prompt, **kwargs)
 
     def log_usage(self, response: ModelResponse):
