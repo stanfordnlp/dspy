@@ -369,7 +369,7 @@ If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new 
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)</h4></summary>
+  <summary><h4 style="display: inline">[6.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)</h4></summary>
 
 In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.)
 
@@ -383,7 +383,7 @@ Oh, and you wouldn't need to maintain long, brittle, model-specific strings at t
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
+  <summary><h4 style="display: inline">[6.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
 
 
 > _Note: If you use LangChain as a thin wrapper around your own prompt strings, refer to answer [5.a] instead._
@@ -402,7 +402,7 @@ If you're familiar with neural networks:
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines</h4></summary>
+  <summary><h4 style="display: inline">[6.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines</h4></summary>
 
 
 Guidance, LMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
