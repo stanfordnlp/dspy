@@ -116,10 +116,12 @@ class TypedPredictor(dspy.Module):
         """Return a string representation of the TypedPredictor object."""
         return f"TypedPredictor({self.signature})"
 
-    def _make_example(self, type_) -> str:
+    def _make_example(self, field) -> str:
         # Note: DSPy will cache this call so we only pay the first time TypedPredictor is called.
-        
-        schema = json.dumps(type_.model_json_schema())
+        if hasattr(field, "model_json_schema"):
+            pass
+        schema = field.json_schema_extra["schema"]
+        parser = field.json_schema_extra["parser"]
         if self.wrap_json:
             schema = "```json\n" + schema + "\n```\n"
         json_object = dspy.Predict(
@@ -128,9 +130,9 @@ class TypedPredictor(dspy.Module):
                 "Make a very succinct json object that validates with the following schema",
             ),
         )(json_schema=schema).json_object
-        # We use the model_validate_json method to make sure the example is valid
+        # We use the parser to make sure the json object is valid.
         try:
-            type_.model_validate_json(_unwrap_json(json_object, type_.model_validate_json))
+            parser(_unwrap_json(json_object, parser))
         except (pydantic.ValidationError, ValueError):
             return ""  # Unable to make an example
         return json_object
@@ -228,19 +230,19 @@ class TypedPredictor(dspy.Module):
                     )
                 else:
                     # Anything else we wrap in a pydantic object
-                    if  (inspect.isclass(type_) 
+                    if (
+                        inspect.isclass(type_)
                         and typing.get_origin(type_) not in (list, tuple)  # To support Python 3.9
-                        and issubclass(type_, pydantic.BaseModel)):
-                            
+                        and issubclass(type_, pydantic.BaseModel)
+                    ):
                         to_json = lambda x: x.model_dump_json()
                         from_json = lambda x, type_=type_: type_.model_validate_json(x)
                         schema = json.dumps(type_.model_json_schema())
                     else:
                         adapter = pydantic.TypeAdapter(type_)
-                        to_json = lambda x : adapter.serializer.to_json(x)
+                        to_json = lambda x: adapter.serializer.to_json(x)
                         from_json = lambda x, type_=adapter: type_.validate_json(x)
                         schema = json.dumps(adapter.json_schema())
-                      
                     if self.wrap_json:
                         to_json = lambda x, inner=to_json: "```json\n" + inner(x) + "\n```\n"
                         schema = "```json\n" + schema + "\n```"
@@ -250,6 +252,7 @@ class TypedPredictor(dspy.Module):
                         + (". Respond with a single JSON object. JSON Schema: " + schema),
                         format=lambda x, to_json=to_json: (x if isinstance(x, str) else to_json(x)),
                         parser=lambda x, from_json=from_json: from_json(_unwrap_json(x, from_json)),
+                        schema=schema,
                         type_=type_,
                     )
             else:  # If input field
@@ -311,7 +314,7 @@ class TypedPredictor(dspy.Module):
                         if (
                             try_i + 1 < self.max_retries
                             and prefix not in current_desc
-                            and (example := self._make_example(field.annotation))
+                            and (example := self._make_example(field))
                         ):
                             signature = signature.with_updated_fields(
                                 name,
