@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List
 from typing_extensions import NotRequired, TypedDict
 from pydantic import BaseModel
 
@@ -255,8 +255,8 @@ class EncoderModelParams(BaseModel):
     """Pydantic data model for the Encoder Model Params."""
 
     model: str
-    input: list[str]
-    instructions: str
+    input: Optional[List[str]] = None
+    # instructions: str
     dimension: Optional[int] = None
 
     class Config:

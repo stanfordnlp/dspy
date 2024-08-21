@@ -16,8 +16,7 @@ from dsp.modules.schemas import (
 )
 from dsp.modules.lm_helper import LLMHelper
 
-
-litellm.cache = Cache(type="disk")
+litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
 
 # Use this for development testing
 litellm.set_verbose = True
@@ -28,10 +27,10 @@ class LLM(LLMHelper):
     Usage:
     ```python
     import dspy
-    from dspy import LLMModelParams
+    from dspy import LLMParams
 
-    llm_params = LLMModelParams(
-        model="gpt-4o-mini", api_key=OPENAI_APIKEY
+    llm_params = LLMParams(
+        model="gpt-4o-mini", api_key=OPENAI_APIKEY, provider="openai"
     )
     openai_llm = dspy.LLM(llm_params)
     openai_llm("Hello, how are you?")
