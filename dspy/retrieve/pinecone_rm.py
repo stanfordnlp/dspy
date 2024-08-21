@@ -85,7 +85,7 @@ class PineconeRM(Retrieve):
                 from transformers import AutoModel, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
-                "You need to install Hugging Face transformers library to use a local embedding model with PineconeRM.",
+                "You need to install Hugging Face transformers (with torch dependencies) library to use a local embedding model with PineconeRM.",
             ) from exc
 
             self._local_embed_model = AutoModel.from_pretrained(local_embed_model)
