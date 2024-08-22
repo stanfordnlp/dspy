@@ -8,7 +8,6 @@ import backoff
 
 from dsp.utils.settings import settings
 
-# Check if 'boto3' is available
 boto3_spec = importlib.util.find_spec("boto3")
 
 if boto3_spec is not None:
@@ -16,7 +15,6 @@ if boto3_spec is not None:
 
     ERRORS = (ClientError,)
 else:
-    # If 'boto3' is not available, fall back to using a general Exception
     ERRORS = (Exception,)
 
 
