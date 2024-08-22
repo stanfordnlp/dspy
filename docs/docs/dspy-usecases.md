@@ -34,7 +34,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 ## Papers Using DSPy
 
-| **Name** | **Usecase** |
+| **Name** | **Description** |
 |---|---|
 | **[SToRM](https://arxiv.org/abs/2402.14207v1)** | Wikipage generation |
 | **[IReRa](https://arxiv.org/abs/2401.12178)** | Extreme reranking |
@@ -47,7 +47,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 ## Repositories about DSPy
 
-| **Name** | **Link** |
+| **Name** | **Description/Link** |
 |---|---|
 | **DSPy PII Masking Demo by Eric Ness** | PII Masking [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
 | **Optimizing LM for Text2SQL using DSPy** | Text2SQL [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
