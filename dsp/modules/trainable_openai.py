@@ -1,15 +1,55 @@
+from collections import defaultdict
 from concurrent.futures import Future
 import time
-from typing import Any, List, Optional, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 import ujson
+
 import openai
+
 from dsp.modules.lm import TrainableLM, TrainingMethod
 from dsp.modules.gpt3 import GPT3
 
-from collections import defaultdict
+
+#-------------------------------------------------------------------------------
+#    Templates for the user-facing strings used by this module
+#-------------------------------------------------------------------------------
+
+_ERR_MSG_DATASET_VALIDATION = """Found errors in the dataset format using the \
+OpenAI API. Here are the number of datapoints for each error type found:
+{err_info}"""
+
+_ERR_MSG_DATASET_VALIDATION_TYPE = """    {key}: {val}"""
+
+_INFO_MSG_DATASET_VALIDATION = """No errors found in the dataset format \
+using the OpenAI API."""
+
+_INFO_MSG_DATAPOINT_LONG = """There are {num} examples that may be over the \
+16,385 token limit, they will be truncated during fine-tuning."""
+
+_INFO_MSG_DATAPOINT_SYSTEM = """There are {num} examples that are missing a \
+system message."""
+
+_INFO_MSG_DATAPOINT_USER = """There are {num} examples that are missing a \
+user message."""
+
+_INFO_MSG_TRAINING = """The charge for finetuning is determined by the number \
+of epochs multiplied by the number of billing tokens in the dataset. Here are \
+the stats for this training dataset:
+    num_billing_tokens: {num_billing_tokens}
+    n_epochs: {n_epochs}
+    num_total_charge_tokens: {training_charge}"""
+
+_INFO_DATA_FILE_UPLOAD = "Uploaded the data file {fname} to the OpenAI servers."
+
+_INFO_MSG_TRAINING_STARTED = "Started training with the following ID: {job_id}"
+
+
+#-------------------------------------------------------------------------------
+#    Helper functions
+#-------------------------------------------------------------------------------
 
 # These utility functions come from: https://cookbook.openai.com/examples/chat_finetuning_data_prep
-def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], None]:
+def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], AssertionError]:
     """Validate OpenAI data before sending it to the model.
 
     Args:
@@ -18,8 +58,12 @@ def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any
     Returns:
         Either a list of errors and their counts or None if no errors are found
     """
-    format_errors = defaultdict(int)
+    # TODO: Move the import outside the function
+    from dsp import logger
 
+    # TODO: Counting the number of errors is not very useful, we can consider
+    # raising an error as we run into issues.
+    format_errors = defaultdict(int)
     for ex in dataset:
         if not isinstance(ex, dict):
             format_errors["data_type"] += 1
@@ -49,16 +93,22 @@ def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any
         if not any(message.get("role", None) == "assistant" for message in messages):
             format_errors["example_missing_assistant_message"] += 1
 
+    # Raise an error if there are any format errors
     if format_errors:
-        print("Found errors:")
+        err_info = ""
         for k, v in format_errors.items():
-            print(f"{k}: {v}")
-    else:
-        print("No errors found")
+            err_info += _ERR_MSG_DATASET_VALIDATION_TYPE.format(key=k, val=v)
 
+        err_msg = _ERR_MSG_DATASET_VALIDATION.format(err_info=err_info)
+        raise ValueError(err_msg)
+        
+    # If no errors are found, log a message
+    msg = _INFO_MSG_DATASET_VALIDATION
+    print(msg)
 
 
 def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
+    # TODO: Should the import be moved outside? Same with the other functions
     import tiktoken
     encoding = tiktoken.get_encoding("cl100k_base")
 
@@ -85,6 +135,9 @@ def num_assistant_tokens_from_messages(messages):
 
 
 def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
+    # TODO: Move the import outside the function
+    from dsp import logger
+
     n_missing_system = 0
     n_missing_user = 0
     n_messages = []
@@ -101,19 +154,27 @@ def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
         convo_lens.append(num_tokens_from_messages(messages))
         assistant_message_lens.append(
             num_assistant_tokens_from_messages(messages))
-
     n_too_long = sum([length > 16385 for length in convo_lens])
+
     if n_too_long > 0:
-        print(f"\n{n_too_long} examples may be over the 16,385 token limit, they will be truncated during fine-tuning")
+        msg = _INFO_MSG_DATAPOINT_LONG.format(num=n_too_long)
+        print(msg)
+
     if n_missing_system > 0:
-        print(f"\n{n_missing_system} examples are missing a system message")
+        msg = _INFO_MSG_DATAPOINT_SYSTEM.format(num=n_missing_system)
+        print(msg)
+
     if n_missing_user > 0:
-        print(f"\n{n_missing_user} examples are missing a user message")
+        msg = _INFO_MSG_DATAPOINT_USER.format(num=n_missing_user)
+        print(msg)
 
     return convo_lens
 
 
 def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name=1, convo_lens=None):
+    # TODO: Move the import outside the function
+    from dsp import logger
+
     MAX_TOKENS_PER_EXAMPLE = 16385
 
     TARGET_EPOCHS = 3
@@ -122,6 +183,7 @@ def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name
     MIN_DEFAULT_EPOCHS = 1
     MAX_DEFAULT_EPOCHS = 25
 
+    # TODO: Can we not fix the above variables as constants?
     n_epochs = TARGET_EPOCHS
     n_train_examples = len(dataset)
     if n_train_examples * TARGET_EPOCHS < MIN_TARGET_EXAMPLES:
@@ -136,32 +198,22 @@ def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name
 
     n_billing_tokens_in_dataset = sum(
         min(MAX_TOKENS_PER_EXAMPLE, length) for length in convo_lens)
-    print(
-        f"Dataset has ~{n_billing_tokens_in_dataset} tokens that will be charged for during training")
-    print(f"By default, you'll train for {n_epochs} epochs on this dataset")
-    print(
-        f"By default, you'll be charged for ~{n_epochs * n_billing_tokens_in_dataset} tokens")
 
-
-def backoff_hdlr(details):
-    """Handler from https://pypi.org/project/backoff/"""
-    print(
-        "Backing off {wait:0.1f} seconds after {tries} tries "
-        "calling function {target} with kwargs "
-        "{kwargs}".format(**details),
+    # TODO would be more informative to share the total price
+    msg = _INFO_MSG_TRAINING.format(
+        num_billing_tokens=n_billing_tokens_in_dataset,
+        n_epochs=n_epochs,
+        training_charge=n_epochs * n_billing_tokens_in_dataset
     )
+    print(msg)
+
+
+#-------------------------------------------------------------------------------
+#    Classes
+#-------------------------------------------------------------------------------
 
 class TrainableOpenAI(GPT3, TrainableLM):
-    """Wrapper around specifically the OpenAI API to finetune.
-
-        Args:
-            model (str, optional): OpenAI supported LLM model to use. Defaults to "gpt-3.5-turbo-instruct".
-            api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
-            api_provider (Literal["openai"], optional): The API provider to use. Defaults to "openai".
-            model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
-            system_prompt (Optional[str], optional): The system prompt to use. Defaults to None in init, and "You are a helpful assistant." in format_data_for_vanilla_finetuning.
-            **kwargs: Additional arguments to pass to the API provider.
-    """
+    """Wrapper around specifically the OpenAI API to finetune."""
     SUPPORTED_TRAINING_METHODS = [TrainingMethod.SFT]
 
     def __init__(
@@ -174,26 +226,33 @@ class TrainableOpenAI(GPT3, TrainableLM):
             system_prompt: Optional[str] = None,
             **kwargs,
     ):
+        """Initialize the TrainableOpenAI class.
+        
+        Args:
+            model (str, optional): OpenAI supported LLM model to use. Defaults to "gpt-3.5-turbo-instruct".
+            api_key (Optional[str], optional): API provider Authentication token. use Defaults to None.
+            api_provider (Literal["openai"], optional): The API provider to use. Defaults to "openai".
+            model_type (Literal["chat", "text"], optional): The type of model that was specified. Mainly to decide the optimal prompting strategy. Defaults to "text".
+            system_prompt (Optional[str], optional): The system prompt to use. Defaults to None in init, and "You are a helpful assistant." in format_data_for_vanilla_finetuning.
+            **kwargs: Additional arguments to pass to the API provider.
+        """
         super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "openai", "You must use an OpenAI model with this class."
-        self.fine_tuning_file_ids = {}
+        self.active_finetuning_job_id: str = None
+        self.active_finetuning_file_ids: Optional[Dict[str, str]] = None
 
-    def _verify_training_arguments(self, dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]], **kwargs) -> bool:
+    def _verify_training_arguments(self, dataset: List[dict[str, Any]], **kwargs) -> bool:
         """Verify the training arguments before starting training.
-        More information on dataset verification can be found here: https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
+
+        More information on dataset verification can be found here:
+        https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
         Args:
             dataset: The dataset to be used for training.
-            valset: The validation dataset to be used for training.
-            training_arguments: The hyperparameters to be used for training.
+            **kwargs: The hyperparameters to be used for training.
             """
         def validate_dataset(name, data: dict[str, Any]) -> bool:
             dataset_validation = openai_data_validation(data)
-
-            if dataset_validation:
-                print("Dataset validation failed")
-                print(dataset_validation)
-                return False
 
             if name == "train":
                 convo_lens = check_message_lengths(data)
@@ -202,8 +261,6 @@ class TrainableOpenAI(GPT3, TrainableLM):
             return True
 
         datasets = {"train": dataset}
-        if valset:
-            datasets["val"] = valset
 
         for name, data in datasets.items():
             if not validate_dataset(name, data):
@@ -239,7 +296,7 @@ class TrainableOpenAI(GPT3, TrainableLM):
         
         return list(map(format_single_item, data))
 
-    def _submit_data(self, train_path: str, eval_path: Optional[str]):
+    def _submit_data(self, train_path: str, eval_path: Optional[str] = None):
         """Submit the data files to OpenAI API to be later used for fine-tuning.
 
         API reference: https://platform.openai.com/docs/api-reference/files/object
@@ -250,32 +307,60 @@ class TrainableOpenAI(GPT3, TrainableLM):
         Returns:
             str: The file id of the data to be used for fine-tuning.
         """
+        # TODO: Move the import outside the function
+        from dsp import logger
+
         datasets = {"train": train_path}
         if eval_path:
             datasets["val"] = eval_path
+
+        self.active_finetuning_file_ids = {}
         for name, path in datasets.items():
             file = openai.files.create(
                 file=open(f"{path}", "rb"),
                 purpose="fine-tune"
             )
-            print(f"Uploaded {name} data to OpenAI")
-            self.fine_tuning_file_ids[name] = file.id
+            msg = _INFO_DATA_FILE_UPLOAD.format(fname=path)
+            print(msg)
+            self.active_finetuning_file_ids[name] = file.id
 
     # TODO: support OAI wandb integration
     def _start_remote_training(self, **kwargs) -> str:
-        assert self.fine_tuning_file_ids["train"] is not None, "You must load data before starting training"
+        # TODO: Move the import outside the function
+        from dsp import logger
+
+        assert self.active_finetuning_file_ids and self.active_finetuning_file_ids["train"] is not None, "You must load data before starting training"
         hyperparameters = kwargs.get("hyperparameters", {})
         job = openai.fine_tuning.jobs.create(
-            training_file=self.fine_tuning_file_ids["train"],
+            training_file=self.active_finetuning_file_ids["train"],
             model=self.kwargs["model"],
-            seed=kwargs.get("seed", 0),
+            seed=kwargs.get("seed", None),
             hyperparameters=hyperparameters,
-            validation_file=self.fine_tuning_file_ids.get("val", None),
+            validation_file=self.active_finetuning_file_ids.get("val", None),
             integrations=kwargs.get("integrations", None),
             suffix=kwargs.get("suffix", None),
         )
-        self.fine_tuning_job_id = job.id
+        self.active_finetuning_job_id = job.id
+
+        # TODO: Does this actually start the training or just create the job
+        # to be put in a queue?
+        msg = _INFO_MSG_TRAINING_STARTED.format(job_id=self.active_finetuning_job_id)
+        print(msg)
+
         return job.id
+    
+    def _delete_active_data_files(self):
+        if self.active_finetuning_file_ids is not None:
+            # TODO: Handle the case where the file is already deleted
+            for file in self.active_finetuning_file_ids.values():
+                openai.files.delete(file)
+            self.active_finetuning_file_ids = None
+    
+    def _delete_active_job(self):
+        if self.active_finetuning_job_id is not None:
+            # TODO: Handle the case where the job is already completed
+            openai.fine_tuning.jobs.cancel(self.active_finetuning_job_id)
+            self.active_finetuning_job_id = None
 
     def validate_hyperparameters(self, hyperparameters: dict[str, Any]) -> bool:
         """Validate the hyperparameters before starting training. Only checks the hyperparameters that are allowed in the OpenAI API.
@@ -307,21 +392,9 @@ class TrainableOpenAI(GPT3, TrainableLM):
 
         return True
 
-    def stop_training(self) -> None:
-        if self.fine_tuning_file_ids:
-            for file in self.fine_tuning_file_ids.values():
-                openai.files.delete(file)
-
-            self.fine_tuning_file_ids = {}
-
-        if self.fine_tuning_job_id:
-            openai.fine_tuning.jobs.cancel(self.fine_tuning_job_id)
-
-        self.fine_tuning_job_id = None
-
     def check_training_status(self) -> bool:
-        assert self.fine_tuning_job_id is not None, "You must start training before checking status"
-        temp_job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
+        assert self.active_finetuning_job_id is not None, "You must start training before checking status"
+        temp_job = openai.fine_tuning.jobs.retrieve(self.active_finetuning_job_id)
         if temp_job.status == "succeeded":
             return True
         elif temp_job.status == "failed":
@@ -332,62 +405,20 @@ class TrainableOpenAI(GPT3, TrainableLM):
             return False
 
     def retrieve_trained_model_client(self):
-        assert self.fine_tuning_job_id is not None, "Start training before retrieving the model"
-        job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
+        assert self.active_finetuning_job_id is not None, "Start training before retrieving the model"
+        job = openai.fine_tuning.jobs.retrieve(self.active_finetuning_job_id)
+
         if job.status == "succeeded":
             # NOTE: Not making a copy here because that is done before the training process starts
             self.kwargs["model"] = job.fine_tuned_model
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
     
-    def start_training(self, future: Future['TrainableOpenAI'], method: TrainingMethod, train_path: str, eval_path: Optional[str], **kwargs):
-        """
-        Handles the fine-tuning process for an OpenAIModel instance.
-
-        Args:
-            original_model: The original model instance to be fine-tuned.
-            future: The Future object that will hold the fine-tuned model.
-            **kwargs: Additional arguments for fine-tuning.
-        """
-        try:
-            if method not in self.SUPPORTED_TRAINING_METHODS:
-                raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
-
-            # Convert the data from prompt completion to OAI compatible messages
-            train_dataset = self._format_data_for_vanilla_finetuning(train_path)
-            val_dataset = self._format_data_for_vanilla_finetuning(eval_path) if eval_path else None
-            
-            if not self._verify_training_arguments(train_dataset, val_dataset, **kwargs):
-                print("Unable to verify arguments")
-                raise RuntimeError("Unable to verify argument")
-            
-            if method != TrainingMethod.SFT:
-                raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-
-            for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
-                if not (path and dataset):
-                    continue
-                with open(path, "w") as f:
-                    for item in dataset:
-                        f.write(ujson.dumps(item) + "\n")
-
-            self._submit_data(train_path, eval_path)
-
-            # Start the remote training
-            job_id = self._start_remote_training(**kwargs)
-
-            # Wait for the training to complete
-            self.wait_for_training()
-
-            # Retrieve the trained model and return a copy
-            self.retrieve_trained_model_client()
-            future.set_result(self)
-
-        except Exception as e:
-            future.set_exception(e)
+        # Clean up the data files and jobs; this allows for proper caching
+        self._delete_active_data_files()
+        self.active_finetuning_job_id = None
 
     def wait_for_training(self):
-        print("Waiting for training to complete")
         while not self.check_training_status():
             time.sleep(60)
 
@@ -403,36 +434,77 @@ class TrainableOpenAI(GPT3, TrainableLM):
         if job.status != "succeeded":
             raise RuntimeError("Job not completed yet, cannot retrieve model")
         model = TrainableOpenAI(model=job.fine_tuned_model, **kwargs)
-        model.fine_tuning_job_id = job_id
-        return model
-    
-    def get_finetune(self, train_path: str, eval_path: Optional[str], method: TrainingMethod, **kwargs) -> Future[TrainableLM]:
-        """
-        Does everything required to finetune an OpenAI model.
 
-        This includes:
-        - Convert the data to the required format
-        - Validate the data
-        - Load the data
-        - Start the remote training
-        - Wait for the training to complete
-        - Retrieve the trained model
+        return model
+
+    def get_finetune(self, method: TrainingMethod, train_path: str, **kwargs) -> Future[TrainableLM]:
+        """Get a future for a finetuned model from the given training data.
 
         Args:
-            train_path: The path to the training data.
-            val_path: The path to the validation data.
             method: The training method to use.
-            **kwargs: Additional arguments to pass to the API provider.
-            https://platform.openai.com/docs/api-reference/fine-tuning/create
-                The kwargs can contain:
-                    - hyperparameters: The hyperparameters to use for training.
-                        - n_epochs
-                        - learning_rate_multiplier
-                        - batch_size
-                    - seed: The seed to use for training.
-                    - integrations: See https://platform.openai.com/docs/api-reference/fine-tuning/create#fine-tuning-create-integrations
-                    - suffix: A suffix to add to the model name.
-        Returns:
-            Future[TrainableLM]: A Future object that will hold the fine-tuned model
+            train_path: The path to the training data, which should be in the
+                format required by the training method. The format is verified
+                in FinetunableLM.get_finetune(...) using the
+                dsp.modules.lm.verify_training_method_data_format(...) function.
+            **kwargs: Additional arguments that will be passed to the OpenAI's
+                finetuning creating endpoint. Refer to the documentation at
+                https://platform.openai.com/docs/api-reference/fine-tuning/create
+                for details.
+                
+                Some possible kwargs are shared below, but refer to the
+                documentation for a complete list:
+                - hyperparameters (Dict[str, Any]): A dictionary containing the
+                  hyperparameters to be used for training. Some example keys
+                  are:
+                    - n_epochs (int)
+                    - learning_rate_multiplier (float)
+                    - batch_size (int)
+                - seed (int): The seed to use for training.
         """
-        return super().get_finetune(train_path=train_path, eval_path=eval_path, method=method, **kwargs)
+        return super().get_finetune(method, train_path, **kwargs)
+
+    def start_training(self, future: Future['TrainableOpenAI'], method: TrainingMethod, train_path: str, **kwargs):
+        """Start the training process for an TrainableOpenAI model."""
+        try:
+            if method not in self.SUPPORTED_TRAINING_METHODS:
+                raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
+
+            # Convert the data from prompt completion to OAI compatible messages
+            train_dataset = self._format_data_for_vanilla_finetuning(train_path)
+            
+            if not self._verify_training_arguments(train_dataset, **kwargs):
+                print("Unable to verify arguments")
+                raise RuntimeError("Unable to verify argument")
+            
+            if method != TrainingMethod.SFT:
+                raise NotImplementedError("Only SFT finetuning is supported at the moment.")
+
+            # TODO: This function should not overwrite the same file
+            # TODO: Where should the intermediary files be stored? In DSPy
+            # cachedir?
+            with open(train_path, "w") as f:
+                for item in train_dataset:
+                    f.write(ujson.dumps(item) + "\n")
+
+            self._submit_data(train_path)
+
+            # Start the remote training
+            job_id = self._start_remote_training(**kwargs)
+
+            # Wait for the training to complete
+            self.wait_for_training()
+
+            # Retrieve the trained model and return a copy
+            self.retrieve_trained_model_client()
+    
+            future.set_result(self)
+
+        except Exception as e:
+            future.set_exception(e)
+
+    def stop_training(self) -> None:
+        """Stop the any training process related to this instance."""
+        # TODO: This is impossible to call right now because the training is
+        # is wrapped in a future object.
+        self._delete_active_data_files()
+        self._delete_active_job()

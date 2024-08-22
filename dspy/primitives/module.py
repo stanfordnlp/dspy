@@ -113,7 +113,6 @@ class BaseModule:
         return obj
 
     def dump_state(self, save_verbose):
-        print(self.named_parameters())
         return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
 
     def load_state(self, state):

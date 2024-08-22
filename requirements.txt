@@ -1,3 +1,4 @@
+# DSPy requirements
 backoff
 datasets
 joblib~=1.3
@@ -11,3 +12,7 @@ structlog
 tqdm
 ujson
 magicattr~=0.1.6
+
+# Fine-tuning requirements
+# TODO: Move to a separate file
+tiktoken
