@@ -20,6 +20,8 @@
 
 **Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
 
+**Roadmap for DSPy 2.5 and DSPy 3.0:** [Roadmap Sketch](https://github.com/stanfordnlp/dspy/blob/main/docs/docs/roadmap.md)
+
 **How is DSPy Used?:** [DSPy Use Cases](docs/docs/dspy-usecases.md)
 
 [![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
