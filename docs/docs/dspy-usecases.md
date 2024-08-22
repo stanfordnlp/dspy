@@ -8,7 +8,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 | **Name** | **Use Cases** |
 |---|---|
-| **[Normal Computing](https://www.normalcomputing.com/)** | Language specs from chip companies to intermediate languages |
+| **[Normal Computing](https://www.normalcomputing.com/)** | Specs from chip companies from English to intermediate languages |
 | **[Replit](https://replit.com/)** | Synthesize diffs using large pre-trained code LLMs with a few-shot prompt pipeline implemented with DSPy. [Blog](https://blog.replit.com/code-repair) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Jetblue](https://www.jetblue.com/) + [Databricks](https://www.databricks.com/)** | Multiple Chatbot Use Cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
