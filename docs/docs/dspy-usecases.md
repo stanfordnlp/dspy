@@ -19,9 +19,9 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Replit](https://replit.com/)** | Synthesize diffs using large pre-trained code LLMs with a few-shot prompt pipeline implemented with DSPy. [Blog](https://blog.replit.com/code-repair) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Jetblue](https://www.jetblue.com/) + [Databricks](https://www.databricks.com/)** | Multiple Chatbot Use Cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
-| **[Normal Computing](https://www.normalcomputing.com/)** | Specs from chip companies from English to intermediate formal languages |
 | **[PingCAP](https://pingcap.com/)** | Building a knowledge graph. [Article](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | Different pipelines within Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
+| **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
 | **[Procure.FYI](https://www.procure.fyi/)** | Process messy, publicly available technology spending and pricing data via DSPy. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
