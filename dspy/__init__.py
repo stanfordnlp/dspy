@@ -13,6 +13,7 @@ from .functional import *  # isort: skip
 settings = dsp.settings
 
 LM = dsp.LM
+TrainableLM = dsp.TrainableLM
 
 AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3

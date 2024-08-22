@@ -1,6 +1,5 @@
 from .anthropic import Claude
 from .aws_models import AWSAnthropic, AWSMeta, AWSMistral, AWSModel
-
 # Below is obsolete. It has been replaced with Bedrock class in dsp/modules/aws_providers.py
 # from .bedrock import *
 from .aws_providers import Bedrock, Sagemaker
@@ -31,3 +30,8 @@ from .snowflake import *
 from .tensorrt_llm import TensorRTModel
 from .watsonx import *
 from .you import You
+
+# TODO: Replace the * imports with explicit imports. For example, "LM" is
+# imported implicitly by an * import, but it should be imported explicitly.
+# Here we are importing it again.
+from .lm import LM, TrainableLM
