@@ -53,7 +53,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **Optimizing LM for Text2SQL using DSPy** | Text2SQL [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
 | **DSPy PII Masking Demo by Eric Ness** | PII Masking [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
 
-TODO: This list in particular is highly incomplete. There are dozens of others, e.g. see "Used By" in GitHub for some examples.
+TODO: This list in particular is highly incomplete. There are dozens of others, e.g. see "Used By" in GitHub for some examples, e.g. STORM (10k stars), Theory of Mind, BIG BENCH, Indian Languages NLI, etc.
 
 ## A Few Blogs about DSPy
 
@@ -61,6 +61,8 @@ TODO: This list in particular is highly incomplete. There are dozens of others, 
 |---|
 | **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
 | **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
+
+TODO: This list in particular is highly incomplete. There are several good other ones.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
