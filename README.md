@@ -20,7 +20,7 @@
 
 **Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
 
-**Roadmap for DSPy 2.5 and DSPy 3.0:** [Roadmap Sketch](https://github.com/stanfordnlp/dspy/blob/main/docs/docs/roadmap.md)
+**Roadmap for DSPy 2.5 & 3.0:** [Roadmap Sketch](https://github.com/stanfordnlp/dspy/blob/main/docs/docs/roadmap.md)
 
 **How is DSPy Used?:** [DSPy Use Cases](docs/docs/dspy-usecases.md)
 
