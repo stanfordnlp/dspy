@@ -20,10 +20,10 @@ other object: '{sname}' != '{oname}'"""
 _ERR_MSG_SIGNATURE = """Structurally equivalent predictors must have the same \
 signature: '{sname}' != '{oname}'"""
 
+
 #-------------------------------------------------------------------------------
 #    Classes
 #-------------------------------------------------------------------------------
-
 
 class Predict(Module, Parameter):
     def __init__(self, signature, **config):
