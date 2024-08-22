@@ -27,6 +27,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
 | **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
+| **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads |
 
 ## A Few Providers and Integrations
 
