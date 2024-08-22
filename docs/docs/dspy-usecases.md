@@ -1,5 +1,7 @@
 # DSPy Use Cases
 
+We often get questions of "Is DSPy used in production?" or "How are people using DSPy in production?" and this list was created to answer these questions.
+
 This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your company to the list, please make a PR.
 
 ## Company Use Cases
@@ -16,6 +18,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
+| **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 
 ## Providers and Integrations
 
@@ -40,6 +43,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent efficiency optimization |
 | **[Prompts as Auto-Optimized Training Hyperparameters (PATH)](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
 | **[Empathetic Dialogues for English learning (EDEN)](https://arxiv.org/abs/2406.17982v1)** | Uses adaptive empathetic feedback to improve student grit |
+| **[ECG-Chat](https://arxiv.org/pdf/2408.08849)** | Uses DSPy with GraphRAG for medical report generation |
 
 ## Repositories about DSPy
 
