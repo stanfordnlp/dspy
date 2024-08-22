@@ -10,20 +10,35 @@ from dspy.primitives.program import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
+
 #-------------------------------------------------------------------------------
-#    Templates for the user-facing strings used by this module
+#    Helper functions
 #-------------------------------------------------------------------------------
 
-_ERR_MSG_CLASS = """The class of this object does not match the class of the \
-other object: '{sname}' != '{oname}'"""
+def assert_structural_equivalency_for_predictors(
+        predictor1: object,
+        predictor2: object,
+    ) -> Optional[AssertionError]:
+    """Assert that the two predictors are structurally equivalent to each other.
 
-_ERR_MSG_SIGNATURE = """Structurally equivalent predictors must have the same \
-signature: '{sname}' != '{oname}'"""
+    Args:
+        predictor1: The predictor to compare with.
+        predictor2: The predictor to compare with.
+
+    Raises:
+        AssertionError: If the predictors are not structurally equivalent.
+    """
+    # Assert that the objects are predictors
+    assert isinstance(predictor1, Predict)
+    assert isinstance(predictor2, Predict)
+
+    # Assert that the predictors have equivalent signatures
+    assert predictor1.signature.equals(predictor2.signature)
+
 
 #-------------------------------------------------------------------------------
 #    Classes
 #-------------------------------------------------------------------------------
-
 
 class Predict(Module, Parameter):
     def __init__(self, signature, **config):
@@ -32,37 +47,13 @@ class Predict(Module, Parameter):
         self.config = config
         self.reset()
 
-    def _assert_structural_equivalency(
-            self,
-            other: Predict
-        ) -> Optional[AssertionError]:
-        """Assert that the predictor is structurally equivalent to another.
-
-        Args:
-            other: The predictor to compare with.
-
-        Raises:
-            AssertionError: If the predictors are not structurally equivalent.
-        """
-        # Assert that the other object is an instance of the same class
-        sname = self.__class__.__name__
-        oname = other.__class__.__name__
-        err_msg = _ERR_MSG_CLASS.format(sname=sname, oname=oname)
-        assert isinstance(other, self.__class__), err_msg
-
-        # Assert that the predictors have equivalent signatures
-        sname = self.signature.signature
-        oname = other.signature.signature
-        err_msg = _ERR_MSG_SIGNATURE.format(sname=sname, oname=oname)
-        assert self.signature.equals(other.signature), err_msg
-
     def reset(self):
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
-    def dump_state(self, save_field_meta=False):
+    def dump_state(self, save_verbose=False):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -76,8 +67,8 @@ class Predict(Module, Parameter):
 
             state["demos"].append(demo)
 
-        # If `save_field_meta` save all field metadata as well.
-        if save_field_meta:
+        # If `save_verbose` save all field metadata as well.
+        if save_verbose:
             fields = []
             for field_key in self.signature.fields.keys():
                 field_metadata = self.signature.fields[field_key]
