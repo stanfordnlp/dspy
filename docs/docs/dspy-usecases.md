@@ -7,7 +7,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 ## Table of Contents
 
 1. [Company Use Cases](#a-few-company-use-cases)
-2. [roviders and Integrations](#a-few-providers-and-integrations)
+2. [Providers and Integrations](#a-few-providers-and-integrations)
 3. [Papers Using DSPy](#a-few-papers-using-dspy)
 4. [Repositories about DSPy](#a-few-repositories-about-dspy)
 5. [Blogs about DSPy](#a-few-blogs-about-dspy)
