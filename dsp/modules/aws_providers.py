@@ -1,17 +1,22 @@
 """AWS providers for LMs."""
 
+import importlib.util
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import backoff
+
 from dsp.utils.settings import settings
 
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-    ERRORS = (ClientError,)
+# Check if 'boto3' is available
+boto3_spec = importlib.util.find_spec("boto3")
 
-except ImportError:
+if boto3_spec is not None:
+    from botocore.exceptions import ClientError
+
+    ERRORS = (ClientError,)
+else:
+    # If 'boto3' is not available, fall back to using a general Exception
     ERRORS = (Exception,)
 
 
@@ -29,6 +34,7 @@ def giveup_hdlr(details):
     if "max retries" in details.args[0]:
         return False
     return True
+
 
 class AWSProvider(ABC):
     """This abstract class adds support for AWS model providers such as Bedrock and SageMaker.
@@ -48,6 +54,8 @@ class AWSProvider(ABC):
         region_name: str,
         service_name: str,
         profile_name: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
         batch_n_enabled: bool = True,
     ) -> None:
         """_summary_.
@@ -56,20 +64,26 @@ class AWSProvider(ABC):
             region_name (str, optional): The AWS region where this LM is hosted.
             service_name (str): Used in context of invoking the boto3 API.
             profile_name (str, optional): boto3 credentials profile.
+            aws_access_key_id (str, optional): AWS access key id.
+            aws_secret_access_key (str, optional): AWS secret access key.
             batch_n_enabled (bool): If False, call the LM N times rather than batching.
         """
         try:
             import boto3
         except ImportError as exc:
-            raise ImportError('pip install boto3 to use AWS models.') from exc
+            raise ImportError("pip install boto3 to use AWS models.") from exc
 
-        if profile_name is None:
-            self.predictor = boto3.client(service_name, region_name=region_name)
-        else:
-            self.predictor = boto3.Session(profile_name=profile_name).client(
+        if aws_access_key_id and aws_secret_access_key:
+            self.predictor = boto3.client(
                 service_name,
                 region_name=region_name,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
             )
+        elif profile_name:
+            self.predictor = boto3.Session(profile_name=profile_name).client(service_name, region_name=region_name)
+        else:
+            self.predictor = boto3.client(service_name, region_name=region_name)
 
         self.batch_n_enabled = batch_n_enabled
 
@@ -105,7 +119,7 @@ class AWSProvider(ABC):
 
         n = -1
         if not self.batch_n_enabled:
-            n = query_kwargs.pop('n', 1)
+            n = query_kwargs.pop("n", 1)
             query_kwargs["num_generations"] = n
 
         return n, query_kwargs
@@ -118,15 +132,21 @@ class Bedrock(AWSProvider):
         self,
         region_name: str,
         profile_name: Optional[str] = None,
-        batch_n_enabled: bool = False,   # This has to be setup manually on Bedrock.
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+        batch_n_enabled: bool = False,  # This has to be setup manually on Bedrock.
     ) -> None:
         """_summary_.
 
         Args:
             region_name (str): The AWS region where this LM is hosted.
             profile_name (str, optional): boto3 credentials profile.
+            aws_access_key_id (str, optional): AWS access key id.
+            aws_secret_access_key (str, optional): AWS secret access key.
         """
-        super().__init__(region_name, "bedrock-runtime", profile_name, batch_n_enabled)
+        super().__init__(
+            region_name, "bedrock-runtime", profile_name, aws_access_key_id, aws_secret_access_key, batch_n_enabled
+        )
 
     def call_model(self, model_id: str, body: str) -> str:
         return self.predictor.invoke_model(
@@ -144,14 +164,18 @@ class Sagemaker(AWSProvider):
         self,
         region_name: str,
         profile_name: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
     ) -> None:
         """_summary_.
 
         Args:
             region_name (str, optional): The AWS region where this LM is hosted.
             profile_name (str, optional): boto3 credentials profile.
+            aws_access_key_id (str, optional): AWS access key id.
+            aws_secret_access_key (str, optional): AWS secret access key.
         """
-        super().__init__(region_name, "runtime.sagemaker", profile_name)
+        super().__init__(region_name, "runtime.sagemaker", profile_name, aws_access_key_id, aws_secret_access_key)
 
     @backoff.on_exception(
         backoff.expo,
