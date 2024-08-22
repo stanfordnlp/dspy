@@ -59,7 +59,6 @@ def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any
         Either a list of errors and their counts or None if no errors are found
     """
     # TODO: Move the import outside the function
-    from dsp import logger
 
     # TODO: Counting the number of errors is not very useful, we can consider
     # raising an error as we run into issues.
@@ -136,7 +135,6 @@ def num_assistant_tokens_from_messages(messages):
 
 def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
     # TODO: Move the import outside the function
-    from dsp import logger
 
     n_missing_system = 0
     n_missing_user = 0
@@ -173,7 +171,6 @@ def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
 
 def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name=1, convo_lens=None):
     # TODO: Move the import outside the function
-    from dsp import logger
 
     MAX_TOKENS_PER_EXAMPLE = 16385
 
@@ -308,7 +305,6 @@ class TrainableOpenAI(GPT3, TrainableLM):
             str: The file id of the data to be used for fine-tuning.
         """
         # TODO: Move the import outside the function
-        from dsp import logger
 
         datasets = {"train": train_path}
         if eval_path:
@@ -327,7 +323,6 @@ class TrainableOpenAI(GPT3, TrainableLM):
     # TODO: support OAI wandb integration
     def _start_remote_training(self, **kwargs) -> str:
         # TODO: Move the import outside the function
-        from dsp import logger
 
         assert self.active_finetuning_file_ids and self.active_finetuning_file_ids["train"] is not None, "You must load data before starting training"
         hyperparameters = kwargs.get("hyperparameters", {})
