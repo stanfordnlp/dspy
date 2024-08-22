@@ -29,6 +29,8 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
 | **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads |
 
+Though we are aware of plenty of usage at Fortune 500 companies, this list only includes companies that have OKed being included for specific products so far.
+
 ## A Few Providers and Integrations
 
 | **Name** | **Link** |
@@ -53,6 +55,8 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Prompts as Auto-Optimized Training Hyperparameters (PATH)](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
 | **[Empathetic Dialogues for English learning (EDEN)](https://arxiv.org/abs/2406.17982v1)** | Uses adaptive empathetic feedback to improve student grit |
 | **[ECG-Chat](https://arxiv.org/pdf/2408.08849)** | Uses DSPy with GraphRAG for medical report generation |
+
+TODO: This list is missing a few key things like UofT's winning system at MEDIQA and UMD's Suicide Detection system that outperforms 20-hour human prompt engineering by 40%, etc.
 
 ## A Few Repositories about DSPy
 
