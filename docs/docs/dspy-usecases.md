@@ -29,7 +29,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
 | **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads |
 
-Though we are aware of plenty of usage at Fortune 500 companies, this list only includes companies that have OKed being included for specific products so far.
+Though we are aware of plenty of usage at Fortune 500 companies, this list only includes companies that have public posts or have OKed being included for specific products so far.
 
 ## A Few Providers and Integrations
 
