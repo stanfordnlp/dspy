@@ -1,8 +1,8 @@
 # DSPy Use Cases
 
-We often get questions of "Is DSPy used in production?" or "How are people using DSPy in production?" and this list was created to answer these questions.
+We often get questions like "How are people using DSPy in practice?", like in production or for research. This list was created to collect a few pointers and to encourage others in the community to add their own work below.
 
-This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your company to the list, please make a PR.
+This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please make a PR.
 
 ## Company Use Cases
 
