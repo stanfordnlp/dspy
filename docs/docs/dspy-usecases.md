@@ -18,7 +18,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 |---|---|
 | **[Replit](https://replit.com/)** | Synthesize diffs using large pre-trained code LLMs with a few-shot prompt pipeline implemented with DSPy. [Blog](https://blog.replit.com/code-repair) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
-| **[Jetblue](https://www.jetblue.com/) + [Databricks](https://www.databricks.com/)** | Multiple Chatbot Use Cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
+| **[JetBlue](https://www.jetblue.com/) + [Databricks](https://www.databricks.com/)** | Multiple Chatbot Use Cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
 | **[PingCAP](https://pingcap.com/)** | Building a knowledge graph. [Article](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | Different pipelines within Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
 | **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
