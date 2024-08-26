@@ -42,7 +42,8 @@ class Settings:
                 suggest_failures=0,
                 langchain_history=[],
                 experimental=False,
-                backoff_time = 10
+                backoff_time = 10,
+                enable_cache=True
             )
             cls._instance.__append(config)
 
