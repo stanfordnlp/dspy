@@ -28,6 +28,8 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
 | **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads |
+| **[Howie](https://howie.ai)** | Using DSPy to automate meeting scheduling through email. |
+| **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
 
 Though we are aware of plenty of usage at Fortune 500 companies, this list only includes companies that have public posts or have OKed being included for specific products so far.
 
