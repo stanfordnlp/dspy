@@ -89,7 +89,7 @@ class MilvusRM(dspy.Retrieve):
             query_or_queries = [query_or_queries]
         query_embeddings = self.embedding_function(query_or_queries)
 
-        k = k or self.top_k
+        k = k or self.k
 
         milvus_res = self.milvus_client.search(
             collection_name=self.collection_name,
