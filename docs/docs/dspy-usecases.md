@@ -77,7 +77,7 @@ TODO: This list in particular is highly incomplete. There are dozens of others, 
 | **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
 | **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
 
-TODO: This list in particular is highly incomplete. There are several good other ones.
+TODO: This list in particular is highly incomplete. There are several good other ones, e.g. from Sephora. In general adding videos will be useful here.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
