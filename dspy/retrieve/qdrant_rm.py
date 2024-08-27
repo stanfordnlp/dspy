@@ -78,28 +78,21 @@ class QdrantRM(dspy.Retrieve):
 
         vectors = self._vectorizer(queries)
 
-        # If vector_name is None
-        # vector = [0.8, 0.2, 0.3...]
-        # Else
-        # vector = {"name": vector_name, "vector": [0.8, 0.2, 0.3...]}
-        vectors = [
-            vector if self._vector_name is None else {"name": self._vector_name, "vector": vector} for vector in vectors
-        ]
-
         search_requests = [
-            models.SearchRequest(
-                vector=vector,
+            models.QueryRequest(
+                query=vector,
+                using=self._vector_name,
                 limit=k or self.k,
                 with_payload=[self._document_field],
                 filter=filter,
             )
             for vector in vectors
         ]
-        batch_results = self._client.search_batch(self._collection_name, requests=search_requests)
+        batch_results = self._client.query_batch_points(self._collection_name, requests=search_requests)
 
         passages_scores = defaultdict(float)
         for batch in batch_results:
-            for result in batch:
+            for result in batch.points:
                 # If a passage is returned multiple times, the score is accumulated.
                 document = result.payload.get(self._document_field)
                 passages_scores[document] += result.score

@@ -46,7 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
-qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
+qdrant = ["qdrant-client>=1.11.1", "fastembed>=0.2.0"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla~=0.3.7"]
 pinecone = ["pinecone-client~=2.2.4"]
