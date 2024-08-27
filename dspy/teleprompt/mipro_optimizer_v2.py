@@ -210,7 +210,7 @@ class MIPROv2(Teleprompter):
                 try:
                     self.program_code_string = get_dspy_source_code(student)
                     if self.verbose:
-                        print("SOURCE CODE:",self.program_code_string)
+                        if self.verbose: print("SOURCE CODE:",self.program_code_string)
                 except Exception as e:
                     print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
                     self.program_code_string = None
@@ -228,6 +228,7 @@ class MIPROv2(Teleprompter):
             )
 
             # Setup logging
+            logging.getLogger('openai').setLevel(logging.WARNING)
             logging.basicConfig(level=logging.WARNING)
             setup_logging(self.log_dir)
 
@@ -382,9 +383,9 @@ class MIPROv2(Teleprompter):
                             p_new.demos = p_demo_candidates[demos_idx]
 
                     # Log assembled program
-                    print("CANDIDATE PROGRAM:")
-                    print_full_program(candidate_program)
-                    print("...")
+                    if self.verbose: print("CANDIDATE PROGRAM:")
+                    if self.verbose: print_full_program(candidate_program)
+                    if self.verbose: print("...")
 
                     # Save the candidate program
                     trial_logs[trial.number]["program_path"] = save_candidate_program(
@@ -396,25 +397,27 @@ class MIPROv2(Teleprompter):
                     # Evaluate the candidate program with relevant batch size
                     batch_size = self._get_batch_size(minibatch, trainset)
                     score = eval_candidate_program(
-                        batch_size, trainset, candidate_program, evaluate,
+                        batch_size, trainset, candidate_program, 
+                        evaluate,
                     )
+                    if self.verbose: print(f"SCORE {score}, BATCH SIZE {batch_size}")
 
                     # Print out a full trace of the program in use
-                    print("FULL TRACE")
-                    full_trace = get_task_model_history_for_full_example(
-                        candidate_program, self.task_model, trainset, evaluate,
-                    )
-                    print("...")
+                    if self.verbose:
+                        print("FULL TRACE")
+                        get_task_model_history_for_full_example(
+                            candidate_program, self.task_model, trainset, evaluate,
+                        )
+                        print("...")
 
                     # Log relevant information
-                    print(f"Score {score}")                
+                    if self.verbose: print(f"Score {score}")                
                     categorical_key = ",".join(map(str, chosen_params))
                     param_score_dict[categorical_key].append(
                         (score, candidate_program),
                     )
                     trial_logs[trial.number]["num_eval_calls"] = batch_size
                     trial_logs[trial.number]["full_eval"] = batch_size >= len(trainset)
-                    trial_logs[trial.number]["eval_example_call"] = full_trace
                     trial_logs[trial.number]["score"] = score
                     trial_logs[trial.number]["pruned"] = False
                     total_eval_calls += trial_logs[trial.number]["num_eval_calls"]
@@ -432,7 +435,7 @@ class MIPROv2(Teleprompter):
                     # Update the best program if the current score is better, and if we're not using minibatching
                     best_score_updated = False
                     if score > best_score and trial_logs[trial.number]["full_eval"] and not minibatch:
-                        print("Updating best score")
+                        if self.verbose: print("Updating best score")
                         best_score = score
                         best_program = candidate_program.deepcopy()
                         best_score_updated = True
@@ -462,7 +465,7 @@ class MIPROv2(Teleprompter):
                         trial_logs[trial.number]["score"] = full_train_score
                         
                         if full_train_score > best_score:
-                            print(f"UPDATING BEST SCORE WITH {full_train_score}")
+                            if self.verbose: print(f"UPDATING BEST SCORE WITH {full_train_score}")
                             best_score = full_train_score
                             best_program = highest_mean_program.deepcopy()
                             best_score_updated = True
@@ -490,10 +493,9 @@ class MIPROv2(Teleprompter):
             objective_function = create_objective(
                 program, instruction_candidates, demo_candidates, evaluate, trainset,
             )
-
             sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
             study = optuna.create_study(direction="maximize", sampler=sampler)
-            score = study.optimize(objective_function, n_trials=num_batches)
+            _ = study.optimize(objective_function, n_trials=num_batches)
 
             if best_program is not None and self.track_stats:
                 best_program.trial_logs = trial_logs
@@ -501,7 +503,6 @@ class MIPROv2(Teleprompter):
                 best_program.prompt_model_total_calls = self.prompt_model_total_calls
                 best_program.total_calls = self.total_calls
 
-            # program_file_path = os.path.join(self.log_dir, 'best_program.pickle')
             if self.log_dir:
                 program_file_path = os.path.join(self.log_dir, "best_program")
                 best_program.save(program_file_path)
