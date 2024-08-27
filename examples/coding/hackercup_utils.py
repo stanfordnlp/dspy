@@ -4,6 +4,13 @@ import multiprocessing
 import concurrent.futures
 from typing import List, Optional
 
+"""
+Note that this code is largely based off of the code here:
+https://github.com/HackerCupAI/starter-kits/blob/main/submit_first_solution/01_one_shot.py
+
+by @tcapelle, with some adaptations for this workflow.
+"""
+
 def extract_code(code_str):
     # Regex pattern to extract the code between ```python and ```
     pattern = r"```python\s*([\s\S]*?)\s*```"
@@ -69,28 +76,6 @@ def run_with_timeout(code: str, input: Optional[str], timeout: int):
     return {"result": return_dict.get("result"), "error": None, "stack_trace": None}
 
 
-# Function to check the solution
-def check_solution(expected: str, actual: str) -> dict:
-    "Check the solution against the expected output"
-    matches = 0
-    expected_lines = expected.strip().split("\n")
-    actual_lines = actual.strip().split("\n")
-    offending_cases = []
-    for expected_line, actual_line in zip(expected_lines, actual_lines):
-        expected_line = expected_line.strip()
-        actual_line = actual_line.strip()
-
-        if expected_line == actual_line:
-            matches += 1  # +1 for the whole line match
-        else:
-            offending_cases.append((expected_line, actual_line))
-    return {
-        "matches": matches == len(expected_lines),
-        "total": len(expected_lines),
-        "offending_cases": offending_cases,
-    }
-
-
 async def arun(
     code: Optional[str] = None, input: Optional[str] = None, timeout: int = 60
 ):
@@ -115,3 +100,24 @@ async def arun(
 # Function to run code synchronously
 def run(code: Optional[str] = None, input: Optional[str] = None, timeout: int = 5):
     return asyncio.run(arun(code, input, timeout))
+
+# Function to check the solution
+def check_solution(expected: str, actual: str) -> dict:
+    "Check the solution against the expected output"
+    matches = 0
+    expected_lines = expected.strip().split("\n")
+    actual_lines = actual.strip().split("\n")
+    offending_cases = []
+    for expected_line, actual_line in zip(expected_lines, actual_lines):
+        expected_line = expected_line.strip()
+        actual_line = actual_line.strip()
+
+        if expected_line == actual_line:
+            matches += 1  # +1 for the whole line match
+        else:
+            offending_cases.append((expected_line, actual_line))
+    return {
+        "matches": matches == len(expected_lines),
+        "total": len(expected_lines),
+        "offending_cases": offending_cases,
+    }

@@ -84,147 +84,26 @@ class SimpleGenerateCode(dspy.Module):
 
 ### DEFINE ADVANCED PIPELINE ###
 
-class GenerateCodeString1(Signature):
-    """You are an expert problem solver. Your task is creating the code to solve the problem at hand in python.
-
-    The program should have a single `solve` method that has the following signature:
-    input: [str]: The same Input provided above
-    output [str]: The same Output provided above
-
-    Here's an example of the format we'd expect for a simple python program that adds 1 to a number:
-    ```python def solve(x: int):\n    return x + 1```
-
-    Note:
-    * Do NOT print( the Output, instead return it.
-    * Make sure that your proposed solution is both time and memory efficient.
-    """
-
-    # """Given a description of a coding challenge to solve, please respond with the """
-    problem_description: str = InputField(format=str)
-    expected_behavior: str = InputField(format=str)
-    solution: str = OutputField(
-        format=str, desc="A plan for how we should go about solving this problem."
-    )
-    python_program: str = OutputField(format=str)
-
-
-class GenerateCodeString2(Signature):
-    """You are an expert leetcoder who is competing in the HackerCup.
-
-    Your task is to write the code to solve the problem described below.
-
-    The program should have a single `solve` method that has the following signature:
-    input: [str]: The same Input provided above
-    output [str]: The same Output provided above
-
-    Here's an example of the format we'd expect for a simple python program that adds 1 to a number:
-    ```python def solve(x: int):\n    return x + 1```
-
-    Note:
-    * Do NOT print( the Output, instead return it.
-    * Make sure that your proposed solution is both time and memory efficient.
-    """
-
-    # """Given a description of a coding challenge to solve, please respond with the """
-    problem_description: str = InputField(format=str)
-    expected_behavior: str = InputField(format=str)
-    solution: str = OutputField(
-        format=str, desc="A plan for how we should go about solving this problem."
-    )
-    python_program: str = OutputField(format=str)
-
-
-class GenerateCodeString3(Signature):
-    """Given the leetcode problem below, write a solution in python.
-
-    The program should have a single `solve` method that has the following signature:
-    input: [str]: The same Input provided above
-    output [str]: The same Output provided above
-
-    Here's an example of the format we'd expect for a simple python program that adds 1 to a number:
-    ```python def solve(x: int):\n    return x + 1```
-
-    Note:
-    * Do NOT print( the Output, instead return it.
-    * Make sure that your proposed solution is both time and memory efficient.
-    """
-
-    # """Given a description of a coding challenge to solve, please respond with the """
-    problem_description: str = InputField(format=str)
-    expected_behavior: str = InputField(format=str)
-    solution: str = OutputField(
-        format=str, desc="A plan for how we should go about solving this problem."
-    )
-    python_program: str = OutputField(format=str)
-
-class FixCodeWithStackTrace(Signature):
-    """We are trying to get this python code to run properly. Please examine the current code and the error, and propose new code."""
-
-    problem_description = InputField()
-    current_code = InputField(
-        prefix="Current Incorrect Code",
-        desc="Current code that is producing the incorrect behavior",
-    )
-    expected_behavior = InputField()
-    stack_trace = InputField()
-    explanation = OutputField(desc="Explanation for why the current error is occuring.")
-    fixed_code = OutputField()
-
-
-class FixCodeWithCases(Signature):
-    """We are trying to get this python code to run properly. Please examine the current code and the cases that are currently being missed. Propose new code that fixes the error."""
-
-    problem_description = InputField(format=str)
-    current_code = InputField(
-        prefix="Current Incorrect Code:",
-        desc="Current code that is producing the incorrect behavior",
-    )
-    expected_behavior = InputField(format=str)
-    current_incorrect_results = InputField(format=str)
-    problems = OutputField(
-        prefix="Problem(s):",
-        desc="Problem(s) with current code that have led to the incorrect results",
-        format=str,
-    )
-    solutions = OutputField(
-        prefix="Solution(s):",
-        desc="Solution(s) to problems with existing code",
-        format=str,
-    )
-    fixes = OutputField(
-        prefix="Specific Changes to Make to Code:",
-        desc="Specific changes we will be making to the code - this can include changes to particular code snippets.",
-    )
-    fixed_code = OutputField(
-        format=str,
-        prefix="New Code w/ Fixes Integrated:",
-        desc="Code with fixes applied to correct the incorrect behavior. This code MUST be different from the code above, as it should have the fixes integrated. Include a comment next to the changes made to point them out.",
-    )
-
-
 class GenerateCode(dspy.Module):
-    def __init__(self, max_tries=3, num_ensembles=5):
+    def __init__(self, max_tries=2, num_ensembles=3):
         super().__init__()
         # Initialize variables
         self.max_tries = max_tries
         self.num_ensembles = num_ensembles
 
         # Initialize layers
-        # self.generate_code = dspy.Predict(GenerateCodeSignature, n=self.num_ensembles)
-        self.generate_code1 = dspy.Predict(GenerateCodeString1)
-        self.generate_code2 = dspy.Predict(GenerateCodeString2)
-        self.generate_code3 = dspy.Predict(GenerateCodeString3)
-        self.fix_code_with_error = dspy.Predict(FixCodeWithStackTrace)
-        self.fix_code_with_cases = dspy.Predict(FixCodeWithCases)
+        self.generate_code = dspy.ChainOfThought("problem_description, expected_behavior -> python_program", n=self.num_ensembles)
+        self.fix_code = dspy.ChainOfThought("problem_description, current_code, expected_behavior, current_incorrect_results -> fixed_code")
 
     def forward(self, problem_description, sample_input, sample_output):
 
         expected_behavior = get_expected_behavior_str(sample_input, sample_output)
-        python_code1 = extract_code(self.generate_code1(problem_description=problem_description, expected_behavior = expected_behavior).python_program)
-        python_code2 = extract_code(self.generate_code2(problem_description=problem_description, expected_behavior = expected_behavior).python_program)
-        python_code3 = extract_code(self.generate_code3(problem_description=problem_description, expected_behavior = expected_behavior).python_program)
-
-        python_solutions = [python_code1, python_code2, python_code3]
+        solutions = self.generate_code(
+            problem_description=problem_description, expected_behavior=expected_behavior
+        )
+        python_solutions = [
+             extract_code(solution.python_program) for solution in solutions.completions
+        ]
 
         for i, python_code in enumerate(python_solutions):
             for try_iter in range(self.max_tries):
@@ -237,16 +116,16 @@ class GenerateCode(dspy.Module):
                 )
                 if error:  # Running code led to an exception, fix code
                     python_code = extract_code(
-                        self.fix_code_with_error(
+                        self.fix_code(
                             problem_description=problem_description,
                             current_code=python_code,
                             expected_behavior=expected_behavior,
-                            stack_trace=stack_trace,
+                            current_incorrect_results=stack_trace,
                         ).fixed_code
                     )
                 elif result is None:  # Nothing was returned by program
                     python_code = extract_code(
-                        self.fix_code_with_cases(
+                        self.fix_code(
                             problem_description=problem_description,
                             current_code=python_code,
                             expected_behavior=expected_behavior,
@@ -255,7 +134,7 @@ class GenerateCode(dspy.Module):
                     )
                 elif not isinstance(result, str):  # Wrong type returned by program
                     python_code = extract_code(
-                        self.fix_code_with_cases(
+                        self.fix_code(
                             problem_description=problem_description,
                             current_code=python_code,
                             expected_behavior=expected_behavior,
@@ -266,14 +145,14 @@ class GenerateCode(dspy.Module):
                     "matches"
                 ]:
                     print(
-                        f"CORRECT SOLN W/ CODE OPTION {i}, DEBUGGING TRY {try_iter+1}."
-                    )
+                        f"CORRECT SOLN FOUND! CODE OPTION {i}/{len(python_solutions)} | DEBUGGING ITER: {try_iter}/{self.max_tries-1}."
+                        )
                     return dspy.Prediction(solution=python_code)
                 else:  # Otherwise, we should be able to check the solution
                     solution_results = check_solution(sample_output, result)
                     # with dspy.context(lm=gpt4):
                     python_code = extract_code(
-                        self.fix_code_with_cases(
+                        self.fix_code(
                             problem_description=problem_description,
                             current_code=python_code,
                             expected_behavior=expected_behavior,
@@ -355,7 +234,6 @@ def test_code(timeout=5):
 
     return metric
 
-
 if __name__ == "__main__":
 
     ### LOAD AND PREPARE DATA ### 
@@ -389,7 +267,7 @@ if __name__ == "__main__":
     ]
 
     trainset = sample_ds + full_ds[0:40] # use sample in train because it's easier 
-    testset = full_ds[40:90]
+    testset = full_ds[40:60]
 
     # Configure our dspy settings (particularly LM we're using)
     lm = dspy.OpenAI(
@@ -404,21 +282,26 @@ if __name__ == "__main__":
     # Setup evaluation function
     evaluate = Evaluate(
         devset=testset,
-        num_threads=1, # Note: Set this to 1 for debugging purposes 
+        num_threads=16, # Note: Set this to 1 for debugging purposes 
         display_progress=True,
         display_table=5,
         metric=test_code(timeout=5)
     )
 
     # Try out a simple program (7.5% on 40 ex)
-    # simple_program = SimpleGenerateCode()
-    # print(f"Evaluating Simple Program on test...")
-    # evaluate(program=simple_program, devset=testset)
+    simple_program = SimpleGenerateCode()
+    print(f"Evaluating Simple Program on test...")
+    evaluate(program=simple_program, devset=testset)
 
-    # Try out more advanced pipeline (22.5% on 40 ex)
-    multi_stage_program = GenerateCode()
+    # Try out more advanced pipeline | ~25%
+    multi_stage_program = GenerateCode(max_tries=3, num_ensembles=3)
     print(f"Evaluating Multi-Stage Program on test...")
     evaluate(program=multi_stage_program, devset=testset)
+
+    # Try out more advanced pipeline | ~30% 
+    # multi_stage_program = GenerateCode(max_tries=5, num_ensembles=5)
+    # print(f"Evaluating Multi-Stage Program on test...")
+    # evaluate(program=multi_stage_program, devset=testset)
 
     # OPTIONAL: Optimize program w/ MIPROv2 (0-shot)
     # multi_stage_program = GenerateCode()
