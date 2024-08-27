@@ -82,7 +82,7 @@ class MilvusRM(dspy.Retrieve):
         self.collection_name = collection_name
 
         self.embedding_function = embedding_function or openai_embedding_function
-        self.top_k = k
+        self.k = k
 
     def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
         if isinstance(query_or_queries, str):
