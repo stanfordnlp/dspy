@@ -49,16 +49,19 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 
 | **Name** | **Description** |
 |---|---|
-| **[STORM](https://arxiv.org/abs/2402.14207v1)** | Wikipage generation |
-| **[IReRa](https://arxiv.org/abs/2401.12178)** | Extreme reranking |
+| **[STORM: Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking](https://arxiv.org/abs/2402.14207)** | Writing Wikipedia-like Articles From Scratch |
+| **[PATH: Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
+| **[WangLab @ MEDIQA](https://arxiv.org/abs/2404.14544)** | UofT's winning system at MEDIQA, outperforms the next best system by 20 points |
+| **[UMD's Suicide Detection System](https://arxiv.org/abs/2406.06608)** | Outperforms 20-hour expert human prompt engineering by 40% |
+| **[IReRa](https://arxiv.org/abs/2401.12178)** | Extreme Classification with > 10,000 Labels |
 | **[The Unreasonable Effectiveness of Eccentric Automatic Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
 | **[Palimpzest](https://arxiv.org/abs/2405.14696)** | A Declarative System for Optimizing AI Workloads |
-| **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent efficiency optimization |
-| **[Prompts as Auto-Optimized Training Hyperparameters (PATH)](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
-| **[Empathetic Dialogues for English learning (EDEN)](https://arxiv.org/abs/2406.17982v1)** | Uses adaptive empathetic feedback to improve student grit |
+| **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent Efficiency Optimization |
+| **[EDEN: Empathetic Dialogues for English learning](https://arxiv.org/abs/2406.17982v1)** | Uses adaptive empathetic feedback to improve student grit |
 | **[ECG-Chat](https://arxiv.org/pdf/2408.08849)** | Uses DSPy with GraphRAG for medical report generation |
+| **[DSPy Assertions](https://arxiv.org/abs/2312.13382)** | Various applications of imposing hard and soft constraints on LM outputs. |
+| **[DSPy Guardrails](https://boxiyu.github.io/assets/pdf/DSPy_Guardrails.pdf)** | Reduce the attack success rate of CodeAttack, decreasing from 75% to 5%. |
 
-TODO: This list is missing a few key things like UofT's winning system at MEDIQA and UMD's Suicide Detection system that outperforms 20-hour human prompt engineering by 40%, etc.
 
 ## A Few Repositories about DSPy
 
