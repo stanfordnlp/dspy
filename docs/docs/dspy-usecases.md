@@ -44,6 +44,13 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 | **Snowflake** | [https://medium.com/snowflake/dspy-snowflake-140d6d947d73](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
 | **Langchain** | [https://python.langchain.com/v0.2/docs/integrations/providers/dspy/](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
 | **Weaviate** | [https://weaviate.io/blog/dspy-optimizers](https://weaviate.io/blog/dspy-optimizers) |
+| **[Stanford DSPy - Qdrant](https://qdrant.tech/documentation/frameworks/dspy/)** |
+| **Weights & Biases Weave** | [https://weave-docs.wandb.ai/guides/integrations/dspy/](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
+| **Milvus** | [https://milvus.io/docs/integrate_with_dspy.md](https://milvus.io/docs/integrate_with_dspy.md) |
+| **Neo4j** | [https://neo4j.com/labs/genai-ecosystem/dspy/](https://neo4j.com/labs/genai-ecosystem/dspy/) |
+| **Lightning AI** | [https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
+| **Haystack** | [https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
+
 
 ## A Few Papers Using DSPy
 
@@ -77,7 +84,6 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 | **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
 | **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
 
- 
 TODO: This list in particular is highly incomplete. There is a couple dozen other good ones.
 
 ## A Few Blogs & Videos on using DSPy
@@ -85,10 +91,27 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 | **Name** |
 |---|
 | **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
+| **[DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering/)** |
 | **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
-| **[DSPy Explained! (60K views) ]()** |
+| **[DSPy Intro from Sephora (25K views)](https://www.youtube.com/watch?v=D2HurSldDkE)** |
+| **[DSPy Explained! (60K views) ](https://www.youtube.com/watch?v=41EfOY0Ldkc)** |
+| **[Structured Outputs with DSPy](https://www.youtube.com/watch?v=tVw3CwrN5-8)** |
+| **[Achieving GPT-4 Level Performance At Lower Cost Using DSPy](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy)** |
+| **[Optimization of LLM Systems with DSPy and LangChain](https://www.youtube.com/watch?v=4EXOmWeqXRc)** |
+| **[Automated Prompt Engineering with DSPy + DSPy Visualization](https://www.youtube.com/watch?v=eAZ2LtJ6D5k)** |
+| **[DSPy: Transforming Language Model Calls into Smart Pipelines // MLOps Podcast](https://www.youtube.com/watch?v=NoaDWKHdkHg)** |
+| **[NeurIPS Hacker Cup AI: DSPy for code generation](https://www.youtube.com/watch?v=gpe-rtJN8z8)** |
+| **[MIPRO and DSPy with Krista Opsahl-Ong! - Weaviate Podcast](https://www.youtube.com/watch?v=skMH3DOV_UQ)** |
+| **[Getting Started with RAG in DSPy!](https://www.youtube.com/watch?v=CEuUG4Umfxs)** |
+| **[Adding Depth to DSPy Programs](https://www.youtube.com/watch?v=0c7Ksd6BG88)** |
+| **[Programming Foundation Models with DSPy](https://www.youtube.com/watch?v=Y94tw4eDHW0)** |
+| **[DSPy End-to-End: Meetup in San Francisco](https://www.youtube.com/watch?v=Y81DoFmt-2U)** |
+| **[SBTB23 DSPy](https://www.youtube.com/watch?v=Dt3H2ninoeY)** |
+| **[DSPy and ColBERT with Omar Khattab! - Weaviate Podcast](https://www.youtube.com/watch?v=CDung1LnLbY)** |
 
-TODO: This list in particular is highly incomplete. There are dozens of other good ones, e.g. from Sephora. In general adding videos will be useful here.
+
+
+TODO: This list in particular is highly incomplete. There are dozens of other good ones.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
