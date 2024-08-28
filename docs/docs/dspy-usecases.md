@@ -53,7 +53,7 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 | **[PATH: Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
 | **[WangLab @ MEDIQA](https://arxiv.org/abs/2404.14544)** | UofT's winning system at MEDIQA, outperforms the next best system by 20 points |
 | **[UMD's Suicide Detection System](https://arxiv.org/abs/2406.06608)** | Outperforms 20-hour expert human prompt engineering by 40% |
-| **[IReRa](https://arxiv.org/abs/2401.12178)** | Extreme Classification with > 10,000 Labels |
+| **[IReRa: Infer-Retrieve-Rank](https://arxiv.org/abs/2401.12178)** | Extreme Classification with > 10,000 Labels |
 | **[The Unreasonable Effectiveness of Eccentric Automatic Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
 | **[Palimpzest](https://arxiv.org/abs/2405.14696)** | A Declarative System for Optimizing AI Workloads |
 | **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent Efficiency Optimization |
@@ -63,24 +63,31 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 | **[DSPy Guardrails](https://boxiyu.github.io/assets/pdf/DSPy_Guardrails.pdf)** | Reduce the attack success rate of CodeAttack, decreasing from 75% to 5%. |
 
 
-## A Few Repositories about DSPy
+## A Few Repositories (or other OSS examples) using DSPy
 
 | **Name** | **Description/Link** |
 |---|---|
-| **Homework from Stanford CS 224U** | [Github](https://github.com/cgpotts/cs224u/blob/main/hw_openqa.ipynb) |
+| **Stanford CS 224U Homework** | [Github](https://github.com/cgpotts/cs224u/blob/main/hw_openqa.ipynb) |
+| **STORM Report Generation (10,000 GitHub stars)** | [Github](https://github.com/stanford-oval/storm) |
+| **DSPy Redteaming** | [Github](https://github.com/haizelabs/dspy-redteam) |
+| **DSPy Theory of Mind** |  [Github](https://github.com/plastic-labs/dspy-opentom) |
+| **Indic cross-lingual Natural Language Inference** |  [Github](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb) |
 | **Optimizing LM for Text2SQL using DSPy** | Text2SQL [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
 | **DSPy PII Masking Demo by Eric Ness** | PII Masking [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
+| **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
+| **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
 
-TODO: This list in particular is highly incomplete. There are dozens of others, e.g. see "Used By" in GitHub for some examples, e.g. STORM (10k stars), Theory of Mind, BIG BENCH, Indian Languages NLI, etc.
+ 
+TODO: This list in particular is highly incomplete. There is a couple dozen other good ones.
 
-## A Few Blogs about DSPy
+## A Few Blogs & Videos on using DSPy
 
 | **Name** |
-|---|
 | **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
 | **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
+| **[DSPy Explained! (60K views) ]()** |
 
-TODO: This list in particular is highly incomplete. There are several good other ones, e.g. from Sephora. In general adding videos will be useful here.
+TODO: This list in particular is highly incomplete. There are dozens of other good ones, e.g. from Sephora. In general adding videos will be useful here.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
