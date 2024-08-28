@@ -33,23 +33,23 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 Though we are aware of plenty of usage at Fortune 500 companies, this list only includes companies that have public posts or have OKed being included for specific products so far.
 
-## A Few Providers and Integrations
+## A Few Providers, Integrations, and related Blog Releases
 
 | **Name** | **Link** |
 |---|---|
-| **Databricks** | [https://www.databricks.com/blog/dspy-databricks](https://www.databricks.com/blog/dspy-databricks) |
-| **Zenbase** | [https://zenbase.ai/](https://zenbase.ai/) |
-| **LangWatch** | [https://langwatch.ai/blog/introducing-dspy-visualizer](https://langwatch.ai/blog/introducing-dspy-visualizer) |
-| **Gradient** | [https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
-| **Snowflake** | [https://medium.com/snowflake/dspy-snowflake-140d6d947d73](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
-| **Langchain** | [https://python.langchain.com/v0.2/docs/integrations/providers/dspy/](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
-| **Weaviate** | [https://weaviate.io/blog/dspy-optimizers](https://weaviate.io/blog/dspy-optimizers) |
-| **[Stanford DSPy - Qdrant](https://qdrant.tech/documentation/frameworks/dspy/)** |
-| **Weights & Biases Weave** | [https://weave-docs.wandb.ai/guides/integrations/dspy/](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
-| **Milvus** | [https://milvus.io/docs/integrate_with_dspy.md](https://milvus.io/docs/integrate_with_dspy.md) |
-| **Neo4j** | [https://neo4j.com/labs/genai-ecosystem/dspy/](https://neo4j.com/labs/genai-ecosystem/dspy/) |
-| **Lightning AI** | [https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
-| **Haystack** | [https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
+| **Databricks** | [Link](https://www.databricks.com/blog/dspy-databricks) |
+| **Zenbase** | [Link](https://zenbase.ai/) |
+| **LangWatch** | [Link](https://langwatch.ai/blog/introducing-dspy-visualizer) |
+| **Gradient** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
+| **Snowflake** | [Link](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
+| **Langchain** | [Link](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
+| **Weaviate** | [Link](https://weaviate.io/blog/dspy-optimizers) |
+| **Stanford DSPy - Qdrant** | [Link](https://qdrant.tech/documentation/frameworks/dspy/) |
+| **Weights & Biases Weave** | [Link](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
+| **Milvus** | [Link](https://milvus.io/docs/integrate_with_dspy.md) |
+| **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
+| **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
+| **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
 
 
 ## A Few Papers Using DSPy
@@ -61,7 +61,7 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 | **[WangLab @ MEDIQA](https://arxiv.org/abs/2404.14544)** | UofT's winning system at MEDIQA, outperforms the next best system by 20 points |
 | **[UMD's Suicide Detection System](https://arxiv.org/abs/2406.06608)** | Outperforms 20-hour expert human prompt engineering by 40% |
 | **[IReRa](https://arxiv.org/abs/2401.12178)** | Infer-Retrieve-Rank: Extreme Classification with > 10,000 Labels |
-| **[The Unreasonable Effectiveness of Eccentric Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
+| **[Unreasonably Effective Eccentric Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
 | **[Palimpzest](https://arxiv.org/abs/2405.14696)** | A Declarative System for Optimizing AI Workloads |
 | **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent Efficiency Optimization |
 | **[EDEN](https://arxiv.org/abs/2406.17982v1)** | Empathetic Dialogues for English Learning: Uses adaptive empathetic feedback to improve student grit |
