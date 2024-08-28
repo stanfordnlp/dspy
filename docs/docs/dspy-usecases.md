@@ -111,7 +111,7 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 
 
 
-TODO: This list in particular is highly incomplete. There are dozens of other good ones.
+TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
