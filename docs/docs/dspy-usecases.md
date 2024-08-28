@@ -56,18 +56,18 @@ Though we are aware of plenty of usage at Fortune 500 companies, this list only 
 
 | **Name** | **Description** |
 |---|---|
-| **[STORM: Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking](https://arxiv.org/abs/2402.14207)** | Writing Wikipedia-like Articles From Scratch |
-| **[PATH: Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)** | Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
+| **[STORM](https://arxiv.org/abs/2402.14207)** | Writing Wikipedia-like Articles From Scratch. |
+| **[PATH](https://arxiv.org/abs/2406.11706)** | Prompts as Auto-Optimized Training Hyperparameters: Training Best-in-Class IR Models from Scratch with 10 Gold Labels |
 | **[WangLab @ MEDIQA](https://arxiv.org/abs/2404.14544)** | UofT's winning system at MEDIQA, outperforms the next best system by 20 points |
 | **[UMD's Suicide Detection System](https://arxiv.org/abs/2406.06608)** | Outperforms 20-hour expert human prompt engineering by 40% |
-| **[IReRa: Infer-Retrieve-Rank](https://arxiv.org/abs/2401.12178)** | Extreme Classification with > 10,000 Labels |
-| **[The Unreasonable Effectiveness of Eccentric Automatic Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
+| **[IReRa](https://arxiv.org/abs/2401.12178)** | Infer-Retrieve-Rank: Extreme Classification with > 10,000 Labels |
+| **[The Unreasonable Effectiveness of Eccentric Prompts](https://arxiv.org/abs/2402.10949v2)** | General Prompt Optimization |
 | **[Palimpzest](https://arxiv.org/abs/2405.14696)** | A Declarative System for Optimizing AI Workloads |
 | **[AI Agents that Matter](https://arxiv.org/abs/2407.01502v1)** | Agent Efficiency Optimization |
-| **[EDEN: Empathetic Dialogues for English learning](https://arxiv.org/abs/2406.17982v1)** | Uses adaptive empathetic feedback to improve student grit |
+| **[EDEN](https://arxiv.org/abs/2406.17982v1)** | Empathetic Dialogues for English Learning: Uses adaptive empathetic feedback to improve student grit |
 | **[ECG-Chat](https://arxiv.org/pdf/2408.08849)** | Uses DSPy with GraphRAG for medical report generation |
-| **[DSPy Assertions](https://arxiv.org/abs/2312.13382)** | Various applications of imposing hard and soft constraints on LM outputs. |
-| **[DSPy Guardrails](https://boxiyu.github.io/assets/pdf/DSPy_Guardrails.pdf)** | Reduce the attack success rate of CodeAttack, decreasing from 75% to 5%. |
+| **[DSPy Assertions](https://arxiv.org/abs/2312.13382)** | Various applications of imposing hard and soft constraints on LM outputs |
+| **[DSPy Guardrails](https://boxiyu.github.io/assets/pdf/DSPy_Guardrails.pdf)** | Reduce the attack success rate of CodeAttack, decreasing from 75% to 5% |
 
 
 ## A Few Repositories (or other OSS examples) using DSPy
@@ -88,26 +88,26 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 
 ## A Few Blogs & Videos on using DSPy
 
-| **Name** |
-|---|
-| **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
-| **[DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering/)** |
-| **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
-| **[DSPy Intro from Sephora (25K views)](https://www.youtube.com/watch?v=D2HurSldDkE)** |
-| **[DSPy Explained! (60K views) ](https://www.youtube.com/watch?v=41EfOY0Ldkc)** |
-| **[Structured Outputs with DSPy](https://www.youtube.com/watch?v=tVw3CwrN5-8)** |
-| **[Achieving GPT-4 Level Performance At Lower Cost Using DSPy](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy)** |
-| **[Optimization of LLM Systems with DSPy and LangChain](https://www.youtube.com/watch?v=4EXOmWeqXRc)** |
-| **[Automated Prompt Engineering with DSPy + DSPy Visualization](https://www.youtube.com/watch?v=eAZ2LtJ6D5k)** |
-| **[DSPy: Transforming Language Model Calls into Smart Pipelines // MLOps Podcast](https://www.youtube.com/watch?v=NoaDWKHdkHg)** |
-| **[NeurIPS Hacker Cup AI: DSPy for code generation](https://www.youtube.com/watch?v=gpe-rtJN8z8)** |
-| **[MIPRO and DSPy with Krista Opsahl-Ong! - Weaviate Podcast](https://www.youtube.com/watch?v=skMH3DOV_UQ)** |
-| **[Getting Started with RAG in DSPy!](https://www.youtube.com/watch?v=CEuUG4Umfxs)** |
-| **[Adding Depth to DSPy Programs](https://www.youtube.com/watch?v=0c7Ksd6BG88)** |
-| **[Programming Foundation Models with DSPy](https://www.youtube.com/watch?v=Y94tw4eDHW0)** |
-| **[DSPy End-to-End: Meetup in San Francisco](https://www.youtube.com/watch?v=Y81DoFmt-2U)** |
-| **[SBTB23 DSPy](https://www.youtube.com/watch?v=Dt3H2ninoeY)** |
-| **[DSPy and ColBERT with Omar Khattab! - Weaviate Podcast](https://www.youtube.com/watch?v=CDung1LnLbY)** |
+| **Name** | **Link** |
+|---|---|
+| **Why I bet on DSPy** | [Blog](https://blog.isaacbmiller.com/posts/dspy) |
+| **Not Your Average Prompt Engineering** | [Blog](https://jina.ai/news/dspy-not-your-average-prompt-engineering/) |
+| **Why I'm excited about DSPy** | [Blog](https://substack.stephen.so/p/why-im-excited-about-dspy) |
+| **DSPy Intro from Sephora (25K views)** | [Link](https://www.youtube.com/watch?v=D2HurSldDkE) |
+| **DSPy Explained! (60K views)** | [Link](https://www.youtube.com/watch?v=41EfOY0Ldkc) |
+| **Structured Outputs with DSPy** | [Link](https://www.youtube.com/watch?v=tVw3CwrN5-8) |
+| **Achieving GPT-4 Performance at Lower Cost** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
+| **Optimization with DSPy and LangChain** | [Link](https://www.youtube.com/watch?v=4EXOmWeqXRc) |
+| **Automated Prompt Engineering + Visualization** | [Link](https://www.youtube.com/watch?v=eAZ2LtJ6D5k) |
+| **Transforming LM Calls into Pipelines** | [Link](https://www.youtube.com/watch?v=NoaDWKHdkHg) |
+| **NeurIPS Hacker Cup: DSPy for Code Gen** | [Link](https://www.youtube.com/watch?v=gpe-rtJN8z8) |
+| **MIPRO and DSPy - Weaviate Podcast** | [Link](https://www.youtube.com/watch?v=skMH3DOV_UQ) |
+| **Getting Started with RAG in DSPy** | [Link](https://www.youtube.com/watch?v=CEuUG4Umfxs) |
+| **Adding Depth to DSPy Programs** | [Link](https://www.youtube.com/watch?v=0c7Ksd6BG88) |
+| **Programming Foundation Models with DSPy** | [Link](https://www.youtube.com/watch?v=Y94tw4eDHW0) |
+| **DSPy End-to-End: SF Meetup** | [Link](https://www.youtube.com/watch?v=Y81DoFmt-2U) |
+| **SBTB23 DSPy** | [Link](https://www.youtube.com/watch?v=Dt3H2ninoeY) |
+| **DSPy and ColBERT - Weaviate Podcast** | [Link](https://www.youtube.com/watch?v=CDung1LnLbY) |
 
 
 
