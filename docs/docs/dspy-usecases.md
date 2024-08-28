@@ -83,6 +83,7 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 ## A Few Blogs & Videos on using DSPy
 
 | **Name** |
+|---|
 | **[Why I bet on DSPy](https://blog.isaacbmiller.com/posts/dspy)** |
 | **[Why I'm excited about DSPy](https://substack.stephen.so/p/why-im-excited-about-dspy)** |
 | **[DSPy Explained! (60K views) ]()** |
