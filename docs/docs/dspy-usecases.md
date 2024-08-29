@@ -115,4 +115,4 @@ TODO: This list in particular is highly incomplete. There are dozens of other go
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
-Huge shoutout to them for the massive support <3. See the [Weaviate DSPy directory](https://weaviate.io/developers/weaviate/more-resources/dspy).
+Huge shoutout to them for the massive support ❤️. See the [Weaviate DSPy directory](https://weaviate.io/developers/weaviate/more-resources/dspy).
