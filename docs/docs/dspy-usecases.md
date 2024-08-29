@@ -44,7 +44,7 @@ WIP. This list only includes companies that have public posts or have OKed being
 | **Snowflake** | [Link](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
 | **Langchain** | [Link](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
 | **Weaviate** | [Link](https://weaviate.io/blog/dspy-optimizers) |
-| **Stanford DSPy - Qdrant** | [Link](https://qdrant.tech/documentation/frameworks/dspy/) |
+| **Qdrant** | [Link](https://qdrant.tech/documentation/frameworks/dspy/) |
 | **Weights & Biases Weave** | [Link](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
 | **Milvus** | [Link](https://milvus.io/docs/integrate_with_dspy.md) |
 | **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
