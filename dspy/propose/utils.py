@@ -1,7 +1,7 @@
 import json
 import re
 
-from dspy.teleprompt.utils import get_signature
+from dspy.optimizers.utils import get_signature
 
 
 def strip_prefix(text):

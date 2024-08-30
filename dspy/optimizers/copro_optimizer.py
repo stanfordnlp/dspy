@@ -4,7 +4,7 @@ import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.signatures import Signature
-from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.optimizers.teleprompt import Teleprompter
 
 """
 USAGE SUGGESTIONS:

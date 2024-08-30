@@ -1,4 +1,4 @@
-from dspy.teleprompt.mipro_optimizer import MIPRO
+from dspy.optimizers.mipro_optimizer import MIPRO
 
 """
 ===============================================================

@@ -1,6 +1,6 @@
 import pytest
 import dsp, dspy
-from dspy.teleprompt.knn_fewshot import KNNFewShot
+from dspy.optimizers.knn_fewshot import KNNFewShot
 from dspy.utils.dummies import DummyLM, DummyVectorizer
 
 

@@ -35,7 +35,7 @@ class TestIntroIntegration:
                 prediction = self.generate_answer(context=context, question=question)
                 return dspy.Prediction(context=context, answer=prediction.answer)
 
-        from dspy.teleprompt import BootstrapFewShot
+        from dspy.optimizers import BootstrapFewShot
 
         # Validation logic: check that the predicted answer is correct.
         # Also check that the retrieved context actually contains that answer.

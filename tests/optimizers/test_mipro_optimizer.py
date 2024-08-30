@@ -3,7 +3,7 @@ import pytest
 import re
 import dspy
 from dsp.modules import LM
-from dspy.teleprompt.signature_opt_bayesian import MIPRO
+from dspy.optimizers.signature_opt_bayesian import MIPRO
 from dspy.utils.dummies import DummyLM
 from dspy import Example
 

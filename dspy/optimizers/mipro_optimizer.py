@@ -12,8 +12,8 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.signatures import Signature
 from dspy.signatures.signature import signature_to_template
-from dspy.teleprompt import BootstrapFewShot
-from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.optimizers import BootstrapFewShot
+from dspy.optimizers.teleprompt import Teleprompter
 
 """
 USAGE SUGGESTIONS:

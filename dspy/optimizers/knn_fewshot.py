@@ -3,7 +3,7 @@ from typing import List, Optional
 
 import dsp
 from dspy.predict.knn import KNN
-from dspy.teleprompt import BootstrapFewShot
+from dspy.optimizers import BootstrapFewShot
 
 from .teleprompt import Teleprompter
 

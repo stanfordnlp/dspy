@@ -4,7 +4,7 @@ import dspy.evaluate
 import dspy
 from dspy.datasets import HotPotQA
 from dspy.evaluate.evaluate import Evaluate
-from dspy.teleprompt.bootstrap import BootstrapFewShot
+from dspy.optimizers.bootstrap import BootstrapFewShot
 
 
 class GenerateAnswer(dspy.Signature):

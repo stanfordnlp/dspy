@@ -1,6 +1,6 @@
 import textwrap
 import dspy
-from dspy.teleprompt.signature_opt import COPRO
+from dspy.optimizers.signature_opt import COPRO
 from dspy.utils.dummies import DummyLM
 from dspy import Example
 

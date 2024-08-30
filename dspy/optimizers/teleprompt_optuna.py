@@ -1,7 +1,7 @@
 import optuna
 
 from dspy.evaluate.evaluate import Evaluate
-from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.optimizers.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot
 

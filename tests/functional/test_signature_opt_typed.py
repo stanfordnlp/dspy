@@ -4,7 +4,7 @@ import pydantic
 import dspy
 from dspy.evaluate import Evaluate
 from dspy.functional import TypedPredictor
-from dspy.teleprompt.signature_opt_typed import optimize_signature, make_info
+from dspy.optimizers.signature_opt_typed import optimize_signature, make_info
 from dspy.utils import DummyLM
 
 from dspy.evaluate import Evaluate

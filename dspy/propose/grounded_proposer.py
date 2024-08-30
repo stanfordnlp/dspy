@@ -4,7 +4,7 @@ import re
 import dspy
 from dspy.propose.dataset_summary_generator import create_dataset_summary
 from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix
-from dspy.teleprompt.utils import get_signature
+from dspy.optimizers.utils import get_signature
 
 from .propose_base import Proposer
 

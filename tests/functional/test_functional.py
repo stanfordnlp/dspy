@@ -10,8 +10,8 @@ import dspy
 from dspy.functional import FunctionalModule, TypedChainOfThought, TypedPredictor, cot, predictor
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
-from dspy.teleprompt.bootstrap import BootstrapFewShot
-from dspy.teleprompt.vanilla import LabeledFewShot
+from dspy.optimizers.bootstrap import BootstrapFewShot
+from dspy.optimizers.vanilla import LabeledFewShot
 from dspy.utils.dummies import DummyLM
 
 

@@ -16,7 +16,7 @@ except ImportError:
 
 import dspy
 from dspy.predict.parameter import Parameter
-from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
+from dspy.optimizers.bootstrap import BootstrapFewShot, LabeledFewShot
 
 """
 This file consists of helper functions for our variety of optimizers.

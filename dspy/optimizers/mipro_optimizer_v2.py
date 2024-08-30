@@ -10,9 +10,8 @@ import numpy as np
 import optuna
 
 from dspy.evaluate.evaluate import Evaluate
-from dspy.propose import GroundedProposer
-from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.utils import (
+from dspy.optimizers.teleprompt import Teleprompter
+from dspy.optimizers.utils import (
     create_n_fewshot_demo_sets,
     eval_candidate_program,
     get_dspy_source_code,
@@ -25,6 +24,7 @@ from dspy.teleprompt.utils import (
     set_signature,
     setup_logging,
 )
+from dspy.propose import GroundedProposer
 
 try:
     import wandb
@@ -74,7 +74,8 @@ BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT = 3
 LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT = 0
 
 MB_FULL_EVAL_STEPS = 10
-MINIBATCH_SIZE = 25#50
+MINIBATCH_SIZE = 25
+
 
 class MIPROv2(Teleprompter):
     def __init__(
@@ -111,7 +112,7 @@ class MIPROv2(Teleprompter):
 
         # Check if WANDB_RUN_ID is set in the environment
         self.wandb_run_id = None
-    
+
     def _get_batch_size(
         self,
         minibatch,
@@ -145,10 +146,15 @@ class MIPROv2(Teleprompter):
 
         random.seed(seed)
         valset = valset or trainset
-        estimated_prompt_model_calls = 10 + self.n * len(
+        estimated_prompt_model_calls = (
+            10
+            + self.n
+            * len(
                 student.predictors(),
-            ) + (0 if not program_aware_proposer else len(student.predictors()) + 1)  # num data summary calls + N * P + (P + 1)
-        
+            )
+            + (0 if not program_aware_proposer else len(student.predictors()) + 1)
+        )  # num data summary calls + N * P + (P + 1)
+
         prompt_model_line = ""
         if not program_aware_proposer:
             prompt_model_line = f"""{YELLOW}- Prompt Model: {BLUE}{BOLD}10{ENDC}{YELLOW} data summarizer calls + {BLUE}{BOLD}{self.n}{ENDC}{YELLOW} * {BLUE}{BOLD}{len(student.predictors())}{ENDC}{YELLOW} lm calls in program = {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}"""
@@ -161,9 +167,10 @@ class MIPROv2(Teleprompter):
             estimated_task_model_calls_wo_module_calls = len(trainset) * num_batches  # M * T * P
             task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in train set * {BLUE}{BOLD}{num_batches}{ENDC}{YELLOW} batches * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}"""
         else:
-            estimated_task_model_calls_wo_module_calls = self.minibatch_size * num_batches + (len(trainset) * (num_batches // self.minibatch_full_eval_steps))  # B * T * P
+            estimated_task_model_calls_wo_module_calls = self.minibatch_size * num_batches + (
+                len(trainset) * (num_batches // self.minibatch_full_eval_steps)
+            )  # B * T * P
             task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{self.minibatch_size}{ENDC}{YELLOW} examples in minibatch * {BLUE}{BOLD}{num_batches}{ENDC}{YELLOW} batches + {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in train set * {BLUE}{BOLD}{num_batches // self.minibatch_full_eval_steps}{ENDC}{YELLOW} full evals = {BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls}{ENDC}{YELLOW} task model calls{ENDC}"""
-            
 
         user_message = textwrap.dedent(f"""\
             {YELLOW}{BOLD}WARNING: Projected Language Model (LM) Calls{ENDC}
@@ -210,7 +217,7 @@ class MIPROv2(Teleprompter):
                 try:
                     self.program_code_string = get_dspy_source_code(student)
                     if self.verbose:
-                        print("SOURCE CODE:",self.program_code_string)
+                        print("SOURCE CODE:", self.program_code_string)
                 except Exception as e:
                     print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
                     self.program_code_string = None
@@ -218,7 +225,7 @@ class MIPROv2(Teleprompter):
             else:
                 self.program_code_string = None
 
-            # Setup our proposer 
+            # Setup our proposer
             proposer = GroundedProposer(
                 trainset=trainset,
                 prompt_model=self.prompt_model,
@@ -317,8 +324,10 @@ class MIPROv2(Teleprompter):
             best_program = None
             trial_logs = {}
             total_eval_calls = 0
-            param_score_dict = defaultdict(list) # Dictionaries of paramater combinations we've tried, and their associated scores
-            fully_evaled_param_combos = {} # List of the parameter combinations we've done full evals of
+            param_score_dict = defaultdict(
+                list
+            )  # Dictionaries of paramater combinations we've tried, and their associated scores
+            fully_evaled_param_combos = {}  # List of the parameter combinations we've done full evals of
 
             # Define our trial objective
             def create_objective(
@@ -330,7 +339,7 @@ class MIPROv2(Teleprompter):
             ):
                 def objective(trial):
                     nonlocal best_program, best_score, trial_logs, total_eval_calls  # Allow access to the outer variables
-                    
+
                     # Kick off trial
                     logging.info(f"Starting trial num: {trial.number}")
                     trial_logs[trial.number] = {}
@@ -341,7 +350,6 @@ class MIPROv2(Teleprompter):
                     # Choose set of instructions & demos to use for each predictor
                     chosen_params = []
                     for i, p_new in enumerate(candidate_program.predictors()):
-
                         # Get instruction candidates / demos for our given predictor
                         p_instruction_candidates = instruction_candidates[i]
                         if demo_candidates:
@@ -355,14 +363,13 @@ class MIPROv2(Teleprompter):
                         chosen_params.append(instruction_idx)
                         if demo_candidates:
                             demos_idx = trial.suggest_categorical(
-                                f"{i}_predictor_demos", range(len(p_demo_candidates)),
+                                f"{i}_predictor_demos",
+                                range(len(p_demo_candidates)),
                             )
                             chosen_params.append(demo_candidates)
 
                         # Log the selected instruction / demo candidate
-                        trial_logs[trial.number][
-                            f"{i}_predictor_instruction"
-                        ] = instruction_idx
+                        trial_logs[trial.number][f"{i}_predictor_instruction"] = instruction_idx
                         if demo_candidates:
                             trial_logs[trial.number][f"{i}_predictor_demos"] = demos_idx
 
@@ -388,7 +395,9 @@ class MIPROv2(Teleprompter):
 
                     # Save the candidate program
                     trial_logs[trial.number]["program_path"] = save_candidate_program(
-                        candidate_program, self.log_dir, trial.number,
+                        candidate_program,
+                        self.log_dir,
+                        trial.number,
                     )
 
                     trial_logs[trial.number]["num_eval_calls"] = 0
@@ -396,18 +405,24 @@ class MIPROv2(Teleprompter):
                     # Evaluate the candidate program with relevant batch size
                     batch_size = self._get_batch_size(minibatch, trainset)
                     score = eval_candidate_program(
-                        batch_size, trainset, candidate_program, evaluate,
+                        batch_size,
+                        trainset,
+                        candidate_program,
+                        evaluate,
                     )
 
                     # Print out a full trace of the program in use
                     print("FULL TRACE")
                     full_trace = get_task_model_history_for_full_example(
-                        candidate_program, self.task_model, trainset, evaluate,
+                        candidate_program,
+                        self.task_model,
+                        trainset,
+                        evaluate,
                     )
                     print("...")
 
                     # Log relevant information
-                    print(f"Score {score}")                
+                    print(f"Score {score}")
                     categorical_key = ",".join(map(str, chosen_params))
                     param_score_dict[categorical_key].append(
                         (score, candidate_program),
@@ -436,37 +451,46 @@ class MIPROv2(Teleprompter):
                         best_score = score
                         best_program = candidate_program.deepcopy()
                         best_score_updated = True
-                        
 
                     # If we're doing minibatching, check to see if it's time to do a full eval
                     if minibatch and trial.number % self.minibatch_full_eval_steps == 0:
-                        
                         # Save old information as the minibatch version
                         trial_logs[trial.number]["mb_score"] = score
                         trial_logs[trial.number]["mb_program_path"] = trial_logs[trial.number]["program_path"]
 
                         # Identify our best program (based on mean of scores so far, and do a full eval on it)
-                        highest_mean_program, combo_key = get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_combos)
+                        highest_mean_program, combo_key = get_program_with_highest_avg_score(
+                            param_score_dict, fully_evaled_param_combos
+                        )
                         full_train_score = eval_candidate_program(
-                            len(trainset), trainset, highest_mean_program, evaluate,
+                            len(trainset),
+                            trainset,
+                            highest_mean_program,
+                            evaluate,
                         )
 
                         # Log relevant information
-                        fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_train_score}
+                        fully_evaled_param_combos[combo_key] = {
+                            "program": highest_mean_program,
+                            "score": full_train_score,
+                        }
                         total_eval_calls += len(trainset)
                         trial_logs[trial.number]["total_eval_calls_so_far"] = total_eval_calls
                         trial_logs[trial.number]["full_eval"] = True
                         trial_logs[trial.number]["program_path"] = save_candidate_program(
-                            program=highest_mean_program, log_dir=self.log_dir, trial_num=trial.number, note="full_eval",
+                            program=highest_mean_program,
+                            log_dir=self.log_dir,
+                            trial_num=trial.number,
+                            note="full_eval",
                         )
                         trial_logs[trial.number]["score"] = full_train_score
-                        
+
                         if full_train_score > best_score:
                             print(f"UPDATING BEST SCORE WITH {full_train_score}")
                             best_score = full_train_score
                             best_program = highest_mean_program.deepcopy()
                             best_score_updated = True
-                    
+
                     # If the best score was updated, do a full eval on the dev set
                     if best_score_updated:
                         full_dev_score = evaluate(
@@ -488,7 +512,11 @@ class MIPROv2(Teleprompter):
 
             # Run the trial
             objective_function = create_objective(
-                program, instruction_candidates, demo_candidates, evaluate, trainset,
+                program,
+                instruction_candidates,
+                demo_candidates,
+                evaluate,
+                trainset,
             )
 
             sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)

@@ -3,7 +3,7 @@ import dspy
 from dspy.predict import Predict
 from dspy.utils.dummies import DummyLM
 from dspy import Example
-from dspy.teleprompt import BootstrapFewShot
+from dspy.optimizers import BootstrapFewShot
 import textwrap
 
 
