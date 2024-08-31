@@ -46,6 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
+lancedb = ["lancedb>=0.11.0"]
 qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla~=0.3.7"]
@@ -101,6 +102,7 @@ requests = "^2.31.0"
 optuna = "^3.4.0"
 anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
+lancedb = {version = "^0.11.0", optional = true}
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
 pyepsilla = {version = "^0.3.7", optional = true}
@@ -145,6 +147,7 @@ semver = "^3.0.2"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
+lancedb = ["lancedb"]
 qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla"]

@@ -26,6 +26,7 @@ setup(
 
     extras_require={
         "chromadb": ["chromadb~=0.4.14"],
+        "lancedb": ["lancedb~=0.11.0"],
         "qdrant": ["qdrant-client", "fastembed"],
         "marqo": ["marqo~=3.1.0"],
         "mongodb": ["pymongo~=3.12.0"],
