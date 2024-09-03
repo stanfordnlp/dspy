@@ -14,6 +14,8 @@ SnowflakeRM(
      cortex_search_service: str,
      snowflake_database: str,
      snowflake_schema: dict,
+     retrieval_columns: list,
+     search_filter: dict = None,
      k: int = 3,
 )
 ```
@@ -24,6 +26,8 @@ SnowflakeRM(
 - `cortex_search_service (str)`: The name of the Cortex Search service to be used.
 - `snowflake_database (str)`: The name of the Snowflake database to be used with the Cortex Search service.
 - `snowflake_schema (str)`: The name of the Snowflake schema to be used with the Cortex Search service.
+- `retrieval_columns (str)`: A list of columns to return for each relevant result in the response.
+- `search_filter (dict, optional)`: Optional filter object used for filtering results based on data in the ATTRIBUTES columns. See [Filter syntax](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/query-cortex-search-service#filter-syntax)
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
 
 ### Methods
@@ -35,8 +39,6 @@ Query the Cortex Search service to retrieve the top k relevant results given a q
 **Parameters:**
 
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
-- `response_columns` (_List[str]_): A list of columns to return for each relevant result in the response.
-- `filters` (_Optional[dict]_): An optional filter object for filtering results based on data in the ATTRIBUTES columns. See [Filter syntax](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/query-cortex-search-service#filter-syntax)
 - `k` (_Optional[int]_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
