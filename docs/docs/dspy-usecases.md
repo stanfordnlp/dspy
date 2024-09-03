@@ -18,7 +18,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 |---|---|
 | **[Replit](https://replit.com/)** | Synthesize diffs using code LLMs using a DSPy pipeline. [Blog](https://blog.replit.com/code-repair) |
 | **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
-| **[Databricks](https://www.databricks.com/)** | Uses DSPy extensively for research, products, and customer solutions in areas including LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) |
+| **[Databricks](https://www.databricks.com/)** | Research, products, and customer solutions around LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | Different pipelines within Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
 | **[PingCAP](https://pingcap.com/)** | Building a knowledge graph. [Article](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
