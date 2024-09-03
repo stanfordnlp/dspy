@@ -16,8 +16,8 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 | **Name** | **Use Cases** |
 |---|---|
-| **[Replit](https://replit.com/)** | Synthesize diffs using large pre-trained code LLMs with a few-shot prompt pipeline implemented with DSPy. [Blog](https://blog.replit.com/code-repair) |
-| **[JetBlue](https://www.jetblue.com/)** | Multiple Chatbot Use Cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
+| **[Replit](https://replit.com/)** | Synthesize diffs using code LLMs using a DSPy pipeline. [Blog](https://blog.replit.com/code-repair) |
+| **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
 | **[Databricks](https://www.databricks.com/)** | Uses DSPy extensively for research, products, and customer solutions in areas including LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | Different pipelines within Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
