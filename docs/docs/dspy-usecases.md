@@ -88,6 +88,7 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 | **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
 | **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
 | **Ittia Research Fact Checking** | [Github](https://github.com/ittia-research/check) |
+| **Strategic Debate via Tree-of-Thought** | [Github](https://github.com/zbambergerNLP/strategic-debate-tot) |
 
 TODO: This list in particular is highly incomplete. There is a couple dozen other good ones.
 
