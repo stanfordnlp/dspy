@@ -36,7 +36,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Howie](https://howie.ai)** | Using DSPy to automate meeting scheduling through email. |
 | **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
 
-WIP. This list only includes companies that have public posts or have OKed being included for specific products so far.
+WIP. This list mainly includes companies that have public posts or have OKed being included for specific products so far.
 
 ## A Few Providers, Integrations, and related Blog Releases
 
