@@ -78,6 +78,8 @@ class LM(ABC):
                     printed.append((prompt, x))
                 elif provider == "you.com":
                     printed.append((prompt, x["response"]["answer"]))
+                elif provider == "baidu":
+                    printed.append((prompt, x["response"].body['result']))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -105,6 +107,7 @@ class LM(ABC):
                 "premai",
                 "you.com",
                 "tensorrt_llm",
+                "baidu",
             ):
                 text = choices
             elif provider == "openai" or provider == "ollama" or provider == "llama":

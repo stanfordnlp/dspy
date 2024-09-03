@@ -5,6 +5,7 @@ from .aws_models import AWSAnthropic, AWSMeta, AWSMistral, AWSModel
 # from .bedrock import *
 from .aws_providers import Bedrock, Sagemaker
 from .azure_openai import AzureOpenAI
+from .baidu import Ernie
 from .cache_utils import *
 from .clarifai import *
 from .cloudflare import *

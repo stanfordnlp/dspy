@@ -31,6 +31,7 @@ GoogleVertexAI = dsp.GoogleVertexAI
 GROQ = dsp.GroqLM
 Snowflake = dsp.Snowflake
 Claude = dsp.Claude
+Baidu = dsp.Ernie
 
 HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
