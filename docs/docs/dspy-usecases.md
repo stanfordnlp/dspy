@@ -83,10 +83,11 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 | **DSPy Redteaming** | [Github](https://github.com/haizelabs/dspy-redteam) |
 | **DSPy Theory of Mind** |  [Github](https://github.com/plastic-labs/dspy-opentom) |
 | **Indic cross-lingual Natural Language Inference** |  [Github](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb) |
-| **Optimizing LM for Text2SQL using DSPy** | Text2SQL [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
-| **DSPy PII Masking Demo by Eric Ness** | PII Masking [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
+| **Optimizing LM for Text2SQL using DSPy** | [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
+| **DSPy PII Masking Demo by Eric Ness** | [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
 | **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
 | **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
+| **Ittia Research Fact Checking** | [Github](https://github.com/ittia-research/check) |
 
 TODO: This list in particular is highly incomplete. There is a couple dozen other good ones.
 
