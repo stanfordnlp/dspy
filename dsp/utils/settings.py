@@ -36,6 +36,7 @@ class Settings:
                 compiling=False,  # TODO: can probably be removed
                 skip_logprobs=False,
                 trace=[],
+                debug_trace =[],
                 release=0,
                 bypass_assert=False,
                 bypass_suggest=False,

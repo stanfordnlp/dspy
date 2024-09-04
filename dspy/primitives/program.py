@@ -3,10 +3,17 @@ import os
 
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
+from dspy.teleprompt.teleprompt import Teleprompter
 from pydantic import BaseModel, RootModel
 from typing import List, Tuple, Set, Optional, TypeVar, Type, Union, Literal
+import inspect
 class ProgramMeta(type):
-    pass
+    def __new__(cls, name, bases, class_dict):
+        for attr, value in class_dict.items():
+            if attr == "forward" and callable(value):
+                original_method= value
+                class_dict[attr] = forward_wrapper(original_method,cls,name)
+        return type.__new__(cls, name, bases, class_dict)
     # def __call__(cls, *args, **kwargs):
     #     obj = super(ProgramMeta, cls).__call__(*args, **kwargs)
 
@@ -167,6 +174,28 @@ class Module(BaseModule, metaclass=ProgramMeta):
     #         print("Done")
 
     #     return new_copy
+    
+def forward_wrapper(method, cls, name):
+    def inner_wrapper(self,*args, **kwargs):
+        stack = inspect.stack()
+        current_id = id(stack[0].frame)
+        for frame_info in stack:
+            caller_locals = frame_info.frame.f_locals
+            if 'self' not in caller_locals:
+                continue
+            caller = caller_locals['self']
+            if isinstance(caller, Module) or isinstance(caller, Teleprompter):
+                parent_frame_id = id(frame_info.frame)
+                dsp.settings.debug_trace.append({
+                    'class_name' : name,
+                    'object_id' : id(self),
+                    'frame_id' : current_id,
+                    'parent_frame_id': parent_frame_id,
+                    'args' : args,
+                    'kwargs' : kwargs                
+                })
+        return method(self, *args, **kwargs)
+    return inner_wrapper
 
 
 def set_attribute_by_name(obj, name, value):
