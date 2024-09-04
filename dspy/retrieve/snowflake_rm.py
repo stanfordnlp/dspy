@@ -31,7 +31,7 @@ class SnowflakeRM(dspy.Retrieve):
 
     def __init__(
         self,
-        snowflake_session: dict,
+        snowflake_session: object,
         cortex_search_service: str,
         snowflake_database: str,
         snowflake_schema: str,
