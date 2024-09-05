@@ -137,7 +137,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **Adding Depth to DSPy Programs** | [Link](https://www.youtube.com/watch?v=0c7Ksd6BG88) |
 | **Programming Foundation Models with DSPy** | [Link](https://www.youtube.com/watch?v=Y94tw4eDHW0) |
 | **DSPy End-to-End: SF Meetup** | [Link](https://www.youtube.com/watch?v=Y81DoFmt-2U) |
-| **Monitoring & Tracing DSPy with Langtrace** | [Link]([https://langtrace.ai/blog/announcing-dspy-support-in-langtrace](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace)) |
+| **Monitoring & Tracing DSPy with Langtrace** | [Link](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace) |
 
 TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
 
