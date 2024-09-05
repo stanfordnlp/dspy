@@ -18,7 +18,7 @@ except ImportError:
 
 # Verify the compatibility of the OpenAI library version installed.
 try:
-    major, minor, _ = map(int, openai.__version__.split('.'))
+    major, minor, _ = map(int, openai.__version__.split("."))
     OPENAI_VERSION_COMPATIBLE = major >= 1 and minor >= 16
 except Exception:
     OPENAI_VERSION_COMPATIBLE = False
@@ -31,6 +31,7 @@ if not OPENAI_VERSION_COMPATIBLE:
 # Attempt to handle specific OpenAI errors; fallback to general ones if necessary.
 try:
     import openai.error
+
     ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
@@ -45,7 +46,7 @@ class MyScaleRM(dspy.Retrieve):
     MyScaleDB using embeddings.  It supports embedding generation through either a local
     model or the OpenAI API. This class abstracts away the complexities of connecting to
     MyScaleDB, managing API keys, and processing queries to return semantically
-    relevant results. 
+    relevant results.
 
     Assumes that a table named `database.table` exists in MyScaleDB, and that the
     table has column named `vector_column` that stores vector data and a vector index has
@@ -64,16 +65,18 @@ class MyScaleRM(dspy.Retrieve):
 
     """
 
-    def __init__(self,
-                 client: clickhouse_connect.driver.client.Client,
-                 table: str,
-                 database: str = "default",
-                 metadata_columns: List[str] = ["text"],
-                 vector_column: str = "vector",
-                 k: int = 3,
-                 openai_api_key: Optional[str] = None,
-                 openai_model: Optional[str] = None,
-                 local_embed_model: Optional[str] = None):
+    def __init__(
+        self,
+        client: clickhouse_connect.driver.client.Client,
+        table: str,
+        database: str = "default",
+        metadata_columns: List[str] = ["text"],
+        vector_column: str = "vector",
+        k: int = 3,
+        openai_api_key: Optional[str] = None,
+        openai_model: Optional[str] = None,
+        local_embed_model: Optional[str] = None,
+    ):
         self.client = client
         self.database = database
         self.table = table
@@ -89,7 +92,7 @@ class MyScaleRM(dspy.Retrieve):
         if local_embed_model:
             self.setup_local_model(local_embed_model)
         elif openai_api_key:
-            os.environ['OPENAI_API_KEY'] = self.openai_api_key
+            os.environ["OPENAI_API_KEY"] = self.openai_api_key
 
     def setup_local_model(self, model_name: str):
         """
@@ -106,7 +109,7 @@ class MyScaleRM(dspy.Retrieve):
             from transformers import AutoModel, AutoTokenizer
         except ImportError as exc:
             raise ModuleNotFoundError(
-                """You need to install PyTorch and Hugging Face's transformers library to use a local embedding model. 
+                """You need to install PyTorch and Hugging Face's transformers library to use a local embedding model.
                 Install the pytorch using `pip install torch` and transformers using `pip install transformers` """,
             ) from exc
 
@@ -118,11 +121,11 @@ class MyScaleRM(dspy.Retrieve):
             raise ValueError(f"Failed to load model or tokenizer. Error: {str(e)}")
 
         if torch.cuda.is_available():
-            self.device = torch.device('cuda:0')
+            self.device = torch.device("cuda:0")
         elif torch.backends.mps.is_available():
-            self.device = torch.device('mps')
+            self.device = torch.device("mps")
         else:
-            self.device = torch.device('cpu')
+            self.device = torch.device("cpu")
 
         self._local_embed_model.to(self.device)
 
@@ -148,8 +151,8 @@ class MyScaleRM(dspy.Retrieve):
             return self._get_embedding_from_local_model(query)
         else:
             raise ValueError("No valid method for obtaining embeddings is configured.")
-    
-    #TO DO Add this method as Util method outside MyScaleRM 
+
+    # TO DO Add this method as Util method outside MyScaleRM
     def _get_embeddings_from_openai(self, query: str) -> List[float]:
         """
         Uses the OpenAI API to generate embeddings for the given query.
@@ -160,12 +163,10 @@ class MyScaleRM(dspy.Retrieve):
         Returns:
             A list containing the embedding of a query.
         """
-        response = openai.embeddings.create(
-        model=self.model,
-        input=query)
+        response = openai.embeddings.create(model=self.model, input=query)
         return response.data[0].embedding
-    
-    #TO DO Add this method as Util method outside MyScaleRM 
+
+    # TO DO Add this method as Util method outside MyScaleRM
     def _get_embedding_from_local_model(self, query: str) -> List[float]:
         """
         Generates embeddings for a single query using the configured local model.
@@ -177,6 +178,7 @@ class MyScaleRM(dspy.Retrieve):
             A list representing the query's embedding.
         """
         import torch
+
         self._local_embed_model.eval()  # Ensure the model is in evaluation mode
 
         inputs = self._local_tokenizer(query, return_tensors="pt", padding=True, truncation=True).to(self.device)
@@ -184,7 +186,7 @@ class MyScaleRM(dspy.Retrieve):
             output = self._local_embed_model(**inputs)
 
         return output.last_hidden_state.mean(dim=1).squeeze().numpy().tolist()
-    
+
     def forward(self, user_query: str, k: Optional[int] = None) -> List[dotdict]:
         """
         Executes a retrieval operation based on a user's query and returns the top k relevant results.
@@ -201,12 +203,18 @@ class MyScaleRM(dspy.Retrieve):
         """
         if user_query is None:
             raise ValueError("Query is required")
-        k = k if k is not None else self.k
+        k = k or self.k
         embeddings = self.get_embeddings(user_query)
-        columns_string = ', '.join(self.metadata_columns)
+        columns_string = ", ".join(self.metadata_columns)
         result = self.client.query(f"""
         SELECT {columns_string},
         distance({self.vector_column}, {embeddings}) as dist FROM {self.database}.{self.table} ORDER BY dist LIMIT {k}
+        """)
+        result = self.client.query(f"""
+            SELECT {columns_string}, distance({self.vector_column}, {embeddings}) AS dist
+            FROM {self.database}.{self.table}
+            ORDER BY dist
+            LIMIT {k}
         """)
 
         # Convert the metadata into strings to pass to dspy.Prediction
@@ -219,6 +227,5 @@ class MyScaleRM(dspy.Retrieve):
                 row_string = "\n".join(row_strings)  # Combine formatted data
                 results.append(row_string)  # Append to results
 
-        passages = [dotdict({"long_text": passage}) for passage in results]
-
-        return passages  # Return list of dotdict 
+        # Return list of dotdict
+        return [dotdict({"long_text": passage}) for passage in results]
