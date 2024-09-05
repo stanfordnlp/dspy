@@ -3,7 +3,7 @@ import os
 
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
-from dspy.teleprompt.teleprompt import Teleprompter
+# from dspy.teleprompt.teleprompt import Teleprompter
 from pydantic import BaseModel, RootModel
 from typing import List, Tuple, Set, Optional, TypeVar, Type, Union, Literal
 import inspect
@@ -177,24 +177,62 @@ class Module(BaseModule, metaclass=ProgramMeta):
     
 def forward_wrapper(method, cls, name):
     def inner_wrapper(self,*args, **kwargs):
+        from dspy.teleprompt import Teleprompter
         stack = inspect.stack()
         current_id = id(stack[0].frame)
-        for frame_info in stack:
+        parent_frame_id = None
+        parent_object_id = None
+        parent_name = None
+        def return_caller_or_none(frame_info):
+            if not frame_info:
+                return
             caller_locals = frame_info.frame.f_locals
             if 'self' not in caller_locals:
-                continue
+                return
             caller = caller_locals['self']
             if isinstance(caller, Module) or isinstance(caller, Teleprompter):
-                parent_frame_id = id(frame_info.frame)
-                dsp.settings.debug_trace.append({
-                    'class_name' : name,
-                    'object_id' : id(self),
-                    'frame_id' : current_id,
-                    'parent_frame_id': parent_frame_id,
-                    'args' : args,
-                    'kwargs' : kwargs                
-                })
-        return method(self, *args, **kwargs)
+                return caller
+        
+        try:
+            for i in range(len(stack)):
+                current_frame_info = stack[i]
+                caller = return_caller_or_none(current_frame_info)
+                if caller and caller != self and (current_frame_info.function == "inner_wrapper" or 
+                                                  isinstance(caller, Teleprompter)):
+                    parent_frame_id = id(current_frame_info.frame)
+                    parent_object_id = id(caller)
+                    parent_name = type(caller).__name__
+                    break
+                # potential_next_stack = None if i == len(stack) - 1 else stack[i+1]
+                # potential_next_caller = return_caller_or_none(potential_next_stack)
+                # if potential_next_caller == self:
+                #     current_id = id(potential_next_stack)
+                # if caller and caller != self and potential_next_caller != caller:
+                #     parent_frame_id = id(current_frame_info.frame)
+                #     parent_object_id = id(caller)
+                #     parent_name = type(caller).__name__
+                #     break
+        except Exception as e :
+            print(e)
+            pass
+        import time
+        result = method(self, *args, **kwargs) 
+        trace_obj = {
+                        'class_name' : name,
+                        'object_id' : id(self),
+                        'frame_id' : current_id,
+                        'parent_frame_id': parent_frame_id,
+                        'parent_object_id' : parent_object_id,
+                        'parent_name': parent_name,
+                        'parent_id': parent_object_id,
+                        'args' : args,
+                        'kwargs' : kwargs,
+                        'time': int(time.time()),
+                        'result' : result.toDict() if hasattr(result, "toDict")  else None
+                    }
+        
+        dsp.settings.debug_trace.append({k: v for k, v in trace_obj.items() if v is None})
+        return result
     return inner_wrapper
 
 
