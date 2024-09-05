@@ -7,17 +7,17 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 ## Table of Contents
 
 1. [Company Use Cases](#a-few-company-use-cases)
-2. [Providers and Integrations](#a-few-providers-integrations-and-related-blog-releases)
-3. [Papers Using DSPy](#a-few-papers-using-dspy)
-4. [Repositories about DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
-5. [Blogs about DSPy](#a-few-blogs--videos-on-using-dspy)
+2. [Providers](#a-few-providers-integrations-and-related-blog-releases)
+3. [Research Papers using DSPy](#a-few-papers-using-dspy)
+4. [Open-source Software using DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
+5. [Blogs & Videos on using DSPy](#a-few-blogs--videos-on-using-dspy)
+
 
 ## A Few Company Use Cases
 
 | **Name** | **Use Cases** |
 |---|---|
 | **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
-| **[Moody's](https://www.moodys.com/)** | Leveraging DSPy to optimize RAG systems, LLM-as-a-Judge, and agentic systems for financial workflows. |
 | **[Replit](https://replit.com/)** | Synthesize diffs using code LLMs using a DSPy pipeline. [Blog](https://blog.replit.com/code-repair) |
 | **[Databricks](https://www.databricks.com/)** | Research, products, and customer solutions around LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) |
 | **[Sephora](https://www.sephora.com/)** | Undisclosed agent usecases; perspectives shared in [DAIS Session](https://www.youtube.com/watch?v=D2HurSldDkE). |
@@ -26,6 +26,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | Different pipelines within Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |
 | **[PingCAP](https://pingcap.com/)** | Building a knowledge graph. [Article](https://www.pingcap.com/article/building-a-graphrag-from-wikipedia-page-using-dspy-openai-and-tidb-vector-database/) |
+| **[Moody's](https://www.moodys.com/)** | Leveraging DSPy to optimize RAG systems, LLM-as-a-Judge, and agentic systems for financial workflows. |
 | **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
 | **[Procure.FYI](https://www.procure.fyi/)** | Process messy, publicly available technology spending and pricing data via DSPy. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
