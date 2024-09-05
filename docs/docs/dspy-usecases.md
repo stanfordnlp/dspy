@@ -7,9 +7,9 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 ## Table of Contents
 
 1. [Company Use Cases](#a-few-company-use-cases)
-2. [Providers](#a-few-providers-integrations-and-related-blog-releases)
-3. [Research Papers using DSPy](#a-few-papers-using-dspy)
-4. [Open-source Software using DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
+2. [Research Papers using DSPy](#a-few-papers-using-dspy)
+3. [Open-source Software using DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
+4. [Providers](#a-few-providers-integrations-and-related-blog-releases)
 5. [Blogs & Videos on using DSPy](#a-few-blogs--videos-on-using-dspy)
 
 
@@ -39,25 +39,6 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 
 WIP. This list mainly includes companies that have public posts or have OKed being included for specific products so far.
 
-## A Few Providers, Integrations, and related Blog Releases
-
-| **Name** | **Link** |
-|---|---|
-| **Databricks** | [Link](https://www.databricks.com/blog/dspy-databricks) |
-| **Zenbase** | [Link](https://zenbase.ai/) |
-| **LangWatch** | [Link](https://langwatch.ai/blog/introducing-dspy-visualizer) |
-| **Gradient** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
-| **Snowflake** | [Link](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
-| **Langchain** | [Link](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
-| **Weaviate** | [Link](https://weaviate.io/blog/dspy-optimizers) |
-| **Qdrant** | [Link](https://qdrant.tech/documentation/frameworks/dspy/) |
-| **Weights & Biases Weave** | [Link](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
-| **Milvus** | [Link](https://milvus.io/docs/integrate_with_dspy.md) |
-| **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
-| **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
-| **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
-| **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
-| **LLamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 
 ## A Few Papers Using DSPy
 
@@ -104,6 +85,26 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 | **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 
 TODO: This list in particular is highly incomplete. There are a couple dozen other good ones.
+
+## A Few Providers, Integrations, and related Blog Releases
+
+| **Name** | **Link** |
+|---|---|
+| **Databricks** | [Link](https://www.databricks.com/blog/dspy-databricks) |
+| **Zenbase** | [Link](https://zenbase.ai/) |
+| **LangWatch** | [Link](https://langwatch.ai/blog/introducing-dspy-visualizer) |
+| **Gradient** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
+| **Snowflake** | [Link](https://medium.com/snowflake/dspy-snowflake-140d6d947d73) |
+| **Langchain** | [Link](https://python.langchain.com/v0.2/docs/integrations/providers/dspy/) |
+| **Weaviate** | [Link](https://weaviate.io/blog/dspy-optimizers) |
+| **Qdrant** | [Link](https://qdrant.tech/documentation/frameworks/dspy/) |
+| **Weights & Biases Weave** | [Link](https://weave-docs.wandb.ai/guides/integrations/dspy/) |
+| **Milvus** | [Link](https://milvus.io/docs/integrate_with_dspy.md) |
+| **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
+| **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
+| **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
+| **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
+| **LLamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 
 ## A Few Blogs & Videos on using DSPy
 
