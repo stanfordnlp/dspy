@@ -105,7 +105,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
 | **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
 | **LLamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
-| **Langtrace** | [Link]([https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy)) |
+| **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |
 
 ## A Few Blogs & Videos on using DSPy
 
