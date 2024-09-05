@@ -105,6 +105,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
 | **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
 | **LLamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
+| **Langtrace** | [Link]([https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy)) |
 
 ## A Few Blogs & Videos on using DSPy
 
@@ -136,6 +137,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **Adding Depth to DSPy Programs** | [Link](https://www.youtube.com/watch?v=0c7Ksd6BG88) |
 | **Programming Foundation Models with DSPy** | [Link](https://www.youtube.com/watch?v=Y94tw4eDHW0) |
 | **DSPy End-to-End: SF Meetup** | [Link](https://www.youtube.com/watch?v=Y81DoFmt-2U) |
+| **Monitoring & Tracing DSPy with Langtrace** | [Link]([https://www.youtube.com/watch?v=Y81DoFmt-2U](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace)) |
 
 TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
 
