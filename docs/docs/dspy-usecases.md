@@ -55,6 +55,8 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 | **Neo4j** | [Link](https://neo4j.com/labs/genai-ecosystem/dspy/) |
 | **Lightning AI** | [Link](https://lightning.ai/lightning-ai/studios/dspy-programming-with-foundation-models) |
 | **Haystack** | [Link](https://towardsdatascience.com/automating-prompt-engineering-with-dspy-and-haystack-926a637a3f43) |
+| **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
+| **LLamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 
 ## A Few Papers Using DSPy
 
@@ -90,6 +92,15 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 | **Ittia Research Fact Checking** | [Github](https://github.com/ittia-research/check) |
 | **Strategic Debate via Tree-of-Thought** | [Github](https://github.com/zbambergerNLP/strategic-debate-tot) |
 | **Sanskrit to English Translation App**| [Github](https://github.com/ganarajpr/sanskrit-translator-dspy) |
+| **DSPy for extracting features from PDFs on arXiv**| [Github](https://github.com/S1M0N38/dspy-arxiv) |
+| **DSPygen: DSPy in Ruby on Rails**| [Github](https://github.com/seanchatmangpt/dspygen) |
+| **DSPy Inspector**| [Github](https://github.com/Neoxelox/dspy-inspector) |
+| **DSPy with FastAPI**| [Github](https://github.com/diicellman/dspy-rag-fastapi) |
+| **DSPy for Indian Languages**| [Github](https://github.com/saifulhaq95/DSPy-Indic) |
+| **Hurricane: Blog Posts with Generative Feedback Loops!**| [Github](https://github.com/weaviate-tutorials/Hurricane) |
+| **RAG example using DSPy, Gradio, FastAPI, and Ollama**| [Github](https://github.com/diicellman/dspy-gradio-rag) |
+| **Synthetic Data Generation**| [Github](https://colab.research.google.com/drive/1CweVOu0qhTC0yOfW5QkLDRIKuAuWJKEr?usp=sharing) |
+| **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 
 TODO: This list in particular is highly incomplete. There is a couple dozen other good ones.
 
@@ -97,13 +108,23 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 
 | **Name** | **Link** |
 |---|---|
+| **Blog Posts** | |
 | **Why I bet on DSPy** | [Blog](https://blog.isaacbmiller.com/posts/dspy) |
 | **Not Your Average Prompt Engineering** | [Blog](https://jina.ai/news/dspy-not-your-average-prompt-engineering/) |
 | **Why I'm excited about DSPy** | [Blog](https://substack.stephen.so/p/why-im-excited-about-dspy) |
-| **DSPy Intro from Sephora (25K views)** | [Link](https://www.youtube.com/watch?v=D2HurSldDkE) |
-| **DSPy Explained! (60K views)** | [Link](https://www.youtube.com/watch?v=41EfOY0Ldkc) |
-| **Structured Outputs with DSPy** | [Link](https://www.youtube.com/watch?v=tVw3CwrN5-8) |
 | **Achieving GPT-4 Performance at Lower Cost** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
+| **Prompt engineering is a task best left to AI models** | [Link](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/) |
+| **What makes DSPy a valuable framework for developing complex language model pipelines?** | [Link](https://medium.com/@sujathamudadla1213/what-makes-dspy-a-valuable-framework-for-developing-complex-language-model-pipelines-edfa5b4bcf9b) |
+| **DSPy: A new framework to program your foundation models just by prompting** | [Link](https://www.linkedin.com/pulse/dspy-new-framework-program-your-foundation-models-just-prompting-lli4c/) |
+| **Intro to DSPy: Goodbye Prompting, Hello Programming** | [Link](https://medium.com/towards-data-science/intro-to-dspy-goodbye-prompting-hello-programming-4ca1c6ce3eb9) |
+| **DSPyGen: Revolutionizing AI** | [Link](https://www.linkedin.com/pulse/launch-alert-dspygen-20242252-revolutionizing-ai-sean-chatman--g9f1c/) |
+| **Building an AI Assistant with DSPy** | [Link](https://www.linkedin.com/pulse/building-ai-assistant-dspy-valliappa-lakshmanan-vgnsc/) |
+| **Videos** | |
+| **DSPy Explained! (60K views)** | [Link](https://www.youtube.com/watch?v=41EfOY0Ldkc) |
+| **DSPy Intro from Sephora (25K views)** | [Link](https://www.youtube.com/watch?v=D2HurSldDkE) |
+| **Structured Outputs with DSPy** | [Link](https://www.youtube.com/watch?v=tVw3CwrN5-8) |
+| **DSPy and ColBERT - Weaviate Podcast** | [Link](https://www.youtube.com/watch?v=CDung1LnLbY) |
+| **SBTB23 DSPy** | [Link](https://www.youtube.com/watch?v=Dt3H2ninoeY) |
 | **Optimization with DSPy and LangChain** | [Link](https://www.youtube.com/watch?v=4EXOmWeqXRc) |
 | **Automated Prompt Engineering + Visualization** | [Link](https://www.youtube.com/watch?v=eAZ2LtJ6D5k) |
 | **Transforming LM Calls into Pipelines** | [Link](https://www.youtube.com/watch?v=NoaDWKHdkHg) |
@@ -113,10 +134,10 @@ TODO: This list in particular is highly incomplete. There is a couple dozen othe
 | **Adding Depth to DSPy Programs** | [Link](https://www.youtube.com/watch?v=0c7Ksd6BG88) |
 | **Programming Foundation Models with DSPy** | [Link](https://www.youtube.com/watch?v=Y94tw4eDHW0) |
 | **DSPy End-to-End: SF Meetup** | [Link](https://www.youtube.com/watch?v=Y81DoFmt-2U) |
-| **SBTB23 DSPy** | [Link](https://www.youtube.com/watch?v=Dt3H2ninoeY) |
-| **DSPy and ColBERT - Weaviate Podcast** | [Link](https://www.youtube.com/watch?v=CDung1LnLbY) |
 
 TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
+
+Credit: Some of these resources were originally compiled in the [Awesome DSPy](https://github.com/ganarajpr/awesome-dspy/tree/master) repo.
 
 ### Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 
