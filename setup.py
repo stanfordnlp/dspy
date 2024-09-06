@@ -12,7 +12,7 @@ setup(
     #replace_package_name_marker
     name="dspy-ai",
     #replace_package_version_marker
-    version="2.4.12", 	
+    version="2.4.14", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	
@@ -38,7 +38,8 @@ setup(
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
         "groq": ["groq~=0.8.0"],
-    },	
+        "langfuse": ["langfuse~=2.36.1"]
+    },
     classifiers=[	
         "Development Status :: 3 - Alpha",	
         "Intended Audience :: Science/Research",	

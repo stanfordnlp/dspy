@@ -10,6 +10,7 @@
 **[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
 [Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     
 [Jun'24] [Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)    
+[Feb'24] [Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models](https://arxiv.org/abs/2402.14207)         
 [Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
 [Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
 [Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
@@ -18,6 +19,10 @@
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
 **Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
+
+**Roadmap for DSPy 2.5 & 3.0:** [Roadmap Sketch](https://github.com/stanfordnlp/dspy/blob/main/docs/docs/roadmap.md)
+
+**How is DSPy Used?:** [DSPy Use Cases](docs/docs/dspy-usecases.md)
 
 [![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
 
@@ -29,7 +34,6 @@ To make this more systematic and much more powerful, **DSPy** does two things. F
 
 **DSPy** can routinely teach powerful models like `GPT-3.5` or `GPT-4` and local models like `T5-base` or `Llama2-13b` to be much more reliable at tasks, i.e. having higher quality and/or avoiding specific failure patterns. **DSPy** optimizers will "compile" the _same_ program into _different_ instructions, few-shot prompts, and/or weight updates (finetunes) for each LM. This is a new paradigm in which LMs and their prompts fade into the background as optimizable pieces of a larger system that can learn from data. **tldr;** less prompting, higher scores, and a more systematic approach to solving hard tasks with LMs.
 
-
 ### Table of Contents
 
 If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
@@ -40,8 +44,6 @@ If you need help thinking about your task, we recently created a [Discord server
 1. **[Compiling: Two Powerful Concepts](#4-two-powerful-concepts-signatures--teleprompters)**
 1. **[Pydantic Types](#5-pydantic-types)** 
 1. **[FAQ: Is DSPy right for me?](#6-faq-is-dspy-right-for-me)**
-
-
 
 ### Analogy to Neural Networks
 
@@ -370,7 +372,7 @@ If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new 
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)</h4></summary>
+  <summary><h4 style="display: inline">[6.a] DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)</h4></summary>
 
 In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.)
 
@@ -384,7 +386,7 @@ Oh, and you wouldn't need to maintain long, brittle, model-specific strings at t
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
+  <summary><h4 style="display: inline">[6.b] DSPy vs. application development libraries like LangChain, LlamaIndex</h4></summary>
 
 
 > _Note: If you use LangChain as a thin wrapper around your own prompt strings, refer to answer [5.a] instead._
@@ -403,7 +405,7 @@ If you're familiar with neural networks:
 
 ####
 <details>
-  <summary><h4 style="display: inline">[5.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines</h4></summary>
+  <summary><h4 style="display: inline">[6.c] DSPy vs. generation control libraries like Guidance, LMQL, RELM, Outlines</h4></summary>
 
 
 Guidance, LMQL, RELM, and Outlines are all exciting new libraries for controlling the individual completions of LMs, e.g., if you want to enforce JSON output schema or constrain sampling to a particular regular expression.
