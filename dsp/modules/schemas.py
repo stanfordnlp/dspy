@@ -4,21 +4,12 @@ from typing_extensions import NotRequired, TypedDict
 from pydantic import BaseModel
 
 import litellm
-from dsp.modules.provider_kwargs import get_google_ai_safety_settings
 
 
 class StreamOptions(BaseModel):
     """Pydantic data model for the Stream Options."""
 
     include_usage: bool = False
-
-
-class Functions(BaseModel):
-    """Pydantic data model for the Functions."""
-
-    description: Optional[str] = ""
-    name: str
-    parameters: Optional[dict[str, Any]] = None
 
 
 class ToolFunction(BaseModel):
@@ -75,7 +66,7 @@ class DSPyEncoderModelResponse(TypedDict):
 class LLMModelParams(BaseModel):
     """Pydantic data model for the LLM Model Params."""
 
-    model: str = "gpt-4o-mini"
+    model: str = "openai/gpt-4o-mini"
     messages: Optional[list[ChatMessage]] = None
     temperature: float = 0.0
     max_tokens: Optional[int] = None  # TODO: our previous default are varied across providers. Clarify!
@@ -84,8 +75,6 @@ class LLMModelParams(BaseModel):
     presence_penalty: Optional[float] = None
     n: int = 1
     stop: Optional[Union[str, list[str]]] = None
-    functions: Optional[list[Functions]] = None  # TODO: openai depricated this
-    function_call: Optional[Union[Optional[str], Functions]] = None  # TODO: openai depricated this
     safety_settings: Optional[dict[str, Any]] = None
     logit_bias: Optional[dict[str, float]] = None
     user: Optional[str] = None
@@ -115,14 +104,43 @@ class LLMModelParams(BaseModel):
         except AttributeError:
             return None
 
-    def to_json(self, ignore_sensitive: bool = False, exclude_none: bool = False) -> dict[str, Any]:
-        return LLMModelParams(**self.model_dump()).model_dump(exclude_none=exclude_none)
+
+    def _init_messages(self):
+        if self.messages:
+            if self.messages[0].role != "system" and self.system_prompt:
+                self.messages = [
+                    ChatMessage(role="system", content=self.system_prompt),
+                    *self.messages
+                ]
+            return
+
+        if self.system_prompt:
+            self.messages = [
+                ChatMessage(role="system", content=self.system_prompt),
+            ]
+        else:
+            self.messages = []
+    
+    def get_only_valid_model_params(self):
+        litellm_model_params = litellm.get_supported_openai_params(self.model)
+        litellm_model_params += ["model", "messages"]
+        return self.to_json(include_only=litellm_model_params, exclude_none=True)
+
+    def to_json(self, include_only: list[str] = [], exclude_none: bool = False) -> dict[str, Any]:
+        """Converts the LLMModelParams to a JSON object."""
+        return LLMModelParams(**self.model_dump()).model_dump(include=include_only, exclude_none=exclude_none)
 
     def get_copy(self) -> dict[str, Any]:
         return LLMModelParams(**self.model_dump())
 
+    def __init__(self, **data):
+        super().__init__(**data)
 
-class LiteLLMParams:
+        # DSPy mainly focuses on single prompt text, so we do a minor transformation to format it as messages
+        self._init_messages()
+
+
+class LiteLLMParams(BaseModel):
     """Pydantic data model for the Lite LLM Params."""
 
     # Litellm specific
@@ -141,33 +159,36 @@ class LiteLLMParams:
     metadata: Optional[dict[str, Any]] = (
         None  # Any additional data you want to be logged when the call is made (sent to logging integrations, eg. promptlayer and accessible via custom callback function)
     )
-    drop_params: bool = True
-
-
-class LLMParams(LLMModelParams, LiteLLMParams):
-    """Pydantic data model for the LLM Params."""
-
-    provider: Optional[str] = ""
+    api_key: Optional[str] = None
+    # provider: Optional[str] = ""
     extra_headers: Optional[dict[str, str]] = None
+
+    # Provider specific params
+
+    # Vertex specific params
     vertex_credentials: Optional[str] = None
     vertex_project: Optional[str] = None
     vertex_location: Optional[str] = None
-    custom_provider: Optional[bool] = None
+
+    # WatsonX specific params
     decoding_method: Optional[str] = None  # WatsonX - greedy
     project_id: Optional[str] = None  # WatsonX
 
+    # AWS specific params
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION_NAME: Optional[str] = None
 
+    # Cloudflare specific params
     CLOUDFLARE_API_KEY: Optional[str] = None
     CLOUDFLARE_ACCOUNT_ID: Optional[str] = None
 
+    # Anyscale specific params
     ANYSCALE_API_KEY: Optional[str] = None
 
+    # TogetherAI specific params
     TOGETHERAI_API_KEY: Optional[str] = None
-    model_all_params: Optional[list[str]] = None
-    litellm_model: Optional[str] = None
+
 
     class Config:
         """Allows for extra parameters to be added."""
@@ -180,76 +201,11 @@ class LLMParams(LLMModelParams, LiteLLMParams):
         except AttributeError:
             return None
 
-    def to_json(self, ignore_sensitive: bool = False, exclude_none: bool = True) -> dict[str, Any]:
+    def to_json(self, exclude_none: bool = True) -> dict[str, Any]:
         """Converts the LLMParams to a JSON object."""
-        param_json = self.model_dump(
-            include=self.model_all_params,
-            exclude=["api_base"] if ignore_sensitive else [],
+        return self.model_dump(
             exclude_none=exclude_none,
-        )
-        return param_json
-
-    def get_model_params(
-        self, return_json: bool = False, exclude_none: bool = False
-    ) -> Union[dict[str, Any], LLMModelParams]:
-        """Returns the model parameters."""
-        if return_json:
-            return super().to_json(exclude_none=exclude_none)
-        return super().get_copy()
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        if self.provider is None:
-            _, provider, _, _ = litellm.get_llm_provider(self.model)
-            self.provider = provider
-        elif self.provider not in litellm.provider_list:
-            self.custom_provider = True
-            if self.provider == "premai":
-                self.api_base = "https://api.premai.com/v1"
-            if self.provider == "you.com":
-
-                if self.model == "research":
-                    self.model = "custom/research"
-                else:
-                    self.model = "custom/smart"
-
-                if self.api_base is None:
-                    self.api_base = "https://chat-api.you.com/"
-                    self.api_base = self.api_base + "/" + self.model.split("/")[1]
-
-            if self.api_base is None:
-                raise ValueError(
-                    f"""Please provide an API base for the custom provider {self.provider}.
-                    Please visit https://docs.litellm.ai/docs/providers to see all supported LLM providers.
-                    You can still use your custom provider by setting the api_base parameter."""
-                )
-            if "/" in self.model.split("/")[0]:
-                self.model = "custom/" + self.model
-
-        self.litellm_model = f"{self.provider}/{self.model}"
-
-        if self.system_prompt:
-            self.messages = [ChatMessage(role="system", content=self.system_prompt)]
-        if self.prompt:
-            if not self.messages:
-                self.messages = []
-            self.messages.append(ChatMessage(role="user", content=self.prompt))
-
-        if "vertex_ai" in self.provider and self.safety_settings is None:
-            self.safety_settings = get_google_ai_safety_settings()
-
-            self.vertex_credentials = (
-                self.api_key or os.environ.get("VERTEX_CREDENTIALS") or self.extra_args.get("vertex_credentials")
-            )
-            self.vertex_project = self.extra_args.get("vertex_project") or os.environ.get("VERTEX_PROJECT")
-            self.vertex_location = self.extra_args.get("vertex_location") or os.environ.get("VERTEX_LOCATION")
-
-        self.model_all_params = (
-            litellm.get_supported_openai_params(self.litellm_model)
-            + list(LiteLLMParams.__annotations__.keys())
-            + ["model", "messages"]
-        )
-
+        )     
 
 class EncoderModelParams(BaseModel):
     """Pydantic data model for the Encoder Model Params."""
@@ -291,8 +247,6 @@ class EncoderParams(EncoderModelParams):
     metadata: Optional[dict[str, Any]] = (
         None  # Any additional data you want to be logged when the call is made (sent to logging integrations, eg. promptlayer and accessible via custom callback function)
     )
-    drop_params: bool = True
-
     class Config:
         """Allows for extra parameters to be added."""
 

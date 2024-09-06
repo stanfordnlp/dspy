@@ -113,7 +113,7 @@ class Predict(Module, Parameter):
         assert lm is not None, "No LM is loaded."
 
         # Get the lm params
-        lm_params: LLMModelParams = lm.llm_params.get_model_params()
+        lm_params: LLMModelParams = lm.llm_params
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
