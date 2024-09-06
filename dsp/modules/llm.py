@@ -20,7 +20,7 @@ from dsp.modules.lm_helper import LLMHelper
 litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
 
 # Use this for development testing
-litellm.set_verbose = True
+litellm.set_verbose = False
 
 class LLM(LLMHelper):
     """Wrapper around the LLM API.
