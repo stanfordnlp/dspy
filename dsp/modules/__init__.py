@@ -13,7 +13,7 @@ from .colbertv2 import ColBERTv2, ColBERTv2RerankerLocal, ColBERTv2RetrieverLoca
 from .databricks import *
 from .dummy_lm import *
 from .google import *
-from .googlevertexai import *
+from .google_vertex_ai import *
 from .gpt3 import *
 from .groq_client import *
 from .hf import HFModel
