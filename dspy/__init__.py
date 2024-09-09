@@ -6,12 +6,15 @@ from .primitives import *
 from .retrieve import *
 from .signatures import *
 from .utils.logging import logger, set_log_output
+from .utils import deploy_dspy
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
+
+from . import evaluate
 
 settings = dsp.settings
 
@@ -54,6 +57,7 @@ AWSMeta = dsp.AWSMeta
 Watsonx = dsp.Watsonx
 PremAI = dsp.PremAI
 
+VLLMOfflineEngine  = dsp.VLLMOfflineEngine
 You = dsp.You
 
 configure = settings.configure

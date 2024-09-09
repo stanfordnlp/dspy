@@ -1,0 +1,21 @@
+model_id: meta-llama/Meta-Llama-3-8B-Instruct # <-- change this to the model you want to fine-tune
+train_path: s3://llm-guide/data/viggo/train.jsonl # <-- change this to the path to your training data
+valid_path: s3://llm-guide/data/viggo/val.jsonl # <-- change this to the path to your validation data. This is optional
+context_length: 512 # <-- change this to the context length you want to use
+num_devices: 16 # <-- change this to total number of GPUs that you want to use
+num_epochs: 10 # <-- change this to the number of epochs that you want to train for
+train_batch_size_per_device: 8
+eval_batch_size_per_device: 16
+learning_rate: 5e-6
+padding: "longest" # This will pad batches to the longest sequence. Use "max_length" when profiling to profile the worst case.
+num_checkpoints_to_keep: 1
+dataset_size_scaling_factor: 10000
+output_dir: /mnt/local_storage
+deepspeed:
+  config_path: configs/deepspeed/zero_3_offload_optim+param.json
+dataset_size_scaling_factor: 10000 # internal flag. No need to change
+flash_attention_2: true
+trainer_resources:
+  memory: 53687091200 # 50 GB memory
+worker_resources:
+  accelerator_type:A10G: 0.001

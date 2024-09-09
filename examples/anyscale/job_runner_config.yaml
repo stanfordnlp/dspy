@@ -1,0 +1,5 @@
+entrypoint: python utils/ft.py model_config_dspy_custom.yaml
+image_uri: localhost:5555/anyscale/llm-forge:0.5.3
+max_retries: 0
+name: dspy-finetuning
+requirements: []
