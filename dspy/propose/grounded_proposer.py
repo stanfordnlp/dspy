@@ -194,7 +194,7 @@ class GenerateModuleInstruction(dspy.Module):
             if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
 
             # Identify all modules
-            init_pattern = r"def __init__\(.*?\):([\s\S]*?)(?=^\s*def|\Z)"
+            init_pattern = r"def __init__\([\s\S]*?\):([\s\S]*?)(?=^\s*def|\Z)"
             init_content_match = re.search(init_pattern, self.program_code_string)
             init_content = init_content_match.group(0)
             pattern = r"^(.*dspy\.(ChainOfThought|Predict).*)$"  # TODO: make it so that this extends out to any dspy Module
