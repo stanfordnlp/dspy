@@ -33,13 +33,13 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Set up Git
-        run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-      - name: Push docs subtree
+      - name: Push docs to separate repo
+        uses: cpina/github-action-push-to-another-repository@main
         env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          git remote add docs-repo https://${GH_PAT}@github.com/krypticmouse/dspy-docs.git
-          git subtree push --prefix=docs docs-repo master
+          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }}
+        with:
+          source-directory: 'docs'
+          destination-github-username: 'krypticmouse'
+          destination-repository-name: 'dspy-docs'
+          user-email: github-actions@github.com
+          target-branch: master
