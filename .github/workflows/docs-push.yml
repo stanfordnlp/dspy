@@ -1,0 +1,44 @@
+name: Update DSPy Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+
+jobs:
+  build-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run build test
+        run: npm run build
+
+  update-docs-subtree:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set up Git
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+      - name: Push docs subtree
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git remote add docs-repo https://${GH_PAT}@github.com/krypticmouse/dspy-docs.git
+          git subtree push --prefix=docs docs-repo master
