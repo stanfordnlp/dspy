@@ -19,10 +19,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '14'
+          node-version: '16'
       - name: Install dependencies
+        working-directory: ./docs
         run: npm ci
-      - name: Run build test
+      - name: Build docs
+        working-directory: ./docs
         run: npm run build
 
   update-docs-subtree:
