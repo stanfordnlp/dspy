@@ -1,0 +1,8 @@
+{
+    "label": "Internal",
+    "position": 99999,
+    "link": {
+      "type": "generated-index",
+      "description": "An intro to release notes"
+    }
+}
