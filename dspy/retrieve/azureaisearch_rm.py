@@ -255,7 +255,7 @@ class AzureAISearchRM(dspy.Retrieve):
                     query_speller=query_speller,
                     semantic_configuration_name=semantic_configuration_name,
                     top=top,
-                    vector_queries=[vector_query],
+                    vector_queries=vector_query,
                     vector_filter_mode=vector_filter_mode,
                     query_caption=("extractive|highlight-false" if use_semantic_captions else None),
                 )
@@ -266,7 +266,7 @@ class AzureAISearchRM(dspy.Retrieve):
                     query_language=query_language,
                     query_speller=query_speller,
                     top=top,
-                    vector_queries=[vector_query],
+                    vector_queries=vector_query,
                     vector_filter_mode=vector_filter_mode,
                 )
         if is_fulltext_search:
