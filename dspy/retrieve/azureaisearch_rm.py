@@ -229,7 +229,7 @@ class AzureAISearchRM(dspy.Retrieve):
                     search_text=None,
                     filter=filter,
                     query_type=query_type,
-                    vector_queries=[vector_query],
+                    vector_queries=vector_query,
                     vector_filter_mode=vector_filter_mode,
                     semantic_configuration_name=semantic_configuration_name,
                     top=top,
@@ -239,7 +239,7 @@ class AzureAISearchRM(dspy.Retrieve):
                 results = client.search(
                     search_text=None,
                     filter=filter,
-                    vector_queries=[vector_query],
+                    vector_queries=vector_query,
                     vector_filter_mode=vector_filter_mode,
                     top=top,
                 )
