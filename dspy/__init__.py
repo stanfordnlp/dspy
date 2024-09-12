@@ -9,10 +9,12 @@ from .utils.logging import logger, set_log_output
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
+from dspy.evaluate import Evaluate # isort: skip
+from dspy.clients import * # isort: skip
 
 settings = dsp.settings
 
-LM = dsp.LM
+# LM = dsp.LM
 
 AzureOpenAI = dsp.AzureOpenAI
 OpenAI = dsp.GPT3
