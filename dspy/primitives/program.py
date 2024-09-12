@@ -86,6 +86,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
         assert_transform_module(self, handler, **handler_args)
         return self
     
+    def trace_info(self) ->str :
+        import json
+        from pydantic.json import pydantic_encoder 
+        return json.dumps(dsp.settings.debug_trace)
+        
+    
     def debug_info(module : BaseModule) -> str:
         from dspy.predict.predict import Predict
         from dspy.retrieve.retrieve import Retrieve, RetrieveThenRerank
@@ -175,17 +181,30 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     #     return new_copy
     
+
 def forward_wrapper(method, cls, name):
+    random_name = "______dontuse_______"
     def inner_wrapper(self,*args, **kwargs):
+        
         from dspy.teleprompt import Teleprompter
+        from dspy.signatures import Signature, SignatureMeta
+        import random
+        r = random.randbytes(10)
         stack = inspect.stack()
-        current_id = id(stack[0].frame)
+        def hash_stack(stack : inspect.FrameInfo):
+            if random_name in stack.frame.f_locals:
+                return stack.frame.f_locals[random_name]
+            else:
+                r = random.randint(0,2147483647)
+                stack.frame.f_locals[random_name] = r
+                return r
+            
+        current_id = hash_stack(stack[0])
         parent_frame_id = None
         parent_object_id = None
         parent_name = None
-        def return_caller_or_none(frame_info):
-            if not frame_info:
-                return
+        def return_caller_or_none(frame_info : inspect.FrameInfo):
+            
             caller_locals = frame_info.frame.f_locals
             if 'self' not in caller_locals:
                 return
@@ -199,7 +218,7 @@ def forward_wrapper(method, cls, name):
                 caller = return_caller_or_none(current_frame_info)
                 if caller and caller != self and (current_frame_info.function == "inner_wrapper" or 
                                                   isinstance(caller, Teleprompter)):
-                    parent_frame_id = id(current_frame_info.frame)
+                    parent_frame_id = hash_stack(current_frame_info)
                     parent_object_id = id(caller)
                     parent_name = type(caller).__name__
                     break
@@ -217,6 +236,8 @@ def forward_wrapper(method, cls, name):
             pass
         import time
         result = method(self, *args, **kwargs) 
+        newkargs =  {k: v.model_json_schema() if isinstance(v,SignatureMeta) else v for k, v in kwargs.items()}
+    
         trace_obj = {
                         'class_name' : name,
                         'object_id' : id(self),
@@ -224,14 +245,15 @@ def forward_wrapper(method, cls, name):
                         'parent_frame_id': parent_frame_id,
                         'parent_object_id' : parent_object_id,
                         'parent_name': parent_name,
-                        'parent_id': parent_object_id,
                         'args' : args,
-                        'kwargs' : kwargs,
+                        'kwargs' : newkargs,
+                        'file':  os.path.abspath(inspect.getfile(self.__class__)),
+                        'line' :  inspect.findsource(self.__class__)[1],
                         'time': int(time.time()),
                         'result' : result.toDict() if hasattr(result, "toDict")  else None
                     }
         
-        dsp.settings.debug_trace.append({k: v for k, v in trace_obj.items() if v is None})
+        dsp.settings.debug_trace.append({k: v for k, v in trace_obj.items() if v is not None})
         return result
     return inner_wrapper
 
