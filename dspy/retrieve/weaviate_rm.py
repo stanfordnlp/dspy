@@ -126,3 +126,12 @@ class WeaviateRM(dspy.Retrieve):
             return objects
         else:
             raise ValueError("get_objects is not supported for the v3 Weaviate Python client, please upgrade to v4.")
+        
+    def insert(self, new_object_properties: dict):
+        if self._client_type == "WeaviateClient":
+            self._weaviate_collection.data.insert(
+                properties=new_object_properties,
+                uuid=get_valid_uuid(uuid4())
+            )
+        else:
+            raise AttributeError("insert is not supported for the v3 Weaviate Python client, please upgrade to v4.")
