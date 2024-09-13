@@ -54,6 +54,7 @@ class WeaviateRM(dspy.Retrieve):
     ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
+        self._weaviate_collection = self._weaviate_client.collections.get(self._weaviate_collection_name)
         self._weaviate_collection_text_key = weaviate_collection_text_key
 
         # Check the type of weaviate_client (this is added to support v3 and v4)
@@ -83,7 +84,7 @@ class WeaviateRM(dspy.Retrieve):
         passages, parsed_results = [], []
         for query in queries:
             if self._client_type == "WeaviateClient":
-                results = self._weaviate_client.collections.get(self._weaviate_collection_name).query.hybrid(
+                results = self._weaviate_collection.query.hybrid(
                     query=query,
                     limit=k,
                     **kwargs,
