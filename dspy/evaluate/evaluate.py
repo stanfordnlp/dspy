@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import tqdm
+from pydantic import BaseModel
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
@@ -223,7 +224,8 @@ class Evaluate:
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
         data = [
-            merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
+            merge_example_pred(example, prediction) | {"correct": score}
+            for _, example, prediction, score in predicted_devset
         ]
 
         result_df = pd.DataFrame(data)
@@ -271,7 +273,11 @@ class Evaluate:
         return round(100 * ncorrect / ntotal, 2)
 
 
-def merge_dicts(d1, d2) -> dict:
+def merge_example_pred(d1, d2) -> dict:
+    if isinstance(d1, BaseModel):
+        d1 = d1.model_dump()
+    if isinstance(d2, BaseModel):
+        d2 = d2.model_dump()
     merged = {}
     for k, v in d1.items():
         if k in d2:
