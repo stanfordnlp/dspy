@@ -165,8 +165,7 @@ class LM(ABC):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop("model")
-
-        return self.__class__(model=model, **kwargs)
+        return self.__class__(model, **kwargs)
 
 #-------------------------------------------------------------------------------
 #    Classes for finetuning LMs

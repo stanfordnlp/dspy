@@ -7,9 +7,6 @@ import ray
 import vllm
 from vllm import LLM
 from vllm.logger import init_logger
-import deploy_dspy
-from deploy_dspy.async_llm import AsyncLLMWrapper
-from deploy_dspy.download import download_model
 from transformers import AutoTokenizer
 from concurrent.futures import ThreadPoolExecutor, Future
 import time
@@ -31,7 +28,7 @@ class CoT(dspy.Module):
 
 class DSPyActor:
     def __init__(self, async_mode=False, batch_size=5):
-        dotenv.load_dotenv()
+        # dotenv.load_dotenv()
         model = "meta-llama/Meta-Llama-3-8B-Instruct"
         engine_args = {
             "max_pending_requests": 512,
@@ -121,8 +118,8 @@ def main(dataset):
 if __name__ == "__main__":
     if ray.is_initialized():
         ray.shutdown()
-    ray.init(runtime_env={"py_modules": [dspy, dsp, deploy_dspy], "env_vars": {"HF_HOME": "/mnt/local_storage/.cache/huggingface/"}})
-
+    ray.init(runtime_env={"py_modules": [dspy, dsp], "env_vars": {"HF_HOME": "/mnt/local_storage/.cache/huggingface/", "HF_TOKEN": "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"}})
+    # export HF_HOME=/mnt/local_storage/.cache/huggingface/
     gms8k = GSM8K()
 
     trainset, devset = gms8k.train, gms8k.dev

@@ -2,6 +2,7 @@ from .modules import *  # noqa
 from .primitives import *  # noqa
 from .adapters import *  # noqa
 from .utils import settings  # noqa
+from .deploy_dspy import *
 
 """
 TODO:
