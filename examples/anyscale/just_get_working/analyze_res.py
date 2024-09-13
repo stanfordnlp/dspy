@@ -4,8 +4,11 @@ from dspy.datasets import HotPotQA
 
 combined_res = []
 num_errors = 0
-for i in range(3):
-    res = json.load(open(f"results_8b_{i*500}_{(i+1)*500}.json", "r"))
+filenames = ["results_p70b_0_500.json", "results_p70b_500_1500.json"]
+
+for i in range(len(filenames)):
+    # res = json.load(open(f"results_8b_{i*500}_{(i+1)*500}.json", "r"))
+    res = json.load(open(filenames[i], "r"))
     num_errors += sum(1 for r in res if r.get("error", None) is not None)
     res = [r for r in res if r.get("error", None) is None]
     combined_res.extend(res)

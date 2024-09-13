@@ -1,0 +1,38 @@
+context_length: 512
+dataset_size_scaling_factor: 10000
+deepspeed:
+  config_path: configs/deepspeed/zero_3_offload_optim+param.json
+eval_batch_size_per_device: 16
+flash_attention_2: true
+learning_rate: 1e-4
+lora_config:
+  bias: none
+  fan_in_fan_out: false
+  init_lora_weights: true
+  lora_alpha: 16
+  lora_dropout: 0.05
+  modules_to_save: []
+  r: 8
+  target_modules:
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  - embed_tokens
+  - lm_head
+  task_type: CAUSAL_LM
+model_id: meta-llama/Meta-Llama-3-8B-Instruct
+num_checkpoints_to_keep: 1
+num_devices: 16
+num_epochs: 4
+output_dir: /mnt/cluster_storage/dspy/finetuning/artifacts/
+padding: longest
+train_batch_size_per_device: 16
+train_path: s3://anyscale-production-data-cld-1j41ls4gwkga4pwp8nbql6f239/org_4snvy99zwbmh4gbtk64jfqggmj/cld_1j41ls4gwkga4pwp8nbql6f239/artifact_storage/train.jsonl
+valid_path: s3://anyscale-production-data-cld-1j41ls4gwkga4pwp8nbql6f239/org_4snvy99zwbmh4gbtk64jfqggmj/cld_1j41ls4gwkga4pwp8nbql6f239/artifact_storage/val.jsonl
+worker_resources:
+  accelerator_type: L4:8
+  memory: 53687091200

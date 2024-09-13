@@ -1,5 +1,5 @@
 from vllm import AsyncLLMEngine, SamplingParams, AsyncEngineArgs, RequestOutput
-from vllm.entrypoints.chat_utils import parse_chat_messages, apply_chat_template
+from vllm.entrypoints.chat_utils import parse_chat_messages, apply_hf_chat_template
 
 from typing import List, Dict, Optional, Union
 
@@ -23,6 +23,11 @@ class AsyncLLMWrapper:
             **kwargs,
             disable_log_requests=True,
         )
+        if "model" in kwargs:
+            self.name = kwargs["model"]
+        else:
+            print("Using default model meta-llama/Meta-Llama-3-70B-Instruct as name")
+            self.name = "meta-llama/Meta-Llama-3-70B-Instruct"
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
         self.request_id = 0
         self.max_pending_requests = max_pending_requests
@@ -48,15 +53,17 @@ class AsyncLLMWrapper:
             prompt = TextTokensPrompt(prompt=prompt, prompt_token_ids=prompt_token_ids)
         if self.max_pending_requests > 0:
             await self.free_queue.get()
-        print("adding request with id", request_id)
+        # print("adding request with id", request_id)
         stream = await self.engine.add_request(str(request_id), prompt, sampling_params)
         async for request_output in stream:
             if request_output.finished:
                 if self.max_pending_requests > 0:
                     self.free_queue.put_nowait(True)
+                # print("request_output", request_output.request_id)
+                # print("request_output", request_output.outputs[0].text, "\n\n")
                 return (request_output, idx_in_batch)
-            else:
-                print("request_output", request_output)
+            # else:
+            #     print("request_output", request_output)
         assert False
 
     async def start_generate_async(self, prompt, sampling_params, prompt_token_ids):
@@ -71,14 +78,10 @@ class AsyncLLMWrapper:
                 assert p["prompt_token_ids"]
                 pti = None
             tasks.append(
+                asyncio.create_task(
                     self._process(self.request_id, p, pti, sampling_params, i)
+                )
             )
-            # async for request_output in stream:
-            # if request_output.finished:
-            #     if self.max_pending_requests > 0:
-            #         self.free_queue.put_nowait(True)
-            #     return (request_output, idx_in_batch)
-            
         return tasks
 
     async def generate_async(self, prompt, sampling_params, prompt_token_ids):
@@ -102,7 +105,7 @@ class AsyncLLMWrapper:
         model_config = await asyncio.wait_for(self.engine.get_model_config(), timeout=10)
         conversations= [parse_chat_messages(conversation, model_config,
                                                self.tokenizer)[0] for conversation in messages]
-        prompts = [apply_chat_template(
+        prompts = [apply_hf_chat_template(
             self.tokenizer,
             conversation,
             chat_template=chat_template,
@@ -110,7 +113,7 @@ class AsyncLLMWrapper:
 
         prompt_token_ids = [self.tokenizer.encode(prompt) for prompt in prompts]
 
-        tasks = self.start_generate_async(
+        tasks = await self.start_generate_async(
             prompts, sampling_params, prompt_token_ids
         )
         
@@ -118,7 +121,17 @@ class AsyncLLMWrapper:
         return returns
 
     def chat(self, messages: List[List[Dict[str, str]]], sampling_params: Optional[Union[SamplingParams, List[SamplingParams]]] = None, use_tqdm: bool = True, lora_request = None, chat_template: Optional[str] = None, add_generation_prompt: bool = True):
-        ret = self.loop.run_until_complete(
+        if self.loop.is_running():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            ret = new_loop.run_until_complete(
+                self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt)
+            )
+            new_loop.close()
+            asyncio.set_event_loop(self.loop)
+            return ret
+        else:
+            ret = self.loop.run_until_complete(
             self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt)
         )
         return ret
@@ -129,10 +142,10 @@ class AsyncLLMWrapper:
             request_id = self.request_id
             
         model_config = await asyncio.wait_for(self.engine.get_model_config(), timeout=10)
-        print("messages", messages)
+        # print("messages", messages)
         conversation= parse_chat_messages(messages, model_config,
                                                self.tokenizer)[0]
-        prompt = apply_chat_template(
+        prompt = apply_hf_chat_template(
             self.tokenizer,
             conversation,
             chat_template=chat_template,

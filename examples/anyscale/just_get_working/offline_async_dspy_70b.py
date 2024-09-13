@@ -7,9 +7,9 @@ import ray
 import vllm
 from vllm import LLM
 from vllm.logger import init_logger
-import deploy_dspy
-from deploy_dspy.async_llm import AsyncLLMWrapper
-from deploy_dspy.download import download_model
+# import deploy_dspy
+from dsp.deploy_dspy.async_llm import AsyncLLMWrapper
+from dsp.deploy_dspy.download import download_model
 from transformers import AutoTokenizer
 from concurrent.futures import ThreadPoolExecutor, Future
 import time
@@ -42,7 +42,7 @@ class BasicMH(dspy.Module):
 
 class DSPyActor:
     def __init__(self, async_mode=False, batch_size=5):
-        dotenv.load_dotenv()
+        # dotenv.load_dotenv()
         print("loading model")
         model_path = download_model("meta-llama/Meta-Llama-3-70B-Instruct")
         self.llm = AsyncLLMWrapper(model_path,
@@ -63,6 +63,8 @@ class DSPyActor:
         dspy.settings.configure(lm=self.lm, rm=self.rm, experimental=True)
 
         self.basic_pred = BasicMH()
+        self.basic_pred.load("basicmh_70b_3_3_6_100_100.json")
+
         self.thread_pool = ThreadPoolExecutor(max_workers=60)
 
     def __call__(self, inputs):
@@ -80,6 +82,8 @@ class DSPyActor:
         return results
 
     def process_question(self, question, idx):
+        if idx % 100 == 0:
+            print(f"Processing question {idx}")
         # time.sleep(10 * idx)
         with dspy.context(lm=self.lm):
             try:
@@ -92,7 +96,7 @@ class DSPyActor:
 
 def main(dataset):
     # ds = ray.data.from_items([f"What is 1 + {num}" for num in range(10000)])
-    start_idx = 1000
+    start_idx = 500
     end_idx = 1500
     
     ds = ray.data.from_items([x.question for x in dataset[start_idx:end_idx]])
@@ -113,14 +117,12 @@ def main(dataset):
         print(f"Time taken: {end - start}")
         print(f"Total items: {count}")
         print(f"Time taken per item: {(end - start) / count}")
-        with open(f"results_{start_idx}_{end_idx}.json", "w") as f:
-            # results is of form [{"results": {"question": ..., "answer": ...}}]
-            # we need to flatten it to [{"question": ..., "answer": ...}]
+        with open(f"results_p70b_{start_idx}_{end_idx}.json", "w") as f:
             results = [result["results"] for result in results]
             json.dump(results, f)
 
     if LOAD_RESULTS:
-        results = json.load(open(f"results_{start_idx}_{end_idx}.json", "r"))
+        results = json.load(open(f"results_p70b_{start_idx}_{end_idx}.json", "r"))
     
     
     QA_map = {x.question: x for x in dataset[start_idx:end_idx]}
@@ -130,9 +132,12 @@ def main(dataset):
     print("results: ", sum(results), "/", len(results), f"= {sum(results) / len(results)}")
 
 if __name__ == "__main__":
+    # model_path = download_model("meta-llama/Meta-Llama-3-70B-Instruct")
+
+
     if ray.is_initialized():
         ray.shutdown()
-    ray.init(runtime_env={"py_modules": [dspy, dsp, deploy_dspy], "env_vars": {"HF_HOME": "/mnt/local_storage/.cache/huggingface/"}})
+    ray.init(runtime_env={"py_modules": [dspy, dsp], "env_vars": {"HF_HOME": "/mnt/local_storage/.cache/huggingface/", "HF_TOKEN": "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"}})
 
     dataset = HotPotQA(train_seed=1, eval_seed=2023, test_size=0, only_hard_examples=True)
     trainset = [x.with_inputs('question') for x in dataset.train]
