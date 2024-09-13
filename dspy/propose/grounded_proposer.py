@@ -3,8 +3,8 @@ import re
 
 import dspy
 from dspy.propose.dataset_summary_generator import create_dataset_summary
-from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix
-from dspy.teleprompt.utils import get_signature
+from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix, get_dspy_source_code
+from dspy.teleprompt.utils import get_signature, get_prompt_model
 
 from .propose_base import Proposer
 
@@ -186,21 +186,25 @@ class GenerateModuleInstruction(dspy.Module):
         program_description = ""
         module_code = ""
         if self.program_aware:
-            program_description = strip_prefix(
-                self.describe_program(
-                    program_code=self.program_code_string, program_example=task_demos,
-                ).program_description,
-            )
-            if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
+            try:
+                program_description = strip_prefix(
+                    self.describe_program(
+                        program_code=self.program_code_string, program_example=task_demos,
+                    ).program_description,
+                )
+                if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
 
-            # Identify all modules
-            init_pattern = r"def __init__\([\s\S]*?\):([\s\S]*?)(?=^\s*def|\Z)"
-            init_content_match = re.search(init_pattern, self.program_code_string)
-            init_content = init_content_match.group(0)
-            pattern = r"^(.*dspy\.(ChainOfThought|Predict).*)$"  # TODO: make it so that this extends out to any dspy Module
-            matches = re.findall(pattern, init_content, re.MULTILINE)
-            modules = [match[0].strip() for match in matches]
-            module_code = modules[pred_i]
+                # Identify all modules
+                init_pattern = r"def __init__\([\s\S]*?\):([\s\S]*?)(?=^\s*def|\Z)"
+                init_content_match = re.search(init_pattern, self.program_code_string)
+                init_content = init_content_match.group(0)
+                pattern = r"^(.*dspy\.(ChainOfThought|Predict).*)$"  # TODO: make it so that this extends out to any dspy Module
+                matches = re.findall(pattern, init_content, re.MULTILINE)
+                modules = [match[0].strip() for match in matches]
+                module_code = modules[pred_i]
+            except:
+                if self.verbose: print("Error getting program description. Running without program aware proposer.")
+                self.program_aware = False
 
         module_description = self.describe_module(
             program_code=self.program_code_string,
@@ -236,8 +240,8 @@ class GroundedProposer(Proposer):
     def __init__(
         self,
         prompt_model,
+        program,
         trainset,
-        program_code_string=None,
         view_data_batch_size=10,
         use_dataset_summary=True,
         program_aware=True,
@@ -258,8 +262,17 @@ class GroundedProposer(Proposer):
         self.set_history_randomly=set_history_randomly
         self.verbose = verbose
 
-        self.prompt_model = prompt_model
-        self.program_code_string = program_code_string
+        self.prompt_model = get_prompt_model(prompt_model)
+        if self.program_aware:
+            try:
+                self.program_code_string = get_dspy_source_code(program)
+                if self.verbose: print("SOURCE CODE:",self.program_code_string)
+            except Exception as e:
+                print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
+                self.program_code_string = None
+                self.program_aware = False
+        else:
+            self.program_code_string = None
         self.data_summary = create_dataset_summary(
             trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
         )
@@ -270,7 +283,6 @@ class GroundedProposer(Proposer):
         trainset,
         program,
         demo_candidates,
-        prompt_model,
         trial_logs,
         N,
         T,
@@ -306,7 +318,7 @@ class GroundedProposer(Proposer):
                         program=program,
                         predictor=predictor,
                         pred_i=pred_i,
-                        prompt_model=prompt_model,
+                        # prompt_model=prompt_model,
                         T=T,
                         demo_candidates=demo_candidates,
                         demo_set_i=demo_set_i,
@@ -321,7 +333,7 @@ class GroundedProposer(Proposer):
         program,
         predictor,
         pred_i,
-        prompt_model,
+        # prompt_model,
         T,
         demo_candidates,
         demo_set_i,
@@ -347,9 +359,10 @@ class GroundedProposer(Proposer):
         )
 
         # Generate a new instruction for our predictor, using the temperature specified for this round
-        original_temp = prompt_model.kwargs["temperature"]
-        with dspy.settings.context(lm=prompt_model):
-            prompt_model.kwargs["temperature"] = T
+        original_temp = self.prompt_model.kwargs["temperature"]
+
+        with dspy.settings.context(lm=self.prompt_model):
+            self.prompt_model.kwargs["temperature"] = T
             proposed_instruction = instruction_generator.forward(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
@@ -359,10 +372,10 @@ class GroundedProposer(Proposer):
                 previous_instructions=instruction_history,
                 tip=tip,
             ).proposed_instruction
-        prompt_model.kwargs["temperature"] = original_temp
+        self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
-        prompt_model.inspect_history(n=1)
+        if self.verbose: self.prompt_model.inspect_history(n=1)
         if self.verbose: print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
 
         return strip_prefix(proposed_instruction)

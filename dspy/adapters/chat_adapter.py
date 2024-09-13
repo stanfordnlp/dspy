@@ -1,7 +1,7 @@
 import re
 from .base import Adapter
 
-field_header_pattern = re.compile(r'\[\[\[\[ #### (\w+) #### \]\]\]\]')
+field_header_pattern = re.compile(r'\[\[\[ ### (\w+) ### \]\]\]')
 
 
 class ChatAdapter(Adapter):
@@ -42,7 +42,7 @@ class ChatAdapter(Adapter):
 
 
 def format_fields(fields):
-    return '\n\n'.join([f"[[[[ #### {k} #### ]]]]\n{v}" for k, v in fields.items()]).strip()
+    return '\n\n'.join([f"[[[ ### {k} ### ]]]\n{v}" for k, v in fields.items()]).strip()
 
 def format_chat_turn(field_names, values):
     if not set(values).issuperset(set(field_names)):
