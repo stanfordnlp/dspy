@@ -13,3 +13,4 @@ ujson
 httpx
 magicattr~=0.1.6
 litellm
+diskcache
