@@ -10,6 +10,8 @@ from .predict import Predict
 
 # TODO: There's a lot of value in having a stopping condition in the LM calls at `\n\nObservation:`
 
+# TODO [NEW]: When max_iters is about to be reached, reduce the set of available actions to only the Finish action.
+
 
 class ReAct(Module):
     def __init__(self, signature, max_iters=5, num_results=3, tools=None):
