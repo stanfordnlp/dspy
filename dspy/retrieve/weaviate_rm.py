@@ -108,3 +108,21 @@ class WeaviateRM(dspy.Retrieve):
             passages.extend(dotdict({"long_text": d}) for d in parsed_results)
 
         return passages
+    
+    def get_objects(self, num_samples: int, fields: List[str]) -> List[dict]:
+        """Get objects from Weaviate using the cursor API."""
+        if self._client_type == "WeaviateClient":
+            objects = []
+            counter = 0
+            for item in self._weaviate_collection.iterator():
+                if counter >= num_samples:
+                    break
+                new_object = {}
+                for key in item.properties.keys():
+                    if key in fields:
+                      new_object[key] = item.properties[key]
+                objects.append(new_object)
+                counter += 1
+            return objects
+        else:
+            raise ValueError("get_objects is not supported for the v3 Weaviate Python client, please upgrade to v4.")
