@@ -7,7 +7,7 @@ sidebar_position: 9
 ### Usage
 
 ```python
-lm = dspy.GroqLM(model='mixtral-8x7b-32768', api_key ="gsk_***" )
+lm = dspy.GROQ(model='mixtral-8x7b-32768', api_key ="gsk_***" )
 ```
 
 ### Constructor
