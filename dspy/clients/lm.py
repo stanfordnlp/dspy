@@ -1,10 +1,14 @@
 import os
 import ujson
-import litellm
 import functools
 
-from litellm.caching import Cache
-litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
+try:
+    import litellm
+    from litellm.caching import Cache
+    
+    litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
+except ImportError:
+    litellm = None
 
 class LM:
     def __init__(self, model, model_type='chat', temperature=0.0, cache=True, **kwargs):
