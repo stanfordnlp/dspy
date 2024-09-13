@@ -88,7 +88,7 @@ def _inspect_history(lm, n: int = 1):
             print(msg['content'].strip())
             print("\n")
 
-        print(_red(f"Response:"))
+        print(_red("Response:"))
         print(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
