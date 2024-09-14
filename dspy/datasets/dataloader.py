@@ -107,9 +107,9 @@ class DataLoader(Dataset):
                     for row in rm.get_objects(num_samples=num_samples, fields=fields)
                 ]
             except AttributeError:
-                raise ValueError("Retrieval module does not support get_objects. Please use a different retrieval module.")
+                raise ValueError("Retrieval module does not support `get_objects`. Please use a different retrieval module.")
         except AttributeError:
-            raise ValueError("Retrieval module not found. Please set a retrieval module using dspy.settings.rm.")
+            raise ValueError("Retrieval module not found. Please set a retrieval module using `dspy.settings.configure`.")
 
     def sample(
         self,
