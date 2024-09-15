@@ -120,7 +120,7 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
-        if isinstance(lm, dspy.LM):
+        if isinstance(lm, dspy.BaseLM):
             completions = v2_5_generate(lm, config, signature, demos, kwargs)
         elif dsp.settings.experimental:
             completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
@@ -211,8 +211,9 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
 
 def v2_5_generate(lm, lm_kwargs, signature, demos, inputs):
     from dspy.adapters import ChatAdapter
-
-    adapter = ChatAdapter()
+    import dspy
+    adapter = dspy.settings.adapter or ChatAdapter()
+    
     return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs)
     
 
