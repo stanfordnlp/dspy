@@ -77,8 +77,8 @@ class MIPROv2(Teleprompter):
     def __init__(
         self,
         metric,
-        prompt_model=None,
-        task_model=None,
+        prompt_model=dspy.settings.lm,
+        task_model=dspy.settings.lm,
         teacher_settings={},
         num_candidates=10,
         num_threads=6,
@@ -92,8 +92,8 @@ class MIPROv2(Teleprompter):
         self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
-        self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
-        self.task_model = task_model if task_model else dspy.settings.lm
+        self.task_model = task_model
+        self.prompt_model = prompt_model
         self.verbose = verbose
         self.track_stats = track_stats
         self.log_dir = log_dir
@@ -103,9 +103,6 @@ class MIPROv2(Teleprompter):
         self.num_threads = num_threads
         self.max_errors = max_errors
         self.metric_threshold = metric_threshold
-
-        # Check if WANDB_RUN_ID is set in the environment
-        self.wandb_run_id = None
 
     def compile(
         self,
@@ -120,7 +117,7 @@ class MIPROv2(Teleprompter):
         program_aware_proposer=True,
         requires_permission_to_run=True,
         view_data_batch_size=10,
-        minibatch_size=25, # TODO: more intelligently set these defaults
+        minibatch_size=25,
         minibatch_full_eval_steps=10,
     ):
         # Define ANSI escape codes for colors
