@@ -19,7 +19,6 @@ class ChainOfThought(Module):
 
         prefix = "Reasoning: Let's think step by step in order to"
 
-        import dspy
         if isinstance(dspy.settings.lm, dspy.LM):
             desc = "${reasoning}"
         elif dspy.settings.experimental:
