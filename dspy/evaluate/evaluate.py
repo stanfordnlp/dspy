@@ -61,6 +61,7 @@ class Evaluate:
         self.batched_metric = batched_metric
         self.predictions = [] # used to store predictions for a batched_metric call
         self.examples = [] # used to store examples for a batched_metric call
+        self.example_idxs = [] 
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -77,7 +78,7 @@ class Evaluate:
                 " use 'dspy.set_log_level('debug')'. In the future this will raise an error.",
             )
 
-    def _execute_single_thread(self, wrapped_program, devset, display_progress):
+    def _execute_single_thread(self, wrapped_program, devset, display_progress, is_batch):
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -86,16 +87,20 @@ class Evaluate:
         for idx, arg in devset:
             with logging_redirect_tqdm():
                 example_idx, example, prediction, score = wrapped_program(idx, arg)
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
-
+                if not is_batch:
+                    reordered_devset.append((example_idx, example, prediction, score))
+                    ncorrect += score
+                    ntotal += 1
+                    self._update_progress(pbar, ncorrect, ntotal)
         pbar.close()
 
+        if is_batch:
+            reordered_devset = example_idx
+            ncorrect = sum(score for _,_,_, score in example_idx)
+            ntotal = len(reordered_devset)
         return reordered_devset, ncorrect, ntotal
 
-    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress):
+    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress, is_batch):
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -135,16 +140,21 @@ class Evaluate:
                 if prediction is job_cancelled:
                     continue
 
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
+                if not is_batch:
+                    reordered_devset.append((example_idx, example, prediction, score))
+                    ncorrect += score
+                    ntotal += 1
+                    self._update_progress(pbar, ncorrect, ntotal)
             pbar.close()
 
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
             raise KeyboardInterrupt
 
+        if is_batch:
+            reordered_devset = example_idx
+            ncorrect = sum(score for _,_,_, score in example_idx)
+            ntotal = len(reordered_devset)
         return reordered_devset, ncorrect, ntotal
 
     def _update_progress(self, pbar, ncorrect, ntotal):
@@ -188,11 +198,23 @@ class Evaluate:
                     # store the predictions in each call
                     self.predictions.append(prediction)
                     self.examples.append(example)
+                    self.example_idxs.append(example_idx)
                     # call batched_metric after all predictions generated
                     if example_idx == len(devset) - 1:
-                        df = pd.DataFrame({"example": self.examples, "prediction": self.predictions})
+                        df = pd.DataFrame({ 
+                            # TODO: should the example ids be part of the dataframe?
+                            "example_idx": self.example_idxs,
+                            "example": self.examples, 
+                            "prediction": self.predictions
+                            })
                         batched_scores = batched_metric(df)
-                        # TODO: Complete
+                        for i, score in enumerate(batched_scores):  
+                            reordered_devset.append((self.example_idxs[i], self.examples[i], self.predictions[i], score))
+                        return reordered_devset, None, None, None
+                    
+                    else:
+                        # placeholders which aren't used when using batched_metric
+                        return example_idx, example, "batch", None
 
                 else:
                     score = metric(
@@ -220,6 +242,7 @@ class Evaluate:
             finally:
                 if creating_new_thread:
                     del thread_stacks[threading.get_ident()]
+
 
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
