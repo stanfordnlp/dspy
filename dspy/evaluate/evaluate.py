@@ -47,6 +47,7 @@ class Evaluate:
         *,
         devset,
         metric=None,
+        batched_metric=None,
         num_threads=1,
         display_progress=False,
         display_table=False,
@@ -57,6 +58,9 @@ class Evaluate:
     ):
         self.devset = devset
         self.metric = metric
+        self.batched_metric = batched_metric
+        self.predictions = [] # used to store predictions for a batched_metric call
+        self.examples = [] # used to store examples for a batched_metric call
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -151,6 +155,7 @@ class Evaluate:
         self,
         program,
         metric=None,
+        batched_metric=None,
         devset=None,
         num_threads=None,
         display_progress=None,
@@ -159,6 +164,8 @@ class Evaluate:
         return_outputs=None,
     ):
         metric = metric if metric is not None else self.metric
+        batched_metric = batched_metric if batched_metric is not None else self.batched_metric
+        is_batch = True if batched_metric is not None else False
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -176,18 +183,30 @@ class Evaluate:
 
             try:
                 prediction = program(**example.inputs())
-                score = metric(
-                    example,
-                    prediction,
-                )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
 
-                # increment assert and suggest failures to program's attributes
-                if hasattr(program, "_assert_failures"):
-                    program._assert_failures += dspy.settings.get("assert_failures")
-                if hasattr(program, "_suggest_failures"):
-                    program._suggest_failures += dspy.settings.get("suggest_failures")
+                if batched_metric is not None:
+                    # store the predictions in each call
+                    self.predictions.append(prediction)
+                    self.examples.append(example)
+                    # call batched_metric after all predictions generated
+                    if example_idx == len(devset) - 1:
+                        df = pd.DataFrame({"example": self.examples, "prediction": self.predictions})
+                        batched_scores = batched_metric(df)
+                        # TODO: Complete
 
-                return example_idx, example, prediction, score
+                else:
+                    score = metric(
+                        example,
+                        prediction,
+                    )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
+
+                    # increment assert and suggest failures to program's attributes
+                    if hasattr(program, "_assert_failures"):
+                        program._assert_failures += dspy.settings.get("assert_failures")
+                    if hasattr(program, "_suggest_failures"):
+                        program._suggest_failures += dspy.settings.get("suggest_failures")
+
+                    return example_idx, example, prediction, score
             except Exception as e:
                 with self.error_lock:
                     self.error_count += 1
@@ -206,13 +225,14 @@ class Evaluate:
         tqdm.tqdm._instances.clear()
 
         if num_threads == 1:
-            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
+            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress, is_batch)
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
                 wrapped_program,
                 devset,
                 num_threads,
                 display_progress,
+                is_batch
             )
 
         dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
