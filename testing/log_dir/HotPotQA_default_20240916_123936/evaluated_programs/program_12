@@ -1,0 +1,235 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "King Abdulaziz University | King Abdulaziz University (KAU) (Arabic: \u062c\u0627\u0645\u0639\u0629 \u0627\u0644\u0645\u0644\u0643 \u0639\u0628\u062f \u0627\u0644\u0639\u0632\u064a\u0632\u200e \u200e \"\u01e7\u0101mi\u02bfat al-malik \u02bfabd al-\u02bfaz\u012bz \") was founded in 1967 in Jeddah, Saudi Arabia. Designed by English architect John Elliott, it had 2,000 faculty and more than 37,000 students in 2000\/2001. Established initially as a private university by a group of businessmen led by Sheikh Muhammad Abu Bakr Bakhashab Pasha and including the writer Hamza Bogary. in 1974 King Abdulaziz University was converted to a public university by a resolution of the Council Ministers of Saudi Arabia. In 2016, it was ranked the top Arab university by Times Higher Education.",
+          "Al-Hikmah University | Al-Hikmah University is an Islamic university located in Ilorin, Kwara State, Nigeria. It was founded in 2005 by AbdulRaeem Oladimeji Islamic Foundation AROIF based in Nigeria and World Assembly of Muslim Youths WAMY based in Jeddah. Professor Muhammed Taofeek Olalekan Ibrahim is the current Vice-Chancellor. The goal of Al-Hikmah University is to be a centre of intellectual and moral excellence.",
+          "Abdul Alkalimat | Abdul Alkalimat (born Gerald Arthur McWorter, November 21, 1942) is an American professor of African-American studies and library and information science at the University of Illinois at Urbana\u2013Champaign. He is the author of several books, including \"Introduction to Afro-American Studies\", \"The African American Experience in Cyberspace\", and \"Malcolm X for Beginners\". He curates two websites related to African-American history, \"Malcolm X: A Research Site\" and \"eBlack Studies\".",
+          "University of Illinois at Urbana\u2013Champaign | The University of Illinois at Urbana\u2013Champaign (also known as U of I, Illinois, or colloquially as the University of Illinois or UIUC) is a public research university in the U.S. state of Illinois. Founded in 1867 as a land-grant institution in the twin cities of Champaign and Urbana, it is the flagship campus of the University of Illinois system and a founding member of the Big Ten Conference.",
+          "UIUC College of Education | The School of Education at the University of Illinois at Urbana-Champaign was founded in 1905. It was later renamed the College of Education in 1918. The college offers undergraduate, graduate, and online programs in areas including elementary education, early childhood education, special education, and Educational Organization and Leadership. It began with six departments; three of them merged and formed the largest department in the college. All departments offer masters and doctoral degrees. However, only two departments offer undergraduate degree programs: Special Education and Curriculum & Instruction. The college also offers 16 online programs. Students seeking an undergraduate degree in the college must meet the minimum graduation requirement set forth by the university. To obtain a certification, students must also meet the requirements of the Council on Teacher Education, a professional educational administration at the University of Illinois. The total enrollment is 1,361 students as of 2015.",
+          "History of University of Illinois at Urbana\u2013Champaign | History of University of Illinois at Urbana\u2013Champaign"
+        ],
+        "question": "Abdul Alkalimat is a professor of African-American studies and library and information science at a university founded in which year ?",
+        "rationale": "find the answer. We know that Abdul Alkalimat is a professor of African-American studies and library and information science. We also know that he is at a university. We need to find the year the university was founded.",
+        "search_query": "\"university founded by Abdul Alkalimat\" OR \"university founded by Abdul Alkalimat year\" OR \"Abdul Alkalimat university founding year\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "King Abdulaziz University | King Abdulaziz University (KAU) (Arabic: \u062c\u0627\u0645\u0639\u0629 \u0627\u0644\u0645\u0644\u0643 \u0639\u0628\u062f \u0627\u0644\u0639\u0632\u064a\u0632\u200e \u200e \"\u01e7\u0101mi\u02bfat al-malik \u02bfabd al-\u02bfaz\u012bz \") was founded in 1967 in Jeddah, Saudi Arabia. Designed by English architect John Elliott, it had 2,000 faculty and more than 37,000 students in 2000\/2001. Established initially as a private university by a group of businessmen led by Sheikh Muhammad Abu Bakr Bakhashab Pasha and including the writer Hamza Bogary. in 1974 King Abdulaziz University was converted to a public university by a resolution of the Council Ministers of Saudi Arabia. In 2016, it was ranked the top Arab university by Times Higher Education.",
+          "Al-Hikmah University | Al-Hikmah University is an Islamic university located in Ilorin, Kwara State, Nigeria. It was founded in 2005 by AbdulRaeem Oladimeji Islamic Foundation AROIF based in Nigeria and World Assembly of Muslim Youths WAMY based in Jeddah. Professor Muhammed Taofeek Olalekan Ibrahim is the current Vice-Chancellor. The goal of Al-Hikmah University is to be a centre of intellectual and moral excellence.",
+          "Abdul Alkalimat | Abdul Alkalimat (born Gerald Arthur McWorter, November 21, 1942) is an American professor of African-American studies and library and information science at the University of Illinois at Urbana\u2013Champaign. He is the author of several books, including \"Introduction to Afro-American Studies\", \"The African American Experience in Cyberspace\", and \"Malcolm X for Beginners\". He curates two websites related to African-American history, \"Malcolm X: A Research Site\" and \"eBlack Studies\".",
+          "University of Illinois at Urbana\u2013Champaign | The University of Illinois at Urbana\u2013Champaign (also known as U of I, Illinois, or colloquially as the University of Illinois or UIUC) is a public research university in the U.S. state of Illinois. Founded in 1867 as a land-grant institution in the twin cities of Champaign and Urbana, it is the flagship campus of the University of Illinois system and a founding member of the Big Ten Conference.",
+          "UIUC College of Education | The School of Education at the University of Illinois at Urbana-Champaign was founded in 1905. It was later renamed the College of Education in 1918. The college offers undergraduate, graduate, and online programs in areas including elementary education, early childhood education, special education, and Educational Organization and Leadership. It began with six departments; three of them merged and formed the largest department in the college. All departments offer masters and doctoral degrees. However, only two departments offer undergraduate degree programs: Special Education and Curriculum & Instruction. The college also offers 16 online programs. Students seeking an undergraduate degree in the college must meet the minimum graduation requirement set forth by the university. To obtain a certification, students must also meet the requirements of the Council on Teacher Education, a professional educational administration at the University of Illinois. The total enrollment is 1,361 students as of 2015.",
+          "History of University of Illinois at Urbana\u2013Champaign | History of University of Illinois at Urbana\u2013Champaign"
+        ],
+        "question": "Abdul Alkalimat is a professor of African-American studies and library and information science at a university founded in which year ?",
+        "rationale": "produce the search query. We need to find the year when Abdul Alkalimat's university was founded. We can do this by looking at the context provided, which includes information about the universities where Abdul Alkalimat has worked. We can use this information to construct a search query that will help us find the answer.",
+        "search_query": "\"University of Illinois at Urbana\u2013Champaign founding year\""
+      },
+      {
+        "question": "FM broadcasting began at the station of which inventor, who won the first Medal of Honor by what is now the IEEE?",
+        "answer": "Edwin Howard Armstrong",
+        "dspy_uuid": "ba798ded-c673-4211-b641-10995228209b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Ryan Hulings plays for the Dayton Dyanmo, who is his head coach?",
+        "answer": "Dan Griest",
+        "dspy_uuid": "bdf29396-0771-45ad-8d84-ce423cb86a6b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The tomb of Ferdowsi example of Achaemenid architecture, a style from which culture?",
+        "answer": "the Achaemenid Persians",
+        "dspy_uuid": "bdf6b22d-f0d5-46e2-8eb8-28b3393e2b4c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Merle Reagle did crosswords for what magazine that has a focus on aging issues?",
+        "answer": "AARP The Magazine",
+        "dspy_uuid": "23102dce-8b33-41f8-b92b-bec9d8f29ea8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "0b222fcb-9385-4163-b1ab-e1c5f098fc6e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What genre of music has American musicians Jonathan Davis and Philip Labonte both have in common in the bands they have played in?",
+        "answer": "metal",
+        "dspy_uuid": "e4a33857-1f38-44be-87c4-6d270d95ed2f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was released first, The Three Lives of Thomasina or The Shaggy Dog?",
+        "answer": "The Shaggy Dog",
+        "dspy_uuid": "a049f589-259b-4e4a-a90e-a65f732818ae",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are both Ralph Saenz and Roddy Woomble credited as writers?",
+        "answer": "no",
+        "dspy_uuid": "09ed93f2-8471-4c2f-aaef-81e7423ccff0",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Under which number president did Arthur A. Ballantine become solicitor of the Internal Revenue Service?",
+        "answer": "31st",
+        "dspy_uuid": "c4a4378b-0622-4189-b895-ea9a5a043c54",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "f62e0365-075c-4c62-825e-51a45fa0e460",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In what year was the club founded that played Manchester City in the 1972 FA Charity Shield",
+        "answer": "1874",
+        "dspy_uuid": "a7d093fc-f1b4-4b9b-b1f4-de6720b068f9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "162fb7a6-392a-4063-862e-dfbc4c1c5100",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What actress that starred in The Legend of Tarzan got her start by appearing in Australian independent films?",
+        "answer": "Margot Elise Robbie",
+        "dspy_uuid": "3a07d582-3108-47b0-aa70-f1cb7dc690bd",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the context and question, generate a search query that is relevant to the question and can be used to find the answer. The search query should be a natural language phrase that is likely to return relevant results in a search engine. The search query should also be concise and easy to read. The search query should be written in a way that is clear and concise, and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is easy to understand and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "question": "What singer, who originally sang a song included as the third single in Mel McDaniel's 1980 album \"I'm Countryfied\" had the nickname \"Gentle Giant\"?",
+        "answer": "Don Williams",
+        "dspy_uuid": "fb0929e0-5e30-47ae-a8b5-7cfef8959a69",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "2b786848-44f2-46d5-a2f8-866f5f582144",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Samantha Cristoforetti and Mark Shuttleworth are both best known for being first in their field to go where? ",
+        "answer": "space",
+        "dspy_uuid": "3f95035e-4b6e-40b4-be95-8b69cadd2f6e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Princess Astrid, Mrs. Ferner is the older sister of a king who ascended to the throne on which day ?",
+        "answer": "on 17 January 1991",
+        "dspy_uuid": "e38659e3-7063-49c5-849a-2cc76744d13f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Victorians - Their Story In Pictures is a documentary series written by an author born in what year?",
+        "answer": "1950",
+        "dspy_uuid": "484c82e7-6e44-43be-986f-251e4ae07a2c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?",
+        "answer": "Tae Kwon Do Times",
+        "dspy_uuid": "93857b9e-328c-440e-86b3-dd2c152344bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Chester Bennett was executed during an occupation that happened after how many days of fierce fighting ?",
+        "answer": "18 days",
+        "dspy_uuid": "6304f058-2b27-47b8-a0b6-68e521a47fb2",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Nike Mercurial Vapor is endorsed by the Brazilian footballer who plays what position for Liverpool?",
+        "answer": "midfielder",
+        "dspy_uuid": "1cf31f1b-abef-4ec7-b10a-8d8a7b4269b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is Mikael Blomkvist's profession in \"The Girl in the Spider's Web\"?",
+        "answer": "investigative journalist",
+        "dspy_uuid": "f71caa21-b945-452c-96a5-40dc61b32497",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What country does Ngezi Platinum F.C. play in?",
+        "answer": "Africa",
+        "dspy_uuid": "80fea12e-e335-4cc3-a321-8cb9d267b530",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The tomb of Ferdowsi example of Achaemenid architecture, a style from which culture?",
+        "answer": "the Achaemenid Persians",
+        "dspy_uuid": "bdf6b22d-f0d5-46e2-8eb8-28b3393e2b4c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When was the Houston Rockets point guard recruited by Frank Sullivan born?",
+        "answer": "August 23, 1988",
+        "dspy_uuid": "96701135-3fdb-4c48-ac58-18caeeb769b5",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which former White House employee worked alongside Kaitlan Collins at the politically conservative news website The Daily Caller?",
+        "answer": "Neil Patel",
+        "dspy_uuid": "4f8ab016-9dd4-457f-a6b7-dc633e6e2463",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which team drafted Emil Johansson in the 52nd NHL Entry Draft in the seventh round?",
+        "answer": "Providence Bruins",
+        "dspy_uuid": "6d100254-b21f-4620-a251-2eaf8035cf8c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do both Scott Treleaven and Raoul Peck make films? ",
+        "answer": "yes",
+        "dspy_uuid": "f65cb61c-29fa-4b39-b377-248c22e88a35",
+        "dspy_split": "train"
+      },
+      {
+        "question": " The Badge is a 2002 mystery-thriller film starring an American actress whose notible films include what 1999 Martin Scorsese film?",
+        "answer": "Bringing Out the Dead",
+        "dspy_uuid": "09f2e62a-ec8c-4158-b4a6-81f0cecf9b3f",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

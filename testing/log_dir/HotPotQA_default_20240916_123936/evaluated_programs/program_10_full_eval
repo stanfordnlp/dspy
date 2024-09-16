@@ -1,0 +1,275 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "The East Coast Angels | The East Coast Angels were one of Ireland's early punk groups, forming in Dublin in the 1970s. Their output has been chronicled in 's book, \"\".",
+          "Larry Blackmon | Lawrence Ernest Blackmon (born May 24, 1956) is the lead singer and founder frontman of the funk and R&B band, Cameo. Starting the band \"East Coast\", Blackmon and Tomi Jenkins formed the \"New York City Players\" as compliment to the Ohio Players. Having to rename the group due to a conflict, the band later called itself Cameo. Blackmon lived in Harlem and played drums on several hits for the band Black Ivory. He is the son of Lee Black, a former boxer.",
+          "The Saunders Brothers Show | The Saunders Brothers Show is a Canadian Comedy\/Celtic band from Nova Scotia. Billed as \"East Coast music with a twist\", the band is well known for their outrageously comedic bantering demeanor and audience participation, complemented by extreme flexibility in terms of musical genres, ranging from folk and country\/pop to Gospel and East Coast traditional all flavored with a unique twist.",
+          "The Ocean Blue | The Ocean Blue, formed in Hershey, Pennsylvania in 1986, is an American indie pop band that combines melodic guitars and synthesizers. Its core original members included David Schelzel (born September 26, 1967) on lead vocals\/guitar, Steve Lau on keyboards\/saxophone, Bobby Mittan on bass guitar and Rob Minnig on drums and vocals.",
+          "The Ocean Blue (album) | The Ocean Blue is the eponymous debut album by American band The Ocean Blue, released in 1989 by record labels Sire and Reprise.",
+          "Ocean Colour Scene | Ocean Colour Scene (often abbreviated to OCS) are an English rock band formed in Moseley, Birmingham, in 1989. They have had five Top 10 albums including a number one in 1997. They have also achieved seventeen Top 40 singles and six Top 10 singles to date."
+        ],
+        "question": "What was formed farther east, The Ocean Blue or The Dandy Warhols",
+        "rationale": "find the answer. We know that The Ocean Blue is a band that was formed in 1986, and The Dandy Warhols are a band that was formed in 1994. We also know that The Ocean Blue was formed farther east than The Dandy Warhols.",
+        "search_query": "\"bands formed east coast\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "The East Coast Angels | The East Coast Angels were one of Ireland's early punk groups, forming in Dublin in the 1970s. Their output has been chronicled in 's book, \"\".",
+          "Larry Blackmon | Lawrence Ernest Blackmon (born May 24, 1956) is the lead singer and founder frontman of the funk and R&B band, Cameo. Starting the band \"East Coast\", Blackmon and Tomi Jenkins formed the \"New York City Players\" as compliment to the Ohio Players. Having to rename the group due to a conflict, the band later called itself Cameo. Blackmon lived in Harlem and played drums on several hits for the band Black Ivory. He is the son of Lee Black, a former boxer.",
+          "The Saunders Brothers Show | The Saunders Brothers Show is a Canadian Comedy\/Celtic band from Nova Scotia. Billed as \"East Coast music with a twist\", the band is well known for their outrageously comedic bantering demeanor and audience participation, complemented by extreme flexibility in terms of musical genres, ranging from folk and country\/pop to Gospel and East Coast traditional all flavored with a unique twist.",
+          "The Ocean Blue | The Ocean Blue, formed in Hershey, Pennsylvania in 1986, is an American indie pop band that combines melodic guitars and synthesizers. Its core original members included David Schelzel (born September 26, 1967) on lead vocals\/guitar, Steve Lau on keyboards\/saxophone, Bobby Mittan on bass guitar and Rob Minnig on drums and vocals.",
+          "The Ocean Blue (album) | The Ocean Blue is the eponymous debut album by American band The Ocean Blue, released in 1989 by record labels Sire and Reprise.",
+          "Ocean Colour Scene | Ocean Colour Scene (often abbreviated to OCS) are an English rock band formed in Moseley, Birmingham, in 1989. They have had five Top 10 albums including a number one in 1997. They have also achieved seventeen Top 40 singles and six Top 10 singles to date."
+        ],
+        "question": "What was formed farther east, The Ocean Blue or The Dandy Warhols",
+        "rationale": "produce the search_query. We need to find the information about the formation of The Ocean Blue and The Dandy Warhols. We can start by searching for the formation year of both bands.",
+        "search_query": "\"formation year of The Ocean Blue\" OR \"formation year of The Dandy Warhols\" OR \"when was The Ocean Blue formed\" OR \"when was The Dandy Warhols formed\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Jackpot (Chingy album) | Jackpot is the debut studio album by American rapper Chingy. Sales of the album achieved Double Platinum in the US. It was released on July 15, 2003, by the Disturbing tha Peace label. Anchored by the smash single \"Right Thurr\", this album also had two other top three hits, \"Holidae In\" featuring Ludacris and Snoop Dogg, and \"One Call Away\" featuring J-Weav. The album was produced by The Trak Starz except for \"Bagg Up\", which was produced by DJ Quik. The enhanced version of the album features the uncut video of \"Right Thurr\".",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Georgia (Field Mob and Ludacris song) | \"Georgia\" is a single by Southern hip hop duo Field Mob and Atlanta-based rapper Ludacris featuring R&B singer Jamie Foxx, with production by DJ Vudu Spellz. It first appeared on \"Ludacris Presents: Disturbing tha Peace\", a compilation album released by Ludacris' own Disturbing tha Peace record label, showcasing the company's new talent as of 2006. The track was reprised on the Field Mob album \"Light Poles and Pine Trees\" released later the same year.",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Disturbing tha Peace | Disturbing tha Peace (DTP) is an American record label founded by Christopher \"Ludacris\" Bridges. Today it operates as a subsidiary of Def Jam, a division of Universal Music Group.",
+          "WeMix | WeMix was an online music creation community and user-generated record label founded in 2007 by hip-hop musician and actor Christopher \"Ludacris\" Bridges and was headquartered in New York City. It was a privately held joint venture between Ludacris\u2019 Disturbing tha Peace label and MegaMobile TV (a company founded by Matthew Apfel). The site was a social network as well as a content browsing\/filtering structure similar to YouTube. WeMix allowed artists to interact, share their music, give feedback, and collaborate with other artists. The site was free to all users and had an internet-advertising business model."
+        ],
+        "question": "Who was DJ Pain 1 produced for that founded Distrurbing tha Peace?",
+        "rationale": "find the answer. We know that DJ Pain 1 is a producer, and he has worked with several artists. We also know that Distrurbing tha Peace is a record label that was founded by a well-known rapper. By combining these two pieces of information, we can search for the answer.",
+        "search_query": "\"DJ Pain 1 produced for Distrurbing tha Peace\" OR \"founder of Distrurbing tha Peace\" OR \"rapper who founded Distrurbing tha Peace\""
+      },
+      {
+        "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
+        "answer": "Madonna",
+        "dspy_uuid": "2029b50e-a729-4c6c-a1a5-8f63d2f089f8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "f84708b4-80ee-443a-8e98-38e6e60f177c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "8bf3f177-624a-44bf-8096-8f295f9d698c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "8c9665bf-a877-4101-a5de-dc6970167348",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "efeeeebb-b48f-42de-900b-6e722fe57958",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "2b786848-44f2-46d5-a2f8-866f5f582144",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "cbc76ea2-4d65-44fd-9729-f5d1ae056b9d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "00b89853-f7b8-488f-a0ec-3ad404a04409",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "b89a3a75-2739-4b55-b9b4-18cfb0c3e512",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "162fb7a6-392a-4063-862e-dfbc4c1c5100",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "0b8223c0-453f-4f3e-878b-ef302f9e0119",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cb22cc5b-5f05-4408-899f-8f376b26238f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "e96dbb84-bb57-455d-b299-5b3c1042719e",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given a high-stakes scenario where a traveler is trying to find the most busy airport in Northern Ireland, and is currently on the M2 motorway, generate a search query that will help the traveler find the correct answer. The search query should be specific, accurate, and relevant to the context and question.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "determine which airport we are going to. We know that the M2 motorway is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. We also know that the M2 motorway has the busiest sections of any road or motorway in Northern Ireland. Therefore, if we are taking the M2 motorway to one of the Northern Ireland's most busiest airport, we are going to Belfast International Airport.",
+        "answer": "Belfast International Airport"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Mark Miller (kickboxer) | Mark Jason Miller (born September 17, 1971) is an American kickboxer who competes in the super heavyweight division.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Brian Warren | Brian Warren (born June 5, 1974) is an American mixed martial arts fighter from San Bernardino, California. Warren has fought in many organizations including K-1, King of the Cage, Strikeforce, Kage Kombat, Pangea, and Bellator. Warren has fought notable title holders such as Cung Le, Jason \"Mayhem\" Miller, Jeremy Horn, Jake Shields, and other known fighters such as TUF alum Jared Rollins, Justin Levens, Nate Loughran, Karo Parisyan, and Tiki Ghosn. Warren won a 2nd place medal in 2003 and 3rd place medal in 2006 in the advanced men's division of Grapplers Quest."
+        ],
+        "question": "Who has fought in the most championships, Tim Kennedy or Jason Miller?",
+        "rationale": "determine who has fought in the most championships. We can see that both Tim Kennedy and Jason Miller have fought in multiple organizations, including the UFC, Strikeforce, WEC, and DREAM. However, according to the information provided, Tim Kennedy has fought in the most championships, having competed in the UFC, Strikeforce, WEC, ShoMMA, HDNet Fights, and the IFL, whereas Jason Miller has fought in the UFC, Strikeforce, WFA, WEC, and DREAM.",
+        "answer": "Tim Kennedy"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Kenny Natt | Kenneth Wayne \"Kenny\" Natt (born October 5, 1958) is a former American professional basketball player and ex-interim head coach for the National Basketball Association's Sacramento Kings. He was a 6'3\" 185 lb guard and played collegiately at Northeast Louisiana University (now the University of Louisiana-Monroe) and had a three-year NBA playing career. After serving as an assistant with the Cleveland Cavaliers from 2004 to 2007, Natt was named to the coaching staff of newly appointed Kings head coach and former Kansas City Kings teammate Reggie Theus in 2007. He was subsequently named interim head coach on the firing of Theus, but he himself was fired on April 24, 2009, after the Kings finished with an NBA season-low 17 wins.",
+          "Reggie Witherspoon (basketball) | Phillip Reginald \"Reggie\" Witherspoon (born February 21, 1961) is the head coach of the Canisius College men's basketball team and the former head coach of the University at Buffalo men's college basketball team. He was fired after the 2012-13 season. He was the head coach at Erie Community College, and head coach and assistant coach at Sweet Home High School before he was hired as the interim head coach at Buffalo in December 1999. Witherspoon was named full-time head coach on March 10, 2000. He was the first African American named head coach of a varsity sports team in any Western New York suburban school district. Witherspoon served one season as an assistant at Alabama under head coach Anthony Grant. In 2015, Witherspoon was let go by Alabama when Grant was replaced by Avery Johnson. He was subsequently named as an assistant on Matt McCall's staff at UT-Chattanooga.",
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Wiley Brown | Wiley Brown , is the current Head Coach of the University of Louisville Men's Basketball program, following a recruiting scandal resulting in the firing of Rick Pitino in 2017. He is a retired NFL player, who lettered 2 years with the Philadelphia Eagles as a defensive end, before deciding to play professional basketball in the International Federation of Basketball where he traveled throughout the world. Brown spent one year with the CBA Louisville Catbirds and six years in Europe.",
+          "Richard Pitino | Richard William Pitino (born September 16, 1982) is the head coach of the University of Minnesota Golden Gophers men's basketball team. He is the son of former Louisville head coach, Rick Pitino. After attending St. Sebastian's School in Needham, Massachusetts, Richard Pitino earned a Bachelor of Arts degree in history at Providence College in 2005. During his time at Providence, Pitino was the manager for the Friars men's basketball team under Tim Welsh. For two years, he also served as an assistant coach for Saint Andrew's School in nearby Barrington, Rhode Island."
+        ],
+        "question": "Reggie Theus was the assistant coach for what man who had coached in the NBA?",
+        "rationale": "answer this question. We know that Reggie Theus was an assistant coach for the University of Louisville under Rick Pitino. Therefore, the answer is Rick Pitino.",
+        "answer": "Rick Pitino"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics.",
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics."
+        ],
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "rationale": "produce the answer. We know that Nicole Beharie is an American actress and singer, and she has starred in several films and TV series. We can look at the provided texts to find the answer. From the texts, we can see that Nicole Beharie starred in the biographical sports drama \"42\" (2013). Therefore, the answer is \"42\".",
+        "answer": "42"
+      },
+      {
+        "question": "The historical unit of the US Army that began its service before the Civil War fought in what battle in 1879?",
+        "answer": "Battle of Milk Creek",
+        "dspy_uuid": "9852aff7-7e6b-419b-b051-f05331fd0bf1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Old Rectory is in a small town and civil parish where?",
+        "answer": "North Lincolnshire, England",
+        "dspy_uuid": "ae198001-bb3f-4612-b53c-bb7d5bedbc9d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What do the outcomes of both Baker v. Wade and Bowers v. Harwick have in common?",
+        "answer": "appellate court reversed the lower court's decision",
+        "dspy_uuid": "dfc94327-5dda-4121-b278-e70c76b9217c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What sport was the player born in the county seat of Osage County involved in?",
+        "answer": "Rugby",
+        "dspy_uuid": "e24839c4-6e0e-4af0-9108-7fbd69e305ee",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which director was nominated for more Academy Awards, Lee Tit or Sidney Lumet?",
+        "answer": "14 of his films were nominated",
+        "dspy_uuid": "55fefdff-5191-4668-b232-77c36596f6ba",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When did the coach of the Karachi Kings finish his time as coach of the Australia national cricket team ?",
+        "answer": "23 June 2013.",
+        "dspy_uuid": "1f2c758d-f840-437a-b75b-d9bd1b5ff6b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What 45 acre neighborhood is north of the South End-Groesbeckville Historic Distric?",
+        "answer": "The Mansion Historic District",
+        "dspy_uuid": "25f0634a-6d51-4c7c-8fa1-2ce1f1653f42",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During the 2010 Dutch general election, which current Prime Minister led the People's Party for Freedom and Democracy?",
+        "answer": "Mark Rutte",
+        "dspy_uuid": "0c5ae036-af8f-479b-9d37-cb6145957498",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "ac252956-fcaa-493b-86f8-e4c0fdfec309",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What instrument did Nigel Walley play in John Lennon's band formed in 1956, which would later become the Beatles?",
+        "answer": "tea-chest bass",
+        "dspy_uuid": "f264febe-8746-4f48-aa09-d5e6276eec88",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given a high-stakes scenario in which you are tasked with generating a search query or answer based on a complex context and question, use your language understanding and generation capabilities to produce a precise and accurate answer. For example, imagine you are a researcher tasked with finding a specific piece of information for a critical project, and you have a limited amount of time to find the answer. You must use your skills to quickly and accurately generate a search query or answer that will help you achieve your goal.",
+    "extended_signature_prefix": "Answer:"
+  }
+}
