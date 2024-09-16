@@ -38,85 +38,85 @@
       {
         "question": "Cross Border Orchestra of Ireland is based at an institute in what province?",
         "answer": "Leinster",
-        "dspy_uuid": "a24e6d1f-8f81-4cef-bf2b-9776f335608b",
+        "dspy_uuid": "a5dd57a1-5229-4522-9937-6b1b12cc99c4",
         "dspy_split": "train"
       },
       {
         "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
         "answer": "The Waltz King",
-        "dspy_uuid": "66063c4d-a3cf-49e9-add1-f058fd37b43b",
+        "dspy_uuid": "c3ee2126-6397-4417-b78a-26f81e063aef",
         "dspy_split": "train"
       },
       {
         "question": "What American dancer, actor, singer, director, and choreographer was in the 1943 musical comedy Du Barry Was a Lady?",
         "answer": "Gene Kelly",
-        "dspy_uuid": "bb6388ff-f543-46d9-bf1f-f4bd79e52469",
+        "dspy_uuid": "9d19f06d-7b8b-4735-99be-cb2e4884a8f5",
         "dspy_split": "train"
       },
       {
         "question": "How many games were won during his career by the right-handed pitcher whose deadly beanball in 1920 is featured in \"The Pitch That Killed\" by Mike Sowell?",
         "answer": "over 200",
-        "dspy_uuid": "b6efea43-ae61-4c85-82f0-7f1b8e3f037f",
+        "dspy_uuid": "95dc34c2-0e21-4466-8582-e3c3259bc6be",
         "dspy_split": "train"
       },
       {
         "question": "Who was born first, Rowan Atkinson, or Maxim Baldry?",
         "answer": "Rowan Sebastian Atkinson",
-        "dspy_uuid": "9e525ee1-a001-4d1f-a7bf-a7436e36e59e",
+        "dspy_uuid": "e509d6d0-ccc1-47a1-8317-0b52107265b2",
         "dspy_split": "train"
       },
       {
         "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
         "answer": "Madonna",
-        "dspy_uuid": "88379085-1fc0-48bb-8c97-d5a734ca0158",
+        "dspy_uuid": "00a54ee5-923a-4510-9436-80b625e8b713",
         "dspy_split": "train"
       },
       {
         "question": "Who was the undisputed \"boss\"  that succeeded Woodrow Wilson in Atlantic City?",
         "answer": "Enoch Lewis \"Nucky\" Johnson",
-        "dspy_uuid": "88541505-7d48-46d1-9f60-ae620c7fb237",
+        "dspy_uuid": "6bd7ecfd-fe81-439f-aaab-281fe40ca513",
         "dspy_split": "train"
       },
       {
         "question": "When was the member of Dillard & Clark who also played in the Byrds born?",
         "answer": "1944",
-        "dspy_uuid": "e942e67a-6f13-47f1-85a0-d40848293977",
+        "dspy_uuid": "f6bca14e-c705-4b77-bed5-3e38d098f685",
         "dspy_split": "train"
       },
       {
         "question": "The \"To You I Belong\" singers broke up when when which member decided to leave?",
         "answer": "Sin\u00e9ad O'Carroll",
-        "dspy_uuid": "0d4b24f3-3be7-4ea1-a1a3-0fba0ef036f4",
+        "dspy_uuid": "53a9b9d5-f239-451d-8eda-d5ad07d43787",
         "dspy_split": "train"
       },
       {
         "question": "What was the nationality of the mixed martial artist who defeated Trent Jenkins in the first ever fight in UFC history?",
         "answer": "American",
-        "dspy_uuid": "e08be829-b791-4f22-8716-7676ac91f20d",
+        "dspy_uuid": "d76e9cc4-c454-4a89-ba9a-c26b0e93d6b3",
         "dspy_split": "train"
       },
       {
         "question": "Full Circle included a cover of the song by which songwriter, musician, and actor?",
         "answer": "Roger Dean Miller, Sr.",
-        "dspy_uuid": "432a2bc8-7783-4fa6-ae07-19927acf7230",
+        "dspy_uuid": "1bcec709-f6fc-48b4-9ad8-55dce5148c1b",
         "dspy_split": "train"
       },
       {
         "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
         "answer": "23,674",
-        "dspy_uuid": "f4f268e6-7ae8-4927-afc1-c633c88bee3c",
+        "dspy_uuid": "954d04cc-e3c6-4839-bf8f-d70803377dec",
         "dspy_split": "train"
       },
       {
         "question": "During Maine gubernatorial election, 1956, which candidate ran, who later on ran for Vice President of the United States?",
         "answer": "Edmund Muskie",
-        "dspy_uuid": "c77fca3e-0cf8-44c8-ac22-af96b578d5de",
+        "dspy_uuid": "72dee840-7063-4884-887e-12bae2f6f3f0",
         "dspy_split": "train"
       },
       {
         "question": "Which genus of plants is endemic to Australia, Retama or Baeckea?",
         "answer": "Retama",
-        "dspy_uuid": "ee3cb58b-280b-4128-bac3-8e0933940217",
+        "dspy_uuid": "1fc0983f-8b68-4717-a9b4-1bd9f0b7f9cc",
         "dspy_split": "train"
       }
     ],
@@ -161,85 +161,85 @@
       {
         "question": "What American dancer, actor, singer, director, and choreographer was in the 1943 musical comedy Du Barry Was a Lady?",
         "answer": "Gene Kelly",
-        "dspy_uuid": "bb6388ff-f543-46d9-bf1f-f4bd79e52469",
+        "dspy_uuid": "9d19f06d-7b8b-4735-99be-cb2e4884a8f5",
         "dspy_split": "train"
       },
       {
         "question": "Who was born first, Rowan Atkinson, or Maxim Baldry?",
         "answer": "Rowan Sebastian Atkinson",
-        "dspy_uuid": "9e525ee1-a001-4d1f-a7bf-a7436e36e59e",
+        "dspy_uuid": "e509d6d0-ccc1-47a1-8317-0b52107265b2",
         "dspy_split": "train"
       },
       {
         "question": "Which genus of plants is endemic to Australia, Retama or Baeckea?",
         "answer": "Retama",
-        "dspy_uuid": "ee3cb58b-280b-4128-bac3-8e0933940217",
+        "dspy_uuid": "1fc0983f-8b68-4717-a9b4-1bd9f0b7f9cc",
         "dspy_split": "train"
       },
       {
         "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
         "answer": "The Waltz King",
-        "dspy_uuid": "66063c4d-a3cf-49e9-add1-f058fd37b43b",
+        "dspy_uuid": "c3ee2126-6397-4417-b78a-26f81e063aef",
         "dspy_split": "train"
       },
       {
         "question": "What was the nationality of the mixed martial artist who defeated Trent Jenkins in the first ever fight in UFC history?",
         "answer": "American",
-        "dspy_uuid": "e08be829-b791-4f22-8716-7676ac91f20d",
+        "dspy_uuid": "d76e9cc4-c454-4a89-ba9a-c26b0e93d6b3",
         "dspy_split": "train"
       },
       {
         "question": "During Maine gubernatorial election, 1956, which candidate ran, who later on ran for Vice President of the United States?",
         "answer": "Edmund Muskie",
-        "dspy_uuid": "c77fca3e-0cf8-44c8-ac22-af96b578d5de",
+        "dspy_uuid": "72dee840-7063-4884-887e-12bae2f6f3f0",
         "dspy_split": "train"
       },
       {
         "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
         "answer": "23,674",
-        "dspy_uuid": "f4f268e6-7ae8-4927-afc1-c633c88bee3c",
+        "dspy_uuid": "954d04cc-e3c6-4839-bf8f-d70803377dec",
         "dspy_split": "train"
       },
       {
         "question": "When was the member of Dillard & Clark who also played in the Byrds born?",
         "answer": "1944",
-        "dspy_uuid": "e942e67a-6f13-47f1-85a0-d40848293977",
+        "dspy_uuid": "f6bca14e-c705-4b77-bed5-3e38d098f685",
         "dspy_split": "train"
       },
       {
         "question": "Cross Border Orchestra of Ireland is based at an institute in what province?",
         "answer": "Leinster",
-        "dspy_uuid": "a24e6d1f-8f81-4cef-bf2b-9776f335608b",
+        "dspy_uuid": "a5dd57a1-5229-4522-9937-6b1b12cc99c4",
         "dspy_split": "train"
       },
       {
         "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
         "answer": "Madonna",
-        "dspy_uuid": "88379085-1fc0-48bb-8c97-d5a734ca0158",
+        "dspy_uuid": "00a54ee5-923a-4510-9436-80b625e8b713",
         "dspy_split": "train"
       },
       {
         "question": "Who was the undisputed \"boss\"  that succeeded Woodrow Wilson in Atlantic City?",
         "answer": "Enoch Lewis \"Nucky\" Johnson",
-        "dspy_uuid": "88541505-7d48-46d1-9f60-ae620c7fb237",
+        "dspy_uuid": "6bd7ecfd-fe81-439f-aaab-281fe40ca513",
         "dspy_split": "train"
       },
       {
         "question": "Full Circle included a cover of the song by which songwriter, musician, and actor?",
         "answer": "Roger Dean Miller, Sr.",
-        "dspy_uuid": "432a2bc8-7783-4fa6-ae07-19927acf7230",
+        "dspy_uuid": "1bcec709-f6fc-48b4-9ad8-55dce5148c1b",
         "dspy_split": "train"
       },
       {
         "question": "The \"To You I Belong\" singers broke up when when which member decided to leave?",
         "answer": "Sin\u00e9ad O'Carroll",
-        "dspy_uuid": "0d4b24f3-3be7-4ea1-a1a3-0fba0ef036f4",
+        "dspy_uuid": "53a9b9d5-f239-451d-8eda-d5ad07d43787",
         "dspy_split": "train"
       },
       {
         "question": "How many games were won during his career by the right-handed pitcher whose deadly beanball in 1920 is featured in \"The Pitch That Killed\" by Mike Sowell?",
         "answer": "over 200",
-        "dspy_uuid": "b6efea43-ae61-4c85-82f0-7f1b8e3f037f",
+        "dspy_uuid": "95dc34c2-0e21-4466-8582-e3c3259bc6be",
         "dspy_split": "train"
       }
     ],

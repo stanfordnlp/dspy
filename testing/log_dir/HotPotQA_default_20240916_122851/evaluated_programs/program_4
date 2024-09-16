@@ -1,0 +1,243 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Fig Trees | Fig Trees is a 2009 Canadian operatic documentary film written and directed by John Greyson. It follows South African AIDS activist Zackie Achmat and Canadian AIDS activist Tim McCaskell as they fight for access to treatment for HIV\/AIDS. It was also inspired by Gertrude Stein and Virgil Thomson's opera \"Four Saints in Three Acts\". The film premiered at the 59th Berlin International Film Festival where it won the Teddy Award for Best Documentary.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "Fig Leaves | Fig Leaves is a 1926 American silent comedy film directed by Howard Hawks, released by Fox Film Corporation, and starring George O'Brien and Olive Borden. The film had a sequence, a fashion show, filmed in Technicolor. A print of the film survives in the film archive of the Museum of Modern Art.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "When Ponds Freeze Over | When Ponds Freeze Over is a Canadian short film, directed by Mary Lewis and released in 1998.",
+          "In the Crease | In the Crease (the youth hockey experience) is a feature-length documentary film that follows the real-life story of a teenage hockey team's quest to win a national championship and also stars over a dozen NHL players sharing their own hockey triumphs. The film was produced and directed by Matthew Gannon and Michael Sarner, distributed by Stickmen Pictures LLC, aired on Versus on January 20, 2008 and was released on DVD on October 26, 2006."
+        ],
+        "question": "Which film was created first, Fig Trees or Pond Hockey?",
+        "rationale": "find the answer. We know that Fig Trees was released in 2009, while Pond Hockey was released in 2008. Therefore, Pond Hockey was created first.",
+        "search_query": "\"Pond Hockey vs Fig Trees release date\""
+      },
+      {
+        "question": "The second place finisher of the 2011 Gran Premio Santander d'Italia drove for who when he won the 2009 FIA Formula One World Championship?",
+        "answer": "Brawn GP",
+        "dspy_uuid": "60da99e8-0dbe-498a-9601-c1ace7471d94",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "bfe4f35c-c82e-46b4-9719-27dc2ae6d371",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are the Carlisle Cathedral and Bangor Cathedral both located in the United Kingdom?",
+        "answer": "yes",
+        "dspy_uuid": "b17c8031-870c-49fb-b915-ebfb680efa50",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Sting was an episode of The Office written by the American actress who created what other sitcom?",
+        "answer": "The Mindy Project",
+        "dspy_uuid": "6aca9f1d-94ee-4775-8597-bb76e8f7f64f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "2224befc-0322-4a94-b226-ccc00ba0d451",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Juan Pablo Di Pace had a role on the sequel series to what Jeff Franklin-created American sitcom?",
+        "answer": "Full House",
+        "dspy_uuid": "b65a5902-c186-46fa-8943-46485b399c4c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Carlo Ignazio Monza's music formed a ballet based on what 18th century play? ",
+        "answer": "Commedia dell'arte",
+        "dspy_uuid": "9e705efb-eba1-44e4-9bc5-6af8112fa1bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "1c000400-74b2-4447-b2e5-6b31f2072f9f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who composed the song from the film \"Zindagi Na Milegi Dobara\" that was shot in the Spanish town of Alajar?",
+        "answer": "Javed Akhtar",
+        "dspy_uuid": "77446232-a3aa-4c7c-9ab1-01d5ae7bd46a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who has been on a British television music competition show and was was most popular in the 80's with the pop band 'Culture Club'?",
+        "answer": "George Alan O'Dowd",
+        "dspy_uuid": "91e628d9-3109-4171-95f3-cbf4c36c7ee5",
+        "dspy_split": "train"
+      },
+      {
+        "question": "For which college team did this American professional basketball player for the Miami Heat of the National Basketball Association (NBA) who earned praise for being the NBA's leading rebounder during the 2016\u201317 Miami Heat season play?",
+        "answer": "the Marshall Thundering Herd",
+        "dspy_uuid": "fec3088c-fcd3-456b-884e-a45938e4336e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "dae21a53-3bcb-4a60-b7fd-cf1500175fc5",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "92987874-596d-46dd-a509-d40968811267",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cc5e448a-482b-4f56-94af-d9c20b768881",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Johnny Narron is a friend of this center fielder whom he helped in his recovery from drug addiction who won the MVP award in what year?",
+        "answer": "2010",
+        "dspy_uuid": "b8efdbee-31b9-4f26-8e71-ccd98fcf7215",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Provide a search query that can be used to find the answer to the question, based on the context and the question. The search query should be a natural language sentence that can be used to search for relevant information. For example, \"What actor stars in Predestination and Game of Thrones?\" could be used to search for the answer. This instruction can be used to prompt a language model to generate a search query that can be used to find the answer to the question. The language model can be trained on a dataset of questions and answers, and can use this training data to generate a search query that is likely to find the answer.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Henry Sewell Stokes | Henry Sewell Stokes (1808\u20131895) was a British poet. The Cornish poet was a schoolfellow of Charles Dickens; later literary friends included Tennyson and Robert Stephen Hawker. His great nephew, Sewell Stokes, was a novelist, biographer and playwright.",
+          "Sewell Stokes | Francis Martin Sewell Stokes (16 November 1902, London \u2013 2 November 1979, London) was an English novelist, biographer, playwright, screenwriter, broadcaster and prison visitor. He collaborated on a number of occasions with his brother, Leslie Stokes, an actor and later in life a BBC radio producer, with whom he shared a flat for many years overlooking the British Museum. It was here that Sewell Stokes did much of his writing in the Reading Room, used by so many distinguished writers over the years.",
+          "William Sewell (author) | William Henry Sewell (23 January 1804\u201314 November 1874), English divine and author helped to found two public schools along High Anglican lines. A devout churchman, learned scholar, and reforming schoolmaster, Sewell was strongly influenced by the Tractarians. Born on the Newport, Isle of Wight, the second son of a solicitor and Fellow of The Queen's College, Oxford he had six brothers, four of whom became national figures. Richard Clarke Sewell was a recognised poet, legal writer and Fellow of Magdalen College, Oxford. Henry Sewell worked in the family firm before emigrating to become Premier of New Zealand. James Edwards Sewell was Warden of New College, Oxford (1860-1903). Elizabeth Sewell wrote devotional religious books and children's stories. She founded Ventnor St Boniface School for girls.",
+          "Henry Sewell Stokes | Henry Sewell Stokes (1808\u20131895) was a British poet. The Cornish poet was a schoolfellow of Charles Dickens; later literary friends included Tennyson and Robert Stephen Hawker. His great nephew, Sewell Stokes, was a novelist, biographer and playwright.",
+          "Charles Dickens Jr. | Charles Culliford Boz Dickens (6 January 1837 \u2013 20 July 1896) was the first child of the English novelist Charles Dickens and his wife Catherine. A failed businessman, he became the editor of his father's magazine \"All the Year Round\", and a successful writer of dictionaries. He is now most remembered for his two 1879 books \"Dickens's Dictionary of London\" and \"Dickens's Dictionary of the Thames\".",
+          "Dickens (disambiguation) | Charles Dickens (1812\u20131870) was an English writer and social critic."
+        ],
+        "question": "What English writer born in 1812 was a schoolfellow of Henry Sewell Stokes?",
+        "rationale": "find the answer. We know that Henry Sewell Stokes was a schoolfellow of Charles Dickens, and we also know that Charles Dickens was born in 1812. Therefore, the answer is...",
+        "answer": "Charles Dickens"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "determine the answer. We know that the M2 motorway is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. We also know that Belfast International Airport is located 11.5 NM northwest of Belfast in Northern Ireland. Therefore, if you are taking the M2 motorway to one of the Northern Ireland's most busiest airport, you are going to Belfast International Airport.",
+        "answer": "Belfast International Airport"
+      },
+      {
+        "question": "Whats was the population in 2003 of Centralia, the least populated municipality in Pennsylvania, USA?",
+        "answer": "7",
+        "dspy_uuid": "7ba00a27-8a79-4128-8bb1-15acfb68f00e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In 1904 Selma Feldbach graduated in medicine from a comprehensive university founded in what year?",
+        "answer": "1834",
+        "dspy_uuid": "7644a1d5-e228-4b25-8bfa-2de2567d4bbe",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Remember Me Ballin' is a CD single by Indo G that features an American rapper born in what year?",
+        "answer": "1979",
+        "dspy_uuid": "a318338f-4a57-491d-89f7-4dcab8282a5e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Was The Devil and Max Devlin or Do Dooni Chaar released first?",
+        "answer": "The Devil and Max Devlin",
+        "dspy_uuid": "ea21149d-1d1e-4ea1-80fe-218eda59fa93",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which English actor starred in Cabin Pressure ",
+        "answer": "Roger William Allam",
+        "dspy_uuid": "18ca4f8a-e7c5-4586-86e2-28f4c2800b2d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Milan Sachs conducted the premiere of the play Jen\u016ffa by the composer who was inspired by what types of music?",
+        "answer": "Moravian and other Slavic folk music",
+        "dspy_uuid": "cf281773-6ec0-4ab2-af0e-fa3f722e94c7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which Portuguese winger played beside  Zlatan Ibrahimovi\u0107 in the 2008-09 Inter Milan team ?",
+        "answer": "Quaresma",
+        "dspy_uuid": "25556184-0921-40b9-b8ef-93cc914e571d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During the 2010 Dutch general election, which current Prime Minister led the People's Party for Freedom and Democracy?",
+        "answer": "Mark Rutte",
+        "dspy_uuid": "4cedb735-d9d9-4dd6-8e49-7109a18aee4a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What actor stars in Predestination and Game of Thrones? ",
+        "answer": "Noah Taylor",
+        "dspy_uuid": "81d42de3-3fd5-4b26-ae87-aa05f0af299d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie is based on a book, Darby O'Gill and the Little People and College Road Trip?",
+        "answer": "Darby O'Gill and the Little People",
+        "dspy_uuid": "74a5b8fb-81a6-46b7-bdfd-eba247de7236",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which Italian composer did George Balanchine add in 1976?",
+        "answer": "Arcangelo Corelli",
+        "dspy_uuid": "c2f0adfb-7ea6-485f-8403-58bce62eebd9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The historical unit of the US Army that began its service before the Civil War fought in what battle in 1879?",
+        "answer": "Battle of Milk Creek",
+        "dspy_uuid": "eb2df18e-6bc1-4319-bef0-92386c5616fb",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Montenegrin Mountain Hound and Mudhol Hound are both used for what common purpose?",
+        "answer": "hunting",
+        "dspy_uuid": "f0cdde1a-2ec3-4aa2-bef5-d2fb4fbcd7ba",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was created first, Fig Trees or Pond Hockey?",
+        "answer": "Pond Hockey",
+        "dspy_uuid": "86a12b0c-750e-49a9-bd7d-8b4078442786",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the context, question, and task, generate a natural language response that accurately answers the question, providing a clear and concise rationale for the answer. This response should be based on the information provided in the context and should be written in a way that is easy to understand. The response should also include relevant details and examples to support the answer. Use the context to identify the key concepts and relationships that are relevant to the question and use this information to guide the generation of the response. The response should be free of ambiguity and should provide a clear and concise answer to the question. The response should also be written in a natural language style that is easy to read and understand. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is not supported by the context. The response should be written in a way that is easy to understand and should provide a clear and concise answer to the question. The response should be based on the information provided in the context and should not include any information that is",
+    "extended_signature_prefix": "Answer:"
+  }
+}

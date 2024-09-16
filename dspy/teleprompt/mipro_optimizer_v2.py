@@ -149,6 +149,12 @@ class MIPROv2(Teleprompter):
         else:
             if len(valset) < 1:
                 raise ValueError("Validation set must have at least 1 example if specified.")
+            
+        if minibatch and minibatch_size > len(trainset):
+            raise ValueError(f"Minibatch size cannot exceed the size of the trainset.  Note that your trainset contains {len(trainset)} examples.  It may have been shrunk due to validation set splitting.  Your validation set contains {len(valset)} examples.")
+        
+        if minibatch and num_trials < minibatch_full_eval_steps:
+            raise ValueError(f"Number of trials (num_trials={num_trials}) must be greater than or equal to the number of minibatch full eval steps (minibatch_full_eval_steps={minibatch_full_eval_steps}).")
 
         estimated_prompt_model_calls = 10 + self.num_candidates * len(
                 student.predictors(),

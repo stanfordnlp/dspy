@@ -1,0 +1,243 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "King Abdulaziz University | King Abdulaziz University (KAU) (Arabic: \u062c\u0627\u0645\u0639\u0629 \u0627\u0644\u0645\u0644\u0643 \u0639\u0628\u062f \u0627\u0644\u0639\u0632\u064a\u0632\u200e \u200e \"\u01e7\u0101mi\u02bfat al-malik \u02bfabd al-\u02bfaz\u012bz \") was founded in 1967 in Jeddah, Saudi Arabia. Designed by English architect John Elliott, it had 2,000 faculty and more than 37,000 students in 2000\/2001. Established initially as a private university by a group of businessmen led by Sheikh Muhammad Abu Bakr Bakhashab Pasha and including the writer Hamza Bogary. in 1974 King Abdulaziz University was converted to a public university by a resolution of the Council Ministers of Saudi Arabia. In 2016, it was ranked the top Arab university by Times Higher Education.",
+          "Al-Hikmah University | Al-Hikmah University is an Islamic university located in Ilorin, Kwara State, Nigeria. It was founded in 2005 by AbdulRaeem Oladimeji Islamic Foundation AROIF based in Nigeria and World Assembly of Muslim Youths WAMY based in Jeddah. Professor Muhammed Taofeek Olalekan Ibrahim is the current Vice-Chancellor. The goal of Al-Hikmah University is to be a centre of intellectual and moral excellence.",
+          "Abdul Alkalimat | Abdul Alkalimat (born Gerald Arthur McWorter, November 21, 1942) is an American professor of African-American studies and library and information science at the University of Illinois at Urbana\u2013Champaign. He is the author of several books, including \"Introduction to Afro-American Studies\", \"The African American Experience in Cyberspace\", and \"Malcolm X for Beginners\". He curates two websites related to African-American history, \"Malcolm X: A Research Site\" and \"eBlack Studies\".",
+          "University of Illinois at Urbana\u2013Champaign | The University of Illinois at Urbana\u2013Champaign (also known as U of I, Illinois, or colloquially as the University of Illinois or UIUC) is a public research university in the U.S. state of Illinois. Founded in 1867 as a land-grant institution in the twin cities of Champaign and Urbana, it is the flagship campus of the University of Illinois system and a founding member of the Big Ten Conference.",
+          "UIUC College of Education | The School of Education at the University of Illinois at Urbana-Champaign was founded in 1905. It was later renamed the College of Education in 1918. The college offers undergraduate, graduate, and online programs in areas including elementary education, early childhood education, special education, and Educational Organization and Leadership. It began with six departments; three of them merged and formed the largest department in the college. All departments offer masters and doctoral degrees. However, only two departments offer undergraduate degree programs: Special Education and Curriculum & Instruction. The college also offers 16 online programs. Students seeking an undergraduate degree in the college must meet the minimum graduation requirement set forth by the university. To obtain a certification, students must also meet the requirements of the Council on Teacher Education, a professional educational administration at the University of Illinois. The total enrollment is 1,361 students as of 2015.",
+          "History of University of Illinois at Urbana\u2013Champaign | History of University of Illinois at Urbana\u2013Champaign"
+        ],
+        "question": "Abdul Alkalimat is a professor of African-American studies and library and information science at a university founded in which year ?",
+        "rationale": "find the answer. We know that Abdul Alkalimat is a professor of African-American studies and library and information science. We also know that he is at a university. We need to find the year the university was founded.",
+        "search_query": "\"university founded by Abdul Alkalimat\" OR \"university founded by Abdul Alkalimat year\" OR \"Abdul Alkalimat university founding year\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "King Abdulaziz University | King Abdulaziz University (KAU) (Arabic: \u062c\u0627\u0645\u0639\u0629 \u0627\u0644\u0645\u0644\u0643 \u0639\u0628\u062f \u0627\u0644\u0639\u0632\u064a\u0632\u200e \u200e \"\u01e7\u0101mi\u02bfat al-malik \u02bfabd al-\u02bfaz\u012bz \") was founded in 1967 in Jeddah, Saudi Arabia. Designed by English architect John Elliott, it had 2,000 faculty and more than 37,000 students in 2000\/2001. Established initially as a private university by a group of businessmen led by Sheikh Muhammad Abu Bakr Bakhashab Pasha and including the writer Hamza Bogary. in 1974 King Abdulaziz University was converted to a public university by a resolution of the Council Ministers of Saudi Arabia. In 2016, it was ranked the top Arab university by Times Higher Education.",
+          "Al-Hikmah University | Al-Hikmah University is an Islamic university located in Ilorin, Kwara State, Nigeria. It was founded in 2005 by AbdulRaeem Oladimeji Islamic Foundation AROIF based in Nigeria and World Assembly of Muslim Youths WAMY based in Jeddah. Professor Muhammed Taofeek Olalekan Ibrahim is the current Vice-Chancellor. The goal of Al-Hikmah University is to be a centre of intellectual and moral excellence.",
+          "Abdul Alkalimat | Abdul Alkalimat (born Gerald Arthur McWorter, November 21, 1942) is an American professor of African-American studies and library and information science at the University of Illinois at Urbana\u2013Champaign. He is the author of several books, including \"Introduction to Afro-American Studies\", \"The African American Experience in Cyberspace\", and \"Malcolm X for Beginners\". He curates two websites related to African-American history, \"Malcolm X: A Research Site\" and \"eBlack Studies\".",
+          "University of Illinois at Urbana\u2013Champaign | The University of Illinois at Urbana\u2013Champaign (also known as U of I, Illinois, or colloquially as the University of Illinois or UIUC) is a public research university in the U.S. state of Illinois. Founded in 1867 as a land-grant institution in the twin cities of Champaign and Urbana, it is the flagship campus of the University of Illinois system and a founding member of the Big Ten Conference.",
+          "UIUC College of Education | The School of Education at the University of Illinois at Urbana-Champaign was founded in 1905. It was later renamed the College of Education in 1918. The college offers undergraduate, graduate, and online programs in areas including elementary education, early childhood education, special education, and Educational Organization and Leadership. It began with six departments; three of them merged and formed the largest department in the college. All departments offer masters and doctoral degrees. However, only two departments offer undergraduate degree programs: Special Education and Curriculum & Instruction. The college also offers 16 online programs. Students seeking an undergraduate degree in the college must meet the minimum graduation requirement set forth by the university. To obtain a certification, students must also meet the requirements of the Council on Teacher Education, a professional educational administration at the University of Illinois. The total enrollment is 1,361 students as of 2015.",
+          "History of University of Illinois at Urbana\u2013Champaign | History of University of Illinois at Urbana\u2013Champaign"
+        ],
+        "question": "Abdul Alkalimat is a professor of African-American studies and library and information science at a university founded in which year ?",
+        "rationale": "produce the search query. We need to find the year when Abdul Alkalimat's university was founded. We can do this by looking at the context provided, which includes information about the universities where Abdul Alkalimat has worked. We can use this information to construct a search query that will help us find the answer.",
+        "search_query": "\"University of Illinois at Urbana\u2013Champaign founding year\""
+      },
+      {
+        "question": "FM broadcasting began at the station of which inventor, who won the first Medal of Honor by what is now the IEEE?",
+        "answer": "Edwin Howard Armstrong",
+        "dspy_uuid": "e6e9c6b0-7a8d-47ee-b261-e4ecc873f7a7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Ryan Hulings plays for the Dayton Dyanmo, who is his head coach?",
+        "answer": "Dan Griest",
+        "dspy_uuid": "9e1c852c-7798-4404-b908-6fcac00d0c25",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The tomb of Ferdowsi example of Achaemenid architecture, a style from which culture?",
+        "answer": "the Achaemenid Persians",
+        "dspy_uuid": "4feab15d-0f81-4316-9acd-713666be2bfd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Merle Reagle did crosswords for what magazine that has a focus on aging issues?",
+        "answer": "AARP The Magazine",
+        "dspy_uuid": "fad9053a-5c2c-406a-90be-548155a54405",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "e990bb9c-d899-480e-8ea3-b390de6dedae",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "bfe4f35c-c82e-46b4-9719-27dc2ae6d371",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What genre of music has American musicians Jonathan Davis and Philip Labonte both have in common in the bands they have played in?",
+        "answer": "metal",
+        "dspy_uuid": "57af6294-bb18-469c-b760-e05b101745ac",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was released first, The Three Lives of Thomasina or The Shaggy Dog?",
+        "answer": "The Shaggy Dog",
+        "dspy_uuid": "977d3199-e857-4f2f-8e0e-ad0bf1e33a7d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are both Ralph Saenz and Roddy Woomble credited as writers?",
+        "answer": "no",
+        "dspy_uuid": "f54c25ce-58c9-44f0-93d5-fc7be801c217",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Under which number president did Arthur A. Ballantine become solicitor of the Internal Revenue Service?",
+        "answer": "31st",
+        "dspy_uuid": "cfda8f5d-db18-44ec-8d19-d185e265c288",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "37d101f9-4267-4b99-9a1e-5e8265e3394e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In what year was the club founded that played Manchester City in the 1972 FA Charity Shield",
+        "answer": "1874",
+        "dspy_uuid": "1da282e8-0b17-45ab-9698-06a46ade8f36",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "bd5b4b6f-88a2-4e82-b9d8-1109bb6e559a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What actress that starred in The Legend of Tarzan got her start by appearing in Australian independent films?",
+        "answer": "Margot Elise Robbie",
+        "dspy_uuid": "c77bc785-489f-4283-82ea-af7724471da1",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the context and question, generate a search query that is relevant to the question and can be used to find the answer. The search query should be a natural language phrase that is likely to return relevant results in a search engine. The search query should also be concise and easy to read. The search query should be written in a way that is clear and concise, and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is easy to understand and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is clear and concise, and should not contain any technical jargon. The search query should be designed to be used by a wide range of users, and should be accessible to users with different levels of expertise. The search query should be written in a way that is easy to read and should not contain any unnecessary words or phrases. The search query should be designed to be used in a search engine, and should be optimized for search engine ranking. The search query should be written in a way that is",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Fig Trees | Fig Trees is a 2009 Canadian operatic documentary film written and directed by John Greyson. It follows South African AIDS activist Zackie Achmat and Canadian AIDS activist Tim McCaskell as they fight for access to treatment for HIV\/AIDS. It was also inspired by Gertrude Stein and Virgil Thomson's opera \"Four Saints in Three Acts\". The film premiered at the 59th Berlin International Film Festival where it won the Teddy Award for Best Documentary.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "Fig Leaves | Fig Leaves is a 1926 American silent comedy film directed by Howard Hawks, released by Fox Film Corporation, and starring George O'Brien and Olive Borden. The film had a sequence, a fashion show, filmed in Technicolor. A print of the film survives in the film archive of the Museum of Modern Art.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "When Ponds Freeze Over | When Ponds Freeze Over is a Canadian short film, directed by Mary Lewis and released in 1998.",
+          "In the Crease | In the Crease (the youth hockey experience) is a feature-length documentary film that follows the real-life story of a teenage hockey team's quest to win a national championship and also stars over a dozen NHL players sharing their own hockey triumphs. The film was produced and directed by Matthew Gannon and Michael Sarner, distributed by Stickmen Pictures LLC, aired on Versus on January 20, 2008 and was released on DVD on October 26, 2006."
+        ],
+        "question": "Which film was created first, Fig Trees or Pond Hockey?",
+        "rationale": "determine which film was created first. We can look at the release dates of the films. According to the context, Fig Trees was released in 2009, while Pond Hockey was released in 2008. Therefore, Pond Hockey was created first.",
+        "answer": "Pond Hockey"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "2224befc-0322-4a94-b226-ccc00ba0d451",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are the Carlisle Cathedral and Bangor Cathedral both located in the United Kingdom?",
+        "answer": "yes",
+        "dspy_uuid": "b17c8031-870c-49fb-b915-ebfb680efa50",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "92987874-596d-46dd-a509-d40968811267",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "bfe4f35c-c82e-46b4-9719-27dc2ae6d371",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who has been on a British television music competition show and was was most popular in the 80's with the pop band 'Culture Club'?",
+        "answer": "George Alan O'Dowd",
+        "dspy_uuid": "91e628d9-3109-4171-95f3-cbf4c36c7ee5",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Johnny Narron is a friend of this center fielder whom he helped in his recovery from drug addiction who won the MVP award in what year?",
+        "answer": "2010",
+        "dspy_uuid": "b8efdbee-31b9-4f26-8e71-ccd98fcf7215",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who composed the song from the film \"Zindagi Na Milegi Dobara\" that was shot in the Spanish town of Alajar?",
+        "answer": "Javed Akhtar",
+        "dspy_uuid": "77446232-a3aa-4c7c-9ab1-01d5ae7bd46a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cc5e448a-482b-4f56-94af-d9c20b768881",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "1c000400-74b2-4447-b2e5-6b31f2072f9f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The second place finisher of the 2011 Gran Premio Santander d'Italia drove for who when he won the 2009 FIA Formula One World Championship?",
+        "answer": "Brawn GP",
+        "dspy_uuid": "60da99e8-0dbe-498a-9601-c1ace7471d94",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Juan Pablo Di Pace had a role on the sequel series to what Jeff Franklin-created American sitcom?",
+        "answer": "Full House",
+        "dspy_uuid": "b65a5902-c186-46fa-8943-46485b399c4c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Carlo Ignazio Monza's music formed a ballet based on what 18th century play? ",
+        "answer": "Commedia dell'arte",
+        "dspy_uuid": "9e705efb-eba1-44e4-9bc5-6af8112fa1bf",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "dae21a53-3bcb-4a60-b7fd-cf1500175fc5",
+        "dspy_split": "train"
+      },
+      {
+        "question": "For which college team did this American professional basketball player for the Miami Heat of the National Basketball Association (NBA) who earned praise for being the NBA's leading rebounder during the 2016\u201317 Miami Heat season play?",
+        "answer": "the Marshall Thundering Herd",
+        "dspy_uuid": "fec3088c-fcd3-456b-884e-a45938e4336e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Sting was an episode of The Office written by the American actress who created what other sitcom?",
+        "answer": "The Mindy Project",
+        "dspy_uuid": "6aca9f1d-94ee-4775-8597-bb76e8f7f64f",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the context and question, generate a search query to retrieve relevant information and then use that information to produce an answer to the question. This instruction encourages the language model to think more critically and creatively about how to solve the problem, and to use the context and question to guide its search for relevant information. It also allows the model to generate a more detailed and accurate answer, as it is able to draw on a wider range of information and to use that information to support its answer.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

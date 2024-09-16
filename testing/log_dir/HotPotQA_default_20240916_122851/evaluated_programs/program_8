@@ -1,0 +1,267 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "The East Coast Angels | The East Coast Angels were one of Ireland's early punk groups, forming in Dublin in the 1970s. Their output has been chronicled in 's book, \"\".",
+          "Larry Blackmon | Lawrence Ernest Blackmon (born May 24, 1956) is the lead singer and founder frontman of the funk and R&B band, Cameo. Starting the band \"East Coast\", Blackmon and Tomi Jenkins formed the \"New York City Players\" as compliment to the Ohio Players. Having to rename the group due to a conflict, the band later called itself Cameo. Blackmon lived in Harlem and played drums on several hits for the band Black Ivory. He is the son of Lee Black, a former boxer.",
+          "The Saunders Brothers Show | The Saunders Brothers Show is a Canadian Comedy\/Celtic band from Nova Scotia. Billed as \"East Coast music with a twist\", the band is well known for their outrageously comedic bantering demeanor and audience participation, complemented by extreme flexibility in terms of musical genres, ranging from folk and country\/pop to Gospel and East Coast traditional all flavored with a unique twist.",
+          "The Ocean Blue | The Ocean Blue, formed in Hershey, Pennsylvania in 1986, is an American indie pop band that combines melodic guitars and synthesizers. Its core original members included David Schelzel (born September 26, 1967) on lead vocals\/guitar, Steve Lau on keyboards\/saxophone, Bobby Mittan on bass guitar and Rob Minnig on drums and vocals.",
+          "The Ocean Blue (album) | The Ocean Blue is the eponymous debut album by American band The Ocean Blue, released in 1989 by record labels Sire and Reprise.",
+          "Ocean Colour Scene | Ocean Colour Scene (often abbreviated to OCS) are an English rock band formed in Moseley, Birmingham, in 1989. They have had five Top 10 albums including a number one in 1997. They have also achieved seventeen Top 40 singles and six Top 10 singles to date."
+        ],
+        "question": "What was formed farther east, The Ocean Blue or The Dandy Warhols",
+        "rationale": "find the answer. We know that The Ocean Blue is a band that was formed in 1986, and The Dandy Warhols are a band that was formed in 1994. We also know that The Ocean Blue was formed farther east than The Dandy Warhols.",
+        "search_query": "\"bands formed east coast\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "The East Coast Angels | The East Coast Angels were one of Ireland's early punk groups, forming in Dublin in the 1970s. Their output has been chronicled in 's book, \"\".",
+          "Larry Blackmon | Lawrence Ernest Blackmon (born May 24, 1956) is the lead singer and founder frontman of the funk and R&B band, Cameo. Starting the band \"East Coast\", Blackmon and Tomi Jenkins formed the \"New York City Players\" as compliment to the Ohio Players. Having to rename the group due to a conflict, the band later called itself Cameo. Blackmon lived in Harlem and played drums on several hits for the band Black Ivory. He is the son of Lee Black, a former boxer.",
+          "The Saunders Brothers Show | The Saunders Brothers Show is a Canadian Comedy\/Celtic band from Nova Scotia. Billed as \"East Coast music with a twist\", the band is well known for their outrageously comedic bantering demeanor and audience participation, complemented by extreme flexibility in terms of musical genres, ranging from folk and country\/pop to Gospel and East Coast traditional all flavored with a unique twist.",
+          "The Ocean Blue | The Ocean Blue, formed in Hershey, Pennsylvania in 1986, is an American indie pop band that combines melodic guitars and synthesizers. Its core original members included David Schelzel (born September 26, 1967) on lead vocals\/guitar, Steve Lau on keyboards\/saxophone, Bobby Mittan on bass guitar and Rob Minnig on drums and vocals.",
+          "The Ocean Blue (album) | The Ocean Blue is the eponymous debut album by American band The Ocean Blue, released in 1989 by record labels Sire and Reprise.",
+          "Ocean Colour Scene | Ocean Colour Scene (often abbreviated to OCS) are an English rock band formed in Moseley, Birmingham, in 1989. They have had five Top 10 albums including a number one in 1997. They have also achieved seventeen Top 40 singles and six Top 10 singles to date."
+        ],
+        "question": "What was formed farther east, The Ocean Blue or The Dandy Warhols",
+        "rationale": "produce the search_query. We need to find the information about the formation of The Ocean Blue and The Dandy Warhols. We can start by searching for the formation year of both bands.",
+        "search_query": "\"formation year of The Ocean Blue\" OR \"formation year of The Dandy Warhols\" OR \"when was The Ocean Blue formed\" OR \"when was The Dandy Warhols formed\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Jackpot (Chingy album) | Jackpot is the debut studio album by American rapper Chingy. Sales of the album achieved Double Platinum in the US. It was released on July 15, 2003, by the Disturbing tha Peace label. Anchored by the smash single \"Right Thurr\", this album also had two other top three hits, \"Holidae In\" featuring Ludacris and Snoop Dogg, and \"One Call Away\" featuring J-Weav. The album was produced by The Trak Starz except for \"Bagg Up\", which was produced by DJ Quik. The enhanced version of the album features the uncut video of \"Right Thurr\".",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Georgia (Field Mob and Ludacris song) | \"Georgia\" is a single by Southern hip hop duo Field Mob and Atlanta-based rapper Ludacris featuring R&B singer Jamie Foxx, with production by DJ Vudu Spellz. It first appeared on \"Ludacris Presents: Disturbing tha Peace\", a compilation album released by Ludacris' own Disturbing tha Peace record label, showcasing the company's new talent as of 2006. The track was reprised on the Field Mob album \"Light Poles and Pine Trees\" released later the same year.",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Disturbing tha Peace | Disturbing tha Peace (DTP) is an American record label founded by Christopher \"Ludacris\" Bridges. Today it operates as a subsidiary of Def Jam, a division of Universal Music Group.",
+          "WeMix | WeMix was an online music creation community and user-generated record label founded in 2007 by hip-hop musician and actor Christopher \"Ludacris\" Bridges and was headquartered in New York City. It was a privately held joint venture between Ludacris\u2019 Disturbing tha Peace label and MegaMobile TV (a company founded by Matthew Apfel). The site was a social network as well as a content browsing\/filtering structure similar to YouTube. WeMix allowed artists to interact, share their music, give feedback, and collaborate with other artists. The site was free to all users and had an internet-advertising business model."
+        ],
+        "question": "Who was DJ Pain 1 produced for that founded Distrurbing tha Peace?",
+        "rationale": "find the answer. We know that DJ Pain 1 is a producer, and he has worked with several artists. We also know that Distrurbing tha Peace is a record label that was founded by a well-known rapper. By combining these two pieces of information, we can search for the answer.",
+        "search_query": "\"DJ Pain 1 produced for Distrurbing tha Peace\" OR \"founder of Distrurbing tha Peace\" OR \"rapper who founded Distrurbing tha Peace\""
+      },
+      {
+        "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
+        "answer": "Madonna",
+        "dspy_uuid": "00a54ee5-923a-4510-9436-80b625e8b713",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "c6119f00-7502-4390-b471-13cf11234ea1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "087d3c6d-5add-4ab0-85aa-d757e71acc8d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "20074b78-95a2-42af-a7dc-d8bd139f452a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "9171e525-f0f4-43a8-8d7e-400bc45b5f6c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "97d1358c-4e7e-4711-86a6-89faf261c4bd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "2206fc6c-4aa6-4bbf-a16f-8a3f10c3698e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "1c000400-74b2-4447-b2e5-6b31f2072f9f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "705cc62f-b310-42a5-81c6-c674091482d7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "bd5b4b6f-88a2-4e82-b9d8-1109bb6e559a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "4aeb22b2-faee-4e55-97f2-27f2fad856d3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cc5e448a-482b-4f56-94af-d9c20b768881",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "04384f27-9eed-4b96-8da4-fceae1f6c01f",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Generate a search query that is a natural language question that can be used to retrieve relevant passages from the internet based on the context and question provided. Make sure the search query is concise and relevant to the topic. The search query should be written in a style that is conversational and easy to understand. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "The East Coast Angels | The East Coast Angels were one of Ireland's early punk groups, forming in Dublin in the 1970s. Their output has been chronicled in 's book, \"\".",
+          "Larry Blackmon | Lawrence Ernest Blackmon (born May 24, 1956) is the lead singer and founder frontman of the funk and R&B band, Cameo. Starting the band \"East Coast\", Blackmon and Tomi Jenkins formed the \"New York City Players\" as compliment to the Ohio Players. Having to rename the group due to a conflict, the band later called itself Cameo. Blackmon lived in Harlem and played drums on several hits for the band Black Ivory. He is the son of Lee Black, a former boxer.",
+          "The Saunders Brothers Show | The Saunders Brothers Show is a Canadian Comedy\/Celtic band from Nova Scotia. Billed as \"East Coast music with a twist\", the band is well known for their outrageously comedic bantering demeanor and audience participation, complemented by extreme flexibility in terms of musical genres, ranging from folk and country\/pop to Gospel and East Coast traditional all flavored with a unique twist.",
+          "The Ocean Blue | The Ocean Blue, formed in Hershey, Pennsylvania in 1986, is an American indie pop band that combines melodic guitars and synthesizers. Its core original members included David Schelzel (born September 26, 1967) on lead vocals\/guitar, Steve Lau on keyboards\/saxophone, Bobby Mittan on bass guitar and Rob Minnig on drums and vocals.",
+          "The Ocean Blue (album) | The Ocean Blue is the eponymous debut album by American band The Ocean Blue, released in 1989 by record labels Sire and Reprise.",
+          "Ocean Colour Scene | Ocean Colour Scene (often abbreviated to OCS) are an English rock band formed in Moseley, Birmingham, in 1989. They have had five Top 10 albums including a number one in 1997. They have also achieved seventeen Top 40 singles and six Top 10 singles to date."
+        ],
+        "question": "What was formed farther east, The Ocean Blue or The Dandy Warhols",
+        "rationale": "produce the answer. We know that The Ocean Blue was formed in Hershey, Pennsylvania, which is located in the eastern United States. We also know that The Dandy Warhols were formed in Portland, Oregon, which is located in the western United States. Therefore, The Ocean Blue was formed farther east.",
+        "answer": "The Ocean Blue"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Jackpot (Chingy album) | Jackpot is the debut studio album by American rapper Chingy. Sales of the album achieved Double Platinum in the US. It was released on July 15, 2003, by the Disturbing tha Peace label. Anchored by the smash single \"Right Thurr\", this album also had two other top three hits, \"Holidae In\" featuring Ludacris and Snoop Dogg, and \"One Call Away\" featuring J-Weav. The album was produced by The Trak Starz except for \"Bagg Up\", which was produced by DJ Quik. The enhanced version of the album features the uncut video of \"Right Thurr\".",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Georgia (Field Mob and Ludacris song) | \"Georgia\" is a single by Southern hip hop duo Field Mob and Atlanta-based rapper Ludacris featuring R&B singer Jamie Foxx, with production by DJ Vudu Spellz. It first appeared on \"Ludacris Presents: Disturbing tha Peace\", a compilation album released by Ludacris' own Disturbing tha Peace record label, showcasing the company's new talent as of 2006. The track was reprised on the Field Mob album \"Light Poles and Pine Trees\" released later the same year.",
+          "Ludacris | Christopher Brian Bridges (born September 11, 1977), better known by his stage name Ludacris, is an American rapper and actor. Ludacris is the founder of Disturbing tha Peace, an imprint distributed by Def Jam Recordings. Ludacris has won Screen Actors Guild, Critic's Choice, MTV, and Grammy Awards. Along with fellow Atlanta-based rappers Big Boi and Andr\u00e9 3000 of OutKast, Ludacris was one of the first and most influential \"Dirty South\" rappers to achieve mainstream success during the early 2000s. In 2014, Ludacris was featured in Forbes list titled \"Hip-Hop Cash Kings\", as he earned $8 million.",
+          "Disturbing tha Peace | Disturbing tha Peace (DTP) is an American record label founded by Christopher \"Ludacris\" Bridges. Today it operates as a subsidiary of Def Jam, a division of Universal Music Group.",
+          "WeMix | WeMix was an online music creation community and user-generated record label founded in 2007 by hip-hop musician and actor Christopher \"Ludacris\" Bridges and was headquartered in New York City. It was a privately held joint venture between Ludacris\u2019 Disturbing tha Peace label and MegaMobile TV (a company founded by Matthew Apfel). The site was a social network as well as a content browsing\/filtering structure similar to YouTube. WeMix allowed artists to interact, share their music, give feedback, and collaborate with other artists. The site was free to all users and had an internet-advertising business model."
+        ],
+        "question": "Who was DJ Pain 1 produced for that founded Distrurbing tha Peace?",
+        "rationale": "find the answer. We know that DJ Pain 1 is a producer who has worked with many artists, including Ludacris. We also know that Ludacris founded Disturbing tha Peace, a record label. Therefore, we can conclude that DJ Pain 1 produced for Ludacris, who founded Disturbing tha Peace.",
+        "answer": "Ludacris"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Massachusetts Institute of Technology | The Massachusetts Institute of Technology (MIT) is a private research university in Cambridge, Massachusetts. It is often ranked as one of the world's most prestigious universities.",
+          "Harvard University | Harvard University is a private Ivy League research university in Cambridge, Massachusetts, established in 1636, whose history, influence, and wealth have made it one of the world's most prestigious universities.",
+          "Institute of Technology (United States) | Polytechnic Institutes are technological universities many dating back to the mid 19th century. A handful of American universities include the phrases Institute of Technology, Polytechnic Institute, Polytechnic University, University of Technology or similar phrasing in their names; these are generally research-intensive universities with a focus on Science, Technology, Engineering, and Mathematics.",
+          "Massachusetts Institute of Technology | The Massachusetts Institute of Technology (MIT) is a private research university in Cambridge, Massachusetts. It is often ranked as one of the world's most prestigious universities.",
+          "Carnegie Mellon School of Computer Science | The School of Computer Science (SCS) at Carnegie Mellon University in Pittsburgh, Pennsylvania, US is a leading private school for computer science established in 1988. It has been consistently ranked among the top computer science programs over the decades. U.S. News & World Report currently ranks the graduate program as tied for 1st with Massachusetts Institute of Technology, Stanford University, and University of California, Berkeley.",
+          "TU Delft Faculty of Architecture | The Faculty of Architecture and the Built Environment at TU Delft (Dutch: \"Faculteit Bouwkunde\" ; abbr. \"BK\" ) is the largest faculty of the university with around 2900 students. It is also one of the top faculties of the TU Delft and was ranked 3rd in the world\u2019s top universities for architecture & built environment in the QS World University Rankings by Subject 2015, following the Massachusetts Institute of Technology (MIT) and University College London (UCL)."
+        ],
+        "question": "Are Rockefeller University and Massachusetts Institute of Technology both considered to be prestigious?",
+        "rationale": "determine whether both Rockefeller University and Massachusetts Institute of Technology are considered to be prestigious. We know that Massachusetts Institute of Technology is often ranked as one of the world's most prestigious universities. We also know that Rockefeller University is a private research university in New York City, and it is considered to be one of the world's top universities. Therefore, we can conclude that both Rockefeller University and Massachusetts Institute of Technology are considered to be prestigious.",
+        "answer": "yes"
+      },
+      {
+        "question": "What is the nickname for this United States drag racer who drove Brutus?",
+        "answer": "Jungle Jim",
+        "dspy_uuid": "705cc62f-b310-42a5-81c6-c674091482d7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "087d3c6d-5add-4ab0-85aa-d757e71acc8d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Baltasar Korm\u00e1kur and John G. Avildsen both film producers?",
+        "answer": "no",
+        "dspy_uuid": "9171e525-f0f4-43a8-8d7e-400bc45b5f6c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cc5e448a-482b-4f56-94af-d9c20b768881",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which company distributed this 1977 American animated film produced by Walt Disney Productions for which Sherman Brothers wrote songs?",
+        "answer": "Buena Vista Distribution",
+        "dspy_uuid": "c6119f00-7502-4390-b471-13cf11234ea1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which American actress who made their film debut in the 1995 teen drama \"Kids\" was the co-founder of Voto Latino?",
+        "answer": "Rosario Dawson",
+        "dspy_uuid": "4aeb22b2-faee-4e55-97f2-27f2fad856d3",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "1c000400-74b2-4447-b2e5-6b31f2072f9f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "97d1358c-4e7e-4711-86a6-89faf261c4bd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "2206fc6c-4aa6-4bbf-a16f-8a3f10c3698e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Organisation that allows a community to influence their operation or use and to enjoy the benefits arisingwas founded in what year?",
+        "answer": "2010",
+        "dspy_uuid": "04384f27-9eed-4b96-8da4-fceae1f6c01f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What person does Wormholes in fiction and Nathan Rosen have in common?",
+        "answer": "Einstein",
+        "dspy_uuid": "20074b78-95a2-42af-a7dc-d8bd139f452a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
+        "answer": "Madonna",
+        "dspy_uuid": "00a54ee5-923a-4510-9436-80b625e8b713",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "bd5b4b6f-88a2-4e82-b9d8-1109bb6e559a",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "You are a trivia expert. Given the context and question, generate the answer and provide a brief reasoning to support your answer. Use the context to help you find the answer. For example, if the question is about a character in a book or movie, look for relevant information in the context to help you identify the correct answer.",
+    "extended_signature_prefix": "Answer:"
+  }
+}
