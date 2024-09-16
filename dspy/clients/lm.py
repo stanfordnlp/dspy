@@ -36,12 +36,13 @@ class LM:
         else: completion = cached_litellm_text_completion if cache else litellm_text_completion
 
         response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
-        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response.choices]
+        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response, outputs=outputs)
-        entry = dict(**entry, usage=dict(response["usage"]), cost=response["_hidden_params"].get("response_cost"))
+        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
+        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
+        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
         self.history.append(entry)
 
         return outputs
@@ -60,7 +61,7 @@ def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
 
 @functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request):
-    return litellm_text_completion(request, cache=None)
+    return litellm_text_completion(request, cache={"no-cache": False, "no-store": False})
 
 def litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
