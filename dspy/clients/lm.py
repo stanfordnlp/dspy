@@ -3,12 +3,19 @@ import ujson
 import functools
 
 try:
-    import litellm
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning)
+        import litellm
+
     from litellm.caching import Cache
-    
     litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
+
 except ImportError:
-    litellm = None
+    class LitellmPlaceholder:
+        def __getattr__(self, _): raise ImportError("The LiteLLM package is not installed. Run `pip install litellm`.")
+
+    litellm = LitellmPlaceholder()
 
 class LM:
     def __init__(self, model, model_type='chat', temperature=0.0, cache=True, **kwargs):

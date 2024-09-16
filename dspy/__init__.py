@@ -11,6 +11,7 @@ from .utils.logging import logger, set_log_output
 from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
+from dspy.adapters import * # isort: skip
 
 settings = dsp.settings
 

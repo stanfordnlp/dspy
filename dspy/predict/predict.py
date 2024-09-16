@@ -210,9 +210,9 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
 
 
 def v2_5_generate(lm, lm_kwargs, signature, demos, inputs):
-    from dspy.adapters import ChatAdapter
+    import dspy
+    adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-    adapter = ChatAdapter()
     return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs)
     
 
