@@ -112,6 +112,7 @@ class MIPROv2(Teleprompter):
         student,
         *,
         trainset,
+        valset=None,
         num_trials=30,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
@@ -131,6 +132,24 @@ class MIPROv2(Teleprompter):
         ENDC = "\033[0m"  # Resets the color to default
 
         random.seed(seed)
+
+        # Validate inputs
+        if not trainset:
+            raise ValueError("Trainset cannot be empty.")
+
+        if not valset:
+            if len(trainset) < 2:
+                raise ValueError("Trainset must have at least 2 examples if no valset specified, or at least 1 example with external validation set.")
+            
+            valset_size = min(300, max(1, int(len(trainset) * 0.25))) # 25% of trainset, capped at 300
+            cutoff = len(trainset) - valset_size
+            valset = trainset[cutoff:]
+            trainset = trainset[:cutoff]
+
+        else:
+            if len(valset) < 1:
+                raise ValueError("Validation set must have at least 1 example if specified.")
+
         estimated_prompt_model_calls = 10 + self.num_candidates * len(
                 student.predictors(),
             ) + (0 if not program_aware_proposer else len(student.predictors()) + 1)  # num data summary calls + N * P + (P + 1)
