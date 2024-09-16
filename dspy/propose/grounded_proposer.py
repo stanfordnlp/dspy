@@ -290,17 +290,7 @@ class GroundedProposer(Proposer):
     ):
         """This method is responsible for returning the full set of new instructions for our program, given the specified criteria."""
 
-        proposed_instructions = {}
-
-        if self.set_tip_randomly:
-            if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
-            # Randomly select the tip
-            selected_tip_key = random.choice(list(TIPS.keys()))
-            selected_tip = TIPS[selected_tip_key]
-            self.use_tip = bool(
-                selected_tip,
-            )
-            if self.verbose: print(f"Selected tip: {selected_tip_key}")        
+        proposed_instructions = {}      
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
@@ -313,6 +303,15 @@ class GroundedProposer(Proposer):
             for demo_set_i in range(len(demo_candidates[0])):
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
+                if self.set_tip_randomly:
+                    if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
+                    # Randomly select the tip
+                    selected_tip_key = random.choice(list(TIPS.keys()))
+                    selected_tip = TIPS[selected_tip_key]
+                    self.use_tip = bool(
+                        selected_tip,
+                    )
+                    if self.verbose: print(f"Selected tip: {selected_tip_key}")  
                 proposed_instructions[pred_i].append(
                     self.propose_instruction_for_predictor(
                         program=program,
