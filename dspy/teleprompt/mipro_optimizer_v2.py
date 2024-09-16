@@ -302,7 +302,7 @@ class MIPROv2(Teleprompter):
                     
                     # Kick off trial
                     if minibatch:
-                        print(f"== Minibatch Trial {trial.number+1} / {num_trials}==")
+                        print(f"== Minibatch Trial {trial.number+1} / {num_trials} ==")
                     else:
                         print(f"===== Trial {trial.number+1} / {num_trials} =====")
                     trial_logs[trial.number+1] = {}
@@ -411,8 +411,8 @@ class MIPROv2(Teleprompter):
                         
 
                     # If we're doing minibatching, check to see if it's time to do a full eval
-                    if minibatch and trial.number+1 % minibatch_full_eval_steps == 0:
-                        print(f"===== Full Eval {trial.number+1 // minibatch_full_eval_steps} =====")
+                    if minibatch and (((trial.number+1) % minibatch_full_eval_steps == 0) or (trial.number+1 == num_trials)):
+                        print(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====")
                         
                         # Save old information as the minibatch version
                         trial_logs[trial.number+1]["mb_score"] = score
@@ -420,14 +420,14 @@ class MIPROv2(Teleprompter):
 
                         # Identify our best program (based on mean of scores so far, and do a full eval on it)
                         highest_mean_program, mean, combo_key = get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_combos)
-                        full_train_score = eval_candidate_program(
-                            len(trainset), trainset, highest_mean_program, evaluate,
-                        )
-
+                        
                         if trial.number+1 // minibatch_full_eval_steps > 0:
                             print(f"Doing full eval on next top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
                         else:
                             print(f"Doing full eval on top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
+                        full_train_score = eval_candidate_program(
+                            len(trainset), trainset, highest_mean_program, evaluate,
+                        )
 
                         # Log relevant information
                         fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_train_score}
