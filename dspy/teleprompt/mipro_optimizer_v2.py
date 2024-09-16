@@ -386,8 +386,10 @@ class MIPROv2(Teleprompter):
 
                     # Evaluate the candidate program with relevant batch size
                     batch_size = minibatch_size if minibatch else len(trainset)
+                    evalset = trainset if minibatch else valset
+
                     score = eval_candidate_program(
-                        batch_size, trainset, candidate_program, 
+                        batch_size, evalset, candidate_program, 
                         evaluate,
                     )
 
