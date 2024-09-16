@@ -308,6 +308,15 @@ class MIPROv2(Teleprompter):
             param_score_dict = defaultdict(list) # Dictionaries of paramater combinations we've tried, and their associated scores
             fully_evaled_param_combos = {} # List of the parameter combinations we've done full evals of
 
+            # Evaluate the default program
+            if self.verbose: print("Evaluating the default program...\n")
+            default_score = eval_candidate_program(len(valset), valset, program, evaluate)
+            if self.verbose: print(f"Default program score: {default_score}\n")
+
+            best_score = default_score
+            best_program = program.deepcopy()
+
+
             # Define our trial objective
             def create_objective(
                 baseline_program,
@@ -385,8 +394,8 @@ class MIPROv2(Teleprompter):
                     trial_logs[trial.number+1]["num_eval_calls"] = 0
 
                     # Evaluate the candidate program with relevant batch size
-                    batch_size = minibatch_size if minibatch else len(trainset)
                     evalset = trainset if minibatch else valset
+                    batch_size = minibatch_size if minibatch else len(evalset)
 
                     score = eval_candidate_program(
                         batch_size, evalset, candidate_program, 
@@ -446,28 +455,28 @@ class MIPROv2(Teleprompter):
                             print(f"Doing full eval on next top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
                         else:
                             print(f"Doing full eval on top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
-                        full_train_score = eval_candidate_program(
-                            len(trainset), trainset, highest_mean_program, evaluate,
+                        full_val_score = eval_candidate_program(
+                            len(valset), valset, highest_mean_program, evaluate,
                         )
 
                         # Log relevant information
-                        fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_train_score}
+                        fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_val_score}
                         total_eval_calls += len(trainset)
                         trial_logs[trial.number+1]["total_eval_calls_so_far"] = total_eval_calls
                         trial_logs[trial.number+1]["full_eval"] = True
                         trial_logs[trial.number+1]["program_path"] = save_candidate_program(
                             program=highest_mean_program, log_dir=self.log_dir, trial_num=trial.number+1, note="full_eval",
                         )
-                        trial_logs[trial.number+1]["score"] = full_train_score
+                        trial_logs[trial.number+1]["score"] = full_val_score
                         
-                        if full_train_score > best_score:
-                            print(f"{GREEN}Best full eval score so far!{ENDC} Score: {full_train_score}")
-                            best_score = full_train_score
+                        if full_val_score > best_score:
+                            print(f"{GREEN}Best full eval score so far!{ENDC} Score: {full_val_score}")
+                            best_score = full_val_score
                             best_scoring_trial = trial.number+1
                             best_program = highest_mean_program.deepcopy()
                             best_score_updated = True
                         else:
-                            print(f"Full eval score: {full_train_score}")
+                            print(f"Full eval score: {full_val_score}")
                             print(f"Best full eval score so far: {best_score}")
                         print("=======================\n\n")
                     
