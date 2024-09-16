@@ -1,0 +1,243 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Ian Hanmore | Ian Hanmore is a Scottish actor known for his role as the warlock Pyat Pree in the second season of the HBO series \"Game of Thrones\".",
+          "Will Tudor | William James Sibree \"Will\" Tudor (born 11 April 1987) is an English actor. He is best known for his role as Olyvar in the HBO series \"Game of Thrones\", which he portrayed from season 3 to season 5. He has also appeared in the TV miniseries \"The Red Tent\", and the Channel 4\/AMC drama \"Humans\". He is set to play Sebastian Verlac\/Jonathan Morgenstern on the Freeform series \"Shadowhunters\".",
+          "Predestination (film) | Predestination is a 2014 Australian science fiction thriller film written and directed by Michael and Peter Spierig. The film stars Ethan Hawke, Sarah Snook and Noah Taylor, and is based on the short story \"\"\u2014All You Zombies\u2014\"\" by Robert A. Heinlein.",
+          "Noah Taylor | Noah George Taylor (born 4 September 1969) is an English-Australian actor. He is best known for his roles as David Helfgott in Shine, Locke in HBO series \"Game of Thrones\", Mr. Bucket in \"Charlie and the Chocolate Factory\" and Danny in the Australian cult film \"He Died with a Felafel in His Hand\".",
+          "Bran Stark | Brandon Stark, typically called Bran, is a fictional character in the \"A Song of Ice and Fire\" series of fantasy novels by American author George R. R. Martin, and its television adaptation \"Game of Thrones\". Martin told \"Rolling Stone\" in 2014 that Bran's chapter with Jaime and Cersei Lannister is what \"hooked\" many readers early in the first novel.",
+          "Ned Stark | Eddard \"Ned\" Stark is a fictional character in the 1996 fantasy novel \"A Game of Thrones\" by George R. R. Martin, and the first season of \"Game of Thrones\", HBO's adaptation of Martin's \"A Song of Ice and Fire\" series. In the storyline, Ned is the lord of Winterfell, an ancient fortress in the North of the fictional continent of Westeros. Though the character is established as a primary character in the novel and the TV adaptation, Martin's plot twist at the end involving Ned shocked both readers of the book and viewers of the TV series."
+        ],
+        "question": "What actor stars in Predestination and Game of Thrones? ",
+        "rationale": "find the answer. We know that the actor stars in both Predestination and Game of Thrones, so we can search for actors who have appeared in both movies and TV shows. We can use a search engine like Google to find the answer.",
+        "search_query": "\"actors who have appeared in Predestination and Game of Thrones\""
+      },
+      {
+        "question": "What type of gesture does Donets-Krivoy Rog Soviet Republic and have in common?",
+        "answer": "signed",
+        "dspy_uuid": "efbc48ba-bfba-4776-bd5d-39587d859a70",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "8bf3f177-624a-44bf-8096-8f295f9d698c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Imperfect Circles is an episode of the drama that was developed by whom?",
+        "answer": "Brian K. Vaughan",
+        "dspy_uuid": "798c0965-4247-45dd-97d6-18ffd40064c7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who supervises the subordinate that occupies the majority of Chatan, Japan?",
+        "answer": "United States Pacific Command",
+        "dspy_uuid": "f4ac2f43-38f9-48d9-88d1-a739ccd84f40",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What country does Ngezi Platinum F.C. play in?",
+        "answer": "Africa",
+        "dspy_uuid": "80fea12e-e335-4cc3-a321-8cb9d267b530",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was released first, The Three Lives of Thomasina or The Shaggy Dog?",
+        "answer": "The Shaggy Dog",
+        "dspy_uuid": "a049f589-259b-4e4a-a90e-a65f732818ae",
+        "dspy_split": "train"
+      },
+      {
+        "question": "\"Hurt\" is a 2009 gothic horror movie starring William Mapother, but what TV series is he most associated with?",
+        "answer": "Lost",
+        "dspy_uuid": "15c79db8-c42b-4dbe-9286-0e3b53d39f68",
+        "dspy_split": "train"
+      },
+      {
+        "question": "How much did retired Canadian professional ice hockey player of Albanian origin spend with his cohorts to purchase the Ontario Raiders?",
+        "answer": "$250,000",
+        "dspy_uuid": "bca45d18-b007-4dd1-aed7-003c684f3ce7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where is the football club from that Glen Robert Moss plays for?",
+        "answer": "New South Wales",
+        "dspy_uuid": "bcb6528e-c927-4d21-8be2-a444073de3f4",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Reggie Theus was the assistant coach for what man who had coached in the NBA?",
+        "answer": "Rick Pitino",
+        "dspy_uuid": "48a68563-74a5-4929-8c14-49ced274e346",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What important political role did the female star of the film Talk About a Stranger hold ?",
+        "answer": "First Lady of the United States",
+        "dspy_uuid": "af8f0aef-3d0a-4a8c-9795-8bddda72857c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Rockefeller University and Massachusetts Institute of Technology both considered to be prestigious?",
+        "answer": "yes",
+        "dspy_uuid": "8d96fe27-f4e7-4cf8-82ac-b219a207bd36",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which mountain is higher, Manaslu or Jengish Chokusu?",
+        "answer": "Manaslu",
+        "dspy_uuid": "ab2cbf21-539f-4c76-ae23-0353b3095e1c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "answer": "42",
+        "dspy_uuid": "98a04499-2051-4628-aeb3-60ba04551dae",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, and `rationale`, generate the fields `search_query`. This proposed instruction takes into account the rationale provided by the user, which is the reasoning behind the search query. This can help the language model to better understand the user's intent and generate a more accurate search query. For example, in the given task demo, the user provides the rationale \"Let's think step by step in order to find the search query. We need to find the magazines that have published articles by Scott Shaw.\" This rationale can be used to generate a more accurate search query, such as \"Scott Shaw magazine\" OR (\"Tae Kwon Do Times\" OR \"Southwest Art\") -magazines. By incorporating the rationale into the instruction, we can improve the accuracy and relevance of the search query generated by the language model.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "King Abdulaziz University | King Abdulaziz University (KAU) (Arabic: \u062c\u0627\u0645\u0639\u0629 \u0627\u0644\u0645\u0644\u0643 \u0639\u0628\u062f \u0627\u0644\u0639\u0632\u064a\u0632\u200e \u200e \"\u01e7\u0101mi\u02bfat al-malik \u02bfabd al-\u02bfaz\u012bz \") was founded in 1967 in Jeddah, Saudi Arabia. Designed by English architect John Elliott, it had 2,000 faculty and more than 37,000 students in 2000\/2001. Established initially as a private university by a group of businessmen led by Sheikh Muhammad Abu Bakr Bakhashab Pasha and including the writer Hamza Bogary. in 1974 King Abdulaziz University was converted to a public university by a resolution of the Council Ministers of Saudi Arabia. In 2016, it was ranked the top Arab university by Times Higher Education.",
+          "Al-Hikmah University | Al-Hikmah University is an Islamic university located in Ilorin, Kwara State, Nigeria. It was founded in 2005 by AbdulRaeem Oladimeji Islamic Foundation AROIF based in Nigeria and World Assembly of Muslim Youths WAMY based in Jeddah. Professor Muhammed Taofeek Olalekan Ibrahim is the current Vice-Chancellor. The goal of Al-Hikmah University is to be a centre of intellectual and moral excellence.",
+          "Abdul Alkalimat | Abdul Alkalimat (born Gerald Arthur McWorter, November 21, 1942) is an American professor of African-American studies and library and information science at the University of Illinois at Urbana\u2013Champaign. He is the author of several books, including \"Introduction to Afro-American Studies\", \"The African American Experience in Cyberspace\", and \"Malcolm X for Beginners\". He curates two websites related to African-American history, \"Malcolm X: A Research Site\" and \"eBlack Studies\".",
+          "University of Illinois at Urbana\u2013Champaign | The University of Illinois at Urbana\u2013Champaign (also known as U of I, Illinois, or colloquially as the University of Illinois or UIUC) is a public research university in the U.S. state of Illinois. Founded in 1867 as a land-grant institution in the twin cities of Champaign and Urbana, it is the flagship campus of the University of Illinois system and a founding member of the Big Ten Conference.",
+          "UIUC College of Education | The School of Education at the University of Illinois at Urbana-Champaign was founded in 1905. It was later renamed the College of Education in 1918. The college offers undergraduate, graduate, and online programs in areas including elementary education, early childhood education, special education, and Educational Organization and Leadership. It began with six departments; three of them merged and formed the largest department in the college. All departments offer masters and doctoral degrees. However, only two departments offer undergraduate degree programs: Special Education and Curriculum & Instruction. The college also offers 16 online programs. Students seeking an undergraduate degree in the college must meet the minimum graduation requirement set forth by the university. To obtain a certification, students must also meet the requirements of the Council on Teacher Education, a professional educational administration at the University of Illinois. The total enrollment is 1,361 students as of 2015.",
+          "History of University of Illinois at Urbana\u2013Champaign | History of University of Illinois at Urbana\u2013Champaign"
+        ],
+        "question": "Abdul Alkalimat is a professor of African-American studies and library and information science at a university founded in which year ?",
+        "rationale": "find the answer. We know that Abdul Alkalimat is a professor at the University of Illinois at Urbana\u2013Champaign, and we also know that the university was founded in 1867. Therefore, the answer is 1867.",
+        "answer": "1867"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Ian Hanmore | Ian Hanmore is a Scottish actor known for his role as the warlock Pyat Pree in the second season of the HBO series \"Game of Thrones\".",
+          "Will Tudor | William James Sibree \"Will\" Tudor (born 11 April 1987) is an English actor. He is best known for his role as Olyvar in the HBO series \"Game of Thrones\", which he portrayed from season 3 to season 5. He has also appeared in the TV miniseries \"The Red Tent\", and the Channel 4\/AMC drama \"Humans\". He is set to play Sebastian Verlac\/Jonathan Morgenstern on the Freeform series \"Shadowhunters\".",
+          "Predestination (film) | Predestination is a 2014 Australian science fiction thriller film written and directed by Michael and Peter Spierig. The film stars Ethan Hawke, Sarah Snook and Noah Taylor, and is based on the short story \"\"\u2014All You Zombies\u2014\"\" by Robert A. Heinlein.",
+          "Noah Taylor | Noah George Taylor (born 4 September 1969) is an English-Australian actor. He is best known for his roles as David Helfgott in Shine, Locke in HBO series \"Game of Thrones\", Mr. Bucket in \"Charlie and the Chocolate Factory\" and Danny in the Australian cult film \"He Died with a Felafel in His Hand\".",
+          "Bran Stark | Brandon Stark, typically called Bran, is a fictional character in the \"A Song of Ice and Fire\" series of fantasy novels by American author George R. R. Martin, and its television adaptation \"Game of Thrones\". Martin told \"Rolling Stone\" in 2014 that Bran's chapter with Jaime and Cersei Lannister is what \"hooked\" many readers early in the first novel.",
+          "Ned Stark | Eddard \"Ned\" Stark is a fictional character in the 1996 fantasy novel \"A Game of Thrones\" by George R. R. Martin, and the first season of \"Game of Thrones\", HBO's adaptation of Martin's \"A Song of Ice and Fire\" series. In the storyline, Ned is the lord of Winterfell, an ancient fortress in the North of the fictional continent of Westeros. Though the character is established as a primary character in the novel and the TV adaptation, Martin's plot twist at the end involving Ned shocked both readers of the book and viewers of the TV series."
+        ],
+        "question": "What actor stars in Predestination and Game of Thrones? ",
+        "rationale": "find the answer. We know that Predestination is a 2014 Australian science fiction thriller film written and directed by Michael and Peter Spierig. The film stars Ethan Hawke, Sarah Snook and Noah Taylor, and is based on the short story \"\"\u2014All You Zombies\u2014\"\" by Robert A. Heinlein. We also know that Noah Taylor is an English-Australian actor who is best known for his roles as David Helfgott in Shine, Locke in HBO series \"Game of Thrones\", Mr. Bucket in \"Charlie and the Chocolate Factory\" and Danny in the Australian cult film \"He Died with a Felafel in His Hand\". Therefore, the answer is Noah Taylor.",
+        "answer": "Noah Taylor"
+      },
+      {
+        "question": "The tomb of Ferdowsi example of Achaemenid architecture, a style from which culture?",
+        "answer": "the Achaemenid Persians",
+        "dspy_uuid": "bdf6b22d-f0d5-46e2-8eb8-28b3393e2b4c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What actress that starred in The Legend of Tarzan got her start by appearing in Australian independent films?",
+        "answer": "Margot Elise Robbie",
+        "dspy_uuid": "3a07d582-3108-47b0-aa70-f1cb7dc690bd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Ryan Hulings plays for the Dayton Dyanmo, who is his head coach?",
+        "answer": "Dan Griest",
+        "dspy_uuid": "bdf29396-0771-45ad-8d84-ce423cb86a6b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Under which number president did Arthur A. Ballantine become solicitor of the Internal Revenue Service?",
+        "answer": "31st",
+        "dspy_uuid": "c4a4378b-0622-4189-b895-ea9a5a043c54",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Kelsey Ross Brokes is associated with what Costa Mesa, California-based clothing company?",
+        "answer": "RVCA",
+        "dspy_uuid": "162fb7a6-392a-4063-862e-dfbc4c1c5100",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In what year was the club founded that played Manchester City in the 1972 FA Charity Shield",
+        "answer": "1874",
+        "dspy_uuid": "a7d093fc-f1b4-4b9b-b1f4-de6720b068f9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was released first, The Three Lives of Thomasina or The Shaggy Dog?",
+        "answer": "The Shaggy Dog",
+        "dspy_uuid": "a049f589-259b-4e4a-a90e-a65f732818ae",
+        "dspy_split": "train"
+      },
+      {
+        "question": "FM broadcasting began at the station of which inventor, who won the first Medal of Honor by what is now the IEEE?",
+        "answer": "Edwin Howard Armstrong",
+        "dspy_uuid": "ba798ded-c673-4211-b641-10995228209b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "0b222fcb-9385-4163-b1ab-e1c5f098fc6e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What genre of music has American musicians Jonathan Davis and Philip Labonte both have in common in the bands they have played in?",
+        "answer": "metal",
+        "dspy_uuid": "e4a33857-1f38-44be-87c4-6d270d95ed2f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which of these publications was most recently published, Who Put the Bomp or Self?",
+        "answer": "Self",
+        "dspy_uuid": "f62e0365-075c-4c62-825e-51a45fa0e460",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are both Ralph Saenz and Roddy Woomble credited as writers?",
+        "answer": "no",
+        "dspy_uuid": "09ed93f2-8471-4c2f-aaef-81e7423ccff0",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Merle Reagle did crosswords for what magazine that has a focus on aging issues?",
+        "answer": "AARP The Magazine",
+        "dspy_uuid": "23102dce-8b33-41f8-b92b-bec9d8f29ea8",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given a high-stakes scenario in which you are tasked with generating a search query or answer based on a complex context and question, use your language understanding and generation capabilities to produce a precise and accurate answer. For example, imagine you are a researcher tasked with finding a specific piece of information for a critical project, and you have a limited amount of time to find the answer. You must use your skills to quickly and accurately generate a search query or answer that will help you achieve your goal.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

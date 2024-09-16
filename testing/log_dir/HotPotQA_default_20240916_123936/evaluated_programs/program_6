@@ -1,0 +1,130 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Please generate a search query that accurately captures the essence of the question, considering the context provided, and is likely to yield relevant results. The search query should be concise, clear, and free of ambiguity. Please keep in mind that the goal is to find the answer to the question, and the search query should be designed to facilitate this process.\".",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Fig Trees | Fig Trees is a 2009 Canadian operatic documentary film written and directed by John Greyson. It follows South African AIDS activist Zackie Achmat and Canadian AIDS activist Tim McCaskell as they fight for access to treatment for HIV\/AIDS. It was also inspired by Gertrude Stein and Virgil Thomson's opera \"Four Saints in Three Acts\". The film premiered at the 59th Berlin International Film Festival where it won the Teddy Award for Best Documentary.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "Fig Leaves | Fig Leaves is a 1926 American silent comedy film directed by Howard Hawks, released by Fox Film Corporation, and starring George O'Brien and Olive Borden. The film had a sequence, a fashion show, filmed in Technicolor. A print of the film survives in the film archive of the Museum of Modern Art.",
+          "Pond Hockey (film) | Pond Hockey is a 2008 American documentary film, directed by Tommy Haines, and produced by Northland Films. The film is an examination of the changing culture of pond hockey.",
+          "When Ponds Freeze Over | When Ponds Freeze Over is a Canadian short film, directed by Mary Lewis and released in 1998.",
+          "In the Crease | In the Crease (the youth hockey experience) is a feature-length documentary film that follows the real-life story of a teenage hockey team's quest to win a national championship and also stars over a dozen NHL players sharing their own hockey triumphs. The film was produced and directed by Matthew Gannon and Michael Sarner, distributed by Stickmen Pictures LLC, aired on Versus on January 20, 2008 and was released on DVD on October 26, 2006."
+        ],
+        "question": "Which film was created first, Fig Trees or Pond Hockey?",
+        "rationale": "determine which film was created first. We can look at the release dates of the films. According to the context, Fig Trees was released in 2009, while Pond Hockey was released in 2008. Therefore, Pond Hockey was created first.",
+        "answer": "Pond Hockey"
+      },
+      {
+        "question": "What head of state position was held by Harry S Truman when he gave Harold E Wilson the Medal of Honor?",
+        "answer": "President of the United States",
+        "dspy_uuid": "348a67da-e2a9-4d9a-894b-8821d30c69c7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are the Carlisle Cathedral and Bangor Cathedral both located in the United Kingdom?",
+        "answer": "yes",
+        "dspy_uuid": "ebe1f43a-ea5b-41ac-89e0-4632d28fa36e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Tombstone stared an actor born May 17, 1955 known as who?",
+        "answer": "Bill Paxton",
+        "dspy_uuid": "d86dcc32-1a65-44eb-ab68-6cb04dd00639",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "answer": "Kitty Hawk, North Carolina",
+        "dspy_uuid": "0b222fcb-9385-4163-b1ab-e1c5f098fc6e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who has been on a British television music competition show and was was most popular in the 80's with the pop band 'Culture Club'?",
+        "answer": "George Alan O'Dowd",
+        "dspy_uuid": "4062d8dd-47d7-4ad9-8b29-cb51b38e16b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Johnny Narron is a friend of this center fielder whom he helped in his recovery from drug addiction who won the MVP award in what year?",
+        "answer": "2010",
+        "dspy_uuid": "a089099c-b6ca-4c57-87da-592dfd14cbfb",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who composed the song from the film \"Zindagi Na Milegi Dobara\" that was shot in the Spanish town of Alajar?",
+        "answer": "Javed Akhtar",
+        "dspy_uuid": "f23f9465-0750-4263-894e-b1cf02db5975",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie was released first, Son of Flubber or Davy Crockett, King of the Wild Frontier?",
+        "answer": "Davy Crockett, King of the Wild Frontier",
+        "dspy_uuid": "cb22cc5b-5f05-4408-899f-8f376b26238f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who released the album that \"Stylo\" was a single on in the United States?",
+        "answer": "Virgin Records",
+        "dspy_uuid": "00b89853-f7b8-488f-a0ec-3ad404a04409",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The second place finisher of the 2011 Gran Premio Santander d'Italia drove for who when he won the 2009 FIA Formula One World Championship?",
+        "answer": "Brawn GP",
+        "dspy_uuid": "0549113d-a0bd-45cf-88fc-10a9d57b2152",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Juan Pablo Di Pace had a role on the sequel series to what Jeff Franklin-created American sitcom?",
+        "answer": "Full House",
+        "dspy_uuid": "397c1ebd-658c-49fb-88b0-677350f9721a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Carlo Ignazio Monza's music formed a ballet based on what 18th century play? ",
+        "answer": "Commedia dell'arte",
+        "dspy_uuid": "76eec0e5-3fe9-452e-aa77-ac10da314350",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What part of the world do the Viezenbeek and Lindemans Brewery hale from?",
+        "answer": "Brussels",
+        "dspy_uuid": "70dbff62-e13e-4cb4-a202-5f3bf1104e3f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "For which college team did this American professional basketball player for the Miami Heat of the National Basketball Association (NBA) who earned praise for being the NBA's leading rebounder during the 2016\u201317 Miami Heat season play?",
+        "answer": "the Marshall Thundering Herd",
+        "dspy_uuid": "6612c8fa-9afd-4a12-93fa-99a4196851f1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The Sting was an episode of The Office written by the American actress who created what other sitcom?",
+        "answer": "The Mindy Project",
+        "dspy_uuid": "625c0c83-5ea8-4b6c-b57a-8f1ba94e9aed",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "You are a trivia expert. Given the context and question, generate the answer and provide a brief reasoning to support your answer. Use the context to help you find the answer. For example, if the question is about a character in a book or movie, look for relevant information in the context to help you identify the correct answer.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

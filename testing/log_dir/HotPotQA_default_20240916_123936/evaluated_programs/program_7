@@ -1,0 +1,243 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Ian Hanmore | Ian Hanmore is a Scottish actor known for his role as the warlock Pyat Pree in the second season of the HBO series \"Game of Thrones\".",
+          "Will Tudor | William James Sibree \"Will\" Tudor (born 11 April 1987) is an English actor. He is best known for his role as Olyvar in the HBO series \"Game of Thrones\", which he portrayed from season 3 to season 5. He has also appeared in the TV miniseries \"The Red Tent\", and the Channel 4\/AMC drama \"Humans\". He is set to play Sebastian Verlac\/Jonathan Morgenstern on the Freeform series \"Shadowhunters\".",
+          "Predestination (film) | Predestination is a 2014 Australian science fiction thriller film written and directed by Michael and Peter Spierig. The film stars Ethan Hawke, Sarah Snook and Noah Taylor, and is based on the short story \"\"\u2014All You Zombies\u2014\"\" by Robert A. Heinlein.",
+          "Noah Taylor | Noah George Taylor (born 4 September 1969) is an English-Australian actor. He is best known for his roles as David Helfgott in Shine, Locke in HBO series \"Game of Thrones\", Mr. Bucket in \"Charlie and the Chocolate Factory\" and Danny in the Australian cult film \"He Died with a Felafel in His Hand\".",
+          "Bran Stark | Brandon Stark, typically called Bran, is a fictional character in the \"A Song of Ice and Fire\" series of fantasy novels by American author George R. R. Martin, and its television adaptation \"Game of Thrones\". Martin told \"Rolling Stone\" in 2014 that Bran's chapter with Jaime and Cersei Lannister is what \"hooked\" many readers early in the first novel.",
+          "Ned Stark | Eddard \"Ned\" Stark is a fictional character in the 1996 fantasy novel \"A Game of Thrones\" by George R. R. Martin, and the first season of \"Game of Thrones\", HBO's adaptation of Martin's \"A Song of Ice and Fire\" series. In the storyline, Ned is the lord of Winterfell, an ancient fortress in the North of the fictional continent of Westeros. Though the character is established as a primary character in the novel and the TV adaptation, Martin's plot twist at the end involving Ned shocked both readers of the book and viewers of the TV series."
+        ],
+        "question": "What actor stars in Predestination and Game of Thrones? ",
+        "rationale": "find the answer. We know that the actor stars in both Predestination and Game of Thrones, so we can search for actors who have appeared in both movies and TV shows. We can use a search engine like Google to find the answer.",
+        "search_query": "\"actors who have appeared in Predestination and Game of Thrones\""
+      },
+      {
+        "question": "What type of gesture does Donets-Krivoy Rog Soviet Republic and have in common?",
+        "answer": "signed",
+        "dspy_uuid": "efbc48ba-bfba-4776-bd5d-39587d859a70",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "8bf3f177-624a-44bf-8096-8f295f9d698c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Imperfect Circles is an episode of the drama that was developed by whom?",
+        "answer": "Brian K. Vaughan",
+        "dspy_uuid": "798c0965-4247-45dd-97d6-18ffd40064c7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who supervises the subordinate that occupies the majority of Chatan, Japan?",
+        "answer": "United States Pacific Command",
+        "dspy_uuid": "f4ac2f43-38f9-48d9-88d1-a739ccd84f40",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What country does Ngezi Platinum F.C. play in?",
+        "answer": "Africa",
+        "dspy_uuid": "80fea12e-e335-4cc3-a321-8cb9d267b530",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which film was released first, The Three Lives of Thomasina or The Shaggy Dog?",
+        "answer": "The Shaggy Dog",
+        "dspy_uuid": "a049f589-259b-4e4a-a90e-a65f732818ae",
+        "dspy_split": "train"
+      },
+      {
+        "question": "\"Hurt\" is a 2009 gothic horror movie starring William Mapother, but what TV series is he most associated with?",
+        "answer": "Lost",
+        "dspy_uuid": "15c79db8-c42b-4dbe-9286-0e3b53d39f68",
+        "dspy_split": "train"
+      },
+      {
+        "question": "How much did retired Canadian professional ice hockey player of Albanian origin spend with his cohorts to purchase the Ontario Raiders?",
+        "answer": "$250,000",
+        "dspy_uuid": "bca45d18-b007-4dd1-aed7-003c684f3ce7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Where is the football club from that Glen Robert Moss plays for?",
+        "answer": "New South Wales",
+        "dspy_uuid": "bcb6528e-c927-4d21-8be2-a444073de3f4",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Reggie Theus was the assistant coach for what man who had coached in the NBA?",
+        "answer": "Rick Pitino",
+        "dspy_uuid": "48a68563-74a5-4929-8c14-49ced274e346",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What important political role did the female star of the film Talk About a Stranger hold ?",
+        "answer": "First Lady of the United States",
+        "dspy_uuid": "af8f0aef-3d0a-4a8c-9795-8bddda72857c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Are Rockefeller University and Massachusetts Institute of Technology both considered to be prestigious?",
+        "answer": "yes",
+        "dspy_uuid": "8d96fe27-f4e7-4cf8-82ac-b219a207bd36",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which mountain is higher, Manaslu or Jengish Chokusu?",
+        "answer": "Manaslu",
+        "dspy_uuid": "ab2cbf21-539f-4c76-ae23-0353b3095e1c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "answer": "42",
+        "dspy_uuid": "98a04499-2051-4628-aeb3-60ba04551dae",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the context and question, generate a search query that can be used to retrieve relevant information to answer the question, considering the context and question's content, including entities, keywords, and phrases. The generated search query should be a natural language query that can be used to retrieve relevant information from a search engine or database. The search query should be concise, clear, and relevant to the question, and should take into account the context and question's content, including entities, keywords, and phrases. The generated search query should be a single sentence or phrase that can be used to retrieve relevant information to answer the question. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a natural language query that can be used to retrieve relevant information from a search engine or database. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a single sentence or phrase that can be used to retrieve relevant information to answer the question. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a natural language query that can be used to retrieve relevant information from a search engine or database. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a single sentence or phrase that can be used to retrieve relevant information to answer the question. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a natural language query that can be used to retrieve relevant information from a search engine or database. The search query should be designed to retrieve relevant information from the context and question's content, including entities, keywords, and phrases, and should be concise, clear, and relevant to the question. The generated search query should be a single sentence or phrase that can be used to retrieve relevant information to answer the question. The search query should be designed to retrieve",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Scott Shaw (artist) | Scott Shaw (often spelled Scott Shaw!) is a United States cartoonist and animator, and historian of comics. Among Scott's comic-book work is Hanna-Barbera's \"The Flintstones\" (for Marvel Comics and Harvey Comics), \"Captain Carrot and His Amazing Zoo Crew\" (for DC Comics), and \"Simpsons Comics\" (for Bongo Comics). He was also the first artist for Archie Comics' \"Sonic the Hedgehog\" comic book series.",
+          "Flower magazine | Flower magazine is a bimonthly, seasonal publication based in Birmingham, Alabama. Founded by Margot Shaw in March 2007, the magazine features national and international content, including profiles of floral designers and their creations, stylish weddings, and inspirations for entertaining and decorating with flowers. Shaw is also the editor of the magazine. At the initial phase the magazine was published quarterly.",
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Kwon Tae-man | Kwon Tae-man (born 1941) was an early Korean hapkido practitioner and a pioneer of the art, first in Korea and then in the United States. He formed one of the earliest dojang's for hapkido in the United States in Torrance, California, and has been featured in many magazine articles promoting the art.",
+          "Hee Il Cho | Cho Hee Il (born October 13, 1940) is a prominent Korean-American master of taekwondo, holding the rank of 9th \"dan\" in the martial art. He has written 11 martial art books, produced 70 martial art training videos, and has appeared on more than 70 martial arts magazine covers. Cho won several national and international competitions as a taekwondo competitor, and has appeared in several films, including \"Fight to Win\", \"Best of the Best\", \"Bloodsport II\", and \"Bloodsport III\". He founded the Action International Martial Arts Association (AIMAA) in 1980, and is its President. Cho is a member of both \"Black Belt\" magazine's Hall of Fame and \"Tae Kwon Do Times\" magazine's Hall of Fame."
+        ],
+        "question": "Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?",
+        "rationale": "find the answer. We know that Scott Shaw is a cartoonist and animator, and historian of comics. He has worked on various comic-book series, including \"The Flintstones\", \"Captain Carrot and His Amazing Zoo Crew\", and \"Simpsons Comics\". We also know that Tae Kwon Do Times is a magazine devoted to the martial art of taekwon-do, and is published in the United States of America. Southwest Art is a magazine that focuses on Western art, and it is unlikely that Scott Shaw would have written articles for this magazine. Therefore, the correct answer is Tae Kwon Do Times.",
+        "answer": "Tae Kwon Do Times"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Word to the Mutha! | \"Word to the Mutha!\" is a song co-written and performed by American contemporary R&B group Bell Biv DeVoe. It originally appeared on their debut studio album \"Poison\" under the title \"Ronnie, Bobby, Ricky, Mike, Ralph and Johnny (Word to the Mutha)!\" , but the title was shortened and a remixed version of the song was issued as the only official single from the group's remix album \"\" The song features vocals from Bobby Brown, Ralph Tresvant and Johnny Gill; and it was the first recorded song to feature all six members of New Edition; although Brown, Tresvant and Gill are credited separately on the single rather than collectively as New Edition.",
+          "Ralph Schuckett | Ralph Dion Schuckett (born March 2, 1948 in Los Angeles, California) is an American keyboardist, songwriter, record producer and TV\/film composer. He played with Clear Light (1966\u221268), The Peanut Butter Conspiracy (1968\u221270), Jo Mama (1969\u221272), Carole King (1969\u221272), Lou Reed (1972\u221273), Todd Rundgren and Utopia (1972\u221275), and, as a studio musician in both LA and NY, on albums by Carole King (notably \"Tapestry\"), James Taylor, Hall & Oates, Whitney Houston, George Benson, The Four Tops, Cher, Donna Summer, Kashif, Richie Havens, Patty Smyth, Phoebe Snow, The Manhattans, Rodney Crowell, Joan Osborne, Ellen Shipley, Elliott Murphy and many others. His string and brass arrangements can be heard on recordings by Billy Joel, George Benson, Michael Bolton, Joan Osborne, Bette Midler, Bonnie Tyler, Graham Parker and others.",
+          "Ralph Butler | Ralph Thomas Butler (12 October 1886 \u2013 8 April 1969) was a British songwriter, responsible for the lyrics of many popular songs of the 1930s and later, mostly with comic or novelty elements.",
+          "Ralph Butler | Ralph Thomas Butler (12 October 1886 \u2013 8 April 1969) was a British songwriter, responsible for the lyrics of many popular songs of the 1930s and later, mostly with comic or novelty elements.",
+          "Ralph Schuckett | Ralph Dion Schuckett (born March 2, 1948 in Los Angeles, California) is an American keyboardist, songwriter, record producer and TV\/film composer. He played with Clear Light (1966\u221268), The Peanut Butter Conspiracy (1968\u221270), Jo Mama (1969\u221272), Carole King (1969\u221272), Lou Reed (1972\u221273), Todd Rundgren and Utopia (1972\u221275), and, as a studio musician in both LA and NY, on albums by Carole King (notably \"Tapestry\"), James Taylor, Hall & Oates, Whitney Houston, George Benson, The Four Tops, Cher, Donna Summer, Kashif, Richie Havens, Patty Smyth, Phoebe Snow, The Manhattans, Rodney Crowell, Joan Osborne, Ellen Shipley, Elliott Murphy and many others. His string and brass arrangements can be heard on recordings by Billy Joel, George Benson, Michael Bolton, Joan Osborne, Bette Midler, Bonnie Tyler, Graham Parker and others.",
+          "Ralph Saenz | Ralph Michael Saenz (born May 17, 1965), better known by the stage name Michael Starr, is an American singer, songwriter, and musician. He is best known as the lead singer for the comedic glam metal band Steel Panther."
+        ],
+        "question": "Are both Ralph Saenz and Roddy Woomble credited as writers?",
+        "rationale": "determine if both Ralph Saenz and Roddy Woomble are credited as writers. We can look at the provided information about Ralph Saenz, who is known as the lead singer for the comedic glam metal band Steel Panther. We can also look at the information about Roddy Woomble, who is a Scottish singer-songwriter. According to the information, Ralph Saenz is credited as a writer, but there is no information about Roddy Woomble being credited as a writer. Therefore, we can conclude that only Ralph Saenz is credited as a writer.",
+        "answer": "no"
+      },
+      {
+        "question": "What American dancer, actor, singer, director, and choreographer was in the 1943 musical comedy Du Barry Was a Lady?",
+        "answer": "Gene Kelly",
+        "dspy_uuid": "7dd728e5-39e2-4c76-a213-cd7f1ed01bb6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was born first, Rowan Atkinson, or Maxim Baldry?",
+        "answer": "Rowan Sebastian Atkinson",
+        "dspy_uuid": "bcbbc155-db12-41ae-a1e9-dcd999095b62",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which genus of plants is endemic to Australia, Retama or Baeckea?",
+        "answer": "Retama",
+        "dspy_uuid": "0067e92c-da35-4a2d-be61-9438454f6b93",
+        "dspy_split": "train"
+      },
+      {
+        "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
+        "answer": "The Waltz King",
+        "dspy_uuid": "9b675294-75dd-4b4a-a7d0-3b30212790b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What was the nationality of the mixed martial artist who defeated Trent Jenkins in the first ever fight in UFC history?",
+        "answer": "American",
+        "dspy_uuid": "966266be-4fb0-4010-9d30-b15d2758a2af",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During Maine gubernatorial election, 1956, which candidate ran, who later on ran for Vice President of the United States?",
+        "answer": "Edmund Muskie",
+        "dspy_uuid": "58758a5a-1177-416e-9b87-b375f2b33ff0",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
+        "answer": "23,674",
+        "dspy_uuid": "9dca1d09-95de-4bda-9702-78ebed4639dc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When was the member of Dillard & Clark who also played in the Byrds born?",
+        "answer": "1944",
+        "dspy_uuid": "82af02ae-f1be-402b-8211-d68440488b2a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Cross Border Orchestra of Ireland is based at an institute in what province?",
+        "answer": "Leinster",
+        "dspy_uuid": "612881b9-f813-4e8b-ae21-17f19d719d34",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
+        "answer": "Madonna",
+        "dspy_uuid": "2029b50e-a729-4c6c-a1a5-8f63d2f089f8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was the undisputed \"boss\"  that succeeded Woodrow Wilson in Atlantic City?",
+        "answer": "Enoch Lewis \"Nucky\" Johnson",
+        "dspy_uuid": "4bf7bbbd-9323-4c31-b42a-2eae45715e56",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Full Circle included a cover of the song by which songwriter, musician, and actor?",
+        "answer": "Roger Dean Miller, Sr.",
+        "dspy_uuid": "9f83c977-06df-4171-a60f-285641d53673",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The \"To You I Belong\" singers broke up when when which member decided to leave?",
+        "answer": "Sin\u00e9ad O'Carroll",
+        "dspy_uuid": "7b4e9bc2-0161-4df2-922d-5ab21f748d97",
+        "dspy_split": "train"
+      },
+      {
+        "question": "How many games were won during his career by the right-handed pitcher whose deadly beanball in 1920 is featured in \"The Pitch That Killed\" by Mike Sowell?",
+        "answer": "over 200",
+        "dspy_uuid": "4b5adc47-d5f2-4652-a176-a8a4a52457db",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the context and question, generate a search query to retrieve relevant information and then use that information to produce an answer to the question. This instruction encourages the language model to think more critically and creatively about how to solve the problem, and to use the context and question to guide its search for relevant information. It also allows the model to generate a more detailed and accurate answer, as it is able to draw on a wider range of information and to use that information to support its answer.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

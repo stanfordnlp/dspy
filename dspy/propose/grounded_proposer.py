@@ -183,8 +183,8 @@ class GenerateModuleInstruction(dspy.Module):
                     break
 
         # Summarize the program
-        program_description = ""
-        module_code = ""
+        program_description = "Not available"
+        module_code = "Not provided"
         if self.program_aware:
             try:
                 program_description = strip_prefix(
@@ -194,14 +194,19 @@ class GenerateModuleInstruction(dspy.Module):
                 )
                 if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
 
-                # Identify all modules
-                init_pattern = r"def __init__\([\s\S]*?\):([\s\S]*?)(?=^\s*def|\Z)"
-                init_content_match = re.search(init_pattern, self.program_code_string)
-                init_content = init_content_match.group(0)
-                pattern = r"^(.*dspy\.(ChainOfThought|Predict).*)$"  # TODO: make it so that this extends out to any dspy Module
-                matches = re.findall(pattern, init_content, re.MULTILINE)
-                modules = [match[0].strip() for match in matches]
-                module_code = modules[pred_i]
+                inputs = []
+                outputs = []
+                for field_name, field in get_signature(program.predictors()[pred_i]).fields.items():
+                    # Access the '__dspy_field_type' from the extra metadata
+                    dspy_field_type = field.json_schema_extra.get('__dspy_field_type')
+                    
+                    # Based on the '__dspy_field_type', append to the respective list
+                    if dspy_field_type == "input":
+                        inputs.append(field_name)
+                    else:
+                        outputs.append(field_name)
+
+                module_code = f"{program.predictors()[pred_i].__class__.__name__}({', '.join(inputs)}) -> {', '.join(outputs)}"
             except:
                 if self.verbose: print("Error getting program description. Running without program aware proposer.")
                 self.program_aware = False

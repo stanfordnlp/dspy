@@ -41,7 +41,7 @@ from dspy.teleprompt import MIPROv2
 
 teleprompter = MIPROv2(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5)
 eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 ```
 
@@ -109,6 +109,7 @@ class MIPROv2(Teleprompter):
         student,
         *,
         trainset,
+        valset=None,
         num_trials=30,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
@@ -128,6 +129,30 @@ class MIPROv2(Teleprompter):
         ENDC = "\033[0m"  # Resets the color to default
 
         random.seed(seed)
+
+        # Validate inputs
+        if not trainset:
+            raise ValueError("Trainset cannot be empty.")
+
+        if not valset:
+            if len(trainset) < 2:
+                raise ValueError("Trainset must have at least 2 examples if no valset specified, or at least 1 example with external validation set.")
+            
+            valset_size = min(300, max(1, int(len(trainset) * 0.25))) # 25% of trainset, capped at 300
+            cutoff = len(trainset) - valset_size
+            valset = trainset[cutoff:]
+            trainset = trainset[:cutoff]
+
+        else:
+            if len(valset) < 1:
+                raise ValueError("Validation set must have at least 1 example if specified.")
+            
+        if minibatch and minibatch_size > len(trainset):
+            raise ValueError(f"Minibatch size cannot exceed the size of the trainset.  Note that your trainset contains {len(trainset)} examples.  It may have been shrunk due to validation set splitting.  Your validation set contains {len(valset)} examples.")
+        
+        if minibatch and num_trials < minibatch_full_eval_steps:
+            raise ValueError(f"Number of trials (num_trials={num_trials}) must be greater than or equal to the number of minibatch full eval steps (minibatch_full_eval_steps={minibatch_full_eval_steps}).")
+
         estimated_prompt_model_calls = 10 + self.num_candidates * len(
                 student.predictors(),
             ) + (0 if not program_aware_proposer else len(student.predictors()) + 1)  # num data summary calls + N * P + (P + 1)
@@ -286,6 +311,15 @@ class MIPROv2(Teleprompter):
             param_score_dict = defaultdict(list) # Dictionaries of paramater combinations we've tried, and their associated scores
             fully_evaled_param_combos = {} # List of the parameter combinations we've done full evals of
 
+            # Evaluate the default program
+            if self.verbose: print("Evaluating the default program...\n")
+            default_score = eval_candidate_program(len(valset), valset, program, evaluate)
+            if self.verbose: print(f"Default program score: {default_score}\n")
+
+            best_score = default_score
+            best_program = program.deepcopy()
+
+
             # Define our trial objective
             def create_objective(
                 baseline_program,
@@ -363,9 +397,11 @@ class MIPROv2(Teleprompter):
                     trial_logs[trial.number+1]["num_eval_calls"] = 0
 
                     # Evaluate the candidate program with relevant batch size
-                    batch_size = minibatch_size if minibatch else len(trainset)
+                    evalset = trainset if minibatch else valset
+                    batch_size = minibatch_size if minibatch else len(evalset)
+
                     score = eval_candidate_program(
-                        batch_size, trainset, candidate_program, 
+                        batch_size, evalset, candidate_program, 
                         evaluate,
                     )
 
@@ -422,28 +458,28 @@ class MIPROv2(Teleprompter):
                             print(f"Doing full eval on next top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
                         else:
                             print(f"Doing full eval on top averaging program (Avg Score: {mean}) so far from mini-batch trials...")
-                        full_train_score = eval_candidate_program(
-                            len(trainset), trainset, highest_mean_program, evaluate,
+                        full_val_score = eval_candidate_program(
+                            len(valset), valset, highest_mean_program, evaluate,
                         )
 
                         # Log relevant information
-                        fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_train_score}
+                        fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_val_score}
                         total_eval_calls += len(trainset)
                         trial_logs[trial.number+1]["total_eval_calls_so_far"] = total_eval_calls
                         trial_logs[trial.number+1]["full_eval"] = True
                         trial_logs[trial.number+1]["program_path"] = save_candidate_program(
                             program=highest_mean_program, log_dir=self.log_dir, trial_num=trial.number+1, note="full_eval",
                         )
-                        trial_logs[trial.number+1]["score"] = full_train_score
+                        trial_logs[trial.number+1]["score"] = full_val_score
                         
-                        if full_train_score > best_score:
-                            print(f"{GREEN}Best full eval score so far!{ENDC} Score: {full_train_score}")
-                            best_score = full_train_score
+                        if full_val_score > best_score:
+                            print(f"{GREEN}Best full eval score so far!{ENDC} Score: {full_val_score}")
+                            best_score = full_val_score
                             best_scoring_trial = trial.number+1
                             best_program = highest_mean_program.deepcopy()
                             best_score_updated = True
                         else:
-                            print(f"Full eval score: {full_train_score}")
+                            print(f"Full eval score: {full_val_score}")
                             print(f"Best full eval score so far: {best_score}")
                         print("=======================\n\n")
                     

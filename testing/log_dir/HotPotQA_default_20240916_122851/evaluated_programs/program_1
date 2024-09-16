@@ -1,0 +1,283 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Anya Beyersdorf | Anya Beyersdorf is an Australian actress-turned-writer\/director born in Armidale, New South Wales. In 2014 she won an AWGIE Award - the Monte Miller Award for her screenplay Paradise at the Australian Writer's Guild Awards. In 2016, she was awarded one of four inaugural Lexus Australia Short Film Fellowships by the Sydney Film Festival. She was also a Nicholl Fellowship in Screenwriting Semi-finalist.",
+          "BeeJay Anya | BeeJay Anya (born March 9, 1995) is an American basketball player. He played college basketball for the NC State Wolfpack. He was named Atlantic Coast Conference Sixth Man of the Year in 2015. Anya represented the United States youth team at the 2012 FIBA Under-17 World Championship, winning the gold medal.",
+          "Karin Beyer | Karin Beyer (born 30 July 1941) is a retired East German swimmer. She set three world records in the 100 m (1958, 1:20.3 and 1:19.6) and 200 m (1961, 2:48.0) breaststroke events. At the 1958 European Championships she finished fourth in the 4\u00d7100 m medley relay. The same year she was selected as East German Sportspersonality of the Year.",
+          "Armidale, New South Wales | Armidale is a city in the Northern Tablelands, New South Wales, Australia. Armidale had an estimated population of 23,674 as of 30 June 2015. It is the administrative centre for the Northern Tablelands region. It is approximately halfway between Sydney and Brisbane at the junction of the New England Highway and Waterfall Way. Armidale traditional owners are Anaiwan people. Many Gumbaynggirr people have settled in Armidale since colonisation.",
+          "Presbyterian Ladies' College, Armidale | The Presbyterian Ladies' College, Armidale (PLC Armidale) is an independent, Presbyterian, day and boarding school for girls. The school is located in Armidale, a large rural town with a population of 28,000 in the New England region of New South Wales, Australia.",
+          "Armer\u00eda Municipality | Armer\u00eda is a municipality in the south-central part of the Mexican state of Colima. The municipality reported 29,599 inhabitants in the 2015 census and has an area of 341.60 km\u00b2 (131.89 sq mi). Its municipal seat is Ciudad de Armer\u00eda."
+        ],
+        "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
+        "rationale": "find the search query. We need to find the city where Anya Beyersdorf was born, then find the estimated population of that city in 2015. We can use Wikipedia or other reliable sources to find this information.",
+        "search_query": "\"Anya Beyersdorf birthplace population 2015\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Anya Beyersdorf | Anya Beyersdorf is an Australian actress-turned-writer\/director born in Armidale, New South Wales. In 2014 she won an AWGIE Award - the Monte Miller Award for her screenplay Paradise at the Australian Writer's Guild Awards. In 2016, she was awarded one of four inaugural Lexus Australia Short Film Fellowships by the Sydney Film Festival. She was also a Nicholl Fellowship in Screenwriting Semi-finalist.",
+          "BeeJay Anya | BeeJay Anya (born March 9, 1995) is an American basketball player. He played college basketball for the NC State Wolfpack. He was named Atlantic Coast Conference Sixth Man of the Year in 2015. Anya represented the United States youth team at the 2012 FIBA Under-17 World Championship, winning the gold medal.",
+          "Karin Beyer | Karin Beyer (born 30 July 1941) is a retired East German swimmer. She set three world records in the 100 m (1958, 1:20.3 and 1:19.6) and 200 m (1961, 2:48.0) breaststroke events. At the 1958 European Championships she finished fourth in the 4\u00d7100 m medley relay. The same year she was selected as East German Sportspersonality of the Year.",
+          "Armidale, New South Wales | Armidale is a city in the Northern Tablelands, New South Wales, Australia. Armidale had an estimated population of 23,674 as of 30 June 2015. It is the administrative centre for the Northern Tablelands region. It is approximately halfway between Sydney and Brisbane at the junction of the New England Highway and Waterfall Way. Armidale traditional owners are Anaiwan people. Many Gumbaynggirr people have settled in Armidale since colonisation.",
+          "Presbyterian Ladies' College, Armidale | The Presbyterian Ladies' College, Armidale (PLC Armidale) is an independent, Presbyterian, day and boarding school for girls. The school is located in Armidale, a large rural town with a population of 28,000 in the New England region of New South Wales, Australia.",
+          "Armer\u00eda Municipality | Armer\u00eda is a municipality in the south-central part of the Mexican state of Colima. The municipality reported 29,599 inhabitants in the 2015 census and has an area of 341.60 km\u00b2 (131.89 sq mi). Its municipal seat is Ciudad de Armer\u00eda."
+        ],
+        "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
+        "rationale": "find the search query. We need to find the city where Anya Beyersdorf was born, which is Armidale, New South Wales. Then we need to find the estimated population of Armidale in 2015.",
+        "search_query": "\"estimated population of Armidale in 2015\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wing warping | Wing warping was an early system for lateral (roll) control of a fixed-wing aircraft. The technique, used and patented by the Wright brothers, consisted of a system of pulleys and cables to twist the trailing edges of the wings in opposite directions. In many respects, this approach is similar to that used to trim the performance of a paper airplane by curling the paper at the back of its wings.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Brothers flights of 1909 | Airplane inventors Wilbur and Orville Wright are famed for making the first controlled, powered, heavier-than-air flights on 17 December 1903 at Kitty Hawk, North Carolina. Lesser-known are other flights of theirs which played an important role at the dawn of aviation history. In 1909 Wilbur was invited by the Hudson-Fulton Celebration Committee to make paid exhibition flights to help mark 300 years of New York history, including Henry Hudson discovering Manhattan and Robert Fulton starting a successful commercial steamboat service on the Hudson River. The committee wanted the Wrights to demonstrate flights over the water around New York City. Orville was making flights for customers in Germany, so Wilbur, who had just finished training U.S. Army pilots, accepted the job."
+        ],
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "rationale": "create a search query. We need to find a phrase that describes the topic of wing warping, the Wright brothers, and their first controlled, sustained flight. We can combine these elements to create a search query.",
+        "search_query": "\"Wright brothers wing warping first controlled flight\""
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wing warping | Wing warping was an early system for lateral (roll) control of a fixed-wing aircraft. The technique, used and patented by the Wright brothers, consisted of a system of pulleys and cables to twist the trailing edges of the wings in opposite directions. In many respects, this approach is similar to that used to trim the performance of a paper airplane by curling the paper at the back of its wings.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Brothers flights of 1909 | Airplane inventors Wilbur and Orville Wright are famed for making the first controlled, powered, heavier-than-air flights on 17 December 1903 at Kitty Hawk, North Carolina. Lesser-known are other flights of theirs which played an important role at the dawn of aviation history. In 1909 Wilbur was invited by the Hudson-Fulton Celebration Committee to make paid exhibition flights to help mark 300 years of New York history, including Henry Hudson discovering Manhattan and Robert Fulton starting a successful commercial steamboat service on the Hudson River. The committee wanted the Wrights to demonstrate flights over the water around New York City. Orville was making flights for customers in Germany, so Wilbur, who had just finished training U.S. Army pilots, accepted the job."
+        ],
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "rationale": "produce the search query. We know that the Wright brothers made their first controlled, sustained flight near Kitty Hawk, North Carolina. We also know that they pioneered a system for lateral aircraft control called wing warping. Therefore, we can combine these two pieces of information to form a search query.",
+        "search_query": "\"Wright brothers' first controlled flight near Kitty Hawk\" OR \"Wright brothers' wing warping system\""
+      },
+      {
+        "question": "Who wrote an autobiography published by White Mountain Castle Publishing about his adventure in Hawaii?",
+        "answer": "Daniel Keauhou Matsu \"Danny\" Yamashiro",
+        "dspy_uuid": "966a5ca3-d342-413c-ac57-e898497c1b02",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What mountain chain includes the mountain where Shiloh, Alabama is located?",
+        "answer": "Appalachian",
+        "dspy_uuid": "d08b6b6c-0b14-43dc-9877-a8a9215c8d71",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "d45c5401-dfb5-42cf-b04f-755c6f0178b7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Imperfect Circles is an episode of the drama that was developed by whom?",
+        "answer": "Brian K. Vaughan",
+        "dspy_uuid": "f6268ec6-17d0-4c29-b856-1008db8d2260",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "97d1358c-4e7e-4711-86a6-89faf261c4bd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What singer, who originally sang a song included as the third single in Mel McDaniel's 1980 album \"I'm Countryfied\" had the nickname \"Gentle Giant\"?",
+        "answer": "Don Williams",
+        "dspy_uuid": "1fa99e23-e4f3-40d5-a7bc-58521942380b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "2206fc6c-4aa6-4bbf-a16f-8a3f10c3698e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who lived longer, Al-Ghazali or Averroes (Ibn Rushd)?",
+        "answer": "Ibn Rushd",
+        "dspy_uuid": "35ccc969-b803-42db-a5be-a3bb58d83ed9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When was the company founded that now publishes Formula D ?",
+        "answer": "1995",
+        "dspy_uuid": "2b5e0817-0acf-4153-a097-a16d6bd9559f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie is based on a book, Darby O'Gill and the Little People and College Road Trip?",
+        "answer": "Darby O'Gill and the Little People",
+        "dspy_uuid": "74a5b8fb-81a6-46b7-bdfd-eba247de7236",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who received more nominations for the Academy Award Oscar, Stephen Frears or Mario Monicelli?",
+        "answer": "Mario Monicelli",
+        "dspy_uuid": "68eeedbb-d457-4ba7-a5aa-cf5b7453e945",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "087d3c6d-5add-4ab0-85aa-d757e71acc8d",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Generate a search query that is a natural language question that can be used to retrieve relevant passages from the internet based on the context and question provided. Make sure the search query is concise and relevant to the topic. The search query should be written in a style that is conversational and easy to understand. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a clear and concise answer to the question. The search query should be able to be used to retrieve passages that provide a",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Anya Beyersdorf | Anya Beyersdorf is an Australian actress-turned-writer\/director born in Armidale, New South Wales. In 2014 she won an AWGIE Award - the Monte Miller Award for her screenplay Paradise at the Australian Writer's Guild Awards. In 2016, she was awarded one of four inaugural Lexus Australia Short Film Fellowships by the Sydney Film Festival. She was also a Nicholl Fellowship in Screenwriting Semi-finalist.",
+          "BeeJay Anya | BeeJay Anya (born March 9, 1995) is an American basketball player. He played college basketball for the NC State Wolfpack. He was named Atlantic Coast Conference Sixth Man of the Year in 2015. Anya represented the United States youth team at the 2012 FIBA Under-17 World Championship, winning the gold medal.",
+          "Karin Beyer | Karin Beyer (born 30 July 1941) is a retired East German swimmer. She set three world records in the 100 m (1958, 1:20.3 and 1:19.6) and 200 m (1961, 2:48.0) breaststroke events. At the 1958 European Championships she finished fourth in the 4\u00d7100 m medley relay. The same year she was selected as East German Sportspersonality of the Year.",
+          "Armidale, New South Wales | Armidale is a city in the Northern Tablelands, New South Wales, Australia. Armidale had an estimated population of 23,674 as of 30 June 2015. It is the administrative centre for the Northern Tablelands region. It is approximately halfway between Sydney and Brisbane at the junction of the New England Highway and Waterfall Way. Armidale traditional owners are Anaiwan people. Many Gumbaynggirr people have settled in Armidale since colonisation.",
+          "Presbyterian Ladies' College, Armidale | The Presbyterian Ladies' College, Armidale (PLC Armidale) is an independent, Presbyterian, day and boarding school for girls. The school is located in Armidale, a large rural town with a population of 28,000 in the New England region of New South Wales, Australia.",
+          "Armer\u00eda Municipality | Armer\u00eda is a municipality in the south-central part of the Mexican state of Colima. The municipality reported 29,599 inhabitants in the 2015 census and has an area of 341.60 km\u00b2 (131.89 sq mi). Its municipal seat is Ciudad de Armer\u00eda."
+        ],
+        "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
+        "rationale": "find the answer. We know that Anya Beyersdorf was born in Armidale, New South Wales, Australia. We also know that Armidale had an estimated population of 23,674 as of 30 June 2015. Therefore, the estimated population in 2015 of the city in which Anya Beyersdorf was born is 23,674.",
+        "answer": "23,674"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wing warping | Wing warping was an early system for lateral (roll) control of a fixed-wing aircraft. The technique, used and patented by the Wright brothers, consisted of a system of pulleys and cables to twist the trailing edges of the wings in opposite directions. In many respects, this approach is similar to that used to trim the performance of a paper airplane by curling the paper at the back of its wings.",
+          "Wright Flyer | The Wright Flyer (often retrospectively referred to as Flyer I or 1903 Flyer) was the first successful heavier-than-air powered aircraft. It was designed and built by the Wright brothers. They flew it four times on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina, US. Today, the airplane is exhibited in the National Air and Space Museum in Washington D.C. The U.S. Smithsonian Institution describes the aircraft as \"the first powered, heavier-than-air machine to achieve controlled, sustained flight with a pilot aboard\". The flight of \"Flyer I\" marks the beginning of the \"pioneer era\" of aviation.",
+          "Wright brothers | The Wright brothers, Orville (August 19, 1871 \u2013 January 30, 1948) and Wilbur (April 16, 1867 \u2013 May 30, 1912), were two American brothers, inventors, and aviation pioneers who are generally credited with inventing, building, and flying the world's first successful airplane. They made the first controlled, sustained flight of a powered, heavier-than-air aircraft on December 17, 1903, four miles south of Kitty Hawk, North Carolina. In 1904\u201305 the brothers developed their flying machine into the first practical fixed-wing aircraft. Although not the first to build and fly experimental aircraft, the Wright brothers were the first to invent aircraft controls that made fixed-wing powered flight possible.",
+          "Wright Brothers flights of 1909 | Airplane inventors Wilbur and Orville Wright are famed for making the first controlled, powered, heavier-than-air flights on 17 December 1903 at Kitty Hawk, North Carolina. Lesser-known are other flights of theirs which played an important role at the dawn of aviation history. In 1909 Wilbur was invited by the Hudson-Fulton Celebration Committee to make paid exhibition flights to help mark 300 years of New York history, including Henry Hudson discovering Manhattan and Robert Fulton starting a successful commercial steamboat service on the Hudson River. The committee wanted the Wrights to demonstrate flights over the water around New York City. Orville was making flights for customers in Germany, so Wilbur, who had just finished training U.S. Army pilots, accepted the job."
+        ],
+        "question": "Wing warping, a system for lateral aircraft control, was pioneered by the Wright brothers during their first controlled, sustained flight near which now-famous location?",
+        "rationale": "answer this question. We know that the Wright brothers made their first controlled, sustained flight on December 17, 1903, near Kill Devil Hills, about four miles south of Kitty Hawk, North Carolina. We also know that they used wing warping as a system for lateral control of their aircraft. Therefore, we can conclude that wing warping was pioneered by the Wright brothers during their first controlled, sustained flight near Kitty Hawk, North Carolina.",
+        "answer": "Kitty Hawk, North Carolina."
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics.",
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics."
+        ],
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "rationale": "produce the answer. We know that Nicole Beharie is an American actress and singer, and we have information about her roles in films like \"American Violet\" (2008) and \"42\" (2013). We can see that \"42\" is a biographical sports drama film, and it stars Chadwick Boseman as Jackie Robinson and Nicole Beharie in a supporting role. Therefore, the answer is \"42\".",
+        "answer": "42"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Merl Reagle | Merl Harry Reagle (January 5, 1950 \u2013 August 22, 2015) was an American crossword constructor. For 30 years, he constructed a puzzle every Sunday for the \"San Francisco Chronicle\" (originally the \"San Francisco Examiner\"), which he syndicated to more than 50 Sunday newspapers, including the \"Washington Post\", the \"Los Angeles Times\", the \"Philadelphia Inquirer\", the \"Seattle Times\", \"The Plain Dealer\" (Cleveland, Ohio), the \"Hartford Courant\", the \"New York Observer\", and the \"Arizona Daily Star\". Reagle also produced a bimonthly crossword puzzle for \"AARP The Magazine\" magazine, a monthly crossword puzzle for the Society of Former Special Agents of the FBI, and puzzles for the American Crossword Puzzle Tournament.",
+          "Aging and Disease | Aging and Disease is a bimonthly peer-reviewed open access medical journal published by JKL International on behalf of the International Society on Aging and Disease. It covers all issues pertaining to the biology of aging, pathophysiology of age-related diseases, and novel treatments for diseases afflicting the elderly. The journal was established in 2010 and the editors-in-chief are Kunlin Jin (University of North Texas), Ashok Shetty (University of Texas at Austin), and David Greenberg (Buck Institute for Research on Aging).",
+          "AARP The Magazine | AARP The Magazine is an American bi-monthly magazine, published by the American Association of Retired People, AARP, which focuses on aging issues.",
+          "Merl Reagle | Merl Harry Reagle (January 5, 1950 \u2013 August 22, 2015) was an American crossword constructor. For 30 years, he constructed a puzzle every Sunday for the \"San Francisco Chronicle\" (originally the \"San Francisco Examiner\"), which he syndicated to more than 50 Sunday newspapers, including the \"Washington Post\", the \"Los Angeles Times\", the \"Philadelphia Inquirer\", the \"Seattle Times\", \"The Plain Dealer\" (Cleveland, Ohio), the \"Hartford Courant\", the \"New York Observer\", and the \"Arizona Daily Star\". Reagle also produced a bimonthly crossword puzzle for \"AARP The Magazine\" magazine, a monthly crossword puzzle for the Society of Former Special Agents of the FBI, and puzzles for the American Crossword Puzzle Tournament.",
+          "AARP The Magazine | AARP The Magazine is an American bi-monthly magazine, published by the American Association of Retired People, AARP, which focuses on aging issues.",
+          "Your Health Now | Your Health Now was a free, bi-monthly health magazine provided by Merck & Co., Inc.. The magazine was launched in September 2005 and was available by mail, online, and in doctors\u2019 offices. The magazine was headquartered in Whitehouse Station, New Jersey."
+        ],
+        "question": "Merle Reagle did crosswords for what magazine that has a focus on aging issues?",
+        "rationale": "find the answer. We know that Merle Reagle was a crossword constructor who worked for many newspapers and magazines. We also know that he produced a bimonthly crossword puzzle for \"AARP The Magazine\" magazine, which focuses on aging issues. Therefore, the answer is AARP The Magazine.",
+        "answer": "AARP The Magazine"
+      },
+      {
+        "question": "Imperfect Circles is an episode of the drama that was developed by whom?",
+        "answer": "Brian K. Vaughan",
+        "dspy_uuid": "f6268ec6-17d0-4c29-b856-1008db8d2260",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When was the company founded that now publishes Formula D ?",
+        "answer": "1995",
+        "dspy_uuid": "2b5e0817-0acf-4153-a097-a16d6bd9559f",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "d45c5401-dfb5-42cf-b04f-755c6f0178b7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Son of Paleface starred the comedian and vaudevilian of what nationality?",
+        "answer": "American",
+        "dspy_uuid": "97d1358c-4e7e-4711-86a6-89faf261c4bd",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which movie is based on a book, Darby O'Gill and the Little People and College Road Trip?",
+        "answer": "Darby O'Gill and the Little People",
+        "dspy_uuid": "74a5b8fb-81a6-46b7-bdfd-eba247de7236",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which type of horse has been used by both the British Household Cavalry and Anheuser-Busch Brewing Company for commercials?",
+        "answer": "Clydesdales",
+        "dspy_uuid": "2206fc6c-4aa6-4bbf-a16f-8a3f10c3698e",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who wrote an autobiography published by White Mountain Castle Publishing about his adventure in Hawaii?",
+        "answer": "Daniel Keauhou Matsu \"Danny\" Yamashiro",
+        "dspy_uuid": "966a5ca3-d342-413c-ac57-e898497c1b02",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who received more nominations for the Academy Award Oscar, Stephen Frears or Mario Monicelli?",
+        "answer": "Mario Monicelli",
+        "dspy_uuid": "68eeedbb-d457-4ba7-a5aa-cf5b7453e945",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who lived longer, Al-Ghazali or Averroes (Ibn Rushd)?",
+        "answer": "Ibn Rushd",
+        "dspy_uuid": "35ccc969-b803-42db-a5be-a3bb58d83ed9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who is older, Aleksandr Danilovich Aleksandrov or Anatoly Fomenko?",
+        "answer": "Aleksandr Danilovich Aleksandrov",
+        "dspy_uuid": "087d3c6d-5add-4ab0-85aa-d757e71acc8d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What singer, who originally sang a song included as the third single in Mel McDaniel's 1980 album \"I'm Countryfied\" had the nickname \"Gentle Giant\"?",
+        "answer": "Don Williams",
+        "dspy_uuid": "1fa99e23-e4f3-40d5-a7bc-58521942380b",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What mountain chain includes the mountain where Shiloh, Alabama is located?",
+        "answer": "Appalachian",
+        "dspy_uuid": "d08b6b6c-0b14-43dc-9877-a8a9215c8d71",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "You are a researcher trying to answer trivia questions based on a given context. Given the fields `context` and `question`, use the context to provide a detailed and accurate answer to the question.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

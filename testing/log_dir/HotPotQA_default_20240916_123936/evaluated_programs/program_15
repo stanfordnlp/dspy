@@ -1,0 +1,283 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "find the answer. We know that the M2 motorway is a major road in Northern Ireland, and we are looking for an airport. The busiest airport in Northern Ireland is Belfast International Airport, which is located near the M2 motorway. Therefore, we can conclude that the answer is Belfast International Airport.",
+        "search_query": "\"M2 motorway to Belfast International Airport\" or \"M2 motorway to Belfast airport\" or \"Northern Ireland airport near M2 motorway\" or \"busiest airport in Northern Ireland\" or \"Belfast International Airport location\" or \"M2 motorway route to airport\" or \"airport near M2 motorway Northern Ireland\" or \"Belfast airport location\" or \"M2 motorway to airport\" or \"Northern Ireland airport\" or \"Belfast International Airport\" or \"M2 motorway route\" or \"airport near M2 motorway\" or \"M2 motorway to Belfast\" or \"Belfast airport\" or \"M2 motorway airport\" or \"Northern Ireland M2 motorway airport\" or \"M2 motorway airport location\" or \"Belfast International Airport M2 motorway\" or \"M2 motorway to airport Northern Ireland\" or \"M2 motorway airport route\" or \"M2 motorway airport location Northern Ireland\" or \"M2 motorway airport route Northern Ireland\" or \"M2 motorway airport location Belfast\" or \"M2 motorway airport route Belfast\" or \"M2 motorway airport location Northern Ireland\" or \"M2 motorway airport route Northern Ireland\" or \"M2"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "produce the search query. We know that the M2 motorway is one of the most important motorways in Northern Ireland, and it forms part of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. Therefore, if you are taking the M2 motorway to one of the Northern Ireland's most busiest airport, you are going to Belfast International Airport.",
+        "search_query": "\"Belfast International Airport\" or \"Belfast International Airport M2 motorway\" or \"M2 motorway to Belfast International Airport\" or \"Northern Ireland airport M2 motorway\" or \"M2 motorway airport\" or \"Belfast airport M2 motorway\" or \"M2 motorway to airport\" or \"airport M2 motorway\" or \"M2 motorway airport Northern Ireland\" or \"Belfast International Airport M2 motorway Northern Ireland\" or \"M2 motorway to Belfast International Airport Northern Ireland\" or \"Northern Ireland airport M2 motorway Northern Ireland\" or \"M2 motorway airport Northern Ireland\" or \"Belfast airport M2 motorway Northern Ireland\" or \"M2 motorway to airport Northern Ireland\" or \"airport M2 motorway Northern Ireland\" or \"M2 motorway airport\" or \"Belfast airport M2 motorway\" or \"M2 motorway to airport\" or \"airport M2 motorway\" or \"M2 motorway airport Northern Ireland\" or \"Belfast International Airport M2 motorway Northern Ireland\" or \"M2 motorway to Belfast International Airport Northern Ireland\" or \"Northern Ireland airport M2 motorway Northern Ireland\" or \"M2 motorway airport Northern Ireland"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Mark Miller (kickboxer) | Mark Jason Miller (born September 17, 1971) is an American kickboxer who competes in the super heavyweight division.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Brian Warren | Brian Warren (born June 5, 1974) is an American mixed martial arts fighter from San Bernardino, California. Warren has fought in many organizations including K-1, King of the Cage, Strikeforce, Kage Kombat, Pangea, and Bellator. Warren has fought notable title holders such as Cung Le, Jason \"Mayhem\" Miller, Jeremy Horn, Jake Shields, and other known fighters such as TUF alum Jared Rollins, Justin Levens, Nate Loughran, Karo Parisyan, and Tiki Ghosn. Warren won a 2nd place medal in 2003 and 3rd place medal in 2006 in the advanced men's division of Grapplers Quest."
+        ],
+        "question": "Who has fought in the most championships, Tim Kennedy or Jason Miller?",
+        "rationale": "find the answer. We need to look up the number of championships each of them has fought in. We can do this by searching for their names along with the keyword \"championships\" and the word \"fights\" or \"matches\".",
+        "search_query": "(Tim Kennedy OR Jason Miller) AND (championships OR fights OR matches) -N\/A"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Mark Miller (kickboxer) | Mark Jason Miller (born September 17, 1971) is an American kickboxer who competes in the super heavyweight division.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Brian Warren | Brian Warren (born June 5, 1974) is an American mixed martial arts fighter from San Bernardino, California. Warren has fought in many organizations including K-1, King of the Cage, Strikeforce, Kage Kombat, Pangea, and Bellator. Warren has fought notable title holders such as Cung Le, Jason \"Mayhem\" Miller, Jeremy Horn, Jake Shields, and other known fighters such as TUF alum Jared Rollins, Justin Levens, Nate Loughran, Karo Parisyan, and Tiki Ghosn. Warren won a 2nd place medal in 2003 and 3rd place medal in 2006 in the advanced men's division of Grapplers Quest."
+        ],
+        "question": "Who has fought in the most championships, Tim Kennedy or Jason Miller?",
+        "rationale": "determine who has fought in the most championships, Tim Kennedy or Jason Miller. We know that both Tim Kennedy and Jason Miller are professional mixed martial artists who have fought in various organizations. We can start by listing the organizations that each fighter has competed in. For Tim Kennedy, we know that he has fought in the UFC, Strikeforce, the WEC, ShoMMA, HDNet Fights, and the IFL. For Jason Miller, we know that he has fought in the UFC, Strikeforce, WFA, WEC, and DREAM. Now, let's compare the number of organizations that each fighter has competed in. Tim Kennedy has fought in 6 organizations, while Jason Miller has fought in 5 organizations. Therefore, Tim Kennedy has fought in the most championships.",
+        "search_query": "\"Tim Kennedy vs Jason Miller\" \"Tim Kennedy UFC\" \"Jason Miller UFC\" \"Tim Kennedy Strikeforce\" \"Jason Miller Strikeforce\" \"Tim Kennedy WEC\" \"Jason Miller WEC\" \"Tim Kennedy IFL\" \"Jason Miller DREAM\" \"Tim Kennedy HDNet Fights\" \"Jason Miller WFA\" \"Tim Kennedy ShoMMA\" \"Jason Miller WEC\" \"Tim Kennedy IFL\" \"Jason Miller Strikeforce\" \"Tim Kennedy UFC\" \"Jason Miller UFC\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\" \"Tim Kennedy vs Jason Miller\""
+      },
+      {
+        "question": "When did the coach of the Karachi Kings finish his time as coach of the Australia national cricket team ?",
+        "answer": "23 June 2013.",
+        "dspy_uuid": "1f2c758d-f840-437a-b75b-d9bd1b5ff6b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What instrument did Nigel Walley play in John Lennon's band formed in 1956, which would later become the Beatles?",
+        "answer": "tea-chest bass",
+        "dspy_uuid": "f264febe-8746-4f48-aa09-d5e6276eec88",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What do the outcomes of both Baker v. Wade and Bowers v. Harwick have in common?",
+        "answer": "appellate court reversed the lower court's decision",
+        "dspy_uuid": "dfc94327-5dda-4121-b278-e70c76b9217c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The historical unit of the US Army that began its service before the Civil War fought in what battle in 1879?",
+        "answer": "Battle of Milk Creek",
+        "dspy_uuid": "9852aff7-7e6b-419b-b051-f05331fd0bf1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "ac252956-fcaa-493b-86f8-e4c0fdfec309",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which director was nominated for more Academy Awards, Lee Tit or Sidney Lumet?",
+        "answer": "14 of his films were nominated",
+        "dspy_uuid": "55fefdff-5191-4668-b232-77c36596f6ba",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During the 2010 Dutch general election, which current Prime Minister led the People's Party for Freedom and Democracy?",
+        "answer": "Mark Rutte",
+        "dspy_uuid": "0c5ae036-af8f-479b-9d37-cb6145957498",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Old Rectory is in a small town and civil parish where?",
+        "answer": "North Lincolnshire, England",
+        "dspy_uuid": "ae198001-bb3f-4612-b53c-bb7d5bedbc9d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What sport was the player born in the county seat of Osage County involved in?",
+        "answer": "Rugby",
+        "dspy_uuid": "e24839c4-6e0e-4af0-9108-7fbd69e305ee",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What 45 acre neighborhood is north of the South End-Groesbeckville Historic Distric?",
+        "answer": "The Mansion Historic District",
+        "dspy_uuid": "25f0634a-6d51-4c7c-8fa1-2ce1f1653f42",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "determine which airport we are going to. We know that the M2 motorway is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. We also know that the M2 motorway has the busiest sections of any road or motorway in Northern Ireland. Therefore, if we are taking the M2 motorway to one of the Northern Ireland's most busiest airport, we are going to Belfast International Airport.",
+        "answer": "Belfast International Airport"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Mark Miller (kickboxer) | Mark Jason Miller (born September 17, 1971) is an American kickboxer who competes in the super heavyweight division.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Brian Warren | Brian Warren (born June 5, 1974) is an American mixed martial arts fighter from San Bernardino, California. Warren has fought in many organizations including K-1, King of the Cage, Strikeforce, Kage Kombat, Pangea, and Bellator. Warren has fought notable title holders such as Cung Le, Jason \"Mayhem\" Miller, Jeremy Horn, Jake Shields, and other known fighters such as TUF alum Jared Rollins, Justin Levens, Nate Loughran, Karo Parisyan, and Tiki Ghosn. Warren won a 2nd place medal in 2003 and 3rd place medal in 2006 in the advanced men's division of Grapplers Quest."
+        ],
+        "question": "Who has fought in the most championships, Tim Kennedy or Jason Miller?",
+        "rationale": "determine who has fought in the most championships. We can see that both Tim Kennedy and Jason Miller have fought in multiple organizations, including the UFC, Strikeforce, WEC, and DREAM. However, according to the information provided, Tim Kennedy has fought in the most championships, having competed in the UFC, Strikeforce, WEC, ShoMMA, HDNet Fights, and the IFL, whereas Jason Miller has fought in the UFC, Strikeforce, WFA, WEC, and DREAM.",
+        "answer": "Tim Kennedy"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Kenny Natt | Kenneth Wayne \"Kenny\" Natt (born October 5, 1958) is a former American professional basketball player and ex-interim head coach for the National Basketball Association's Sacramento Kings. He was a 6'3\" 185 lb guard and played collegiately at Northeast Louisiana University (now the University of Louisiana-Monroe) and had a three-year NBA playing career. After serving as an assistant with the Cleveland Cavaliers from 2004 to 2007, Natt was named to the coaching staff of newly appointed Kings head coach and former Kansas City Kings teammate Reggie Theus in 2007. He was subsequently named interim head coach on the firing of Theus, but he himself was fired on April 24, 2009, after the Kings finished with an NBA season-low 17 wins.",
+          "Reggie Witherspoon (basketball) | Phillip Reginald \"Reggie\" Witherspoon (born February 21, 1961) is the head coach of the Canisius College men's basketball team and the former head coach of the University at Buffalo men's college basketball team. He was fired after the 2012-13 season. He was the head coach at Erie Community College, and head coach and assistant coach at Sweet Home High School before he was hired as the interim head coach at Buffalo in December 1999. Witherspoon was named full-time head coach on March 10, 2000. He was the first African American named head coach of a varsity sports team in any Western New York suburban school district. Witherspoon served one season as an assistant at Alabama under head coach Anthony Grant. In 2015, Witherspoon was let go by Alabama when Grant was replaced by Avery Johnson. He was subsequently named as an assistant on Matt McCall's staff at UT-Chattanooga.",
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Wiley Brown | Wiley Brown , is the current Head Coach of the University of Louisville Men's Basketball program, following a recruiting scandal resulting in the firing of Rick Pitino in 2017. He is a retired NFL player, who lettered 2 years with the Philadelphia Eagles as a defensive end, before deciding to play professional basketball in the International Federation of Basketball where he traveled throughout the world. Brown spent one year with the CBA Louisville Catbirds and six years in Europe.",
+          "Richard Pitino | Richard William Pitino (born September 16, 1982) is the head coach of the University of Minnesota Golden Gophers men's basketball team. He is the son of former Louisville head coach, Rick Pitino. After attending St. Sebastian's School in Needham, Massachusetts, Richard Pitino earned a Bachelor of Arts degree in history at Providence College in 2005. During his time at Providence, Pitino was the manager for the Friars men's basketball team under Tim Welsh. For two years, he also served as an assistant coach for Saint Andrew's School in nearby Barrington, Rhode Island."
+        ],
+        "question": "Reggie Theus was the assistant coach for what man who had coached in the NBA?",
+        "rationale": "answer this question. We know that Reggie Theus was an assistant coach for the University of Louisville under Rick Pitino. Therefore, the answer is Rick Pitino.",
+        "answer": "Rick Pitino"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics.",
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics."
+        ],
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "rationale": "produce the answer. We know that Nicole Beharie is an American actress and singer, and she has starred in several films and TV series. We can look at the provided texts to find the answer. From the texts, we can see that Nicole Beharie starred in the biographical sports drama \"42\" (2013). Therefore, the answer is \"42\".",
+        "answer": "42"
+      },
+      {
+        "question": "The historical unit of the US Army that began its service before the Civil War fought in what battle in 1879?",
+        "answer": "Battle of Milk Creek",
+        "dspy_uuid": "9852aff7-7e6b-419b-b051-f05331fd0bf1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Old Rectory is in a small town and civil parish where?",
+        "answer": "North Lincolnshire, England",
+        "dspy_uuid": "ae198001-bb3f-4612-b53c-bb7d5bedbc9d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What do the outcomes of both Baker v. Wade and Bowers v. Harwick have in common?",
+        "answer": "appellate court reversed the lower court's decision",
+        "dspy_uuid": "dfc94327-5dda-4121-b278-e70c76b9217c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What sport was the player born in the county seat of Osage County involved in?",
+        "answer": "Rugby",
+        "dspy_uuid": "e24839c4-6e0e-4af0-9108-7fbd69e305ee",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which director was nominated for more Academy Awards, Lee Tit or Sidney Lumet?",
+        "answer": "14 of his films were nominated",
+        "dspy_uuid": "55fefdff-5191-4668-b232-77c36596f6ba",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When did the coach of the Karachi Kings finish his time as coach of the Australia national cricket team ?",
+        "answer": "23 June 2013.",
+        "dspy_uuid": "1f2c758d-f840-437a-b75b-d9bd1b5ff6b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What 45 acre neighborhood is north of the South End-Groesbeckville Historic Distric?",
+        "answer": "The Mansion Historic District",
+        "dspy_uuid": "25f0634a-6d51-4c7c-8fa1-2ce1f1653f42",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During the 2010 Dutch general election, which current Prime Minister led the People's Party for Freedom and Democracy?",
+        "answer": "Mark Rutte",
+        "dspy_uuid": "0c5ae036-af8f-479b-9d37-cb6145957498",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "ac252956-fcaa-493b-86f8-e4c0fdfec309",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What instrument did Nigel Walley play in John Lennon's band formed in 1956, which would later become the Beatles?",
+        "answer": "tea-chest bass",
+        "dspy_uuid": "f264febe-8746-4f48-aa09-d5e6276eec88",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the context and question, generate a search query that can be used to retrieve relevant information, and then use that information to generate an answer and a rationale for the answer. This instruction is designed to prompt the language model to generate a search query that is relevant to the question and context, and then use that query to generate an answer and a rationale for the answer. This instruction is more specific and detailed than the basic instruction, and is designed to guide the language model to generate a more accurate and relevant response.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

@@ -1,0 +1,267 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Scott Shaw (artist) | Scott Shaw (often spelled Scott Shaw!) is a United States cartoonist and animator, and historian of comics. Among Scott's comic-book work is Hanna-Barbera's \"The Flintstones\" (for Marvel Comics and Harvey Comics), \"Captain Carrot and His Amazing Zoo Crew\" (for DC Comics), and \"Simpsons Comics\" (for Bongo Comics). He was also the first artist for Archie Comics' \"Sonic the Hedgehog\" comic book series.",
+          "Flower magazine | Flower magazine is a bimonthly, seasonal publication based in Birmingham, Alabama. Founded by Margot Shaw in March 2007, the magazine features national and international content, including profiles of floral designers and their creations, stylish weddings, and inspirations for entertaining and decorating with flowers. Shaw is also the editor of the magazine. At the initial phase the magazine was published quarterly.",
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Kwon Tae-man | Kwon Tae-man (born 1941) was an early Korean hapkido practitioner and a pioneer of the art, first in Korea and then in the United States. He formed one of the earliest dojang's for hapkido in the United States in Torrance, California, and has been featured in many magazine articles promoting the art.",
+          "Hee Il Cho | Cho Hee Il (born October 13, 1940) is a prominent Korean-American master of taekwondo, holding the rank of 9th \"dan\" in the martial art. He has written 11 martial art books, produced 70 martial art training videos, and has appeared on more than 70 martial arts magazine covers. Cho won several national and international competitions as a taekwondo competitor, and has appeared in several films, including \"Fight to Win\", \"Best of the Best\", \"Bloodsport II\", and \"Bloodsport III\". He founded the Action International Martial Arts Association (AIMAA) in 1980, and is its President. Cho is a member of both \"Black Belt\" magazine's Hall of Fame and \"Tae Kwon Do Times\" magazine's Hall of Fame."
+        ],
+        "question": "Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?",
+        "rationale": "find the search query. We need to find the magazines that have published articles by Scott Shaw. We can use the keywords \"Scott Shaw\" and \"magazine\" to search for the relevant information.",
+        "search_query": "\"Scott Shaw magazine\" OR (\"Tae Kwon Do Times\" OR \"Southwest Art\") -magazines"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Scott Shaw (artist) | Scott Shaw (often spelled Scott Shaw!) is a United States cartoonist and animator, and historian of comics. Among Scott's comic-book work is Hanna-Barbera's \"The Flintstones\" (for Marvel Comics and Harvey Comics), \"Captain Carrot and His Amazing Zoo Crew\" (for DC Comics), and \"Simpsons Comics\" (for Bongo Comics). He was also the first artist for Archie Comics' \"Sonic the Hedgehog\" comic book series.",
+          "Flower magazine | Flower magazine is a bimonthly, seasonal publication based in Birmingham, Alabama. Founded by Margot Shaw in March 2007, the magazine features national and international content, including profiles of floral designers and their creations, stylish weddings, and inspirations for entertaining and decorating with flowers. Shaw is also the editor of the magazine. At the initial phase the magazine was published quarterly.",
+          "Tae Kwon Do Times | Tae Kwon Do Times is a magazine devoted to the martial art of taekwondo, and is published in the United States of America. While the title suggests that it focuses on taekwondo exclusively, the magazine also covers other Korean martial arts. \"Tae Kwon Do Times\" has published articles by a wide range of authors, including He-Young Kimm, Thomas Kurz, Scott Shaw, and Mark Van Schuyver.",
+          "Kwon Tae-man | Kwon Tae-man (born 1941) was an early Korean hapkido practitioner and a pioneer of the art, first in Korea and then in the United States. He formed one of the earliest dojang's for hapkido in the United States in Torrance, California, and has been featured in many magazine articles promoting the art.",
+          "Hee Il Cho | Cho Hee Il (born October 13, 1940) is a prominent Korean-American master of taekwondo, holding the rank of 9th \"dan\" in the martial art. He has written 11 martial art books, produced 70 martial art training videos, and has appeared on more than 70 martial arts magazine covers. Cho won several national and international competitions as a taekwondo competitor, and has appeared in several films, including \"Fight to Win\", \"Best of the Best\", \"Bloodsport II\", and \"Bloodsport III\". He founded the Action International Martial Arts Association (AIMAA) in 1980, and is its President. Cho is a member of both \"Black Belt\" magazine's Hall of Fame and \"Tae Kwon Do Times\" magazine's Hall of Fame."
+        ],
+        "question": "Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art?",
+        "rationale": "find the answer. We know that Scott Shaw is a cartoonist and animator, and historian of comics. We also know that he has worked on various comic-book series, including \"The Flintstones\", \"Captain Carrot and His Amazing Zoo Crew\", and \"Sonic the Hedgehog\". Given this information, we can infer that Scott Shaw is likely to have worked on comic-book series that are not related to martial arts or flowers. Therefore, it is unlikely that he has published articles in Tae Kwon Do Times or Flower magazine. The most likely magazine that has published articles by Scott Shaw is Southwest Art, given that it is a magazine that focuses on art and comics.",
+        "search_query": "Which magazine has published articles by Scott Shaw, Tae Kwon Do Times or Southwest Art? Scott Shaw cartoonist animator historian comics Tae Kwon Do Times Flower magazine Southwest Art comic-book series \"The Flintstones\" \"Captain Carrot and His Amazing Zoo Crew\" \"Sonic the Hedgehog\" martial arts flowers."
+      },
+      {
+        "question": "Cross Border Orchestra of Ireland is based at an institute in what province?",
+        "answer": "Leinster",
+        "dspy_uuid": "612881b9-f813-4e8b-ae21-17f19d719d34",
+        "dspy_split": "train"
+      },
+      {
+        "question": "This American guitarist best known for her work with the Iron Maidens is an ancestor of a composer who was known as what?",
+        "answer": "The Waltz King",
+        "dspy_uuid": "9b675294-75dd-4b4a-a7d0-3b30212790b9",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What American dancer, actor, singer, director, and choreographer was in the 1943 musical comedy Du Barry Was a Lady?",
+        "answer": "Gene Kelly",
+        "dspy_uuid": "7dd728e5-39e2-4c76-a213-cd7f1ed01bb6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "How many games were won during his career by the right-handed pitcher whose deadly beanball in 1920 is featured in \"The Pitch That Killed\" by Mike Sowell?",
+        "answer": "over 200",
+        "dspy_uuid": "4b5adc47-d5f2-4652-a176-a8a4a52457db",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was born first, Rowan Atkinson, or Maxim Baldry?",
+        "answer": "Rowan Sebastian Atkinson",
+        "dspy_uuid": "bcbbc155-db12-41ae-a1e9-dcd999095b62",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which James Bond movie theme song artist released first, the artist of Die Another Day or The World Is Not Enough?",
+        "answer": "Madonna",
+        "dspy_uuid": "2029b50e-a729-4c6c-a1a5-8f63d2f089f8",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Who was the undisputed \"boss\"  that succeeded Woodrow Wilson in Atlantic City?",
+        "answer": "Enoch Lewis \"Nucky\" Johnson",
+        "dspy_uuid": "4bf7bbbd-9323-4c31-b42a-2eae45715e56",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When was the member of Dillard & Clark who also played in the Byrds born?",
+        "answer": "1944",
+        "dspy_uuid": "82af02ae-f1be-402b-8211-d68440488b2a",
+        "dspy_split": "train"
+      },
+      {
+        "question": "The \"To You I Belong\" singers broke up when when which member decided to leave?",
+        "answer": "Sin\u00e9ad O'Carroll",
+        "dspy_uuid": "7b4e9bc2-0161-4df2-922d-5ab21f748d97",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What was the nationality of the mixed martial artist who defeated Trent Jenkins in the first ever fight in UFC history?",
+        "answer": "American",
+        "dspy_uuid": "966266be-4fb0-4010-9d30-b15d2758a2af",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Full Circle included a cover of the song by which songwriter, musician, and actor?",
+        "answer": "Roger Dean Miller, Sr.",
+        "dspy_uuid": "9f83c977-06df-4171-a60f-285641d53673",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What was the estimated population in 2015 of the city in which Anya Beyersdorf was born ?",
+        "answer": "23,674",
+        "dspy_uuid": "9dca1d09-95de-4bda-9702-78ebed4639dc",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During Maine gubernatorial election, 1956, which candidate ran, who later on ran for Vice President of the United States?",
+        "answer": "Edmund Muskie",
+        "dspy_uuid": "58758a5a-1177-416e-9b87-b375f2b33ff0",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which genus of plants is endemic to Australia, Retama or Baeckea?",
+        "answer": "Retama",
+        "dspy_uuid": "0067e92c-da35-4a2d-be61-9438454f6b93",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given a high-stakes scenario where a traveler is trying to find the most busy airport in Northern Ireland, and is currently on the M2 motorway, generate a search query that will help the traveler find the correct answer. The search query should be specific, accurate, and relevant to the context and question.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "M3 motorway (Northern Ireland) | The M3 is an urban motorway 0.8 miles (1.3 km) in length owned by Siac Construction and Cintra, S.A. that connects the M2 in north Belfast, Northern Ireland to the A2 Sydenham Bypass in east Belfast. It is the shortest motorway in Northern Ireland, and one of the busiest, carrying 60,000 vehicles per day as of 2005. It has a permanent speed limit of 50 mph (80 km\/h).",
+          "M5 motorway (Northern Ireland) | The M5 is a spur motorway of 1.4 miles (2.3 km) length in north Belfast, Northern Ireland. It connects the M2 to the A2 Shore Road at Hazelbank in Newtownabbey. It is a dual two lane road with most of the road on a causeway in Belfast Lough in order to bypass Whitehouse beach.",
+          "M2 motorway (Northern Ireland) | The M2 is a motorway in Belfast and County Antrim in Northern Ireland. It is in two sections, the southern section running from north Belfast to Antrim and the northern section acts as a bypass of Ballymena, with the A26 road linking the two sections. In total it is 22 miles (36.2 kilometres). The M2 has the busiest sections of any road or motorway in Northern Ireland. The M2 is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. It forms part of the unsigned European route E01, E16 and E18 roads.",
+          "Belfast International Airport | Belfast International Airport (IATA: BFS, ICAO: EGAA) is an airport 11.5 NM northwest of Belfast in Northern Ireland. Formerly known as Aldergrove Airport, after the nearby village of Aldergrove, Belfast International is Northern Ireland's busiest airport and the second busiest airport on the island of Ireland, second only to Dublin Airport. In 2016, over 5.1 million passengers travelled through the airport, marking a 17% increase compared with 2015.",
+          "Ballymena (borough) | Ballymena is a former local government district with borough status in Northern Ireland. It was one of twenty-six districts created on 1 October 1973 and covered the town of Ballymena and the surrounding area which includes small towns including Broughshane, Cullybackey, Galgorm, Ahoghill and Portglenone. The borough has an area of 200 sqmi and a population of 64,044 according to the 2011 census. The borough had a central location within Northern Ireland and is served by the M2 motorway and with a station on the Belfast-Derry\/Londonderry railway line. Belfast International Airport itself is only 18 mi away and the Belfast City Airport is 30 mi from Ballymena. It was also accessible to the seaports of Larne and Belfast, 20 and 27 mi away respectively. As of 2015 it has been replaced by Mid and East Antrim Borough Council."
+        ],
+        "question": "If you are taking the M2 motorway to one of the Northern Ireland's most busiest airport what airport are you going to? ",
+        "rationale": "determine which airport we are going to. We know that the M2 motorway is one of Northern Ireland's most important motorways, forming most of the main route from Belfast city to both Belfast International Airport and less than a quarter of the way to Derry. We also know that the M2 motorway has the busiest sections of any road or motorway in Northern Ireland. Therefore, if we are taking the M2 motorway to one of the Northern Ireland's most busiest airport, we are going to Belfast International Airport.",
+        "answer": "Belfast International Airport"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Mark Miller (kickboxer) | Mark Jason Miller (born September 17, 1971) is an American kickboxer who competes in the super heavyweight division.",
+          "Jason Miller (fighter) | Jason Nicholas Miller (born December 24, 1980) best known as Mayhem Miller is an American mixed martial arts fighter and TV host. Miller trains at Mercado Muay Thai in Mission Viejo, California and at Kings MMA in Huntington Beach, California. He has fought in the UFC, Strikeforce, WFA, WEC and DREAM. In his career, Miller beat Robbie Lawler, Tim Kennedy, Denis Kang and Kazushi Sakuraba, among others.",
+          "Tim Kennedy (fighter) | Timothy Fred \"Tim\" Kennedy (born September 1, 1979) is an American retired professional mixed martial artist who most recently competed in the UFC's Middleweight division. He has also formerly competed for Strikeforce, the WEC, ShoMMA, HDNet Fights, and represented the Chicago Red Bears in the IFL. Kennedy is one of the few fighters to simultaneously serve in the United States Army National Guard while also fighting professionally.",
+          "Brian Warren | Brian Warren (born June 5, 1974) is an American mixed martial arts fighter from San Bernardino, California. Warren has fought in many organizations including K-1, King of the Cage, Strikeforce, Kage Kombat, Pangea, and Bellator. Warren has fought notable title holders such as Cung Le, Jason \"Mayhem\" Miller, Jeremy Horn, Jake Shields, and other known fighters such as TUF alum Jared Rollins, Justin Levens, Nate Loughran, Karo Parisyan, and Tiki Ghosn. Warren won a 2nd place medal in 2003 and 3rd place medal in 2006 in the advanced men's division of Grapplers Quest."
+        ],
+        "question": "Who has fought in the most championships, Tim Kennedy or Jason Miller?",
+        "rationale": "determine who has fought in the most championships. We can see that both Tim Kennedy and Jason Miller have fought in multiple organizations, including the UFC, Strikeforce, WEC, and DREAM. However, according to the information provided, Tim Kennedy has fought in the most championships, having competed in the UFC, Strikeforce, WEC, ShoMMA, HDNet Fights, and the IFL, whereas Jason Miller has fought in the UFC, Strikeforce, WFA, WEC, and DREAM.",
+        "answer": "Tim Kennedy"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Kenny Natt | Kenneth Wayne \"Kenny\" Natt (born October 5, 1958) is a former American professional basketball player and ex-interim head coach for the National Basketball Association's Sacramento Kings. He was a 6'3\" 185 lb guard and played collegiately at Northeast Louisiana University (now the University of Louisiana-Monroe) and had a three-year NBA playing career. After serving as an assistant with the Cleveland Cavaliers from 2004 to 2007, Natt was named to the coaching staff of newly appointed Kings head coach and former Kansas City Kings teammate Reggie Theus in 2007. He was subsequently named interim head coach on the firing of Theus, but he himself was fired on April 24, 2009, after the Kings finished with an NBA season-low 17 wins.",
+          "Reggie Witherspoon (basketball) | Phillip Reginald \"Reggie\" Witherspoon (born February 21, 1961) is the head coach of the Canisius College men's basketball team and the former head coach of the University at Buffalo men's college basketball team. He was fired after the 2012-13 season. He was the head coach at Erie Community College, and head coach and assistant coach at Sweet Home High School before he was hired as the interim head coach at Buffalo in December 1999. Witherspoon was named full-time head coach on March 10, 2000. He was the first African American named head coach of a varsity sports team in any Western New York suburban school district. Witherspoon served one season as an assistant at Alabama under head coach Anthony Grant. In 2015, Witherspoon was let go by Alabama when Grant was replaced by Avery Johnson. He was subsequently named as an assistant on Matt McCall's staff at UT-Chattanooga.",
+          "Reggie Theus | Reginald Wayne Theus (born October 13, 1957) is an American retired basketball player and the current head coach of Cal State Northridge. He formerly served as head coach for the NBA's Sacramento Kings and New Mexico State University's men's basketball team. He was also an assistant coach for the University of Louisville under Rick Pitino.",
+          "Wiley Brown | Wiley Brown , is the current Head Coach of the University of Louisville Men's Basketball program, following a recruiting scandal resulting in the firing of Rick Pitino in 2017. He is a retired NFL player, who lettered 2 years with the Philadelphia Eagles as a defensive end, before deciding to play professional basketball in the International Federation of Basketball where he traveled throughout the world. Brown spent one year with the CBA Louisville Catbirds and six years in Europe.",
+          "Richard Pitino | Richard William Pitino (born September 16, 1982) is the head coach of the University of Minnesota Golden Gophers men's basketball team. He is the son of former Louisville head coach, Rick Pitino. After attending St. Sebastian's School in Needham, Massachusetts, Richard Pitino earned a Bachelor of Arts degree in history at Providence College in 2005. During his time at Providence, Pitino was the manager for the Friars men's basketball team under Tim Welsh. For two years, he also served as an assistant coach for Saint Andrew's School in nearby Barrington, Rhode Island."
+        ],
+        "question": "Reggie Theus was the assistant coach for what man who had coached in the NBA?",
+        "rationale": "answer this question. We know that Reggie Theus was an assistant coach for the University of Louisville under Rick Pitino. Therefore, the answer is Rick Pitino.",
+        "answer": "Rick Pitino"
+      },
+      {
+        "augmented": true,
+        "context": [
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics.",
+          "Nicole Beharie | Nicole Beharie (born January 3, 1985) is an American actress and singer. She is known for her roles in the drama film \"American Violet\" (2008), the drama \"Shame\" (2011), and the biographical sports drama \"42\" (2013). From September 2013 to April 2016, she starred in the Fox fantasy series \"Sleepy Hollow\".",
+          "42 (film) | 42 is a 2013 American biographical sports film written and directed by Brian Helgeland about the racial integration of American professional baseball by player Jackie Robinson, who wore jersey number 42 through his Major League career. The film stars Chadwick Boseman as Robinson, and Harrison Ford as Branch Rickey, with Alan Tudyk, Nicole Beharie, Christopher Meloni, Andre Holland, Lucas Black, Hamish Linklater and Ryan Merriman appearing in supporting roles.",
+          "American Violet | American Violet is a 2008 drama film directed by Tim Disney and starring Nicole Beharie. The story is based on Regina Kelly, a victim of Texas police drug enforcement tactics."
+        ],
+        "question": "Which 2013 sports drama starred Nicole Beharie? ",
+        "rationale": "produce the answer. We know that Nicole Beharie is an American actress and singer, and she has starred in several films and TV series. We can look at the provided texts to find the answer. From the texts, we can see that Nicole Beharie starred in the biographical sports drama \"42\" (2013). Therefore, the answer is \"42\".",
+        "answer": "42"
+      },
+      {
+        "question": "The historical unit of the US Army that began its service before the Civil War fought in what battle in 1879?",
+        "answer": "Battle of Milk Creek",
+        "dspy_uuid": "9852aff7-7e6b-419b-b051-f05331fd0bf1",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Old Rectory is in a small town and civil parish where?",
+        "answer": "North Lincolnshire, England",
+        "dspy_uuid": "ae198001-bb3f-4612-b53c-bb7d5bedbc9d",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What do the outcomes of both Baker v. Wade and Bowers v. Harwick have in common?",
+        "answer": "appellate court reversed the lower court's decision",
+        "dspy_uuid": "dfc94327-5dda-4121-b278-e70c76b9217c",
+        "dspy_split": "train"
+      },
+      {
+        "question": "On the coast of what ocean is the birthplace of Diogal Sakho?",
+        "answer": "Atlantic",
+        "dspy_uuid": "8ce2df70-a04a-44f0-8bb1-32b1c92dc299",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What sport was the player born in the county seat of Osage County involved in?",
+        "answer": "Rugby",
+        "dspy_uuid": "e24839c4-6e0e-4af0-9108-7fbd69e305ee",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Which director was nominated for more Academy Awards, Lee Tit or Sidney Lumet?",
+        "answer": "14 of his films were nominated",
+        "dspy_uuid": "55fefdff-5191-4668-b232-77c36596f6ba",
+        "dspy_split": "train"
+      },
+      {
+        "question": "When did the coach of the Karachi Kings finish his time as coach of the Australia national cricket team ?",
+        "answer": "23 June 2013.",
+        "dspy_uuid": "1f2c758d-f840-437a-b75b-d9bd1b5ff6b6",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What 45 acre neighborhood is north of the South End-Groesbeckville Historic Distric?",
+        "answer": "The Mansion Historic District",
+        "dspy_uuid": "25f0634a-6d51-4c7c-8fa1-2ce1f1653f42",
+        "dspy_split": "train"
+      },
+      {
+        "question": "During the 2010 Dutch general election, which current Prime Minister led the People's Party for Freedom and Democracy?",
+        "answer": "Mark Rutte",
+        "dspy_uuid": "0c5ae036-af8f-479b-9d37-cb6145957498",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What year was the co-author (with Tom Verducci) of The Yankee Years born?",
+        "answer": "1940",
+        "dspy_uuid": "4da6111f-ce19-48f1-a471-55e29ca52468",
+        "dspy_split": "train"
+      },
+      {
+        "question": "Do Stu Block and Johnny Bonnel's bands play the same type of music?",
+        "answer": "no",
+        "dspy_uuid": "ac252956-fcaa-493b-86f8-e4c0fdfec309",
+        "dspy_split": "train"
+      },
+      {
+        "question": "What instrument did Nigel Walley play in John Lennon's band formed in 1956, which would later become the Beatles?",
+        "answer": "tea-chest bass",
+        "dspy_uuid": "f264febe-8746-4f48-aa09-d5e6276eec88",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "extended_signature_prefix": "Answer:"
+  }
+}
