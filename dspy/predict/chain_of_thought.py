@@ -18,7 +18,11 @@ class ChainOfThought(Module):
         *_keys, last_key = signature.output_fields.keys()
 
         prefix = "Reasoning: Let's think step by step in order to"
-        if dspy.settings.experimental:
+
+        import dspy
+        if isinstance(dspy.settings.lm, dspy.LM):
+            desc = "${reasoning}"
+        elif dspy.settings.experimental:
             desc = "${produce the output fields}. We ..."
         else:
             desc = f"${{produce the {last_key}}}. We ..."
