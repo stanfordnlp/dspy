@@ -135,7 +135,7 @@ class MIPROv2(Teleprompter):
             if len(trainset) < 2:
                 raise ValueError("Trainset must have at least 2 examples if no valset specified, or at least 1 example with external validation set.")
             
-            valset_size = min(500, max(1, int(len(trainset) * 0.80))) # 80% of trainset, capped at 300
+            valset_size = min(500, max(1, int(len(trainset) * 0.80))) # 80% of trainset, capped at 500
             cutoff = len(trainset) - valset_size
             valset = trainset[cutoff:]
             trainset = trainset[:cutoff]
@@ -144,8 +144,8 @@ class MIPROv2(Teleprompter):
             if len(valset) < 1:
                 raise ValueError("Validation set must have at least 1 example if specified.")
             
-        if minibatch and minibatch_size > len(trainset):
-            raise ValueError(f"Minibatch size cannot exceed the size of the trainset.  Note that your trainset contains {len(trainset)} examples.  It may have been shrunk due to validation set splitting.  Your validation set contains {len(valset)} examples.")
+        if minibatch and minibatch_size > len(valset):
+            raise ValueError(f"Minibatch size cannot exceed the size of the valset.  Note that your validation set contains {len(valset)} examples.  Your train set contains {len(trainset)} examples.")
         
         if minibatch and num_trials < minibatch_full_eval_steps:
             raise ValueError(f"Number of trials (num_trials={num_trials}) must be greater than or equal to the number of minibatch full eval steps (minibatch_full_eval_steps={minibatch_full_eval_steps}).")
@@ -164,10 +164,10 @@ class MIPROv2(Teleprompter):
         task_model_line = ""
         if not minibatch:
             estimated_task_model_calls_wo_module_calls = len(trainset) * num_trials  # M * T * P
-            task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in train set * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}"""
+            task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{len(valset)}{ENDC}{YELLOW} examples in val set * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches * {BLUE}{BOLD}# of LM calls in your program{ENDC}{YELLOW} = ({BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls} * # of LM calls in your program{ENDC}{YELLOW}) task model calls{ENDC}"""
         else:
             estimated_task_model_calls_wo_module_calls = minibatch_size * num_trials + (len(trainset) * (num_trials // minibatch_full_eval_steps))  # B * T * P
-            task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{minibatch_size}{ENDC}{YELLOW} examples in minibatch * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches + {BLUE}{BOLD}{len(trainset)}{ENDC}{YELLOW} examples in train set * {BLUE}{BOLD}{num_trials // minibatch_full_eval_steps}{ENDC}{YELLOW} full evals = {BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls}{ENDC}{YELLOW} task model calls{ENDC}"""
+            task_model_line = f"""{YELLOW}- Task Model: {BLUE}{BOLD}{minibatch_size}{ENDC}{YELLOW} examples in minibatch * {BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches + {BLUE}{BOLD}{len(valset)}{ENDC}{YELLOW} examples in val set * {BLUE}{BOLD}{num_trials // minibatch_full_eval_steps}{ENDC}{YELLOW} full evals = {BLUE}{BOLD}{estimated_task_model_calls_wo_module_calls}{ENDC}{YELLOW} task model calls{ENDC}"""
             
 
         user_message = textwrap.dedent(f"""\
@@ -187,7 +187,7 @@ class MIPROv2(Teleprompter):
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
             and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
 
-            {YELLOW}- Reducing the number of trials (`num_trials`), the size of the trainset, or the number of LM calls in your program.{ENDC}
+            {YELLOW}- Reducing the number of trials (`num_trials`), the size of the valset, or the number of LM calls in your program.{ENDC}
             {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}\n""")
 
         user_confirmation_message = textwrap.dedent(f"""\
