@@ -23,13 +23,7 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     save_file_to_log_dir,
     set_signature,
-    # setup_logging,
 )
-
-try:
-    import wandb
-except ImportError:
-    wandb = None
 
 """
 USAGE SUGGESTIONS:
@@ -42,7 +36,7 @@ from dspy.teleprompt import MIPROv2
 teleprompter = MIPROv2(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5)
-eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
+eval_score = evaluate(compiled_prompt_opt, devset=valset[:EVAL_NUM], **kwargs)
 ```
 
 Note that this teleprompter takes in the following parameters:
@@ -115,11 +109,14 @@ class MIPROv2(Teleprompter):
         max_labeled_demos=16,
         seed=9,
         minibatch=True,
-        program_aware_proposer=True,
-        requires_permission_to_run=True,
-        view_data_batch_size=10,
         minibatch_size=25,
         minibatch_full_eval_steps=10,
+        program_aware_proposer=True,
+        data_aware_proposer=True,
+        view_data_batch_size=10,
+        tip_aware_proposer=True,
+        fewshot_aware_proposer=True,
+        requires_permission_to_run=True,
     ):
         # Define ANSI escape codes for colors
         YELLOW = "\033[93m"
@@ -138,7 +135,7 @@ class MIPROv2(Teleprompter):
             if len(trainset) < 2:
                 raise ValueError("Trainset must have at least 2 examples if no valset specified, or at least 1 example with external validation set.")
             
-            valset_size = min(300, max(1, int(len(trainset) * 0.25))) # 25% of trainset, capped at 300
+            valset_size = min(500, max(1, int(len(trainset) * 0.80))) # 80% of trainset, capped at 300
             cutoff = len(trainset) - valset_size
             valset = trainset[cutoff:]
             trainset = trainset[:cutoff]
@@ -222,7 +219,7 @@ class MIPROv2(Teleprompter):
             # Set up program and evaluation function
             program = student.deepcopy()
             evaluate = Evaluate(
-                devset=trainset,
+                devset=valset,
                 metric=self.metric,
                 num_threads=self.num_threads,
                 max_errors=self.max_errors,
@@ -267,8 +264,8 @@ class MIPROv2(Teleprompter):
             # Generate N candidate instructions
 
             # Setup our proposer 
-            print(f"\n==> STEP 2: PROPOSE INSTRUCTION CANDIDATES <==")
-            print("In this step, by default we will use the few-shot examples from the previous step, a generated dataset summary, and a summary of the program code, and a randomly selected prompting tip to propose instructions.")
+            print("\n==> STEP 2: PROPOSE INSTRUCTION CANDIDATES <==")
+            print("In this step, by default we will use the few-shot examples from the previous step, a generated dataset summary, a summary of the program code, and a randomly selected prompting tip to propose instructions.")
 
             proposer = GroundedProposer(
                 program=program,
@@ -277,12 +274,16 @@ class MIPROv2(Teleprompter):
                 # program_code_string=self.program_code_string,
                 view_data_batch_size=view_data_batch_size,
                 program_aware=program_aware_proposer,
+                use_dataset_summary=data_aware_proposer,
+                use_task_demos=fewshot_aware_proposer,
+                use_tip=tip_aware_proposer,
+                set_tip_randomly=tip_aware_proposer,
                 use_instruct_history=False,
                 set_history_randomly=False,
                 verbose = self.verbose,
             )
             
-            print(f"\nProposing instructions...\n")
+            print("\nProposing instructions...\n")
             instruction_candidates = proposer.propose_instructions_for_program(
                 trainset=trainset,
                 program=program,
@@ -303,18 +304,16 @@ class MIPROv2(Teleprompter):
                 demo_candidates = None
 
             # Initialize variables to track during the optimization process
-            best_score = float("-inf")
             best_scoring_trial = 0
-            best_program = None
             trial_logs = {}
             total_eval_calls = 0
             param_score_dict = defaultdict(list) # Dictionaries of paramater combinations we've tried, and their associated scores
             fully_evaled_param_combos = {} # List of the parameter combinations we've done full evals of
 
             # Evaluate the default program
-            if self.verbose: print("Evaluating the default program...\n")
+            print("Evaluating the default program...\n")
             default_score = eval_candidate_program(len(valset), valset, program, evaluate)
-            if self.verbose: print(f"Default program score: {default_score}\n")
+            print(f"Default program score: {default_score}\n")
 
             best_score = default_score
             best_program = program.deepcopy()
@@ -326,7 +325,7 @@ class MIPROv2(Teleprompter):
                 instruction_candidates,
                 demo_candidates,
                 evaluate,
-                trainset,
+                valset,
             ):
                 def objective(trial):
                     nonlocal best_program, best_score, best_scoring_trial, trial_logs, total_eval_calls  # Allow access to the outer variables
@@ -397,11 +396,10 @@ class MIPROv2(Teleprompter):
                     trial_logs[trial.number+1]["num_eval_calls"] = 0
 
                     # Evaluate the candidate program with relevant batch size
-                    evalset = trainset if minibatch else valset
-                    batch_size = minibatch_size if minibatch else len(evalset)
+                    batch_size = minibatch_size if minibatch else len(valset)
 
                     score = eval_candidate_program(
-                        batch_size, evalset, candidate_program, 
+                        batch_size, valset, candidate_program, 
                         evaluate,
                     )
 
@@ -409,7 +407,7 @@ class MIPROv2(Teleprompter):
                     if self.verbose:
                         print("Full trace of prompts in use on an example...")
                         get_task_model_history_for_full_example(
-                            candidate_program, self.task_model, trainset, evaluate,
+                            candidate_program, self.task_model, valset, evaluate,
                         )
 
                     # Log relevant information
@@ -418,7 +416,7 @@ class MIPROv2(Teleprompter):
                         (score, candidate_program),
                     )
                     trial_logs[trial.number+1]["num_eval_calls"] = batch_size
-                    trial_logs[trial.number+1]["full_eval"] = batch_size >= len(trainset)
+                    trial_logs[trial.number+1]["full_eval"] = batch_size >= len(valset)
                     trial_logs[trial.number+1]["score"] = score
                     trial_logs[trial.number+1]["pruned"] = False
                     total_eval_calls += trial_logs[trial.number+1]["num_eval_calls"]
@@ -464,7 +462,7 @@ class MIPROv2(Teleprompter):
 
                         # Log relevant information
                         fully_evaled_param_combos[combo_key] = {"program":highest_mean_program, "score": full_val_score}
-                        total_eval_calls += len(trainset)
+                        total_eval_calls += len(valset)
                         trial_logs[trial.number+1]["total_eval_calls_so_far"] = total_eval_calls
                         trial_logs[trial.number+1]["full_eval"] = True
                         trial_logs[trial.number+1]["program_path"] = save_candidate_program(
@@ -489,10 +487,10 @@ class MIPROv2(Teleprompter):
 
             # Run the trial
             optuna.logging.set_verbosity(optuna.logging.WARNING)
-            print(f"\n==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
+            print(f"==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
             print("In this step, we will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination. Bayesian Optimization will be used for this search process.\n")
             objective_function = create_objective(
-                program, instruction_candidates, demo_candidates, evaluate, trainset,
+                program, instruction_candidates, demo_candidates, evaluate, valset,
             )
             sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
             study = optuna.create_study(direction="maximize", sampler=sampler)
