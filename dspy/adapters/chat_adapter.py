@@ -1,5 +1,13 @@
 import re
+import base64
+import os
+import requests
+import io
 from .base import Adapter
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 field_header_pattern = re.compile(r'\[\[\[\[ #### (\w+) #### \]\]\]\]')
 
@@ -45,10 +53,60 @@ def format_fields(fields):
     return '\n\n'.join([f"[[[[ #### {k} #### ]]]]\n{v}" for k, v in fields.items()]).strip()
 
 def format_chat_turn(field_names, values):
-    if not set(values).issuperset(set(field_names)):
+    temp_field_names = tuple(f for f in field_names if f != "rationale")
+    if not set(values).issuperset(set(temp_field_names)):
         raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    return format_fields({k: values[k] for k in field_names})
+    text_content = format_fields({k: values[k] for k in field_names if 'image' not in k and ('rationale' not in k or 'rationale' in values)})
+    
+    request = []
+    
+    for k in field_names:
+        if 'image' in k:
+            image = values[k]
+            if not image:
+                continue
+            image_base64 = encode_image(image)
+            if image_base64:
+                request.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    }
+                })
+            else:
+                raise ValueError(f"Failed to encode image for field {k}")
+
+    request.append({
+        "type": "text",
+        "text": text_content
+    })
+    
+    return request
+
+def encode_image(image):
+    assert Image is not None, "Pillow is not installed. Please install it to use image fields."
+    if hasattr(Image, 'Image') and isinstance(image, Image.Image):
+        # PIL Image (including PngImageFile, JpegImageFile, etc.)
+        buffered = io.BytesIO()
+        image.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    elif isinstance(image, str):
+        if os.path.isfile(image):
+            # Local file path
+            with open(image, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
+        else:
+            # Assume it's a URL
+            return encode_image_base64_from_url(image)
+    else:
+        raise ValueError(f"Unsupported image type. Must be PIL Image, file path, or URL. Got {type(image)}")
+
+def encode_image_base64_from_url(image_url: str) -> str:
+    """Encode an image retrieved from a remote url to base64 format."""
+    with requests.get(image_url) as response:
+        response.raise_for_status()
+        return base64.b64encode(response.content).decode('utf-8')
 
 def enumerate_fields(fields):
     parts = []
