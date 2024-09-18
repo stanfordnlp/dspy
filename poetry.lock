@@ -516,6 +516,17 @@ urllib3 = [
 crt = ["awscrt (==0.21.5)"]
 
 [[package]]
+name = "cachetools"
+version = "5.5.0"
+description = "Extensible memoizing collections and decorators"
+optional = true
+python-versions = ">=3.7"
+files = [
+    {file = "cachetools-5.5.0-py3-none-any.whl", hash = "sha256:02134e8439cdc2ffb62023ce1debca2944c3f289d66bb17ead3ab3dede74b292"},
+    {file = "cachetools-5.5.0.tar.gz", hash = "sha256:2cc24fb4cbe39633fb7badd9db9ca6295d766d9c2995f245725a46715d050f2a"},
+]
+
+[[package]]
 name = "certifi"
 version = "2024.8.30"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -1036,6 +1047,20 @@ wrapt = ">=1.10,<2"
 
 [package.extras]
 dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "sphinx (<2)", "tox"]
+
+[[package]]
+name = "deprecation"
+version = "2.1.0"
+description = "A library to handle automated deprecations"
+optional = true
+python-versions = "*"
+files = [
+    {file = "deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a"},
+    {file = "deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff"},
+]
+
+[package.dependencies]
+packaging = "*"
 
 [[package]]
 name = "dill"
@@ -2256,6 +2281,42 @@ traitlets = ">=5.3"
 [package.extras]
 docs = ["myst-parser", "pydata-sphinx-theme", "sphinx-autodoc-typehints", "sphinxcontrib-github-alt", "sphinxcontrib-spelling", "traitlets"]
 test = ["ipykernel", "pre-commit", "pytest (<8)", "pytest-cov", "pytest-timeout"]
+
+[[package]]
+name = "lancedb"
+version = "0.11.0"
+description = "lancedb"
+optional = true
+python-versions = ">=3.8"
+files = [
+    {file = "lancedb-0.11.0-cp38-abi3-macosx_10_15_x86_64.whl", hash = "sha256:11d56c26cd3c7db3757dd29e67f2bbe6d997f39cf4389cc56c7399ffec018fbb"},
+    {file = "lancedb-0.11.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:3e8da024de348dd08f2fdf72063349ca0eece2d66a58bba723adc36af957979a"},
+    {file = "lancedb-0.11.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c954dc44ede89d775159f42844f1862a18dde80c616b7bd7b5eb7c98217d0328"},
+    {file = "lancedb-0.11.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:fe76f0fcdc44203cfc5c0153fb4cf882a64678935ae9280a9751c64d07b04f4d"},
+    {file = "lancedb-0.11.0-cp38-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:911277e45c3ee57c650fddeb4c85669fb1377103c3992ae73a6c681f4a1d68f0"},
+    {file = "lancedb-0.11.0-cp38-abi3-win_amd64.whl", hash = "sha256:1a7b0c7fc3383f947a52e0692c36a6351dd0c841dd012071bfba66044c95b22a"},
+]
+
+[package.dependencies]
+attrs = ">=21.3.0"
+cachetools = "*"
+deprecation = "*"
+overrides = ">=0.7"
+packaging = "*"
+pydantic = ">=1.10"
+pylance = "0.15.0"
+ratelimiter = ">=1.0,<2.0"
+requests = ">=2.31.0"
+retry = ">=0.9.2"
+tqdm = ">=4.27.0"
+
+[package.extras]
+azure = ["adlfs (>=2024.2.0)"]
+clip = ["open-clip", "pillow", "torch"]
+dev = ["pre-commit", "ruff"]
+docs = ["mkdocs", "mkdocs-jupyter", "mkdocs-material", "mkdocstrings[python]"]
+embeddings = ["awscli (>=1.29.57)", "boto3 (>=1.28.57)", "botocore (>=1.31.57)", "cohere", "google-generativeai", "huggingface-hub", "instructorembedding", "ollama", "open-clip-torch", "openai (>=1.6.1)", "pillow", "sentence-transformers", "torch"]
+tests = ["aiohttp", "boto3", "duckdb", "pandas (>=1.4)", "polars (>=0.19)", "pytest", "pytest-asyncio", "pytest-mock", "pytz", "tantivy"]
 
 [[package]]
 name = "llama-cloud"
@@ -4564,6 +4625,32 @@ docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
 tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
 
 [[package]]
+name = "pylance"
+version = "0.15.0"
+description = "python wrapper for Lance columnar format"
+optional = true
+python-versions = ">=3.9"
+files = [
+    {file = "pylance-0.15.0-cp39-abi3-macosx_10_15_x86_64.whl", hash = "sha256:c61b1e3532fa481505cf04197fc3e38f1f2169d724c9eaa889f3acbae183db41"},
+    {file = "pylance-0.15.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:12f1ce4c47cf78b720d62667297e956a593430fe4a7559988c0436d27e58f2b6"},
+    {file = "pylance-0.15.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8821c2cffeb6c273833edf7e3777de8e9f93a014a50a347a87e11c5b743f82fe"},
+    {file = "pylance-0.15.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:225df36e231f70b1c15df89c8c3ccc82f9dc7f443ebd24c2c808eac86ed99ed5"},
+    {file = "pylance-0.15.0-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:fbce3e07c33e3d30dd07593cfda4e185e1a08fa75fdc3ae4dcd2941ce7137714"},
+    {file = "pylance-0.15.0-cp39-abi3-win_amd64.whl", hash = "sha256:0260f4f93811c3888440412b6c7c071cc8fd22ac1a8b323472f919952926df2a"},
+]
+
+[package.dependencies]
+numpy = ">=1.22,<2"
+pyarrow = ">=12"
+
+[package.extras]
+benchmarks = ["pytest-benchmark"]
+dev = ["ruff (==0.4.1)"]
+ray = ["ray[data]"]
+tests = ["boto3", "datasets", "duckdb", "h5py (<3.11)", "ml-dtypes", "pandas", "pillow", "polars[pandas,pyarrow]", "pytest", "tensorflow", "tqdm"]
+torch = ["torch"]
+
+[[package]]
 name = "pymdown-extensions"
 version = "10.9"
 description = "Extension pack for Python Markdown."
@@ -5018,6 +5105,20 @@ fastembed = ["fastembed (==0.3.6)"]
 fastembed-gpu = ["fastembed-gpu (==0.3.6)"]
 
 [[package]]
+name = "ratelimiter"
+version = "1.2.0.post0"
+description = "Simple python rate limiting object"
+optional = true
+python-versions = "*"
+files = [
+    {file = "ratelimiter-1.2.0.post0-py3-none-any.whl", hash = "sha256:a52be07bc0bb0b3674b4b304550f10c769bbb00fead3072e035904474259809f"},
+    {file = "ratelimiter-1.2.0.post0.tar.gz", hash = "sha256:5c395dcabdbbde2e5178ef3f89b568a3066454a6ddc223b76473dac22f89b4f7"},
+]
+
+[package.extras]
+test = ["pytest (>=3.0)", "pytest-asyncio"]
+
+[[package]]
 name = "referencing"
 version = "0.35.1"
 description = "JSON Referencing + Python"
@@ -5154,6 +5255,21 @@ urllib3 = ">=1.21.1,<3"
 [package.extras]
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
+
+[[package]]
+name = "retry"
+version = "0.9.2"
+description = "Easy to use retry decorator."
+optional = true
+python-versions = "*"
+files = [
+    {file = "retry-0.9.2-py2.py3-none-any.whl", hash = "sha256:ccddf89761fa2c726ab29391837d4327f819ea14d244c232a1d24c67a2f98606"},
+    {file = "retry-0.9.2.tar.gz", hash = "sha256:f8bfa8b99b69c4506d6f5bd3b0aabf77f98cdb17f3c9fc3f5ca820033336fba4"},
+]
+
+[package.dependencies]
+decorator = ">=3.4.2"
+py = ">=1.4.26,<2.0.0"
 
 [[package]]
 name = "rich"
@@ -7438,6 +7554,7 @@ chromadb = ["chromadb"]
 docs = ["autodoc_pydantic", "docutils", "furo", "m2r2", "myst-nb", "myst-parser", "sphinx", "sphinx-autobuild", "sphinx-automodapi", "sphinx-reredirects", "sphinx_rtd_theme"]
 epsilla = ["pyepsilla"]
 fastembed = ["fastembed"]
+lancedb = ["lancedb"]
 marqo = ["marqo"]
 milvus = ["pymilvus"]
 pinecone = ["pinecone-client"]
@@ -7448,4 +7565,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "758427544b35e949bda6bb5a57820b14df90563ead51ee13f09bd1f2a6b3d5cd"
+content-hash = "feaaa7a26b7688acf8eb9e6b18b2069520caed59c27684ce86669a380389f458"
