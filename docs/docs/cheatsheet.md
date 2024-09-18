@@ -422,9 +422,9 @@ Other custom configurations are similar to customizing the `dspy.BootstrapFewSho
 
 ### Including `dspy.Assert` and `dspy.Suggest` statements
 ```python
-dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 
-dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 ```
 
 ### Activating DSPy Program with Assertions 

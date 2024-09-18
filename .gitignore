@@ -56,3 +56,4 @@ assertion.log
 /.devcontainer/.personalization.sh
 
 .mypy_cache
+dummy.csv
