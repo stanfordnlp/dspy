@@ -122,7 +122,6 @@ class GPT3(LM):
     def _openai_client(self):
         return openai
 
-    # TODO: add test suite to me.
     def deep_copy(self):
         """Creates a deep copy of the GPT3 instance."""
         return copy.deepcopy(self)
