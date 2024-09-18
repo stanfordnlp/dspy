@@ -42,6 +42,21 @@ def new_to_old_field(field):
     )
 
 
+class Image(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not isinstance(v, (str, bytes)):
+            raise TypeError("string or bytes required")
+        return cls(v)
+
+    def __repr__(self):
+        return f"Image({super().__repr__()})"
+
+
 class OldField:
     """A more ergonomic datatype that infers prefix and desc if omitted."""
 
