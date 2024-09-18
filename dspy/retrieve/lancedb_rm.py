@@ -3,7 +3,7 @@ Retriever model for LanceDB
 Author: Prashant Dixit (@PrashantDixit0)
 """
 
-from typing import List, Optional, Union
+from typing import List, Union
 
 import backoff
 import lancedb.table
@@ -22,11 +22,8 @@ if lancedb is None:
         "The lancedb library is required to use LancedbRM. Install it with `pip install dspy-ai[lancedb]`",
     )
 
-from lancedb.embeddings import EmbeddingFunctionRegistry, get_registry
-from lancedb.pydantic import LanceModel, Vector
 
 import openai
-import os
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
