@@ -139,6 +139,10 @@ lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="..."
 
 5. `dspy.PremAI` for hosted best open source and closed source models.
 
+6. `dspy.Claude` for hosted Claude models.
+
+7. `dspy.AWSAnthropic` for hosted Claude models and `dspy.AWSMeta` for hosted Llama3 models.
+
 ### Local LMs.
 
 You need to host these models on your own GPU(s). Below, we include pointers for how to do that.

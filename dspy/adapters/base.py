@@ -1,7 +1,9 @@
 class Adapter:
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        messages = self.format(signature, demos, inputs)
-        outputs = lm(messages=messages, **lm_kwargs)
+        inputs = self.format(signature, demos, inputs)
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+
+        outputs = lm(**inputs, **lm_kwargs)
         values = []
 
         for output in outputs:

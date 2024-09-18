@@ -2,7 +2,7 @@ import re
 from .base import Adapter
 from .image_utils import encode_image
 
-field_header_pattern = re.compile(r'\[\[\[\[ #### (\w+) #### \]\]\]\]')
+field_header_pattern = re.compile(r'\[\[\[ ### (\w+) ### \]\]\]')
 
 class ChatAdapter(Adapter):
     def __init__(self):
@@ -10,7 +10,15 @@ class ChatAdapter(Adapter):
 
     def format(self, signature, demos, inputs):
         messages = []
+
+        # TODO: Extract `raw_demos` out of `demos`, i.e. demos where some of the output_fields are not filled in.
+        # raw_demos = [demo for demo in demos if not all(k in demo for k in signature.output_fields)]
+        # demos = [demo for demo in demos if demo not in raw_demos]
+
         messages.append({"role": "system", "content": prepare_instructions(signature)})
+        # messages.append({"role": "system", "content": prepare_instructions(signature, raw_demos)})
+
+        # TODO: Remove the raw_demos from demos.
 
         for demo in demos:
             output_fields_, demo_ = list(signature.output_fields.keys()) + ['completed'], {**demo, 'completed': ''}
@@ -43,12 +51,12 @@ class ChatAdapter(Adapter):
 
 
 def format_fields(fields):
-    return '\n\n'.join([f"[[[[ #### {k} #### ]]]]\n{v}" for k, v in fields.items()]).strip()
+    return '\n\n'.join([f"[[[ ### {k} ### ]]]\n{v}" for k, v in fields.items()]).strip()
 
 def format_chat_turn(field_names, values):
-    temp_field_names = tuple(f for f in field_names if f != "rationale")
-    if not set(values).issuperset(set(temp_field_names)):
-        raise ValueError(f"Expected {field_names} but got {values.keys()}")
+    # TODO: Reinstate validation after dealing with raw_demos in the system messages.
+    # if not set(values).issuperset(set(field_names)):
+    #     raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
     text_content = format_fields({k: values[k] for k in field_names if 'image' not in k and ('rationale' not in k or 'rationale' in values)})
     
@@ -96,12 +104,12 @@ def prepare_instructions(signature):
     parts.append(format_fields({f : f"{{{f}}}" for f in signature.output_fields}))
     parts.append(format_fields({'completed' : ""}))
 
+    objective = ('\n' + ' ' * 8).join([''] + signature.instructions.splitlines())
+    parts.append(f"In adhering to this structure, your objective is: {objective}")
+
     parts.append("You will receive some input fields in each interaction. " +
                  "Respond only with the corresponding output fields, starting with the field " +
                  ", then ".join(f"`{f}`" for f in signature.output_fields) +
                  ", and then ending with the marker for `completed`.")
-    
-    objective = ('\n' + ' ' * 8).join([''] + signature.instructions.splitlines())
-    parts.append(f"In adhering to this structure, your objective is: {objective}")
 
     return '\n\n'.join(parts).strip()
