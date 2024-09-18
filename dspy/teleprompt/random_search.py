@@ -137,16 +137,6 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             score_data.append((score, subscores, seed, program))
 
-            if len(score_data) > 2:  # We check if there are at least 3 scores to consider
-                for k in [1, 2, 3, 5, 8, 9999]:
-                    top_k_scores = sorted(score_data, key=lambda x: x[0], reverse=True)[:k]
-
-                    # Transpose the subscores to get max per entry and then calculate their average
-                    transposed_subscores = zip(*[subscores for _, subscores, *_ in top_k_scores if subscores])
-                    avg_of_max_per_entry = sum(max(entry) for entry in transposed_subscores) / len(top_k_scores[0][1])
-
-                    print(f"Average of max per entry across top {k} scores: {avg_of_max_per_entry}")
-
             if self.stop_at_score is not None and score >= self.stop_at_score:
                 print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
                 break
