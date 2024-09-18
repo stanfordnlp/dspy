@@ -33,7 +33,15 @@ def _inspect_history(lm, n: int = 1):
         print("\n\n\n")
         for msg in messages:
             print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg['content'].strip())
+            if isinstance(msg['content'], str):
+                print(msg['content'].strip())
+            else:
+                if isinstance(msg['content'], list):
+                    for c in msg['content']:
+                        if c["type"] == "text":
+                            print(c["text"].strip())
+                        elif c["type"] == "image_url":
+                            print("<IMAGE URL>\n")
             print("\n")
 
         print(_red("Response:"))

@@ -58,30 +58,39 @@ def format_chat_turn(field_names, values):
     # if not set(values).issuperset(set(field_names)):
     #     raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    text_content = format_fields({k: values[k] for k in field_names if 'image' not in k and ('rationale' not in k or 'rationale' in values)})
+    # text_content = format_fields({k: values[k] for k in field_names if 'image' not in k})
     
     request = []
     
     for k in field_names:
         if 'image' in k:
-            image = values[k]
+            image = values.get(k)
             if not image:
-                continue
+                raise ValueError(f"Image not found for field {k}")
+            
             image_base64 = encode_image(image)
-            if image_base64:
-                request.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_base64}"
-                    }
-                })
-            else:
+            if not image_base64:
                 raise ValueError(f"Failed to encode image for field {k}")
-
-    request.append({
-        "type": "text",
-        "text": text_content
-    })
+            
+            if request and request[-1]["type"] == "text":
+                request[-1]["text"] += f"\n\n[[[ ### {k} ### ]]]\n"
+            else:
+                request.append({
+                    "type": "text",
+                    "text": f"\n\n[[[ ### {k} ### ]]]\n"
+                })
+            
+            request.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_base64}"
+                }
+            })
+        else:
+            request.append({
+                "type": "text",
+                "text": format_fields({k: values[k]})
+            })
     
     return request
 

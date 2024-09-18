@@ -10,7 +10,7 @@ class Adapter:
             try:
                 value = self.parse(signature, output)
             except Exception as e:
-                print("Failed to parse", messages, output)
+                print("Failed to parse", inputs, output)
                 raise e
             assert set(value.keys()) == set(signature.output_fields.keys()), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
             values.append(value)
