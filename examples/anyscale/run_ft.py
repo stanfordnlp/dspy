@@ -5,6 +5,8 @@ import msgspec
 import ujson
 import anyscale
 from anyscale.job.models import JobConfig, JobState
+import os
+import jsonlines
 # from dspy.
 
 
@@ -24,42 +26,44 @@ def main():
         print("Unable to verify arguments")
         raise RuntimeError("Unable to verify argument")
 
+    formatted_paths = {}
     for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
         if not (path and dataset):
             continue
         formatted_path = path.split(".")[0] + "_formatted.jsonl"
         with open(formatted_path, "w") as f:
             for item in dataset:
-                f.write(ujson.dumps(item) + "\n")  
+                f.write(ujson.dumps(item) + "\n")
 
-    s3_train_path, s3_eval_path = lm._submit_data(train_path=formatted_path, eval_path=formatted_path)
+        with jsonlines.open(formatted_path) as reader:
+            print("num items in ", path, ": ", sum(1 for _ in reader))
+        
+        formatted_paths[path] = formatted_path
 
+    s3_train_path, s3_eval_path = lm._submit_data(train_path=formatted_paths[train_path], eval_path=formatted_paths[eval_path])
+    
     kwargs = {
         "hyperparameters": {
-            "trainer_resources": {
-                "memory": 53687091200,
-            },
-            "worker_resources": {
-                "memory": 53687091200,
-                "accelerator_type": {
-                    "L4": 0.001
-                }
-            },
+            "num_devices": 4,
+            "trainer_resources": None,
+            "worker_resources": None
         }
     }
     compute_config_path, compute_config = lm._generate_config_files(use_lora=True, train_path=s3_train_path, eval_path=s3_eval_path, **kwargs)
 
     if method != TrainingMethod.SFT:
         raise NotImplementedError("Only SFT finetuning is supported at the moment.")
-    # exit()
-    job_id: str = anyscale.job.submit(
-        compute_config
-    )
-    anyscale.job.wait(id=job_id, timeout_s=18000)
-    print(f"Job {job_id} succeeded!")
+    # job_id: str = anyscale.job.submit(
+    #     compute_config
+    # )
+    # anyscale.job.wait(id=job_id, timeout_s=18000)
+    # print(f"Job {job_id} succeeded!")
+    command = compute_config.entrypoint
+    print(command)
+    os.system(command)
 
-    model_info = anyscale.llm.models.get(job_id=job_id).to_dict()
-    print(model_info)
+    # model_info = anyscale.llm.models.get(job_id=job_id).to_dict()
+    # print(model_info)
 
 
 

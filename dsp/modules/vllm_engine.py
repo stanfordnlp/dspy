@@ -14,13 +14,13 @@ import ujson
 from dsp.deploy_dspy.download import download_model
 from dsp.deploy_dspy.async_llm import AsyncLLMWrapper
 from transformers import AutoTokenizer
-try:
-    import msgspec
-    from vllm import LLM, SamplingParams
-    # from vllm.lora.request import LoraRequest
+# try:
+import msgspec
+from vllm import LLM, SamplingParams # maybe need vllm 0.5.4
+from vllm.lora.request import LoRARequest
 
-except ImportError:
-    print("vllm not installed")
+# except ImportError:
+#     print("vllm not installed")
 
 ERRORS = Exception
 
@@ -58,7 +58,7 @@ class VLLMOfflineEngine(LM):
         self.model_type = model_type
         self.history = []
         self.batch_size = 256
-        self.batch_timeout = 20
+        self.batch_timeout = 5
         self.max_concurrent_batches = 1
         self.prompt_queue = queue.Queue()
         self.prompt_queue_lock = Lock()
@@ -115,14 +115,16 @@ class VLLMOfflineEngine(LM):
         unique_kwargs = {k: v for k, v in self.kwargs.items() if k not in sampling_param_dict}
         unique_kwargs.pop("async_mode", None)
         unique_kwargs.pop("model", None)
+        lora_request = LoRARequest("lora2", 1, "/home/ray/default/lora2")
         with self.lock_of_async_defeat:
-            responses = chat_request(self.llm, messages, sampling_params, **unique_kwargs)
+            responses = chat_request(self.llm, messages, sampling_params, lora_request, **unique_kwargs)
         return responses
 
     def basic_request(self, prompt, **kwargs):
         messages = [{"role": "user", "content": prompt}]
         if self.system_prompt:
             messages.insert(0, [{"role": "system", "content": self.system_prompt}])
+        
         sampling_param_dict = {k: v for k, v in self.kwargs.items() if k in msgspec.structs.asdict(SamplingParams())}
         sampling_params = SamplingParams(**sampling_param_dict)
         unique_kwargs = {k: v for k, v in self.kwargs.items() if k not in sampling_param_dict}
@@ -251,8 +253,8 @@ def custom_lru_cache(maxsize=None):
 # @custom_lru_cache(maxsize=None if cache_turn_on else 0)
 # @NotebookCacheMemory.cache
 # @CacheMemory.cache
-def chat_request(llm: AsyncLLMWrapper, prompt, sampling_params, **kwargs):
-    x = llm.chat(prompt, sampling_params, use_tqdm=False, **kwargs)
+def chat_request(llm: AsyncLLMWrapper, prompt, sampling_params, lora_request, **kwargs):
+    x = llm.chat(prompt, sampling_params, use_tqdm=False, lora_request=lora_request, **kwargs)
     return x
 
 # @functools.lru_cache(maxsize=None if cache_turn_on else 0)
@@ -260,3 +262,11 @@ def chat_request(llm: AsyncLLMWrapper, prompt, sampling_params, **kwargs):
 # @CacheMemory.cache
 def completions_request(llm: LLM, prompt, sampling_params, **kwargs):
     return llm.generate(prompt, sampling_params, use_tqdm=False, **kwargs)
+
+
+# if __name__ == "__main__":
+#     # model_path = download_model("meta-llama/Meta-Llama-3-70B-Instruct")
+
+#     import msgspec
+#     print(isinstance(SamplingParams(), msgspec.Struct))
+#     print(msgspec.structs.asdict(SamplingParams()))

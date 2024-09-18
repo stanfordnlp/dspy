@@ -239,7 +239,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         class OldSignature(cls, Signature):
             pass
 
-        replace_fields = ["__doc__", "model_fields", "model_extra", "model_config"]
+        replace_fields = ["__doc__", "model_fields", "model_extra",]
         for field in replace_fields:
             setattr(cls, field, getattr(new_signature, field))
         cls.model_rebuild(force=True)

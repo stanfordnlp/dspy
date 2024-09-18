@@ -1,5 +1,5 @@
 from vllm import AsyncLLMEngine, SamplingParams, AsyncEngineArgs, RequestOutput
-from vllm.entrypoints.chat_utils import parse_chat_messages, apply_hf_chat_template
+from vllm.entrypoints.chat_utils import parse_chat_messages
 
 from typing import List, Dict, Optional, Union
 
@@ -9,6 +9,12 @@ try:
 except ImportError:
     # API change since vLLM v0.5.3+
     from vllm.entrypoints.openai.serving_engine import TextTokensPrompt
+
+try:
+    from vllm.entrypoints.chat_utils import apply_chat_template
+except ImportError:
+    from vllm.entrypoints.chat_utils import apply_hf_chat_template as apply_chat_template
+    print("unable to import apply_chat_template")
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import dotenv
 dotenv.load_dotenv()
@@ -46,7 +52,7 @@ class AsyncLLMWrapper:
                 self.free_queue.put_nowait(True)
 
     async def _process(
-        self, request_id, prompt, prompt_token_ids, sampling_params, idx_in_batch
+        self, request_id, prompt, prompt_token_ids, sampling_params, idx_in_batch, lora_request
     ):
         if isinstance(prompt, str):
             assert prompt_token_ids
@@ -54,19 +60,19 @@ class AsyncLLMWrapper:
         if self.max_pending_requests > 0:
             await self.free_queue.get()
         # print("adding request with id", request_id)
-        stream = await self.engine.add_request(str(request_id), prompt, sampling_params)
+        stream = await self.engine.add_request(request_id=str(request_id), inputs=prompt, params=sampling_params, lora_request=lora_request)
         async for request_output in stream:
             if request_output.finished:
                 if self.max_pending_requests > 0:
                     self.free_queue.put_nowait(True)
-                # print("request_output", request_output.request_id)
+                # print("request_output", request_output)
                 # print("request_output", request_output.outputs[0].text, "\n\n")
                 return (request_output, idx_in_batch)
             # else:
             #     print("request_output", request_output)
         assert False
 
-    async def start_generate_async(self, prompt, sampling_params, prompt_token_ids):
+    async def start_generate_async(self, prompt, sampling_params, prompt_token_ids, lora_request):
         tasks = []
 
         for i, p in enumerate(prompt):
@@ -79,7 +85,7 @@ class AsyncLLMWrapper:
                 pti = None
             tasks.append(
                 asyncio.create_task(
-                    self._process(self.request_id, p, pti, sampling_params, i)
+                    self._process(self.request_id, p, pti, sampling_params, i, lora_request)
                 )
             )
         return tasks
@@ -105,7 +111,7 @@ class AsyncLLMWrapper:
         model_config = await asyncio.wait_for(self.engine.get_model_config(), timeout=10)
         conversations= [parse_chat_messages(conversation, model_config,
                                                self.tokenizer)[0] for conversation in messages]
-        prompts = [apply_hf_chat_template(
+        prompts = [apply_chat_template(
             self.tokenizer,
             conversation,
             chat_template=chat_template,
@@ -114,7 +120,7 @@ class AsyncLLMWrapper:
         prompt_token_ids = [self.tokenizer.encode(prompt) for prompt in prompts]
 
         tasks = await self.start_generate_async(
-            prompts, sampling_params, prompt_token_ids
+            prompts, sampling_params, prompt_token_ids, lora_request
         )
         
         returns = await asyncio.gather(*tasks, return_exceptions=True)
@@ -145,12 +151,12 @@ class AsyncLLMWrapper:
         # print("messages", messages)
         conversation= parse_chat_messages(messages, model_config,
                                                self.tokenizer)[0]
-        prompt = apply_hf_chat_template(
-            self.tokenizer,
+        prompt = self.tokenizer.apply_chat_template(
             conversation,
             chat_template=chat_template,
-            add_generation_prompt=add_generation_prompt)
-
+            add_generation_prompt=add_generation_prompt,
+            tokenize=False
+            )
         prompt_token_ids = self.tokenizer.encode(prompt)
 
         x = await self._process(request_id, prompt, prompt_token_ids, sampling_params, 0)
@@ -161,6 +167,7 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
     # engine.generate("What is LLM?", SamplingParams(temperature=0.0), None)
     prompt = "What is LLM?"
+    #lora_request=LoRARequest("tuned_lora_model", 1, "/home/ray/default/lora1")
     sampling_params = SamplingParams(temperature=0.0)
     prompt_token_ids = tokenizer.encode(prompt)
     print(next(engine.generate([prompt], sampling_params, [prompt_token_ids])))
