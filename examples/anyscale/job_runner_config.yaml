@@ -1,4 +1,4 @@
-entrypoint: llmforge anyscale finetune model_config_dspy_1485349613046161493.yaml
-image_uri: localhost:5555/anyscale/llm-forge:0.5.4
+entrypoint: llmforge anyscale finetune model_config_dspy_2600252322592036946.yaml
+image_uri: localhost:5555/anyscale/llm-forge:0.5.5
 name: dspy-llmforge-fine-tuning-job
 working_dir: .

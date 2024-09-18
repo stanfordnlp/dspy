@@ -10,6 +10,7 @@ import yaml
 import os
 import time
 from anyscale.job import JobConfig
+import jsonlines
 
 class TrainableAnyscale(MultiOpenAI, TrainableLM):
     """Wrapper around specifically the OpenAI API to finetune.
@@ -157,7 +158,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             "name": "dspy-llmforge-fine-tuning-job",
             "entrypoint": f"llmforge anyscale finetune {filename}",
             "working_dir": ".",
-            "image_uri": "localhost:5555/anyscale/llm-forge:0.5.4"
+            "image_uri": "localhost:5555/anyscale/llm-forge:0.5.5"
         }
         compute_config_kwargs = kwargs.get("compute_config", {})
         compute_config_dict.update(compute_config_kwargs)
@@ -209,15 +210,26 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             datasets["val"] = eval_path
 
         for name, path in datasets.items():
+            def count_items_in_jsonl(file_path):
+                with jsonlines.open(file_path) as reader:
+                    count = sum(1 for _ in reader)
+                return count
+
+            num_items = count_items_in_jsonl(path)
+            print(f"Number of items in {name} data: {num_items}")
+
+
             s3_path = os.path.join(storage, f"{name}.jsonl")
             print(f"Uploading {name} data to S3 at {s3_path}")
             # ray.data.read_json(path).write_json(s3_path)
             # NOTE: trying a local copy for now
-            if s3_path[:2] != "s3":
+            if s3_path[:2] == "s3":
+                os.system(f"aws s3 cp {path} {s3_path}")
+            elif s3_path[:2] == "gs":
+                os.system(f"gsutil cp {path} {s3_path}")
+            else:
                 os.system(f"cp {path} {s3_path}")
                 print(f"Copied {path} to {s3_path}")
-            else:
-                os.system(f"aws s3 cp {path} {s3_path}")
             self.fine_tuning_file_ids[name] = s3_path
         
         return self.fine_tuning_file_ids["train"], self.fine_tuning_file_ids.get("val", None)

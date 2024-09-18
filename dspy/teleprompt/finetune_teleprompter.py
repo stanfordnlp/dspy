@@ -265,11 +265,11 @@ def bootstrap_data(
     cname = program.__class__.__name__
     info = _INFO_BOOTSTRAP_DATA.format(len(dataset), cname, num_threads)
     logger.info(info)
-    # evaluator = Evaluate(
-    #     devset=dataset, num_threads=num_threads, display_progress=True
-    # )
-    # evaluator(program, metric=metric)
-
+    evaluator = Evaluate(
+        devset=dataset, num_threads=num_threads, display_progress=True
+    )
+    x = evaluator(program, metric=metric)
+    print(x)
     data = process_dataset_threaded(dataset, program, metric, num_threads)
     
     return data
@@ -291,13 +291,13 @@ def process_dataset_threaded(dataset: List[Any], program: Callable, metric: Opti
     return data
 
 def process_example(example: Any, example_ind: int, program: Callable, metric: Optional[Callable] = None) -> Dict[str, Any]:
-    print("Processing example:", example_ind)
+    # print("Processing example:", example_ind)
     with dspy.context(trace=[]):
-        print("Running program...", example_ind)
+        # print("Running program...", example_ind)
         prediction = program(**example.inputs())
-        print("Getting trace...", example_ind)
+        # print("Getting trace...", example_ind)
         trace = dspy.settings.trace
-        print("Getting score...", example_ind)
+        # print("Getting score...", example_ind)
         score = metric(example, prediction, trace) if metric else None
 
     data_dict = {
@@ -425,6 +425,7 @@ def bootstrap_data_for_round(
 
     # Collect the data for the given round
     with dspy.context(lm=context_lm):
+        print(context_lm.kwargs)
         data = bootstrap_data(
             program, dataset, metric=metric, num_threads=num_threads
         )

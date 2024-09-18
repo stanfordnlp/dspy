@@ -4,7 +4,7 @@ from dspy.datasets import HotPotQA
 
 combined_res = []
 num_errors = 0
-filenames = ["results_p70b_0_500.json", "results_p70b_500_1500.json"]
+filenames = ["results_ft_8b_0_500.json", "results_ft_8b_500_1500.json"]
 
 for i in range(len(filenames)):
     # res = json.load(open(f"results_8b_{i*500}_{(i+1)*500}.json", "r"))
