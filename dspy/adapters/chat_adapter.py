@@ -14,93 +14,6 @@ class ChatAdapter(Adapter):
     ChatAdapter is used to format and parse data for chat-based LLMs.
     """
 
-    @staticmethod
-    def format_fields(fields: dict[str, Any]) -> str:
-        """
-        Format the fields into a string.
-        """
-        return "\n\n".join(
-            [f"[[[ ### {field_name} ### ]]]\n{field_value}" for field_name, field_value in fields.items()]
-        ).strip()
-
-    @staticmethod
-    def enumerate_fields(fields: dict[str, Field]) -> str:
-        """
-        Enumerate the fields into a string.
-        """
-        parts = []
-        for idx, (k, v) in enumerate(fields.items()):
-            parts.append(f"{idx+1}. `{k}`")
-            parts[-1] += f" ({v.annotation.__name__})"
-            parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
-
-        return "\n".join(parts).strip()
-
-    @staticmethod
-    def prepare_instructions(signature: Signature) -> str:
-        """
-        Convert the signature into an instructions string.
-        """
-        parts = []
-        parts.append("Your input fields are:\n" + ChatAdapter.enumerate_fields(signature.input_fields))
-        parts.append("Your output fields are:\n" + ChatAdapter.enumerate_fields(signature.output_fields))
-        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
-
-        parts.append(ChatAdapter.format_fields({f: f"{{{f}}}" for f in signature.input_fields}))
-        parts.append(ChatAdapter.format_fields({f: f"{{{f}}}" for f in signature.output_fields}))
-        parts.append(ChatAdapter.format_fields({"completed": ""}))
-
-        objective = ("\n" + " " * 8).join([""] + signature.instructions.splitlines())
-        parts.append(f"In adhering to this structure, your objective is: {objective}")
-
-        parts.append(
-            "You will receive some input fields in each interaction. "
-            + "Respond only with the corresponding output fields, starting with the field "
-            + ", then ".join(f"`{f}`" for f in signature.output_fields)
-            + ", and then ending with the marker for `completed`."
-        )
-
-        return "\n\n".join(parts).strip()
-
-    @staticmethod
-    def format_chat_turn(
-        field_names: list[str], field_types: list[type], values: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        """
-        Format the chat turn into a list of OAI-formatted messages.
-        """
-        # TODO: Reinstate validation after dealing with raw_demos in the system messages.
-        # if not set(values).issuperset(set(field_names)):
-        #     raise ValueError(f"Expected {field_names} but got {values.keys()}")
-
-        message_contents: list[dict[str, str]] = []
-
-        for field_name, field_type in zip(field_names, field_types):
-
-            if field_type == Image:
-                image = values[field_name]
-                if not image:
-                    raise ValueError(f"Image not found for field {field_name}")
-
-                image_base64 = encode_image(image)
-                if not image_base64:
-                    raise ValueError(f"Failed to encode image for field {field_name}")
-
-                if message_contents and message_contents[-1]["type"] == "text":
-                    message_contents[-1]["text"] += f"\n\n[[[ ### {field_name} ### ]]]\n"
-                else:
-                    message_contents.append({"type": "text", "text": f"\n\n[[[ ### {field_name} ### ]]]\n"})
-
-                message_contents.append(
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                )
-            else:
-                message_contents.append(
-                    {"type": "text", "text": ChatAdapter.format_fields({field_name: values[field_name]})}
-                )
-
-        return message_contents
-
     def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
@@ -108,7 +21,7 @@ class ChatAdapter(Adapter):
         # raw_demos = [demo for demo in demos if not all(k in demo for k in signature.output_fields)]
         # demos = [demo for demo in demos if demo not in raw_demos]
 
-        prepared_instructions = ChatAdapter.prepare_instructions(signature)
+        prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
 
         # messages.append({"role": "system", "content": prepare_instructions(signature, raw_demos)})
@@ -124,20 +37,20 @@ class ChatAdapter(Adapter):
             messages.append(
                 {
                     "role": "user",
-                    "content": ChatAdapter.format_chat_turn(signature.input_fields.keys(), input_field_types, demo),
+                    "content": format_chat_turn(signature.input_fields.keys(), input_field_types, demo),
                 }
             )
             messages.append(
                 {
                     "role": "assistant",
-                    "content": ChatAdapter.format_chat_turn(output_fields_, output_field_types, demo_),
+                    "content": format_chat_turn(output_fields_, output_field_types, demo_),
                 }
             )
 
         messages.append(
             {
                 "role": "user",
-                "content": ChatAdapter.format_chat_turn(signature.input_fields.keys(), input_field_types, inputs),
+                "content": format_chat_turn(signature.input_fields.keys(), input_field_types, inputs),
             }
         )
 
@@ -165,3 +78,86 @@ class ChatAdapter(Adapter):
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
+
+
+def format_fields(fields: dict[str, Any]) -> str:
+    """
+    Format the fields into a string.
+    """
+    return "\n\n".join(
+        [f"[[[ ### {field_name} ### ]]]\n{field_value}" for field_name, field_value in fields.items()]
+    ).strip()
+
+
+def enumerate_fields(fields: dict[str, Field]) -> str:
+    """
+    Enumerate the fields into a string.
+    """
+    parts = []
+    for idx, (k, v) in enumerate(fields.items()):
+        parts.append(f"{idx+1}. `{k}`")
+        parts[-1] += f" ({v.annotation.__name__})"
+        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+
+    return "\n".join(parts).strip()
+
+
+def prepare_instructions(signature: Signature) -> str:
+    """
+    Convert the signature into an instructions string.
+    """
+    parts = []
+    parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
+    parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
+    parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+
+    parts.append(format_fields({f: f"{{{f}}}" for f in signature.input_fields}))
+    parts.append(format_fields({f: f"{{{f}}}" for f in signature.output_fields}))
+    parts.append(format_fields({"completed": ""}))
+
+    objective = ("\n" + " " * 8).join([""] + signature.instructions.splitlines())
+    parts.append(f"In adhering to this structure, your objective is: {objective}")
+
+    parts.append(
+        "You will receive some input fields in each interaction. "
+        + "Respond only with the corresponding output fields, starting with the field "
+        + ", then ".join(f"`{f}`" for f in signature.output_fields)
+        + ", and then ending with the marker for `completed`."
+    )
+
+    return "\n\n".join(parts).strip()
+
+
+def format_chat_turn(field_names: list[str], field_types: list[type], values: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Format the chat turn into a list of OAI-formatted messages.
+    """
+    # TODO: Reinstate validation after dealing with raw_demos in the system messages.
+    # if not set(values).issuperset(set(field_names)):
+    #     raise ValueError(f"Expected {field_names} but got {values.keys()}")
+
+    message_contents: list[dict[str, str]] = []
+
+    for field_name, field_type in zip(field_names, field_types):
+
+        if field_type == Image:
+            image = values[field_name]
+            if not image:
+                raise ValueError(f"Image not found for field {field_name}")
+
+            image_base64 = encode_image(image)
+            if not image_base64:
+                raise ValueError(f"Failed to encode image for field {field_name}")
+
+            if message_contents and message_contents[-1]["type"] == "text":
+                message_contents[-1]["text"] += f"\n\n[[[ ### {field_name} ### ]]]\n"
+            else:
+                message_contents.append({"type": "text", "text": f"\n\n[[[ ### {field_name} ### ]]]\n"})
+
+            message_contents.append(
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+            )
+        else:
+            message_contents.append({"type": "text", "text": format_fields({field_name: values[field_name]})})
+
+    return message_contents
