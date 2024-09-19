@@ -1,6 +1,5 @@
 """AWS providers for LMs."""
 
-import importlib.util
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -8,13 +7,12 @@ import backoff
 
 from dsp.utils.settings import settings
 
-boto3_spec = importlib.util.find_spec("boto3")
-
-if boto3_spec is not None:
+try:
     from botocore.exceptions import ClientError
 
     ERRORS = (ClientError,)
-else:
+
+except ImportError:
     ERRORS = (Exception,)
 
 
