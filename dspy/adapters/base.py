@@ -1,15 +1,24 @@
 import abc
+from dspy.utils.logging import logger
 
 
 class Adapter:
+    """
+    Base class for all Adapters.
+    Adapters are used to format and parse data for different types of LLMs.
+    """
 
     @abc.abstractmethod
     def format(self, signature, demos, inputs):
-        pass
+        """
+        Format the input data for the LLM.
+        """
 
     @abc.abstractmethod
     def parse(self, signature, completion):
-        pass
+        """
+        Parse the output data from the LLM.
+        """
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         inputs = self.format(signature, demos, inputs)
@@ -22,7 +31,7 @@ class Adapter:
             try:
                 value = self.parse(signature, output)
             except Exception as e:
-                print("Failed to parse", inputs, output)
+                logger.exception("Failed to parse LLM output:\nInput: %s\nOutput: %s", inputs, output)
                 raise e
             assert set(value.keys()) == set(
                 signature.output_fields.keys()
