@@ -1,5 +1,6 @@
 import copy
 import random
+from functools import reduce
 
 from langchain_core.pydantic_v1 import Extra
 from langchain_core.runnables import Runnable
@@ -163,3 +164,29 @@ class LangChainModule(dspy.Module):
     def invoke(self, d, *args, **kwargs):
         return self.forward(**d).output
 
+    def reset_copy(self):
+        """Override `reset_copy()` to skip parts that cannot be deep copied."""
+        if self.chain is None:
+            obj = copy.deepcopy(self)
+        else:
+            chain = self.chain
+            steps = []
+            for step in chain.steps:
+                if isinstance(step, LangChainPredict):
+                    # Only copy the LangChainPredict object.
+                    steps.append(copy.deepcopy(step))
+                else:
+                    steps.append(step)
+
+            chain_copy = reduce(lambda x, y: x | y, steps)
+            # Temporarily remove the chain from `self` instance for deep copying.
+            self.chain = None
+            obj = copy.deepcopy(self)
+            obj.chain = chain_copy
+            # Put back the chain to `self` instance.
+            self.chain = chain
+
+        for param in obj.parameters():
+            param.reset()
+
+        return obj

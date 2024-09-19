@@ -32,6 +32,24 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]
+    
+    def set_lm(self, lm):
+        import dspy
+        assert dspy.settings.experimental, "Setting the lm is an experimental feature."
+
+        for _, param in self.named_predictors():
+            param.lm = lm
+
+    def get_lm(self):
+        import dspy
+        assert dspy.settings.experimental, "Getting the lm is an experimental feature."
+
+        all_used_lms = [param.lm for _, param in self.named_predictors()]
+
+        if len(set(all_used_lms)) == 1:
+            return all_used_lms[0]
+        
+        raise ValueError("Multiple LMs are being used in the module.")
 
     def __repr__(self):
         s = []
