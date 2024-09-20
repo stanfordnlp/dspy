@@ -4,6 +4,7 @@ import sys
 import threading
 import types
 from typing import Any
+import traceback
 
 import pandas as pd
 import tqdm
@@ -53,6 +54,7 @@ class Evaluate:
         max_errors=5,
         return_all_scores=False,
         return_outputs=False,
+        provide_traceback=False,
         **_kwargs,
     ):
         self.devset = devset
@@ -66,7 +68,7 @@ class Evaluate:
         self.cancel_jobs = threading.Event()
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
-
+        self.provide_traceback = provide_traceback
         if "display" in _kwargs:
             dspy.logger.warning(
                 "DeprecationWarning: 'display' has been deprecated. To see all information for debugging,"
@@ -194,9 +196,12 @@ class Evaluate:
                     current_error_count = self.error_count
                 if current_error_count >= self.max_errors:
                     raise e
-
-                dspy.logger.error(f"Error for example in dev set: \t\t {e}")
-
+                
+                if self.provide_traceback:
+                    dspy.logger.error(f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}")
+                else:
+                    dspy.logger.error(f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace.")
+                
                 return example_idx, example, {}, 0.0
             finally:
                 if creating_new_thread:
