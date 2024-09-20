@@ -33,7 +33,7 @@ class HFClientTGI(HFModel):
         self.ports = port if isinstance(port, list) else [port]
         self.http_request_kwargs = http_request_kwargs or {}
 
-        self.headers = {"Content-Type": "application/json"}
+        self.headers = self.http_request_kwargs.pop('headers', {"Content-Type": "application/json"})
 
         self.kwargs = {
             "model": model,
