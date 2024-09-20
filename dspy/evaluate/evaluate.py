@@ -273,8 +273,9 @@ class Evaluate:
         return round(100 * ncorrect / ntotal, 2)
 
 
+# in this function we merge example instance and prediction instance into one dictionary
 def merge_example_pred(d1, d2) -> dict:
-    if isinstance(d1, BaseModel):
+    if isinstance(d1, BaseModel):  # if d1 is a pydantic model, we convert it to a dictionary
         d1 = d1.model_dump()
     if isinstance(d2, BaseModel):
         d2 = d2.model_dump()
