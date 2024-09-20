@@ -106,14 +106,10 @@ class Predict(Module, Parameter):
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
-
-        num_generations = config.get("n")
-        if num_generations is None:
-            num_generations = lm.kwargs.get("n", lm.kwargs.get("num_generations", 1))
+        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
-            # print(f"#> Setting temperature to 0.7 since n={num_generations} and prior temperature={temperature}.")
 
         if new_signature is not None:
             signature = new_signature
@@ -123,7 +119,10 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        if dsp.settings.experimental:
+        import dspy
+        if isinstance(lm, dspy.LM):
+            completions = v2_5_generate(lm, config, signature, demos, kwargs)
+        elif dsp.settings.experimental:
             completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
         else:
             completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
@@ -208,6 +207,15 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
 
     return completions
+
+
+def v2_5_generate(lm, lm_kwargs, signature, demos, inputs):
+    import dspy
+    adapter = dspy.settings.adapter or dspy.ChatAdapter()
+
+    return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs)
+    
+
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

@@ -37,7 +37,7 @@ jobs:
           VERSION=${{ needs.extract-tag.outputs.version }}  
           PACKAGE_NAME="dspy-ai-test"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
-          NEW_VERSION=$(python3 build_utils/test_version.py $PACKAGE_NAME $VERSION)  
+          NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "::set-output name=version::$NEW_VERSION"  
       - name: Update version in setup.py

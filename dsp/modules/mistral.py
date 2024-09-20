@@ -5,8 +5,9 @@ import backoff
 from dsp.modules.lm import LM
 from dsp.utils.settings import settings
 
+mistralai_api_error = None
 try:
-    from mistralai.client import MistralClient
+    from mistralai import Mistral as MistralAI
     from mistralai.models.usermessage import UserMessage
 except ImportError:
     mistralai_api_error = Exception
@@ -58,7 +59,7 @@ class Mistral(LM):
                 "Not loading Mistral AI because it is not installed. Install it with `pip install mistralai`."
             )
 
-        self.client = MistralClient(api_key=api_key)
+        self.client = MistralAI(api_key=api_key)
 
         self.provider = "mistral"
         self.kwargs = {
@@ -84,7 +85,7 @@ class Mistral(LM):
         if n is not None and n > 1 and kwargs["temperature"] == 0.0:
             kwargs["temperature"] = 0.7
 
-        response = self.client.chat(**kwargs)
+        response = self.client.chat.complete(**kwargs)
 
         history = {
             "prompt": prompt,

@@ -79,7 +79,7 @@ class GPT3(LM):
 
         default_model_type = (
             "chat"
-            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model) and ("instruct" not in model)
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model or "o1" in model) and ("instruct" not in model)
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type
@@ -122,6 +122,12 @@ class GPT3(LM):
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
+        if "o1" in self.kwargs["model"]:
+            if "max_tokens" in kwargs:
+                max_tokens = kwargs.pop("max_tokens")
+                kwargs["max_completion_tokens"] = max_tokens
+            kwargs.pop("temperature")
+            
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             messages = [{"role": "user", "content": prompt}]
