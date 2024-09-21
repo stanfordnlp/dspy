@@ -163,9 +163,9 @@ You can find other examples tweeted by [@lateinteraction](https://twitter.com/la
 - Typed DSPy (contributed by [@normal-computing](https://github.com/normal-computing))
   - [Using DSPy to train Gpt 3.5 on HumanEval by Thomas Ahle](https://github.com/stanfordnlp/dspy/blob/main/examples/functional/functional.ipynb)
   - [Building a chess playing agent using DSPy by Franck SN](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e)
+- [Building LLMs for Code Repair](https://blog.replit.com/code-repair) 
 
-
-TODO: Add links to the state-of-the-art results by the University of Toronto on Clinical NLP, on Theory of Mind (ToM) by Plastic Labs, and the DSPy pipeline from Replit.
+TODO: Add links to the state-of-the-art results by the University of Toronto on Clinical NLP and on Theory of Mind (ToM) by Plastic Labs.
 
 There are also recent cool examples at [Weaviate's DSPy cookbook](https://github.com/weaviate/recipes/tree/main/integrations/llm-frameworks/dspy) by Connor Shorten. [See tutorial on YouTube](https://www.youtube.com/watch?v=CEuUG4Umfxs).
 
