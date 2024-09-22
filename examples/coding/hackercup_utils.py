@@ -2,7 +2,7 @@ import re
 import asyncio
 import multiprocessing
 import concurrent.futures
-from typing import List, Optional
+from typing import Optional
 
 """
 Note that this code is largely based off of the code here:
@@ -91,7 +91,7 @@ async def arun(
         return {
             "error": f"Function call timed out after {timeout} seconds",
             "result": None,
-            "stack_trace": f"Function call timed out. Code needs to be more efficient.",
+            "stack_trace": "Function call timed out. Code needs to be more efficient.",
         }
     except Exception as e:
         return {"error": str(e), "result": None}

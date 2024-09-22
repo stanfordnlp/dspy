@@ -1,6 +1,3 @@
-import logging
-import os
-import pickle
 import random
 import sys
 import textwrap
@@ -21,7 +18,6 @@ from dspy.teleprompt.utils import (
     get_task_model_history_for_full_example,
     print_full_program,
     save_candidate_program,
-    save_file_to_log_dir,
     set_signature,
 )
 
@@ -236,12 +232,12 @@ class MIPROv2(Teleprompter):
                 max_labeled_demos_for_candidate_gen = max_labeled_demos
             
             # Generate N few shot example sets (these will inform instruction creation, and be used as few-shot examples in our prompt)
-            print(f"Beginning MIPROv2 optimization process...")
-            print(f"\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
+            print("Beginning MIPROv2 optimization process...")
+            print("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
             if max_bootstrapped_demos > 0:
-                print(f"These will be used for as few-shot examples candidates for our program and for creating instructions.\n")
+                print("These will be used for as few-shot examples candidates for our program and for creating instructions.\n")
             else:
-                print(f"These will be used for informing instruction proposal.\n")
+                print("These will be used for informing instruction proposal.\n")
             print(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
             try:
                 demo_candidates = create_n_fewshot_demo_sets(
@@ -487,7 +483,7 @@ class MIPROv2(Teleprompter):
 
             # Run the trial
             optuna.logging.set_verbosity(optuna.logging.WARNING)
-            print(f"==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
+            print("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
             print("In this step, we will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination. Bayesian Optimization will be used for this search process.\n")
             objective_function = create_objective(
                 program, instruction_candidates, demo_candidates, evaluate, valset,

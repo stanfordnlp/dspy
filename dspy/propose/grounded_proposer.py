@@ -1,5 +1,4 @@
 import random
-import re
 
 import dspy
 from dspy.propose.dataset_summary_generator import create_dataset_summary

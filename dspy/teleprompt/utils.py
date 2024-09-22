@@ -15,7 +15,6 @@ except ImportError:
     extract_symbols = None
 
 import dspy
-from dspy.predict.parameter import Parameter
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
 
 """

@@ -1,23 +1,15 @@
 import datasets
-import time
-import asyncio
-from typing import List, Optional
 import os
 import openai
 import dspy
 from dspy import InputField, OutputField, Signature
-from dspy.functional import TypedPredictor
-import pydantic
 from dspy import Example
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
-import re
-import traceback
 from datetime import datetime
 import random
 from dspy.teleprompt import MIPROv2
 from hackercup_utils import extract_code, run, check_solution
-from datetime import datetime
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 openai.api_base = os.environ.get("OPENAI_API_BASE")
@@ -290,12 +282,12 @@ if __name__ == "__main__":
 
     # Try out a simple program (7.5% on 40 ex)
     simple_program = SimpleGenerateCode()
-    print(f"Evaluating Simple Program on test...")
+    print("Evaluating Simple Program on test...")
     evaluate(program=simple_program, devset=testset)
 
     # Try out more advanced pipeline | ~25%
     multi_stage_program = GenerateCode(max_tries=3, num_ensembles=3)
-    print(f"Evaluating Multi-Stage Program on test...")
+    print("Evaluating Multi-Stage Program on test...")
     evaluate(program=multi_stage_program, devset=testset)
 
     # Try out more advanced pipeline | ~30% 
