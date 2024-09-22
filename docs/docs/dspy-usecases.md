@@ -36,6 +36,8 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads. |
 | **[Howie](https://howie.ai)** | Using DSPy to automate meeting scheduling through email. |
 | **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
+| **[Salomatic](https://langtrace.ai/blog/case-study-how-salomatic-used-langtrace-to-build-a-reliable-medical-report-generation-system)** | Enriching medical reports using DSPy. |
+| **[Truelaw](https://www.youtube.com/watch?v=O0F3RAWZNfM)** | How Truelaw builds bespoke LLM pipelines for law firms using DSPy. |
 
 WIP. This list mainly includes companies that have public posts or have OKed being included for specific products so far.
 
