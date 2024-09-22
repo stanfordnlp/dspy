@@ -119,11 +119,7 @@ class BaseModule:
         # Set attribuetes of the copied instance.
         for attr, value in self.__dict__.items():
             if isinstance(value, BaseModule):
-                try:
-                    # Try deep copying the module to reduce recursion depth.
-                    setattr(new_instance, attr, copy.deepcopy(value))
-                except Exception:
-                    setattr(new_instance, attr, value.deepcopy())
+                setattr(new_instance, attr, value.deepcopy())
             else:
                 try:
                     # Try to deep copy the attribute
