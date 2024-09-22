@@ -58,3 +58,18 @@ You = dsp.You
 
 configure = settings.configure
 context = settings.context
+
+
+import dspy.teleprompt
+
+LabeledFewShot = dspy.teleprompt.LabeledFewShot
+BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
+BootstrapFewShotWithRandomSearch = dspy.teleprompt.BootstrapFewShotWithRandomSearch
+BootstrapRS = dspy.teleprompt.BootstrapFewShotWithRandomSearch
+COPRO = dspy.teleprompt.COPRO
+MIPROv2 = dspy.teleprompt.MIPROv2
+Ensemble = dspy.teleprompt.Ensemble
+
+
+def inspect_history(*args, **kwargs):
+    return settings.lm.inspect_history(*args, **kwargs)
