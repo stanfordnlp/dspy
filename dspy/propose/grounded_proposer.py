@@ -1,10 +1,9 @@
 import random
-import re
 
 import dspy
 from dspy.propose.dataset_summary_generator import create_dataset_summary
-from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix
-from dspy.teleprompt.utils import get_signature
+from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix, get_dspy_source_code
+from dspy.teleprompt.utils import get_signature, get_prompt_model
 
 from .propose_base import Proposer
 
@@ -136,6 +135,7 @@ class GenerateModuleInstruction(dspy.Module):
         use_task_demos=True,
         use_instruct_history=True,
         use_tip=True,
+        verbose=False,
     ):
         super().__init__()
         self.use_dataset_summary = use_dataset_summary
@@ -143,6 +143,7 @@ class GenerateModuleInstruction(dspy.Module):
         self.use_task_demos = use_task_demos
         self.use_instruct_history = use_instruct_history
         self.use_tip = use_tip
+        self.verbose = verbose
 
         self.program_code_string = program_code_string
         self.describe_program = dspy.Predict(DescribeProgram)
@@ -181,24 +182,33 @@ class GenerateModuleInstruction(dspy.Module):
                     break
 
         # Summarize the program
-        program_description = ""
-        module_code = ""
+        program_description = "Not available"
+        module_code = "Not provided"
         if self.program_aware:
-            program_description = strip_prefix(
-                self.describe_program(
-                    program_code=self.program_code_string, program_example=task_demos,
-                ).program_description,
-            )
-            print(f"PROGRAM DESCRIPTION: {program_description}")
+            try:
+                program_description = strip_prefix(
+                    self.describe_program(
+                        program_code=self.program_code_string, program_example=task_demos,
+                    ).program_description,
+                )
+                if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
 
-            # Identify all modules
-            init_pattern = r"def __init__\([\s\S]*?\):([\s\S]*?)(?=^\s*def|\Z)"
-            init_content_match = re.search(init_pattern, self.program_code_string)
-            init_content = init_content_match.group(0)
-            pattern = r"^(.*dspy\.(ChainOfThought|Predict).*)$"  # TODO: make it so that this extends out to any dspy Module
-            matches = re.findall(pattern, init_content, re.MULTILINE)
-            modules = [match[0].strip() for match in matches]
-            module_code = modules[pred_i]
+                inputs = []
+                outputs = []
+                for field_name, field in get_signature(program.predictors()[pred_i]).fields.items():
+                    # Access the '__dspy_field_type' from the extra metadata
+                    dspy_field_type = field.json_schema_extra.get('__dspy_field_type')
+                    
+                    # Based on the '__dspy_field_type', append to the respective list
+                    if dspy_field_type == "input":
+                        inputs.append(field_name)
+                    else:
+                        outputs.append(field_name)
+
+                module_code = f"{program.predictors()[pred_i].__class__.__name__}({', '.join(inputs)}) -> {', '.join(outputs)}"
+            except:
+                if self.verbose: print("Error getting program description. Running without program aware proposer.")
+                self.program_aware = False
 
         module_description = self.describe_module(
             program_code=self.program_code_string,
@@ -209,7 +219,7 @@ class GenerateModuleInstruction(dspy.Module):
         ).module_description
 
         # Generate an instruction for our chosen module
-        print(f"task_demos {task_demos}")
+        if self.verbose: print(f"task_demos {task_demos}")
         instruct = self.generate_module_instruction(
             dataset_description=data_summary,
             program_code=self.program_code_string,
@@ -223,9 +233,8 @@ class GenerateModuleInstruction(dspy.Module):
         )
         if hasattr(instruct, "module_description"):
             module_description = strip_prefix(instruct.module_description)
-            print(f"MODULE DESCRIPTION: {module_description}")
+            if self.verbose: print(f"MODULE DESCRIPTION: {module_description}")
         proposed_instruction = strip_prefix(instruct.proposed_instruction)
-        # print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
 
         return dspy.Prediction(proposed_instruction=proposed_instruction)
 
@@ -235,8 +244,8 @@ class GroundedProposer(Proposer):
     def __init__(
         self,
         prompt_model,
+        program,
         trainset,
-        program_code_string=None,
         view_data_batch_size=10,
         use_dataset_summary=True,
         program_aware=True,
@@ -245,6 +254,7 @@ class GroundedProposer(Proposer):
         use_tip=True,
         set_tip_randomly=True,
         set_history_randomly=True,
+        verbose=False,
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -254,20 +264,29 @@ class GroundedProposer(Proposer):
         self.use_tip = use_tip
         self.set_tip_randomly=set_tip_randomly
         self.set_history_randomly=set_history_randomly
+        self.verbose = verbose
 
-        self.prompt_model = prompt_model
-        self.program_code_string = program_code_string
+        self.prompt_model = get_prompt_model(prompt_model)
+        if self.program_aware:
+            try:
+                self.program_code_string = get_dspy_source_code(program)
+                if self.verbose: print("SOURCE CODE:",self.program_code_string)
+            except Exception as e:
+                print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
+                self.program_code_string = None
+                self.program_aware = False
+        else:
+            self.program_code_string = None
         self.data_summary = create_dataset_summary(
             trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
         )
-        print(f"DATA SUMMARY: {self.data_summary}")
+        if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
 
     def propose_instructions_for_program(
         self,
         trainset,
         program,
         demo_candidates,
-        prompt_model,
         trial_logs,
         N,
         T,
@@ -275,35 +294,34 @@ class GroundedProposer(Proposer):
     ):
         """This method is responsible for returning the full set of new instructions for our program, given the specified criteria."""
 
-        proposed_instructions = {}
-
-        if self.set_tip_randomly:
-            print("Using a randomly generated configuration for our grounded proposer.")
-            # Randomly select the tip
-            selected_tip_key = random.choice(list(TIPS.keys()))
-            selected_tip = TIPS[selected_tip_key]
-            self.use_tip = bool(
-                selected_tip,
-            )
-            print(f"Selected tip: {selected_tip_key}")        
+        proposed_instructions = {}      
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
             use_history = random.random() < 0.5
             self.use_instruct_history = use_history
-            print(f"Use history T/F: {self.use_instruct_history}")
-
+            if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
+        
         # Create an instruction for each predictor 
         for pred_i, predictor in enumerate(program.predictors()):
             for demo_set_i in range(len(demo_candidates[0])):
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
+                if self.set_tip_randomly:
+                    if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
+                    # Randomly select the tip
+                    selected_tip_key = random.choice(list(TIPS.keys()))
+                    selected_tip = TIPS[selected_tip_key]
+                    self.use_tip = bool(
+                        selected_tip,
+                    )
+                    if self.verbose: print(f"Selected tip: {selected_tip_key}")  
                 proposed_instructions[pred_i].append(
                     self.propose_instruction_for_predictor(
                         program=program,
                         predictor=predictor,
                         pred_i=pred_i,
-                        prompt_model=prompt_model,
+                        # prompt_model=prompt_model,
                         T=T,
                         demo_candidates=demo_candidates,
                         demo_set_i=demo_set_i,
@@ -318,7 +336,7 @@ class GroundedProposer(Proposer):
         program,
         predictor,
         pred_i,
-        prompt_model,
+        # prompt_model,
         T,
         demo_candidates,
         demo_set_i,
@@ -340,12 +358,14 @@ class GroundedProposer(Proposer):
             use_task_demos=self.use_task_demos,
             use_instruct_history=self.use_instruct_history and instruction_history,
             use_tip=self.use_tip,
+            verbose=self.verbose
         )
 
         # Generate a new instruction for our predictor, using the temperature specified for this round
-        original_temp = prompt_model.kwargs["temperature"]
-        with dspy.settings.context(lm=prompt_model):
-            prompt_model.kwargs["temperature"] = T
+        original_temp = self.prompt_model.kwargs["temperature"]
+
+        with dspy.settings.context(lm=self.prompt_model):
+            self.prompt_model.kwargs["temperature"] = T
             proposed_instruction = instruction_generator.forward(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
@@ -355,10 +375,10 @@ class GroundedProposer(Proposer):
                 previous_instructions=instruction_history,
                 tip=tip,
             ).proposed_instruction
-        prompt_model.kwargs["temperature"] = original_temp
+        self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
-        prompt_model.inspect_history(n=1)
-        print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
+        if self.verbose: self.prompt_model.inspect_history(n=1)
+        if self.verbose: print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
 
         return strip_prefix(proposed_instruction)
