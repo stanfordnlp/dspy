@@ -130,6 +130,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 best_program = program
 
             scores.append(score)
+            print(f"Scores so far: {scores}")
             print(f"Best score so far: {max(scores)}")
 
             score_data.append((score, subscores, seed, program))

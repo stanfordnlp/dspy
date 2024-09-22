@@ -1,7 +1,8 @@
 import re
+import textwrap
 from .base import Adapter
 
-field_header_pattern = re.compile(r'\[\[\[ ### (\w+) ### \]\]\]')
+field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
 
 
 class ChatAdapter(Adapter):
@@ -11,21 +12,22 @@ class ChatAdapter(Adapter):
     def format(self, signature, demos, inputs):
         messages = []
 
-        # TODO: Extract `raw_demos` out of `demos`, i.e. demos where some of the output_fields are not filled in.
-        # raw_demos = [demo for demo in demos if not all(k in demo for k in signature.output_fields)]
-        # demos = [demo for demo in demos if demo not in raw_demos]
+        # Extract demos where some of the output_fields are not filled in.
+        incomplete_demos = [demo for demo in demos if not all(k in demo for k in signature.fields)]
+        complete_demos = [demo for demo in demos if demo not in incomplete_demos]
+        incomplete_demos = [demo for demo in incomplete_demos \
+                            if any(k in demo for k in signature.input_fields) and \
+                                any(k in demo for k in signature.output_fields)]
+
+        demos = incomplete_demos + complete_demos
 
         messages.append({"role": "system", "content": prepare_instructions(signature)})
-        # messages.append({"role": "system", "content": prepare_instructions(signature, raw_demos)})
-
-        # TODO: Remove the raw_demos from demos.
 
         for demo in demos:
-            output_fields_, demo_ = list(signature.output_fields.keys()) + ['completed'], {**demo, 'completed': ''}
-            messages.append({"role": "user", "content": format_chat_turn(signature.input_fields.keys(), demo)})
-            messages.append({"role": "assistant", "content": format_chat_turn(output_fields_, demo_)})
+            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
+            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
         
-        messages.append({"role": "user", "content": format_chat_turn(signature.input_fields.keys(), inputs)})
+        messages.append(format_turn(signature, inputs, role="user"))
 
         return messages
     
@@ -48,16 +50,52 @@ class ChatAdapter(Adapter):
 
         return fields
 
+def format_blob(blob):
+    if '\n' not in blob and "«" not in blob and "»" not in blob: return f"«{blob}»"
+
+    modified_blob = blob.replace('\n', '\n    ')
+    return f"«««\n    {modified_blob}\n»»»"
+
+
+def format_list(items):
+    if len(items) == 0: return "N/A"
+    if len(items) == 1: return format_blob(items[0])
+
+    return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(items)])
+
 
 def format_fields(fields):
-    return '\n\n'.join([f"[[[ ### {k} ### ]]]\n{v}" for k, v in fields.items()]).strip()
+    output = []
+    for k, v in fields.items():
+        v = v if not isinstance(v, list) else format_list(v)
+        output.append(f"[[ ## {k} ## ]]\n{v}")
 
-def format_chat_turn(field_names, values):
-    # TODO: Reinstate validation after dealing with raw_demos in the system messages.
-    # if not set(values).issuperset(set(field_names)):
-    #     raise ValueError(f"Expected {field_names} but got {values.keys()}")
+    return '\n\n'.join(output).strip()
+        
+        
+
+def format_turn(signature, values, role, incomplete=False):       
+    content = []
+
+    if role == "user":
+        field_names = signature.input_fields.keys()
+        if incomplete:
+            content.append("This is an example of the task, though some input or output fields are not supplied.")
+    else:
+        field_names, values = list(signature.output_fields.keys()) + ['completed'], {**values, 'completed': ''}
+
+    if not incomplete:
+        if not set(values).issuperset(set(field_names)):
+            raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    return format_fields({k: values.get(k, "Not supplied for this particular example.") for k in field_names})
+    content.append(format_fields({k: values.get(k, "Not supplied for this particular example.") for k in field_names}))
+
+    if role == "user":
+        content.append("Respond with the corresponding output fields, starting with the field " +
+                       ", then ".join(f"`{f}`" for f in signature.output_fields) +
+                       ", and then ending with the marker for `completed`.")
+
+    return {"role": role, "content": '\n\n'.join(content).strip()}
 
 def enumerate_fields(fields):
     parts = []
@@ -78,12 +116,13 @@ def prepare_instructions(signature):
     parts.append(format_fields({f : f"{{{f}}}" for f in signature.output_fields}))
     parts.append(format_fields({'completed' : ""}))
 
-    objective = ('\n' + ' ' * 8).join([''] + signature.instructions.splitlines())
+    instructions = textwrap.dedent(signature.instructions)
+    objective = ('\n' + ' ' * 8).join([''] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")
 
-    parts.append("You will receive some input fields in each interaction. " +
-                 "Respond only with the corresponding output fields, starting with the field " +
-                 ", then ".join(f"`{f}`" for f in signature.output_fields) +
-                 ", and then ending with the marker for `completed`.")
+    # parts.append("You will receive some input fields in each interaction. " +
+    #              "Respond only with the corresponding output fields, starting with the field " +
+    #              ", then ".join(f"`{f}`" for f in signature.output_fields) +
+    #              ", and then ending with the marker for `completed`.")
 
     return '\n\n'.join(parts).strip()

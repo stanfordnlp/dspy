@@ -1,6 +1,7 @@
 import os
 import ujson
 import functools
+from pathlib import Path
 
 try:
     import warnings
@@ -9,7 +10,8 @@ try:
         import litellm
 
     from litellm.caching import Cache
-    litellm.cache = Cache(disk_cache_dir=".dspy_cache", type="disk")
+    disk_cache_dir = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
+    litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
 
 except ImportError:
     class LitellmPlaceholder:
@@ -18,11 +20,11 @@ except ImportError:
     litellm = LitellmPlaceholder()
 
 class LM:
-    def __init__(self, model, model_type='chat', temperature=0.0, cache=True, **kwargs):
+    def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.kwargs = dict(temperature=temperature, **kwargs)
+        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
     
     def __call__(self, prompt=None, messages=None, **kwargs):
@@ -90,7 +92,7 @@ def _red(text: str, end: str = "\n"):
 def _inspect_history(lm, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in reversed(lm.history[-n:]):
+    for item in lm.history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item['prompt']}]
         outputs = item["outputs"]
 
