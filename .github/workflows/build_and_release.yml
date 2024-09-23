@@ -55,33 +55,6 @@ jobs:
         with: 
           repository-url: https://test.pypi.org/legacy/
 
-  test-intro-script: 
-    needs: [extract-tag, build-and-publish-test-pypi]
-    runs-on: ubuntu-latest
-    steps:  
-      - uses: actions/checkout@v4 
-      - name: Set up Python 3.9  
-        uses: actions/setup-python@v5
-        with:  
-          python-version: "3.9"  
-          cache: "pip"
-      - name: Install package from TestPyPI
-        run: |
-          .github/workflow_scripts/install_testpypi_pkg.sh ${{ needs.extract-tag.outputs.version }}
-      - name: Install other dependencies
-        run: |  
-          python3 -m pip install Jinja2
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install -r requirements-dev.txt
-          python3 -m pip install openai==0.28.1
-      - name: Set up cache directory  
-        run: | 
-          mkdir -p cache  
-          echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV  
-      - name: Run Python script  
-        run: |    
-          pytest -c tests_integration/pytest.ini tests_integration/
-
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi, test-intro-script]
     runs-on: ubuntu-latest
