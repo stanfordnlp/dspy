@@ -1,6 +1,11 @@
 import re
+import ast
+import json
 import textwrap
+
+from pydantic import TypeAdapter
 from .base import Adapter
+from typing import get_origin, get_args
 
 field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
 
@@ -43,7 +48,11 @@ class ChatAdapter(Adapter):
 
         fields = {}
         for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields): fields[k] = v
+            if (k not in fields) and (k in signature.output_fields):
+                try:
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                except Exception as e:
+                    raise ValueError(f"Error parsing field {k}: {e}, with value ```{v}```")
 
         if fields.keys() != signature.output_fields.keys():
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
@@ -72,7 +81,17 @@ def format_fields(fields):
 
     return '\n\n'.join(output).strip()
         
-        
+
+def parse_value(value, annotation):
+    if annotation is str: return str(value)
+    parsed_value = value
+    if isinstance(value, str):
+        try: parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            try: parsed_value = ast.literal_eval(value)
+            except (ValueError, SyntaxError): parsed_value = value
+    return TypeAdapter(annotation).validate_python(parsed_value)
+
 
 def format_turn(signature, values, role, incomplete=False):       
     content = []
@@ -97,11 +116,24 @@ def format_turn(signature, values, role, incomplete=False):
 
     return {"role": role, "content": '\n\n'.join(content).strip()}
 
+
+def get_annotation_name(annotation):
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None:
+        if hasattr(annotation, '__name__'):
+            return annotation.__name__
+        else:
+            return str(annotation)
+    else:
+        args_str = ', '.join(get_annotation_name(arg) for arg in args)
+        return f"{origin.__name__}[{args_str}]"
+
 def enumerate_fields(fields):
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
-        parts[-1] += f" ({v.annotation.__name__})"
+        parts[-1] += f" ({get_annotation_name(v.annotation)})"
         parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra['desc'] != f'${{{k}}}' else ''
 
     return '\n'.join(parts).strip()
