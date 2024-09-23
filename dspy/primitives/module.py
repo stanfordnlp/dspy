@@ -1,4 +1,5 @@
 import copy
+import logging
 from collections import deque
 from collections.abc import Generator
 
@@ -125,6 +126,10 @@ class BaseModule:
                     # Try to deep copy the attribute
                     setattr(new_instance, attr, copy.deepcopy(value))
                 except Exception:
+                    logging.warning(
+                        f"Failed to deep copy attribute '{attr}' of {self.__class__.__name__}, "
+                        "falling back to shallow copy or reference copy."
+                    )
                     try:
                         # Fallback to shallow copy if deep copy fails
                         setattr(new_instance, attr, copy.copy(value))
