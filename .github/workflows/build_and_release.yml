@@ -56,7 +56,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
 
   build-and-publish-pypi:
-    needs: [extract-tag, build-and-publish-test-pypi, test-intro-script]
+    needs: [extract-tag, build-and-publish-test-pypi]
     runs-on: ubuntu-latest
     environment: 
       name: pypi
