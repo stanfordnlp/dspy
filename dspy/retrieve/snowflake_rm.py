@@ -35,25 +35,28 @@ class SnowflakeRM(dspy.Retrieve):
         cortex_search_service: str,
         snowflake_database: str,
         snowflake_schema: str,
-        retrieval_columns: list,
-        search_filter=None,
         k: int = 3,
     ):
         super().__init__(k=k)
         self.k = k
         self.cortex_search_service_name = cortex_search_service
-        self.retrieval_columns = retrieval_columns
-        self.search_filter = search_filter
         self.client = self._fetch_cortex_service(
             snowflake_session, snowflake_database, snowflake_schema, cortex_search_service
         )
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
-        """Query Cortex Search endpoint for top relevant passages.
+    def forward(
+        self,
+        query_or_queries: Union[str, list[str]],
+        retrieval_columns: list[str],
+        filter: Optional[dict] = None,
+        k: Optional[int] = None,
+    ) -> dspy.Prediction:
+        """Query Cortex Search endpoint for top k relevant passages.
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
+            retrieval_columns (List[str]): Columns to include in response.
+            filter (Optional[json]):Filter query.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
-
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
         """
@@ -66,12 +69,12 @@ class SnowflakeRM(dspy.Retrieve):
             response_chunks = self._query_cortex_search(
                 cortex_search_service=self.client,
                 query=cortex_query,
-                columns=self.retrieval_columns,
-                filter=self.search_filter,
+                columns=retrieval_columns,
+                filter=filter,
                 k=k,
             )
 
-            if len(self.retrieval_columns) == 1:
+            if len(retrieval_columns) == 1:
                 passages.extend(
                     dotdict({"long_text": passage[self.retrieval_columns[0]]}) for passage in response_chunks["results"]
                 )
@@ -100,8 +103,8 @@ class SnowflakeRM(dspy.Retrieve):
         Args:
             cortex_search_service (object): cortex search service for querying
             query (str): The query or queries to search for.
-            repsonse_columns: A comma-separated list of columns to return for each relevant result in the response. These columns must be included in the source query for the service.
-            filters: A filter object for filtering results based on data in the ATTRIBUTES columns. See Filter syntax.
+            columns (Optional[list]): A comma-separated list of columns to return for each relevant result in the response. These columns must be included in the source query for the service.
+            filter (Optional[json]): A filter object for filtering results based on data in the ATTRIBUTES columns. See Filter syntax.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
 
         Returns:
