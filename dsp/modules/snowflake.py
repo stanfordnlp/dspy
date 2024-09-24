@@ -3,15 +3,12 @@ import json
 from typing import Any
 
 import backoff
-from pydantic_core import PydanticCustomError
 
 from dsp.modules.lm import LM
 from dsp.utils.settings import settings
 
 try:
-    from snowflake.snowpark import Session
     from snowflake.snowpark import functions as snow_func
-
 except ImportError:
     pass
 
@@ -35,53 +32,34 @@ def giveup_hdlr(details) -> bool:
 class Snowflake(LM):
     """Wrapper around Snowflake's CortexAPI.
 
-    Currently supported models include 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b',
+    Supported models include 'llama3.1-70b','llama3.1-405b','snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b',
     'llama2-70b-chat','mistral-7b','gemma-7b','llama3-8b','llama3-70b','reka-core'.
     """
 
-    def __init__(self, model: str = "mixtral-8x7b", credentials=None, **kwargs):
+    def __init__(self, session: object, model: str = "mixtral-8x7b", **kwargs):
         """Parameters
 
         ----------
+        session:
+            Snowflake Snowpark session for accessing Snowflake Cortex service.
+            Full list of requirements can be found here: https://docs.snowflake.com/en/developer-guide/snowpark/reference/python/latest/api/snowflake.snowpark.Session
         model : str
-            Which pre-trained model from Snowflake to use?
+            Which pre-trained model from Snowflake to use.
             Choices are 'snowflake-arctic','mistral-large','reka-flash','mixtral-8x7b','llama2-70b-chat','mistral-7b','gemma-7b'
             Full list of supported models is available here: https://docs.snowflake.com/en/user-guide/snowflake-cortex/llm-functions#complete
-        credentials: dict
-            Snowflake credentials required to initialize the session. 
-            Full list of requirements can be found here: https://docs.snowflake.com/en/developer-guide/snowpark/reference/python/latest/api/snowflake.snowpark.Session
         **kwargs: dict
             Additional arguments to pass to the API provider.
         """
         super().__init__(model)
 
+        self.client = self._init_cortex(snowflake_session=session)
         self.model = model
-        cortex_models = [
-            "llama3-8b",
-            "llama3-70b",
-            "reka-core",
-            "snowflake-arctic",
-            "mistral-large",
-            "reka-flash",
-            "mixtral-8x7b",
-            "llama2-70b-chat",
-            "mistral-7b",
-            "gemma-7b",
-        ]
+        self.available_args = {
+            "max_tokens",
+            "temperature",
+            "top_p",
+        }
 
-        if model in cortex_models:
-            self.available_args = {
-                "max_tokens",
-                "temperature",
-                "top_p",
-            }
-        else:
-            raise PydanticCustomError(
-                "model",
-                'model name is not valid, got "{model_name}"',
-            )
-
-        self.client = self._init_cortex(credentials=credentials)
         self.provider = "Snowflake"
         self.history: list[dict[str, Any]] = []
         self.kwargs = {
@@ -94,11 +72,11 @@ class Snowflake(LM):
         }
 
     @classmethod
-    def _init_cortex(cls, credentials: dict) -> None:
-        session = Session.builder.configs(credentials).create()
-        session.query_tag = {"origin": "sf_sit", "name": "dspy", "version": {"major": 1, "minor": 0}}
+    def _init_cortex(cls, snowflake_session) -> None:
+        # session = Session.builder.configs(credentials).create()
+        snowflake_session.query_tag = {"origin": "sf_sit", "name": "dspy", "version": {"major": 1, "minor": 0}}
 
-        return session
+        return snowflake_session
 
     def _prepare_params(
         self,

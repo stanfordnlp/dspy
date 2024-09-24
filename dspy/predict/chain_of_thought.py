@@ -27,8 +27,13 @@ class ChainOfThought(Module):
             desc = f"${{produce the {last_key}}}. We ..."
 
         rationale_type = rationale_type or dspy.OutputField(prefix=prefix, desc=desc)
+
         # Add "rationale" field to the output signature.
-        extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        if isinstance(dspy.settings.lm, dspy.LM):
+            extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
+        else:
+            extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        
         self._predict = dspy.Predict(extended_signature, **config)
         self._predict.extended_signature = extended_signature
 

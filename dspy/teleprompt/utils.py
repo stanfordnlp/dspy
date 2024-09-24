@@ -15,7 +15,6 @@ except ImportError:
     extract_symbols = None
 
 import dspy
-from dspy.predict.parameter import Parameter
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
 
 """
@@ -44,13 +43,12 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
     # Evaluate on the full trainset
     if batch_size >= len(trainset):
-        score = evaluate(candidate_program, devset=trainset, display_table=0)
+        score = evaluate(candidate_program, devset=trainset)
     # Or evaluate on a minibatch
     else:
         score = evaluate(
             candidate_program,
             devset=create_minibatch(trainset, batch_size),
-            display_table=0,
         )
 
     return score
@@ -120,12 +118,10 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
         if key in fully_evaled_param_combos:
             continue
 
-        print(f"Best Combination: {key} with Mean = {mean}")
-
-        return program, key
+        return program, mean, key
 
     # If no valid program is found, we return the last valid one that we found
-    return program, key
+    return program, mean, key
 
 
 def calculate_last_n_proposed_quality(
@@ -184,7 +180,7 @@ def print_full_program(program):
         print(f"i: {get_signature(predictor).instructions}")
         *_, last_field = get_signature(predictor).fields.values()
         print(f"p: {last_field.json_schema_extra['prefix']}")
-        print("\n")
+    print("\n")
 
 
 def save_candidate_program(program, log_dir, trial_num, note=None):
@@ -227,24 +223,30 @@ def setup_logging(log_dir):
         return
     # Create a logger
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.WARNING)
 
     # Create a file handler that logs debug and higher level messages
     file_handler = logging.FileHandler(f"{log_dir}/logs.txt")
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.WARNING)
     file_formatter = logging.Formatter("%(asctime)s - %(message)s")
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
 
     # Create a console handler with a higher log level
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)
     console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
 
 ### OTHER UTILS ###
+
+def get_prompt_model(prompt_model):
+    if prompt_model:
+        return prompt_model
+    else:
+        return dspy.settings.lm
 
 def get_signature(predictor):
     if hasattr(predictor, "extended_signature"):
@@ -269,6 +271,7 @@ def create_n_fewshot_demo_sets(
     max_bootstrapped_demos,
     metric,
     teacher_settings,
+    max_errors=10,
     max_rounds=1,
     labeled_sample=True,
     min_num_samples=1,
@@ -297,6 +300,8 @@ def create_n_fewshot_demo_sets(
     # Go through and create each candidate set
     for seed in range(-3, num_candidate_sets):
 
+        print(f"Bootstrapping set {seed+4}/{num_candidate_sets+3}")
+
         trainset2 = list(trainset)
 
         if seed == -3 and include_non_bootstrapped:
@@ -318,6 +323,7 @@ def create_n_fewshot_demo_sets(
             # unshuffled few-shot
             program = BootstrapFewShot(
                 metric=metric,
+                max_errors=max_errors,
                 max_bootstrapped_demos=max_bootstrapped_demos,
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,
@@ -332,6 +338,7 @@ def create_n_fewshot_demo_sets(
 
             teleprompter = BootstrapFewShot(
                 metric=metric,
+                max_errors=max_errors,
                 metric_threshold=metric_threshold,
                 max_bootstrapped_demos=size,
                 max_labeled_demos=max_labeled_demos,
@@ -393,44 +400,3 @@ def new_getfile(object):
     raise TypeError(f'Source for {object!r} not found')
 
 inspect.getfile = new_getfile
-
-def get_dspy_source_code(module):
-    header = []
-    base_code = ""
-
-    # Don't get source code for Predict or ChainOfThought modules (NOTE we will need to extend this list as more DSPy.modules are added)
-    if not type(module).__name__ == "Predict" and not type(module).__name__ == "ChainOfThought":
-        try:
-            base_code = inspect.getsource(type(module))
-        except TypeError:
-            obj = type(module)
-            cell_code = "".join(inspect.linecache.getlines(new_getfile(obj)))
-            class_code = extract_symbols(cell_code, obj.__name__)[0][0]
-            base_code = str(class_code)
-
-    completed_set = set()
-    for attribute in module.__dict__.keys():
-        try:
-            iterable = iter(getattr(module, attribute))
-        except TypeError:
-            iterable = [getattr(module, attribute)]
-
-        for item in iterable:
-            if item in completed_set:
-                continue
-            if isinstance(item, Parameter):
-                if hasattr(item, 'signature') and item.signature is not None and item.signature.__pydantic_parent_namespace__['signature_name'] + "_sig" not in completed_set:
-                    try:
-                        header.append(inspect.getsource(item.signature))
-                        print(inspect.getsource(item.signature))
-                    except (TypeError, OSError):
-                        header.append(str(item.signature))
-                    completed_set.add(item.signature.__pydantic_parent_namespace__['signature_name'] + "_sig")
-            if isinstance(item, dspy.Module):
-                code = get_dspy_source_code(item).strip()
-                if code not in completed_set:
-                    header.append(code)
-                    completed_set.add(code)
-            completed_set.add(item)
-        
-    return '\n\n'.join(header) + '\n\n' + base_code

@@ -1,8 +1,16 @@
 import json
 import re
+import dspy
+import inspect
+try:
+    from IPython.core.magics.code import extract_symbols
+except ImportError:
+    # Won't be able to read code from juptyer notebooks
+    extract_symbols = None
+
+from dspy.predict.parameter import Parameter
 
 from dspy.teleprompt.utils import get_signature
-
 
 def strip_prefix(text):
     pattern = r'^[\*\s]*(([\w\'\-]+\s+){0,4}[\w\'\-]+):\s*'
@@ -132,3 +140,44 @@ def create_example_string(fields, example):
 
     # Joining all the field strings
     return '\n'.join(output)
+
+def get_dspy_source_code(module):
+    header = []
+    base_code = ""
+
+    # Don't get source code for Predict or ChainOfThought modules (NOTE we will need to extend this list as more DSPy.modules are added)
+    if not type(module).__name__ == "Predict" and not type(module).__name__ == "ChainOfThought":
+        try:
+            base_code = inspect.getsource(type(module))
+        except TypeError:
+            obj = type(module)
+            cell_code = "".join(inspect.linecache.getlines(new_getfile(obj)))
+            class_code = extract_symbols(cell_code, obj.__name__)[0][0]
+            base_code = str(class_code)
+
+    completed_set = set()
+    for attribute in module.__dict__.keys():
+        try:
+            iterable = iter(getattr(module, attribute))
+        except TypeError:
+            iterable = [getattr(module, attribute)]
+
+        for item in iterable:
+            if item in completed_set:
+                continue
+            if isinstance(item, Parameter):
+                if hasattr(item, 'signature') and item.signature is not None and item.signature.__pydantic_parent_namespace__['signature_name'] + "_sig" not in completed_set:
+                    try:
+                        header.append(inspect.getsource(item.signature))
+                        print(inspect.getsource(item.signature))
+                    except (TypeError, OSError):
+                        header.append(str(item.signature))
+                    completed_set.add(item.signature.__pydantic_parent_namespace__['signature_name'] + "_sig")
+            if isinstance(item, dspy.Module):
+                code = get_dspy_source_code(item).strip()
+                if code not in completed_set:
+                    header.append(code)
+                    completed_set.add(code)
+            completed_set.add(item)
+        
+    return '\n\n'.join(header) + '\n\n' + base_code
