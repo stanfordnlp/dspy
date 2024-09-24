@@ -95,7 +95,7 @@ In this teleprompter there is a breadth and depth argument that defines the numb
 ```python
 kwargs = dict(num_threads=64, display_progress=True, display_table=0) # Used in Evaluate class in the optimization process
 
-compiled_prompt_opt = teleprompter.compile(cot, trainset=devset, eval_kwargs=kwargs)
+compiled_prompt_opt = teleprompter.compile(cot, trainset=trainset, eval_kwargs=kwargs)
 ```
 
 Once the training is done you'll have better instructions and prefixes that you'll need to edit in signature manually. So let's say the output during optimization is like:
