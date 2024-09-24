@@ -63,7 +63,7 @@ class Settings:
         if name in self.config:
             return self.config[name]
 
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        super().__getattr__(name)
 
     def __append(self, config):
         thread_id = threading.get_ident()
