@@ -1,7 +1,13 @@
 from typing import Any, Optional, Literal, Dict, List, Union, cast
 from pydantic import BaseModel
+import os
 
-import litellm
+if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
+    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+import litellm  
+litellm.telemetry = False
+
 from litellm.types.utils import Choices, ModelResponse, Usage
 from litellm.caching import Cache
 
