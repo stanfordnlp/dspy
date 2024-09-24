@@ -12,7 +12,6 @@ import json
 import textwrap
 
 from pydantic import TypeAdapter
-from .base import Adapter
 from typing import get_origin, get_args
 
 field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
