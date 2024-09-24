@@ -85,8 +85,10 @@ class LM(ABC):
                     printed.append((prompt, x))
                 elif provider == "you.com":
                     printed.append((prompt, x["response"]["answer"]))
+                elif provider == "vllm_offline":
+                    printed.append((prompt, x["response"].outputs))
                 elif provider == "vllm":
-                    printed.append((prompt, x["response"][0].outputs))
+                    printed.append((prompt, x["response"]["choices"]))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -127,6 +129,8 @@ class LM(ABC):
             elif provider == "cloudflare":
                 text = choices[0]
             elif provider == "vllm":
+                text = choices[0]["message"]["content"]
+            elif provider == "vllm_offline":
                 text = choices[0].text
             else:
                 text = choices[0]["text"]

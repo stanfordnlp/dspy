@@ -1,0 +1,104 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [],
+        "question": "Out of Central Nebraska Regional Airport and Chippewa County International Airport, which one is more west in the USA?",
+        "rationale": "produce the output fields. We need to identify the locations of the two airports and determine which one is more west in the USA.",
+        "search_query": "\"Central Nebraska Regional Airport vs Chippewa County International Airport which one is more west in the USA\""
+      },
+      {
+        "question": "what revolution led to the overthrow of King James II of England and its news led to overthrow of androws in the Boston Revolt",
+        "answer": "The Glorious Revolution,",
+        "dspy_uuid": "a9a454c3-3722-4ea3-8109-3a20ab9c1752",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In how many countries is the meat substitute product which has the same name with where Jedd Hughes was born available? ",
+        "answer": "19 countries",
+        "dspy_uuid": "27a6f9ac-4e6a-46fa-9d21-11d7994885a7",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Central Nebraska Regional Airport | Central Nebraska Regional Airport (IATA: GRI, ICAO: KGRI, FAA LID: GRI) is three miles northeast of Grand Island, in Hall County, Nebraska. It is owned by the Hall County Airport Authority. The airport sees two airlines, subsidized by the Essential Air Service program.",
+          "Chippewa Valley Regional Airport | Chippewa Valley Regional Airport (IATA: KEAU, ICAO: EAU) is a public use airport in Chippewa County, Wisconsin, United States. The airport is owned by Eau Claire county and is located three nautical miles (6 km) north of the central business district of the city of Eau Claire, Wisconsin.",
+          "Central Illinois Regional Airport | Central Illinois Regional Airport at Bloomington-Normal (IATA: KBMI, ICAO: BMI) is a public airport in McLean County, Illinois, three miles east of Bloomington and southeast of Normal. Owned by the Bloomington-Normal Airport Authority, it is also known as Central Illinois Regional Airport (CIRA)."
+        ],
+        "question": "Out of Central Nebraska Regional Airport and Chippewa County International Airport, which one is more west in the USA?",
+        "rationale": "produce the output fields. We need to identify the locations of Central Nebraska Regional Airport and Chippewa Valley Regional Airport, and then determine which one is more west in the USA.",
+        "search_query": "(\"Central Nebraska Regional Airport\" OR \"Chippewa Valley Regional Airport\") AND (\"USA\" OR \"United States\") AND (\"west\" OR \"western\")"
+      },
+      {
+        "question": "In how many countries is the meat substitute product which has the same name with where Jedd Hughes was born available? ",
+        "answer": "19 countries",
+        "dspy_uuid": "27a6f9ac-4e6a-46fa-9d21-11d7994885a7",
+        "dspy_split": "train"
+      },
+      {
+        "question": "what revolution led to the overthrow of King James II of England and its news led to overthrow of androws in the Boston Revolt",
+        "answer": "The Glorious Revolution,",
+        "dspy_uuid": "a9a454c3-3722-4ea3-8109-3a20ab9c1752",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "context": [
+          "Central Nebraska Regional Airport | Central Nebraska Regional Airport (IATA: GRI, ICAO: KGRI, FAA LID: GRI) is three miles northeast of Grand Island, in Hall County, Nebraska. It is owned by the Hall County Airport Authority. The airport sees two airlines, subsidized by the Essential Air Service program.",
+          "Chippewa Valley Regional Airport | Chippewa Valley Regional Airport (IATA: KEAU, ICAO: EAU) is a public use airport in Chippewa County, Wisconsin, United States. The airport is owned by Eau Claire county and is located three nautical miles (6 km) north of the central business district of the city of Eau Claire, Wisconsin.",
+          "Central Illinois Regional Airport | Central Illinois Regional Airport at Bloomington-Normal (IATA: KBMI, ICAO: BMI) is a public airport in McLean County, Illinois, three miles east of Bloomington and southeast of Normal. Owned by the Bloomington-Normal Airport Authority, it is also known as Central Illinois Regional Airport (CIRA).",
+          "Hudson Valley Regional Airport | Hudson Valley Regional Airport (IATA: POU, ICAO: KPOU, FAA LID: POU) , formerly known as the Dutchess County Airport, is a county-owned public-use airport located on State Route 376 in the Town of Wappinger, Dutchess County, New York, United States, four miles (6 km) south of the central business district of Poughkeepsie. It is sometimes called Poughkeepsie Airport, which gives it the code \"POU\". The airport provides corporate and general aviation transportation services."
+        ],
+        "question": "Out of Central Nebraska Regional Airport and Chippewa County International Airport, which one is more west in the USA?",
+        "rationale": "produce the output fields. We need to compare the locations of Central Nebraska Regional Airport and Chippewa Valley Regional Airport. We can do this by looking at their coordinates or their geographical locations. According to the context, Central Nebraska Regional Airport is located in Hall County, Nebraska, while Chippewa Valley Regional Airport is located in Chippewa County, Wisconsin. Since Nebraska is generally west of Wisconsin, we can conclude that Central Nebraska Regional Airport is more west in the USA.",
+        "answer": "Central Nebraska Regional Airport"
+      },
+      {
+        "question": "what revolution led to the overthrow of King James II of England and its news led to overthrow of androws in the Boston Revolt",
+        "answer": "The Glorious Revolution,",
+        "dspy_uuid": "a9a454c3-3722-4ea3-8109-3a20ab9c1752",
+        "dspy_split": "train"
+      },
+      {
+        "question": "In how many countries is the meat substitute product which has the same name with where Jedd Hughes was born available? ",
+        "answer": "19 countries",
+        "dspy_uuid": "27a6f9ac-4e6a-46fa-9d21-11d7994885a7",
+        "dspy_split": "train"
+      }
+    ],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

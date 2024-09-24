@@ -161,7 +161,6 @@ class MultiOpenAI(LM):
             if self.system_prompt:
                 messages.insert(0, {"role": "system", "content": self.system_prompt})
             kwargs["messages"] = messages
-            # print("in basic_request", kwargs["temperature"])
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = self.chat_request(**kwargs)
 
