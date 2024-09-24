@@ -30,5 +30,7 @@ from .snowflake import *
 from .tensorrt_llm import TensorRTModel
 from .trainable_anyscale import TrainableAnyscale
 from .vllm_engine import VLLMOfflineEngine
+from .vllm_engine_2 import VLLMOfflineEngine2
+from .vllm_engine_3 import VLLMOfflineEngine3
 from .watsonx import *
 from .you import You

@@ -2,7 +2,7 @@ from vllm import AsyncLLMEngine, SamplingParams, AsyncEngineArgs, RequestOutput
 from vllm.entrypoints.chat_utils import parse_chat_messages
 
 from typing import List, Dict, Optional, Union
-
+import concurrent.futures
 import asyncio
 try:
     from vllm.inputs.data import TextTokensPrompt
@@ -39,6 +39,8 @@ class AsyncLLMWrapper:
         self.max_pending_requests = max_pending_requests
         self.tokenizer = tokenizer
         self.lock = asyncio.Lock()
+        self.submit_lock = asyncio.Lock()
+        self.engine_model_config = asyncio.run(self.engine.get_model_config())
 
         # vLLM performance gets really bad if there are too many requests in the pending queue.
         # We work around it by introducing another queue that gates how many requests we are
@@ -59,8 +61,9 @@ class AsyncLLMWrapper:
             prompt = TextTokensPrompt(prompt=prompt, prompt_token_ids=prompt_token_ids)
         if self.max_pending_requests > 0:
             await self.free_queue.get()
-        # print("adding request with id", request_id)
-        stream = await self.engine.add_request(request_id=str(request_id), inputs=prompt, params=sampling_params, lora_request=lora_request)
+        print("adding request with id", request_id)
+        async with self.lock:
+            stream = await self.engine.add_request(request_id=str(request_id), inputs=prompt, params=sampling_params, lora_request=lora_request)
         async for request_output in stream:
             if request_output.finished:
                 if self.max_pending_requests > 0:
@@ -76,18 +79,20 @@ class AsyncLLMWrapper:
         tasks = []
 
         for i, p in enumerate(prompt):
-            self.request_id += 1
+            async with self.lock:
+                self.request_id += 1
             if prompt_token_ids:
                 pti = prompt_token_ids[i]
                 p = TextTokensPrompt(prompt=p, prompt_token_ids=pti)
             else:
                 assert p["prompt_token_ids"]
                 pti = None
-            tasks.append(
-                asyncio.create_task(
-                    self._process(self.request_id, p, pti, sampling_params, i, lora_request)
+            async with self.lock:
+                tasks.append(
+                    asyncio.create_task(
+                        self._process(self.request_id, p, pti, sampling_params, i, lora_request)
+                    )
                 )
-            )
         return tasks
 
     async def generate_async(self, prompt, sampling_params, prompt_token_ids):
@@ -108,7 +113,7 @@ class AsyncLLMWrapper:
         add_generation_prompt: bool = True,
     ) -> List[RequestOutput]:
         # async with self.lock:
-        model_config = await asyncio.wait_for(self.engine.get_model_config(), timeout=10)
+        model_config = self.engine_model_config
         conversations= [parse_chat_messages(conversation, model_config,
                                                self.tokenizer)[0] for conversation in messages]
         prompts = [apply_chat_template(
@@ -127,20 +132,20 @@ class AsyncLLMWrapper:
         return returns
 
     def chat(self, messages: List[List[Dict[str, str]]], sampling_params: Optional[Union[SamplingParams, List[SamplingParams]]] = None, use_tqdm: bool = True, lora_request = None, chat_template: Optional[str] = None, add_generation_prompt: bool = True):
-        if self.loop.is_running():
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            ret = new_loop.run_until_complete(
-                self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt)
-            )
-            new_loop.close()
-            asyncio.set_event_loop(self.loop)
-            return ret
-        else:
-            ret = self.loop.run_until_complete(
-            self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt)
-        )
-        return ret
+        def run_in_new_loop():
+            print("running in new loop")
+            return asyncio.run(self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt))
+
+        # if self.loop.is_running():
+        # Run in a separate thread to avoid blocking the main loop
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+        # else:
+        #     # If the loop is not running, we can run it directly
+        #     return self.loop.run_until_complete(
+        #         self.chat_async(messages, sampling_params, use_tqdm, lora_request, chat_template, add_generation_prompt)
+        #     )
 
     async def chat_single(self, messages: List[Dict[str, str]], sampling_params: Optional[Union[SamplingParams, List[SamplingParams]]] = None, use_tqdm: bool = True, lora_request = None, chat_template: Optional[str] = None, add_generation_prompt: bool = True):
         async with self.lock:

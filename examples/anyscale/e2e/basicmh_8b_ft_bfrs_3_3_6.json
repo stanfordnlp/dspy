@@ -1,0 +1,35 @@
+{
+  "retrieve": {
+    "k": 3
+  },
+  "generate_query[0]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_query[1]": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "signature_prefix": "Search Query:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `search_query`.",
+    "extended_signature_prefix": "Search Query:"
+  },
+  "generate_answer": {
+    "lm": null,
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "signature_prefix": "Answer:",
+    "extended_signature_instructions": "Given the fields `context`, `question`, produce the fields `answer`.",
+    "extended_signature_prefix": "Answer:"
+  }
+}

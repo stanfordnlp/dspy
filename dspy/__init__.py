@@ -58,6 +58,8 @@ Watsonx = dsp.Watsonx
 PremAI = dsp.PremAI
 
 VLLMOfflineEngine  = dsp.VLLMOfflineEngine
+VLLMOfflineEngine2 = dsp.VLLMOfflineEngine2
+VLLMOfflineEngine3 = dsp.VLLMOfflineEngine3
 You = dsp.You
 
 configure = settings.configure
