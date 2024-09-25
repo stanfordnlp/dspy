@@ -28,7 +28,7 @@ class SnowflakeRM(dspy.Retrieve):
         cortex_search_service(str): Name of the Cortex Search service to be used.
         snowflake_database (str): The name of the Snowflake table containing document embeddings.
         snowflake_schema (str): The name of the Snowflake table containing document embeddings.
-        auto_filter (bool): Generate and push down filter based on user query prior to retrieving results.
+        auto_filter (bool): Auto generate metadata filter based on user query and push it down prior to retrieving Cortex Search results.
         k (int, optional): The default number of top passages to retrieve. Defaults to 3.
     """
 
