@@ -7,7 +7,10 @@ try:
     import warnings
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning)
-        import litellm
+        if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
+             os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+        import litellm  
+        litellm.telemetry = False
 
     from litellm.caching import Cache
     disk_cache_dir = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
