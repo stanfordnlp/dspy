@@ -14,6 +14,7 @@ SnowflakeRM(
      cortex_search_service: str,
      snowflake_database: str,
      snowflake_schema: dict,
+     auto_filter:bool,
      k: int = 3,
 )
 ```
@@ -24,6 +25,7 @@ SnowflakeRM(
 - `cortex_search_service (str)`: The name of the Cortex Search service to be used.
 - `snowflake_database (str)`: The name of the Snowflake database to be used with the Cortex Search service.
 - `snowflake_schema (str)`: The name of the Snowflake schema to be used with the Cortex Search service.
+- `auto_filter (bool)`: Auto-generate metadata filter and push it down to Cortex Search service prior to retrieving results.
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
 
 ### Methods
@@ -69,11 +71,11 @@ snowflake_retriever = SnowflakeRM(snowflake_session=snowpark,
     cortex_search_service="<YOUR_CORTEX_SERACH_SERVICE_NAME>",
     snowflake_database="<YOUR_SNOWFLAKE_DATABASE_NAME>",
     snowflake_schema="<YOUR_SNOWFLAKE_SCHEMA_NAME>",
+    auto_filter=True,
     k = 5)
 
 results = snowflake_retriever("Explore the meaning of life",
-    response_columns=["<NAME_OF_COLUMN_CONTAINING_TEXT>"],
-    filter={ "@eq": { "string_col": "value" } })
+    response_columns=["<NAME_OF_INDEXED_COLUMN>","<NAME_OF_ATTRIBUTE_COLUMN"])
 
 for result in results:
     print("Document:", result.long_text, "\n")
