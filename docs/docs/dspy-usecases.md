@@ -19,7 +19,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 |---|---|
 | **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
 | **[Replit](https://replit.com/)** | Synthesize diffs using code LLMs using a DSPy pipeline. [Blog](https://blog.replit.com/code-repair) |
-| **[Databricks](https://www.databricks.com/)** | Research, products, and customer solutions around LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) |
+| **[Databricks](https://www.databricks.com/)** | Research, products, and customer solutions around LM Judges, RAG applications, and classification tasks. [Blog](https://www.databricks.com/blog/dspy-databricks) [Blog II](https://www.databricks.com/customers/ddi) |
 | **[Sephora](https://www.sephora.com/)** | Undisclosed agent usecases; perspectives shared in [DAIS Session](https://www.youtube.com/watch?v=D2HurSldDkE). |
 | **[Zoro UK](https://www.zoro.co.uk/)** | E-commerce applications around structured shopping. [Portkey Session](https://www.youtube.com/watch?v=_vGKSc1tekE) |
 | **[VMware](https://www.vmware.com/)** | RAG and other prompt optimization applications. [Interview in The Register.](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/) [Business Insider.](https://www.businessinsider.com/chaptgpt-large-language-model-ai-prompt-engineering-automated-optimizer-2024-3) |
