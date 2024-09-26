@@ -3,7 +3,6 @@ import ujson
 import typing
 import inspect
 import pydantic
-import warnings
 
 from pydantic.fields import FieldInfo
 from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
