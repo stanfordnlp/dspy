@@ -142,7 +142,7 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         else:
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)", r"\1\n", code_block,
+                r"([a-zA-Z_]\w* *=.*?)(?=\n[a-zA-Z_]\w* *=)", r"\1\n", code_block,
             )
             code_block = re.sub(
                 r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$", r"\1\n\2", code_block,

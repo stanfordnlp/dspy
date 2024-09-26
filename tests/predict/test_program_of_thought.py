@@ -46,6 +46,18 @@ def test_pot_code_generation():
         Reasoning: Let's think step by step in order to Reason_B
 
         Answer: 2""")
+    
+def test_pot_code_parser():
+    pot = ProgramOfThought(BasicQA)
+    lm = DummyLM([
+        "Reason_A",
+        "```python\nif True==True and True==True:    result=True\n```", 
+        "Reason_B",
+        "True",
+    ])
+    dspy.settings.configure(lm=lm)
+    res = pot(question="What is True?")
+    assert res.answer == "True"    
 
 def test_pot_code_generation_with_error():
     pot = ProgramOfThought(BasicQA)
