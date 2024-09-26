@@ -112,6 +112,7 @@ The DSPy documentation is divided into **tutorials** (step-by-step illustration 
 - Hands-on Overviews of DSPy by the community: [DSPy Explained! by Connor Shorten](https://www.youtube.com/watch?v=41EfOY0Ldkc), [DSPy explained by code_your_own_ai](https://www.youtube.com/watch?v=ycfnKPxBMck), [DSPy Crash Course by AI Bites](https://youtu.be/5-zgASQKkKQ?si=3gnmVouT5_rpk_nu), [DSPy Paper Explained by Unify](https://youtu.be/kFB8kFchCH4?si=FuM6L5H5lweanckz)
 - Interviews: [Weaviate Podcast in-person](https://www.youtube.com/watch?v=CDung1LnLbY), and you can find 6-7 other remote podcasts on YouTube from a few different perspectives/audiences.
 - **Tracing in DSPy** with Arize Phoenix: [Tutorial for tracing your prompts and the steps of your DSPy programs](https://colab.research.google.com/github/Arize-ai/phoenix/blob/main/tutorials/tracing/dspy_tracing_tutorial.ipynb)
+- **Tracing & Experimentation in DSPy with Langtrace: [Run experiments, capture traces, metrics, checkpoints and visualize eval scores with Langtrace](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy#dspy)
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
 - **Tracing & Optimization Tracking in DSPy** with Parea AI: [Tutorial on tracing & evaluating a DSPy RAG program](https://docs.parea.ai/tutorials/dspy-rag-trace-evaluate/tutorial)
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
@@ -177,7 +178,6 @@ There are also recent cool examples at [Weaviate's DSPy cookbook](https://github
 For visualizing the progress during the optimization process, LangWatch has a [DSPy Visualizer](https://docs.langwatch.ai/dspy-visualization/quickstart) to help understanding and debugging the optimizer by inspecting the prompts, signature and demonstrations being optimized, the examples being evaluated, as well as the LM calls and costs:
 
 ![DSPy Visualizer](./docs/images/DSPy-visualizer.png)
-
 
 ## 3) Syntax: You're in charge of the workflow—it's free-form Python code!
 
