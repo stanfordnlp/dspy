@@ -357,6 +357,8 @@ class PythonInterpreter:
                 return any(results)
             else: #TODO - add any other BoolOps missing
                 raise InterpreterError(f"Boolean operator {condition.op} is not supported")
+        elif isinstance(condition, ast.Name):
+            return self._execute_name(name=condition)
         elif isinstance(condition, ast.Compare):
             if len(condition.ops) > 1:
                 raise InterpreterError("Cannot evaluate conditions with multiple operators")
