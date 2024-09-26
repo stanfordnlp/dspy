@@ -7,6 +7,12 @@ def test_execute_simple_code():
     result = interpreter.execute(code)
     assert result is None, "Simple print statement should return None"
 
+def test_execute_boolop_code():
+    interpreter = PythonInterpreter(action_space={'print': print})
+    code = "if (True and True) or (False and False): result = True"
+    result = interpreter.execute(code)
+    assert result is True, "Conditional with boolop should not raise an exception"    
+
 def test_action_space_limitation():
     def func(string):
         pass

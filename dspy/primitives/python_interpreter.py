@@ -188,6 +188,8 @@ class PythonInterpreter:
             return self._execute_call(expression)
         elif isinstance(expression, ast.Compare):
             return self._execute_condition(expression)
+        elif isinstance(expression, ast.BoolOp):
+            return self._execute_condition(expression)
         elif isinstance(expression, ast.Constant):
             # Constant -> just return the value
             return expression.value
