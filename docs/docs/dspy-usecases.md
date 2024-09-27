@@ -38,6 +38,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Dicer.ai](https://dicer.ai/)** | Uses DSPy for marketing AI to get the most from their paid ads. |
 | **[Howie](https://howie.ai)** | Using DSPy to automate meeting scheduling through email. |
 | **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
+| **[Trampoline AI](https://trampoline.ai)** | Uses DSPy to power their data-augmentation and LM pipelines. |
 
 WIP. This list mainly includes companies that have public posts or have OKed being included for specific products so far.
 
