@@ -1,12 +1,13 @@
-import inspect
 import json
+import ujson
 import typing
+import inspect
+import pydantic
+
+from pydantic.fields import FieldInfo
 from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
-import pydantic
-import ujson
-from pydantic.fields import FieldInfo
-
+import dsp
 import dspy
 from dsp.adapters import passages2text
 from dspy.primitives.prediction import Prediction
@@ -400,7 +401,12 @@ def _func_to_signature(func):
 
 def _unwrap_json(output, from_json: Callable[[str], Union[pydantic.BaseModel, str, None]]):
     try:
-        parsing_result = from_json(output)
+        parsing_result = None
+        if isinstance(dsp.settings.lm, dspy.LM):
+            parsing_result = output
+        else:
+            parsing_result = from_json(output)
+        
         if isinstance(parsing_result, pydantic.BaseModel):
             return parsing_result.model_dump_json()
         else:
