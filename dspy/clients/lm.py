@@ -13,7 +13,7 @@ try:
         litellm.telemetry = False
 
     from litellm.caching import Cache
-    disk_cache_dir = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
+    disk_cache_dir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
     litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
 
 except ImportError:
