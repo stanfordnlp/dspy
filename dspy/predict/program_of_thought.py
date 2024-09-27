@@ -156,7 +156,6 @@ class ProgramOfThought(Module):
         interpreter = PythonInterpreter(action_space={"print": print}, import_white_list=self.import_white_list)
         try:
             output = str(code_prompt.execute(interpreter=interpreter)[0])
-            print
             return code, output, None
         except Exception as e:
             return code, None, str(e)
