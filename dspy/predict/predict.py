@@ -18,10 +18,11 @@ def warn_once(msg: str):
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, **config):
+    def __init__(self, signature, _parse_values=True, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self._parse_values = _parse_values
         self.reset()
 
     def reset(self):
@@ -128,7 +129,7 @@ class Predict(Module, Parameter):
 
         import dspy
         if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(lm, config, signature, demos, kwargs)
+            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once("\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
                       f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
@@ -224,11 +225,11 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     return completions
 
 
-def v2_5_generate(lm, lm_kwargs, signature, demos, inputs):
+def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     import dspy
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-    return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs)
+    return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values)
     
 
 
