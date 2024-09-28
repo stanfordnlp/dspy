@@ -1,13 +1,12 @@
-import json
-import ujson
-import typing
 import inspect
-import pydantic
-
-from pydantic.fields import FieldInfo
+import json
+import typing
 from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
-import dsp
+import pydantic
+import ujson
+from pydantic.fields import FieldInfo
+
 import dspy
 from dsp.adapters import passages2text
 from dspy.primitives.prediction import Prediction
@@ -100,7 +99,7 @@ class TypedPredictor(dspy.Module):
         """
         super().__init__()
         self.signature = ensure_signature(signature, instructions)
-        self.predictor = dspy.Predict(signature)
+        self.predictor = dspy.Predict(signature, _parse_values=False)
         self.max_retries = max_retries
         self.wrap_json = wrap_json
         self.explain_errors = explain_errors
@@ -401,12 +400,7 @@ def _func_to_signature(func):
 
 def _unwrap_json(output, from_json: Callable[[str], Union[pydantic.BaseModel, str, None]]):
     try:
-        parsing_result = None
-        if isinstance(dsp.settings.lm, dspy.LM):
-            parsing_result = output
-        else:
-            parsing_result = from_json(output)
-        
+        parsing_result = from_json(output)
         if isinstance(parsing_result, pydantic.BaseModel):
             return parsing_result.model_dump_json()
         else:

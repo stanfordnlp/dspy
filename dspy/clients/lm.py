@@ -29,6 +29,9 @@ class LM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+        # Exceptions for O-1 models, which requires a temperature of 1.0.
+        if "o1-" in model: self.kwargs['temperature'] = 1.0
     
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
