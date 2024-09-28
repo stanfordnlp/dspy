@@ -45,7 +45,7 @@ jobs:
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
       - name: Update package name in setup.py
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' setup.py
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' setup.py 
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
@@ -54,6 +54,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with: 
           repository-url: https://test.pypi.org/legacy/
+          verbose: true
 
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi]
@@ -74,11 +75,23 @@ jobs:
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' setup.py
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+      # Publish to dspy-ai
       - name: Update package name in setup.py  
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' setup.py
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' pyproject.toml 
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' pyproject.toml
       - name: Build a binary wheel
         run: python3 setup.py sdist bdist_wheel
-      - name: Publish distribution 📦 to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+      - name: Publish distribution 📦 to PyPI (dspy-ai)
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
+      # Publish to dspy
+      - name: Update package name in setup.py  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy"/;}' setup.py
+      - name: Update package name in pyproject.toml
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy"/;}' pyproject.toml
+      - name: Build a binary wheel
+        run: python3 setup.py sdist bdist_wheel
+      - name: Publish distribution 📦 to PyPI (dspy)
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
+
+    
