@@ -36,7 +36,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(['{"value": ["What is the speed of light?", "What is the speed of sound?"]}'])
+    lm = DummyLM(['["What is the speed of light?", "What is the speed of sound?"]'])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -557,7 +557,7 @@ def test_parse_type_string():
 
 
 def test_literal():
-    lm = DummyLM([f'{{"value": "{i}"}}' for i in range(100)])
+    lm = DummyLM(['"2"', '"3"'])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -567,8 +567,22 @@ def test_literal():
     assert f() == "2"
 
 
+def test_literal_missmatch():
+    lm = DummyLM([f'"{i}"' for i in range(5, 100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor(max_retries=1)
+    def f() -> Literal["2", "3"]:
+        pass
+
+    with pytest.raises(Exception) as e_info:
+        f()
+
+    assert e_info.value.args[1]["f"] == "Input should be '2' or '3':  (error type: literal_error)"
+
+
 def test_literal_int():
-    lm = DummyLM([f'{{"value": {i}}}' for i in range(100)])
+    lm = DummyLM(["2", "3"])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -576,6 +590,20 @@ def test_literal_int():
         pass
 
     assert f() == 2
+
+
+def test_literal_int_missmatch():
+    lm = DummyLM([f"{i}" for i in range(5, 100)])
+    dspy.settings.configure(lm=lm)
+
+    @predictor(max_retries=1)
+    def f() -> Literal[2, 3]:
+        pass
+
+    with pytest.raises(Exception) as e_info:
+        f()
+
+    assert e_info.value.args[1]["f"] == "Input should be 2 or 3:  (error type: literal_error)"
 
 
 def test_fields_on_base_signature():
@@ -896,9 +924,7 @@ def _test_demos_missing_input():
 
 
 def test_conlist():
-    dspy.settings.configure(
-        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
-    )
+    dspy.settings.configure(lm=DummyLM(["[]", "[1]", "[1, 2]", "[1, 2, 3]"]))
 
     @predictor
     def make_numbers(input: str) -> Annotated[list[int], Field(min_items=2)]:
@@ -908,9 +934,7 @@ def test_conlist():
 
 
 def test_conlist2():
-    dspy.settings.configure(
-        lm=DummyLM(['{"value": []}', '{"value": [1]}', '{"value": [1, 2]}', '{"value": [1, 2, 3]}'])
-    )
+    dspy.settings.configure(lm=DummyLM(["[]", "[1]", "[1, 2]", "[1, 2, 3]"]))
 
     make_numbers = TypedPredictor("input:str -> output:Annotated[List[int], Field(min_items=2)]")
     assert make_numbers(input="What are the first two numbers?").output == [1, 2]

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy-ai"
 #replace_package_version_marker
-version="2.4.10"
+version="2.5.2"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -27,9 +27,9 @@ classifiers = [
 # `pip install .` will pull from pyproject.toml dependencies
 
 dependencies = [
-    "backoff~=2.2.1",
-    "joblib~=1.3.2",
-    "openai>=0.28.1,<2.0.0",
+    "backoff~=2.2",
+    "joblib~=1.3",
+    "openai",
     "pandas",
     "regex",
     "ujson",
@@ -39,13 +39,17 @@ dependencies = [
     "optuna",
     "pydantic~=2.0",
     "structlog",
-    "jinja2"
+    "jinja2",
+    "magicattr~=0.1.6",
+    "litellm",
+    "diskcache"
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic~=0.18.0"]
+anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
-qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
+lancedb = ["lancedb>=0.11.0"]
+qdrant = ["qdrant-client>=1.11.1", "fastembed>=0.2.0"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla~=0.3.7"]
 pinecone = ["pinecone-client~=2.2.4"]
@@ -88,8 +92,8 @@ keywords = ["dspy", "ai", "language models", "llm", "openai"]
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 pydantic = "^2.0"
-backoff = "^2.2.1"
-joblib = "^1.3.2"
+backoff = "^2.2"
+joblib = "^1.3"
 openai = ">=0.28.1,<2.0.0"
 pandas = "^2.1.1"
 regex = "^2023.10.3"
@@ -98,8 +102,9 @@ tqdm = "^4.66.1"
 datasets = "^2.14.6"
 requests = "^2.31.0"
 optuna = "^3.4.0"
-anthropic = { version = "^0.18.0", optional = true }
+anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
+lancedb = {version = "^0.11.0", optional = true}
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
 pyepsilla = {version = "^0.3.7", optional = true}
@@ -127,7 +132,9 @@ structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
-
+magicattr = "^0.1.6"
+litellm = "^1.4.27"
+diskcache = "^5.6.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -139,9 +146,11 @@ ruff = "^0.3.0"
 black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
+semver = "^3.0.2"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
+lancedb = ["lancedb"]
 qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla"]
@@ -209,90 +218,16 @@ exclude_lines = [
 line-length = 120
 indent-width = 4
 target-version = "py39"
-extend-unsafe-fixes = ["D"]
 
 [tool.ruff.lint]
-# List of rules: https://docs.astral.sh/ruff/rules
+# Select a minimal set of rules
 select = [
-    # flake8-builtins
-    "A",
-    # flake8-commas
-    "COM812",
-    # flake8-comprehensions
-    "C4",
-    # pydocstyle
-    "D",
-    # pycodestyle
-    "E",
-    # Pyflakes
-    "F",
-    # pyupgrade
-    "UP",
-    # flake8-bugbear
-    "B",
-    # flake8-simplify
-    "SIM",
-    # flake8-implicit-str-concat
-    "ISC",
-    # pep8-naming
-    "N",
-    # flake8-annotations
-    "ANN",
-    # flake8-async
-    "ASYNC",
-    # flake8-bandid selected
-    "S",
-    # flake8-print
-    "T20",
-    # flake8-return
-    "RET",
-    # flake8-simplify
-    "SIM",
-    # flake8-unused-arguments
-    "ARG",
-    # flake8-use-pathlib
-    "PTH",
-    # eradicate
-    "ERA",
-    # pandas-vet
-    "PD",
-    # Import sort
-    "I",
-    # avoid shadowing
-    "PLW",
+    "F",  # Pyflakes
+    "E",  # Pycodestyle
 ]
+
 ignore = [
-    "D100",
-    "D101",
-    "D104",
-    "D106",
-    # missing-type-self
-    "ANN101",
-    # missing-type-cls
-    "ANN102",
-    # missing-type-kwargs
-    "ANN003",
-    # utf-8 encoding skip
-    "UP009",
-    # Missing return type annotation for special method `__init__`
-    "ANN204",
-    # Star-arg unpacking after a keyword argument is strongly discouraged
-    "B026",
-    # Missing type annotation for function argument `self`
-    "ANN001",
-    # Dynamically typed expressions (typing.Any) are disallowed in `wrapper`
-    "ANN401",
-    # We don't need docstrings for every method
-    "ANN202",
-    "D107",
-    "D102",
-    "D103",
-    # Inline lambdas
-    "E731",
-    # Sometimes we need List and Tuple
-    "UP006",
-    # Ignore assert
-    "S101",
+    "E501",  # Line too long
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -300,18 +235,10 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.format]
-docstring-code-format = true
-quote-style = "double"
-# Like Black, indent with spaces, rather than tabs.
+docstring-code-format = false
 indent-style = "space"
-# Like Black, respect magic trailing commas.
-skip-magic-trailing-comma = false
-# Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
 [tool.ruff.lint.per-file-ignores]
-"**/{tests,docs}/*" = ["ALL"]
-"**__init__.py" = ["F401"]
+"**/{tests,testing,docs}/*" = ["ALL"]
+"**__init__.py" = ["ALL"]

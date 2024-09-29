@@ -10,7 +10,8 @@ from dspy.utils import DummyLM
 from dspy.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.functional import TypedPredictor
-
+import json
+from pydantic_core import to_jsonable_python
 
 hotpotqa = [
     ex.with_inputs("question")
@@ -109,7 +110,7 @@ def test_opt():
         [
             # Seed prompts
             "some thoughts",
-            '{"value": [{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]}',
+            '[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
         ]
     )
     dspy.settings.configure(lm=qa_model)
@@ -163,18 +164,13 @@ def test_opt_composed():
 
     info2 = make_info(ExpectedSignature2)
 
-    T = TypeVar("T")
-
-    class OutputWrapper(pydantic.BaseModel, Generic[T]):
-        value: list[T]
-
     qa_model = DummyLM([])
     prompt_model = DummyLM(
         [
             "some thoughts",
-            OutputWrapper[type(info1)](value=[info1]).model_dump_json(),
+            json.dumps([to_jsonable_python(info1)]),
             "some thoughts",
-            OutputWrapper[type(info2)](value=[info2]).model_dump_json(),
+            json.dumps([to_jsonable_python(info2)]),
         ]
     )
     dspy.settings.configure(lm=qa_model)

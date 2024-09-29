@@ -1,7 +1,7 @@
-from .modules import *
-from .primitives import *
-from .templates import *
-from .utils import settings
+from .modules import *  # noqa
+from .primitives import *  # noqa
+from .adapters import *  # noqa
+from .utils import settings  # noqa
 
 """
 TODO:

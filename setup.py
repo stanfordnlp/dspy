@@ -12,20 +12,21 @@ setup(
     #replace_package_name_marker
     name="dspy-ai",
     #replace_package_version_marker
-    version="2.4.10", 	
+    version="2.5.2", 	
     description="DSPy",	
     long_description=long_description,	
-    long_description_content_type='text/markdown',	
+    long_description_content_type="text/markdown",	
     url="https://github.com/stanfordnlp/dsp",	
     author="Omar Khattab",	
     author_email="okhattab@stanford.edu",	
     license="MIT License",	
-    packages=find_packages(include=['dsp.*', 'dspy.*', 'dsp', 'dspy']),	
-    python_requires='>=3.9',	
+    packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),	
+    python_requires=">=3.9",	
     install_requires=requirements,	
 
     extras_require={
         "chromadb": ["chromadb~=0.4.14"],
+        "lancedb": ["lancedb~=0.11.0"],
         "qdrant": ["qdrant-client", "fastembed"],
         "marqo": ["marqo~=3.1.0"],
         "mongodb": ["pymongo~=3.12.0"],
@@ -37,10 +38,9 @@ setup(
         "myscale":["clickhouse-connect"],
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
-        "google-vertex-ai": ["google-cloud-aiplatform==1.43.0"],
-        "myscale":["clickhouse-connect"],
         "groq": ["groq~=0.8.0"],
-    },	
+        "langfuse": ["langfuse~=2.36.1"]
+    },
     classifiers=[	
         "Development Status :: 3 - Alpha",	
         "Intended Audience :: Science/Research",	
