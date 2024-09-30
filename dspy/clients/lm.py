@@ -7,7 +7,10 @@ try:
     import warnings
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning)
-        import litellm
+        if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
+             os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+        import litellm  
+        litellm.telemetry = False
 
     from litellm.caching import Cache
     disk_cache_dir = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
@@ -26,6 +29,11 @@ class LM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+        if "o1-" in model:
+            assert max_tokens >= 5000 and temperature == 1.0, \
+                "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+                
     
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
