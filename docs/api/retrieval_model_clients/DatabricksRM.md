@@ -76,8 +76,9 @@ To retrieve documents using Databricks Mosaic AI Vector Search, you must [create
 Databricks Mosaic AI Vector Search Index](https://docs.databricks.com/en/generative-ai/create-query-vector-search.html)
 first.
 
-The following example code demonstrates how to set up a Databricks Mosaic AI Direct Access Vector
-Search Index and use the `DatabricksRM` DSPy retriever module to query the index.
+The following example code demonstrates how to set up a Databricks Mosaic AI
+[Direct Access Vector Search Index](https://docs.databricks.com/en/generative-ai/create-query-vector-search.html#create-a-vector-search-index)
+and use the `DatabricksRM` DSPy retriever module to query the index.
 
 ```python
 from databricks.vector_search.client import VectorSearchClient
