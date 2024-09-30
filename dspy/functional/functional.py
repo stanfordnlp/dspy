@@ -99,7 +99,7 @@ class TypedPredictor(dspy.Module):
         """
         super().__init__()
         self.signature = ensure_signature(signature, instructions)
-        self.predictor = dspy.Predict(signature)
+        self.predictor = dspy.Predict(signature, _parse_values=False)
         self.max_retries = max_retries
         self.wrap_json = wrap_json
         self.explain_errors = explain_errors

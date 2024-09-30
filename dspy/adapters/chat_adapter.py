@@ -69,9 +69,9 @@ class ChatAdapter(Adapter):
         )
 
         return messages
-
-    def parse(self, signature: Signature, completion: str) -> dict[str, Any]:
-        sections: list[tuple[str, str]] = [(None, [])]
+    
+    def parse(self, signature, completion, _parse_values=True):
+        sections = [(None, [])]
 
         for line in completion.splitlines():
             match = field_header_pattern.match(line.strip())
@@ -86,9 +86,9 @@ class ChatAdapter(Adapter):
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation) if _parse_values else v
                 except Exception as e:
-                    raise ValueError(f"Error parsing field {k}: {e}, with value ```{v}```")
+                    raise ValueError(f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```")
 
         if fields.keys() != signature.output_fields.keys():
             print("Expected", signature.output_fields.keys(), "but got", fields.keys(), "from", completion)
