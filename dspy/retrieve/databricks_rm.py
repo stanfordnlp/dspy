@@ -238,6 +238,54 @@ class DatabricksRM(dspy.Retrieve):
         )
 
     @staticmethod
+    def _query_via_databricks_sdk(
+        index_name: str,
+        k: int,
+        columns: List[str],
+        query_type: str,
+        query_text: Optional[str],
+        query_vector: Optional[List[float]],
+        databricks_token: Optional[str],
+        databricks_endpoint: Optional[str],
+        filters_json: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        Query a Databricks Vector Search Index via the Databricks SDK.
+        Assumes that the databricks-sdk Python library is installed.
+
+        Args:
+            index_name (str): Name of the Databricks vector search index to query
+            k (int): Number of relevant documents to retrieve.
+            columns (List[str]): Column names to include in response.
+            query_text (str, optional): Text query for which to find relevant documents. Exactly
+                one of query_text or query_vector must be specified.
+            query_vector (List[float], optional): Numeric query vector for which to find relevant
+                documents. Exactly one of query_text or query_vector must be specified.
+            filters_json (str, optional): JSON string representing additional query filters.
+            databricks_token (str): Databricks authentication token. If not specified,
+                the token is resolved from the current environment.
+            databricks_endpoint (str): Databricks index endpoint url. If not specified,
+                the endpoint is resolved from the current environment.
+        Returns:
+            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
+        """
+        from databricks.sdk import WorkspaceClient
+
+        if (query_text, query_vector).count(None) != 1:
+            raise ValueError("Exactly one of query_text or query_vector must be specified.")
+
+        databricks_client = WorkspaceClient(host=databricks_endpoint, token=databricks_token)
+        return databricks_client.vector_search_indexes.query_index(
+            index_name=index_name,
+            query_type=query_type,
+            query_text=query_text,
+            query_vector=query_vector,
+            columns=columns,
+            filters_json=filters_json,
+            num_results=k,
+        ).as_dict()
+
+    @staticmethod
     def _query_via_requests(
         index_name: str,
         k: int,
@@ -294,51 +342,3 @@ class DatabricksRM(dspy.Retrieve):
         if "error_code" in results:
             raise Exception(f"ERROR: {results['error_code']} -- {results['message']}")
         return results
-
-    @staticmethod
-    def _query_via_databricks_sdk(
-        index_name: str,
-        k: int,
-        columns: List[str],
-        query_type: str,
-        query_text: Optional[str],
-        query_vector: Optional[List[float]],
-        databricks_token: Optional[str],
-        databricks_endpoint: Optional[str],
-        filters_json: Optional[str],
-    ) -> Dict[str, Any]:
-        """
-        Query a Databricks Vector Search Index via the Databricks SDK.
-        Assumes that the databricks-sdk Python library is installed.
-
-        Args:
-            index_name (str): Name of the Databricks vector search index to query
-            k (int): Number of relevant documents to retrieve.
-            columns (List[str]): Column names to include in response.
-            query_text (str, optional): Text query for which to find relevant documents. Exactly
-                one of query_text or query_vector must be specified.
-            query_vector (List[float], optional): Numeric query vector for which to find relevant
-                documents. Exactly one of query_text or query_vector must be specified.
-            filters_json (str, optional): JSON string representing additional query filters.
-            databricks_token (str): Databricks authentication token. If not specified,
-                the token is resolved from the current environment.
-            databricks_endpoint (str): Databricks index endpoint url. If not specified,
-                the endpoint is resolved from the current environment.
-        Returns:
-            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
-        """
-        from databricks.sdk import WorkspaceClient
-
-        if (query_text, query_vector).count(None) != 1:
-            raise ValueError("Exactly one of query_text or query_vector must be specified.")
-
-        databricks_client = WorkspaceClient(host=databricks_endpoint, token=databricks_token)
-        return databricks_client.vector_search_indexes.query_index(
-            index_name=index_name,
-            query_type=query_type,
-            query_text=query_text,
-            query_vector=query_vector,
-            columns=columns,
-            filters_json=filters_json,
-            num_results=k,
-        ).as_dict()
