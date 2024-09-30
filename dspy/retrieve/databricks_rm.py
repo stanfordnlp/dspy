@@ -16,7 +16,8 @@ class DatabricksRM(dspy.Retrieve):
     A retrieval module that uses Databricks Vector Search Endpoint to return the top-k embeddings for a given query.
 
     Examples:
-        Below is a code snippet that shows how to configure Databricks Vector Search endpoints:
+        Below is a code snippet that shows how to set up a Databricks Vector Search Index
+        and configure a DatabricksRM DSPy retrieval module to query the index.
 
         (example adapted from "Databricks: How to create and query a Vector Search Index:
         https://docs.databricks.com/en/generative-ai/create-query-vector-search.html#create-a-vector-search-index)
@@ -24,18 +25,14 @@ class DatabricksRM(dspy.Retrieve):
         ```python
         from databricks.vector_search.client import VectorSearchClient
 
-        #Creating Vector Search Client
-
+        # Create a Databricks Vector Search Endpoint
         client = VectorSearchClient()
-
         client.create_endpoint(
             name="your_vector_search_endpoint_name",
             endpoint_type="STANDARD"
         )
 
-        #Creating Vector Search Index using Python SDK
-        #Example for Direct Vector Access Index
-
+        # Create a Databricks Direct Access Vector Search Index
         index = client.create_direct_access_index(
             endpoint_name="your_databricks_host_url",
             index_name="your_index_name",
@@ -50,12 +47,18 @@ class DatabricksRM(dspy.Retrieve):
         )
 
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
-        retriever_model = DatabricksRM(databricks_index_name = "your_index_name",
-        databricks_endpoint = "your_databricks_host_url", databricks_token = "your_databricks_token", columns= ["id", "field2", "field3", "text_vector"], k=3)
+        retriever_model = DatabricksRM(
+            databricks_index_name = "your_index_name",
+            docs_id_column_name="your_id_column",
+            text_column_name="your_text_column",
+            k=3
+        )
         dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
-        Below is a code snippet that shows how to query the Databricks Direct Vector Access Index using the forward() function.
+        Below is a code snippet that shows how to query the Databricks Direct Access Vector
+        Search Index using the ``forward()`` function:
+
         ```python
         self.retrieve = DatabricksRM(query=[1, 2, 3])
         ```
@@ -87,6 +90,9 @@ class DatabricksRM(dspy.Retrieve):
                 in addition to the document id and text columns specified by
                 ``docs_id_column_name`` and ``text_column_name``.
             filters_json (str, optional): A JSON string specifying additional query filters.
+                Example filters: ``{"id <": 5}`` selects records that have an ``id`` column value
+                less than 5, and ``{"id >=": 5, "id <": 10}`` selects records that have an ``id``
+                column value greater than or equal to 5 and less than 10.
             k (int): The number of documents to retrieve.
             docs_id_column_name (str): The name of the column in the Databricks Vector Search Index
                 containing document IDs.
@@ -178,7 +184,7 @@ class DatabricksRM(dspy.Retrieve):
                 query_vector=query_vector,
                 databricks_token=self.databricks_token,
                 databricks_endpoint=self.databricks_endpoint,
-                filters_json=filters_json,
+                filters_json=filters_json or self.filters_json,
             )
         else:
             results = self._query_via_requests(
@@ -190,7 +196,7 @@ class DatabricksRM(dspy.Retrieve):
                 query_type=query_type,
                 query_text=query_text,
                 query_vector=query_vector,
-                filters_json=filters_json,
+                filters_json=filters_json or self.filters_json,
             )
 
         # Checking if defined columns are present in the index columns
