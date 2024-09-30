@@ -48,7 +48,7 @@ DatabricksRM(
 
 ### Methods
 
-#### `def forward(self, query: Union[str, List[float]], query_type: str = "ANN",filters_json: Optional[str] = None) -> dspy.Prediction:`
+#### `def forward(self, query: Union[str, List[float]], query_type: str = "ANN", filters_json: Optional[str] = None) -> dspy.Prediction:`
 
 Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
 specified query.
