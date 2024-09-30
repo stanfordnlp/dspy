@@ -221,7 +221,7 @@ class DatabricksRM(dspy.Retrieve):
 
         # Extracting the results
         items = []
-        for idx, data_row in enumerate(results["result"]["data_array"]):
+        for _, data_row in enumerate(results["result"]["data_array"]):
             item = {}
             for col_name, val in zip(col_names, data_row):
                 item[col_name] = val
@@ -248,7 +248,7 @@ class DatabricksRM(dspy.Retrieve):
         query_text: Optional[str],
         query_vector: Optional[List[float]],
         filters_json: Optional[str],
-    ) -> List[str]:
+    ) -> str:
         """
         Query a Databricks Vector Search Index via the Python requests library.
 
@@ -265,7 +265,7 @@ class DatabricksRM(dspy.Retrieve):
             filters_json (str, optional): JSON string representing additional query filters.
 
         Returns:
-            List[str]: List of top-k retrieved documents. TODO - UPDATE THIS
+            str: JSON response from the Databricks Vector Search Index query.
         """
         if (query_text, query_vector).count(None) != 1:
             raise ValueError("Exactly one of query_text or query_vector must be specified.")
@@ -306,7 +306,7 @@ class DatabricksRM(dspy.Retrieve):
         databricks_token: Optional[str],
         databricks_endpoint: Optional[str],
         filters_json: Optional[str],
-    ) -> List[str]:
+    ) -> str:
         """
         Query a Databricks Vector Search Index via the Databricks SDK.
         Assumes that the databricks-sdk Python library is installed.
@@ -325,7 +325,7 @@ class DatabricksRM(dspy.Retrieve):
             databricks_endpoint (str): Databricks index endpoint url. If not specified,
                 the endpoint is resolved from the current environment.
         Returns:
-            List[str]: List of top-k retrieved documents. TODO - UPDATE THIS
+            str: JSON response from the Databricks Vector Search Index query.
         """
         from databricks.sdk import WorkspaceClient
 
