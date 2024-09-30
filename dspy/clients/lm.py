@@ -29,6 +29,11 @@ class LM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+        if "o1-" in model:
+            assert max_tokens >= 5000 and temperature == 1.0, \
+                "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+                
     
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
