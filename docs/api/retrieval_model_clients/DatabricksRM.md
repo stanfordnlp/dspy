@@ -68,7 +68,8 @@ specified query.
 
 **Returns:**
 
-- `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"long_text": str}]`
+- `dspy.Prediction`: A `dotdict` containg retrieved documents. The schema is
+  `{'docs': List[str], 'doc_ids': List[Int], extra_columns: List[Dict[str, Any]]}`.
 
 ### Quickstart
 
