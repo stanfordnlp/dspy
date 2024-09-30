@@ -78,11 +78,11 @@ class DatabricksRM(dspy.Retrieve):
         """
         Args:
             databricks_index_name (str): The name of the Databricks Vector Search Index to query.
-            databricks_endpoint (str, optional): The Databricks workspace URL containing the
-                Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST`` environment
-                variable. If unspecified, the Databricks SDK is used to identify the endpoint
-                based on the current environment.
-            databricks_token (str, optional): The Databricks workspace authentication token to use
+            databricks_endpoint (str, optional): The URL of the Databricks Workspace containing
+                the Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST``
+                environment variable. If unspecified, the Databricks SDK is used to identify the
+                endpoint based on the current environment.
+            databricks_token (str, optional): The Databricks Workspace authentication token to use
                 when querying the Vector Search Index. Defaults to the value of the
                 ``DATABRICKS_TOKEN`` environment variable. If unspecified, the Databricks SDK is
                 used to identify the token based on the current environment.
