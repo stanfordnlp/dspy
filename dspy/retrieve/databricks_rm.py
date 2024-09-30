@@ -160,7 +160,7 @@ class DatabricksRM(dspy.Retrieve):
         specified query.
 
         Args:
-            query (Union[str, List[float]]): Query text or numeric query vector for which to
+            query (Union[str, List[float]]): The query text or numeric query vector for which to
                 retrieve relevant documents.
             query_type (str): The type of search query to perform against the Databricks Vector
                 Search Index. Must be either 'ANN' (approximate nearest neighbor) or 'HYBRID'

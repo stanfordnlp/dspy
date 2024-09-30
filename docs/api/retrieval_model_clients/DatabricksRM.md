@@ -55,7 +55,7 @@ specified query.
 
 **Parameters:**
 
-- `query (Union[str, List[float]])`: The Query text or numeric query vector
+- `query (Union[str, List[float]])`: The query text or numeric query vector
   for which to retrieve relevant documents.
 - `query_type (str)`: The type of search query to perform against the
   Databricks Vector Search Index. Must be either 'ANN' (approximate nearest neighbor) or 'HYBRID'
