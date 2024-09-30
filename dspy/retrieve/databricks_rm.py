@@ -165,6 +165,15 @@ class DatabricksRM(dspy.Retrieve):
         Returns:
             dspy.Prediction: An object containing the retrieved results.
         """
+        if query_type in ["vector", "text"]:
+            # Older versions of DSPy used a `query_type` argument to disambiguate between text
+            # and vector queries, rather than checking the type of the `query` argument. This
+            # differs from the Databricks Vector Search definition of `query_type`, which
+            # specifies the search algorithm to use (e.g. "ANN" or "HYBRID"). To maintain
+            # backwards compatibility with older versions of DSPy, we map the old `query_type`
+            # values to the Databricks Vector Search default query type of "ANN".
+            query_type = "ANN"
+
         if isinstance(query, str):
             query_text = query
             query_vector = None
