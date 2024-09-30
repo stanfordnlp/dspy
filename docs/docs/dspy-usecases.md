@@ -109,7 +109,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **Arize** | [Link](https://docs.arize.com/phoenix/tracing/integrations-tracing/dspy) |
 | **LlamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 | **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |
-| **Langfuse** | [Link]([https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy](https://langfuse.com/docs/integrations/dspy)) |
+| **Langfuse** | [Link](https://langfuse.com/docs/integrations/dspy) |
 
 ## A Few Blogs & Videos on using DSPy
 
