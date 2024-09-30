@@ -13,11 +13,12 @@ _databricks_sdk_installed = find_spec("databricks.sdk") is not None
 
 class DatabricksRM(dspy.Retrieve):
     """
-    A retrieval module that uses Databricks Vector Search Endpoint to return the top-k embeddings for a given query.
+    A retriever module that uses a Databricks Mosaic AI Vector Search Index to return the top-k
+    embeddings for a given query.
 
     Examples:
         Below is a code snippet that shows how to set up a Databricks Vector Search Index
-        and configure a DatabricksRM DSPy retrieval module to query the index.
+        and configure a DatabricksRM DSPy retriever module to query the index.
 
         (example adapted from "Databricks: How to create and query a Vector Search Index:
         https://docs.databricks.com/en/generative-ai/create-query-vector-search.html#create-a-vector-search-index)
@@ -34,33 +35,34 @@ class DatabricksRM(dspy.Retrieve):
 
         # Create a Databricks Direct Access Vector Search Index
         index = client.create_direct_access_index(
-            endpoint_name="your_databricks_host_url",
+            endpoint_name="your_vector_search_endpoint_name",
             index_name="your_index_name",
             primary_key="id",
             embedding_dimension=1024,
             embedding_vector_column="text_vector",
             schema={
-            "id": "int",
-            "field2": "str",
-            "field3": "float",
-            "text_vector": "array<float>"}
+              "id": "int",
+              "field2": "str",
+              "field3": "float",
+              "text_vector": "array<float>"
+            }
         )
 
-        llm = dspy.OpenAI(model="gpt-3.5-turbo")
-        retriever_model = DatabricksRM(
+        # Create a DatabricksRM retriever module to query the Databricks Direct Access Vector
+        # Search Index
+        retriever = DatabricksRM(
             databricks_index_name = "your_index_name",
-            docs_id_column_name="your_id_column",
-            text_column_name="your_text_column",
+            docs_id_column_name="id",
+            text_column_name="field2",
             k=3
         )
-        dspy.settings.configure(lm=llm, rm=retriever_model)
         ```
 
         Below is a code snippet that shows how to query the Databricks Direct Access Vector
-        Search Index using the DatabricksRM retrieval module:
+        Search Index using the DatabricksRM retriever module:
 
         ```python
-        self.retrieve = DatabricksRM(query=[1, 2, 3])
+        retrieved_results = DatabricksRM(query="Example query text"))
         ```
     """
 
@@ -78,18 +80,18 @@ class DatabricksRM(dspy.Retrieve):
         """
         Args:
             databricks_index_name (str): The name of the Databricks Vector Search Index to query.
-            databricks_endpoint (str, optional): The URL of the Databricks Workspace containing
+            databricks_endpoint (Optional[str]): The URL of the Databricks Workspace containing
                 the Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST``
                 environment variable. If unspecified, the Databricks SDK is used to identify the
                 endpoint based on the current environment.
-            databricks_token (str, optional): The Databricks Workspace authentication token to use
+            databricks_token (Optional[str]): The Databricks Workspace authentication token to use
                 when querying the Vector Search Index. Defaults to the value of the
                 ``DATABRICKS_TOKEN`` environment variable. If unspecified, the Databricks SDK is
                 used to identify the token based on the current environment.
-            columns (list[str], optional): Extra column names to include in response,
+            columns (Optional[List[str]]): Extra column names to include in response,
                 in addition to the document id and text columns specified by
                 ``docs_id_column_name`` and ``text_column_name``.
-            filters_json (str, optional): A JSON string specifying additional query filters.
+            filters_json (Optional[str]): A JSON string specifying additional query filters.
                 Example filters: ``{"id <": 5}`` selects records that have an ``id`` column value
                 less than 5, and ``{"id >=": 5, "id <": 10}`` selects records that have an ``id``
                 column value greater than or equal to 5 and less than 10.
@@ -151,16 +153,23 @@ class DatabricksRM(dspy.Retrieve):
         self,
         query: Union[str, List[float]],
         query_type: str = "ANN",
-        filters_json: str = None,
+        filters_json: Optional[str] = None,
     ) -> dspy.Prediction:
-        """Search with Databricks Vector Search Client for self.k top results for query
+        """
+        Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
+        specified query.
 
         Args:
-            query (Union[str, List[float]]): Query text or numeric query vector to for which to
-                find relevant documents.
+            query (Union[str, List[float]]): Query text or numeric query vector for which to
+                retrieve relevant documents.
             query_type (str): The type of search query to perform against the Databricks Vector
                 Search Index. Must be either 'ANN' (approximate nearest neighbor) or 'HYBRID'
                 (hybrid search).
+            filters_json (Optional[str]): A JSON string specifying additional query filters.
+                Example filters: ``{"id <": 5}`` selects records that have an ``id`` column value
+                less than 5, and ``{"id >=": 5, "id <": 10}`` selects records that have an ``id``
+                column value greater than or equal to 5 and less than 10. If specified, this
+                parameter overrides the `filters_json` parameter passed to the constructor.
 
         Returns:
             dspy.Prediction: An object containing the retrieved results.
@@ -257,11 +266,11 @@ class DatabricksRM(dspy.Retrieve):
             index_name (str): Name of the Databricks vector search index to query
             k (int): Number of relevant documents to retrieve.
             columns (List[str]): Column names to include in response.
-            query_text (str, optional): Text query for which to find relevant documents. Exactly
+            query_text (Optional[str]): Text query for which to find relevant documents. Exactly
                 one of query_text or query_vector must be specified.
-            query_vector (List[float], optional): Numeric query vector for which to find relevant
+            query_vector (Optional[List[float]]): Numeric query vector for which to find relevant
                 documents. Exactly one of query_text or query_vector must be specified.
-            filters_json (str, optional): JSON string representing additional query filters.
+            filters_json (Optional[str]): JSON string representing additional query filters.
             databricks_token (str): Databricks authentication token. If not specified,
                 the token is resolved from the current environment.
             databricks_endpoint (str): Databricks index endpoint url. If not specified,
@@ -306,11 +315,11 @@ class DatabricksRM(dspy.Retrieve):
             columns (List[str]): Column names to include in response.
             databricks_token (str): Databricks authentication token.
             databricks_endpoint (str): Databricks index endpoint url.
-            query_text (str, optional): Text query for which to find relevant documents. Exactly
+            query_text (Optional[str]): Text query for which to find relevant documents. Exactly
                 one of query_text or query_vector must be specified.
-            query_vector (List[float], optional): Numeric query vector for which to find relevant
+            query_vector (Optional[List[float]]): Numeric query vector for which to find relevant
                 documents. Exactly one of query_text or query_vector must be specified.
-            filters_json (str, optional): JSON string representing additional query filters.
+            filters_json (Optional[str]): JSON string representing additional query filters.
 
         Returns:
             Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
