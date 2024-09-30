@@ -105,7 +105,8 @@ index = client.create_direct_access_index(
     }
 )
 
-# Create a DatabricksRM retriever and query the Databricks Direct Access Vector Search Index
+# Create a DatabricksRM retriever and retrieve the top-3 most relevant documents from the
+# Databricks Direct Access Vector Search Index corresponding to an example query
 retriever = DatabricksRM(
     databricks_index_name = "your_index_name",
     docs_id_column_name="id",
