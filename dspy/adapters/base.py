@@ -20,7 +20,7 @@ class Adapter:
         Parse the output data from the LLM.
         """
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
@@ -28,11 +28,7 @@ class Adapter:
         values = []
 
         for output in outputs:
-            try:
-                value = self.parse(signature, output)
-            except Exception as e:
-                logger.exception("Failed to parse LLM output:\nInput: %s\nOutput: %s", inputs, output)
-                raise e
+            value = self.parse(signature, output, _parse_values=_parse_values)
             assert set(value.keys()) == set(
                 signature.output_fields.keys()
             ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"

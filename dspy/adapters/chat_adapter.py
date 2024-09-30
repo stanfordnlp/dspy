@@ -15,8 +15,6 @@ from pydantic import TypeAdapter
 from typing import get_origin, get_args
 
 field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
-# Which is correct? 
-# field_header_pattern = re.compile(r"\[\[\[ ### (\w+) ### \]\]\]")
 
 class ChatAdapter(Adapter):
     """
@@ -27,11 +25,11 @@ class ChatAdapter(Adapter):
         messages: list[dict[str, Any]] = []
 
         # Extract demos where some of the output_fields are not filled in.
-        incomplete_demos = [demo for demo in demos if not all(k in demo for k in signature.fields)]
+        incomplete_demos = [demo for demo in demos if not all(k in demo and demo[k] is not None for k in signature.fields)]
         complete_demos = [demo for demo in demos if demo not in incomplete_demos]
         incomplete_demos = [demo for demo in incomplete_demos \
-                            if any(k in demo for k in signature.input_fields) and \
-                                any(k in demo for k in signature.output_fields)]
+                            if any(k in demo and demo[k] is not None for k in signature.input_fields) and \
+                                any(k in demo and demo[k] is not None for k in signature.output_fields)]
 
         demos = incomplete_demos + complete_demos
 
@@ -215,7 +213,7 @@ def format_chat_turn(field_names: list[str], field_types: list[type], values: di
     message_contents: list[dict[str, str]] = []
 
     for field_name, field_type in zip(field_names, field_types):
-
+        
         if field_type == Image:
             image = values[field_name]
             if not image:
@@ -234,6 +232,14 @@ def format_chat_turn(field_names: list[str], field_types: list[type], values: di
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
             )
         else:
+            # if not field_name in values:
+                # NOTE: Can we just skip? 
+                # Maybe just add an is_demo flag so we can get past bootstrapping.
+                # message_contents.append({"type": "text", "text": format_fields({field_name: f"{field_name} not generated for this example. Should be generated if possible."})})
+                # continue
+            # else:
+            if not field_name in values:
+                print(f"Field {field_name} is None")
             message_contents.append({"type": "text", "text": format_fields({field_name: values[field_name]})})
-
+    print(message_contents)
     return message_contents
