@@ -68,8 +68,9 @@ specified query.
 
 **Returns:**
 
-- `dspy.Prediction`: A `dotdict` containg retrieved documents. The schema is
-  `{'docs': List[str], 'doc_ids': List[Int], extra_columns: List[Dict[str, Any]]}`.
+- `dspy.Prediction`: A `dotdict` containing retrieved documents. The schema is
+  `{'docs': List[str], 'doc_ids': List[Any], extra_columns: List[Dict[str, Any]]}`.
+  The `docs` entry contains the retrieved document content.
 
 ### Quickstart
 
