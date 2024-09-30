@@ -57,7 +57,7 @@ class DatabricksRM(dspy.Retrieve):
         ```
 
         Below is a code snippet that shows how to query the Databricks Direct Access Vector
-        Search Index using the ``forward()`` function:
+        Search Index using the DatabricksRM retrieval module:
 
         ```python
         self.retrieve = DatabricksRM(query=[1, 2, 3])
