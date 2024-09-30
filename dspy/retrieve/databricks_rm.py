@@ -248,7 +248,7 @@ class DatabricksRM(dspy.Retrieve):
         query_text: Optional[str],
         query_vector: Optional[List[float]],
         filters_json: Optional[str],
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Python requests library.
 
@@ -265,7 +265,7 @@ class DatabricksRM(dspy.Retrieve):
             filters_json (str, optional): JSON string representing additional query filters.
 
         Returns:
-            str: JSON response from the Databricks Vector Search Index query.
+            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
         if (query_text, query_vector).count(None) != 1:
             raise ValueError("Exactly one of query_text or query_vector must be specified.")
@@ -306,7 +306,7 @@ class DatabricksRM(dspy.Retrieve):
         databricks_token: Optional[str],
         databricks_endpoint: Optional[str],
         filters_json: Optional[str],
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Databricks SDK.
         Assumes that the databricks-sdk Python library is installed.
@@ -325,7 +325,7 @@ class DatabricksRM(dspy.Retrieve):
             databricks_endpoint (str): Databricks index endpoint url. If not specified,
                 the endpoint is resolved from the current environment.
         Returns:
-            str: JSON response from the Databricks Vector Search Index query.
+            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
         from databricks.sdk import WorkspaceClient
 
