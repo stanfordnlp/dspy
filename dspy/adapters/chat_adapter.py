@@ -14,6 +14,7 @@ import textwrap
 from pydantic import TypeAdapter
 from typing import get_origin, get_args
 
+import PIL
 field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
 
 class ChatAdapter(Adapter):
@@ -36,36 +37,12 @@ class ChatAdapter(Adapter):
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
 
-        # messages.append({"role": "system", "content": prepare_instructions(signature, raw_demos)})
-
-        # TODO: Remove the raw_demos from demos.
-        input_field_types = [field.annotation for field in signature.input_fields.values()]
-        output_field_types = [field.annotation for field in signature.output_fields.values()]
-
         for demo in demos:
-            output_fields_, demo_ = list(signature.output_fields.keys()) + ["completed"], {**demo, "completed": ""}
+            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
+            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
-            # signature
-            messages.append(
-                {
-                    "role": "user",
-                    "content": format_chat_turn(signature.input_fields.keys(), input_field_types, demo),
-                }
-            )
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": format_chat_turn(output_fields_, output_field_types, demo_),
-                }
-            )
-
-        messages.append(
-            {
-                "role": "user",
-                "content": format_chat_turn(signature.input_fields.keys(), input_field_types, inputs),
-            }
-        )
-
+        messages.append(format_turn(signature, inputs, role="user"))
+        print(messages)
         return messages
     
     def parse(self, signature, completion, _parse_values=True):
@@ -107,6 +84,16 @@ def format_list(items):
 
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(items)])
 
+def format_field(field_name, field_value):
+    if isinstance(field_value, Image) or isinstance(field_value, PIL.Image.Image):
+        return [
+            {"type": "text", "text": f"[[ ## {field_name} ## ]]\n"},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encode_image(field_value)}"}}
+        ]
+    
+    if isinstance(field_value, list):
+        field_value = format_list(field_value)
+    return [{"type": "text", "text": f"[[ ## {field_name} ## ]]\n{field_value}"}]
 
 def format_fields(fields):
     output = []
@@ -128,13 +115,13 @@ def parse_value(value, annotation):
     return TypeAdapter(annotation).validate_python(parsed_value)
 
 
-def format_turn(signature, values, role, incomplete=False):       
-    content = []
+def format_turn(signature, values, role, incomplete=False): 
+    fields_to_collapse = []      
 
     if role == "user":
         field_names = signature.input_fields.keys()
         if incomplete:
-            content.append("This is an example of the task, though some input or output fields are not supplied.")
+            fields_to_collapse.append({"type": "text", "text": "This is an example of the task, though some input or output fields are not supplied."})
     else:
         field_names, values = list(signature.output_fields.keys()) + ['completed'], {**values, 'completed': ''}
 
@@ -142,14 +129,41 @@ def format_turn(signature, values, role, incomplete=False):
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    content.append(format_fields({k: values.get(k, "Not supplied for this particular example.") for k in field_names}))
+    fields_to_collapse.extend([format_field(k, values.get(k, "Not supplied for this particular example.")) for k in field_names])
 
     if role == "user":
-        content.append("Respond with the corresponding output fields, starting with the field " +
+        fields_to_collapse.append({"type": "text", "text": "Respond with the corresponding output fields, starting with the field " +
                        ", then ".join(f"`{f}`" for f in signature.output_fields) +
-                       ", and then ending with the marker for `completed`.")
+                       ", and then ending with the marker for `completed`."})
+        
+    # flatmap the list if any items are lists otherwise keep the item
+    flattened_list = []
+    for item in fields_to_collapse:
+        if isinstance(item, list):
+            flattened_list.extend(item)
+        else:
+            flattened_list.append(item)
 
-    return {"role": role, "content": '\n\n'.join(content).strip()}
+    fields_to_collapse = flattened_list
+    # Collapse all consecutive text messages into a single message.
+    collapsed_messages = []
+
+    current_message = None
+    while len(fields_to_collapse) > 0:
+        current_message = fields_to_collapse.pop(0)
+        if current_message["type"] == "image_url":
+            collapsed_messages.append(current_message)
+            continue
+        while len(fields_to_collapse) > 0 and fields_to_collapse[0]["type"] == "text":
+            current_message["text"] += "\n\n" + fields_to_collapse.pop(0)["text"]
+        collapsed_messages.append(current_message)
+
+    # If all the messages are text, collapse them into a single message.
+    if all(message["type"] == "text" for message in collapsed_messages):
+        collapsed_messages = "\n\n".join(message["text"] for message in collapsed_messages)
+    
+    final_message = {"role": role, "content": collapsed_messages}
+    return final_message
 
 
 def get_annotation_name(annotation):
