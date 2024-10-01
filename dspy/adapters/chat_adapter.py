@@ -1,11 +1,9 @@
 import re
 from typing import Any
 from dsp.adapters.base_template import Field
-from dspy.signatures.field import Image
 from dspy.signatures.signature import Signature
 from .base import Adapter
-from .image_utils import encode_image, is_pil_image
-
+from .image_utils import encode_image, is_image
 
 import ast
 import json
@@ -41,7 +39,6 @@ class ChatAdapter(Adapter):
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         messages.append(format_turn(signature, inputs, role="user"))
-        print(messages)
         return messages
     
     def parse(self, signature, completion, _parse_values=True):
@@ -84,10 +81,11 @@ def format_list(items):
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(items)])
 
 def format_field(field_name, field_value):
-    if is_pil_image(field_value):
+    if is_image(field_value):
+        image_data = encode_image(field_value)
         return [
             {"type": "text", "text": f"[[ ## {field_name} ## ]]\n"},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encode_image(field_value)}"}}
+            {"type": "image_url", "image_url": {"url": image_data}}
         ]
     
     if isinstance(field_value, list):
@@ -131,7 +129,7 @@ def format_turn(signature, values, role, incomplete=False):
     fields_to_collapse.extend([format_field(k, values.get(k, "Not supplied for this particular example.")) for k in field_names])
 
     if role == "user":
-        fields_to_collapse.append({"type": "text", "text": "Respond with the corresponding output fields, starting with the field " +
+        fields_to_collapse.append({"type": "text", "text": "Respond with the corresponding output fields using the proper format of [[ ## <field_name> ## ]] followed by the field value. Start with the field " +
                        ", then ".join(f"`{f}`" for f in signature.output_fields) +
                        ", and then ending with the marker for `completed`."})
         

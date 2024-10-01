@@ -12,6 +12,8 @@ from dspy.signatures.signature import ensure_signature, signature_to_template
 import logging
 from functools import lru_cache
 
+from dspy.adapters.image_utils import is_image, encode_image
+
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
@@ -42,6 +44,9 @@ class Predict(Module, Parameter):
             for field in demo:
                 if isinstance(demo[field], BaseModel):
                     demo[field] = demo[field].model_dump_json()
+
+                if is_image(demo[field]):
+                    demo[field] = encode_image(demo[field])
 
             state["demos"].append(demo)
 

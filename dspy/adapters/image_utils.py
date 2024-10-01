@@ -2,7 +2,6 @@ import base64
 import io
 import os
 import requests
-
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -10,18 +9,30 @@ except ImportError:
     Image = None
     PIL_AVAILABLE = False
 
-def encode_image(image):
+def encode_image(image) -> str:
+    """Encode an image to base64 format.
+    Returns:
+        str: The base64 encoded image.
+        str: The image format.
+    """
     assert Image is not None, "Pillow is not installed. Please install it to use image fields."
+    if isinstance(image, str) and image.startswith("data:image/"):
+        return image
     if hasattr(Image, 'Image') and isinstance(image, Image.Image):
         # PIL Image (including PngImageFile, JpegImageFile, etc.)
         buffered = io.BytesIO()
-        image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+        #get the file extension from the image
+        file_extension = image.format
+        image.save(buffered, format=file_extension)
+        encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        return f"data:image/{file_extension};base64,{encoded_image}"
     elif isinstance(image, str):
         if os.path.isfile(image):
+            file_extension = image.split(".")[-1]
             # Local file path
             with open(image, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+                return f"data:image/{file_extension};base64,{encoded_image}"
         else:
             # Assume it's a URL
             return encode_image_base64_from_url(image)
@@ -32,9 +43,13 @@ def encode_image_base64_from_url(image_url: str) -> str:
     """Encode an image retrieved from a remote url to base64 format."""
     with requests.get(image_url) as response:
         response.raise_for_status()
-        return base64.b64encode(response.content).decode('utf-8')
+        file_extension = image_url.split(".")[-1]
+        encoded_image = base64.b64encode(response.content).decode('utf-8')
+        return f"data:image/{file_extension};base64,{encoded_image}"
 
-def is_pil_image(obj) -> bool:
+def is_image(obj) -> bool:
     if PIL_AVAILABLE and isinstance(obj, Image.Image):
+        return True
+    if isinstance(obj, str) and obj.startswith("data:image/"):
         return True
     return False
