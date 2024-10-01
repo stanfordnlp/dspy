@@ -179,9 +179,6 @@ def get_annotation_name(annotation):
         return f"{origin.__name__}[{args_str}]"
 
 def enumerate_fields(fields: dict[str, Field]) -> str:
-    """
-    Enumerate the fields into a string.
-    """
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
@@ -192,9 +189,6 @@ def enumerate_fields(fields: dict[str, Field]) -> str:
 
 
 def prepare_instructions(signature: Signature) -> str:
-    """
-    Convert the signature into an instructions string.
-    """
     parts = []
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
