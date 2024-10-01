@@ -83,7 +83,7 @@ Ultimately, finding the ‘right’ optimizer to use & the best configuration fo
 That being said, here's the general guidance on getting started:
 * If you have **very few examples** (around 10), start with `BootstrapFewShot`.
 * If you have **more data** (50 examples or more), try  `BootstrapFewShotWithRandomSearch`.
-* If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](https://dspy-docs.vercel.app/docs/deep-dive/optimizers/miprov2.md#optimizing-instructions-only-with-miprov2-0-shot). 
+* If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](https://dspy-docs.vercel.app/docs/deep-dive/optimizers/miprov2#optimizing-instructions-only-with-miprov2-0-shot). 
 * If you’re willing to use more inference calls to perform **longer optimization runs** (e.g. 40 trials or more), and have enough data (e.g. 200 examples or more to prevent overfitting) then try `MIPROv2`. 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very **efficient program**, finetune a small LM for your task with `BootstrapFinetune`.
 
