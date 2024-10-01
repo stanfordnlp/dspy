@@ -1,5 +1,4 @@
 import abc
-from dspy.utils.logging import logger
 
 
 class Adapter:
