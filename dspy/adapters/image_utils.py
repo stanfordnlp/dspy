@@ -5,8 +5,10 @@ import requests
 
 try:
     from PIL import Image
+    PIL_AVAILABLE = True
 except ImportError:
     Image = None
+    PIL_AVAILABLE = False
 
 def encode_image(image):
     assert Image is not None, "Pillow is not installed. Please install it to use image fields."
@@ -31,3 +33,8 @@ def encode_image_base64_from_url(image_url: str) -> str:
     with requests.get(image_url) as response:
         response.raise_for_status()
         return base64.b64encode(response.content).decode('utf-8')
+
+def is_pil_image(obj) -> bool:
+    if PIL_AVAILABLE and isinstance(obj, Image.Image):
+        return True
+    return False

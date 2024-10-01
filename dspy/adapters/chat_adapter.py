@@ -4,7 +4,7 @@ from dsp.adapters.base_template import Field
 from dspy.signatures.field import Image
 from dspy.signatures.signature import Signature
 from .base import Adapter
-from .image_utils import encode_image
+from .image_utils import encode_image, is_pil_image
 
 
 import ast
@@ -14,7 +14,6 @@ import textwrap
 from pydantic import TypeAdapter
 from typing import get_origin, get_args
 
-import PIL
 field_header_pattern = re.compile(r'\[\[ ## (\w+) ## \]\]')
 
 class ChatAdapter(Adapter):
@@ -85,7 +84,7 @@ def format_list(items):
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(items)])
 
 def format_field(field_name, field_value):
-    if isinstance(field_value, Image) or isinstance(field_value, PIL.Image.Image):
+    if is_pil_image(field_value):
         return [
             {"type": "text", "text": f"[[ ## {field_name} ## ]]\n"},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encode_image(field_value)}"}}
