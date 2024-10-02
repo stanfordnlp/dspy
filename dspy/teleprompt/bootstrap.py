@@ -1,4 +1,3 @@
-import logging
 import random
 import threading
 from typing import Callable, Dict, Optional
@@ -127,7 +126,7 @@ class BootstrapFewShot(Teleprompter):
 
             name2predictor[student_predictor_name] = None
             predictor2name[id(student_predictor)] = student_predictor_name
-            predictor2name[id(teacher_predictor)] = teacher_predictor
+            predictor2name[id(teacher_predictor)] = teacher_predictor_name
 
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
@@ -151,16 +150,12 @@ class BootstrapFewShot(Teleprompter):
                     progbar.update(1)
             progbar.close()
 
-        logging.debug(
+        dspy.logger.debug(
             f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
         )
-
+        # Examples not used in bootstrapping becomes the validation set.
         self.valset = [x for idx, x in enumerate(self.trainset) if idx not in bootstrapped]
         random.Random(0).shuffle(self.valset)
-
-        # NOTE: Can't yet use evaluate because we need to trace *per example*
-        # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
-        # score = evaluate(self.metric, display_table=False, display_progress=True)
 
     def _bootstrap_one_example(self, example, round_idx=0):
         name2traces = self.name2traces
@@ -214,9 +209,6 @@ class BootstrapFewShot(Teleprompter):
                 predictor_name = self.predictor2name[id(predictor)]
             except KeyError:
                 continue  # FIXME: !
-            import pdb
-
-            pdb.set_trace()
             # Add the demo to the global storage, later it will be used to augment the student's demos.
             name2traces[predictor_name].append(demo)
         return True
@@ -224,7 +216,7 @@ class BootstrapFewShot(Teleprompter):
     def _apply_bootstrap_results_on_student(self):
         """Assigns the bootstrapped demos to the student's predictors."""
         rng = random.Random(0)
-        raw_demos = self.validation
+        raw_demos = self.valset
 
         for name, predictor in self.student.named_predictors():
             augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
