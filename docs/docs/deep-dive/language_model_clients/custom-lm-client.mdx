@@ -17,7 +17,7 @@ In DSPy 2.5, all LM clients except `dspy.LM` are deprecated and will be removed 
 Migrating to `dspy.LM` is straightforward and will let you use new features (Adapters) that improve the consistency of LM outputs, especially when using chat LMs. 
 Learn more about the changes and how to migrate [in this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb).
 
-If you still need to build a custom client, subclassing dspy.LM is a good last resort to ensure compatibility with future updates.
+If you still need to build a custom client, subclassing `dspy.LM` (not `dsp.LM` as in previous DSPy versions) is a good last resort to ensure compatibility with future updates.
 
 ---
 
