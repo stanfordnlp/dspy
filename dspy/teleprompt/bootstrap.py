@@ -136,9 +136,11 @@ class BootstrapFewShot(Teleprompter):
 
         bootstrapped = {}
         self.name2traces = {name: [] for name in self.name2predictor}
-
+        progbar = tqdm.tqdm(total=max_bootstraps, desc=f"Bootstrapping {max_bootstraps} examples")
         for round_idx in range(self.max_rounds):
-            progbar = tqdm.tqdm(total=max_bootstraps, desc=f"Round {round_idx + 1}")
+            if len(bootstrapped) >= max_bootstraps:
+                # If we've already bootstrapped enough examples, don't go to the next round.
+                break
             for example_idx, example in enumerate(self.trainset):
                 if len(bootstrapped) >= max_bootstraps:
                     break
@@ -150,7 +152,7 @@ class BootstrapFewShot(Teleprompter):
                     progbar.update(1)
             progbar.close()
 
-        dspy.logger.debug(
+        dspy.logger.info(
             f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
         )
         # Examples not used in bootstrapping becomes the validation set.
