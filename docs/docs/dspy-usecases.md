@@ -32,6 +32,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
 | **[Procure.FYI](https://www.procure.fyi/)** | Process messy, publicly available technology spending and pricing data via DSPy. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
+| **[Raia](https://raiahealth.com/)** | Using DSPy for AI-powered Personal Healthcare Agents. |
 | **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
