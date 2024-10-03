@@ -7,7 +7,7 @@ import ujson
 
 import dspy
 from dspy import Predict, Signature, TypedPredictor
-from dspy.utils.dummies import DummyLM, DummyLiteLLM
+from dspy.utils.dummies import DummyLiteLLM, DummyLM
 
 
 def test_initialization_with_string_signature():

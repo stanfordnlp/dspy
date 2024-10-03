@@ -10,6 +10,7 @@ from dspy.clients import LM as LiteLLM
 
 RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
 
+
 class DummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
@@ -96,13 +97,13 @@ class DummyLM(LM):
 
 
 class DummyLiteLLM(LiteLLM):
-    def __init__(self, answers: list[str], model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    def __init__(self, answers: list[str], model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         super().__init__("dummy", model_type, temperature, max_tokens, cache, **kwargs)
         self.answers = iter([[ans] for ans in answers])
 
-
     def __call__(self, **kwargs):
         return next(self.answers)
+
 
 def dummy_rm(passages=()) -> callable:
     if not passages:
