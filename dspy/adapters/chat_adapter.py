@@ -8,7 +8,7 @@ from .image_utils import encode_image, is_image
 import ast
 import json
 import textwrap
-
+from itertools import chain
 from pydantic import TypeAdapter
 from typing import get_origin, get_args
 
@@ -120,47 +120,52 @@ def format_turn(signature, values, role, incomplete=False):
         if incomplete:
             fields_to_collapse.append({"type": "text", "text": "This is an example of the task, though some input or output fields are not supplied."})
     else:
-        field_names, values = list(signature.output_fields.keys()) + ['completed'], {**values, 'completed': ''}
+        field_names = list(signature.output_fields.keys()) + ['completed']
+        values = {**values, 'completed': ''}
 
     if not incomplete:
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    fields_to_collapse.extend([format_field(k, values.get(k, "Not supplied for this particular example.")) for k in field_names])
+    fields_to_collapse.extend([
+        format_field(k, values.get(k, "Not supplied for this particular example."))
+        for k in field_names
+    ])
 
     if role == "user":
-        fields_to_collapse.append({"type": "text", "text": "Respond with the corresponding output fields using the proper format of [[ ## <field_name> ## ]] followed by the field value. Start with the field " +
-                       ", then ".join(f"`{f}`" for f in signature.output_fields) +
-                       ", and then ending with the marker for `completed`."})
+        output_fields = list(signature.output_fields.keys())
+        if output_fields:
+            fields_to_collapse.append({
+                "type": "text",
+                "text": (f"Respond with the corresponding output fields using the proper format of "
+                         f"[[ ## <field_name> ## ]] followed by the field value. Start with the field "
+                         f"{', then '.join(f'`{f}`' for f in output_fields)}, "
+                         f"and then ending with the marker for `completed`.")
+            })
         
     # flatmap the list if any items are lists otherwise keep the item
-    flattened_list = []
-    for item in fields_to_collapse:
-        if isinstance(item, list):
-            flattened_list.extend(item)
-        else:
-            flattened_list.append(item)
+    flattened_list = list(chain.from_iterable(
+        item if isinstance(item, list) else [item] for item in fields_to_collapse
+    ))
 
     fields_to_collapse = flattened_list
     # Collapse all consecutive text messages into a single message.
     collapsed_messages = []
-
-    current_message = None
-    while len(fields_to_collapse) > 0:
-        current_message = fields_to_collapse.pop(0)
-        if current_message["type"] == "image_url":
-            collapsed_messages.append(current_message)
-            continue
-        while len(fields_to_collapse) > 0 and fields_to_collapse[0]["type"] == "text":
-            current_message["text"] += "\n\n" + fields_to_collapse.pop(0)["text"]
-        collapsed_messages.append(current_message)
+    for item in flattened_list:
+        if item["type"] == "image_url" or (collapsed_messages and collapsed_messages[-1]["type"] != "text"):
+            collapsed_messages.append(item)
+        elif collapsed_messages and collapsed_messages[-1]["type"] == "text":
+            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
+        else:
+            collapsed_messages.append(item)
 
     # If all the messages are text, collapse them into a single message.
     if all(message["type"] == "text" for message in collapsed_messages):
-        collapsed_messages = "\n\n".join(message["text"] for message in collapsed_messages)
-    
-    final_message = {"role": role, "content": collapsed_messages}
-    return final_message
+        content = "\n\n".join(message["text"] for message in collapsed_messages)
+    else:
+        content = collapsed_messages
+
+    return {"role": role, "content": content}
 
 
 def get_annotation_name(annotation):
