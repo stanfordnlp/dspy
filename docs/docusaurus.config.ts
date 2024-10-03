@@ -90,10 +90,17 @@ const config: Config = {
         { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'right' },
         // Navbar item for the GitHub repository
         {
-          href: 'https://github.com/stanfordnlp/dspy',
-          label: 'GitHub',
-          position: 'right',
+          href: "https://github.com/stanfordnlp/dspy",
+          position: "right",
+          className: "header-github-link",
+          "aria-label": "GitHub repository",
         },
+        {
+          href: 'https://discord.gg/EBr7T9sH',
+          position: 'right',
+          className: 'header-discord-link',
+          'aria-label': 'Discord server',
+        }
       ],
     },
     footer: {
@@ -131,6 +138,10 @@ const config: Config = {
             {
               label: 'GitHub',
               href: 'https://github.com/stanfordnlp/dspy',
+            },
+            {
+              label: 'Discord',
+              href: 'https://discord.gg/VzS6RHHK6F',
             },
           ],
         },
