@@ -7,7 +7,7 @@ import ujson
 
 import dspy
 from dspy import Predict, Signature, TypedPredictor
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DummyLM, DummyLiteLLM
 
 
 def test_initialization_with_string_signature():
@@ -242,13 +242,13 @@ def sandwich_idea_signature():
 
 
 def test_extend_generation(SandwichIdea):
-    lm = DummyLM(
+    lm = DummyLiteLLM(
         [
-            " whole wheat\n\nProtein: turkey\n\nFat: avocado",
+            "\n[[ ## bread ## ]]\n whole wheat\n\n[[ ## protein ## ]]\n turkey\n\n[[ ## fat ## ]]\n avocado",
             # Incomplete generation leads to tomato field being assigned as an
             # empty string ("") in dsp.primitives.predict l98 the generation
             # therefores continues with the next field.
-            " tomato \n\nSauce: mustard",
+            "\n[[ ## garnish ## ]]\ntomato\n\n[[ ## sauce ## ]]\n mustard\n\n",
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -302,7 +302,7 @@ def test_extend_generation(SandwichIdea):
 
 
 def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
-    lm = DummyLM(
+    lm = DummyLiteLLM(
         [
             " white\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo",
             " ham\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo",
@@ -359,7 +359,7 @@ def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
 
 
 def test_extend_generation_with_empty_field(SandwichIdea):
-    lm = DummyLM(
+    lm = DummyLiteLLM(
         [
             " white\n\nProtein: \n\nFat: butter\n\nGarnish: lettuce",
             " lettuce \n\nSauce: mayo",
