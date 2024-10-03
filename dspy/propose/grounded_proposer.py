@@ -172,14 +172,17 @@ class GenerateModuleInstruction(dspy.Module):
         basic_instruction = get_signature(program.predictors()[pred_i]).instructions
         curr_demos_num = 0
         
-        for example in demo_candidates[pred_i][demo_set_i]:
-            if "augmented" in example.keys():
-                fields_to_use = get_signature(program.predictors()[pred_i]).fields
-                example_string = create_example_string(fields_to_use, example)
-                task_demos += f"{example_string}\n"
-                curr_demos_num += 1
-                if curr_demos_num >= max_demos:
-                    break
+        if self.use_task_demos:
+            for example in demo_candidates[pred_i][demo_set_i]:
+                if "augmented" in example.keys():
+                    fields_to_use = get_signature(program.predictors()[pred_i]).fields
+                    example_string = create_example_string(fields_to_use, example)
+                    task_demos += f"{example_string}\n"
+                    curr_demos_num += 1
+                    if curr_demos_num >= max_demos:
+                        break
+        else:
+            task_demos = "No task demos provided."
 
         # Summarize the program
         program_description = "Not available"
@@ -302,9 +305,15 @@ class GroundedProposer(Proposer):
             self.use_instruct_history = use_history
             if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
         
+        num_demos = min(len(demo_candidates[0]) if demo_candidates else N, 1)
+
+        if not demo_candidates:
+            if self.verbose: print("No demo candidates provided. Running without task demos.")
+            self.use_task_demos = False
+
         # Create an instruction for each predictor 
         for pred_i, predictor in enumerate(program.predictors()):
-            for demo_set_i in range(len(demo_candidates[0])):
+            for demo_set_i in range(num_demos):
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
                 if self.set_tip_randomly:
@@ -315,7 +324,8 @@ class GroundedProposer(Proposer):
                     self.use_tip = bool(
                         selected_tip,
                     )
-                    if self.verbose: print(f"Selected tip: {selected_tip_key}")  
+                    if self.verbose: print(f"Selected tip: {selected_tip_key}")
+
                 proposed_instructions[pred_i].append(
                     self.propose_instruction_for_predictor(
                         program=program,
