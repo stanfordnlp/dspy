@@ -10,7 +10,8 @@ from openai import (
     UnprocessableEntityError,
 )
 
-import dspy
+from dsp.utils.settings import settings
+from dspy import Retrieve, Prediction
 
 try:
     from pymongo import MongoClient
@@ -61,14 +62,14 @@ class Embedder:
             RateLimitError,
             UnprocessableEntityError,
         ),
-        max_time=15,
+        max_time=settings.backoff_time,
     )
     def __call__(self, queries) -> Any:
         embedding = self.client.embeddings.create(input=queries, model=self.model)
         return [result.embedding for result in embedding.data]
 
 
-class MongoDBAtlasRM(dspy.Retrieve):
+class MongoDBAtlasRM(Retrieve):
     def __init__(
         self,
         db_name: str,
@@ -107,7 +108,7 @@ class MongoDBAtlasRM(dspy.Retrieve):
 
         self.embedder = Embedder(provider=embedding_provider, model=embedding_model)
 
-    def forward(self, query_or_queries: str) -> dspy.Prediction:
+    def forward(self, query_or_queries: str) -> Prediction:
         query_vector = self.embedder([query_or_queries])
         pipeline = build_vector_search_pipeline(
             index_name=self.index_name,
@@ -116,4 +117,4 @@ class MongoDBAtlasRM(dspy.Retrieve):
             limit=self.k,
         )
         contents = self.client[self.db_name][self.collection_name].aggregate(pipeline)
-        return dspy.Prediction(passages=list(contents))
+        return Prediction(passages=list(contents))

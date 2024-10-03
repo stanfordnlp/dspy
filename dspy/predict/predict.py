@@ -9,12 +9,20 @@ from dspy.primitives.program import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
+import logging
+from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def warn_once(msg: str):
+    logging.warning(msg)
+
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, **config):
+    def __init__(self, signature, _parse_values=True, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self._parse_values = _parse_values
         self.reset()
 
     def reset(self):
@@ -23,7 +31,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -37,6 +45,19 @@ class Predict(Module, Parameter):
 
             state["demos"].append(demo)
 
+        # If `save_verbose` save all field metadata as well.
+        if save_verbose:
+            fields = []
+            for field_key in self.signature.fields.keys():
+                field_metadata = self.signature.fields[field_key]
+                fields.append({
+                    "name":  field_key,
+                    "field_type": field_metadata.json_schema_extra["__dspy_field_type"],
+                    "description": field_metadata.json_schema_extra["desc"],
+                    "prefix": field_metadata.json_schema_extra["prefix"]
+                })
+            state["fields"] = fields
+        
         # Cache the signature instructions and the last field's name.
         *_, last_key = self.signature.fields.keys()
         state["signature_instructions"] = self.signature.instructions
@@ -93,14 +114,10 @@ class Predict(Module, Parameter):
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
-
-        num_generations = config.get("n")
-        if num_generations is None:
-            num_generations = lm.kwargs.get("n", lm.kwargs.get("num_generations", 1))
+        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
-            # print(f"#> Setting temperature to 0.7 since n={num_generations} and prior temperature={temperature}.")
 
         if new_signature is not None:
             signature = new_signature
@@ -110,10 +127,21 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        if dsp.settings.experimental:
-            completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
+        import dspy
+        if isinstance(lm, dspy.LM):
+            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
-            completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
+            warn_once("\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                      f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
+                      " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
+                      " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
+                      " \t\tLearn more about the changes and how to migrate at\n"
+                      " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb")
+
+            if dsp.settings.experimental:
+                completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
+            else:
+                completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -196,6 +224,13 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
 
     return completions
 
+
+def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+    import dspy
+    adapter = dspy.settings.adapter or dspy.ChatAdapter()
+
+    return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values)
+    
 
 
 # TODO: get some defaults during init from the context window?

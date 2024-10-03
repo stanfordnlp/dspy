@@ -72,7 +72,7 @@ class HFModel(LM):
                 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
-                    "You need to install Hugging Face transformers library to use HF models.",
+                    "You need to install Hugging Face transformers (with torch dependencies - pip install transformers[torch]) library to use HF models.",
                 ) from exc
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             try:

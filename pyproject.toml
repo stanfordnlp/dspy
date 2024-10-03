@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy-ai"
 #replace_package_version_marker
-version="2.4.10"
+version="2.5.3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -27,9 +27,9 @@ classifiers = [
 # `pip install .` will pull from pyproject.toml dependencies
 
 dependencies = [
-    "backoff~=2.2.1",
-    "joblib~=1.3.2",
-    "openai>=0.28.1,<2.0.0",
+    "backoff~=2.2",
+    "joblib~=1.3",
+    "openai",
     "pandas",
     "regex",
     "ujson",
@@ -39,13 +39,17 @@ dependencies = [
     "optuna",
     "pydantic~=2.0",
     "structlog",
-    "jinja2"
+    "jinja2",
+    "magicattr~=0.1.6",
+    "litellm",
+    "diskcache"
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
-qdrant = ["qdrant-client>=1.6.2", "fastembed>=0.2.0"]
+lancedb = ["lancedb>=0.11.0"]
+qdrant = ["qdrant-client>=1.11.1", "fastembed>=0.2.0"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla~=0.3.7"]
 pinecone = ["pinecone-client~=2.2.4"]
@@ -88,8 +92,8 @@ keywords = ["dspy", "ai", "language models", "llm", "openai"]
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 pydantic = "^2.0"
-backoff = "^2.2.1"
-joblib = "^1.3.2"
+backoff = "^2.2"
+joblib = "^1.3"
 openai = ">=0.28.1,<2.0.0"
 pandas = "^2.1.1"
 regex = "^2023.10.3"
@@ -100,6 +104,7 @@ requests = "^2.31.0"
 optuna = "^3.4.0"
 anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
+lancedb = {version = "^0.11.0", optional = true}
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
 pyepsilla = {version = "^0.3.7", optional = true}
@@ -127,7 +132,9 @@ structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
-
+magicattr = "^0.1.6"
+litellm = "^1.4.27"
+diskcache = "^5.6.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -139,9 +146,11 @@ ruff = "^0.3.0"
 black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
+semver = "^3.0.2"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
+lancedb = ["lancedb"]
 qdrant = ["qdrant-client", "fastembed"]
 marqo = ["marqo"]
 epsilla = ["pyepsilla"]

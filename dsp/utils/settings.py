@@ -27,6 +27,7 @@ class Settings:
             #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
             config = dotdict(
                 lm=None,
+                adapter=None,
                 rm=None,
                 branch_idx=0,
                 reranker=None,
@@ -42,6 +43,7 @@ class Settings:
                 suggest_failures=0,
                 langchain_history=[],
                 experimental=False,
+                backoff_time = 10
             )
             cls._instance.__append(config)
 

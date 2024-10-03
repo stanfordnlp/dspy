@@ -66,7 +66,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
 
     class GenerateInstructionInitial(Signature, Generic[T]):
         # TODO: Can we make textwrap default/automatic in all signatures?
-        __doc__ = textwrap.dedent("""\
+        __doc__ = textwrap.dedent(
+            """\
         You are a creative instruction optimizer for large language models.
 
         I will give you a ``signature`` of fields (inputs and outputs) in English.
@@ -88,7 +89,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
         - This will be fun!
         - Take a deep breath and think carefully.
         - I really need your help!
-        """)
+        """
+        )
 
         basic_signature: T = InputField()
         proposed_signatures: list[T] = OutputField(
@@ -102,7 +104,8 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
 
 def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signature]:
     class GenerateSignature(dspy.Signature, Generic[T]):
-        __doc__ = textwrap.dedent("""\
+        __doc__ = textwrap.dedent(
+            """\
         You are an instruction optimizer for large language models.
 
         I will give some task instructions I've tried, along with their corresponding validation scores.
@@ -110,7 +113,8 @@ def generate_with_avoidance(signatures_to_avoid: list[BaseModel]) -> type[Signat
         - Your task is to propose a new instruction that will lead a good language model to perform the task even better.
         - Be creative, and think out of the box.
         - Don't repeat instructions, descriptions and prefixes that have already been attempted.
-        """)
+        """
+        )
 
         analysis: str = OutputField(desc="Consider what made the previous instructions good or bad.")
         proposed_signature: T = OutputField(desc="A signature that will likely lead to a high score.")
@@ -146,6 +150,7 @@ def optimize_signature(
     prompt_model=None,
     initial_prompts=2,
     verbose=False,
+    max_retries: int = 3,
 ) -> dspy.Program:
     """Create a new program that is optimized for the given task.
 
@@ -173,6 +178,8 @@ def optimize_signature(
         Note that we also use the "plain" signature as a prompt, so the total number of prompts is initial_prompts + 1.
     verbose : bool, optional
         Whether to print debug information, by default False
+    max_retries : int
+        The number of retries to use when generating new signatures, by default 3.
 
     Notes:
     -----
@@ -212,7 +219,7 @@ def optimize_signature(
             if verbose:
                 print(f"Generating {initial_prompts} initial signatures for {name}...")
             info = candidates[name][0]  # Use initial info, to make sure types are identical
-            generator = TypedChainOfThought(MyGenerateInstructionInitial[type(info)])
+            generator = TypedChainOfThought(MyGenerateInstructionInitial[type(info)], max_retries=max_retries)
             candidates[name] += generator(
                 basic_signature=info,
             ).proposed_signatures
@@ -230,7 +237,10 @@ def optimize_signature(
 
         # Run evaluator given by user
         score = evaluator(module)
-        scores.append(score)
+        if isinstance(score, tuple):
+            scores.append(score[0])
+        else:
+            scores.append(score)
 
         # If we are still testing initial prompts, continue
         if i + 1 < len(next(iter(candidates.values()))):
@@ -260,7 +270,7 @@ def optimize_signature(
 
                 # We can only tell the LM to avoid the signatures we are actually giving it as demos.
                 avoid = [ex.proposed_signature for ex in demos]
-                generator = TypedPredictor(generate_with_avoidance(avoid)[SignatureInfo])
+                generator = TypedPredictor(generate_with_avoidance(avoid)[SignatureInfo], max_retries=max_retries)
                 generator.predictor.demos = demos
 
                 if verbose:
