@@ -10,14 +10,11 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 **Deprecation Notice**
 
-Before building a custom LM client, please note that many use cases are now supported by LiteLLM or other integrations. If your model has an OpenAI-SDK-compatible endpoint, you likely don't need to build a custom LM client and can instead use `dspy.LM`.
+Since DSPy 2.5, you are unlikely to need to build a custom LM client. If your LM provider is supported by [LiteLLM](https://docs.litellm.ai/docs/providers) or if it has an OpenAI-SDK-compatible endpoint, you likely don't need to build a custom LM client and can instead use `dspy.LM`.
 
-In DSPy 2.5, all LM clients except `dspy.LM` are deprecated and will be removed in DSPy 2.6. 
+In DSPy 2.5, all LM clients except `dspy.LM` are deprecated and will be removed in DSPy 2.6. Migrating to `dspy.LM` is straightforward and will let you use new features (Adapters) that improve the consistency of LM outputs, especially when using chat LMs. Learn more about the changes and how to migrate [in this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb).
 
-Migrating to `dspy.LM` is straightforward and will let you use new features (Adapters) that improve the consistency of LM outputs, especially when using chat LMs. 
-Learn more about the changes and how to migrate [in this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb).
-
-If you still need to build a custom client, subclassing `dspy.LM` (not `dsp.LM` as in previous DSPy versions) is a good last resort to ensure compatibility with future updates.
+If you still need to build a custom client, subclassing [`dspy.LM`](https://github.com/stanfordnlp/dspy/blob/main/dspy/clients/lm.py) (not `dsp.LM` as in previous DSPy versions) is the recommended way to ensure compatibility with future updates.
 
 ---
 
