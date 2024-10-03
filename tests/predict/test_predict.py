@@ -352,7 +352,7 @@ def test_extend_generation_rolled_back_when_field_is_skipped(SandwichIdea):
 
     predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
     assert predictor.bread == "white\n\nFat: butter\n\nGarnish: lettuce\n\nSauce: mayo"
-    assert predictor.protein == ""
+    assert predictor.protein == ""  # This field is assigned as "" when the generation is rolled back
     assert predictor.fat == "ham\n\nFat: butter"
     assert predictor.garnish == "lettuce"
     assert predictor.sauce == "mayo"
