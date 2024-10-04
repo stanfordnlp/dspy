@@ -61,7 +61,7 @@ Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThoug
 
 **What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
 
-**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically.
+**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically. We also go by **D**eclarative **S**elf-improving **Py**thon, which is simpler :D
 
 ## 1) Installation
 
