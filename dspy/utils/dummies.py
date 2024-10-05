@@ -4,12 +4,13 @@ from typing import Union
 
 import numpy as np
 
-from dsp.modules import LM
+from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
+from dspy.clients.lm import LM
 
 
-class DummyLM(LM):
-    """Dummy language model for unit testing purposes."""
+class DSPDummyLM(DSPLM):
+    """Dummy language model for unit testing purposes subclassing DSP LM class."""
 
     def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
         """Initializes the dummy language model.
@@ -64,7 +65,7 @@ class DummyLM(LM):
                 },
             )
 
-            RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
+            RED, _, RESET = "\033[91m", "\033[92m", "\033[0m"
             print("=== DummyLM ===")
             print(prompt, end="")
             print(f"{RED}{answer}{RESET}")
@@ -88,6 +89,24 @@ class DummyLM(LM):
 
         # Filter choices and return text completions.
         return [choice["text"] for choice in choices]
+
+    def get_convo(self, index) -> str:
+        """Get the prompt + anwer from the ith message."""
+        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
+
+
+class DummyLM(LM):
+    def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
+        super().__init__("dummy", "chat", 0.0, 1000, True)
+        self.answers = iter([[ans] for ans in answers])
+
+    def __call__(self, **kwargs):
+        fallback = "No more responses"
+        if isinstance(self.answers, dict):
+            answer = next((v for k, v in self.answers.items() if k in kwargs["prompt"]), fallback)
+        else:
+            answer = next(self.answers, fallback)
+        return answer
 
     def get_convo(self, index) -> str:
         """Get the prompt + anwer from the ith message."""
