@@ -191,26 +191,45 @@ def test_multiline_instructions():
 
     predictor = dspy.Predict(MySignature)
 
-    lm = DummyLM(["short answer"])
+    lm = DummyLM(["[[ ## output ## ]]\nshort answer"])
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        First line
-        Second line
-            Third line
+    for message in lm.get_convo(-1)[0]:
+        print("----")
+        print(message["content"])
+        print("----")
+    assert lm.get_convo(-1)[0] == [
+        {
+            "role": "system",
+            "content": textwrap.dedent(
+                """\
+                Your input fields are:
 
-        ---
 
-        Follow the following format.
+                Your output fields are:
+                1. `output` (str)
 
-        Output: ${output}
+                All interactions will be structured in the following way, with the appropriate values filled in.
 
-        ---
 
-        Output: short answer"""
-    )
+
+                [[ ## output ## ]]
+                {output}
+
+                [[ ## completed ## ]]
+
+                In adhering to this structure, your objective is:
+                        First line
+                        Second line
+                            Third line"""
+            ),
+        },
+        {
+            "role": "user",
+            "content": "Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`.",
+        },
+    ]
 
 
 def test_replaced_by_replace_context_manager():

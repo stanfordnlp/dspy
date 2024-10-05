@@ -215,40 +215,23 @@ def test_optimization_and_output_verification():
 
     assert prediction.output == "Madrid"
 
-    expected_lm_output = textwrap.dedent(
-        """\
-        Input:
-
-        ---
-
-        Follow the following format.
-
-        Input: ${input}
-        Reasoning: Let's think step by step in order to ${produce the output}. We ...
-        Output: ${output}
-
-        ---
-
-        Input: What is the capital of France?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Paris
-
-        ---
-
-        Input: What is the capital of Norway?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Oslo
-
-        ---
-
-        Input: What does the fox say?
-        Output: Ring-ding-ding-ding-dingeringeding!
-
-        ---
-
-        Input: What is the capital of Spain?
-        Reasoning: Let's think step by step in order to think deeply.
-        Output: Madrid"""
-    )
-
-    assert lm.get_convo(-1) == expected_lm_output
+    for message in lm.get_convo(-1)[0]:
+        print("----")
+        print(message["content"])
+        print("----")
+    assert lm.get_convo(-1)[0] == [
+        {
+            "role": "system",
+            "content": textwrap.dedent(
+                """\
+            """
+            ),
+        },
+        {
+            "role": "user",
+            "content": textwrap.dedent(
+                """\
+                """
+            ),
+        },
+    ]

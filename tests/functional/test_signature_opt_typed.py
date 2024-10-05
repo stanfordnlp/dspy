@@ -1,17 +1,15 @@
+import json
 from typing import Generic, TypeVar
 
 import pydantic
-import dspy
-from dspy.evaluate import Evaluate
-from dspy.functional import TypedPredictor
-from dspy.teleprompt.signature_opt_typed import optimize_signature, make_info
-from dspy.utils import DummyLM
+from pydantic_core import to_jsonable_python
 
+import dspy
 from dspy.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.functional import TypedPredictor
-import json
-from pydantic_core import to_jsonable_python
+from dspy.teleprompt.signature_opt_typed import make_info, optimize_signature
+from dspy.utils import DummyLM
 
 hotpotqa = [
     ex.with_inputs("question")
@@ -105,12 +103,12 @@ def test_opt():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    qa_model = DummyLM([])
+    qa_model = DummyLM(["[[ ## answer ## ]]\nfoo"] * 100)
     prompt_model = DummyLM(
         [
             # Seed prompts
-            "some thoughts",
-            '[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
+            "[[ ## reasoning ## ]]\nsome thoughts\n\n"
+            '[[ ## proposed_signatures ## ]]\n[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
         ]
     )
     dspy.settings.configure(lm=qa_model)
@@ -167,10 +165,8 @@ def test_opt_composed():
     qa_model = DummyLM([])
     prompt_model = DummyLM(
         [
-            "some thoughts",
-            json.dumps([to_jsonable_python(info1)]),
-            "some thoughts",
-            json.dumps([to_jsonable_python(info2)]),
+            f"[[ ## reasoning ## ]]\nsome thoughts\n\n[[ ## proposed_signatures ## ]]\n{json.dumps([to_jsonable_python(info1)])}",
+            f"[[ ## reasoning ## ]]\nsome thoughts\n\n[[ ## proposed_signatures ## ]]\n{json.dumps([to_jsonable_python(info2)])}",
         ]
     )
     dspy.settings.configure(lm=qa_model)

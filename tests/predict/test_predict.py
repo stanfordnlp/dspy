@@ -1,10 +1,12 @@
+import copy
+import textwrap
+
+import pydantic
+import ujson
+
 import dspy
 from dspy import Predict, Signature, TypedPredictor
 from dspy.utils.dummies import DummyLM
-import copy
-import textwrap
-import pydantic
-import ujson
 
 
 def test_initialization_with_string_signature():
@@ -43,16 +45,27 @@ def test_call_method():
     dspy.settings.configure(lm=lm)
     result = predict_instance(input="test input")
     assert result.output == "test output"
-    assert lm.get_convo(-1) == (
-        "Given the fields `input`, produce the fields `output`.\n"
-        "\n---\n\n"
-        "Follow the following format.\n\n"
-        "Input: ${input}\n"
-        "Output: ${output}\n"
-        "\n---\n\n"
-        "Input: test input\n"
-        "Output: test output"
-    )
+
+    for message in lm.get_convo(-1)[0]:
+        print("----")
+        print(message["content"])
+        print("----")
+    assert lm.get_convo(-1)[0] == [
+        {
+            "role": "system",
+            "content": textwrap.dedent(
+                """\
+            """
+            ),
+        },
+        {
+            "role": "user",
+            "content": textwrap.dedent(
+                """\
+                """
+            ),
+        },
+    ]
 
 
 def test_instructions_after_dump_and_load_state():
@@ -206,17 +219,23 @@ def test_output_only():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        Given the fields , produce the fields `output`.
-        
-        ---
-        
-        Follow the following format.
-        
-        Output: ${output}
-        
-        ---
-        
-        Output: short answer"""
-    )
+    for message in lm.get_convo(-1)[0]:
+        print("----")
+        print(message["content"])
+        print("----")
+    assert lm.get_convo(-1)[0] == [
+        {
+            "role": "system",
+            "content": textwrap.dedent(
+                """\
+            """
+            ),
+        },
+        {
+            "role": "user",
+            "content": textwrap.dedent(
+                """\
+                """
+            ),
+        },
+    ]

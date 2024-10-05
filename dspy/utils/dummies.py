@@ -1,11 +1,13 @@
 import random
 import re
+from collections import defaultdict
 from typing import Union
 
 import numpy as np
 
 from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
+from dspy.adapters.chat_adapter import field_header_pattern
 from dspy.clients.lm import LM
 
 
@@ -98,19 +100,56 @@ class DSPDummyLM(DSPLM):
 class DummyLM(LM):
     def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
         super().__init__("dummy", "chat", 0.0, 1000, True)
-        self.answers = iter([[ans] for ans in answers])
+        self.answers = answers
+        if isinstance(answers, list):
+            self.answers = iter(answers)
+        self.follow_examples = follow_examples
 
-    def __call__(self, **kwargs):
-        fallback = "No more responses"
-        if isinstance(self.answers, dict):
-            answer = next((v for k, v in self.answers.items() if k in kwargs["prompt"]), fallback)
-        else:
-            answer = next(self.answers, fallback)
-        return answer
+    def _use_example(self, messages):
+        # find all field names
+        fields = defaultdict(int)
+        for message in messages:
+            if "content" in message:
+                if ma := field_header_pattern.match(message["content"]):
+                    fields[message["content"][ma.start() : ma.end()]] += 1
+        # find the fields which are missing from the final turns
+        max_count = max(fields.values())
+        output_fields = [field for field, count in fields.items() if count != max_count]
 
-    def get_convo(self, index) -> str:
+        # get the output from the last turn that has the output fields as headers
+        final_input = messages[-1]["content"].split("\n\n")[0]
+        for input, output in zip(reversed(messages[:-1]), reversed(messages)):
+            if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
+                return output["content"]
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        # Build the request.
+        outputs = []
+        for _ in range(kwargs.get("n", 1)):
+            messages = messages or [{"role": "user", "content": prompt}]
+            kwargs = {**self.kwargs, **kwargs}
+
+            if self.follow_examples:
+                outputs.append(self._use_example(messages))
+            elif isinstance(self.answers, dict):
+                outputs.append(
+                    next((v for k, v in self.answers.items() if k in messages[-1]["content"]), "No more responses")
+                )
+            else:
+                outputs.append(next(self.answers, "No more responses"))
+
+            # Logging, with removed api key & where `cost` is None on cache hit.
+            kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
+            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
+            entry = dict(**entry, outputs=outputs, usage=0)
+            entry = dict(**entry, cost=0)
+            self.history.append(entry)
+
+        return outputs
+
+    def get_convo(self, index):
         """Get the prompt + anwer from the ith message."""
-        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
+        return self.history[index]["messages"], self.history[index]["outputs"]
 
 
 def dummy_rm(passages=()) -> callable:

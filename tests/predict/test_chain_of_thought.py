@@ -1,4 +1,5 @@
 import textwrap
+
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
@@ -14,22 +15,23 @@ def test_initialization_with_string_signature():
     ]
     assert predict(question="What is 1+1?").answer == "2"
 
-    print(lm.get_convo(-1))
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        Given the fields `question`, produce the fields `answer`.
-
-        ---
-
-        Follow the following format.
-
-        Question: ${question}
-        Reasoning: Let's think step by step in order to ${produce the answer}. We ...
-        Answer: ${answer}
-
-        ---
-
-        Question: What is 1+1?
-        Reasoning: Let's think step by step in order to find the number after 1
-        Answer: 2"""
-    )
+    for message in lm.get_convo(-1)[0]:
+        print("----")
+        print(message["content"])
+        print("----")
+    assert lm.get_convo(-1)[0] == [
+        {
+            "role": "system",
+            "content": textwrap.dedent(
+                """\
+            """
+            ),
+        },
+        {
+            "role": "user",
+            "content": textwrap.dedent(
+                """\
+                """
+            ),
+        },
+    ]
