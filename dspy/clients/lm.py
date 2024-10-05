@@ -1,6 +1,5 @@
 import os
 import ujson
-import functools
 from pathlib import Path
 
 try:
@@ -61,7 +60,6 @@ class LM:
         _inspect_history(self, n)
 
 
-@functools.lru_cache(maxsize=None)
 def cached_litellm_completion(request):
     return litellm_completion(request, cache={"no-cache": False, "no-store": False})
 
@@ -69,7 +67,6 @@ def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(cache=cache, **kwargs)
 
-@functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request):
     return litellm_text_completion(request, cache={"no-cache": False, "no-store": False})
 
