@@ -86,3 +86,67 @@ print("Example object with Non-Input fields only:", non_input_key_only)
 Example object with Input fields only: Example({'article': 'This is an article.'}) (input_keys=None)
 Example object with Non-Input fields only: Example({'summary': 'This is a summary.'}) (input_keys=None)
 ```
+
+## Loading Dataset from sources
+
+One of the most convinient way to import dataset in DSPy is by using `DataLoader`. The first step is to declare an object, this object can then be used to call utilities to load datasets in different formats:
+
+```python
+from dspy.datasets import DataLoader
+
+dl = DataLoader()
+```
+
+For most dataset formats, it's quite straightforward you pass the file path to the corresponding method of the format and you'll get the list of `Example` for the dataset in return:
+
+```python
+import pandas as pd
+
+csv_dataset = dl.from_csv(
+    "sample_dataset.csv",
+    fields=("instruction", "context", "response"),
+    input_keys=("instruction", "context")
+)
+
+json_dataset = dl.from_json(
+    "sample_dataset.json",
+    fields=("instruction", "context", "response"),
+    input_keys=("instruction", "context")
+)
+
+parquet_dataset = dl.from_parquet(
+    "sample_dataset.parquet",
+    fields=("instruction", "context", "response"),
+    input_keys=("instruction", "context")
+)
+
+pandas_dataset = dl.from_pandas(
+    pd.read_csv("sample_dataset.csv"),    # DataFrame
+    fields=("instruction", "context", "response"),
+    input_keys=("instruction", "context")
+)
+```
+
+These are some supported formats that `DataLoader` supports to load from file directly, in backend most of these methods are leveraging `load_dataset` method from `datasets` library to load these formats. But when working with text data you often use HuggingFace datasets, in order to import HF datasets in list of `Example` format we can use `from_huggingface` method:
+
+```python
+blog_alpaca = dl.from_huggingface(
+    "intertwine-expel/expel-blog"
+    input_keys=("title",)
+)
+```
+
+You can access the dataset of the splits by calling key of the corresponding split:
+
+```python
+from  
+train_split = blog_alpaca['train']
+
+# Since this is the only split in the dataset we can split this into 
+# train and test split ourselves by slicing or sampling 75 rows from the train
+# split for testing.
+testset = train_split[:75]
+trainset = train_split[75:]
+```
+
+The way you load a huggingface dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets you can refer to the [cheatsheet snippets](/docs/cheatsheet.md#dspy-dataloaders) for loading from HF.

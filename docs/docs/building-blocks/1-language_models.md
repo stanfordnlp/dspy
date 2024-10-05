@@ -8,33 +8,56 @@ The most powerful features in DSPy revolve around algorithmically optimizing the
 
 Let's first make sure you can set up your language model. DSPy support clients for many remote and local LMs.
 
-## Setting up the LM client.
+## Using `dspy.LM`
 
-You can just call the constructor that connects to the LM. Then, use `dspy.configure` to declare this as the default LM.
+:::warning
+Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
+
+Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
+
+Any [provider supported in LiteLLM](https://docs.litellm.ai/docs/providers) should work with `dspy.LM`.
+:::
+
+### Setting up the LM client
+
+In DSPy 2.5, we use the `dspy.LM` class to set up language models. This replaces the previous client-specific classes. Then, use `dspy.configure` to declare this as the default LM.
 
 For example, to use OpenAI language models, you can do it as follows.
 
 ```python
-gpt3_turbo = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=300)
-dspy.configure(lm=gpt3_turbo)
+lm = dspy.LM('openai/gpt-4o-mini')
+dspy.configure(lm=lm)
 ```
 
-## Directly calling the LM.
+### Directly calling the LM
 
 You can simply call the LM with a string to give it a raw prompt, i.e. a string.
 
 ```python
-gpt3_turbo("hello! this is a raw prompt to GPT-3.5")
+lm("hello! this is a raw prompt to GPT-4o-mini")
 ```
 
 **Output:**
 ```text
-['Hello! How can I assist you today?']
+["Hello! It looks like you're trying to interact with a model. How can I assist you today?"]
+```
+
+For chat LMs, you can pass a list of messages.
+
+```python
+lm(messages=[{"role": "system", "content": "You are a helpful assistant."},
+             {"role": "user", "content": "What is 2+2?"}])
+```
+
+**Output:**
+```text
+['2 + 2 equals 4.']
 ```
 
 This is almost never the recommended way to interact with LMs in DSPy, but it is allowed.
 
-## Using the LM with DSPy signatures.
+
+### Using the LM with DSPy signatures
 
 You can also use the LM via DSPy [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures) and [`modules`](https://dspy-docs.vercel.app/docs/building-blocks/modules), which we discuss in more depth in the remaining guides.
 
@@ -51,13 +74,15 @@ print(response.answer)
 The castle David Gregory inherited has 7 floors.
 ```
 
-## Using multiple LMs at once.
+### Using multiple LMs at once.
 
 The default LM above is GPT-3.5, `gpt3_turbo`. What if I want to run a piece of code with, say, GPT-4 or LLama-2?
 
 Instead of changing the default LM, you can just change it inside a block of code.
 
-**Tip:** Using `dspy.configure` and `dspy.context` is thread-safe!
+:::tip
+Using `dspy.configure` and `dspy.context` is thread-safe!
+:::
 
 ```python
 # Run with the default LM configured above, i.e. GPT-3.5
@@ -77,105 +102,58 @@ GPT-3.5: The castle David Gregory inherited has 7 floors.
 GPT-4-turbo: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
 ```
 
-## Tips and Tricks.
+### Configuring LM attributes
 
-In DSPy, all LM calls are cached. If you repeat the same call, you will
-get the same outputs. (If you change the inputs or configurations, you
-will get new outputs.)
-
-To generate 5 outputs, you can use `n=5` in the module constructor, or
-pass `config=dict(n=5)` when invoking the module.
+For any LM, you can configure any of the following attributes at initialization or per call.
 
 ```python
-qa = dspy.ChainOfThought('question -> answer', n=5)
-
-response = qa(question="How many floors are in the castle David Gregory inherited?")
-response.completions.answer
+gpt_4o_mini = dspy.LM('openai/gpt-4o-mini', temperature=0.9, max_tokens=3000, stop=None, cache=False)
 ```
+
+By default LMs in DSPy are cached. If you repeat the same call, you will get the same outputs. But you can turn of caching by setting `cache=False` while declaring `dspy.LM` object.
+
+### Using locally hosted LMs
+
+Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as well. This works great for open LMs from HuggingFace hosted locally with SGLang, VLLM, or HF Text-Generation-Inference.
+
+```python
+sglang_port = 7501
+sglang_url = f"http://localhost:{sglang_port}/v1"
+sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+
+# You could also use text mode, in which the prompts are *not* formatted as messages.
+sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
+```
+
+### Inspecting output and usage metadata
+
+Every LM object maintains the history of its interactions, including inputs, outputs, token usage (and $$$ cost), and metadata.
+
+```python
+len(lm.history)  # e.g., 3 calls to the LM
+
+lm.history[-1].keys()  # access the last call to the LM, with all metadata
+```
+
 **Output:**
 ```text
-["The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.",
-    'The castle David Gregory inherited has 4 floors.',
-    'The castle David Gregory inherited has 5 floors.',
-    'David Gregory inherited 10 floors in the castle.',
-    'The castle David Gregory inherited has 5 floors.']
+dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost'])
 ```
 
-If you just call `qa(...)` in a loop with the same input, it will always
-return the same value! That\'s by design.
+## Creating Custom LM Class
 
-To loop and generate one output at a time with the same input, bypass
-the cache by making sure each request is (slightly) unique, as below.
+## Structured LM output with Adapters
+
+Prompt optimizers in DSPy generate and tune the _instructions_ or the _examples_ in the prompts corresponding to your Signatures. DSPy 2.5 introduces **Adapters** as a layer between Signatures and LMs, responsible for formatting these pieces (Signature I/O fields, instructions, and examples) as well as generating and parsing the outputs. 
+
+In DSPy 2.5, the default Adapters are now more natively aware of chat LMs and are responsible for enforcing types, building on earlier experimental features from `TypedPredictor` and `configure(experimental=True)`. In our experience, this change tends to deliver more consistent pre-optimization quality from various LMs, especially for sophisticated Signatures.
 
 ```python
-for idx in range(5):
-    response = qa(question="How many floors are in the castle David Gregory inherited?", config=dict(temperature=0.7+0.0001*idx))
-    print(f'{idx+1}.', response.answer)
-```
-**Output:**
-```text
-1. The specific number of floors in David Gregory's inherited castle is not provided here, so further research would be needed to determine the answer.
-2. It is not possible to determine the exact number of floors in the castle David Gregory inherited without specific information about the castle's layout and history.
-3. The castle David Gregory inherited has 5 floors.
-4. We need more information to determine the number of floors in the castle David Gregory inherited.
-5. The castle David Gregory inherited has a total of 6 floors.
+lm = dspy.LM('openai/gpt-4o-mini')
+dspy.configure(lm=lm, experimental=True)
+
+fact_checking = dspy.ChainOfThought('claims -> verdicts')
+fact_checking(claims=["Python was released in 1991.", "Python is a compiled language."])
 ```
 
-## Remote LMs.
-
-These models are managed services. You just need to sign up and obtain an API key. Calling any of the remote LMs below assumes authentication and mirrors the following format for setting up the LM:
-
-```python
-lm = dspy.{provider_listed_below}(model="your model", model_request_kwargs="...")
-```
-
-1.  `dspy.OpenAI` for GPT-3.5 and GPT-4.
-
-2.  `dspy.Cohere`
-
-3.  `dspy.Anyscale` for hosted Llama2 models.
-
-4. `dspy.Together` for hosted various open source models.
-
-5. `dspy.PremAI` for hosted best open source and closed source models.
-
-6. `dspy.Claude` for hosted Claude models.
-
-7. `dspy.AWSAnthropic` for hosted Claude models and `dspy.AWSMeta` for hosted Llama3 models.
-
-### Local LMs.
-
-You need to host these models on your own GPU(s). Below, we include pointers for how to do that.
-
-1.  `dspy.HFClientTGI`: for HuggingFace models through the Text Generation Inference (TGI) system. [Tutorial: How do I install and launch the TGI server?](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/local_models/HFClientTGI)
-
-```python
-tgi_mistral = dspy.HFClientTGI(model="mistralai/Mistral-7B-Instruct-v0.2", port=8080, url="http://localhost")
-```
-
-2.  `dspy.HFClientVLLM`: for HuggingFace models through vLLM. [Tutorial: How do I install and launch the vLLM server?](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/local_models/HFClientVLLM)
-
-```python
-vllm_mistral = dspy.HFClientVLLM(model="mistralai/Mistral-7B-Instruct-v0.2", port=8080, url="http://localhost")
-```
-
-3.  `dspy.HFModel` (experimental) [Tutorial: How do I initialize models using HFModel](https://dspy-docs.vercel.app/api/local_language_model_clients/HFModel)
-
-```python
-mistral = dspy.HFModel(model = 'mistralai/Mistral-7B-Instruct-v0.2')
-```
-
-4.  `dspy.Ollama` (experimental) for open source models through [Ollama](https://ollama.com). [Tutorial: How do I install and use Ollama on a local computer?](https://dspy-docs.vercel.app/api/local_language_model_clients/Ollama)\n",
-
-```python
-ollama_mistral = dspy.OllamaLocal(model='mistral')
-```
-
-5.  `dspy.ChatModuleClient` (experimental): [How do I install and use MLC?](https://dspy-docs.vercel.app/api/local_language_model_clients/MLC)
-
-```python
-model = 'dist/prebuilt/mlc-chat-Llama-2-7b-chat-hf-q4f16_1'
-model_path = 'dist/prebuilt/lib/Llama-2-7b-chat-hf-q4f16_1-cuda.so'
-
-llama = dspy.ChatModuleClient(model=model, model_path=model_path)
-```
+## Defining Custom Adapters
