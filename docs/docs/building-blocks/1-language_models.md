@@ -156,4 +156,12 @@ fact_checking = dspy.ChainOfThought('claims -> verdicts')
 fact_checking(claims=["Python was released in 1991.", "Python is a compiled language."])
 ```
 
+**Output:**
+```text
+Prediction(
+    reasoning='The first claim states that "Python was released in 1991," which is true. Python was indeed first released by Guido van Rossum in February 1991. The second claim states that "Python is a compiled language." This is false; Python is primarily an interpreted language, although it can be compiled to bytecode, it is not considered a compiled language in the traditional sense like C or Java.',
+    verdicts=[True, False]
+)
+```
+
 ## Defining Custom Adapters
