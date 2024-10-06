@@ -74,10 +74,6 @@ def test_cot_with_hint():
     ]
     assert predict(question="What is 1+1?", hint="think small").answer == "2"
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(textwrap.indent(message["content"], "                "))
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",

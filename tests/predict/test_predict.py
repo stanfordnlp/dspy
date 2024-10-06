@@ -46,10 +46,6 @@ def test_call_method():
     result = predict_instance(input="test input")
     assert result.output == "test output"
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(textwrap.indent(message["content"], "                "))
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",
@@ -241,10 +237,6 @@ def test_output_only():
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(textwrap.indent(message["content"], "                "))
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",

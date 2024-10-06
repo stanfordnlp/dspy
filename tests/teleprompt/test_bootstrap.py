@@ -80,10 +80,6 @@ def test_bootstrap_effectiveness():
     prediction = compiled_student(input=trainset[0].input)
     assert prediction.output == trainset[0].output
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(textwrap.indent(message["content"], "                "))
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",

@@ -15,10 +15,6 @@ def test_initialization_with_string_signature():
     ]
     assert predict(question="What is 1+1?").answer == "2"
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(textwrap.indent(message["content"], "                "))
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",
