@@ -207,4 +207,51 @@ Prediction(
 )
 ```
 
-## Defining Custom Adapters
+### Defining Custom Adapters
+
+Adapters are a powerful feature in DSPy, allowing you to define custom behavior for your Signatures. 
+
+For example, you could define an Adapter that automatically converts the input to uppercase before passing it to the LM. This is a simple example, but it shows how you can create custom Adapters that modify the inputs or outputs of your LMs.
+
+You'll need to inherit the base `Adapter` class and implement two method to create a usable custom Adapter:
+
+* `format`: This method is responsible for formatting the input for the LM. This method takes `signature`, `demos` and `inputs` as input parameters. Demos are in-context examples set manually or through example. The output of this function can be a string prompt supported by completions function, list of message dictionary or any format that the LM you are using supports.
+
+* `parse`: This method is responsible for parsing the output of the LM. This method takes `signature`, `completions` and `_parse_values` as input parameters.
+
+```python
+from dspy.adapter.base import Adapter
+from typing import List, Dict
+
+class UpperCaseAdapter(Adapter):
+    def __init__(self):
+        super().__init__()
+
+    def format(self, signature, demos, inputs):
+        system_prompt = signature.instructions
+        all_fields = signature.model_fields
+        all_field_data = [(all_fields[f].prefix, all_fields[f].desc) for f in all_fields]
+
+        all_field_data_str = "\n".join([f"{p}: {d}" for p, d in all_field_data])
+        format_instruction_prompt = "="*20 + f"""\n\nOutput Format:\n\n{all_field_data_str}\n\n""" + "="*20
+        
+        all_input_fields = signature.input_fields
+        input_fields_data = [(all_input_fields[f].prefix, inputs[f]) for f in all_input_fields]
+
+        input_fields_str = "\n".join([f"{p}: {v}" for p, v in input_fields_data])
+
+        return system_prompt + format_instruction_prompt + input_fields_str
+
+    def parse(self, signature, completions, _parse_values=None):
+        return completions
+```
+
+Once you have defined your custom Adapter, you can use it in your Signatures by passing it as an argument to the `dspy.configure` method.
+
+```python
+dspy.configure(adapter=UpperCaseAdapter())
+```
+
+### Overriding `__call__` method
+
+To gain control over usage of format and parse and even more fine-grained control over the flow of input from signature to outputs you can override `__call__` method and implement your custom flow. Although for most cases only implementing `parse` and `format` function will be fine.
