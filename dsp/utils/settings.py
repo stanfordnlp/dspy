@@ -1,4 +1,4 @@
-import threading\
+import threading
 from copy import deepcopy
 from contextlib import contextmanager
 
