@@ -142,6 +142,49 @@ dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost
 
 ## Creating Custom LM Class
 
+Creating custom LM class is quite straightforward in DSPy. You can inherit from the `dspy.LM` class or create a new class with a similar interface. You'll need to implement/override the three methods:
+
+* `__init__`: Initialize the LM with the given `model` and other keyword arguments.
+* `__call__`: Call the LM with the given input prompt and return a list of string outputs.
+* `inspect_history`: The history of interactions with the LM. This is optional but is needed by some optimizers in DSPy.
+
+:::tip
+If there is not much overlap in features between your LM and LiteLLM it's better to not inherit and implement all methods from ground up.
+:::
+
+Let's create an LM for Gemini using `google-generativeai` package from scratch:
+
+```python
+from dspy import LM
+import google.generativeai as genai
+
+
+class GeminiLM:
+    def __init__(self, model, api_key, endpoint):
+        genai.configure(api_key=os.environ["API_KEY"] or api_key)
+        self.model = genai.GenerativeModel(model)
+
+        self.endpoint = endpoint
+        self.history = []
+        super().__init__(model)
+    
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        if isinstance(prompt, str):
+            prompt = [prompt]
+
+        completions = self.model.generate_content(prompt)
+        self.history.append({"prompt": prompt, "completions": completions})
+         
+
+    def inspect_history(self):
+        for interaction in self.history:
+            print(f"Prompt: {interaction['prompt']} -> Completions: {interaction['completions']}")
+```
+
+The above example is the simplest form of LM. You can add more options to tweak generation config and even control the generated output based on your requirement.
+
+
 ## Structured LM output with Adapters
 
 Prompt optimizers in DSPy generate and tune the _instructions_ or the _examples_ in the prompts corresponding to your Signatures. DSPy 2.5 introduces **Adapters** as a layer between Signatures and LMs, responsible for formatting these pieces (Signature I/O fields, instructions, and examples) as well as generating and parsing the outputs. 
