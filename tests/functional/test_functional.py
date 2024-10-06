@@ -435,7 +435,7 @@ def test_multi_errors():
 
             [[ ## completed ## ]]
 
-            In adhering to this structure, your objective is: 
+            In adhering to this structure, your objective is:
                     Given the fields `email`, produce the fields `flight_information`."""
             ),  # noqa
         },
@@ -508,7 +508,7 @@ def test_field_validator():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is: 
+                In adhering to this structure, your objective is:
                         Make a very succinct json object that validates with the following schema"""
             ),  # noqa
         },
@@ -590,8 +590,7 @@ def test_parse_type_string():
 
 
 def test_literal():
-    pytest.skip("This test is not working as Literal type does not have a __name__ attribute")
-    lm = DummyLM(['[[ ## output ## ]]\n"2"', '[[ ## output ## ]]\n"3"'])
+    lm = DummyLM(['[[ ## f ## ]]\n"2"', '[[ ## f ## ]]\n"3"'])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -602,8 +601,7 @@ def test_literal():
 
 
 def test_literal_missmatch():
-    pytest.skip("This test is not working as Literal type does not have a __name__ attribute")
-    lm = DummyLM([f'[[ ## output ## ]]\n"{i}"' for i in range(5, 100)])
+    lm = DummyLM([f'[[ ## f ## ]]\n"{i}"' for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
     @predictor(max_retries=1)
@@ -617,8 +615,7 @@ def test_literal_missmatch():
 
 
 def test_literal_int():
-    pytest.skip("This test is not working as Literal type does not have a __name__ attribute")
-    lm = DummyLM(["[[ ## output ## ]]\n2", "[[ ## output ## ]]\n3"])
+    lm = DummyLM(["[[ ## f ## ]]\n2", "[[ ## f ## ]]\n3"])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -629,8 +626,7 @@ def test_literal_int():
 
 
 def test_literal_int_missmatch():
-    pytest.skip("This test is not working as Literal type does not have a __name__ attribute")
-    lm = DummyLM([f"[[ ## output ## ]]\n{i}" for i in range(5, 100)])
+    lm = DummyLM([f"[[ ## f ## ]]\n{i}" for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
     @predictor(max_retries=1)
@@ -753,7 +749,7 @@ def test_list_input2():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is: 
+                In adhering to this structure, your objective is:
                         Given the fields `attempted_signatures`, produce the fields `proposed_signature`."""
             ),  # noqa
         },
@@ -821,7 +817,7 @@ def test_custom_reasoning_field():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is: 
+                In adhering to this structure, your objective is:
                         Given the fields `topic`, produce the fields `question`."""
             ),  # noqa
         },
@@ -976,7 +972,7 @@ def test_demos():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is: 
+                In adhering to this structure, your objective is:
                         Given the fields `input`, produce the fields `output`."""
             ),  # noqa
         },
