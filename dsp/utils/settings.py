@@ -1,4 +1,5 @@
-import threading
+import threading\
+from copy import deepcopy
 from contextlib import contextmanager
 
 from dsp.utils.utils import dotdict
@@ -46,8 +47,9 @@ class Settings:
             #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
             #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
             #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
-            config = DEFAULT_CONFIG
-            cls._instance.__append(config)
+
+            # make a deepcopy of the default config to avoid modifying the default config
+            cls._instance.__append(deepcopy(DEFAULT_CONFIG))
 
         return cls._instance
 
