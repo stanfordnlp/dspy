@@ -405,6 +405,7 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
+
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",
@@ -434,9 +435,9 @@ def test_multi_errors():
 
             [[ ## completed ## ]]
 
-            In adhering to this structure, your objective is:
+            In adhering to this structure, your objective is: 
                     Given the fields `email`, produce the fields `flight_information`."""
-            ),
+            ),  # noqa
         },
         {
             "role": "user",
@@ -507,9 +508,9 @@ def test_field_validator():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Make a very succinct json object that validates with the following schema"""
-            ),
+            ),  # noqa
         },
         {
             "role": "user",
@@ -752,9 +753,9 @@ def test_list_input2():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Given the fields `attempted_signatures`, produce the fields `proposed_signature`."""
-            ),
+            ),  # noqa
         },
         {
             "role": "user",
@@ -820,9 +821,9 @@ def test_custom_reasoning_field():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Given the fields `topic`, produce the fields `question`."""
-            ),
+            ),  # noqa
         },
         {
             "role": "user",
@@ -975,9 +976,9 @@ def test_demos():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Given the fields `input`, produce the fields `output`."""
-            ),
+            ),  # noqa
         },
         {
             "role": "user",
