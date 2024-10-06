@@ -209,6 +209,10 @@ Prediction(
 
 ### Defining Custom Adapters
 
+:::warning
+Adapters are low level feature that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
+:::
+
 Adapters are a powerful feature in DSPy, allowing you to define custom behavior for your Signatures. 
 
 For example, you could define an Adapter that automatically converts the input to uppercase before passing it to the LM. This is a simple example, but it shows how you can create custom Adapters that modify the inputs or outputs of your LMs.
@@ -220,7 +224,7 @@ You'll need to inherit the base `Adapter` class and implement two method to crea
 * `parse`: This method is responsible for parsing the output of the LM. This method takes `signature`, `completions` and `_parse_values` as input parameters.
 
 ```python
-from dspy.adapter.base import Adapter
+from dspy.adapters.base import Adapter
 from typing import List, Dict
 
 class UpperCaseAdapter(Adapter):
@@ -230,27 +234,92 @@ class UpperCaseAdapter(Adapter):
     def format(self, signature, demos, inputs):
         system_prompt = signature.instructions
         all_fields = signature.model_fields
-        all_field_data = [(all_fields[f].prefix, all_fields[f].desc) for f in all_fields]
+        all_field_data = [(all_fields[f].json_schema_extra["prefix"], all_fields[f].json_schema_extra["desc"]) for f in all_fields]
 
         all_field_data_str = "\n".join([f"{p}: {d}" for p, d in all_field_data])
         format_instruction_prompt = "="*20 + f"""\n\nOutput Format:\n\n{all_field_data_str}\n\n""" + "="*20
-        
+
         all_input_fields = signature.input_fields
-        input_fields_data = [(all_input_fields[f].prefix, inputs[f]) for f in all_input_fields]
+        input_fields_data = [(all_input_fields[f].json_schema_extra["prefix"], inputs[f]) for f in all_input_fields]
 
         input_fields_str = "\n".join([f"{p}: {v}" for p, v in input_fields_data])
 
-        return system_prompt + format_instruction_prompt + input_fields_str
+        # Convert to uppercase
+        return (system_prompt + format_instruction_prompt + input_fields_str).upper()
 
     def parse(self, signature, completions, _parse_values=None):
-        return completions
+        output_fields = signature.output_fields
+        
+        output_dict = {}
+        for field in output_fields:
+            field_info = output_fields[field]
+            prefix = field_info.json_schema_extra["prefix"]
+
+            field_completion = completions.split(prefix.upper())[-1].split("\n")[0].strip(": ")
+            output_dict[field] = field_completion
+
+        return output_dict
 ```
+
+Let's understand the `UpperCaseAdapter` class. The `format` method takes `signature`, `demos`, and `inputs` as input parameters. It then constructs a prompt by combining the system prompt, format instruction prompt, and input fields. It then converts the prompt to uppercase. 
+
+The `parse` method takes `signature`, `completions`, and `_parse_values` as input parameters. It then extracts the output fields from the completions and returns them as a dictionary.
 
 Once you have defined your custom Adapter, you can use it in your Signatures by passing it as an argument to the `dspy.configure` method.
 
 ```python
 dspy.configure(adapter=UpperCaseAdapter())
 ```
+
+Now, when you run an inference over a Signature, the input will be converted to uppercase before being passed to the LM. The output will be parsed as a dictionary.
+
+```python
+lm = dspy.LM('openai/gpt-4o-mini')
+dspy.configure(lm=lm, adapter=UpperCaseAdapter())
+
+qa = dspy.ChainOfThought('question -> answer')
+
+response = qa(question="How many floors are in the castle David Gregory inherited?")
+response
+```
+
+**Output:**
+```text
+Prediction(
+    reasoning='determine the number of floors in the castle that David Gregory inherited. This information typically comes from a specific source or context, such as a book, movie, or historical reference. Without that context, I cannot provide an exact number.',
+    answer='I do not have the specific information regarding the number of floors in the castle David Gregory inherited.'
+)
+```
+
+Now let's see how the prompt after Adapter looks like!
+
+```python
+lm.inspect_history()
+```
+
+**Output:**
+```text
+User message:
+
+GIVEN THE FIELDS `QUESTION`, PRODUCE THE FIELDS `ANSWER`.====================
+
+OUTPUT FORMAT:
+
+QUESTION:: ${QUESTION}
+REASONING: LET'S THINK STEP BY STEP IN ORDER TO: ${REASONING}
+ANSWER:: ${ANSWER}
+
+====================QUESTION:: HOW MANY FLOORS ARE IN THE CASTLE DAVID GREGORY INHERITED?
+
+
+Response:
+
+QUESTION:: HOW MANY FLOORS ARE IN THE CASTLE DAVID GREGORY INHERITED?  
+REASONING: LET'S THINK STEP BY STEP IN ORDER TO: determine the number of floors in the castle that David Gregory inherited. This information typically comes from a specific source or context, such as a book, movie, or historical reference. Without that context, I cannot provide an exact number.  
+ANSWER:: I do not have the specific information regarding the number of floors in the castle David Gregory inherited.
+```
+
+The above example is a simple Adapter that converts the input to uppercase before passing it to the LM. You can define more complex Adapters based on your requirements.
 
 ### Overriding `__call__` method
 
