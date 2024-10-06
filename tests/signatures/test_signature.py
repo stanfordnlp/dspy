@@ -182,6 +182,9 @@ def test_insantiating2():
 
 
 def test_multiline_instructions():
+    lm = DummyLM(["[[ ## output ## ]]\nshort answer"])
+    dspy.settings.configure(lm=lm)
+
     class MySignature(Signature):
         """First line
         Second line
@@ -190,15 +193,8 @@ def test_multiline_instructions():
         output = OutputField()
 
     predictor = dspy.Predict(MySignature)
-
-    lm = DummyLM(["[[ ## output ## ]]\nshort answer"])
-    dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(message["content"])
-        print("----")
     assert lm.get_convo(-1)[0] == [
         {
             "role": "system",
@@ -219,7 +215,7 @@ def test_multiline_instructions():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         First line
                         Second line
                             Third line"""

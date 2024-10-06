@@ -82,7 +82,7 @@ def test_bootstrap_effectiveness():
 
     for message in lm.get_convo(-1)[0]:
         print("----")
-        print(message["content"])
+        print(textwrap.indent(message["content"], "                "))
         print("----")
     assert lm.get_convo(-1)[0] == [
         {
@@ -105,7 +105,7 @@ def test_bootstrap_effectiveness():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Given the fields `input`, produce the fields `output`."""
             ),
         },

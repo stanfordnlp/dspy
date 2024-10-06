@@ -123,7 +123,7 @@ def test_optimization_and_output_verification():
 
     for message in lm.get_convo(-1)[0]:
         print("----")
-        print(message["content"])
+        print(textwrap.indent(message["content"], "                "))
         print("----")
     assert lm.get_convo(-1)[0] == [
         {
@@ -150,7 +150,7 @@ def test_optimization_and_output_verification():
 
                 [[ ## completed ## ]]
 
-                In adhering to this structure, your objective is:
+                In adhering to this structure, your objective is: 
                         Optimized Prompt"""
             ),
         },

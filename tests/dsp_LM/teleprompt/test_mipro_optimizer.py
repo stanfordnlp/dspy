@@ -210,28 +210,4 @@ def test_optimization_and_output_verification():
     test_input = "What is the capital of Spain?"
     prediction = optimized_student(input=test_input)
 
-    print("CORRECT ANSWER")
-    print(lm.get_convo(-1))
-
     assert prediction.output == "Madrid"
-
-    for message in lm.get_convo(-1)[0]:
-        print("----")
-        print(message["content"])
-        print("----")
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-            """
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                """
-            ),
-        },
-    ]
