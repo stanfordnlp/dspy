@@ -85,7 +85,6 @@ const config: Config = {
           label: 'Documentation', // Label for the navbar item
         },
         { to: '/docs/category/tutorials', label: 'Tutorials', position: 'left' },
-        { to: '/api/intro', label: 'API References', position: 'left' },
         { to: '/docs/dspy-usecases', label: 'DSPy Use Cases', position: 'left' },
         { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'right' },
         // Navbar item for the GitHub repository
@@ -114,10 +113,6 @@ const config: Config = {
             {
               label: 'Documentation',
               to: '/docs/intro',
-            },
-            {
-              label: 'API Reference',
-              to: '/api/intro',
             },
           ],
         },
