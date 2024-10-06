@@ -115,6 +115,15 @@ class ConditionalLM(LM):
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
+def test_bayesian_signature_optimizer_initialization():
+    optimizer = MIPRO(metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True)
+    assert optimizer.metric == simple_metric, "Metric not correctly initialized"
+    assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
+    assert optimizer.verbose is True, "Verbose flag not correctly initialized"
+    assert optimizer.track_stats is True, "Track stats flag not correctly initialized"
+
+
 class SimpleModule(dspy.Module):
     def __init__(self, signature):
         super().__init__()
@@ -210,4 +219,45 @@ def test_optimization_and_output_verification():
     test_input = "What is the capital of Spain?"
     prediction = optimized_student(input=test_input)
 
+    print("CORRECT ANSWER")
+    print(lm.get_convo(-1))
+
     assert prediction.output == "Madrid"
+
+    expected_lm_output = textwrap.dedent(
+        """\
+        Input:
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Reasoning: Let's think step by step in order to ${produce the output}. We ...
+        Output: ${output}
+
+        ---
+
+        Input: What is the capital of France?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Paris
+
+        ---
+
+        Input: What is the capital of Norway?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Oslo
+
+        ---
+
+        Input: What does the fox say?
+        Output: Ring-ding-ding-ding-dingeringeding!
+
+        ---
+
+        Input: What is the capital of Spain?
+        Reasoning: Let's think step by step in order to think deeply.
+        Output: Madrid"""
+    )
+
+    assert lm.get_convo(-1) == expected_lm_output
