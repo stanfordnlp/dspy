@@ -111,6 +111,8 @@ class MIPROv2(Teleprompter):
         data_aware_proposer=True,
         view_data_batch_size=10,
         tip_aware_proposer=True,
+        feedback_aware_proposer=False,
+        feedback=None,
         fewshot_aware_proposer=True,
         requires_permission_to_run=True,
     ):
@@ -274,6 +276,8 @@ class MIPROv2(Teleprompter):
                 use_task_demos=fewshot_aware_proposer,
                 use_tip=tip_aware_proposer,
                 set_tip_randomly=tip_aware_proposer,
+                use_feedback=feedback_aware_proposer,
+                feedback=feedback,
                 use_instruct_history=False,
                 set_history_randomly=False,
                 verbose = self.verbose,
