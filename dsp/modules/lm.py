@@ -55,7 +55,7 @@ class LM(ABC):
         printed = []
         n = n + skip
 
-        for x in reversed(self.history[-100:]):
+        for x in reversed(self.history):
             prompt = x["prompt"]
 
             if prompt != last_prompt:

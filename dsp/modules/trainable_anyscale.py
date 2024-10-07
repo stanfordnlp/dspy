@@ -119,8 +119,14 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         custom_modifications = {
             "model_id": self.kwargs["model"],
             "train_path": train_path,
-            "output_dir": kwargs.get("output_dir", "/mnt/cluster_storage/dspy/finetuning/artifacts/")
+            "logger": {
+                "provider": "wandb",
+            },
+            "num_checkpoints_to_keep": 10
+            # "output_dir": kwargs.get("output_dir", "/mnt/cluster_storage/dspy/finetuning/artifacts/")
         }
+        if kwargs.get("output_dir", None):
+            custom_modifications["output_dir"] = kwargs["output_dir"]
         if eval_path:
             custom_modifications["valid_path"] = eval_path
 
@@ -158,14 +164,22 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             "name": "dspy-llmforge-fine-tuning-job",
             "entrypoint": f"llmforge anyscale finetune {filename}",
             "working_dir": ".",
-            "image_uri": "localhost:5555/anyscale/llm-forge:0.5.5"
+            "image_uri": "localhost:5555/anyscale/llm-forge:0.5.6",
+            "requirements": [
+                "wandb",
+            ],
+            "env_vars": {
+                "WANDB_API_KEY": os.environ.get("WANDB_API_KEY", ""),
+                "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+                "HF_HOME": os.environ.get("HF_HOME", ""),
+            }
         }
         compute_config_kwargs = kwargs.get("compute_config", {})
         compute_config_dict.update(compute_config_kwargs)
         compute_config = JobConfig(**compute_config_dict)
 
         job_runner_config_path = kwargs.get("compute_yaml_path", "job_runner_config.yaml")
-        yaml.safe_dump(compute_config_dict, open(job_runner_config_path, "w"))
+        # yaml.safe_dump(compute_config_dict, open(job_runner_config_path, "w"))
 
         # TODO: Validate the hyperparameters
         # if not self.validate_hyperparameters(training_arguments):
@@ -219,14 +233,14 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             print(f"Number of items in {name} data: {num_items}")
 
 
-            s3_path = os.path.join(storage, f"{name}.jsonl")
+            s3_path = os.path.join(storage, path.split("/")[-1])
             print(f"Uploading {name} data to S3 at {s3_path}")
             # ray.data.read_json(path).write_json(s3_path)
             # NOTE: trying a local copy for now
             if s3_path[:2] == "s3":
                 os.system(f"aws s3 cp {path} {s3_path}")
             elif s3_path[:2] == "gs":
-                os.system(f"gsutil cp {path} {s3_path}")
+                os.system(f"gcloud storage cp {path} {s3_path}")
             else:
                 os.system(f"cp {path} {s3_path}")
                 print(f"Copied {path} to {s3_path}")
