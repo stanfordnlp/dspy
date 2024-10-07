@@ -24,6 +24,7 @@ class Predict(Module, Parameter):
         self.config = config
         self._parse_values = _parse_values
         self.reset()
+        self.loaded_signature = None
 
     def reset(self):
         self.lm = None
@@ -78,12 +79,14 @@ class Predict(Module, Parameter):
         # Reconstruct the signature.
         if "signature_instructions" in state:
             instructions = state["signature_instructions"]
+            self.loaded_signature = self.signature.with_instructions(instructions)
             self.signature = self.signature.with_instructions(instructions)
 
         if "signature_prefix" in state:
             prefix = state["signature_prefix"]
             *_, last_key = self.signature.fields.keys()
             self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+            self.loaded_signature = self.loaded_signature.with_updated_fields(last_key, prefix=prefix)
         
         # Some special stuff for CoT.
         if "extended_signature_instructions" in state:
@@ -103,7 +106,7 @@ class Predict(Module, Parameter):
 
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
-        signature = ensure_signature(kwargs.pop("signature", self.signature))
+        signature = ensure_signature(kwargs.pop("signature", self.loaded_signature or self.signature))
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
