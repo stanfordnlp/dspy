@@ -69,10 +69,13 @@ class ScoNeTask(BaseTask):
         metric_EM = dspy.evaluate.answer_exact_match
         self.metric = metric_EM
 
-        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, EVAL_NUM=100)
+        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
         return ScoNeCoT()
     
     def get_metric(self):
         return self.metric
+    
+    def get_max_tokens(self):
+        return 200

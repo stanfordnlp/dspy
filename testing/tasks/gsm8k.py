@@ -71,10 +71,13 @@ class GSM8KTask(BaseTask):
         self.testset = testset
         self.metric = gsm8k_metric
 
-        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, EVAL_NUM=100)
+        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
         return CoT()
     
     def get_metric(self):
         return self.metric
+    
+    def get_max_tokens(self):
+        return 600

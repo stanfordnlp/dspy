@@ -141,7 +141,7 @@ class TweetMetricTask(BaseTask):
 
         self.metric = metric
 
-        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, EVAL_NUM=100)
+        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
         return TweetMetric()

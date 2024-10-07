@@ -103,7 +103,7 @@ class TweetTask(BaseTask):
 
         self.metric = metric
 
-        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, EVAL_NUM=100)
+        self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
         return MultiHopTweet(passages_per_hop=3) #TODO: make it so we can specify # of passages 
