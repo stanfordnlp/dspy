@@ -101,12 +101,14 @@ We can declare these validation checks through `dspy.Suggest` statements (as we 
 dspy.Suggest(
     len(query) <= 100,
     "Query should be short and less than 100 characters",
+    target_module=self.generate_query
 )
 
 dspy.Suggest(
     validate_query_distinction_local(prev_queries, query),
     "Query should be distinct from: "
     + "; ".join(f"{i+1}) {q}" for i, q in enumerate(prev_queries)),
+    target_module=self.generate_query
 )
 ```
 
@@ -133,12 +135,14 @@ class SimplifiedBaleenAssertions(dspy.Module):
             dspy.Suggest(
                 len(query) <= 100,
                 "Query should be short and less than 100 characters",
+                target_module=self.generate_query
             )
 
             dspy.Suggest(
                 validate_query_distinction_local(prev_queries, query),
                 "Query should be distinct from: "
                 + "; ".join(f"{i+1}) {q}" for i, q in enumerate(prev_queries)),
+                target_module=self.generate_query
             )
 
             prev_queries.append(query)
