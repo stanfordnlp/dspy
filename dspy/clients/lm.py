@@ -3,7 +3,7 @@ import functools
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import ujson
 
 
@@ -87,37 +87,49 @@ class LM:
            self_hosted_model_kill(self)
         logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
 
-    def finetune(self, message_completion_pairs: List[Dict[str, str]], config: Dict[str, Any]) -> FinetuneJob:
+    def finetune(self,
+            message_completion_pairs: List[Dict[str, str]],
+            train_kwargs: Optional[Dict[str, Any]]=None,
+            launch_kwargs: Optional[Dict[str, Any]]=None,
+        ) -> FinetuneJob:
         """Send a request to the provider to launch the model, if supported."""
         # Fine-tuning is experimental and requires the experimental flag
         from dspy import settings as settings
         err = "Fine-tuning is an experimental feature and requires `dspy.settings.experimental = True`."
         assert settings.experimental, err
 
+        # Pack the configuration into a dictionary
+        config = dict(
+            model=self.model,
+            message_completion_pairs=message_completion_pairs,
+            train_kwargs=train_kwargs,
+            launch_kwargs=launch_kwargs,
+        )
+
         # Find the respective finetuning functions and job classes
         finetune_function = None
-        finetune_job = None
+        finetune_job_class = None
         if is_openai_model(self.model):
             finetune_function = finetune_openai
-            finetune_job = FinetuneJobOpenAI()
+            finetune_job_class = FinetuneJobOpenAI
         elif is_anyscale_model(self.model):
             finetune_function = finetune_anyscale
-            finetune_function = finetune_anyscale
-            finetune_job = FinetuneJobAnyScale()
+            finetune_job_class = FinetuneJobAnyScale
 
         # Ensure that the model supports fine-tuning
-        if not finetune_function or not finetune_job:
+        if not finetune_function or not finetune_job_class:
             err = f"Fine-tuning is not supported for the model {self.model}."
             raise ValueError(err)
+
+        # Initialize the finetune job
+        finetune_job = finetune_job_class(**config)
 
         # Start asyncronous training
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(
             finetune_function,
             finetune_job,
-            model=self.model,
-            message_completion_pairs=message_completion_pairs,
-            config=config
+            **config
         )
         executor.shutdown(wait=False)
 

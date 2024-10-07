@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, Future
 from enum import Enum
 from typing import List, Dict, Any, Optional
@@ -39,17 +40,36 @@ def validate_training_data(
 
 class FinetuneJob(Future):
 
+    def __init__(self,
+        model: str,
+        message_completion_pairs: List[Dict[str, str]],
+        train_kwargs: Optional[Dict[str, Any]]=None,
+        launch_kwargs: Optional[Dict[str, Any]]=None,
+    ):
+        self.model = model
+        self.message_completion_pairs = message_completion_pairs
+        self.train_kwargs = train_kwargs
+        self.launch_kwargs = launch_kwargs
+        super().__init__()
+
     def __str__(self):
-        return f"FinetuningJob(model={self.model}, config={self.config})"
+        config = dict(
+            model=self.model,
+            train_kwargs=self.train_kwargs,
+            launch_kwargs=self.launch_kwargs,
+        )
+        return f"FinetuningJob({config})"
 
     def __repr__(self):
         return str(self)
 
-    # Subclasses should implement the following methods
+    # Subclasses should override the cancel method to cancel the finetune job;
+    # then call the super's cancel method so that the future can be cancelled.
     def cancel(self):
-        """Cancel the finetuning job."""
-        raise NotImplementedError("Method `get_status` is not implemented.")
+        """Cancel the finetune job."""
+        super().cancel()
 
-    def get_status(self):
-        """Cancel the finetuning job."""
-        raise NotImplementedError("Method `get_status` is not implemented.")
+    @abstractmethod
+    def status(self):
+        """Get the status of the finetune job."""
+        raise NotImplementedError("Method `status` is not implemented.")

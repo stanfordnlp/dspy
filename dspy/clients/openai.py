@@ -1,9 +1,9 @@
 import re
 import time
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 
+import dspy
 from dspy import logger
-from dspy import LM
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
@@ -56,17 +56,17 @@ OPENAI_MODEL_IDS = model_ids = [
 
 
 class FinetuneJobOpenAI(FinetuneJob):
-    
+
     def cancel(self):
-        """Cancel the finetuning job."""
-        logger.info("[Finetune] Canceling the OpenAI finetuning job")
+        """Cancel the finetune job."""
+        logger.info("[Finetune] Canceling the OpenAI finetune job")
         time.sleep(3)
         logger.info("[Finetune] Done")
         super().cancel()
 
-    def get_status(self):
-        """Get the status of the finetuning job."""
-        logger.info("[Finetune] Getting the status of the OpenAI finetuning job")
+    def status(self):
+        """Get the status of the finetune job."""
+        logger.info("[Finetune] Getting the status of the OpenAI finetune job")
         time.sleep(3)
         status = "Running"
         logger.info("[Finetune] Done")
@@ -99,11 +99,18 @@ def is_openai_model(model: str) -> bool:
     return False
 
 
-def finetune_openai(job: FinetuneJobOpenAI, model: str, message_completion_pairs: List[Dict[str, str]], config: Dict[str, Any]):
+def finetune_openai(
+        job: FinetuneJobOpenAI,
+        model: str,
+        message_completion_pairs: List[Dict[str, str]],
+        train_kwargs: Optional[Dict[str, Any]]=None,
+        launch_kwargs: Optional[Dict[str, Any]]=None,
+    ) -> FinetuneJob:
     """Fine-tune an OpenAI model."""
-
     # Fake fine-tuning
-    logger.info("[Finetune] Fake fine-tuning of an OpenAI model")
+    logger.info("[Finetune] Fake fine-tuning")
+    train_kwargs = train_kwargs or {}
+    launch_kwargs = launch_kwargs or {}
 
     try:
       logger.info("[Finetune] Validate the formatting of the fine-tuning data")
@@ -113,10 +120,16 @@ def finetune_openai(job: FinetuneJobOpenAI, model: str, message_completion_pairs
       logger.info("[Finetune] Done!")
 
       logger.info("[Finetune] Saving the data to a file")  # TODO: Get parent path, keep same across all finetuning jobs
+      # We utilize message_completion_pairs here
       time.sleep(1)
       logger.info("[Finetune] Done!")
 
       logger.info("[Finetune] Uploading the data to the cloud")
+      time.sleep(1)
+      logger.info("[Finetune] Done!")
+
+      logger.info("[Finetune] Launch training")
+      # We utilize model and train_kwargs here
       time.sleep(1)
       logger.info("[Finetune] Done!")
 
@@ -125,12 +138,13 @@ def finetune_openai(job: FinetuneJobOpenAI, model: str, message_completion_pairs
       logger.info("[Finetune] Done!")
 
       logger.info("[Finetune] Get trained model client")
+      model = "ft:gpt-4o:2024-08-06:THIS_IS_A_REAL_MODEL!!!"  # Hardcoded
       time.sleep(1)
       logger.info("[Finetune] Done!")
   
-      logger.info("[Finetune] Create a DSPy LM object for the trained model")  # Will cause a circular import
-      model_id = "ft:gpt-4o:2024-08-06:THIS_IS_A_REAL_MODEL!!!"  # Hardcoded
-      lm = "FakeLM"  # Create an LM client
+      logger.info("[Finetune] Create a DSPy LM object for the trained model")
+      # We utilize launch_kwargs here
+      lm = dspy.LM(model=model, **launch_kwargs)
       time.sleep(1)
       logger.info("[Finetune] Done!")
 
@@ -141,6 +155,3 @@ def finetune_openai(job: FinetuneJobOpenAI, model: str, message_completion_pairs
     except Exception as e:
       logger.error(f"[Finetune] Error: {e}")
       raise e
-
-    print()
-    time.sleep(20)
