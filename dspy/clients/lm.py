@@ -1,6 +1,7 @@
 import os
 import ujson
 import functools
+from .base_lm import BaseLM
 from pathlib import Path
 
 try:
@@ -22,7 +23,7 @@ except ImportError:
 
     litellm = LitellmPlaceholder()
 
-class LM:
+class LM(BaseLM):
     def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         self.model = model
         self.model_type = model_type
@@ -56,9 +57,6 @@ class LM:
         self.history.append(entry)
 
         return outputs
-    
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
 
 
 @functools.lru_cache(maxsize=None)
@@ -89,32 +87,3 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
 
     return litellm.text_completion(cache=cache, model=f'text-completion-openai/{model}', api_key=api_key,
                                    api_base=api_base, prompt=prompt, **kwargs)
-
-
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-def _inspect_history(lm, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in lm.history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item['prompt']}]
-        outputs = item["outputs"]
-
-        print("\n\n\n")
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg['content'].strip())
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
-        
-    print("\n\n\n")

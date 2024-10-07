@@ -12,6 +12,8 @@ from dspy.signatures.signature import ensure_signature, signature_to_template
 import logging
 from functools import lru_cache
 
+from dspy.adapters.image_utils import is_image, encode_image
+
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
@@ -43,6 +45,9 @@ class Predict(Module, Parameter):
                 if isinstance(demo[field], BaseModel):
                     demo[field] = demo[field].model_dump_json()
 
+                if is_image(demo[field]):
+                    demo[field] = encode_image(demo[field])
+
             state["demos"].append(demo)
 
         # If `save_verbose` save all field metadata as well.
@@ -50,14 +55,16 @@ class Predict(Module, Parameter):
             fields = []
             for field_key in self.signature.fields.keys():
                 field_metadata = self.signature.fields[field_key]
-                fields.append({
-                    "name":  field_key,
-                    "field_type": field_metadata.json_schema_extra["__dspy_field_type"],
-                    "description": field_metadata.json_schema_extra["desc"],
-                    "prefix": field_metadata.json_schema_extra["prefix"]
-                })
+                fields.append(
+                    {
+                        "name": field_key,
+                        "field_type": field_metadata.json_schema_extra["__dspy_field_type"],
+                        "description": field_metadata.json_schema_extra["desc"],
+                        "prefix": field_metadata.json_schema_extra["prefix"],
+                    }
+                )
             state["fields"] = fields
-        
+
         # Cache the signature instructions and the last field's name.
         *_, last_key = self.signature.fields.keys()
         state["signature_instructions"] = self.signature.instructions
@@ -67,7 +74,7 @@ class Predict(Module, Parameter):
         if hasattr(self, "extended_signature"):
             # Cache the signature instructions and the last field's name.
             state["extended_signature_instructions"] = self.extended_signature.instructions
-            state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra['prefix']
+            state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra["prefix"]
 
         return state
 
@@ -84,7 +91,7 @@ class Predict(Module, Parameter):
             prefix = state["signature_prefix"]
             *_, last_key = self.signature.fields.keys()
             self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
-        
+
         # Some special stuff for CoT.
         if "extended_signature_instructions" in state:
             instructions = state["extended_signature_instructions"]
@@ -161,7 +168,6 @@ class Predict(Module, Parameter):
         return f"{self.__class__.__name__}({self.signature})"
 
 
-
 def old_generate(demos, signature, kwargs, config, lm, stage):
     # Switch to legacy format for dsp.generate
     x = dsp.Example(demos=demos, **kwargs)
@@ -188,7 +194,7 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
 
 
 def new_generate(lm, signature, example, max_depth=6, **kwargs):
-    kwargs['stop'] = tuple(kwargs.get('stop', [])) or ('\n---', )
+    kwargs["stop"] = tuple(kwargs.get("stop", [])) or ("\n---",)
 
     # Generate and extract the fields.
     template = signature_to_template(signature, adapter=dsp.ExperimentalAdapter)
@@ -203,22 +209,28 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     for field_idx, key in enumerate(field_names):
         completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
         completions = completions_ or completions
-        if len(completions_) == 0: break
+        if len(completions_) == 0:
+            break
 
     # If none of the completions is completed (i.e., none has the final field set).
     if len(completions_) == 0:
         # Pick the first completion that has gone farthest.
         completion = completions[0]
 
-        for field_idx_ in range(field_idx+1, len(field_names)):
-            if field_names[field_idx_] in completion: del completion[field_names[field_idx_]]
+        for field_idx_ in range(field_idx + 1, len(field_names)):
+            if field_names[field_idx_] in completion:
+                del completion[field_names[field_idx_]]
 
         # Recurse with greedy decoding.
-        new_kwargs = {**kwargs, "n": 1, "temperature": 0.0,}
+        new_kwargs = {
+            **kwargs,
+            "n": 1,
+            "temperature": 0.0,
+        }
 
         assert max_depth > 0
-        return new_generate(lm, signature, completion, max_depth=max_depth-1, **new_kwargs)
-    
+        return new_generate(lm, signature, completion, max_depth=max_depth - 1, **new_kwargs)
+
     # Keep only output fields.
     completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
 
@@ -227,6 +239,7 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
 
 def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     import dspy
+
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
     return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values)
