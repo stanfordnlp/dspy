@@ -3,17 +3,22 @@ import functools
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, Union
 import ujson
 
 
 from dspy import logger
-from dspy.clients.finetune import FinetuneJob
-from dspy.clients.self_hosted import is_self_hosted_model
-from dspy.clients.openai import is_openai_model, finetune_openai, FinetuneJobOpenAI
-from dspy.clients.anyscale import is_anyscale_model, finetune_anyscale, FinetuneJobAnyScale
+from dspy.clients.finetune import FinetuneJob, TrainingMethod
+from dspy.clients.self_hosted import (
+    is_self_hosted_model,
+    self_hosted_model_launch,
+    self_hosted_model_kill,
+)
 
 
+DISK_CACHE_DIR = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
+
+    
 try:
     import warnings
     with warnings.catch_warnings():
@@ -24,8 +29,7 @@ try:
         litellm.telemetry = False
 
     from litellm.caching import Cache
-    disk_cache_dir = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
-    litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
+    litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 
 except ImportError:
     class LitellmPlaceholder:
@@ -37,19 +41,29 @@ except ImportError:
 #-------------------------------------------------------------------------------
 #    LiteLLM Client
 #-------------------------------------------------------------------------------
+        
 class LM:
-    def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    def __init__(self, 
+            model,
+            model_type='chat', 
+            temperature=0.0,
+            max_tokens=1000,
+            cache=True,
+            launch_kwargs=None,
+            **kwargs
+        ):
         self.model = model
         self.model_type = model_type
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+        self.launch_kwargs = kwargs.pop("launch_kwargs", launch_kwargs or {})
         self.history = []
 
-        if "o1-" in model:  # TODO: This is error prone!
+        # TODO: This is error prone!
+        if "o1-" in model:
             assert max_tokens >= 5000 and temperature == 1.0, \
                 "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
-                
-    
+
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -78,58 +92,48 @@ class LM:
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
         if is_self_hosted_model(self.model):
-            self_hosted_model_launch(self)
+            self_hosted_model_launch(model, self.launch_kwargs)
         logger.debug(f"`LM.launch()` is called for the auto-launched model {self.model} -- no action is taken.")
 
     def kill(self):
         """Send a request to the provider to kill the model, if needed."""
         if is_self_hosted_model(self.model):
-           self_hosted_model_kill(self)
+           self_hosted_model_kill(model, self.launch_kwargs)
         logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
 
     def finetune(self,
             message_completion_pairs: List[Dict[str, str]],
             train_kwargs: Optional[Dict[str, Any]]=None,
             launch_kwargs: Optional[Dict[str, Any]]=None,
+            cache_finetune: bool = True,
         ) -> FinetuneJob:
-        """Send a request to the provider to launch the model, if supported."""
+        """Start model fine-tuning, if supported."""
         # Fine-tuning is experimental and requires the experimental flag
         from dspy import settings as settings
         err = "Fine-tuning is an experimental feature and requires `dspy.settings.experimental = True`."
         assert settings.experimental, err
 
-        # Pack the configuration into a dictionary
-        config = dict(
+        # Get the fine-tuning provider, if it is supported
+        try:
+            provider = _get_supported_finetune_provider(self.model)
+        except ValueError as err:
+            raise err
+
+        # Initialize the finetune job
+        FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
+        finetune_job = FinetuneJobClass(
             model=self.model,
             message_completion_pairs=message_completion_pairs,
             train_kwargs=train_kwargs,
-            launch_kwargs=launch_kwargs,
         )
-
-        # Find the respective finetuning functions and job classes
-        finetune_function = None
-        finetune_job_class = None
-        if is_openai_model(self.model):
-            finetune_function = finetune_openai
-            finetune_job_class = FinetuneJobOpenAI
-        elif is_anyscale_model(self.model):
-            finetune_function = finetune_anyscale
-            finetune_job_class = FinetuneJobAnyScale
-
-        # Ensure that the model supports fine-tuning
-        if not finetune_function or not finetune_job_class:
-            err = f"Fine-tuning is not supported for the model {self.model}."
-            raise ValueError(err)
-
-        # Initialize the finetune job
-        finetune_job = finetune_job_class(**config)
 
         # Start asyncronous training
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(
-            finetune_function,
+            execute_finetune_job,
             finetune_job,
-            **config
+            launch_kwargs=launch_kwargs,
+            cache_finetune=cache_finetune
         )
         executor.shutdown(wait=False)
 
@@ -152,6 +156,7 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
     kwargs = ujson.loads(request)
 
     # Extract the provider and model from the model string.
+    # TODO: Not all the models are in the format of "provider/model"
     model = kwargs.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
@@ -196,19 +201,141 @@ def _inspect_history(lm, n: int = 1):
 
 
 #-------------------------------------------------------------------------------
-#    Functions for supporting self-hosted models
+#    Fine-tune support
 #-------------------------------------------------------------------------------
+# TODO: This part can be moved to a separate module
+
+from dspy.clients.openai import (
+    FinetuneJobOpenAI,
+    is_openai_model,
+    finetune_openai
+)
+from dspy.clients.anyscale import (
+    FinetuneJobAnyScale,
+    is_anyscale_model,
+    finetune_anyscale
+)
 
 
-# TODO: It would be nice to move these to a separate file
-def self_hosted_model_launch(lm: LM):
-   """Launch a self-hosted model."""
-   # TODO: Hardcode logic that starts a local server of choice using a selected
-   # server (e.g. VLLM, TGI, SGLang)
-   pass
+_PROVIDER_ANYSCALE = "anyscale"
+_PROVIDER_OPENAI = "openai"
+_SUPPORTED_FINETUNE_PROVIDERS = [
+    _PROVIDER_ANYSCALE,
+    _PROVIDER_OPENAI,
+]
+
+            
+def _get_supported_finetune_provider(model: str) -> Union[str, ValueError]:
+    """Return the finetuning provider for the given model.
+
+    The provider must be in _SUPPORTED_FINETUNE_PROVIDERS. This function is not
+    named `_get_provider` because it does not attempt to find the provider of a
+    model if there is no DSPy fine-tuning support for it.
+    """
+    if is_self_hosted_model(model):
+        return _PROVIDER_SELF_HOSTED
+
+    if is_openai_model(model):
+        return _PROVIDER_OPENAI
+
+    if is_anyscale_model(model):
+        return _PROVIDER_ANYSCALE
+    
+    return ValueError(f"DSPy does not have fine-tuning support for {model}")
 
 
-def self_hosted_model_kill(lm: LM):
-   """Kill a self-hosted model."""
-   # Harcode the logic that kills the local server of choice
-   pass
+def get_provider_finetune_job_class(provider: str) -> Type[FinetuneJob]:
+    """Get the FinetuneJob class for the provider."""
+    # Mapping from provider to finetune job type
+    _PROVIDER_TO_FINETUNE_JOB_CLASS = {
+        _PROVIDER_ANYSCALE: FinetuneJobAnyScale,
+        _PROVIDER_OPENAI: FinetuneJobOpenAI,
+    }
+
+    # Get the FinetuneJob class for the provider
+    _CLS = _PROVIDER_TO_FINETUNE_JOB_CLASS[provider]
+
+    return _CLS
+
+
+def get_provider_finetune_function(provider: str) -> callable:
+    """Return the finetune function for the given model."""
+    # Mapping from provider to finetune function
+    _PROVIDER_TO_FINETUNE_FUNCTION = {
+        _PROVIDER_ANYSCALE: finetune_anyscale,
+        _PROVIDER_OPENAI: finetune_openai,
+    }
+
+    # Get the finetuning provider
+    finetune_function = _PROVIDER_TO_FINETUNE_FUNCTION[provider]
+
+    return finetune_function
+
+
+def execute_finetune_job(
+    job: FinetuneJob[Type[LM]],
+    launch_kwargs: Optional[Dict[str, Any]]=None,
+    cache_finetune: bool=True
+):
+    """Execute the finetune job in a blocking manner."""
+    # Input validation
+    launch_kwargs = launch_kwargs or {}
+
+    # Execute finetune job
+    job_kwargs = job.get_kwargs()
+    if cache_finetune:
+        try:
+            model = cached_finetune(job=job, **job_kwargs)
+        except ValueError as err:
+            raise err
+    else:
+        model = finetune(job=job, **job_kwargs)
+
+    # Launch the LM
+    lm = LM(model=model, **launch_kwargs)
+
+    # Set the result of the finetuning job to the fine-tuned LM
+    job.set_result(lm)
+
+
+# TODO: Perhaps we shouldn't directly cache the data
+# TODO: Add DiskCache, ignore job
+def cached_finetune(
+    job,
+    model: str,
+    message_completion_pairs: List[Dict[str, str]],
+    train_kwargs: Optional[Dict[str, Any]]=None,
+) -> Union[str, ValueError]:
+    return finetune(
+        job=job,
+        model=model,
+        message_completion_pairs=message_completion_pairs,
+        train_kwargs=train_kwargs,
+    )
+
+
+def finetune(
+    job,
+    model: str,
+    message_completion_pairs: List[Dict[str, str]],
+    train_kwargs: Optional[Dict[str, Any]]=None,
+) -> Union[str, ValueError]:
+    """Fine-tune a new model based on the given model."""
+    # Get the fine-tuning provider
+    try:
+        provider = _get_supported_finetune_provider(model)
+    except ValueError as err:
+        raise err
+
+    # Get the finetune function
+    provider_finetune_function = get_provider_finetune_function(provider)
+
+    # Fine-tune a new model based on the given model
+    model = provider_finetune_function(
+        job=job,
+        model=model,
+        message_completion_pairs=message_completion_pairs,
+        train_kwargs=train_kwargs,
+    )
+
+    return model

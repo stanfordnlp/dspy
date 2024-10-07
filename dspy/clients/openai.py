@@ -2,14 +2,23 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-import dspy
 from dspy import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
-    validate_training_data
+    validate_training_data,
+    save_data,
 )
 
+
+#-------------------------------------------------------------------------------
+#    Variables
+#-------------------------------------------------------------------------------
+
+# List of training methods supported by OpenAI
+TRAINING_METHODS_OPENAI = [
+    TrainingMethod.SFT,
+]
 
 # TODO: Should we include the TTS/Dall-E models on this list?
 # List of OpenAI model IDs
@@ -54,6 +63,10 @@ OPENAI_MODEL_IDS = model_ids = [
     "davinci-002"
 ]
 
+
+#-------------------------------------------------------------------------------
+#    Function and classes required for the fine-tune interface
+#-------------------------------------------------------------------------------
 
 class FinetuneJobOpenAI(FinetuneJob):
 
@@ -104,54 +117,57 @@ def finetune_openai(
         model: str,
         message_completion_pairs: List[Dict[str, str]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-        launch_kwargs: Optional[Dict[str, Any]]=None,
-    ) -> FinetuneJob:
+    ) -> str:
     """Fine-tune an OpenAI model."""
     # Fake fine-tuning
-    logger.info("[Finetune] Fake fine-tuning")
     train_kwargs = train_kwargs or {}
-    launch_kwargs = launch_kwargs or {}
 
     try:
-      logger.info("[Finetune] Validate the formatting of the fine-tuning data")
-      training_method = TrainingMethod.SFT  # Hardcoded
-      validate_training_data(message_completion_pairs, training_method)
-      time.sleep(5)
-      logger.info("[Finetune] Done!")
+        # Validate the formatting of the fine-tuning data
+        logger.info("[Finetune] Validating the formatting of the data")
+        _validate_data(message_completion_pairs)
+        logger.info("[Finetune] Done!")
 
-      logger.info("[Finetune] Saving the data to a file")  # TODO: Get parent path, keep same across all finetuning jobs
-      # We utilize message_completion_pairs here
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
+        # Validate the formatting of the fine-tuning data
+        logger.error("[Finetune] Saving the data to a file")
+        # data_path = save_data(message_completion_pairs)
+        time.sleep(1)
+        logger.info("[Finetune] Done!")
+    
+        logger.error("[Finetune] Uploading the data to the cloud")
+        time.sleep(1)
+        logger.error("[Finetune] Done!")
 
-      logger.info("[Finetune] Uploading the data to the cloud")
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
+        logger.error("[Finetune] Launch training")
+        # We utilize model and train_kwargs here
+        time.sleep(1)
+        logger.error("[Finetune] Done!")
 
-      logger.info("[Finetune] Launch training")
-      # We utilize model and train_kwargs here
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
+        logger.error("[Finetune] Wait for training to complete")
+        time.sleep(1)
+        logger.error("[Finetune] Done!")
 
-      logger.info("[Finetune] Wait for training to complete")
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
+        logger.error("[Finetune] Get trained model client")
+        model = "ft:gpt-4o:2024-08-06:THIS_IS_A_REAL_MODEL!!!"  # Hardcoded
+        time.sleep(1)
+        logger.error("[Finetune] Done!")
 
-      logger.info("[Finetune] Get trained model client")
-      model = "ft:gpt-4o:2024-08-06:THIS_IS_A_REAL_MODEL!!!"  # Hardcoded
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
-  
-      logger.info("[Finetune] Create a DSPy LM object for the trained model")
-      # We utilize launch_kwargs here
-      lm = dspy.LM(model=model, **launch_kwargs)
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
+        logger.error("[Finetune] Exiting finetune_openai")
 
-      logger.info("Set the result of the FinetuningJob to the new lM")
-      job.set_result(lm)
-      logger.info("[Finetune] Done!")
+        return model
 
     except Exception as e:
       logger.error(f"[Finetune] Error: {e}")
       raise e
+
+
+#-------------------------------------------------------------------------------
+#    Custom functions
+#-------------------------------------------------------------------------------
+def _validate_data(data: Dict[str, str]) -> Optional[Exception]:
+    """Validate the formatting of the fine-tuning data."""
+    # TODO: Hardcoded train method
+    # TODO: Should we skip this validation since the server might have custom
+    # requirements?
+    training_method = TrainingMethod.SFT
+    validate_training_data(data, training_method)

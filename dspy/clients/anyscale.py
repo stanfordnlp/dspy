@@ -7,9 +7,22 @@ from dspy import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
+    get_finetune_directory,
     validate_training_data
 )
 
+#-------------------------------------------------------------------------------
+#    Variables
+#-------------------------------------------------------------------------------
+
+# List of training methods supported by AnyScale
+TRAINING_METHODS_ANYSCALE = [
+    TrainingMethod.SFT,
+]
+
+#-------------------------------------------------------------------------------
+#    Function and classes required for the fine-tune interface
+#-------------------------------------------------------------------------------
 
 class FinetuneJobAnyScale(FinetuneJob):
     
@@ -36,12 +49,11 @@ def finetune_anyscale(
         model: str,
         message_completion_pairs: List[Dict[str, str]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-        launch_kwargs: Optional[Dict[str, Any]]=None,
-    ) -> FinetuneJob:
+    ) -> str:
     """Fine-tune with AnyScale."""
-
     # Fake fine-tuning
     logger.info("[Finetune] Fake fine-tuning")
+    train_kwargs = train_kwargs or {}
 
     try:
       logger.info("[Finetune] Validate the formatting of the fine-tuning data")
@@ -50,7 +62,8 @@ def finetune_anyscale(
       time.sleep(5)
       logger.info("[Finetune] Done!")
 
-      logger.info("[Finetune] Saving the data to a file")  # TODO: Get parent path, keep same across all finetuning jobs
+      logger.info("[Finetune] Saving the data to a file")
+      finetune_parent_dir = get_finetune_directory()
       # We utilize message_completion_pairs here
       time.sleep(1)
       logger.info("[Finetune] Done!")
@@ -72,16 +85,8 @@ def finetune_anyscale(
       model = "anyscale_model"  # Hardcoded
       time.sleep(1)
       logger.info("[Finetune] Done!")
-  
-      logger.info("[Finetune] Create a DSPy LM object for the trained model")
-      # We utilize launch_kwargs here
-      lm = dspy.LM(model=model, **launch_kwargs)
-      time.sleep(1)
-      logger.info("[Finetune] Done!")
 
-      logger.info("Set the result of the FinetuningJob to the new lM")
-      job.set_result(lm)
-      logger.info("[Finetune] Done!")
+      return model
 
     except Exception as e:
       logger.error(f"[Finetune] Error: {e}")
