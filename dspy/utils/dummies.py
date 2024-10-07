@@ -98,6 +98,53 @@ class DSPDummyLM(DSPLM):
 
 
 class DummyLM(LM):
+    """
+    Dummy language model for unit testing purposes.
+
+    Three modes of operation:
+
+    ## 1. List of dictionaries
+
+    If a list of dictionaries is provided, the dummy model will return the next dictionary
+    in the list for each request, formatted according to the `format_fields` function.
+    from the chat adapter.
+
+    ```python
+        lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nred"
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    ## 2. Dictionary of dictionaries
+
+    If a dictionary of dictionaries is provided, the dummy model will return the value
+    corresponding to the key which is contained with the final message of the prompt,
+    formatted according to the `format_fields` function from the chat adapter.
+
+    ```python
+        lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    ## 3. Follow examples
+
+    If `follow_examples` is set to True, and the prompt contains an example input exactly equal to the prompt,
+    the dummy model will return the output from that example.
+
+    ```python
+        lm = DummyLM([{"answer": "red"}], follow_examples=True)
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    """
+
     def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
