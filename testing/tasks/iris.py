@@ -6,7 +6,6 @@ import dspy
 
 class Sig(dspy.Signature):
     "Given the petal and sepal dimensions in cm, predict the iris species."
-    # "Given the petal and sepal dimensions in cm, predict the iris species. If petal_width < 1.0, setosa. Otherwise, if petal_width < 1.65, versicolor. Otherwise, virginica."
 
     petal_length = dspy.InputField()
     petal_width = dspy.InputField()

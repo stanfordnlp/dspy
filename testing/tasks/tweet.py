@@ -55,7 +55,6 @@ def load_models():
     openai.api_key = os.environ.get('OPENAI_API_KEY')
     openai.api_base = os.environ.get('OPENAI_API_BASE')
     gpt4T = dspy.OpenAI(model='gpt-3.5-turbo-1106', max_tokens=1000, model_type='chat')
-    # gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=1000, model_type='chat')
     retrieve = dspy.Retrieve(k=5)
     return gpt4T, retrieve
 
@@ -96,10 +95,10 @@ class TweetTask(BaseTask):
 
         # Tell DSPy that the 'question' field is the input. Any other fields are labels and/or metadata.
         self.trainset = [x.without('id', 'type').with_inputs('question') for x in dataset.train]
-        self.devset = [x.without('id', 'type').with_inputs('question') for x in dataset.dev]
+        self.testset = [x.without('id', 'type').with_inputs('question') for x in dataset.dev]
 
         self.trainset = [x.with_inputs('question') for x in dataset.train]
-        self.devset = [x.with_inputs('question') for x in dataset.dev]
+        self.testset = [x.with_inputs('question') for x in dataset.dev]
 
         self.metric = metric
 

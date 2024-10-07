@@ -15,7 +15,6 @@ def count_unique_docs(example):
 def discrete_retrieval_eval(example, pred, trace=None):
     gold_titles = set(map(dspy.evaluate.normalize_text, [doc['key'] for doc in example['supporting_facts']]))
     found_titles = set(map(dspy.evaluate.normalize_text, [c.split(' | ')[0] for c in pred.retrieved_docs]))
-    # print(f"example {example} | gold titles {gold_titles} | found titles {found_titles} | Is subset: {gold_titles.issubset(found_titles)}")
     return gold_titles.issubset(found_titles)
 
 class RetrieveMultiHop(dspy.Module):

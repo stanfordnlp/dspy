@@ -20,15 +20,7 @@ from tasks.hover import HoverRetrieveDiscrete
 from tasks.iris_typo import IrisTypoClassifierTask
 from tasks.iris import IrisClassifierTask
 
-# datasets = ["scone", "hotpotqa", "hotpotqa_conditional", "gsm8k", "biodex", "tweet", "heart_disease", "iris", "iris_typo", "hover_retrieve_discrete", "tweet_metric"]
-# datasets = ["iris"] # working
-# datasets = ["hotpotqa_conditional"] # working
-# datasets = ["iris_typo"] # working
-datasets = ["hotpotqa"] # <- not working
-# datasets = ["gsm8k"] # working 
-# datasets = ["biodex"] # not working
-# datasets = ["heart_disease"] # working
-# datasets = ["hover_retrieve_discrete"] # not working, need to debug
+datasets = ["scone", "hotpotqa", "hotpotqa_conditional", "gsm8k", "biodex", "tweet", "heart_disease", "iris", "iris_typo", "hover_retrieve_discrete", "tweet_metric"]
 
 class OptimizerTester:
     def __init__(self, datasets=datasets, default_train_num = 200, default_dev_num = 100, default_test_num = 200,
@@ -108,8 +100,6 @@ class OptimizerTester:
             ds = HotPotQAConditionalTask()
         elif dataset == "gsm8k":
             ds = GSM8KTask()
-        elif dataset == "biodex":
-            ds = BioDexTask()
         elif dataset == "tweet":
             ds = TweetTask()
         elif dataset == "heart_disease":

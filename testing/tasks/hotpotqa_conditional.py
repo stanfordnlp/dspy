@@ -76,7 +76,6 @@ class MultiHop(dspy.Module):
         self.retrieve = dspy.Retrieve(k=passages_per_hop)
         self.generate_query = dspy.ChainOfThought("context ,question->search_query")
         self.generate_answer = dspy.ChainOfThought("context ,question->answer")
-        # self.generate_answer = dspy.ChainOfThought(AdversarialAnswer)
 
     def forward(self, question):
         context = []
@@ -129,10 +128,6 @@ class HotPotQAConditionalTask(BaseTask):
         hotpotqa_dev = pd.read_csv(hotpotqa_dev_path)
         hotpotqa_test = pd.read_csv(hotpotqa_test_path)
 
-        # hotpotqa_train = pd.read_csv("../datasets/hotpotqa_conditional/hotpot_train.csv")
-        # hotpotqa_dev = pd.read_csv("../datasets/hotpotqa_conditional/hotpot_dev.csv")
-        # hotpotqa_test = pd.read_csv("../datasets/hotpotqa_conditional/hotpot_test.csv")
-
         combined_train = pd.concat([hotpotqa_train, hotpotqa_dev], ignore_index=True)
 
         # Load and configure the datasets.
@@ -162,9 +157,6 @@ class HotPotQAConditionalTask(BaseTask):
 
     def get_default_max_labeled_demos(self):
         return 0
-
-    def get_handwritten_prompts(self):
-        return []
     
     def get_max_tokens(self):
         return 600

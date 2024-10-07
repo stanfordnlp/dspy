@@ -62,10 +62,6 @@ class GSM8KTask(BaseTask):
         devset = [dspy.Example(**x).with_inputs('question') for x in devset]
         testset = [dspy.Example(**x).with_inputs('question') for x in testset]
 
-        # print(f"Trainset size: {len(trainset)}")
-        # print(f"Devset size: {len(devset)}")
-        # print(f"Testset size: {len(testset)}")
-
         self.trainset= trainset
         self.devset = devset
         self.testset = testset

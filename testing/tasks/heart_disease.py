@@ -70,10 +70,8 @@ class Classify(dspy.Module):
                       thalach=thalach, exang=exang, oldpeak=oldpeak, slope=slope, ca=ca, thal=thal)
         
         opinions = [c(**kwargs) for c in self.classify]
-        try:
-            opinions = [(opinion.reasoning.replace('\n', ' ').strip('.'), opinion.answer.strip('.')) for opinion in opinions]
-        except:
-            breakpoint()
+        opinions = [(opinion.reasoning.replace('\n', ' ').strip('.'), opinion.answer.strip('.')) for opinion in opinions]
+
         opinions = [f"I'm a trainee doctor, trying to {reason}. Hence, my answer is {answer}." for reason, answer in opinions]
         return self.vote(context=opinions, **kwargs)
 

@@ -31,7 +31,6 @@ class IrisTypoClassifierTask(BaseTask):
         fullset = [x.with_inputs('petal_length', 'petal_width', 'sepal_length', 'sepal_width') for x in fullset]
 
         random.Random(0).shuffle(fullset)
-        # self.trainset, self.devset, self.testset = fullset[:25], fullset[20:75], fullset[75:]
         self.trainset,  self.testset = fullset[:75], fullset[75:]
 
         # Set up metrics
@@ -66,7 +65,6 @@ class IrisTypoClassifierTask(BaseTask):
         return self.testset
 
     def get_devset(self, TRAIN_NUM=None, DEV_NUM=None):
-        # return self.devset
         return self.trainset
         
     def get_evalset(self, EVAL_NUM=None):

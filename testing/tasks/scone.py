@@ -64,7 +64,7 @@ class ScoNeTask(BaseTask):
         random.shuffle(all_train)
 
         # 1000 random train, 500 random dev:
-        self.trainset, self.devset = all_train[: 1000], all_train[1000: 1500]
+        self.trainset, self.testset = all_train[: 1000], all_train[1000: 1500]
 
         metric_EM = dspy.evaluate.answer_exact_match
         self.metric = metric_EM

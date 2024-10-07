@@ -10,7 +10,6 @@ class MultiHop(dspy.Module):
         self.retrieve = dspy.Retrieve(k=passages_per_hop)
         self.generate_query = dspy.ChainOfThought("context ,question->search_query")
         self.generate_answer = dspy.ChainOfThought("context ,question->answer")
-        # self.generate_answer = dspy.ChainOfThought(AdversarialAnswer)
 
     def forward(self, question):
         context = []
@@ -26,16 +25,11 @@ class MultiHop(dspy.Module):
 class HotPotQATask(BaseTask):
     def __init__(self):
         # Load and configure the datasets.
-        # hotpot_dataset = HotPotQA(train_seed=1, eval_seed=2023, test_size=1000)
-        # hotpot_dataset = HotPotQA(train_seed=1, eval_seed=2023, keep_details=True)
         hotpot_dataset = HotPotQA(train_seed=1, eval_seed=2023)
 
         self.trainset = [x.with_inputs("question") for x in hotpot_dataset.train]
-        # self.devset = [x.with_inputs("question") for x in hotpot_dataset.dev]
         self.testset = [x.with_inputs("question") for x in hotpot_dataset.dev]
-        #self.testset = self.testset[:500]
 
-        # self.testset = self.testset[:1000]
         # Set up metrics
         NUM_THREADS=16
 
@@ -63,7 +57,7 @@ class HotPotQATask(BaseTask):
     def get_program(self):
         return MultiHop(
             passages_per_hop=3
-        )  # TODO: make it so we can specify # of passages
+        )
 
     def get_metric(self):
         return self.metric

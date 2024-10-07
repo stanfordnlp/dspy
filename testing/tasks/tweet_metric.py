@@ -116,7 +116,7 @@ class TweetMetricTask(BaseTask):
         trainset_temp = [x.without('id', 'type').with_inputs('question') for x in dataset.train]
         devset_temp = [x.without('id', 'type').with_inputs('question') for x in dataset.dev]
         self.trainset = []
-        self.devset = []
+        self.testset = []
 
         gpt3T, gpt4T, retrieve = load_models()
 
@@ -137,7 +137,7 @@ class TweetMetricTask(BaseTask):
                 tweet = MultiHopTweet(passages_per_hop=3)(ex.question).answer
                 example = {'context': context, 'question': question, 'answer': answer, 'tweet': tweet}
 
-                self.devset.append(Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split='dev').with_inputs('context', 'question', 'answer', 'tweet'))
+                self.testset.append(Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split='dev').with_inputs('context', 'question', 'answer', 'tweet'))
 
         self.metric = metric
 
