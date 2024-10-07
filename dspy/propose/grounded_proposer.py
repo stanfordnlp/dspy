@@ -257,6 +257,7 @@ class GroundedProposer(Proposer):
         use_tip=True,
         set_tip_randomly=True,
         set_history_randomly=True,
+        user_intent=None,
         verbose=False,
     ):
         super().__init__()
@@ -281,7 +282,7 @@ class GroundedProposer(Proposer):
         else:
             self.program_code_string = None
         self.data_summary = create_dataset_summary(
-            trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
+            trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model, user_intent=user_intent,
         )
         if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
 

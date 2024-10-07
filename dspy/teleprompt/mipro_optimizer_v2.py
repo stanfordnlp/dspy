@@ -113,6 +113,7 @@ class MIPROv2(Teleprompter):
         tip_aware_proposer=True,
         fewshot_aware_proposer=True,
         requires_permission_to_run=True,
+        user_intent=None,
     ):
         # Define ANSI escape codes for colors
         YELLOW = "\033[93m"
@@ -276,6 +277,7 @@ class MIPROv2(Teleprompter):
                 set_tip_randomly=tip_aware_proposer,
                 use_instruct_history=False,
                 set_history_randomly=False,
+                user_intent=user_intent,
                 verbose = self.verbose,
             )
             
