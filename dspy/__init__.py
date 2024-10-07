@@ -15,6 +15,8 @@ from dspy.adapters import * # isort: skip
 
 from . import evaluate
 
+from . import evaluate
+
 settings = dsp.settings
 
 # LM = dsp.LM
