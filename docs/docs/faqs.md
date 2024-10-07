@@ -85,12 +85,22 @@ Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatoui
 
 - **How do I turn off the cache? How do I export the cache?**
 
-You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/stanfordnlp/dspy/blob/main/dsp/modules/cache_utils.py#L9) environment variable to `False`, which disables the `cache_turn_on` flag.
+From v2.5, you can turn off the cache by setting `cache` parameter in `dspy.LM` to `False`:
+
+```python
+dspy.LM('openai/gpt-4o-mini',  cache=False)
+```
 
 Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here:
 ```python
 os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
+
+:::warning Important
+`DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
+:::
+
+In the AWS lambda deployment, you should disable both DSP_* and DSPY_*.
 
 
 ## Advanced Usage
