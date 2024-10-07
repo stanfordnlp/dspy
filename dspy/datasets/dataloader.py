@@ -97,6 +97,20 @@ class DataLoader(Dataset):
 
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
 
+    def from_rm(self, num_samples: int,
+                fields: List[str], input_keys: List[str]) -> List[dspy.Example]:
+        try:
+            rm = dspy.settings.rm
+            try:
+                return [
+                    dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+                    for row in rm.get_objects(num_samples=num_samples, fields=fields)
+                ]
+            except AttributeError:
+                raise ValueError("Retrieval module does not support `get_objects`. Please use a different retrieval module.")
+        except AttributeError:
+            raise ValueError("Retrieval module not found. Please set a retrieval module using `dspy.settings.configure`.")
+
     def sample(
         self,
         dataset: List[dspy.Example],

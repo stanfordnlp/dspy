@@ -75,18 +75,6 @@ class ExperimentalAdapter(BaseTemplate):
         """
         example = dsp.Example(example)
 
-        raw_pred = raw_pred.strip()
-        parts = raw_pred.split('\n')
-        adjusted_parts = []
-        for part in parts:
-            trimmed_part = part.strip()
-            if trimmed_part:
-                if adjusted_parts:
-                    adjusted_parts.append('\n' + trimmed_part)
-                else:
-                    adjusted_parts.append(trimmed_part)
-        raw_pred = '\n'.join(adjusted_parts)
-
         idx = 0
         while idx < len(self.fields):
             if self.fields[idx].input_variable not in example or example[self.fields[idx].input_variable] is None:

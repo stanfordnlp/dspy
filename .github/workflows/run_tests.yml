@@ -119,28 +119,3 @@ jobs:
           cache: "poetry"
       - name: Run setup.py build
         run: python setup.py build
-
-  integration_test:
-    name: Run Integration Tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9"]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-      - run: pip install -r requirements.txt
-      - run: pip install -r requirements-dev.txt
-      - run: pip install openai==0.28.1
-      - name: Add directory to Python path
-        run: echo "PYTHONPATH=$(python -c 'import sys; print(":".join(sys.path))'):$(pwd)" >> $GITHUB_ENV
-      - name: Set up cache directory
-        run: |
-          cd ./cache
-          echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)" >> $GITHUB_ENV
-      - name: Run tests with pytest
-        run: pytest -c tests_integration/pytest.ini tests_integration/

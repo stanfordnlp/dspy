@@ -84,18 +84,22 @@ const config: Config = {
           position: 'left', // Position in the navbar
           label: 'Documentation', // Label for the navbar item
         },
-        // Navbar item for the API reference, linking to the intro document
         { to: '/docs/category/tutorials', label: 'Tutorials', position: 'left' },
-        // Navbar item for the API reference, linking to the intro document
-        { to: '/api/intro', label: 'API References', position: 'left' },
-        // Navbar item for the API reference, linking to the intro document
+        { to: '/docs/dspy-usecases', label: 'DSPy Use Cases', position: 'left' },
         { to: '/docs/cheatsheet', label: 'DSPy Cheatsheet', position: 'right' },
         // Navbar item for the GitHub repository
         {
-          href: 'https://github.com/stanfordnlp/dspy',
-          label: 'GitHub',
-          position: 'right',
+          href: "https://github.com/stanfordnlp/dspy",
+          position: "right",
+          className: "header-github-link",
+          "aria-label": "GitHub repository",
         },
+        {
+          href: 'https://discord.gg/EBr7T9sH',
+          position: 'right',
+          className: 'header-discord-link',
+          'aria-label': 'Discord server',
+        }
       ],
     },
     footer: {
@@ -109,10 +113,6 @@ const config: Config = {
             {
               label: 'Documentation',
               to: '/docs/intro',
-            },
-            {
-              label: 'API Reference',
-              to: '/api/intro',
             },
           ],
         },
@@ -133,6 +133,10 @@ const config: Config = {
             {
               label: 'GitHub',
               href: 'https://github.com/stanfordnlp/dspy',
+            },
+            {
+              label: 'Discord',
+              href: 'https://discord.gg/VzS6RHHK6F',
             },
           ],
         },

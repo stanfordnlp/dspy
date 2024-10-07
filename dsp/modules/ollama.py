@@ -92,18 +92,18 @@ class OllamaLocal(LM):
             "options": {k: v for k, v in kwargs.items() if k not in ["n", "max_tokens"]},
             "stream": False,
         }
-        
+
         # Set the format if it was defined
         if self.format:
             settings_dict["format"] = self.format
-            
+
         if self.model_type == "chat":
             settings_dict["messages"] = [{"role": "user", "content": prompt}]
         else:
             # Overwrite system prompt defined in modelfile
             if self.system:
                 settings_dict["system"] = self.system
-    
+
             settings_dict["prompt"] = prompt
 
         urlstr = f"{self.base_url}/api/chat" if self.model_type == "chat" else f"{self.base_url}/api/generate"
@@ -195,7 +195,7 @@ class OllamaLocal(LM):
         completions = [self._get_choice_text(c) for c in choices]
 
         return completions
-    
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
