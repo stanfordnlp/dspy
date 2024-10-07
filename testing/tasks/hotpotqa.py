@@ -4,6 +4,7 @@ from dspy.evaluate import Evaluate
 
 from .base_task import BaseTask
 
+
 class MultiHop(dspy.Module):
     def __init__(self, passages_per_hop):
         super().__init__()
@@ -31,7 +32,7 @@ class HotPotQATask(BaseTask):
         self.testset = [x.with_inputs("question") for x in hotpot_dataset.dev]
 
         # Set up metrics
-        NUM_THREADS=16
+        NUM_THREADS = 16
 
         metric_EM = dspy.evaluate.answer_exact_match
         self.metric = metric_EM
@@ -55,13 +56,11 @@ class HotPotQATask(BaseTask):
         self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
-        return MultiHop(
-            passages_per_hop=3
-        )
+        return MultiHop(passages_per_hop=3)
 
     def get_metric(self):
         return self.metric
-    
+
     def get_retrieval_metric(self):
         return self.evaluate_retrieval
 
@@ -70,4 +69,3 @@ class HotPotQATask(BaseTask):
 
     def get_default_max_labeled_demos(self):
         return 2
-
