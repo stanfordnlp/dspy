@@ -304,8 +304,8 @@ class GroundedProposer(Proposer):
             use_history = random.random() < 0.5
             self.use_instruct_history = use_history
             if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
-        
-        num_demos = min(len(demo_candidates[0]) if demo_candidates else N, 1)
+
+        num_demos = max(len(demo_candidates[0]) if demo_candidates else N, 1)
 
         if not demo_candidates:
             if self.verbose: print("No demo candidates provided. Running without task demos.")
@@ -339,6 +339,7 @@ class GroundedProposer(Proposer):
                         tip=selected_tip,
                     ),
                 )
+
         return proposed_instructions
 
     def propose_instruction_for_predictor(
