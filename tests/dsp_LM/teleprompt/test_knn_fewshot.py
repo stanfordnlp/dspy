@@ -43,7 +43,7 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")  # Assuming teacher uses the same module type
 
-    # Setup DspDummyLM with a response for a query similar to one of the training examples
+    # Setup DSPDummyLM with a response for a query similar to one of the training examples
     lm = DSPDummyLM(["Madrid", "10"])
     dspy.settings.configure(lm=lm)  # Responses for the capital of Spain and the result of 5+5)
 
@@ -60,6 +60,6 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     print("CONVO")
     print(lm.get_convo(-1))
 
-    # Validate that the output corresponds to one of the expected DspDummyLM responses
+    # Validate that the output corresponds to one of the expected DSPDummyLM responses
     # This assumes the compiled_student's forward method will execute the predictor with the given query
     assert output in ["Madrid", "10"], "The compiled student did not return the correct output based on the query"

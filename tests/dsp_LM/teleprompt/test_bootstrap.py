@@ -65,7 +65,7 @@ def test_bootstrap_effectiveness():
     assert compiled_student.predictor.demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
-    # We are using a DspDummyLM with follow_examples=True, which means that
+    # We are using a DSPDummyLM with follow_examples=True, which means that
     # even though it would normally reply with "Ring-ding-ding-ding-dingeringeding!"
     # on the second output, if it seems an example that perfectly matches the
     # prompt, it will use that instead. That is why we expect "blue" here.
@@ -115,7 +115,7 @@ def test_error_handling_during_bootstrap():
     student = SimpleModule("input -> output")
     teacher = BuggyModule("input -> output")
 
-    # Setup DspDummyLM to simulate an error scenario
+    # Setup DSPDummyLM to simulate an error scenario
     lm = DSPDummyLM(
         [
             "Initial thoughts",  # Simulate initial teacher's prediction

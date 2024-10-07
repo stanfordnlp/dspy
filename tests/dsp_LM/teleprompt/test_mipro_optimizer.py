@@ -81,7 +81,7 @@ class ConditionalLM(LM):
             answer = "think deeply.\nOutput: " + answer
 
         RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
-        print("=== DspDummyLM ===")
+        print("=== DSPDummyLM ===")
         print(prompt, end="")
         print(f"{RED}{answer}{RESET}")
         print("===")
@@ -173,7 +173,7 @@ def test_signature_optimizer_bad_lm():
         track_stats=False,
     )
 
-    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DspDummyLM,
+    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DSPDummyLM,
     # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
     # and therefore the set of examples that we're using to generate new prompts is empty
     with pytest.raises(ValueError):

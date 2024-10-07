@@ -3,7 +3,7 @@ import logging
 import pytest
 
 import dspy
-from dsp.modules.dummy_lm import DspDummyLM
+from dsp.modules.dummy_lm import DSPDummyLM
 from dspy.datasets import HotPotQA
 
 try:
@@ -38,7 +38,7 @@ def rag_setup() -> dict:
         "index": index,
         "retriever": retriever,
         "rm": rm,
-        "lm": DspDummyLM(answers=dummyset),
+        "lm": DSPDummyLM(answers=dummyset),
         "trainset": trainset,
         "devset": devset,
     }

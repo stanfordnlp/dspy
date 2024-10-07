@@ -5,7 +5,7 @@ from dsp.modules import LM
 
 
 # This testing module was moved in PR #735 to patch Arize Phoenix logging
-class DspDummyLM(LM):
+class DSPDummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
     def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
