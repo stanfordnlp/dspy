@@ -2,11 +2,10 @@ import re
 import asyncio
 import multiprocessing
 import concurrent.futures
-from typing import List, Optional
+from typing import Optional
 import os
 import sys
 import traceback
-import multiprocessing
 
 """
 Note that this code is largely based off of the code here:
@@ -37,7 +36,6 @@ def extract_code(code_str):
     return code.strip()
 
 
-import traceback
 
 
 def run_with_timeout(code: str, input: Optional[str], timeout: int):
