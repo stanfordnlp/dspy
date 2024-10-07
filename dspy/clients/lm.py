@@ -1,7 +1,9 @@
 import os
+import uuid 
 import ujson
 import functools
 from pathlib import Path
+from datetime import datetime
 
 try:
     import warnings
@@ -53,8 +55,14 @@ class LM:
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
         entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
         entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
+        entry = dict(
+            **entry,
+            timestamp=datetime.now().isoformat(),
+            uuid=str(uuid.uuid4()),
+            model=self.model,
+            model_type=self.model_type,
+        )
         self.history.append(entry)
-
         return outputs
     
     def inspect_history(self, n: int = 1):
@@ -103,8 +111,11 @@ def _inspect_history(lm, n: int = 1):
     for item in lm.history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item['prompt']}]
         outputs = item["outputs"]
+        timestamp = item.get("timestamp", "Unknown time")
 
         print("\n\n\n")
+        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
+        
         for msg in messages:
             print(_red(f"{msg['role'].capitalize()} message:"))
             print(msg['content'].strip())

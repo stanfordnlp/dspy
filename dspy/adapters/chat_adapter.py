@@ -4,6 +4,7 @@ import re
 import textwrap
 from typing import get_args, get_origin
 
+import pydantic
 from pydantic import TypeAdapter
 
 from .base import Adapter
@@ -84,10 +85,19 @@ def format_list(items):
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(items)])
 
 
+def _format_field_value(value) -> str:
+    if isinstance(value, list):
+        return format_list(value)
+    elif isinstance(value, pydantic.BaseModel):
+        return value.model_dump_json()
+    else:
+        return str(value)
+
+
 def format_fields(fields):
     output = []
     for k, v in fields.items():
-        v = v if not isinstance(v, list) else format_list(v)
+        v = _format_field_value(v)
         output.append(f"[[ ## {k} ## ]]\n{v}")
 
     return "\n\n".join(output).strip()

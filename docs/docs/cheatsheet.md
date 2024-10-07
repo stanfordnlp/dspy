@@ -304,7 +304,7 @@ loaded_program.load(path=save_path)
 
 ### BootstrapFewShotWithRandomSearch
 
-Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](deep-dive/optimizers/bootstrap-fewshot.mdx).
+Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](/docs/deep-dive/optimizers/bootstrap-fewshot.mdx).
 
 
 ```python
@@ -361,7 +361,7 @@ for p in finetune_program.predictors():
 
 ### COPRO
 
-Detailed documentation on COPRO can be found [here](deep-dive/optimizers/copro.mdx).
+Detailed documentation on COPRO can be found [here](/docs/deep-dive/optimizers/copro.mdx).
 
 
 ```python
@@ -389,7 +389,7 @@ compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_p
 
 ### MIPROv2
 
-Note: detailed documentation can be found [here](deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
+Note: detailed documentation can be found [here](/docs/deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
 
 #### Optimizing with MIPROv2
 ```python

@@ -19,7 +19,7 @@ You cannot use DSPy well if you haven't defined the problem you're trying to sol
 
 It's often useful to come up with just 3-4 examples of the inputs and outputs of your program (e.g., questions and their answers, or topics and their summaries).
 
-If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
+If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/XCGy2WDCQB) for the community.
 
 **Quality and Cost Specs:** You probably don't have infinite budget. Your final system can't be too expensive to run, and it should probably respond to users quickly enough.
 
