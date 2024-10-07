@@ -1,7 +1,5 @@
 import json
-from typing import Generic, TypeVar
 
-import pydantic
 from pydantic_core import to_jsonable_python
 
 import dspy
@@ -103,12 +101,14 @@ def test_opt():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    qa_model = DummyLM(["[[ ## answer ## ]]\nfoo"] * 100)
+    qa_model = DummyLM([{"answer": "foo"}] * 100)
     prompt_model = DummyLM(
         [
+            {
+                "reasoning": "some thoughts",
+                "proposed_signatures": '[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
+            }
             # Seed prompts
-            "[[ ## reasoning ## ]]\nsome thoughts\n\n"
-            '[[ ## proposed_signatures ## ]]\n[{"instructions": "I", "question_desc": "$q", "question_prefix": "Q:", "answer_desc": "$a", "answer_prefix": "A:"}]',
         ]
     )
     dspy.settings.configure(lm=qa_model)
@@ -165,8 +165,8 @@ def test_opt_composed():
     qa_model = DummyLM([])
     prompt_model = DummyLM(
         [
-            f"[[ ## reasoning ## ]]\nsome thoughts\n\n[[ ## proposed_signatures ## ]]\n{json.dumps([to_jsonable_python(info1)])}",
-            f"[[ ## reasoning ## ]]\nsome thoughts\n\n[[ ## proposed_signatures ## ]]\n{json.dumps([to_jsonable_python(info2)])}",
+            {"reasoning": "some thoughts", "proposed_signatures": json.dumps([to_jsonable_python(info1)])},
+            {"reasoning": "some thoughts", "proposed_signatures": json.dumps([to_jsonable_python(info2)])},
         ]
     )
     dspy.settings.configure(lm=qa_model)

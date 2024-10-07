@@ -39,8 +39,8 @@ def test_forward():
     dspy.settings.configure(
         lm=DummyLM(
             {
-                "What is 1+1?": "[[ ## query ## ]]\nlet me check",
-                "let me check": "[[ ## answer ## ]]\n2",
+                "What is 1+1?": {"query": "let me check"},
+                "let me check": {"answer": "2"},
             }
         )
     )

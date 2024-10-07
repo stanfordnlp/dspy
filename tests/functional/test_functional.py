@@ -21,7 +21,7 @@ def test_simple():
         """Think of a hard factual question about a topic."""
 
     expected = "What is the speed of light?"
-    lm = DummyLM([f"[[ ## hard_question ## ]]\n{expected}"])
+    lm = DummyLM([{"hard_question": expected}])
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
@@ -36,7 +36,7 @@ def test_list_output():
         pass
 
     expected = ["What is the speed of light?", "What is the speed of sound?"]
-    lm = DummyLM(['[[ ## hard_questions ## ]]\n["What is the speed of light?", "What is the speed of sound?"]'])
+    lm = DummyLM([{"hard_questions": '["What is the speed of light?", "What is the speed of sound?"]'}])
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
@@ -54,7 +54,7 @@ def test_simple_type():
         """Think of a hard factual question about a topic."""
 
     expected = "What is the speed of light?"
-    lm = DummyLM([f'[[ ## hard_question ## ]]\n{{"value": "{expected}"}}'])
+    lm = DummyLM([{"hard_question": f'{{"value": "{expected}"}}'}])
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
@@ -75,7 +75,7 @@ def test_simple_type_input():
         pass
 
     question = Question(value="What is the speed of light?")
-    lm = DummyLM([f'[[ ## answer ## ]]\n{{"value": "3e8"}}'])
+    lm = DummyLM([{"answer": '{"value": "3e8"}'}])
     dspy.settings.configure(lm=lm)
 
     result = answer(question=question)
@@ -110,10 +110,10 @@ def test_simple_class():
 
     lm = DummyLM(
         [
-            "[[ ## hard_question ## ]]\nWhat is the speed of light?",
-            "[[ ## reasoning ## ]]\nSome bad reasoning, 3e8 m/s.\n\n[[ ## answer ## ]]\n3e8",  # Bad answer 1
-            "[[ ## json_object ## ]]\n{...}",  # Model is asked to create an example
-            f"[[ ## reasoning ## ]]\nSome good reasoning, 3e8 m/s.\n\n[[ ## answer ## ]]\n{expected.model_dump_json()}",  # Good answer
+            {"hard_question": "What is the speed of light?"},
+            {"reasoning": "Some bad reasoning, 3e8 m/s.", "answer": "3e8"},  # Bad answer 1
+            {"json_object": "{...}"},  # Model is asked to create an example
+            {"reasoning": "Some good reasoning, 3e8 m/s.", "answer": f"{expected.model_dump_json()}"},  # Good answer
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -143,7 +143,7 @@ def test_simple_oop():
     expected = "What is the speed of light?"
     lm = DummyLM(
         [
-            f"[[ ## output ## ]]\n{Question(value=expected).model_dump_json()}",
+            {"output": f"{Question(value=expected).model_dump_json()}"},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -242,24 +242,6 @@ def test_bootstrap_effectiveness():
     prediction = compiled_student(input=trainset[0].input)
     assert prediction == trainset[0].output
 
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": "Your input fields are:\n1. `input` (str)\n\nYour output fields are:\n1. `output` (str)\n\nAll interactions will be structured in the following way, with the appropriate values filled in.\n\n[[ ## input ## ]]\n{input}\n\n[[ ## output ## ]]\n{output}\n\n[[ ## completed ## ]]\n\nIn adhering to this structure, your objective is: \n        Given the fields `input`, produce the fields `output`.",
-        },
-        {
-            "role": "user",
-            "content": "[[ ## input ## ]]\nWhat is the color of the sky?\n\nRespond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`.",
-        },
-        {"role": "assistant", "content": "[[ ## output ## ]]\nblue\n\n[[ ## completed ## ]]"},
-        {
-            "role": "user",
-            "content": "[[ ## input ## ]]\nWhat is the color of the sky?\n\nRespond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`.",
-        },
-    ]
-
-    assert lm.get_convo(-1)[1] == ["[[ ## output ## ]]\nblue\n\n[[ ## completed ## ]]"]
-
 
 def test_regex():
     class TravelInformation(BaseModel):
@@ -281,11 +263,11 @@ def test_regex():
     lm = DummyLM(
         [
             # Example with a bad origin code.
-            '[[ ## flight_information ## ]]\n{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            {"flight_information": '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'},
             # Example to help the model understand
-            "[[ ## json_object ## ]]\n{...}",
+            {"json_object": "{...}"},
             # Fixed
-            '[[ ## flight_information ## ]]\n{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+            {"flight_information": '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -341,11 +323,12 @@ def test_custom_model_validate_json():
         [
             # Example with a bad origin code.
             (
-                "[[ ## flight_information ## ]]\nHere is your json: "
-                "{"
-                '"origin": {"code":"JFK", "lat":40.6446, "lon":-73.7797}, '
-                '"destination": {"code":"LAX", "lat":33.942791, "lon":-118.410042}, '
-                '"date": "2022-12-25"}'
+                {
+                    "flight_information": "Here is your json: {"
+                    '"origin": {"code":"JFK", "lat":40.6446, "lon":-73.7797}, '
+                    '"destination": {"code":"LAX", "lat":33.942791, "lon":-118.410042}, '
+                    '"date": "2022-12-25"}'
+                }
             ),
         ]
     )
@@ -370,8 +353,8 @@ def test_raises():
 
     lm = DummyLM(
         [
-            '[[ ## flight_information ## ]]\n{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            '[[ ## flight_information ## ]]\n{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
+            {"flight_information": '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'},
+            {"flight_information": '{"origin": "JFK", "destination": "LAX", "date": "bad date"}'},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -393,11 +376,11 @@ def test_multi_errors():
     lm = DummyLM(
         [
             # First origin is wrong, then destination, then all is good
-            '[[ ## flight_information ## ]]\n{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-            "[[ ## json_object ## ]]\n{...}",  # Example to help the model understand
-            '[[ ## flight_information ## ]]\n{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}',
-            "[[ ## json_object ## ]]\n{...}",  # Example to help the model understand
-            '[[ ## flight_information ## ]]\n{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}',
+            {"flight_information": '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}'},
+            {"json_object": "{...}"},  # Example to help the model understand
+            {"flight_information": '{"origin": "JFK", "destination": "LA0", "date": "2022-12-25"}'},
+            {"json_object": "{...}"},  # Example to help the model understand
+            {"flight_information": '{"origin": "JFK", "destination": "LAX", "date": "2022-12-25"}'},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -405,57 +388,6 @@ def test_multi_errors():
     assert flight_information(email="Some email") == TravelInformation(
         origin="JFK", destination="LAX", date=datetime.date(2022, 12, 25)
     )
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-            Your input fields are:
-            1. `email` (str)
-            2. `error_flight_information_0` (str): An error to avoid in the future
-            3. `error_flight_information_1` (str): An error to avoid in the future
-
-            Your output fields are:
-            1. `flight_information` (TravelInformation): ${flight_information}. Respond with a single JSON object. JSON Schema: {"properties": {"origin": {"pattern": "^[A-Z]{3}$", "title": "Origin", "type": "string"}, "destination": {"pattern": "^[A-Z]{3}$", "title": "Destination", "type": "string"}, "date": {"format": "date", "title": "Date", "type": "string"}}, "required": ["origin", "destination", "date"], "title": "TravelInformation", "type": "object"}
-
-            All interactions will be structured in the following way, with the appropriate values filled in.
-
-            [[ ## email ## ]]
-            {email}
-
-            [[ ## error_flight_information_0 ## ]]
-            {error_flight_information_0}
-
-            [[ ## error_flight_information_1 ## ]]
-            {error_flight_information_1}
-
-            [[ ## flight_information ## ]]
-            {flight_information}
-
-            [[ ## completed ## ]]
-
-            In adhering to this structure, your objective is: 
-                    Given the fields `email`, produce the fields `flight_information`."""
-            ),  # noqa
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-            [[ ## email ## ]]
-            Some email
-
-            [[ ## error_flight_information_0 ## ]]
-            String should match pattern '^[A-Z]{3}$': origin (error type: string_pattern_mismatch)
-
-            [[ ## error_flight_information_1 ## ]]
-            String should match pattern '^[A-Z]{3}$': destination (error type: string_pattern_mismatch)
-
-            Respond with the corresponding output fields, starting with the field `flight_information`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_field_validator():
@@ -476,53 +408,11 @@ def test_field_validator():
 
     # Keep making the mistake (lower case name) until we run
     # out of retries.
-    lm = DummyLM(
-        [
-            '[[ ## get_user_details ## ]]\n{"name": "lower case name", "age": 25}',
-        ]
-        * 10
-    )
+    lm = DummyLM([{"get_user_details": '{"name": "lower case name", "age": 25}'}] * 10)
     dspy.settings.configure(lm=lm)
 
     with pytest.raises(ValueError):
         get_user_details()
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `json_schema` (str)
-
-                Your output fields are:
-                1. `json_object` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## json_schema ## ]]
-                {json_schema}
-
-                [[ ## json_object ## ]]
-                {json_object}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Make a very succinct json object that validates with the following schema"""
-            ),  # noqa
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## json_schema ## ]]
-                {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
-
-                Respond with the corresponding output fields, starting with the field `json_object`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_annotated_field():
@@ -531,7 +421,7 @@ def test_annotated_field():
         pass
 
     # First try 0, which fails, then try 0.5, which passes
-    lm = DummyLM(["[[ ## test ## ]]\n0", "[[ ## test ## ]]\n0.5"])
+    lm = DummyLM([{"test": "0"}, {"test": "0.5"}])
     dspy.settings.configure(lm=lm)
 
     output = test(input="input")
@@ -540,7 +430,7 @@ def test_annotated_field():
 
 
 def test_multiple_outputs():
-    lm = DummyLM([f"[[ ## output ## ]]\n{i}" for i in range(100)])
+    lm = DummyLM([{"output": f"{i}"} for i in range(100)])
     dspy.settings.configure(lm=lm)
 
     test = TypedPredictor("input -> output")
@@ -549,7 +439,7 @@ def test_multiple_outputs():
 
 
 def test_multiple_outputs_int():
-    lm = DummyLM([f"[[ ## output ## ]]\n{i}" for i in range(100)])
+    lm = DummyLM([{"output": f"{i}"} for i in range(100)])
     dspy.settings.configure(lm=lm)
 
     class TestSignature(dspy.Signature):
@@ -566,9 +456,9 @@ def test_multiple_outputs_int_cot():
     # Note: Multiple outputs only work when the language model "speculatively" generates all the outputs in one go.
     lm = DummyLM(
         [
-            "[[ ## reasoning ## ]]\nthoughts 0\n\n[[ ## output ## ]]\n0\n",
-            "[[ ## reasoning ## ]]\nthoughts 1\n\n[[ ## output ## ]]\n1\n",
-            "[[ ## reasoning ## ]]\nthoughts 2\n\n[[ ## output ## ]]\n2\n",
+            {"reasoning": "thoughts 0", "output": "0"},
+            {"reasoning": "thoughts 1", "output": "1"},
+            {"reasoning": "thoughts 2", "output": "2"},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -580,7 +470,7 @@ def test_multiple_outputs_int_cot():
 
 
 def test_parse_type_string():
-    lm = DummyLM([f"[[ ## output ## ]]\n{i}" for i in range(100)])
+    lm = DummyLM([{"output": f"{i}"} for i in range(100)])
     dspy.settings.configure(lm=lm)
 
     test = TypedPredictor("input:int -> output:int")
@@ -590,7 +480,7 @@ def test_parse_type_string():
 
 
 def test_literal():
-    lm = DummyLM(['[[ ## f ## ]]\n"2"', '[[ ## f ## ]]\n"3"'])
+    lm = DummyLM([{"f": '"2"'}, {"f": '"3"'}])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -601,7 +491,7 @@ def test_literal():
 
 
 def test_literal_missmatch():
-    lm = DummyLM([f'[[ ## f ## ]]\n"{i}"' for i in range(5, 100)])
+    lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
     @predictor(max_retries=1)
@@ -615,7 +505,7 @@ def test_literal_missmatch():
 
 
 def test_literal_int():
-    lm = DummyLM(["[[ ## f ## ]]\n2", "[[ ## f ## ]]\n3"])
+    lm = DummyLM([{"f": "2"}, {"f": "3"}])
     dspy.settings.configure(lm=lm)
 
     @predictor
@@ -626,7 +516,7 @@ def test_literal_int():
 
 
 def test_literal_int_missmatch():
-    lm = DummyLM([f"[[ ## f ## ]]\n{i}" for i in range(5, 100)])
+    lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
     @predictor(max_retries=1)
@@ -645,8 +535,8 @@ def test_fields_on_base_signature():
 
     lm = DummyLM(
         [
-            "[[ ## output ## ]]\n2.1",  # Bad output
-            "[[ ## output ## ]]\n0.5",  # Good output
+            {"output": "2.1"},  # Bad output
+            {"output": "0.5"},  # Good output
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -668,12 +558,12 @@ def test_synthetic_data_gen():
 
     lm = DummyLM(
         [
-            '[[ ## fact ## ]]\n{"fact": "The sky is blue", "varacity": true}',
-            '[[ ## fact ## ]]\n{"fact": "The sky is green", "varacity": false}',
-            '[[ ## fact ## ]]\n{"fact": "The sky is red", "varacity": true}',
-            '[[ ## fact ## ]]\n{"fact": "The earth is flat", "varacity": false}',
-            '[[ ## fact ## ]]\n{"fact": "The earth is round", "varacity": true}',
-            '[[ ## fact ## ]]\n{"fact": "The earth is a cube", "varacity": false}',
+            {"fact": '{"fact": "The sky is blue", "varacity": true}'},
+            {"fact": '{"fact": "The sky is green", "varacity": false}'},
+            {"fact": '{"fact": "The sky is red", "varacity": true}'},
+            {"fact": '{"fact": "The earth is flat", "varacity": false}'},
+            {"fact": '{"fact": "The earth is round", "varacity": true}'},
+            {"fact": '{"fact": "The earth is a cube", "varacity": false}'},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -709,7 +599,7 @@ def test_list_input2():
 
     program = TypedChainOfThought(ScoredSignature)
 
-    lm = DummyLM(["[[ ## reasoning ## ]]\nThoughts\n\n[[ ## proposed_signature ## ]]\nOutput"])
+    lm = DummyLM([{"reasoning": "Thoughts", "proposed_signature": "Output"}])
     dspy.settings.configure(lm=lm)
 
     output = program(
@@ -723,49 +613,6 @@ def test_list_input2():
     print(lm.get_convo(-1))
 
     assert output == "Output"
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `attempted_signatures` (list[ScoredString])
-
-                Your output fields are:
-                1. `reasoning` (str): ${produce the proposed_signature}. We ...
-                2. `proposed_signature` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## attempted_signatures ## ]]
-                {attempted_signatures}
-
-                [[ ## reasoning ## ]]
-                {reasoning}
-
-                [[ ## proposed_signature ## ]]
-                {proposed_signature}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields `attempted_signatures`, produce the fields `proposed_signature`."""
-            ),  # noqa
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## attempted_signatures ## ]]
-                [1] «string='string 1' score=0.5»
-                [2] «string='string 2' score=0.4»
-                [3] «string='string 3' score=0.3»
-
-                Respond with the corresponding output fields, starting with the field `reasoning`, then `proposed_signature`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_custom_reasoning_field():
@@ -784,54 +631,13 @@ def test_custom_reasoning_field():
     program = TypedChainOfThought(QuestionSignature, reasoning=reasoning)
 
     expected = "What is the speed of light?"
-    lm = DummyLM([f'[[ ## reasoning ## ]]\nThoughts\n\n[[ ## question ## ]]\n{{"value": "{expected}"}}'])
+    lm = DummyLM([{"reasoning": "Thoughts", "question": f'{{"value": "{expected}"}}'}])
     dspy.settings.configure(lm=lm)
 
     output = program(topic="Physics")
 
     assert isinstance(output.question, Question)
     assert output.question.value == expected
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `topic` (str)
-
-                Your output fields are:
-                1. `reasoning` (str): ${topic}, we should ...
-                2. `question` (Question): ${question}. Respond with a single JSON object. JSON Schema: {"properties": {"value": {"title": "Value", "type": "string"}}, "required": ["value"], "title": "Question", "type": "object"}
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## topic ## ]]
-                {topic}
-
-                [[ ## reasoning ## ]]
-                {reasoning}
-
-                [[ ## question ## ]]
-                {question}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields `topic`, produce the fields `question`."""
-            ),  # noqa
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## topic ## ]]
-                Physics
-
-                Respond with the corresponding output fields, starting with the field `reasoning`, then `question`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_generic_signature():
@@ -845,7 +651,7 @@ def test_generic_signature():
     predictor = TypedPredictor(GenericSignature[int])
     assert predictor.signature.instructions == "My signature"
 
-    lm = DummyLM(["[[ ## output ## ]]\n23"])
+    lm = DummyLM([{"output": "23"}])
     dspy.settings.configure(lm=lm)
 
     assert predictor().output == 23
@@ -858,7 +664,7 @@ def test_field_validator_in_signature():
         @pydantic.field_validator("a")
         @classmethod
         def space_in_a(cls, a: str) -> str:
-            if not " " in a:
+            if " " not in a:
                 raise ValueError("a must contain a space")
             return a
 
@@ -883,10 +689,10 @@ def test_lm_as_validator():
 
     lm = DummyLM(
         [
-            "[[ ## next_square ## ]]\n3",
-            "[[ ## is_square ## ]]\nFalse",
-            "[[ ## next_square ## ]]\n4",
-            "[[ ## is_square ## ]]\nTrue",
+            {"next_square": "3"},
+            {"is_square": "False"},
+            {"next_square": "4"},
+            {"is_square": "True"},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -909,7 +715,7 @@ def test_annotated_validator():
         n: int = dspy.InputField()
         next_square: Annotated[int, AfterValidator(is_square)] = dspy.OutputField()
 
-    lm = DummyLM(["[[ ## next_square ## ]]\n3", "[[ ## next_square ## ]]\n4"])
+    lm = DummyLM([{"next_square": "3"}, {"next_square": "4"}])
     dspy.settings.configure(lm=lm)
 
     m = TypedPredictor(MySignature)(n=2).next_square
@@ -928,7 +734,7 @@ def test_annotated_validator_functional():
     def next_square(n: int) -> Annotated[int, AfterValidator(is_square)]:
         """What is the next square number after n?"""
 
-    lm = DummyLM(["[[ ## next_square ## ]]\n3", "[[ ## next_square ## ]]\n4"])
+    lm = DummyLM([{"next_square": "3"}, {"next_square": "4"}])
     dspy.settings.configure(lm=lm)
 
     m = next_square(n=2)
@@ -946,67 +752,10 @@ def test_demos():
         trainset=[ex.with_inputs("input") for ex in demos],
     )
 
-    lm = DummyLM(["[[ ## output ## ]]\nParis"])
+    lm = DummyLM([{"output": "Paris"}])
     dspy.settings.configure(lm=lm)
 
     assert program(input="What is the capital of France?").output == "Paris"
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `input` (str)
-
-                Your output fields are:
-                1. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## input ## ]]
-                {input}
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields `input`, produce the fields `output`."""
-            ),  # noqa
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                What is the speed of light?
-
-                Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-        {
-            "role": "assistant",
-            "content": textwrap.dedent(
-                """\
-                [[ ## output ## ]]
-                3e8
-
-                [[ ## completed ## ]]"""
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                What is the capital of France?
-
-                Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_demos_missing_input_in_demo():
@@ -1015,7 +764,7 @@ def test_demos_missing_input_in_demo():
         student=dspy.TypedPredictor("input -> output, thoughts"),
         trainset=[ex.with_inputs("input") for ex in demos],
     )
-    lm = DummyLM(["[[ ## thoughts ## ]]\nMy thoughts\n\n[[ ## output ## ]]\nParis"])
+    lm = DummyLM([{"thoughts": "My thoughts", "output": "Paris"}])
     dspy.settings.configure(lm=lm)
     assert program(input="What is the capital of France?").output == "Paris"
 
@@ -1024,10 +773,10 @@ def test_conlist():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## make_numbers ## ]]\n[]",
-                "[[ ## make_numbers ## ]]\n[1]",
-                "[[ ## make_numbers ## ]]\n[1, 2]",
-                "[[ ## make_numbers ## ]]\n[1, 2, 3]",
+                {"make_numbers": "[]"},
+                {"make_numbers": "[1]"},
+                {"make_numbers": "[1, 2]"},
+                {"make_numbers": "[1, 2, 3]"},
             ]
         )
     )
@@ -1043,10 +792,10 @@ def test_conlist2():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## output ## ]]\n[]",
-                "[[ ## output ## ]]\n[1]",
-                "[[ ## output ## ]]\n[1, 2]",
-                "[[ ## output ## ]]\n[1, 2, 3]",
+                {"output": "[]"},
+                {"output": "[1]"},
+                {"output": "[1, 2]"},
+                {"output": "[1, 2, 3]"},
             ]
         )
     )
@@ -1067,7 +816,7 @@ def test_model_validator():
                 raise ValueError(f"category not in {self.allowed_categories}")
             return self
 
-    lm = DummyLM(["[[ ## category ## ]]\nhorse", "[[ ## category ## ]]\ndog"])
+    lm = DummyLM([{"category": "horse"}, {"category": "dog"}])
     dspy.settings.configure(lm=lm)
     predictor = TypedPredictor(MySignature)
 

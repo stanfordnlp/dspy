@@ -37,8 +37,8 @@ def test_evaluate_call():
     dspy.settings.configure(
         lm=DummyLM(
             {
-                "What is 1+1?": "[[ ## answer ## ]]\n2",
-                "What is 2+2?": "[[ ## answer ## ]]\n4",
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
             }
         )
     )
@@ -55,9 +55,7 @@ def test_evaluate_call():
 
 
 def test_multithread_evaluate_call():
-    dspy.settings.configure(
-        lm=DummyLM({"What is 1+1?": "[[ ## answer ## ]]\n2", "What is 2+2?": "[[ ## answer ## ]]\n4"})
-    )
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -80,9 +78,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
             time.sleep(1)
             return super().__call__(*args, **kwargs)
 
-    dspy.settings.configure(
-        lm=SlowLM({"What is 1+1?": "[[ ## answer ## ]]\n2", "What is 2+2?": "[[ ## answer ## ]]\n4"})
-    )
+    dspy.settings.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
 
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -112,9 +108,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
 
 
 def test_evaluate_call_bad():
-    dspy.settings.configure(
-        lm=DummyLM({"What is 1+1?": "[[ ## answer ## ]]\n0", "What is 2+2?": "[[ ## answer ## ]]\n0"})
-    )
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     ev = Evaluate(

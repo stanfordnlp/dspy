@@ -7,7 +7,7 @@ import numpy as np
 
 from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
-from dspy.adapters.chat_adapter import field_header_pattern
+from dspy.adapters.chat_adapter import field_header_pattern, format_fields
 from dspy.clients.lm import LM
 
 
@@ -98,7 +98,7 @@ class DSPDummyLM(DSPLM):
 
 
 class DummyLM(LM):
-    def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
+    def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
@@ -133,10 +133,13 @@ class DummyLM(LM):
                 outputs.append(self._use_example(messages))
             elif isinstance(self.answers, dict):
                 outputs.append(
-                    next((v for k, v in self.answers.items() if k in messages[-1]["content"]), "No more responses")
+                    next(
+                        (format_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        "No more responses",
+                    )
                 )
             else:
-                outputs.append(next(self.answers, "No more responses"))
+                outputs.append(format_fields(next(self.answers, {"answer": "No more responses"})))
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}

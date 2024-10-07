@@ -1,8 +1,10 @@
 import functools
-import dspy
-from dspy.utils import DummyLM
-from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+
 import pydantic
+
+import dspy
+from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+from dspy.utils import DummyLM
 
 
 def test_retry_simple():
@@ -14,7 +16,7 @@ def test_retry_simple():
         assert f"past_{field}" in retry_module.new_signature.input_fields
     assert "feedback" in retry_module.new_signature.input_fields
 
-    lm = DummyLM(["[[ ## answer ## ]]\nblue"])
+    lm = DummyLM([{"answer": "blue"}])
     dspy.settings.configure(lm=lm)
     result = retry_module.forward(
         question="What color is the sky?",
@@ -26,7 +28,7 @@ def test_retry_simple():
 
 def test_retry_forward_with_feedback():
     # First we make a mistake, then we fix it
-    lm = DummyLM(["[[ ## answer ## ]]\nred", "[[ ## answer ## ]]\nblue"])
+    lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
     dspy.settings.configure(lm=lm, trace=[])
 
     class SimpleModule(dspy.Module):
@@ -53,7 +55,7 @@ def test_retry_forward_with_feedback():
 
 def test_retry_forward_with_typed_predictor():
     # First we make a mistake, then we fix it
-    lm = DummyLM(['[[ ## output ## ]]\n{"answer":"red"}', '[[ ## output ## ]]\n{"answer":"blue"}'])
+    lm = DummyLM([{"output": '{"answer":"red"}'}, {"output": '{"answer":"blue"}'}])
     dspy.settings.configure(lm=lm, trace=[])
 
     class AnswerQuestion(dspy.Signature):

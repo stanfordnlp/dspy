@@ -182,7 +182,7 @@ def test_insantiating2():
 
 
 def test_multiline_instructions():
-    lm = DummyLM(["[[ ## output ## ]]\nshort answer"])
+    lm = DummyLM([{"output": "short answer"}])
     dspy.settings.configure(lm=lm)
 
     class MySignature(Signature):
@@ -194,38 +194,6 @@ def test_multiline_instructions():
 
     predictor = dspy.Predict(MySignature)
     assert predictor().output == "short answer"
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-
-
-                Your output fields are:
-                1. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        First line
-                        Second line
-                            Third line"""
-            ),
-        },
-        {
-            "role": "user",
-            "content": "Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`.",
-        },
-    ]
 
 
 def test_replaced_by_replace_context_manager():

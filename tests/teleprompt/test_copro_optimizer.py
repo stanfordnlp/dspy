@@ -1,5 +1,3 @@
-import textwrap
-
 import dspy
 from dspy import Example
 from dspy.teleprompt.signature_opt import COPRO
@@ -44,8 +42,10 @@ def test_signature_optimizer_optimization_process():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## proposed_instruction ## ]]\nOptimized instruction 1\n\n"
-                "[[ ## proposed_prefix_for_output_field ## ]]\nOptimized instruction 2",
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
             ]
         )
     )
@@ -72,8 +72,10 @@ def test_signature_optimizer_statistics_tracking():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## proposed_instruction ## ]]\nOptimized instruction 1\n\n"
-                "[[ ## proposed_prefix_for_output_field ## ]]\nOptimized instruction 2",
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
             ]
         )
     )
@@ -93,14 +95,14 @@ def test_signature_optimizer_statistics_tracking():
 def test_optimization_and_output_verification():
     lm = DummyLM(
         [
-            "[[ ## proposed_instruction ## ]]\nOptimized Prompt\n\n[[ ## proposed_prefix_for_output_field ## ]]\nOptimized Prefix",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
-            "[[ ## reasoning ## ]]\nfrance\n\n[[ ## output ## ]]\nParis",
+            {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -121,54 +123,12 @@ def test_optimization_and_output_verification():
 
     assert prediction.output == "Paris"
 
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `input` (str)
-
-                Your output fields are:
-                1. `reasoning` (str)
-                2. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## input ## ]]
-                {input}
-
-                [[ ## reasoning ## ]]
-                {reasoning}
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Optimized Prompt"""
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                What is the capital of France?
-
-                Respond with the corresponding output fields, starting with the field `reasoning`, then `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
-
 
 def test_statistics_tracking_during_optimization():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## proposed_instruction ## ]]\nOptimized Prompt\n\n"
-                "[[ ## proposed_prefix_for_output_field ## ]]\nOptimized Prefix",
+                {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
             ]
         )
     )

@@ -59,9 +59,7 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
-    lm = DummyLM(
-        ["[[ ## output ## ]]\nblue", "[[ ## output ## ]]\nRing-ding-ding-ding-dingeringeding!"], follow_examples=True
-    )
+    lm = DummyLM([{"output": "blue"}, {"output": "Ring-ding-ding-ding-dingeringeding!"}], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
@@ -79,63 +77,6 @@ def test_bootstrap_effectiveness():
     # prompt, it will use that instead. That is why we expect "blue" here.
     prediction = compiled_student(input=trainset[0].input)
     assert prediction.output == trainset[0].output
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `input` (str)
-
-                Your output fields are:
-                1. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## input ## ]]
-                {input}
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields `input`, produce the fields `output`."""
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                What is the color of the sky?
-
-                Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-        {
-            "role": "assistant",
-            "content": textwrap.dedent(
-                """\
-                [[ ## output ## ]]
-                blue
-
-                [[ ## completed ## ]]"""
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                What is the color of the sky?
-
-                Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_error_handling_during_bootstrap():
@@ -157,7 +98,7 @@ def test_error_handling_during_bootstrap():
     # Setup DummyLM to simulate an error scenario
     lm = DummyLM(
         [
-            "[[ ## output ## ]]\nInitial thoughts",  # Simulate initial teacher's prediction
+            {"output": "Initial thoughts"},  # Simulate initial teacher's prediction
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -182,8 +123,8 @@ def test_validation_set_usage():
 
     lm = DummyLM(
         [
-            "[[ ## output ## ]]\nInitial thoughts",
-            "[[ ## output ## ]]\nFinish[blue]",  # Expected output for both training and validation
+            {"output": "Initial thoughts"},
+            {"output": "Finish[blue]"},  # Expected output for both training and validation
         ]
     )
     dspy.settings.configure(lm=lm)

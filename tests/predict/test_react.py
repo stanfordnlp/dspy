@@ -8,7 +8,7 @@ def test_example_no_tools():
     # Createa a simple dataset which the model will use with the Retrieve tool.
     lm = dspy.utils.DummyLM(
         [
-            "[[ ## Thought_1 ## ]]\nInitial thoughts\n\n[[ ## Action_1 ## ]]\nFinish[blue]",
+            {"Thought_1": "Initial thoughts", "Action_1": "Finish[blue]"},
         ]
     )
     dspy.settings.configure(lm=lm, rm=dummy_rm())
@@ -28,8 +28,8 @@ def test_example_search():
     # Createa a simple dataset which the model will use with the Retrieve tool.
     lm = dspy.utils.DummyLM(
         [
-            "[[ ## Thought_1 ## ]]\nInitial thoughts\n\n[[ ## Action_1 ## ]]\nSearch[the color of the sky]",
-            "[[ ## Thought_2 ## ]]\nMore thoughts\n\n[[ ## Action_2 ## ]]\nFinish[blue]\n\n",
+            {"Thought_1": "Initial thoughts", "Action_1": "Search[the color of the sky]"},
+            {"Thought_2": "More thoughts", "Action_2": "Finish[blue]\n\n"},
         ]
     )
     rm = dummy_rm(
@@ -91,9 +91,9 @@ class DummyTool2:
 def test_custom_tools():
     lm = dspy.utils.DummyLM(
         [
-            "[[ ## Thought_1 ## ]]\nInitial thoughts\n\n[[ ## Action_1 ## ]]\nTool1[foo]",
-            "[[ ## Thought_2 ## ]]\nMore thoughts\n\n[[ ## Action_2 ## ]]\nTool2[bar]",
-            "[[ ## Thought_3 ## ]]\nEven more thoughts\n\n[[ ## Action_3 ## ]]\nFinish[baz]",
+            {"Thought_1": "Initial thoughts", "Action_1": "Tool1[foo]"},
+            {"Thought_2": "More thoughts", "Action_2": "Tool2[bar]"},
+            {"Thought_3": "Even more thoughts", "Action_3": "Finish[baz]"},
         ]
     )
     dspy.settings.configure(lm=lm)

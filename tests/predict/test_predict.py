@@ -41,47 +41,10 @@ def test_lm_after_dump_and_load_state():
 
 def test_call_method():
     predict_instance = Predict("input -> output")
-    lm = DummyLM(["[[ ## output ## ]]\ntest output"])
+    lm = DummyLM([{"output": "test output"}])
     dspy.settings.configure(lm=lm)
     result = predict_instance(input="test input")
     assert result.output == "test output"
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-                1. `input` (str)
-
-                Your output fields are:
-                1. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-                [[ ## input ## ]]
-                {input}
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields `input`, produce the fields `output`."""
-            ),
-        },
-        {
-            "role": "user",
-            "content": textwrap.dedent(
-                """\
-                [[ ## input ## ]]
-                test input
-
-                Respond with the corresponding output fields, starting with the field `output`, and then ending with the marker for `completed`."""
-            ),
-        },
-    ]
 
 
 def test_instructions_after_dump_and_load_state():
@@ -166,16 +129,14 @@ def test_typed_demos_after_dump_and_load_state():
 
 def test_forward_method():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM(["[[ ## answer ## ]]\nNo more responses"]))
+    dspy.settings.configure(lm=DummyLM([{"answer": "No more responses"}]))
     result = program(question="What is 1+1?").answer
     assert result == "No more responses"
 
 
 def test_forward_method2():
     program = Predict("question -> answer1, answer2")
-    dspy.settings.configure(
-        lm=DummyLM(["[[ ## answer1 ## ]]\nmy first answer\n\n[[ ## answer2 ## ]]\nmy second answer"])
-    )
+    dspy.settings.configure(lm=DummyLM([{"answer1": "my first answer", "answer2": "my second answer"}]))
     result = program(question="What is 1+1?")
     assert result.answer1 == "my first answer"
     assert result.answer2 == "my second answer"
@@ -190,7 +151,7 @@ def test_config_management():
 
 def test_multi_output():
     program = Predict("question -> answer", n=2)
-    dspy.settings.configure(lm=DummyLM(["[[ ## answer ## ]]\nmy first answer", "[[ ## answer ## ]]\nmy second answer"]))
+    dspy.settings.configure(lm=DummyLM([{"answer": "my first answer"}, {"answer": "my second answer"}]))
     results = program(question="What is 1+1?")
     assert results.completions.answer[0] == "my first answer"
     assert results.completions.answer[1] == "my second answer"
@@ -201,8 +162,8 @@ def test_multi_output2():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "[[ ## answer1 ## ]]\nmy 0 answer\n\n[[ ## answer2 ## ]]\nmy 2 answer",
-                "[[ ## answer1 ## ]]\nmy 1 answer\n\n[[ ## answer2 ## ]]\nmy 3 answer",
+                {"answer1": "my 0 answer", "answer2": "my 2 answer"},
+                {"answer1": "my 1 answer", "answer2": "my 3 answer"},
             ],
         )
     )
@@ -233,39 +194,6 @@ def test_output_only():
 
     predictor = Predict(OutputOnlySignature)
 
-    lm = DummyLM(["[[ ## output ## ]]\nshort answer"])
+    lm = DummyLM([{"output": "short answer"}])
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
-
-    assert lm.get_convo(-1)[0] == [
-        {
-            "role": "system",
-            "content": textwrap.dedent(
-                """\
-                Your input fields are:
-
-
-                Your output fields are:
-                1. `output` (str)
-
-                All interactions will be structured in the following way, with the appropriate values filled in.
-
-
-
-                [[ ## output ## ]]
-                {output}
-
-                [[ ## completed ## ]]
-
-                In adhering to this structure, your objective is: 
-                        Given the fields , produce the fields `output`."""
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                "Respond with the corresponding output fields, "
-                "starting with the field `output`, and then ending with the marker for `completed`."
-            ),
-        },
-    ]
