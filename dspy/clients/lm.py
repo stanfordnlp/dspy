@@ -1,7 +1,18 @@
-import os
-import ujson
+from concurrent.futures import ThreadPoolExecutor
 import functools
+import os
 from pathlib import Path
+import re
+from typing import Any, Dict, List
+import ujson
+
+
+from dspy import logger
+from dspy.clients.finetune import FinetuneJob
+from dspy.clients.self_hosted import is_self_hosted_model
+from dspy.clients.openai import is_openai_model, finetune_openai, FinetuneJobOpenAI
+from dspy.clients.anyscale import is_anyscale_model, finetune_anyscale, FinetuneJobAnyScale
+
 
 try:
     import warnings
@@ -22,6 +33,10 @@ except ImportError:
 
     litellm = LitellmPlaceholder()
 
+
+#-------------------------------------------------------------------------------
+#    LiteLLM Client
+#-------------------------------------------------------------------------------
 class LM:
     def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         self.model = model
@@ -30,7 +45,7 @@ class LM:
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-        if "o1-" in model:
+        if "o1-" in model:  # TODO: This is error prone!
             assert max_tokens >= 5000 and temperature == 1.0, \
                 "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
                 
@@ -59,6 +74,54 @@ class LM:
     
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
+
+    def launch(self):
+        """Send a request to the provider to launch the model, if needed."""
+        if is_self_hosted_model(self.model):
+            self_hosted_model_launch(self)
+        logger.debug(f"`LM.launch()` is called for the auto-launched model {self.model} -- no action is taken.")
+
+    def kill(self):
+        """Send a request to the provider to kill the model, if needed."""
+        if is_self_hosted_model(self.model):
+           self_hosted_model_kill(self)
+        logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
+
+    def finetune(self, message_completion_pairs: List[Dict[str, str]], config: Dict[str, Any]) -> FinetuneJob:
+        """Send a request to the provider to launch the model, if supported."""
+        # Fine-tuning is experimental and requires the experimental flag
+        from dspy import settings as settings
+        err = "Fine-tuning is an experimental feature and requires `dspy.settings.experimental = True`."
+        assert settings.experimental, err
+
+        # Find the respective finetuning functions and job classes
+        finetune_function = None
+        finetune_job = None
+        if is_openai_model(self.model):
+            finetune_function = finetune_openai
+            finetune_job = FinetuneJobOpenAI()
+        elif is_anyscale_model(self.model):
+            finetune_function = finetune_anyscale
+            finetune_function = finetune_anyscale
+            finetune_job = FinetuneJobAnyScale()
+
+        # Ensure that the model supports fine-tuning
+        if not finetune_function or not finetune_job:
+            err = f"Fine-tuning is not supported for the model {self.model}."
+            raise ValueError(err)
+
+        # Start asyncronous training
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(
+            finetune_function,
+            finetune_job,
+            model=self.model,
+            message_completion_pairs=message_completion_pairs,
+            config=config
+        )
+        executor.shutdown(wait=False)
+
+        return finetune_job
 
 
 @functools.lru_cache(maxsize=None)
@@ -118,3 +181,22 @@ def _inspect_history(lm, n: int = 1):
             print(_red(choices_text, end=""))
         
     print("\n\n\n")
+
+
+#-------------------------------------------------------------------------------
+#    Functions for supporting self-hosted models
+#-------------------------------------------------------------------------------
+
+
+# TODO: It would be nice to move these to a separate file
+def self_hosted_model_launch(lm: LM):
+   """Launch a self-hosted model."""
+   # TODO: Hardcode logic that starts a local server of choice using a selected
+   # server (e.g. VLLM, TGI, SGLang)
+   pass
+
+
+def self_hosted_model_kill(lm: LM):
+   """Kill a self-hosted model."""
+   # Harcode the logic that kills the local server of choice
+   pass
