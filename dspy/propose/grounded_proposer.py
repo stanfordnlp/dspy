@@ -74,6 +74,7 @@ def generate_instruction_class(
     use_task_demos=True,
     use_instruct_history=True,
     use_tip=True,
+    use_feedback=False,
 ):
     class GenerateSingleModuleInstruction(dspy.Signature):
         (
@@ -117,6 +118,12 @@ def generate_instruction_class(
                 desc="A suggestion for how to go about generating the new instruction.",
                 prefix="TIP:",
             )
+        if use_feedback:
+            feedback = dspy.InputField(
+                format=str,
+                desc="Feedback from the user on previous model outputs. This informs us about what failures to avoid and what success factors to focus on.",
+                prefix="FEEDBACK:",
+            )
         proposed_instruction = dspy.OutputField(
             desc="Propose an instruction that will be used to prompt a Language Model to perform this task.",
             prefix="PROPOSED INSTRUCTION:",
@@ -135,6 +142,7 @@ class GenerateModuleInstruction(dspy.Module):
         use_task_demos=True,
         use_instruct_history=True,
         use_tip=True,
+        use_feedback=False,
         verbose=False,
     ):
         super().__init__()
@@ -143,6 +151,7 @@ class GenerateModuleInstruction(dspy.Module):
         self.use_task_demos = use_task_demos
         self.use_instruct_history = use_instruct_history
         self.use_tip = use_tip
+        self.use_feedback = use_feedback
         self.verbose = verbose
 
         self.program_code_string = program_code_string
@@ -154,6 +163,7 @@ class GenerateModuleInstruction(dspy.Module):
             use_task_demos=use_task_demos,
             use_instruct_history=use_instruct_history,
             use_tip=use_tip,
+            use_feedback=use_feedback,
         )
 
     def forward(
@@ -166,6 +176,7 @@ class GenerateModuleInstruction(dspy.Module):
         data_summary,
         max_demos=3,
         tip=None,
+        feedback=None,
     ):
         # Construct full program demo or single module demo depending on whether or not we're using the full program
         task_demos = ""
@@ -230,6 +241,7 @@ class GenerateModuleInstruction(dspy.Module):
             module=module_code,
             task_demos=task_demos,
             tip=tip,
+            feedback=feedback,
             basic_instruction=basic_instruction,
             previous_instructions=previous_instructions,
             module_description=module_description,
@@ -256,6 +268,8 @@ class GroundedProposer(Proposer):
         use_instruct_history=True,
         use_tip=True,
         set_tip_randomly=True,
+        use_feedback=False,
+        feedback=None,
         set_history_randomly=True,
         verbose=False,
     ):
@@ -266,6 +280,8 @@ class GroundedProposer(Proposer):
         self.use_instruct_history = use_instruct_history
         self.use_tip = use_tip
         self.set_tip_randomly=set_tip_randomly
+        self.use_feedback = use_feedback
+        self.feedback = feedback
         self.set_history_randomly=set_history_randomly
         self.verbose = verbose
 
@@ -337,6 +353,7 @@ class GroundedProposer(Proposer):
                         demo_set_i=demo_set_i,
                         trial_logs=trial_logs,
                         tip=selected_tip,
+                        feedback=self.feedback,
                     ),
                 )
 
@@ -353,6 +370,7 @@ class GroundedProposer(Proposer):
         demo_set_i,
         trial_logs,
         tip=None,
+        feedback=None,
     ):
         """This method is responsible for returning a single instruction for a given predictor, using the specified criteria."""
 
@@ -369,6 +387,7 @@ class GroundedProposer(Proposer):
             use_task_demos=self.use_task_demos,
             use_instruct_history=self.use_instruct_history and instruction_history,
             use_tip=self.use_tip,
+            use_feedback=self.use_feedback,
             verbose=self.verbose
         )
 
@@ -385,6 +404,7 @@ class GroundedProposer(Proposer):
                 data_summary=self.data_summary,
                 previous_instructions=instruction_history,
                 tip=tip,
+                feedback=feedback,
             ).proposed_instruction
         self.prompt_model.kwargs["temperature"] = original_temp
 
