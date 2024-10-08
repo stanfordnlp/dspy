@@ -17,12 +17,13 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 
 class LM:
-    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True):
+    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         self.model = model
         self.model_type = model_type
         self.cache = cache
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.kwargs = kwargs
         self.history = []
 
         if "o1-" in model:
@@ -34,7 +35,7 @@ class LM:
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]
-        kwargs = {"temperature": self.temperature, "max_tokens": self.max_tokens, **kwargs}
+        kwargs = {"temperature": self.temperature, "max_tokens": self.max_tokens, **self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
