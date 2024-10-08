@@ -64,7 +64,7 @@ class Predict(Module, Parameter):
             if name not in excluded_keys:
                 setattr(self, name, value)
 
-        self.signature.load_state(state["signature"])
+        self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
             self.extended_signature.load_state(state["extended_signature"])
