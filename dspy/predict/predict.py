@@ -68,6 +68,13 @@ class Predict(Module, Parameter):
         if use_legacy_loading:
             self._load_state_legacy(state)
             return
+        if "signature" not in state and ("signature_instructions" in state or "signature_prefix" in state):
+            # Check if the state is from a version of DSPy prior to v2.5.3.
+            raise ValueError(
+                "The saved state is from a version of DSPy prior to v2.5.3. Please use `use_legacy_loading=True` to "
+                "load the state."
+            )
+
         excluded_keys = ["signature", "extended_signature"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
