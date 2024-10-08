@@ -164,24 +164,26 @@ class SignatureMeta(type(BaseModel)):
         return Signature(new_fields, cls.instructions)
 
     def dump_state(cls):
-        state = {
-            "instructions": cls.instructions,
-            "fields": []
-        }
+        state = {"instructions": cls.instructions, "fields": []}
         for field in cls.fields:
-            state["fields"].append({
-                "prefix": cls.fields[field].json_schema_extra["prefix"],
-                "description": cls.fields[field].json_schema_extra["desc"],
-            })
+            state["fields"].append(
+                {
+                    "prefix": cls.fields[field].json_schema_extra["prefix"],
+                    "description": cls.fields[field].json_schema_extra["desc"],
+                }
+            )
 
         return state
 
     def load_state(cls, state):
-        cls.instructions = state["instructions"]
+        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
-        for field, saved_field in zip(cls.fields.values(), state["fields"]):
+        signature_copy.instructions = state["instructions"]
+        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
             field.json_schema_extra["prefix"] = saved_field["prefix"]
             field.json_schema_extra["desc"] = saved_field["description"]
+
+        return signature_copy
 
     def equals(cls, other) -> bool:
         """Compare the JSON schema of two Pydantic models."""
@@ -210,7 +212,6 @@ class SignatureMeta(type(BaseModel)):
             field_reprs.append(f"{name} = Field({field})")
         field_repr = "\n    ".join(field_reprs)
         return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
-
 
 
 # A signature for a predictor.
