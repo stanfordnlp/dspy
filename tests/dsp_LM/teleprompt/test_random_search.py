@@ -2,7 +2,7 @@ import dspy
 from dspy import Example
 from dspy.predict import Predict
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DSPDummyLM
 
 
 class SimpleModule(dspy.Module):
@@ -23,7 +23,7 @@ def test_basic_workflow():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(
+    lm = DSPDummyLM(
         [
             "Initial thoughts",
             "Finish[blue]",  # Expected output for both training and validation

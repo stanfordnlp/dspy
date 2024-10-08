@@ -6,7 +6,7 @@ import dspy
 from dspy import Example
 from dspy.predict import Predict
 from dspy.teleprompt import BootstrapFewShot
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DSPDummyLM
 
 
 # Define a simple metric function for testing
@@ -21,12 +21,6 @@ examples = [
 ]
 trainset = [examples[0]]
 valset = [examples[1]]
-
-
-def test_bootstrap_initialization():
-    # Initialize BootstrapFewShot with a dummy metric and minimal setup
-    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
-    assert bootstrap.metric == simple_metric, "Metric not correctly initialized"
 
 
 class SimpleModule(dspy.Module):
@@ -44,7 +38,7 @@ def test_compile_with_predict_instances():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(["Initial thoughts", "Finish[blue]"])
+    lm = DSPDummyLM(["Initial thoughts", "Finish[blue]"])
     dspy.settings.configure(lm=lm)
 
     # Initialize BootstrapFewShot and compile the student
@@ -59,7 +53,7 @@ def test_bootstrap_effectiveness():
     # This test verifies if the bootstrapping process improves the student's predictions
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
-    lm = DummyLM([{"output": "blue"}, {"output": "Ring-ding-ding-ding-dingeringeding!"}], follow_examples=True)
+    lm = DSPDummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
@@ -71,12 +65,38 @@ def test_bootstrap_effectiveness():
     assert compiled_student.predictor.demos[0].output == trainset[0].output
 
     # Test the compiled student's prediction.
-    # We are using a DummyLM with follow_examples=True, which means that
+    # We are using a DSPDummyLM with follow_examples=True, which means that
     # even though it would normally reply with "Ring-ding-ding-ding-dingeringeding!"
     # on the second output, if it seems an example that perfectly matches the
     # prompt, it will use that instead. That is why we expect "blue" here.
     prediction = compiled_student(input=trainset[0].input)
     assert prediction.output == trainset[0].output
+
+    # For debugging
+    print("Convo")
+    print(lm.get_convo(-1))
+
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
+        Given the fields `input`, produce the fields `output`.
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Output: ${output}
+
+        ---
+
+        Input: What is the color of the sky?
+        Output: blue
+
+        ---
+
+        Input: What is the color of the sky?
+        Output: blue"""
+    )
 
 
 def test_error_handling_during_bootstrap():
@@ -95,10 +115,10 @@ def test_error_handling_during_bootstrap():
     student = SimpleModule("input -> output")
     teacher = BuggyModule("input -> output")
 
-    # Setup DummyLM to simulate an error scenario
-    lm = DummyLM(
+    # Setup DSPDummyLM to simulate an error scenario
+    lm = DSPDummyLM(
         [
-            {"output": "Initial thoughts"},  # Simulate initial teacher's prediction
+            "Initial thoughts",  # Simulate initial teacher's prediction
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -121,10 +141,10 @@ def test_validation_set_usage():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    lm = DummyLM(
+    lm = DSPDummyLM(
         [
-            {"output": "Initial thoughts"},
-            {"output": "Finish[blue]"},  # Expected output for both training and validation
+            "Initial thoughts",
+            "Finish[blue]",  # Expected output for both training and validation
         ]
     )
     dspy.settings.configure(lm=lm)

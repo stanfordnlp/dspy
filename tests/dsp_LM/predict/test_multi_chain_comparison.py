@@ -1,5 +1,7 @@
+import pytest
+
 import dspy
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DSPDummyLM
 
 
 def test_basic_example():
@@ -30,7 +32,7 @@ def test_basic_example():
 
     # Call the MultiChainComparison on the completions
     question = "What is the color of the sky?"
-    lm = DummyLM([{"rationale": "my rationale", "answer": "blue"}])
+    lm = DSPDummyLM(["my rationale", "blue"])
     dspy.settings.configure(lm=lm)
     final_pred = compare_answers(completions, question=question)
 

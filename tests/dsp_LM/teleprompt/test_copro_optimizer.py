@@ -1,7 +1,11 @@
+import textwrap
+
+import pytest
+
 import dspy
 from dspy import Example
 from dspy.teleprompt.signature_opt import COPRO
-from dspy.utils.dummies import DummyLM
+from dspy.utils.dummies import DSPDummyLM
 
 
 # Define a simple metric function for testing
@@ -39,16 +43,7 @@ class SimpleModule(dspy.Module):
 
 def test_signature_optimizer_optimization_process():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
-    dspy.settings.configure(
-        lm=DummyLM(
-            [
-                {
-                    "proposed_instruction": "Optimized instruction 1",
-                    "proposed_prefix_for_output_field": "Optimized instruction 2",
-                },
-            ]
-        )
-    )
+    dspy.settings.configure(lm=DSPDummyLM(["Optimized instruction 1", "Optimized instruction 2"]))
 
     student = SimpleModule("input -> output")
 
@@ -69,16 +64,7 @@ def test_signature_optimizer_statistics_tracking():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
-    dspy.settings.configure(
-        lm=DummyLM(
-            [
-                {
-                    "proposed_instruction": "Optimized instruction 1",
-                    "proposed_prefix_for_output_field": "Optimized instruction 2",
-                },
-            ]
-        )
-    )
+    dspy.settings.configure(lm=DSPDummyLM(["Optimized instruction"]))
     student = SimpleModule("input -> output")
     optimized_student = optimizer.compile(
         student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False}
@@ -93,16 +79,10 @@ def test_signature_optimizer_statistics_tracking():
 
 
 def test_optimization_and_output_verification():
-    lm = DummyLM(
+    lm = DSPDummyLM(
         [
-            {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
-            {"reasoning": "france", "output": "Paris"},
+            "Optimized Prompt",
+            "Optimized Prefix",
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -121,17 +101,30 @@ def test_optimization_and_output_verification():
 
     print(lm.get_convo(-1))
 
-    assert prediction.output == "Paris"
+    assert prediction.output == "No more responses"
+
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
+        Optimized Prompt
+
+        ---
+
+        Follow the following format.
+
+        Input: ${input}
+        Reasoning: Let's think step by step in order to ${produce the output}. We ...
+        Optimized Prefix ${output}
+
+        ---
+
+        Input: What is the capital of France?
+        Reasoning: Let's think step by step in order to No more responses
+        Optimized Prefix No more responses"""
+    )
 
 
 def test_statistics_tracking_during_optimization():
-    dspy.settings.configure(
-        lm=DummyLM(
-            [
-                {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
-            ]
-        )
-    )
+    dspy.settings.configure(lm=DSPDummyLM(["Optimized instruction for stats tracking"]))
 
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
