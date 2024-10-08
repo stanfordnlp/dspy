@@ -1,5 +1,5 @@
 ---
-sidebar_position: 10
+sidebar_position: 11
 ---
 
 # retrieve.WatsonDiscoveryRM
@@ -22,6 +22,7 @@ class WatsonDiscoveryRM:
 ```
 
 **Parameters:**
+
 - `apikey` (str): apikey for authentication purposes,
 - `url` (str): endpoint URL that includes the service instance ID
 - `version` (str): Release date of the version of the API you want to use. Specify dates in YYYY-MM-DD format.
@@ -36,10 +37,12 @@ class WatsonDiscoveryRM:
 Search the Watson Discovery collection for the top `k` passages matching the given query or queries.
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, list[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"title":str, "long_text": str, "passage_score": float, "document_id": str, "collection_id": str, "start_offset": int, "end_offset": int, "field": str}]`
 
 ### Quickstart

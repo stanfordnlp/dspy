@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 # retrieve.ChromadbRM
@@ -18,6 +18,7 @@ ChromadbRM(
 ```
 
 **Parameters:**
+
 - `collection_name` (_str_): The name of the chromadb collection.
 - `persist_directory` (_str_): Path to the directory where chromadb data is persisted.
 - `embedding_function` (_Optional[EmbeddingFunction[Embeddable]]_, _optional_): The function used for embedding documents and queries. Defaults to `DefaultEmbeddingFunction()` if not specified.
@@ -30,10 +31,12 @@ ChromadbRM(
 Search the chromadb collection for the top `k` passages matching the given query or queries, using embeddings generated via the specified `embedding_function`.
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"id": str, "score": float, "long_text": str, "metadatas": dict }]`
 
 ### Quickstart with OpenAI Embeddings

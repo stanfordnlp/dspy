@@ -150,6 +150,7 @@ def optimize_signature(
     prompt_model=None,
     initial_prompts=2,
     verbose=False,
+    max_retries: int = 3,
 ) -> dspy.Program:
     """Create a new program that is optimized for the given task.
 
@@ -177,6 +178,8 @@ def optimize_signature(
         Note that we also use the "plain" signature as a prompt, so the total number of prompts is initial_prompts + 1.
     verbose : bool, optional
         Whether to print debug information, by default False
+    max_retries : int
+        The number of retries to use when generating new signatures, by default 3.
 
     Notes:
     -----
@@ -216,7 +219,7 @@ def optimize_signature(
             if verbose:
                 print(f"Generating {initial_prompts} initial signatures for {name}...")
             info = candidates[name][0]  # Use initial info, to make sure types are identical
-            generator = TypedChainOfThought(MyGenerateInstructionInitial[type(info)])
+            generator = TypedChainOfThought(MyGenerateInstructionInitial[type(info)], max_retries=max_retries)
             candidates[name] += generator(
                 basic_signature=info,
             ).proposed_signatures
@@ -267,7 +270,7 @@ def optimize_signature(
 
                 # We can only tell the LM to avoid the signatures we are actually giving it as demos.
                 avoid = [ex.proposed_signature for ex in demos]
-                generator = TypedPredictor(generate_with_avoidance(avoid)[SignatureInfo])
+                generator = TypedPredictor(generate_with_avoidance(avoid)[SignatureInfo], max_retries=max_retries)
                 generator.predictor.demos = demos
 
                 if verbose:

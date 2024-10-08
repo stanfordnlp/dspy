@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy-ai"
 #replace_package_version_marker
-version="2.5.2"
+version="2.5.3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
