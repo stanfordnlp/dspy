@@ -8,23 +8,33 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 In this post, we walk you through a minimal working example using the DSPy library. 
 
-We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
+We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI `gpt-4o-mini` model to simulate prompting tasks within DSPy.
 
 ## Setup
 
-Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
+Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary data to DSPy Format and configuring our language model:
 
 ```python
 import dspy
+import random
+
+from dspy.datasets import DataLoader
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
 # Set up the LM.
-turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
-dspy.settings.configure(lm=turbo)
+turbo = dspy.LM(model='openai/gpt-4o-mini', max_tokens=250)
+dspy.configure(lm=turbo)
 
-# Load math questions from the GSM8K dataset.
-gsm8k = GSM8K()
-gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
+# Load math questions from the GSM8K dataset using `DataLoader`
+dl = DataLoader()
+
+gsm8k = dl.from_huggingface(
+    "gsm8k",
+    "main",
+    input_keys = ("question",),
+)
+
+gsm8k_trainset, gsm8k_devset = gsm8k['train'], random.sample(gsm8k['test'], 50)
 ```
 
 Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
