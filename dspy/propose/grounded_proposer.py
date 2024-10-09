@@ -270,20 +270,27 @@ class GroundedProposer(Proposer):
         self.verbose = verbose
 
         self.prompt_model = get_prompt_model(prompt_model)
+
+        self.program_code_string = None
         if self.program_aware:
             try:
                 self.program_code_string = get_dspy_source_code(program)
                 if self.verbose: print("SOURCE CODE:",self.program_code_string)
             except Exception as e:
                 print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
-                self.program_code_string = None
                 self.program_aware = False
-        else:
-            self.program_code_string = None
-        self.data_summary = create_dataset_summary(
-            trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
-        )
-        if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
+
+        self.data_summary  = None
+        if self.use_dataset_summary:
+            try:
+                self.data_summary = create_dataset_summary(
+                    trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
+                )
+                if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
+            except Exception as e:
+                print(f"Error getting data summary: {e}.\n\nRunning without data aware proposer.")
+                self.use_dataset_summary = False
+                print(f"")
 
     def propose_instructions_for_program(
         self,
