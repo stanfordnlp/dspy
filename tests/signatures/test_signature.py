@@ -182,6 +182,9 @@ def test_insantiating2():
 
 
 def test_multiline_instructions():
+    lm = DummyLM([{"output": "short answer"}])
+    dspy.settings.configure(lm=lm)
+
     class MySignature(Signature):
         """First line
         Second line
@@ -190,27 +193,7 @@ def test_multiline_instructions():
         output = OutputField()
 
     predictor = dspy.Predict(MySignature)
-
-    lm = DummyLM(["short answer"])
-    dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
-
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        First line
-        Second line
-            Third line
-
-        ---
-
-        Follow the following format.
-
-        Output: ${output}
-
-        ---
-
-        Output: short answer"""
-    )
 
 
 def test_replaced_by_replace_context_manager():
@@ -255,3 +238,44 @@ def test_multiple_replaced_by_update_signatures():
         assert "input4" in SignatureTwo.input_fields
     assert "input1" in SignatureOne.input_fields
     assert "input2" in SignatureTwo.input_fields
+
+
+def test_dump_and_load_state():
+    class CustomSignature(dspy.Signature):
+        """I am just an instruction."""
+
+        sentence = dspy.InputField(desc="I am an innocent input!")
+        sentiment = dspy.OutputField()
+
+    state = CustomSignature.dump_state()
+    expected = {
+        "instructions": "I am just an instruction.",
+        "fields": [
+            {
+                "prefix": "Sentence:",
+                "description": "I am an innocent input!",
+            },
+            {
+                "prefix": "Sentiment:",
+                "description": "${sentiment}",
+            },
+        ],
+    }
+    assert state == expected
+
+    class CustomSignature2(dspy.Signature):
+        """I am a malicious instruction."""
+
+        sentence = dspy.InputField(desc="I am an malicious input!")
+        sentiment = dspy.OutputField()
+
+    assert CustomSignature2.dump_state() != expected
+    # Overwrite the state with the state of CustomSignature.
+    loaded_signature = CustomSignature2.load_state(state)
+    assert loaded_signature.instructions == "I am just an instruction."
+    # After `load_state`, the state should be the same as CustomSignature.
+    assert loaded_signature.dump_state() == expected
+    # CustomSignature2 should not have been modified.
+    assert CustomSignature2.instructions == "I am a malicious instruction."
+    assert CustomSignature2.fields["sentence"].json_schema_extra["desc"] == "I am an malicious input!"
+    assert CustomSignature2.fields["sentiment"].json_schema_extra["prefix"] == "Sentiment:"

@@ -1,4 +1,5 @@
 from typing import Any, Optional, Union
+from dspy.adapters.chat_adapter import _format_field_value
 import pytest
 
 import pydantic
@@ -114,6 +115,9 @@ def test_pydantic():
     instance = build_model_instance()
     parsed_instance = parser(instance.model_dump_json())
 
+    formatted_instance = _format_field_value(instance.model_dump_json())
+    assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
+
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
 
@@ -128,13 +132,36 @@ def test_optional_pydantic():
     parsed_instance = parser(instance.model_dump_json())
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
+    formatted_instance = _format_field_value(instance.model_dump_json())
+    assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
+
     # Check null case
     parsed_instance = parser("null")
     assert parsed_instance == None, "Optional[MyModel] should be None"
 
 
+def test_nested_pydantic():
+    class NestedModel(pydantic.BaseModel):
+        model: MyModel
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: NestedModel = dspy.OutputField()
+
+    _, parser = get_field_and_parser(MySignature)
+
+    instance = NestedModel(model=build_model_instance())
+    parsed_instance = parser(instance.model_dump_json())
+
+    formatted_instance = _format_field_value(instance.model_dump_json())
+    assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
+
+    assert parsed_instance == instance, f"{instance} != {parsed_instance}"
+
+
 def test_dataclass():
-    from dataclasses import dataclass
+    from dataclasses import dataclass, asdict
+    import ujson
 
     @dataclass(frozen=True)
     class MyDataclass:
@@ -152,3 +179,6 @@ def test_dataclass():
     instance = MyDataclass("foobar", 42, 3.14, True)
     parsed_instance = parser('{"string": "foobar", "number": 42, "floating": 3.14, "boolean": true}')
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
+
+    formatted_instance = _format_field_value(ujson.dumps(asdict(instance)))
+    assert formatted_instance == ujson.dumps(asdict(instance)), f"{formatted_instance} != {ujson.dumps(asdict(instance))}"

@@ -155,31 +155,47 @@ If there is not much overlap in features between your LM and LiteLLM it's better
 Let's create an LM for Gemini using `google-generativeai` package from scratch:
 
 ```python
-from dspy import LM
+import os
+import dspy
 import google.generativeai as genai
 
-
-class GeminiLM:
-    def __init__(self, model, api_key, endpoint):
-        genai.configure(api_key=os.environ["API_KEY"] or api_key)
-        self.model = genai.GenerativeModel(model)
+class GeminiLM(dspy.LM):
+    def __init__(self, model, api_key=None, endpoint=None, **kwargs):
+        genai.configure(api_key=os.environ["GEMINI_API_KEY"] or api_key)
 
         self.endpoint = endpoint
         self.history = []
-        super().__init__(model)
-    
+
+        super().__init__(model, **kwargs)
+        self.model = genai.GenerativeModel(model)
 
     def __call__(self, prompt=None, messages=None, **kwargs):
-        if isinstance(prompt, str):
-            prompt = [prompt]
+        # Custom chat model working for text completion model
+        prompt = '\n\n'.join([x['content'] for x in messages] + ['BEGIN RESPONSE:'])
 
         completions = self.model.generate_content(prompt)
         self.history.append({"prompt": prompt, "completions": completions})
-         
+        
+        # Must return a list of strings
+        return [completions.candidates[0].content.parts[0].text]
 
     def inspect_history(self):
         for interaction in self.history:
             print(f"Prompt: {interaction['prompt']} -> Completions: {interaction['completions']}")
+
+lm = GeminiLM("gemini-1.5-flash", temperature=0)
+dspy.configure(lm=lm)
+
+qa = dspy.ChainOfThought("question->answer")
+qa(question="What is the capital of France?")
+```
+
+**Output:**
+```text
+Prediction(
+    reasoning='France is a country in Western Europe. Its capital city is Paris.',
+    answer='Paris'
+)
 ```
 
 The above example is the simplest form of LM. You can add more options to tweak generation config and even control the generated output based on your requirement.
