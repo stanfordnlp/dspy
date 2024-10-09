@@ -11,7 +11,7 @@ jobs:
     outputs:  
       version: ${{ steps.extract_tag.outputs.tag }}  
     steps:  
-      - uses: actions/checkout@v2  
+      - uses: actions/checkout@v4
       - id: extract_tag  
         name: Extract tag name  
         run: echo "::set-output name=tag::$(echo $GITHUB_REF | cut -d / -f 3)"  
@@ -24,7 +24,7 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
@@ -37,7 +37,7 @@ jobs:
           VERSION=${{ needs.extract-tag.outputs.version }}  
           PACKAGE_NAME="dspy-ai-test"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
-          NEW_VERSION=$(python3 build_utils/test_version.py $PACKAGE_NAME $VERSION)  
+          NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "::set-output name=version::$NEW_VERSION"  
       - name: Update version in setup.py
@@ -45,7 +45,7 @@ jobs:
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
       - name: Update package name in setup.py
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' setup.py
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' setup.py 
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
@@ -55,57 +55,44 @@ jobs:
         with: 
           repository-url: https://test.pypi.org/legacy/
 
-  test-intro-script: 
-    needs: [extract-tag, build-and-publish-test-pypi]
-    runs-on: ubuntu-latest
-    steps:  
-      - uses: actions/checkout@v4 
-      - name: Set up Python 3.9  
-        uses: actions/setup-python@v5
-        with:  
-          python-version: "3.9"  
-          cache: "pip"
-      - name: Install package from TestPyPI
-        run: |
-          .github/workflow_scripts/install_testpypi_pkg.sh ${{ needs.extract-tag.outputs.version }}
-      - name: Install other dependencies
-        run: |  
-          python3 -m pip install Jinja2
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install -r requirements-dev.txt
-          python3 -m pip install openai==0.28.1
-      - name: Set up cache directory  
-        run: | 
-          mkdir -p cache  
-          echo "DSP_NOTEBOOK_CACHEDIR=$(pwd)/cache" >> $GITHUB_ENV  
-      - name: Run Python script  
-        run: |    
-          pytest -c tests_integration/pytest.ini tests_integration/
-
   build-and-publish-pypi:
-    needs: [extract-tag, build-and-publish-test-pypi, test-intro-script]
+    needs: [extract-tag, build-and-publish-test-pypi]
     runs-on: ubuntu-latest
     environment: 
       name: pypi
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
           python-version: "3.9"
       - name: Install dependencies
         run: python3 -m pip install setuptools wheel twine
-      - name: Update version in setup.py
+      - name: Update version in setup.py (dspy)
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' setup.py
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+      # Publish to dspy
       - name: Update package name in setup.py  
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' setup.py
+        run: |
+          sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy"/;}' setup.py
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' pyproject.toml 
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy"/;}' pyproject.toml
       - name: Build a binary wheel
         run: python3 setup.py sdist bdist_wheel
-      - name: Publish distribution 📦 to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+      - name: Publish distribution 📦 to PyPI (dspy)
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
+      # Publish to dspy-ai
+      - name: Update version in setup.py (dspy-ai)
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/.internal_dspyai/setup.py
+      - name: Update package name in setup.py  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' ./dspy/.internal_dspyai/setup.py
+      - name: Update dspy dependency version in setup.py  
+        run: |
+          sed -i '/#replace_dspy_version_marker/{n;s/dspy==[^"]*/dspy==${{ needs.extract-tag.outputs.version }}/;}' ./dspy/.internal_dspyai/setup.py  
+      - name: Build a binary wheel
+        run: python3 ./dspy/.internal_dspyai/setup.py sdist bdist_wheel
+      - name: Publish distribution 📦 to PyPI (dspy-ai)
+        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi

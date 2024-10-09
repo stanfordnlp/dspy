@@ -6,6 +6,8 @@ from dspy.primitives.prediction import Prediction
 
 try:
     import weaviate
+    from weaviate.util import get_valid_uuid
+    from uuid import uuid4
 except ImportError as err:
     raise ImportError(
         "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`",
@@ -52,6 +54,7 @@ class WeaviateRM(dspy.Retrieve):
     ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
+        self._weaviate_collection = self._weaviate_client.collections.get(self._weaviate_collection_name)
         self._weaviate_collection_text_key = weaviate_collection_text_key
 
         # Check the type of weaviate_client (this is added to support v3 and v4)
@@ -81,7 +84,7 @@ class WeaviateRM(dspy.Retrieve):
         passages, parsed_results = [], []
         for query in queries:
             if self._client_type == "WeaviateClient":
-                results = self._weaviate_client.collections.get(self._weaviate_collection_name).query.hybrid(
+                results = self._weaviate_collection.query.hybrid(
                     query=query,
                     limit=k,
                     **kwargs,
@@ -106,3 +109,30 @@ class WeaviateRM(dspy.Retrieve):
             passages.extend(dotdict({"long_text": d}) for d in parsed_results)
 
         return passages
+    
+    def get_objects(self, num_samples: int, fields: List[str]) -> List[dict]:
+        """Get objects from Weaviate using the cursor API."""
+        if self._client_type == "WeaviateClient":
+            objects = []
+            counter = 0
+            for item in self._weaviate_collection.iterator():
+                if counter >= num_samples:
+                    break
+                new_object = {}
+                for key in item.properties.keys():
+                    if key in fields:
+                      new_object[key] = item.properties[key]
+                objects.append(new_object)
+                counter += 1
+            return objects
+        else:
+            raise ValueError("`get_objects` is not supported for the v3 Weaviate Python client, please upgrade to v4.")
+        
+    def insert(self, new_object_properties: dict):
+        if self._client_type == "WeaviateClient":
+            self._weaviate_collection.data.insert(
+                properties=new_object_properties,
+                uuid=get_valid_uuid(uuid4())
+            )
+        else:
+            raise AttributeError("`insert` is not supported for the v3 Weaviate Python client, please upgrade to v4.")

@@ -304,6 +304,9 @@ loaded_program.load(path=save_path)
 
 ### BootstrapFewShotWithRandomSearch
 
+Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](/docs/deep-dive/optimizers/bootstrap-fewshot.mdx).
+
+
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
@@ -358,6 +361,9 @@ for p in finetune_program.predictors():
 
 ### COPRO
 
+Detailed documentation on COPRO can be found [here](/docs/deep-dive/optimizers/copro.mdx).
+
+
 ```python
 from dspy.teleprompt import COPRO
 
@@ -381,6 +387,78 @@ kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
 compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_program, trainset=trainset, num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5, eval_kwargs=kwargs)
 ```
 
+### MIPROv2
+
+Note: detailed documentation can be found [here](/docs/deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
+
+#### Optimizing with MIPROv2
+```python
+# Import the optimizer
+from dspy.teleprompt import MIPROv2
+
+# Initialize optimizer
+teleprompter = MIPROv2(
+    metric=gsm8k_metric,
+    num_candidates=7,
+    init_temperature=0.5,
+    verbose=False,
+    num_threads=4,
+)
+
+# Optimize program
+print(f"Optimizing program with MIPRO...")
+optimized_program = teleprompter.compile(
+    program.deepcopy(),
+    trainset=trainset,
+    max_bootstrapped_demos=3,
+    max_labeled_demos=4,
+    num_trials=15,
+    minibatch_size=25,
+    minibatch_full_eval_steps=10,
+    minibatch=True, 
+    requires_permission_to_run=False,
+)
+
+# Save optimize program for future use
+optimized_program.save(f"mipro_optimized")
+
+# Evaluate optimized program
+print(f"Evluate optimized program...")
+evaluate(optimized_program, devset=devset[:])
+```
+
+#### Optimizing instructions only with MIPROv2 (0-Shot)
+```python
+# Import optimizer
+from dspy.teleprompt import MIPROv2
+
+# Initialize optimizer 
+teleprompter = MIPROv2(
+    metric=gsm8k_metric,
+    num_candidates=15,
+    init_temperature=0.5,
+    verbose=False,
+    num_threads=4,
+)
+
+# Perform optimization
+print(f"Optimizing program with MIPRO (0-Shot)...")
+zeroshot_optimized_program = teleprompter.compile(
+    program.deepcopy(),
+    trainset=trainset,
+    max_bootstrapped_demos=0, # setting demos to 0 for 0-shot optimization
+    max_labeled_demos=0,
+    num_trials=15,
+    minibatch=False, 
+    requires_permission_to_run=False,
+)
+
+
+zeroshot_optimized_program.save(f"mipro_0shot_optimized")
+
+print(f"Evaluate optimized program...")
+evaluate(zeroshot_optimized_program, devset=devset[:])
+```
 ### Signature Optimizer with Types
 
 ```python
@@ -422,9 +500,9 @@ Other custom configurations are similar to customizing the `dspy.BootstrapFewSho
 
 ### Including `dspy.Assert` and `dspy.Suggest` statements
 ```python
-dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 
-dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModuleSignature")
+dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 ```
 
 ### Activating DSPy Program with Assertions 

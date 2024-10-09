@@ -7,7 +7,8 @@ from typing import List, Optional, Union
 
 import backoff
 
-import dspy
+from dspy import Retrieve, Prediction
+from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
 try:
@@ -33,7 +34,7 @@ try:
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
-class PineconeRM(dspy.Retrieve):
+class PineconeRM(Retrieve):
     """
     A retrieval module that uses Pinecone to return the top passages for a given query.
 
@@ -54,7 +55,7 @@ class PineconeRM(dspy.Retrieve):
         dspy.Prediction: An object containing the retrieved passages.
 
     Examples:
-        Below is a code snippet that shows how to use this as the default retriver:
+        Below is a code snippet that shows how to use this as the default retriever:
         ```python
         llm = dspy.OpenAI(model="gpt-3.5-turbo")
         retriever_model = PineconeRM(openai.api_key)
@@ -84,7 +85,7 @@ class PineconeRM(dspy.Retrieve):
                 from transformers import AutoModel, AutoTokenizer
             except ImportError as exc:
                 raise ModuleNotFoundError(
-                "You need to install Hugging Face transformers library to use a local embedding model with PineconeRM.",
+                "You need to install Hugging Face transformers (with torch dependencies - pip install transformers[torch]) library to use a local embedding model with PineconeRM.",
             ) from exc
 
             self._local_embed_model = AutoModel.from_pretrained(local_embed_model)
@@ -178,7 +179,7 @@ class PineconeRM(dspy.Retrieve):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=15,
+        max_time=settings.backoff_time,
     )
     def _get_embeddings(
         self, 
@@ -222,7 +223,7 @@ class PineconeRM(dspy.Retrieve):
         # we need a pooling strategy to get a single vector representation of the input
         # so the default is to take the mean of the hidden states
 
-    def forward(self, query_or_queries: Union[str, List[str]]) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, List[str]]) -> Prediction:
         """Search with pinecone for self.k top passages for query
 
         Args:
@@ -251,7 +252,7 @@ class PineconeRM(dspy.Retrieve):
             )
             passages = [result["metadata"]["text"] for result in sorted_results]
             passages = [dotdict({"long_text": passage for passage in passages})]
-            return dspy.Prediction(passages=passages)
+            return Prediction(passages=passages)
 
         # For multiple queries, query each and return the highest scoring passages
         # If a passage is returned multiple times, the score is accumulated. For this reason we increase top_k by 3x
@@ -269,4 +270,4 @@ class PineconeRM(dspy.Retrieve):
         sorted_passages = sorted(
             passage_scores.items(), key=lambda x: x[1], reverse=True,
         )[: self.k]
-        return dspy.Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])
+        return Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])

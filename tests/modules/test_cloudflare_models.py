@@ -36,7 +36,7 @@ models = {
 }
 
 
-def get_lm(name: str) -> dspy.LM:
+def get_lm(name: str): # -> dspy.LM:
     return dspy.CloudflareAI(model=name)
 
 

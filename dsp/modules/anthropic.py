@@ -3,6 +3,7 @@ import os
 from typing import Any, Optional
 
 import backoff
+from dsp.utils.settings import settings
 
 from dsp.modules.lm import LM
 
@@ -90,7 +91,7 @@ class Claude(LM):
     @backoff.on_exception(
         backoff.expo,
         (anthropic_rate_limit),
-        max_time=1000,
+        max_time=settings.backoff_time,
         max_tries=8,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,

@@ -3,7 +3,6 @@ import re
 import dspy
 from dspy.propose.utils import strip_prefix
 
-
 class ObservationSummarizer(dspy.Signature):
     ("""Given a series of observations I have made about my dataset, please summarize them into a brief 2-3 sentence summary which highlights only the most important details.""")
     observations = dspy.InputField(desc="Observations I have made about my dataset")
@@ -45,8 +44,10 @@ def order_input_keys_in_string(unordered_repr):
 
     return ordered_repr
 
-def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_file=None):
+def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_file=None, verbose=False):
+    if verbose: print("\nBootstrapping dataset summary (this will be used to generate instructions)...")
     upper_lim = min(len(trainset), view_data_batch_size)
+    prompt_model = prompt_model if prompt_model else dspy.settings.lm
     with dspy.settings.context(lm=prompt_model):
         observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=order_input_keys_in_string(trainset[0:upper_lim].__repr__()))
     observations = observation["observations"]
@@ -62,7 +63,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             calls+=1
             if calls >= max_calls:
                 break
-            print(f"b: {b}")
+            if verbose: print(f"b: {b}")
             upper_lim = min(len(trainset), b+view_data_batch_size)
             with dspy.settings.context(lm=prompt_model):
                 output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()))
@@ -76,12 +77,17 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             if log_file: 
                 log_file.write(f"observations {observations}\n")
     except Exception as e:
-        print(f"e {e}. using observations from past round for a summary.")
+        if verbose: print(f"e {e}. using observations from past round for a summary.")
 
-    with dspy.settings.context(lm=prompt_model):
+    if prompt_model:
+        with dspy.settings.context(lm=prompt_model):
+            summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
+    else:
         summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
-    print(f"summary: {summary}")
+    if verbose: print(f"summary: {summary}")
     if log_file:
         log_file.write(f"summary: {summary}\n")
+    
+    if verbose: print(f"\nGenerated summary: {strip_prefix(summary.summary)}\n")
 
     return strip_prefix(summary.summary)

@@ -6,6 +6,18 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 # Creating a Custom Local Model (LM) Client
 
+---
+
+**Deprecation Notice**
+
+Since DSPy 2.5, you are unlikely to need to build a custom LM client. If your LM provider is supported by [LiteLLM](https://docs.litellm.ai/docs/providers) or if it has an OpenAI-compatible endpoint, you likely don't need to build a custom LM client and can instead use `dspy.LM`.
+
+In DSPy 2.5, all LM clients except `dspy.LM` are deprecated and will be removed in DSPy 2.6. Migrating to `dspy.LM` is straightforward and will let you use new features (Adapters) that improve the consistency of LM outputs, especially when using chat LMs. Learn more about the changes and how to migrate [in this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb).
+
+If you still need to build a custom client, subclassing [`dspy.LM`](https://github.com/stanfordnlp/dspy/blob/main/dspy/clients/lm.py) (not `dsp.LM` as in previous DSPy versions) is the recommended way to ensure compatibility with future updates.
+
+---
+
 DSPy provides you with multiple LM clients that you can use to execute any of your pipelines. However, if you have an API or LM that is unable to be executed by any of the existing clients hosted in DSPy, you can create one yourself!! It's not too difficult so let's see how!!
 
 ## Format of LM Client

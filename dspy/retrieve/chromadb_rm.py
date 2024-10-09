@@ -7,7 +7,8 @@ from typing import List, Optional, Union
 import backoff
 import openai
 
-import dspy
+from dspy import Retrieve, Prediction
+from dsp.utils.settings import settings
 from dsp.utils import dotdict
 
 try:
@@ -31,7 +32,7 @@ except ImportError:
     )
 
 
-class ChromadbRM(dspy.Retrieve):
+class ChromadbRM(Retrieve):
     """
     A retrieval module that uses chromadb to return the top passages for a given query.
 
@@ -124,7 +125,7 @@ class ChromadbRM(dspy.Retrieve):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=15,
+        max_time=settings.backoff_time,
     )
     def _get_embeddings(self, queries: List[str]) -> List[List[float]]:
         """Return query vector after creating embedding using OpenAI
@@ -139,7 +140,7 @@ class ChromadbRM(dspy.Retrieve):
 
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs,
-    ) -> dspy.Prediction:
+    ) -> Prediction:
         """Search with db for self.k top passages for query
 
         Args:

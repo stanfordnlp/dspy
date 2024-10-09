@@ -4,10 +4,21 @@ import logging
 from typing import Any, Callable, Literal, Optional, cast
 
 import backoff
-import openai
+
+try:
+    """
+    If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
+    """
+    import langfuse
+    from langfuse.openai import openai
+    logging.info(f"You are using Langfuse,version{langfuse.__version__}")
+except:
+    import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
+
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -166,7 +177,7 @@ class AzureOpenAI(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):

@@ -38,7 +38,7 @@ class QdrantRM(dspy.Retrieve):
 
         Below is a code snippet that shows how to use Qdrant in the forward() function of a module
         ```python
-        self.retrieve = QdrantRM("my_collection_name", qdrant_client=qdrant_client, k=num_passages)
+        self.retrieve = QdrantRM(question, k=num_passages, filter=filter)
         ```
     """
 
@@ -62,12 +62,13 @@ class QdrantRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int] = None, filter: Optional[models.Filter]=None) -> dspy.Prediction:
         """Search with Qdrant for self.k top passages for query.
 
         Args:
             query_or_queries (Union[str, List[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
+            filter (Optional["Filter"]): "Look only for points which satisfies this conditions". Default: None.
 
         Returns:
             dspy.Prediction: An object containing the retrieved passages.
@@ -77,27 +78,21 @@ class QdrantRM(dspy.Retrieve):
 
         vectors = self._vectorizer(queries)
 
-        # If vector_name is None
-        # vector = [0.8, 0.2, 0.3...]
-        # Else
-        # vector = {"name": vector_name, "vector": [0.8, 0.2, 0.3...]}
-        vectors = [
-            vector if self._vector_name is None else {"name": self._vector_name, "vector": vector} for vector in vectors
-        ]
-
         search_requests = [
-            models.SearchRequest(
-                vector=vector,
+            models.QueryRequest(
+                query=vector,
+                using=self._vector_name,
                 limit=k or self.k,
                 with_payload=[self._document_field],
+                filter=filter,
             )
             for vector in vectors
         ]
-        batch_results = self._client.search_batch(self._collection_name, requests=search_requests)
+        batch_results = self._client.query_batch_points(self._collection_name, requests=search_requests)
 
         passages_scores = defaultdict(float)
         for batch in batch_results:
-            for result in batch:
+            for result in batch.points:
                 # If a passage is returned multiple times, the score is accumulated.
                 document = result.payload.get(self._document_field)
                 passages_scores[document] += result.score
