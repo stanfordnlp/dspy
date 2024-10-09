@@ -8,7 +8,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 In this post, we walk you through a minimal working example using the DSPy library. 
 
-We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI `gpt-4o-mini` model to simulate prompting tasks within DSPy.
+We make use of the [MATH dataset](https://huggingface.co/datasets/hendrycks/competition_math) and the OpenAI `gpt-4o-mini` model to simulate prompting tasks within DSPy.
 
 ## Setup
 
@@ -17,79 +17,127 @@ Before we jump into the example, let's ensure our environment is properly config
 ```python
 import dspy
 import random
+import openai
 
 from dspy.datasets import DataLoader
-from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
 # Set up the LM.
-turbo = dspy.LM(model='openai/gpt-4o-mini', max_tokens=250)
-dspy.configure(lm=turbo)
+lm = dspy.LM(model='openai/gpt-4o-mini', max_tokens=8000)
+dspy.configure(lm=lm)
 
-# Load math questions from the GSM8K dataset using `DataLoader`
+# Load math questions from the MATH dataset using `DataLoader`
 dl = DataLoader()
 
-gsm8k = dl.from_huggingface(
-    "gsm8k",
-    "main",
-    input_keys = ("question",),
+math = dl.from_huggingface(
+    "hendrycks/competition_math",
+    input_keys=("problem", )
 )
 
-gsm8k_trainset, gsm8k_devset = gsm8k['train'], random.sample(gsm8k['test'], 50)
+random.seed(84)
+math_trainset, math_valset, math_devset = (
+    random.sample(math['train'], 20), 
+    random.sample(math['train'], 30), 
+    random.sample(math['train'], 50)
+)
 ```
 
-Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
+Let's take a look at what `math_trainset` and `math_devset` are:
 
 ```python
-print(gsm8k_trainset)
+print(math_trainset)
 ```
 
-The `gsm8k_trainset` and `gsm8k_devset` datasets contain lists of `dspy.Examples`, with each example having `question` and `answer` fields.
+The `math_trainset` and `math_devset` datasets contain lists of `dspy.Examples`, with each example having `problem` and `solution` fields.
 
 ## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/api/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/docs/deep-dive/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
 class CoT(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.prog = dspy.ChainOfThought("question -> answer")
-    
-    def forward(self, question):
-        return self.prog(question=question)
+        self.prog = dspy.ChainOfThought("problem -> solution")
+
+    def forward(self, problem):
+        return self.prog(problem=problem)
 ```
 
 ## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
+With our simple program in place, let's move on to compiling it with the [`MIPROv2`](/docs/deep-dive/optimizers/miprov2.md) teleprompter:
 
 ```python
-from dspy.teleprompt import BootstrapFewShot
-
-# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 4-shot examples of our CoT program.
-config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
-
-# Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
-teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
+tp = dspy.MIPROv2(
+    metric=math_metric, 
+    num_candidates=5, 
+    init_temperature=0.7, 
+    verbose=False, 
+    num_threads=4
+)
+compiled_cot = tp.compile(
+    CoT(), trainset=math_trainset, 
+    valset=math_valset, 
+    max_bootstrapped_demos=3, 
+    max_labeled_demos=3, 
+    num_trials=15, 
+    requires_permission_to_run=False
+)
 ```
 
-Note that `BootstrapFewShot` is not an optimizing teleprompter, i.e. it simply creates and validates examples for steps of the pipeline (in this case, chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
+This should take ~10-15 minutes to complete which you can speed but by increasing the `num_threads` parameter but be careful to not overflow the rate limits of API. To check the cost of optimization you can execute the following:
+
+```python
+print(f"Optimization Cost: {sum([lm.history[i]['cost'] for i in range(len(lm.history))])}")
+```
+
+`lm.history` stores the history of your model's interactions, including the cost of each interaction. We can just sum the cost of these interaction and get the total cost of optimization, which is ~22 cents.
+
+:::note
+Make sure that you clear the `lm.history` using `lm.history.clear()` before doing the optimization to get the accurate cost. This is especial
+:::
 
 ## Evaluate
 
-Now that we have a compiled (optimized) DSPy program, let's move to evaluating its performance on the dev dataset.
+Now that we have a compiled (optimized) DSPy program, let's move to evaluating its performance and compare it with the unoptimized model on `math_devset`. Before that, we need a metric to score the solutions. For MATH dataset, it's a bit hard to create a quantitative that works on exact answer/term match. Luckily we can create an LLM judge fairly easily with DSPy:
 
+```python
+llm_judge = dspy.ChainOfThought("question, reference_solution, student_solution -> correct: bool")
+
+def math_metric(gold, pred, trace=None):
+  return llm_judge(question=gold.problem, reference_solution=gold.solution, student_solution=pred.answer).correct
+```
+
+With the metric in place, we can now evaluate the performance of our unoptimized and optimizer models using the `Evaluate` class:
 
 ```python
 from dspy.evaluate import Evaluate
 
 # Set up the evaluator, which can be used multiple times.
-evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, display_progress=True, display_table=0)
+evaluate = Evaluate(
+    devset=math_devset, 
+    metric=math_metric, 
+    num_threads=4, 
+    display_progress=True, 
+    display_table=0
+)
 
 # Evaluate our `optimized_cot` program.
-evaluate(optimized_cot)
+print(f"Unoptimized Model Score: {evaluate(CoT())}")
+print(f"Optimized Model Score: {evaluate(compiled_cot)}")
 ```
+
+**Output:**
+```
+Unoptimized Model Score: 70.0
+Optimized Model Score: 76.0
+```
+
+That's a fairly decent boost with a vanilla CoT pipeline and relatively limited training/ testing dataset!!
+
+:::note
+MATH a popular task that the models are directly optimized for resulting in a relatively low gain, however gains are typically larger for harder tasks.
+:::
 
 ## Inspect the Model's History
 
