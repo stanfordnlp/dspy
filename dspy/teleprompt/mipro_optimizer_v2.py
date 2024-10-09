@@ -25,6 +25,16 @@ from dspy.teleprompt.utils import (
 """
 USAGE SUGGESTIONS:
 
+To start off, you can use a preconfigured auto-run setting, which sets hyperparameters for you:
+
+``` python
+from dspy.teleprompt import MIPROv2
+
+teleprompter = MIPROv2(metric=metric, auto_run_mode = "light")
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset, max_bootstrapped_demos=3, max_labeled_demos=5)
+eval_score = evaluate(compiled_prompt_opt, devset=testset, display_progress=True, num_threads=1)
+```
+
 The following code can be used to compile a optimized signature teleprompter using MIPRO, and evaluate it on an end task:
 
 ``` python
