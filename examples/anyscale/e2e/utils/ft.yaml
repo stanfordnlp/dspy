@@ -1,5 +1,0 @@
-name: dspy-finetuning
-entrypoint: python ft.py configs/training/lora/llama-3-8b.yaml
-image_uri: localhost:5555/anyscale/llm-forge:0.5.3
-requirements: []
-max_retries: 0
