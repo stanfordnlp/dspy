@@ -1,7 +1,7 @@
 import random
 import re
 from collections import defaultdict
-from typing import Union
+from typing import Any, Dict, Union
 
 import numpy as np
 
@@ -171,9 +171,13 @@ class DummyLM(LM):
                 return output["content"]
 
     def __call__(self, prompt=None, messages=None, **kwargs):
-        def format_answer_field(field_name, answer):
-            field = FieldInfoWithName(name=field_name, info=OutputField())
-            return format_fields(fields_with_values={field: answer})
+        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+            return format_fields(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=OutputField()): value
+                    for field_name, value in field_names_and_values.items()
+                }
+            )
 
         # Build the request.
         outputs = []
@@ -186,12 +190,12 @@ class DummyLM(LM):
             elif isinstance(self.answers, dict):
                 outputs.append(
                     next(
-                        (format_answer_field(k, v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        (format_answer_fields({k: v}) for k, v in self.answers.items() if k in messages[-1]["content"]),
                         "No more responses",
                     )
                 )
             else:
-                outputs.append(format_answer_field(**next(self.answers, {"answer": "No more responses"})))
+                outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
