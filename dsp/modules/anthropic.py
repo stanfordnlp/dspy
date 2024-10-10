@@ -8,11 +8,9 @@ from dsp.utils.settings import settings
 from dsp.modules.lm import LM
 
 try:
-    # import anthropic
-    pass
-    # anthropic_rate_limit = anthropic.RateLimitError
-    anthropic_rate_limit = Exception
+    import anthropic
 
+    anthropic_rate_limit = anthropic.RateLimitError
 except ImportError:
     anthropic_rate_limit = Exception
 

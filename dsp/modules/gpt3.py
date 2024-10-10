@@ -127,13 +127,13 @@ class GPT3(LM):
                 max_tokens = kwargs.pop("max_tokens")
                 kwargs["max_completion_tokens"] = max_tokens
             kwargs.pop("temperature")
+            
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             messages = [{"role": "user", "content": prompt}]
             if self.system_prompt:
                 messages.insert(0, {"role": "system", "content": self.system_prompt})
             kwargs["messages"] = messages
-            print("in basic_request", kwargs, "\n\n")
             kwargs = {"stringify_request": json.dumps(kwargs)}
             response = chat_request(**kwargs)
 
@@ -250,9 +250,7 @@ def cached_gpt3_request_v2_wrapped(**kwargs):
 def _cached_gpt3_turbo_request_v2(**kwargs) -> OpenAIObject:
     if "stringify_request" in kwargs:
         kwargs = json.loads(kwargs["stringify_request"])
-    response = cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
-    print(response)
-    return response
+    return cast(OpenAIObject, openai.ChatCompletion.create(**kwargs))
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
@@ -276,9 +274,7 @@ def v1_cached_gpt3_request_v2_wrapped(**kwargs):
 def v1_cached_gpt3_turbo_request_v2(**kwargs):
     if "stringify_request" in kwargs:
         kwargs = json.loads(kwargs["stringify_request"])
-    response = openai.chat.completions.create(**kwargs)
-    print(response)
-    return response
+    return openai.chat.completions.create(**kwargs)
 
 
 @functools.lru_cache(maxsize=None if cache_turn_on else 0)
