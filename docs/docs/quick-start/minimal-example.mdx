@@ -34,40 +34,47 @@ math = dl.from_huggingface(
 )
 
 random.seed(84)
+
+math_subset = random.sample(math['train'], 100)
 math_trainset, math_valset, math_devset = (
-    random.sample(math['train'], 20), 
-    random.sample(math['train'], 30), 
-    random.sample(math['train'], 50)
+    math_subset[:20],
+    math_subset[20:50],
+    math_subset[50:100]
 )
 ```
 
-Let's take a look at what `math_trainset` and `math_devset` are:
+The datasets `math_trainset`, `math_valset`, and `math_devset` are a list of `dspy.Example` which is the standard data format in DSpy necessary for optimization and evaluation. Let's see what one of those datapoint looks like:
 
 ```python
-print(math_trainset)
+print(math_trainset[0])
 ```
 
-The `math_trainset` and `math_devset` datasets contain lists of `dspy.Examples`, with each example having `problem` and `solution` fields.
+**Output:**
+```
+Example({'problem': 'Compute $(-64)\\div (-32)$.', 'level': 'Level 1', 'type': 'Prealgebra', 'solution': 'When $y$ is nonzero, we have $(-x)\\div (-y) = x\\div y$, so \\[(-64)\\div (-32) = 64\\div 32= \\boxed{2}.\\]'}) (input_keys={'problem'})
+```
+
+The `math_valset` and `math_devset` also contain lists of `dspy.Examples` in the same format i.e. each example has `problem` and `solution` fields.
 
 ## Define the Module
 
 With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/docs/deep-dive/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
-cot = dspy.ChainOfThought("problem -> solution")
+cot = dspy.ChainOfThought("problem -> answer")
 ```
 
 You can execute this module by passing `problem` as parameter to the call directly:
 
 ```python
-cot(problem=math_devset[-1].problem)
+cot(problem=math_devset[0].problem)
 ```
 
 **Output:**
 ```
 Prediction(
-    reasoning='To factor the polynomial \\( x^{10} + x^5 + 1 \\), we can utilize the roots of unity. Specifically, we can let \\( \\omega \\) be a primitive cube root of unity, satisfying the equation \\( \\omega^3 = 1 \\) and \\( \\omega^2 + \\omega + 1 = 0 \\). By substituting \\( \\omega \\) into the polynomial, we find that \\( \\omega^{10} + \\omega^5 + 1 = 0 \\), indicating that \\( x^2 + x + 1 \\) is a factor of \\( x^{10} + x^5 + 1 \\).\n\nNext, we can express \\( x^{10} + x^5 + 1 \\) in a form that reveals its factors. We rewrite the polynomial by grouping terms and factoring out common factors. After some algebraic manipulation, we arrive at the factorization:\n\n\\[\nx^{10} + x^5 + 1 = (x^2 + x + 1)(x^8 - x^7 + x^5 - x^4 + x^3 - x + 1).\n\\]\n\nThis shows that the polynomial can be expressed as the product of two polynomials with integer coefficients.',
-    answer='The factorization of \\( x^{10} + x^5 + 1 \\) is \\( (x^2 + x + 1)(x^8 - x^7 + x^5 - x^4 + x^3 - x + 1) \\).'
+    reasoning="To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes when rolling four dice. Each die has 6 faces, so the total number of outcomes is \\(6^4 = 1296\\).\n\nNext, we need to determine the number of outcomes where all four dice show the same number. There are 6 possible outcomes for this scenario (one for each number from 1 to 6).\n\nNow, we can find the number of outcomes where not all dice show the same number by subtracting the number of outcomes where they do show the same number from the total number of outcomes:\n\\[\n\\text{Outcomes where not all are the same} = 1296 - 6 = 1290\n\\]\n\nFinally, the probability that not all dice show the same number is given by the ratio of the favorable outcomes to the total outcomes:\n\\[\nP(\\text{not all the same}) = \\frac{1290}{1296}\n\\]\n\nTo simplify this fraction, we can divide both the numerator and the denominator by 6:\n\\[\nP(\\text{not all the same}) = \\frac{215}{216}\n\\]\n\nThus, the probability that when we roll four fair 6-sided dice, they won't all show the same number is \\(\\frac{215}{216}\\).",
+    answer="The probability that when we roll four fair 6-sided dice, they won't all show the same number is \\(\\frac{215}{216}\\)."
 )
 ```
 
@@ -108,17 +115,20 @@ In adhering to this structure, your objective is:
 User message:
 
 [[ ## problem ## ]]
-Write $x^{10} + x^5 + 1$ as the product of two polynomials with integer coefficients.
+What is the probability that when we roll four fair 6-sided dice, they won't all show the same number?
+
+Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
+
 
 Response:
 
 [[ ## reasoning ## ]]
-To factor the polynomial \( x^{10} + x^5 + 1 \), we can utilize the roots of unity. Specifically, we can let \( \omega \) be a primitive cube root of unity, satisfying the equation \( \omega^3 = 1 \) and \( \omega^2 + \omega + 1 = 0 \). By substituting \( \omega \) into the polynomial, we find that \( \omega^{10} + \omega^5 + 1 = 0 \), indicating that \( x^2 + x + 1 \) is a factor of \( x^{10} + x^5 + 1 \).
+To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes when rolling four dice. Each die has 6 faces, so the total number of outcomes is \(6^4 = 1296\).
 
 ...
 
 [[ ## answer ## ]]
-The factorization of \( x^{10} + x^5 + 1 \) is \( (x^2 + x + 1)(x^8 - x^7 + x^5 - x^4 + x^3 - x + 1) \).
+The probability that when we roll four fair 6-sided dice, they won't all show the same number is \(\frac{215}{216}\).
 
 [[ ## completed ## ]]
 ```
@@ -143,19 +153,20 @@ from dspy.evaluate import Evaluate
 
 # Set up the evaluator, which can be used multiple times.
 evaluate = Evaluate(
-    devset=math_devset, 
-    metric=math_metric, 
-    num_threads=4, 
-    display_progress=True, 
+    devset=math_devset,
+    metric=math_metric,
+    num_threads=4,
+    display_progress=True,
     display_table=0
 )
 
 # Evaluate our `optimized_cot` program.
-print(f"Unoptimized Model Score: {evaluate(CoT())}")
+print(f"\nUnoptimized Model Score: {evaluate(cot)}")
 ```
 
 **Output:**
 ```
+Average Metric: 35 / 50  (70.0): 100%|██████████| 50/50 [01:39<00:00,  1.99s/it]
 Unoptimized Model Score: 70.0
 ```
 
@@ -166,21 +177,21 @@ That's a fairly decent score from a vanilla CoT pipeline!! Let's optimize it to 
 With our simple program in place, let's move on to compiling it with the [`MIPROv2`](/docs/deep-dive/optimizers/miprov2.md) teleprompter:
 
 ```python
-lm.history.clear()  // For fair estimation of optimization cost
+lm.history.clear()  # For fair estimation of optimization cost
 
 tp = dspy.MIPROv2(
-    metric=math_metric, 
-    num_candidates=5, 
-    init_temperature=0.7, 
-    verbose=False, 
+    metric=math_metric,
+    num_candidates=5,
+    init_temperature=0.7,
+    verbose=False,
     num_threads=4
 )
 compiled_cot = tp.compile(
-    CoT(), trainset=math_trainset, 
-    valset=math_valset, 
-    max_bootstrapped_demos=3, 
-    max_labeled_demos=3, 
-    num_trials=15, 
+    cot, trainset=math_trainset,
+    valset=math_valset,
+    max_bootstrapped_demos=3,
+    max_labeled_demos=3,
+    num_trials=15,
     requires_permission_to_run=False
 )
 
@@ -192,20 +203,25 @@ print(f"Optimized Model Score: {evaluate(compiled_cot)}")
 Optimized Model Score: 76.0
 ```
 
-That's a fairly decent boost from a vanilla CoT pipeline and relatively limited training/ testing dataset!! This should take ~12-15 minutes to complete which you can speed but by increasing the `num_threads` parameter but be careful to not overflow the rate limits of API. To check the cost of optimization you can execute the following:
-
 :::note
 MATH a popular task that the models are directly optimized for resulting in a relatively low gain, however gains are typically larger for harder tasks.
 :::
+
+That's a good gain on a simple CoT pipeline with a relatively limited training/testing dataset!! This should take ~12-15 minutes to complete which you can speed up by increasing the `num_threads` parameter but be careful to not overflow the rate limits of the API. To check the cost of optimization you can execute the following:
 
 ```python
 print(f"Optimization Cost: {sum([lm.history[i]['cost'] for i in range(len(lm.history))])}")
 ```
 
-`lm.history` stores the history of your model's interactions, including the cost of each interaction. We can just sum the cost of these interaction and get the total cost of optimization, which is ~26 cents.
+**Output:**
+```
+Optimization Cost: 0.32152019999999976
+```
+
+`lm.history` stores the history of your model's interactions, including the cost of each interaction. We can just sum the cost of these interaction and get the total cost of optimization, which is ~32 cents.
 
 :::note
-Make sure that you clear the `lm.history` using `lm.history.clear()` before doing the optimization to get the accurate cost. This is especial
+Make sure that you clear the `lm.history` using `lm.history.clear()` before doing the optimization to get the accurate cost.
 :::
 
 ## Inspect the Model's History
@@ -242,13 +258,53 @@ All interactions will be structured in the following way, with the appropriate v
 [[ ## completed ## ]]
 
 In adhering to this structure, your objective is: 
-        Analyze the given mathematical problem related to quadratic functions, and provide a detailed step-by-step reasoning process that leads to the final answer. Ensure that your explanation includes identifying key components like coefficients, roots, and the vertex of the parabola, and culminate with the final result based on your analysis.
+        Given the fields `problem`, produce the fields `answer`.
 
 
 User message:
 
 [[ ## problem ## ]]
-Example({'problem': 'Write $x^{10} + x^5 + 1$ as the product of two polynomials with integer coefficients.', 'level': 'Level 5', 'type': 'Intermediate Algebra', 'solution': 'Let $\\omega$ satisfy $x^2 + x + 1 = 0,$ so $\\omega^2 + \\omega + 1 = 0.$  Then $(\\omega - 1)(\\omega^2 + \\omega + 1) = \\omega^3 - 1 = 0,$ so $\\omega^3 = 1.$  Also,\n\\begin{align*}\n\\omega^{10} + \\omega^5 + 1 &= \\omega^9 \\cdot \\omega + \\omega^3 \\cdot \\omega^2 + 1 \\\\\n&= \\omega + \\omega^2 + 1 \\\\\n&= 0.\n\\end{align*}Therefore, $x^2 + x + 1$ is a factor of $x^{10} + x^5 + 1.$\n\nTo bring out this factorization, we can write\n\\begin{align*}\nx^{10} + x^5 + 1 &= x^{10} - x + x^5 - x^2 + x^2 + x + 1 \\\\\n&= x(x^9 - 1) + x^2 (x^3 - 1) + x^2 + x + 1 \\\\\n&= x(x^3 - 1)(x^6 + x^3 + 1) + x^2 (x - 1)(x^2 + x + 1) + x^2 + x + 1 \\\\\n&= x(x - 1)(x^2 + x + 1)(x^6 + x^3 + 1) + x^2 (x - 1)(x^2 + x + 1) + x^2 + x + 1 \\\\\n&= \\boxed{(x^2 + x + 1)(x^8 - x^7 + x^5 - x^4 + x^3 - x + 1)}.\n\\end{align*}'}) (input_keys={'problem'})
+One-half of one-seventh of $T$ equals one-third of one-fifth of 90. What is the value of $T$?
+
+Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
+
+
+Assistant message:
+
+[[ ## reasoning ## ]]
+To solve for \( T \), we start by translating the problem statement into a mathematical equation. 
+
+...
+
+[[ ## answer ## ]]
+84
+
+[[ ## completed ## ]]
+
+
+User message:
+
+...
+
+
+Assistant message:
+
+...
+
+User message:
+
+...
+
+
+Assistant message:
+
+...
+
+
+User message:
+
+[[ ## problem ## ]]
+What is the probability that when we roll four fair 6-sided dice, they won't all show the same number?
 
 Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
 
@@ -256,23 +312,23 @@ Respond with the corresponding output fields, starting with the field `reasoning
 Response:
 
 [[ ## reasoning ## ]]
-To factor the polynomial \( x^{10} + x^5 + 1 \), we can utilize the roots of unity. We start by letting \( \omega \) be a primitive cube root of unity, satisfying the equation \( \omega^3 = 1 \) and \( \omega^2 + \omega + 1 = 0 \). 
+To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes and then the number of outcomes where all dice show the same number.
 
 ...
 
 [[ ## answer ## ]]
-The factorization of \( x^{10} + x^5 + 1 \) is \( (x^2 + x + 1)(x^8 - x^7 + x^5 - x^4 + x^3 - x + 1) \).
+\(\frac{215}{216}\)
 
 [[ ## completed ## ]]
 ```
 
-If you see the objective in the above prompt is now modified to an optimal objective from the optimizer. And there you have it! You've successfully created a working example using the DSPy library. 
+If you see the objective in the above prompt is now modified to an optimal objective and there are "demos" added as examples for the task by the optimizer. And there you have it! You've successfully created a working example using the DSPy library. 
 
 This example showcases how to set up your environment, define a custom module, compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations. 
 
 Feel free to adapt and expand upon this example to suit your specific use case while exploring the extensive capabilities of DSPy.
 
-If you want to try what you just built, run `optimized_cot(question='Your Question Here')`.
+If you want to try what you just built, run `compiled_cot(question='Your Question Here')`.
 
 :::note
 For a more comprehensive walkthrough with detailed examples, please refer to the introduction colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb).
