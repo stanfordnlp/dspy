@@ -149,10 +149,8 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     Args:
       fields_with_values: A dictionary mapping information about a field to its corresponding
                           value.
-      field_info: Information about the field, including its DSPy field type and annotation.
-      value: The value of the field.
     Returns:
-      The formatted value of the field, represented as a string.
+      The joined formatted values of the fields, represented as a string.
     """
     output = []
     for field, field_value in fields_with_values.items():
