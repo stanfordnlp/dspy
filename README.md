@@ -116,6 +116,7 @@ The DSPy documentation is divided into **tutorials** (step-by-step illustration 
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
 - **Tracing & Optimization Tracking in DSPy** with Parea AI: [Tutorial on tracing & evaluating a DSPy RAG program](https://docs.parea.ai/tutorials/dspy-rag-trace-evaluate/tutorial)
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
+- [CS 194/294-196 (LLM Agents) - Lecture 5, Omar Khattab](https://www.youtube.com/watch?v=JEMYuzrKLUw)
 
 ### B) Guides
 
