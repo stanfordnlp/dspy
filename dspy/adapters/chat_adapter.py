@@ -124,15 +124,15 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     """
     dspy_field_type: Literal["input", "output"] = get_dspy_field_type(field_info)
     if isinstance(value, list):
-        if dspy_field_type == "input" and field_info.annotation is not str:
-            # If the field is an input field of type List[Any], format the value as a numbered list
-            # to make it easier for the LLM to parse individual elements from the list by index,
-            # which is helpful for certain tasks (e.g. entity extraction)
+        if dspy_field_type == "input" or field_info.annotation is str:
+            # If the field is an input field or has no special type requirements, format it as
+            # numbered list so that it's organized in a way suitable for presenting long context
+            # to an LLM (i.e. not JSON)
             return format_input_list_field_value(value)
         else:
-            # If the field is an output field or an input field of type str, format the value as
-            # a stringified JSON Array. This ensures that downstream routines can parse the
-            # field value correctly using methods from the `ujson` or `json` packages
+            # If the field is an output field that has strict parsing requirements, format the
+            # value as a stringified JSON Array. This ensures that downstream routines can parse
+            # the field value correctly using methods from the `ujson` or `json` packages.
             return json.dumps(value)
     elif isinstance(value, pydantic.BaseModel):
         return value.model_dump_json()
