@@ -182,14 +182,14 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
 
     Args:
       signature: The DSPy signature to which future LLM responses should conform.
-      values: A dictionary of field names (from the DSPy signature) to corresponding values that
-              should be included in the message.
+      values: A dictionary mapping field names (from the DSPy signature) to corresponding values
+              that should be included in the message.
       role: The role of the message, which can be either "user" or "assistant".
       incomplete: If True, indicates that output field values are present in the set of specified
                   ``values``. If False, indicates that ``values`` only contains input field values.
     Returns:
       A chat message that can be appended to a chat thread. The message contains two string fields:
-      ``role`` ("user" or "assistant") and ``content`` (containing the message itself).
+      ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
     content = []
 
