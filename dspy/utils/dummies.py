@@ -172,6 +172,7 @@ class DummyLM(LM):
 
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
+            print("FIELD NAMES AND VALUES", field_names_and_values)
             return format_fields(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
@@ -190,7 +191,7 @@ class DummyLM(LM):
             elif isinstance(self.answers, dict):
                 outputs.append(
                     next(
-                        (format_answer_fields({k: v}) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
                         "No more responses",
                     )
                 )
