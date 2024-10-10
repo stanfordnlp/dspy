@@ -9,8 +9,12 @@ import openai
 import yaml
 import os
 import time
-from anyscale.job import JobConfig
-import jsonlines
+
+try:
+    from anyscale.job import JobConfig
+    import anyscale
+except ImportError:
+    anyscale = None
 
 class TrainableAnyscale(MultiOpenAI, TrainableLM):
     """Wrapper around specifically the OpenAI API to finetune.
@@ -37,6 +41,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
     ):
         assert api_key is None, "There is no API key needed for this provider."
         assert api_base is None, "There is no API base needed for this provider."
+        assert anyscale is not None, "You must have the Anyscale SDK installed to use this class."
         api_key, api_base = "", ""
         super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
         assert self.provider == "anyscale", "You must use an Anyscale model with this class."
@@ -67,7 +72,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             if name == "train":
                 convo_lens = check_message_lengths(data)
                 estimate_cost(data, convo_lens=convo_lens)
-
             return True
 
         datasets = {"train": dataset}
@@ -77,8 +81,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         for name, data in datasets.items():
             if not validate_dataset(name, data):
                 return False
-
-
         return True
     
     def _generate_config_files(self, train_path: str, eval_path: Optional[str], **kwargs):
@@ -186,25 +188,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         #     return False
 
         return job_runner_config_path, compute_config
-        
-
-    def _format_data_for_vanilla_finetuning(self, data_path: str) -> List[dict[str, Any]]:
-        """Convert the data from prompt completion to OAI compatible messages."""
-        with open(data_path, "r", encoding="utf-8") as file:
-            data = ujson.load(file)
-        
-        def format_single_item(item):
-            messages = [
-                {"role": "user", "content": item["prompt"]},
-                {"role": "assistant", "content": item["completion"]}
-            ]
-            # Always prepend the system prompt if available
-            if self.system_prompt:
-                messages.insert(0, {"role": "system", "content": self.system_prompt})
-            
-            return {"messages": messages}
-        
-        return list(map(format_single_item, data))
 
     def _submit_data(self, train_path: str, eval_path: Optional[str]):
         """Upload the data to the Workspace cloud storage.
@@ -217,42 +200,35 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             str: The file id of the data to be used for fine-tuning.
         """
         storage = os.environ['ANYSCALE_ARTIFACT_STORAGE']
-        # storage = "/mnt/cluster_storage/dspy/"
         
         datasets = {"train": train_path}
         if eval_path:
             datasets["val"] = eval_path
 
         for name, path in datasets.items():
-            def count_items_in_jsonl(file_path):
-                with jsonlines.open(file_path) as reader:
-                    count = sum(1 for _ in reader)
-                return count
-
-            num_items = count_items_in_jsonl(path)
+            num_items = len(read_jsonl(path))
             print(f"Number of items in {name} data: {num_items}")
 
-
-            s3_path = os.path.join(storage, path.split("/")[-1])
-            print(f"Uploading {name} data to S3 at {s3_path}")
+            remote_path = os.path.join(storage, path.split("/")[-1])
+            print(f"Uploading {name} data to S3 at {remote_path}")
             # NOTE: trying a local copy for now
-            if s3_path[:2] == "s3":
-                os.system(f"aws s3 cp {path} {s3_path}")
-            elif s3_path[:2] == "gs":
-                os.system(f"gcloud storage cp {path} {s3_path}")
+            if remote_path[:2] == "s3":
+                os.system(f"aws s3 cp {path} {remote_path}")
+            elif remote_path[:2] == "gs":
+                os.system(f"gcloud storage cp {path} {remote_path}")
             else:
-                os.system(f"cp {path} {s3_path}")
-                print(f"Copied {path} to {s3_path}")
-            self.fine_tuning_file_ids[name] = s3_path
+                os.system(f"cp {path} {remote_path}")
+                print(f"Copied {path} to {remote_path}")
+            self.fine_tuning_file_ids[name] = remote_path
         
         return self.fine_tuning_file_ids["train"], self.fine_tuning_file_ids.get("val", None)
 
-    # TODO
-    def _start_remote_training(self, finetuning_job_path: str, **kwargs) -> str:
-        # self.fine_tuning_job_id = job.id
-        # !anyscale job submit --config-file deploy/jobs/ft.yaml --exclude assets
-        os.system(f"anyscale job submit --config-file {finetuning_job_path}")
-        return "job.id"
+    def _start_remote_training(self, compute_config, **kwargs) -> str:
+        job_id: str = anyscale.job.submit(
+            compute_config
+        )
+        return job_id
+
 
     # TODO: Straight up out of scope lmao
     def validate_hyperparameters(self, hyperparameters: dict[str, Any]) -> bool:
@@ -269,39 +245,32 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
     
     # TODO
     def stop_training(self) -> None:
-        if self.fine_tuning_file_ids:
-            for file in self.fine_tuning_file_ids.values():
-                openai.files.delete(file)
-
-            self.fine_tuning_file_ids = {}
-
-        if self.fine_tuning_job_id:
-            openai.fine_tuning.jobs.cancel(self.fine_tuning_job_id)
+        anyscale.job.cancel(self.fine_tuning_job_id)
 
         self.fine_tuning_job_id = None
     
-    # TODO
-    def check_training_status(self) -> bool:
-        assert self.fine_tuning_job_id is not None, "You must start training before checking status"
-        temp_job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
-        if temp_job.status == "succeeded":
-            return True
-        elif temp_job.status == "failed":
-            print("Job failed")
-            raise RuntimeError(
-                "Job failed, we recommend checking the logs and restarting the compile method")
-        elif temp_job.status == "running":
-            return False
+    # # TODO
+    # def check_training_status(self) -> bool:
+    #     assert self.fine_tuning_job_id is not None, "You must start training before checking status"
+    #     temp_job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
+    #     if temp_job.status == "succeeded":
+    #         return True
+    #     elif temp_job.status == "failed":
+    #         print("Job failed")
+    #         raise RuntimeError(
+    #             "Job failed, we recommend checking the logs and restarting the compile method")
+    #     elif temp_job.status == "running":
+    #         return False
     
-    # TODO
-    def retrieve_trained_model_client(self):
-        assert self.fine_tuning_job_id is not None, "Start training before retrieving the model"
-        job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
-        if job.status == "succeeded":
-            # NOTE: Not making a copy here because that is done before the training process starts
-            self.kwargs["model"] = job.fine_tuned_model
-        else:
-            raise RuntimeError("Job not completed yet, cannot retrieve model")
+    # # TODO
+    # def retrieve_trained_model_client(self):
+    #     assert self.fine_tuning_job_id is not None, "Start training before retrieving the model"
+    #     job = openai.fine_tuning.jobs.retrieve(self.fine_tuning_job_id)
+    #     if job.status == "succeeded":
+    #         # NOTE: Not making a copy here because that is done before the training process starts
+    #         self.kwargs["model"] = job.fine_tuned_model
+    #     else:
+    #         raise RuntimeError("Job not completed yet, cannot retrieve model")
     
     # TODO 
     # Note: working here
@@ -320,9 +289,8 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
 
             # Convert the data from prompt completion to OAI compatible messages
             # This can be slightly flexible to accept json or jsonl and to check if the key starts with "user/assistant/system" or if first key is "messages"
-            train_dataset = self._format_data_for_vanilla_finetuning(train_path)
-            val_dataset = self._format_data_for_vanilla_finetuning(eval_path) if eval_path else None
             
+
             # This is where we validate the yaml + kwargs combo
             if not self._verify_datasets(train_dataset, val_dataset, **kwargs):
                 print("Unable to verify arguments")
@@ -331,6 +299,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             if method != TrainingMethod.SFT:
                 raise NotImplementedError("Only SFT finetuning is supported at the moment.")
 
+            # Convert data into jsonl format
             for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
                 if not (path and dataset):
                     continue
@@ -338,17 +307,25 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
                     for item in dataset:
                         f.write(ujson.dumps(item) + "\n")
 
-            self._submit_data(train_path, eval_path)
-
+            remote_train_path, remote_eval_path = self._submit_data(train_path=train_path, eval_path=eval_path)
+            _, compute_config = self._generate_config_files(train_path=remote_train_path, eval_path=remote_eval_path, **kwargs)
+            
             # Start the remote training
-            job_id = self._start_remote_training(**kwargs)
-
+            job_id = self._start_remote_training(compute_config=compute_config, **kwargs)
+            self.fine_tuning_job_id = job_id
             # Wait for the training to complete
             self.wait_for_training()
 
-            # Retrieve the trained model and return a copy
-            self.retrieve_trained_model_client()
-            # TODO Deploy the service and update to point at that service
+            # # Retrieve the trained model and return a copy
+            # TODO: Add this back; I think I will need to copy the lora weights into the dynamic serving path
+            # self.retrieve_trained_model_client()
+            if job_id:
+                model_info = anyscale.llm.model.get(job_id=job_id).to_dict()
+                # print(model_info)
+
+            storage_uri = model_info["storage_uri"]
+            copy_lora_weights(storage_uri, model_info, job_id)
+
             future.set_result(self)
 
         except Exception as e:
@@ -356,8 +333,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
 
     def wait_for_training(self):
         print("Waiting for training to complete")
-        while not self.check_training_status():
-            time.sleep(60)
+        anyscale.job.wait(id=self.fine_tuning_job_id, timeout_s=18000) 
     
     def get_finetune(self, method: TrainingMethod, train_path: str, eval_path: Optional[str], **kwargs) -> Future[TrainableLM]:
         """
@@ -450,3 +426,12 @@ def copy_lora_weights(storage_uri, model_info, job_id):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         raise e
+
+def read_jsonl(filename):
+    with open(filename, "r") as f:
+        return [ujson.loads(line) for line in f]
+
+def write_jsonl(filename, data):
+    with open(filename, "w") as f:
+        for item in data:
+            f.write(ujson.dumps(item) + "\n")
