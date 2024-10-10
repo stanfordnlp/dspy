@@ -2,12 +2,21 @@ import functools
 import json
 import logging
 from typing import Any, Literal, Optional, cast
-
 import backoff
-import openai
+import httpx
+try:
+    """
+    If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
+    """
+    import langfuse
+    from langfuse.openai import openai
+    logging.info(f"You are using Langfuse,version{langfuse.__version__}")
+except:
+    import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -45,40 +54,46 @@ class GPT3(LM):
     """
 
     def __init__(
-        self,
-        model: str = "gpt-3.5-turbo-instruct",
-        api_key: Optional[str] = None,
-        api_provider: Literal["openai"] = "openai",
-        api_base: Optional[str] = None,
-        model_type: Literal["chat", "text"] = None,
-        system_prompt: Optional[str] = None,
-        **kwargs,
+            self,
+            model: str = "gpt-3.5-turbo-instruct",
+            api_key: Optional[str] = None,
+            api_provider: Literal["openai"] = "openai",
+            api_base: Optional[str] = None,
+            base_url: Optional[str] = None,
+            model_type: Literal["chat", "text"] = None,
+            system_prompt: Optional[str] = None,
+            http_client: Optional[httpx.Client] = None,
+            default_headers: Optional[dict[str, str]] = None,
+            **kwargs,
     ):
         super().__init__(model)
         self.provider = "openai"
         openai.api_type = api_provider
+        openai.default_headers = default_headers or {}
 
         self.system_prompt = system_prompt
 
         assert (
-            api_provider != "azure"
+                api_provider != "azure"
         ), "Azure functionality with base OpenAI has been deprecated, please use dspy.AzureOpenAI instead."
 
         default_model_type = (
             "chat"
-            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model) and ("instruct" not in model)
+            if ("gpt-3.5" in model or "turbo" in model or "gpt-4" in model or "o1" in model) and ("instruct" not in model)
             else "text"
         )
         self.model_type = model_type if model_type else default_model_type
 
         if api_key:
             openai.api_key = api_key
-
+        api_base = base_url or api_base
         if api_base:
             if OPENAI_LEGACY:
                 openai.api_base = api_base
             else:
                 openai.base_url = api_base
+        if http_client:
+            openai.http_client = http_client
 
         self.kwargs = {
             "temperature": 0.0,
@@ -107,6 +122,12 @@ class GPT3(LM):
         raw_kwargs = kwargs
 
         kwargs = {**self.kwargs, **kwargs}
+        if "o1" in self.kwargs["model"]:
+            if "max_tokens" in kwargs:
+                max_tokens = kwargs.pop("max_tokens")
+                kwargs["max_completion_tokens"] = max_tokens
+            kwargs.pop("temperature")
+            
         if self.model_type == "chat":
             # caching mechanism requires hashable kwargs
             messages = [{"role": "user", "content": prompt}]
@@ -133,11 +154,11 @@ class GPT3(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):
-        """Handles retreival of GPT-3 completions whilst handling rate limiting and caching."""
+        """Handles retrieval of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
 
@@ -149,11 +170,11 @@ class GPT3(LM):
         return choice["text"]
 
     def __call__(
-        self,
-        prompt: str,
-        only_completed: bool = True,
-        return_sorted: bool = False,
-        **kwargs,
+            self,
+            prompt: str,
+            only_completed: bool = True,
+            return_sorted: bool = False,
+            **kwargs,
     ) -> list[dict[str, Any]]:
         """Retrieves completions from GPT-3.
 

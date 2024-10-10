@@ -1,0 +1,45 @@
+name: Update DSPy Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+
+jobs:
+  build-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies and build
+        run: |
+          cd docs
+          npm install
+          npm run build
+
+  update-docs-subtree:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Push docs to separate repo
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }}
+        with:
+          source-directory: 'docs'
+          destination-github-username: 'krypticmouse'
+          destination-repository-name: 'dspy-docs'
+          user-email: github-actions@github.com
+          target-branch: master

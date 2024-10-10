@@ -32,7 +32,7 @@ eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 Note that this teleprompter takes in the following parameters:
 
 * prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (i.e., dspy.settings.configure(lm=task_model)).
-* task_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (i.e., dspy.settings.configure(lm=task_model)).
+* task_model: The model used for running your task. When unspecified, defaults to the model set in settings (i.e., dspy.settings.configure(lm=task_model)).
 * metric: The task metric used for optimization.
 * num_candidates: The number of new prompts and sets of fewshot examples to generate and evaluate. Default=10.
 * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
@@ -361,6 +361,7 @@ class MIPRO(Teleprompter):
         requires_permission_to_run=True,
     ) -> dspy.Program:
         # Define ANSI escape codes for colors
+        RED = "\033[91m"
         YELLOW = "\033[93m"
         BLUE = "\033[94m"
         BOLD = "\033[1m"
@@ -400,6 +401,7 @@ class MIPRO(Teleprompter):
             {YELLOW}Awaiting your input...{ENDC}
         """)
 
+        print(f"""{RED}{BOLD}WARNING: MIPRO has been deprecated and replaced with MIPROv2.  MIPRO will be removed in a future release. {ENDC}""")
         print(user_message)
 
         sys.stdout.flush()  # Flush the output buffer to force the message to print

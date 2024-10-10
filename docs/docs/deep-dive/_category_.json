@@ -1,6 +1,6 @@
 {
     "label": "Deep Dive",
-    "position": 99999,
+    "position": 5,
     "link": {
       "type": "generated-index",
       "description": "DSPy introduces signatures (to abstract prompts), modules (to abstract prompting techniques), and optimizers that can tune the prompts (or weights) of modules."

@@ -81,13 +81,26 @@ Exporting DSPy programs is simply saving them as highlighted above!
 
 - **How do I search my own data?**
 
-Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embdeed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
+Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
 
 - **How do I turn off the cache? How do I export the cache?**
 
-You can turn off the cache by setting the [`DSP_CACHEBOOL`](https://github.com/stanfordnlp/dspy/blob/main/dsp/modules/cache_utils.py#L9) environment variable to `False`, which disables the `cache_turn_on` flag.
+From v2.5, you can turn off the cache by setting `cache` parameter in `dspy.LM` to `False`:
 
-Your local cache will be saved to the global env directory `os.environ["DSP_NOTEBOOK_CACHEDIR"]` which you can usually set to `os.path.join(repo_path, 'cache')` and export this cache from here.
+```python
+dspy.LM('openai/gpt-4o-mini',  cache=False)
+```
+
+Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here:
+```python
+os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
+```
+
+:::warning Important
+`DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
+:::
+
+In the AWS lambda deployment, you should disable both DSP_* and DSPY_*.
 
 
 ## Advanced Usage
@@ -134,7 +147,25 @@ Firstly, please refer to your LM/RM provider to ensure stable status or sufficie
 
 Additionally, try reducing the number of threads you are testing on as the corresponding servers may get overloaded with requests and trigger a backoff + retry mechanism.
 
-If all variables seem stable, you may be experiencing timeouts or backoff errors due to incorrect payload requests sent to the api providers. Please verify your arguments are compatible with the SDK you are interacting with. At times, DSPy may have hard-coded arguments that are not relevant for your compatible, in which case, please free to open a PR alerting this or comment out these default settings for your usage. 
+If all variables seem stable, you may be experiencing timeouts or backoff errors due to incorrect payload requests sent to the api providers. Please verify your arguments are compatible with the SDK you are interacting with. 
+
+You can configure backoff times for your LM/RM provider by setting `dspy.settings.backoff_time` while configuring your DSPy workflow. 
+
+```python
+dspy.settings.configure(backoff_time = ...)
+```
+
+Additionally, if you'd like to set individual backoff times for specific providers, you can do so through the DSPy context manager: 
+
+```python
+with dspy.context(backoff_time = ..):
+      dspy.OpenAI(...) # example
+
+with dspy.context(backoff_time = ..):
+      dspy.AzureOpenAI(...) # example
+```
+
+At times, DSPy may have hard-coded arguments that are not relevant for your compatible, in which case, please free to open a PR alerting this or comment out these default settings for your usage. 
 
 ## Contributing
 

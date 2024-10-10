@@ -2,12 +2,12 @@
 sidebar_position: 3
 ---
 
-# dsp.Cohere
+# dspy.Cohere
 
 ### Usage
 
 ```python
-lm = dsp.Cohere(model='command-nightly')
+lm = dspy.Cohere(model='command-nightly')
 ```
 
 ### Constructor

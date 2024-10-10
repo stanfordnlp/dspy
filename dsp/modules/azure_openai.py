@@ -1,13 +1,24 @@
 import functools
 import json
 import logging
-from typing import Any, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional, cast
 
 import backoff
-import openai
+
+try:
+    """
+    If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
+    """
+    import langfuse
+    from langfuse.openai import openai
+    logging.info(f"You are using Langfuse,version{langfuse.__version__}")
+except:
+    import openai
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
+
 
 try:
     OPENAI_LEGACY = int(openai.version.__version__[0]) == 0
@@ -37,6 +48,9 @@ def backoff_hdlr(details):
     )
 
 
+AzureADTokenProvider = Callable[[], str]
+
+
 class AzureOpenAI(LM):
     """Wrapper around Azure's API for OpenAI.
 
@@ -57,6 +71,7 @@ class AzureOpenAI(LM):
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
         system_prompt: Optional[str] = None,
+        azure_ad_token_provider: Optional[AzureADTokenProvider] = None,
         **kwargs,
     ):
         super().__init__(model)
@@ -75,6 +90,7 @@ class AzureOpenAI(LM):
             openai.api_key = api_key
             openai.api_type = "azure"
             openai.api_version = api_version
+            openai.azure_ad_token_provider = azure_ad_token_provider
 
             self.client = None
 
@@ -83,6 +99,7 @@ class AzureOpenAI(LM):
                 azure_endpoint=api_base,
                 api_key=api_key,
                 api_version=api_version,
+                azure_ad_token_provider=azure_ad_token_provider,
             )
 
             self.client = client
@@ -160,7 +177,7 @@ class AzureOpenAI(LM):
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):

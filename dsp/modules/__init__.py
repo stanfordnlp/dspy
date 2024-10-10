@@ -9,21 +9,24 @@ from .cache_utils import *
 from .clarifai import *
 from .cloudflare import *
 from .cohere import *
-from .colbertv2 import ColBERTv2
+from .colbertv2 import ColBERTv2, ColBERTv2RerankerLocal, ColBERTv2RetrieverLocal
 from .databricks import *
 from .dummy_lm import *
 from .google import *
-from .googlevertexai import *
+from .google_vertex_ai import *
 from .gpt3 import *
 from .groq_client import *
 from .hf import HFModel
 from .hf_client import Anyscale, HFClientTGI, Together
+from .llama import *
 from .mistral import *
 from .ollama import *
+from .multi_openai import MultiOpenAI
 from .premai import PremAI
 from .pyserini import *
 from .sbert import *
 from .sentence_vectorizer import *
 from .snowflake import *
+from .tensorrt_llm import TensorRTModel
 from .watsonx import *
-
+from .you import You

@@ -240,7 +240,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                 for i in range(len(dsp.settings.trace) - 1, -1, -1):
                                     trace_element = dsp.settings.trace[i]
                                     mod = trace_element[0]
-                                    if mod.signature == error_target_module:
+                                    if mod == error_target_module:
                                         error_state = e.state[i]
                                         dspy.settings.backtrack_to = mod
                                         break
@@ -248,7 +248,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                 dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
 
                             if dspy.settings.backtrack_to is None:
-                                dspy.logger.error("Specified module not found in trace")
+                                dspy.logger.error("Module not found in trace. If passing a DSPy Signature, please specify the intended module for the assertion (e.g., use `target_module = self.my_module(my_signature)` instead of `target_module =  my_signature`).")
 
                             # save unique feedback message for predictor
                             if error_msg not in dspy.settings.predictor_feedbacks.setdefault(
@@ -257,7 +257,11 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             ):
                                 dspy.settings.predictor_feedbacks[dspy.settings.backtrack_to].append(error_msg)
 
-                            output_fields = error_state[0].new_signature.output_fields
+                            # use `new_signature` if available (CoT)
+                            if hasattr(error_state[0], 'new_signature'):
+                                output_fields = error_state[0].new_signature.output_fields
+                            else:
+                                output_fields = error_state[0].signature.output_fields
                             past_outputs = {}
                             for field_name in output_fields.keys():
                                 past_outputs[field_name] = getattr(

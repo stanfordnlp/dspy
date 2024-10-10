@@ -3,6 +3,7 @@ from typing import Any, Optional
 import backoff
 
 from dsp.modules.lm import LM
+from dsp.utils.settings import settings
 
 try:
     import cohere
@@ -63,7 +64,7 @@ class Cohere(LM):
         self.kwargs = {
             "model": model,
             "temperature": 0.0,
-            "max_tokens": 150,
+            "max_tokens": 2000,
             "p": 1,
             "num_generations": 1,
             **kwargs,
@@ -85,6 +86,8 @@ class Cohere(LM):
         kwargs.pop("num_generations")
         if "n" in kwargs.keys():
             kwargs.pop("n")
+        if "stop" in kwargs.keys():
+            kwargs.pop("stop")
         response = self.co.chat(**kwargs)
 
         self.history.append(
@@ -101,7 +104,7 @@ class Cohere(LM):
     @backoff.on_exception(
         backoff.expo,
         (cohere_api_error),
-        max_time=1000,
+        max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
         giveup=giveup_hdlr,
     )

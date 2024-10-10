@@ -1,10 +1,11 @@
 import textwrap
-import pytest
-import pydantic
-from dspy import Signature, infer_prefix, InputField, OutputField
 from typing import List
 
+import pydantic
+import pytest
+
 import dspy
+from dspy import InputField, OutputField, Signature, infer_prefix
 from dspy.utils.dummies import DummyLM
 
 
@@ -181,6 +182,9 @@ def test_insantiating2():
 
 
 def test_multiline_instructions():
+    lm = DummyLM([{"output": "short answer"}])
+    dspy.settings.configure(lm=lm)
+
     class MySignature(Signature):
         """First line
         Second line
@@ -189,22 +193,89 @@ def test_multiline_instructions():
         output = OutputField()
 
     predictor = dspy.Predict(MySignature)
-
-    lm = DummyLM(["short answer"])
-    dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
 
-    assert lm.get_convo(-1) == textwrap.dedent("""\
-        First line
-        Second line
-            Third line
-        
-        ---
-        
-        Follow the following format.
-        
-        Output: ${output}
-        
-        ---
-        
-        Output: short answer""")
+
+def test_replaced_by_replace_context_manager():
+    class SignatureOne(Signature):
+        input1 = InputField()
+        output = OutputField()
+
+    class SignatureTwo(Signature):
+        input2 = InputField()
+        output = OutputField()
+
+    with SignatureOne.replace(SignatureTwo, validate_new_signature=False):
+        # assert SignatureOne.input_fields has been replaced with SignatureTwo.input_fields
+        assert "input2" in SignatureOne.input_fields
+    # after the context manager, the original input_fields should be restored
+    assert SignatureOne.input_fields["input1"].json_schema_extra["prefix"] == "Input 1:"
+
+
+def test_multiple_replaced_by_update_signatures():
+    class SignatureOne(Signature):
+        input1 = InputField()
+        output = OutputField()
+
+    class SignatureTwo(Signature):
+        input2 = InputField()
+        output = OutputField()
+
+    class SignatureThree(Signature):
+        input3 = InputField()
+        output = OutputField()
+
+    class SignatureFour(Signature):
+        input4 = InputField()
+        output = OutputField()
+
+    signature_map = {
+        SignatureOne: SignatureThree,
+        SignatureTwo: SignatureFour,
+    }
+    with dspy.update_signatures(signature_map, validate_new_signature=False):
+        assert "input3" in SignatureOne.input_fields
+        assert "input4" in SignatureTwo.input_fields
+    assert "input1" in SignatureOne.input_fields
+    assert "input2" in SignatureTwo.input_fields
+
+
+def test_dump_and_load_state():
+    class CustomSignature(dspy.Signature):
+        """I am just an instruction."""
+
+        sentence = dspy.InputField(desc="I am an innocent input!")
+        sentiment = dspy.OutputField()
+
+    state = CustomSignature.dump_state()
+    expected = {
+        "instructions": "I am just an instruction.",
+        "fields": [
+            {
+                "prefix": "Sentence:",
+                "description": "I am an innocent input!",
+            },
+            {
+                "prefix": "Sentiment:",
+                "description": "${sentiment}",
+            },
+        ],
+    }
+    assert state == expected
+
+    class CustomSignature2(dspy.Signature):
+        """I am a malicious instruction."""
+
+        sentence = dspy.InputField(desc="I am an malicious input!")
+        sentiment = dspy.OutputField()
+
+    assert CustomSignature2.dump_state() != expected
+    # Overwrite the state with the state of CustomSignature.
+    loaded_signature = CustomSignature2.load_state(state)
+    assert loaded_signature.instructions == "I am just an instruction."
+    # After `load_state`, the state should be the same as CustomSignature.
+    assert loaded_signature.dump_state() == expected
+    # CustomSignature2 should not have been modified.
+    assert CustomSignature2.instructions == "I am a malicious instruction."
+    assert CustomSignature2.fields["sentence"].json_schema_extra["desc"] == "I am an malicious input!"
+    assert CustomSignature2.fields["sentiment"].json_schema_extra["prefix"] == "Sentiment:"

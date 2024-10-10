@@ -82,14 +82,14 @@ class MilvusRM(dspy.Retrieve):
         self.collection_name = collection_name
 
         self.embedding_function = embedding_function or openai_embedding_function
-        self.top_k = k
+        self.k = k
 
     def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
         if isinstance(query_or_queries, str):
             query_or_queries = [query_or_queries]
         query_embeddings = self.embedding_function(query_or_queries)
 
-        k = k or self.top_k
+        k = k or self.k
 
         milvus_res = self.milvus_client.search(
             collection_name=self.collection_name,
@@ -104,4 +104,4 @@ class MilvusRM(dspy.Retrieve):
         sorted_passages = sorted(
             passage_scores.items(), key=lambda x: x[1], reverse=True,
         )[:k]
-        return dspy.Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])
+        return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]

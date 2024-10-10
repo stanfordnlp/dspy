@@ -1,5 +1,6 @@
 import copy
 import random
+from functools import reduce
 
 from langchain_core.pydantic_v1 import Extra
 from langchain_core.runnables import Runnable
@@ -31,7 +32,10 @@ class ShallowCopyOnly:
     def __deepcopy__(self, memo): return ShallowCopyOnly(copy.copy(self.obj))
 
 
-class LangChainPredict(Predict, Runnable): #, RunnableBinding):
+class LangChainPredictMetaClass(type(Predict), type(Runnable)):
+    pass
+
+class LangChainPredict(Predict, Runnable, metaclass=LangChainPredictMetaClass):
     class Config: extra = Extra.allow  # Allow extra attributes that are not defined in the model
 
     def __init__(self, prompt, llm, **config):
@@ -54,7 +58,8 @@ class LangChainPredict(Predict, Runnable): #, RunnableBinding):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, save_verbose=False):
+        """save_verbose is set as a default argument to support the inherited Parameter interface for dump_state"""
         state_keys = ["lm", "traces", "train", "demos"]
         return {k: getattr(self, k) for k in state_keys}
 
@@ -159,3 +164,29 @@ class LangChainModule(dspy.Module):
     def invoke(self, d, *args, **kwargs):
         return self.forward(**d).output
 
+    def reset_copy(self):
+        """Override `reset_copy()` to skip parts that cannot be deep copied."""
+        if self.chain is None:
+            obj = copy.deepcopy(self)
+        else:
+            chain = self.chain
+            steps = []
+            for step in chain.steps:
+                if isinstance(step, LangChainPredict):
+                    # Only copy the LangChainPredict object.
+                    steps.append(copy.deepcopy(step))
+                else:
+                    steps.append(step)
+
+            chain_copy = reduce(lambda x, y: x | y, steps)
+            # Temporarily remove the chain from `self` instance for deep copying.
+            self.chain = None
+            obj = copy.deepcopy(self)
+            obj.chain = chain_copy
+            # Put back the chain to `self` instance.
+            self.chain = chain
+
+        for param in obj.parameters():
+            param.reset()
+
+        return obj
