@@ -109,6 +109,7 @@ class Predict(Module, Parameter):
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+        # print(dsp.settings)
         assert lm is not None, "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.

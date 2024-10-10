@@ -116,6 +116,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         model_config_data.update(kwargs.get("hyperparameters", {}))
         
         model_config_data["model_id"] = self.kwargs["model"]
+
         custom_modifications = {
             "model_id": self.kwargs["model"],
             "train_path": train_path,
@@ -123,7 +124,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
                 "provider": "wandb",
             },
             "num_checkpoints_to_keep": 10
-            # "output_dir": kwargs.get("output_dir", "/mnt/cluster_storage/dspy/finetuning/artifacts/")
         }
         if kwargs.get("output_dir", None):
             custom_modifications["output_dir"] = kwargs["output_dir"]
@@ -235,7 +235,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
 
             s3_path = os.path.join(storage, path.split("/")[-1])
             print(f"Uploading {name} data to S3 at {s3_path}")
-            # ray.data.read_json(path).write_json(s3_path)
             # NOTE: trying a local copy for now
             if s3_path[:2] == "s3":
                 os.system(f"aws s3 cp {path} {s3_path}")
@@ -255,7 +254,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         os.system(f"anyscale job submit --config-file {finetuning_job_path}")
         return "job.id"
 
-    # TODO
+    # TODO: Straight up out of scope lmao
     def validate_hyperparameters(self, hyperparameters: dict[str, Any]) -> bool:
         """Validate the hyperparameters before starting training. Only checks the hyperparameters that are allowed in the OpenAI API.
         More information on hyperparameter validation can be found here: https://platform.openai.com/docs/api-reference/fine-tuning/create#fine-tuning-create-hyperparameters
@@ -265,24 +264,6 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
 
             Returns:
                 bool: Whether the hyperparameters are valid."""
-        def is_positive_number(value, convert_func):
-            try:
-                return convert_func(value) > 0
-            except (ValueError, TypeError):
-                return False
-
-        parameters = {
-            "batch_size": int,
-            "n_epochs": int,
-            "learning_rate_multiplier": float,
-        }
-
-        for param, convert_func in parameters.items():
-            value = hyperparameters.get(param, None)
-            if value and not is_positive_number(value, convert_func):
-                print(
-                    f"Invalid {param}: Must be a positive {convert_func.__name__}.")
-                return False
 
         return True
     
@@ -322,7 +303,8 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         else:
             raise RuntimeError("Job not completed yet, cannot retrieve model")
     
-    # TODO
+    # TODO 
+    # Note: working here
     def start_training(self, future: Future['TrainableOpenAI'], train_path: str, eval_path: Optional[str], method: TrainingMethod, **kwargs):
         """
         Handles the fine-tuning process for an OpenAIModel instance.
@@ -337,11 +319,12 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
                 raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
 
             # Convert the data from prompt completion to OAI compatible messages
+            # This can be slightly flexible to accept json or jsonl and to check if the key starts with "user/assistant/system" or if first key is "messages"
             train_dataset = self._format_data_for_vanilla_finetuning(train_path)
             val_dataset = self._format_data_for_vanilla_finetuning(eval_path) if eval_path else None
             
             # This is where we validate the yaml + kwargs combo
-            if not self._verify_training_arguments(train_dataset, val_dataset, **kwargs):
+            if not self._verify_datasets(train_dataset, val_dataset, **kwargs):
                 print("Unable to verify arguments")
                 raise RuntimeError("Unable to verify argument")
             
@@ -383,7 +366,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         This includes:
         - Convert the data to the required format
         - Validate the data
-        - Load the data
+        - Submit the data to the cloud storage
         - Start the remote training
         - Wait for the training to complete
         - Retrieve the trained model
@@ -398,3 +381,72 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             Future[TrainableLM]: A Future object that will hold the fine-tuned model
         """
         return super().get_finetune(train_path=train_path, eval_path=eval_path, method=method, **kwargs)
+
+
+# TODO: This should be moved into the TrainableAnyscaleLM class
+
+def copy_lora_weights(storage_uri, model_info, job_id):
+    """
+    Copies LoRA weights from a source GCS bucket to a destination folder.
+    
+    Args:
+    storage_uri (str): The GCS URI of the source bucket and folder.
+    model_info (dict): A dictionary containing model information, including 'base_model_id'.
+    job_id (str): The ID of the job associated with the LoRA weights.
+    
+    Returns:
+    list: A list of copied model names.
+    """
+    try:
+        from google.cloud import storage
+
+        # Initialize the Google Cloud Storage client
+        storage_client = storage.Client()
+
+        # Parse the storage_uri to get bucket name and source folder
+        bucket_name = storage_uri.split('/')[2]
+        source_folder = '/'.join(storage_uri.split('/')[3:-1])
+        print(f"Source folder: {source_folder}")
+
+        # Get the bucket
+        bucket = storage_client.bucket(bucket_name)
+
+        # List all subfolders in the source folder
+        blobs = bucket.list_blobs(prefix=source_folder)
+
+        subfolders = set()
+        for blob in blobs:
+            if '/' in blob.name[len(source_folder):]:
+                subfolder = blob.name.split('/')[:-1]
+                subfolders.add('/'.join(subfolder))
+
+        # Construct the destination folder path
+        base_model_id = model_info["base_model_id"]
+        lora_dynamic_path = f"dspy/lora_weights/{job_id}/{base_model_id}"
+
+        model_names = []
+        # Copy each subfolder to the main storage folder
+        for subfolder in subfolders:
+            subfolder_name = subfolder.split('/')[-1]
+            destination_folder = f"{lora_dynamic_path}:{subfolder_name}"
+            if subfolder_name.startswith("epoch"):
+                model_names.append("/".join(destination_folder.split("/")[-2:]))
+            else:
+                continue
+            
+            # List all blobs in the subfolder
+            subfolder_blobs = bucket.list_blobs(prefix=subfolder)
+            
+            # Copy each blob to the destination folder
+            for blob in subfolder_blobs:
+                source_blob = bucket.blob(blob.name)
+                destination_blob_name = f"{destination_folder}/{blob.name.split('/')[-1]}"
+                bucket.copy_blob(source_blob, bucket, destination_blob_name)
+                print(f"Copied {source_blob.name} to {destination_blob_name}")
+
+        print(f"All subfolders copied to: gs://{bucket_name}/{lora_dynamic_path}")
+        return model_names
+    
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        raise e

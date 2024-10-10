@@ -30,9 +30,18 @@ class Ensemble(Teleprompter):
 
             def forward(self, *args, **kwargs):
                 programs = random.sample(self.programs, size) if size else self.programs
-                outputs = [prog(*args, **kwargs) for prog in programs]
+                outputs = []
+                for prog in programs:
+                    try:
+                        outputs.append(prog(*args, **kwargs))
+                    except Exception as e:
+                        print(f"Error for example in dev set: \t\t {e}")
+                        pass
 
                 if reduce_fn:
+                    # print(f"outputs: {outputs}")
+                    if len(outputs) == 0:
+                        return dspy.Prediction(label="none")
                     return reduce_fn(outputs)
 
                 return outputs
