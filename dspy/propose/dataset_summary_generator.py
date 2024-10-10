@@ -11,18 +11,22 @@ class ObservationSummarizer(dspy.Signature):
 class DatasetDescriptor(dspy.Signature):
     ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
     """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
-    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
+    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative."""
+    """You might be provided with the user intent for this dataset, in which case, use it to guide your observations.""")
     
     examples = dspy.InputField(desc="Sample data points from the dataset")
+    user_intent = dspy.InputField(desc="The intent of the user with this dataset. If it's not provided, you can use the examples to infer this.")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed")
 
 class DatasetDescriptorWithPriorObservations(dspy.Signature):
     ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
     """I will also provide you with a few observations I have already made.  Please add your own observations or if you feel the observations are comprehensive say 'COMPLETE' """
     """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
-    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
+    """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative"""
+    """You might be provided with the user intent for this dataset, in which case, use it to guide your observations.""")
     
     examples = dspy.InputField(desc="Sample data points from the dataset")
+    user_intent = dspy.InputField(desc="The intent of the user with this dataset. If it's not provided, you can use the examples to infer this.")
     prior_observations = dspy.InputField(desc="Some prior observations I made about the data")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
 
@@ -44,12 +48,12 @@ def order_input_keys_in_string(unordered_repr):
 
     return ordered_repr
 
-def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_file=None, verbose=False):
+def create_dataset_summary(trainset, view_data_batch_size, prompt_model, user_intent=None, log_file=None, verbose=False):
     if verbose: print("\nBootstrapping dataset summary (this will be used to generate instructions)...")
     upper_lim = min(len(trainset), view_data_batch_size)
     prompt_model = prompt_model if prompt_model else dspy.settings.lm
     with dspy.settings.context(lm=prompt_model):
-        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=order_input_keys_in_string(trainset[0:upper_lim].__repr__()))
+        observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=order_input_keys_in_string(trainset[0:upper_lim].__repr__()), user_intent=user_intent)
     observations = observation["observations"]
 
     if log_file:
@@ -66,7 +70,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             if verbose: print(f"b: {b}")
             upper_lim = min(len(trainset), b+view_data_batch_size)
             with dspy.settings.context(lm=prompt_model):
-                output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()))
+                output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()), user_intent=user_intent)
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
                 skips += 1
                 if skips >= 5:
