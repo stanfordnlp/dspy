@@ -25,7 +25,6 @@ def test_simple():
     dspy.settings.configure(lm=lm)
 
     question = hard_question(topic="Physics")
-    lm.inspect_history(n=2)
 
     assert question == expected
 
@@ -40,7 +39,6 @@ def test_list_output():
     dspy.settings.configure(lm=lm)
 
     question = hard_questions(topics=["Physics", "Music"])
-    lm.inspect_history(n=2)
 
     assert question == expected
 
@@ -221,7 +219,7 @@ def test_bootstrap_effectiveness():
     teacher = SimpleModule()
     assert student.output.predictor.signature.equals(teacher.output.predictor.signature)
 
-    lm = DummyLM(["blue", "Ring-ding-ding-ding-dingeringeding!"], follow_examples=True)
+    lm = DummyLM([], follow_examples=True)
     dspy.settings.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
@@ -719,7 +717,6 @@ def test_annotated_validator():
     dspy.settings.configure(lm=lm)
 
     m = TypedPredictor(MySignature)(n=2).next_square
-    lm.inspect_history(n=2)
 
     assert m == 4
 
@@ -738,7 +735,6 @@ def test_annotated_validator_functional():
     dspy.settings.configure(lm=lm)
 
     m = next_square(n=2)
-    lm.inspect_history(n=2)
 
     assert m == 4
 
