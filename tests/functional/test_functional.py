@@ -454,7 +454,7 @@ def test_multiple_outputs_int():
 
 
 def test_list_inputs_and_outputs():
-    lm = DummyLM([{"output": ["0", "1", "2"]}])
+    lm = DummyLM([{"output": '["0", "1", "2"]'}])
     dspy.settings.configure(lm=lm)
 
     test = TypedPredictor("input:list[str] -> output:list[str]")
