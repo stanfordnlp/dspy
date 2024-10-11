@@ -13,10 +13,6 @@ from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
 
-from . import evaluate
-
-from . import evaluate
-
 settings = dsp.settings
 
 # LM = dsp.LM
@@ -59,9 +55,6 @@ AWSMeta = dsp.AWSMeta
 Watsonx = dsp.Watsonx
 PremAI = dsp.PremAI
 
-# VLLMOfflineEngine  = dsp.VLLMOfflineEngine
-# VLLMOfflineEngine2 = dsp.VLLMOfflineEngine2
-# VLLMOfflineEngine3 = dsp.VLLMOfflineEngine3
 You = dsp.You
 
 configure = settings.configure
