@@ -237,11 +237,7 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
                 del completion[field_names[field_idx_]]
 
         # Recurse with greedy decoding.
-        new_kwargs = {
-            **kwargs,
-            "n": 1,
-            "temperature": 0.0,
-        }
+        new_kwargs = {**kwargs, "n": 1, "temperature": 0.0}
 
         assert max_depth > 0
         return new_generate(lm, signature, completion, max_depth=max_depth - 1, **new_kwargs)
