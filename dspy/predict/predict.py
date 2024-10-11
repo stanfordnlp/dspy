@@ -263,7 +263,7 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         demos=demos,
         inputs=inputs,
         _parse_values=_parse_values,
-        max_extensions=dspy.settings.max_extensions or 1,
+        max_extensions=dspy.settings.max_extensions or 0,
     )
 
 

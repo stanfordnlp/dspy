@@ -20,11 +20,11 @@ def extend_generation(func):
         func: The function to decorate - should be the __call__ method of the Adapter class
     """
 
-    def wrapper(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True, max_extensions=1):
+    def wrapper(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True, max_extensions=0):
         incomplete_generations = [inputs]
         inner_lm_kwargs = deepcopy(lm_kwargs)
         values = []
-        for _ in range(max_extensions):
+        for _ in range(max_extensions + 1):
             still_incomplete_generations = []
             for input_ in incomplete_generations:
                 parsed_generations = func(
