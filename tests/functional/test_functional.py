@@ -453,7 +453,7 @@ def test_multiple_outputs_int():
     assert output == [0, 1, 2]
 
 
-def test_list_outputs():
+def test_list_inputs_and_outputs():
     lm = DummyLM([{"output": ["0", "1", "2"]}])
     dspy.settings.configure(lm=lm)
 
