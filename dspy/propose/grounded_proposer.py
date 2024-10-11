@@ -187,6 +187,7 @@ class GenerateModuleInstruction(dspy.Module):
         # Summarize the program
         program_description = "Not available"
         module_code = "Not provided"
+        module_description = "Not provided"
         if self.program_aware:
             try:
                 program_description = strip_prefix(
@@ -209,17 +210,17 @@ class GenerateModuleInstruction(dspy.Module):
                         outputs.append(field_name)
 
                 module_code = f"{program.predictors()[pred_i].__class__.__name__}({', '.join(inputs)}) -> {', '.join(outputs)}"
+
+                module_description = self.describe_module(
+                    program_code=self.program_code_string,
+                    program_description=program_description,
+                    program_example=task_demos,
+                    module=module_code,
+                    max_depth=10,
+                ).module_description
             except:
                 if self.verbose: print("Error getting program description. Running without program aware proposer.")
                 self.program_aware = False
-
-        module_description = self.describe_module(
-            program_code=self.program_code_string,
-            program_description=program_description,
-            program_example=task_demos,
-            module=module_code,
-            max_depth=10,
-        ).module_description
 
         # Generate an instruction for our chosen module
         if self.verbose: print(f"task_demos {task_demos}")
