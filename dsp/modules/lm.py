@@ -219,9 +219,10 @@ class TrainableLM(LM, ABC):
 
         # Input verification
         assert method in self.SUPPORTED_TRAINING_METHODS
-        verify_training_method_data_format(method, data_path=train_path)
-        if eval_path:
-            verify_training_method_data_format(method, data_path=eval_path)
+        # Note: Commenting this out because we do not get our data in prompt completion format
+        # verify_training_method_data_format(method, data_path=train_path)
+        # if eval_path:
+        #     verify_training_method_data_format(method, data_path=eval_path)
 
         # Create new model that will eventually be obtained through
         # future.result() when its "start_training" method completes its
@@ -263,3 +264,12 @@ class TrainableLM(LM, ABC):
         lname = self.__class__.__name__
         err_msg = f"{lname} does not implement the 'stop_training' method."
         raise NotImplementedError(err_msg)
+
+def read_jsonl(filename):
+    with open(filename, "r") as f:
+        return [ujson.loads(line) for line in f]
+
+def write_jsonl(filename, data):
+    with open(filename, "w") as f:
+        for item in data:
+            f.write(ujson.dumps(item) + "\n")

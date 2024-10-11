@@ -1,4 +1,5 @@
 from pyexpat import model
+import dsp
 from dsp.modules.lm import TrainableLM, TrainingMethod
 from dsp.modules.multi_openai import MultiOpenAI
 from dsp.modules.trainable_openai import openai_data_validation, check_message_lengths, estimate_cost
@@ -47,20 +48,15 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         assert self.provider == "anyscale", "You must use an Anyscale model with this class."
         self.fine_tuning_file_ids = {}
 
-    def _verify_datasets(self, dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]], **kwargs) -> bool:
+    def _verify_datasets(self, dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]]) -> bool:
         """Verify the training arguments before starting training.
         This will look for a yml template and/or list of hyperparameters and fill in kwargs with any missing values.
         The current implementation will only allow for overriding the default yaml template for the current LM model.
 
         Args:
             dataset: The dataset to be used for training.
-            valset: The validation dataset to be used for training.
-            kwargs: The hyperparameters to be used for training.
-                needs to contain:
-                    A yaml template to use
-                    AND/OR
-                    A list of hyperparameters to override the default yaml template for the current LM model
-            """
+            valset: The validation dataset to be used to calculate validation loss.
+        """
         def validate_dataset(name, data: dict[str, Any]) -> bool:
             dataset_validation = openai_data_validation(data)
 
@@ -284,21 +280,27 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
             **kwargs: Additional arguments for fine-tuning.
         """
         try:
+            print("Starting training process...")
             if method not in self.SUPPORTED_TRAINING_METHODS:
                 raise NotImplementedError(f"TrainableOpenAI can only support {TrainingMethod.SFT} for the time being")
 
+            print("Reading and validating datasets...")
             # Convert the data from prompt completion to OAI compatible messages
             # This can be slightly flexible to accept json or jsonl and to check if the key starts with "user/assistant/system" or if first key is "messages"
-            
+            train_dataset = read_jsonl(train_path)
+            val_dataset = read_jsonl(eval_path) if eval_path else None
 
-            # This is where we validate the yaml + kwargs combo
-            if not self._verify_datasets(train_dataset, val_dataset, **kwargs):
-                print("Unable to verify arguments")
+            # This is where we validate the yaml
+            if not self._verify_datasets(train_dataset, val_dataset):
+                print("Error: Unable to verify arguments")
                 raise RuntimeError("Unable to verify argument")
             
+            # TODO: Validate kwargs
+
             if method != TrainingMethod.SFT:
                 raise NotImplementedError("Only SFT finetuning is supported at the moment.")
 
+            print("Converting data to JSONL format...")
             # Convert data into jsonl format
             for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
                 if not (path and dataset):
@@ -307,28 +309,39 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
                     for item in dataset:
                         f.write(ujson.dumps(item) + "\n")
 
+            print("Submitting data to remote storage...")
             remote_train_path, remote_eval_path = self._submit_data(train_path=train_path, eval_path=eval_path)
+            print(f"Data submitted. Remote train path: {remote_train_path}, Remote eval path: {remote_eval_path}")
+
+            print("Generating configuration files...")
             _, compute_config = self._generate_config_files(train_path=remote_train_path, eval_path=remote_eval_path, **kwargs)
             
+            print("Starting remote training...")
             # Start the remote training
             job_id = self._start_remote_training(compute_config=compute_config, **kwargs)
             self.fine_tuning_job_id = job_id
+            print(f"Remote training started. Job ID: {job_id}")
+
+            print("Waiting for training to complete...")
             # Wait for the training to complete
             self.wait_for_training()
+            print("Training completed.")
 
-            # # Retrieve the trained model and return a copy
-            # TODO: Add this back; I think I will need to copy the lora weights into the dynamic serving path
-            # self.retrieve_trained_model_client()
-            if job_id:
-                model_info = anyscale.llm.model.get(job_id=job_id).to_dict()
-                # print(model_info)
+            print("Retrieving model information...")
+            model_info = anyscale.llm.model.get(job_id=job_id).to_dict()
+            print(f"Model info retrieved: {model_info}")
 
             storage_uri = model_info["storage_uri"]
-            copy_lora_weights(storage_uri, model_info, job_id)
+            print(f"Copying LoRA weights from {storage_uri}...")
+            model_names = copy_lora_weights(storage_uri, model_info, job_id)
+            print(f"LoRA weights copied. Model names: {model_names}")
 
-            future.set_result(self)
+            print("Setting result in future object...")
+            future.set_result(model_names)
+            print("Training process completed successfully.")
 
         except Exception as e:
+            print(f"Error occurred during training: {str(e)}")
             future.set_exception(e)
 
     def wait_for_training(self):
