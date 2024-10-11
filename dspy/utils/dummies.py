@@ -172,7 +172,6 @@ class DummyLM(LM):
 
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
-            print("FIELD NAMES AND VALUES", field_names_and_values)
             return format_fields(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
