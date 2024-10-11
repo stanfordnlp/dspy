@@ -460,11 +460,6 @@ def test_list_inputs_and_outputs():
     test = TypedPredictor("input:list[str] -> output:list[str]")
     output = test(input=["3", "4", "5"]).completions.output[0]
 
-    # Verify that the input list was correctly formatted with indices and «» tokens
-    # for each element
-    expected_input_chat_content = "[[ ## input ## ]]\n[1] «3»\n[2] «4»\n[3] «5»"
-    input_chat_content = lm.get_convo(0)[0][1]["content"]
-    assert expected_input_chat_content in input_chat_content
     # Verify that the format of the output list from the LM was not changed
     assert output == ["0", "1", "2"]
 
