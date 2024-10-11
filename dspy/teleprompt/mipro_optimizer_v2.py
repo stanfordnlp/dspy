@@ -357,13 +357,15 @@ class MIPROv2(Teleprompter):
 
         print(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
 
+        zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
+        
         try:
             demo_candidates = create_n_fewshot_demo_sets(
                 student=program,
                 num_candidate_sets=self.num_candidates,
                 trainset=trainset,
-                max_labeled_demos=self.max_labeled_demos,
-                max_bootstrapped_demos=self.max_bootstrapped_demos,
+                max_labeled_demos= LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_labeled_demos,
+                max_bootstrapped_demos=BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_bootstrapped_demos,
                 metric=self.metric,
                 max_errors=self.max_errors,
                 teacher_settings=self.teacher_settings,
