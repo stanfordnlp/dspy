@@ -239,14 +239,14 @@ def sandwich_idea_signature():
     return SandwichIdea
 
 
-def test_max_extension_1_no_extension(SandwichIdea):
+def test_max_extension_0_no_extension(SandwichIdea):
     lm = DummyLM(
         [
             {"bread": "whole wheat", "protein": "turkey", "fat": "avocado"},
             {"garnish": "tomato", "sauce": "mustard"},
         ]
     )
-    dspy.settings.configure(lm=lm, max_extensions=1)
+    dspy.settings.configure(lm=lm)
 
     with pytest.raises(ValueError):
         Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
