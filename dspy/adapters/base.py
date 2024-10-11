@@ -24,7 +24,7 @@ def extend_generation(func):
         incomplete_generations = [inputs]
         inner_lm_kwargs = deepcopy(lm_kwargs)
         values = []
-        for _ in range(max_extensions + 1):
+        for i in range(max_extensions + 1):
             still_incomplete_generations = []
             for input_ in incomplete_generations:
                 parsed_generations = func(
@@ -32,6 +32,10 @@ def extend_generation(func):
                 )
                 for value in parsed_generations:
                     value = update_output_with_keys_from_input(signature, input_, value)
+                    # if no output fields are generated, and this is the first generation, raise an error
+                    # as the model is not generating any correctly formatted outputs
+                    if len(value) == 0 and i == 0:
+                        raise ValueError("No output values generated - check the input data and signature.")
                     if set(value.keys()) != set(signature.output_fields.keys()):
                         still_incomplete_generations.append({**input_, **value})
                     else:
