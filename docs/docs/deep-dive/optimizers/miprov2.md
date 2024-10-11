@@ -6,6 +6,7 @@
    - [Setting up a Sample Pipeline](#setting-up-a-sample-pipeline)
    - [Optimizing with MIPROv2](#optimizing-with-miprov2)
    - [Optimizing instructions only with MIPROv2 (0-Shot)](#optimizing-instructions-only-with-miprov2-0-shot)
+   - [Optimizing with MIPROv2 (Advanced)](#optimizing-with-miprov2-advanced)
 3. [Parameters](#parameters)
    - [Initialization Parameters](#initialization-parameters)
    - [Compile Method Specific Parameters](#compile-method-specific-parameters)
@@ -69,7 +70,69 @@ evaluate(program, devset=devset[:])
 Now we have the baseline pipeline ready to use, so let's try using the `MIPROv2` optimizer to improve our pipeline's performance!
 
 ### Optimizing with `MIPROv2`
-Here we show how to import, initialize, and compile our program with optimized few-shot examples and instructions using `MIPROv2`.
+To get started with `MIPROv2`, we'd recommend using the `auto` flag, starting with a `light` optimization run. This will set up hyperparameters for you to do a light optimization run on your program.
+
+```python
+# Import the optimizer
+from dspy.teleprompt import MIPROv2
+
+# Initialize optimizer
+teleprompter = MIPROv2(
+    metric=gsm8k_metric,
+    auto="light", # Can choose between light, medium, and heavy optimization runs
+)
+
+# Optimize program
+print(f"Optimizing program with MIPRO...")
+optimized_program = teleprompter.compile(
+    program.deepcopy(),
+    trainset=trainset,
+    max_bootstrapped_demos=3,
+    max_labeled_demos=4,
+    requires_permission_to_run=False,
+)
+
+# Save optimize program for future use
+optimized_program.save(f"mipro_optimized")
+
+# Evaluate optimized program
+print(f"Evluate optimized program...")
+evaluate(optimized_program, devset=devset[:])
+```
+
+#### Optimizing instructions only with `MIPROv2` (0-Shot)
+
+In some cases, we may want to only optimize the instruction, rather than including few-shot examples in the prompt. The code below demonstrates how this can be done using `MIPROv2`. Note that the key difference involves setting `max_labeled_demos` and `max_bootstrapped_demos` to zero.
+```python
+# Import the optimizer
+from dspy.teleprompt import MIPROv2
+
+# Initialize optimizer
+teleprompter = MIPROv2(
+    metric=gsm8k_metric,
+    auto="light", # Can choose between light, medium, and heavy optimization runs
+)
+
+# Optimize program
+print(f"Optimizing zero-shot program with MIPRO...")
+zeroshot_optimized_program = teleprompter.compile(
+    program.deepcopy(),
+    trainset=trainset,
+    max_bootstrapped_demos=0, # ZERO FEW-SHOT EXAMPLES
+    max_labeled_demos=0, # ZERO FEW-SHOT EXAMPLES
+    requires_permission_to_run=False,
+)
+
+# Save optimize program for future use
+zeroshot_optimized_program.save(f"mipro_zeroshot_optimized")
+
+# Evaluate optimized program
+print(f"Evluate optimized program...")
+evaluate(zeroshot_optimized_program, devset=devset[:])
+```
+
+#### Optimizing with `MIPROv2` (advanced)
+Once you've gotten a feel for using `MIPROv2` with `auto` settings, you may want to experiment with setting hyperparameters yourself to get the best results. The code below shows an example of how you can go about this. A full description of each parameter can be found in the section below.
 
 ```python
 # Import the optimizer
@@ -80,8 +143,9 @@ teleprompter = MIPROv2(
     metric=gsm8k_metric,
     num_candidates=7,
     init_temperature=0.5,
+    max_bootstrapped_demos=3,
+    max_labeled_demos=4,
     verbose=False,
-    num_threads=4,
 )
 
 # Optimize program
@@ -89,8 +153,6 @@ print(f"Optimizing program with MIPRO...")
 optimized_program = teleprompter.compile(
     program.deepcopy(),
     trainset=trainset,
-    max_bootstrapped_demos=3,
-    max_labeled_demos=4,
     num_trials=15,
     minibatch_size=25,
     minibatch_full_eval_steps=10,
@@ -106,75 +168,42 @@ print(f"Evluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
-### Optimizing instructions only with `MIPROv2` (0-Shot)
-
-In some cases, we may want to only optimize the instruction, rather than including few-shot examples in the prompt. The code below demonstrates how this can be done using `MIPROv2`. Note that the key difference involves setting `max_labeled_demos` and `max_bootstrapped_demos` to zero.
-```python
-# Import optimizer
-from dspy.teleprompt import MIPROv2
-
-# Initialize optimizer 
-teleprompter = MIPROv2(
-    metric=gsm8k_metric,
-    num_candidates=7,
-    init_temperature=0.5,
-    verbose=False,
-    num_threads=4,
-)
-
-# Perform optimization
-print(f"Optimizing program with MIPRO (0-Shot)...")
-zeroshot_optimized_program = teleprompter.compile(
-    program.deepcopy(),
-    trainset=trainset,
-    max_bootstrapped_demos=0, # setting demos to 0 for 0-shot optimization
-    max_labeled_demos=0,
-    num_trials=15,
-    minibatch_size=25,
-    minibatch_full_eval_steps=10,
-    minibatch=False, 
-    requires_permission_to_run=False,
-)
-
-
-zeroshot_optimized_program.save(f"mipro_0shot_optimized")
-
-print(f"Evaluate optimized program...")
-evaluate(zeroshot_optimized_program, devset=devset[:])
-```
-
 ## Parameters
 
 ### Initialization Parameters
 
 | Parameter            | Type         | Default                                              | Description                                                                                                                  |
 |----------------------|--------------|------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| `metric`           | `dspy.metric`       | N/A - Required                                                 | The evaluation metric used to optimize the task model.                                                                       |
+| `metric`           | `dspy.metric`       | **Required**                                                 | The evaluation metric used to optimize the task model.                                                                       |
 | `prompt_model`     | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for prompt generation.                                                                                            |
 | `task_model`       | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for task execution.                                                                                               |
+| `auto`       | `Optional[str]`       | None                        | If set to `light`, `medium`, or `heavy`, this will automatically configure the following hyperparameters: `num_candidates`, `num_trials`, `minibatch`, and will also cap the size of `valset` up to 100, 300, and 1000 for `light`, `medium`, and `heavy` runs respectively.                                                            |
 | `num_candidates`   | `int`      | `10`                                                   | Number of candidate instructions & few-shot examples to generate and evaluate for each predictor. If `num_candidates=10`, this means for a 2 module LM program we'll be optimizing over 10 candidates x 2 modules x 2 variables (few-shot ex. and instructions for each module)= 40 total variables. Therfore, if we increase `num_candidates`, we will probably want to increase `num_trials` as well (see Compile parameters).                                                                          |
 | `num_threads`      | `int`      |  `6`                                       | Threads to use for evaluation.                                                                                               |
 | `max_errors`       | `int`      | `10`                                                 | Maximum errors during an evaluation run that can be made before throwing an Exception.                                       |
 | `teacher_settings` | `dict`       | `{}`                                                 | Settings to use for the teacher model that bootstraps few-shot examples. An example dict would be `{lm=<dspy.LM object>}`. If your LM program with your default model is struggling to bootstrap any examples, it could be worth using a more powerful teacher model for bootstrapping.                                                     |
+| `max_bootstrapped_demos` | `int`  | `4`      | Maximum number of bootstrapped demonstrations to generate and include in the prompt.                              |
+| `max_labeled_demos`      | `int`  | `16`      | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps. 
 | `init_temperature` | `float`        | `1.0`                                                  | The initial temperature for prompt generation, influencing creativity.                                                       |
 | `verbose`          | `bool`      | `False`                                                | Enables printing intermediate steps and information.                                                                         |
 | `track_stats`      | `bool`      | `True`                                                | Logs relevant information through the optimization process if set to True.                                                                       |
 | `metric_threshold` | `float`        | `None`                                                 | A metric threshold is used if we only want to keep bootstrapped few-shot examples that exceed some threshold of performance.  |
+| `seed` | `int`        | `9`                                                 | Seed for reproducibility.  |
 
 ### Compile Parameters
 
 | Parameter                  | Type     | Default | Description                                                                                              |
 |----------------------------|----------|---------|----------------------------------------------------------------------------------------------------------|
-| `student`                | `dspy.Module`   | N/A (Required)    | The base program to optimize.                                                                            |
-| `trainset`               | `List[dspy.Example]`  | N/A (Required)    | Training dataset which is used to bootstrap few-shot examples and instructions. If a separate `valset` is not specified, 80% of this training set will also be used as a validation set for evaluating new candidate prompts.                                                                    |
+| `student`                | `dspy.Module`   | **Required**    | The base program to optimize.                                                                            |
+| `trainset`               | `List[dspy.Example]`  | **Required** | Training dataset which is used to bootstrap few-shot examples and instructions. If a separate `valset` is not specified, 80% of this training set will also be used as a validation set for evaluating new candidate prompts.                                                                    |
 | `valset`               | `List[dspy.Example]`  | Defaults to 80% of trainset | Dataset which is used to evaluate candidate prompts. We recommend using somewhere between 50-500 examples for optimization.                                                                      |
 | `num_trials`            | `int`  | `30`      | Number of optimization trials to run. When `minibatch` is set to `True`, this represents the number of minibatch trials that will be run on batches of size `minibatch_size`. When minibatch is set to `False`, each trial uses a full evaluation on the training set. In both cases, we recommend setting `num_trials` to a *minimum* of .75 x # modules in program x # variables per module (2 if few-shot examples & instructions will both be optimized, 1 in the 0-shot case).        |
 | `minibatch`              | `bool`  | `True`    | Flag to enable evaluating over minibatches of data (instead of the full validation set) for evaluation each trial.                                                           |
 | `minibatch_size`         | `int`  | `25.0`    | Size of minibatches for evaluations.                                                                     |
 | `minibatch_full_eval_steps` | `int` | `10`    | When minibatching is enabled, a full evaluation on the validation set will be carried out every `minibatch_full_eval_steps` on the top averaging set of prompts (according to their average score on the minibatch trials).          
-| `max_bootstrapped_demos` | `int`  | `4`      | Maximum number of bootstrapped demonstrations to generate and include in the prompt.                              |
-| `max_labeled_demos`      | `int`  | `16`      | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps.                             |
-| `seed`                   | `int`  | `9`       | Seed for reproducibility.                                                    |                                  |
+| `max_bootstrapped_demos` | `Optional[int]`  | Defaults to `init` value. | Maximum number of bootstrapped demonstrations to generate and include in the prompt.                              |
+| `max_labeled_demos`      | `Optional[int]`  | Defaults to `init` value.  | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps.                             |
+| `seed`                   | `Optional[int]`  | Defaults to `init` value. | Seed for reproducibility.                                                    |                                  |
 | `program_aware_proposer` | `bool`  | `True`    | Flag to enable summarizing a reflexive view of the code for your LM program.                             |
 | `data_aware_proposer` | `bool`  | `True`    | Flag to enable summarizing your training dataset.                             |
 | `view_data_batch_size` | `int`  | `10`    | Number of data examples to look at a time when generating the summary.                             |
