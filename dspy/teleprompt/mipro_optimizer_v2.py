@@ -30,8 +30,8 @@ To start off, you can use a preconfigured auto-run setting, which sets hyperpara
 ``` python
 from dspy.teleprompt import MIPROv2
 
-teleprompter = MIPROv2(metric=metric, auto_run_mode = "light")
-compiled_prompt_opt = teleprompter.compile(program, trainset=trainset, max_bootstrapped_demos=3, max_labeled_demos=5)
+teleprompter = MIPROv2(metric=metric, auto = "light")
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset, self.max_bootstrapped_demos=3, self.max_labeled_demos=5)
 eval_score = evaluate(compiled_prompt_opt, devset=testset, display_progress=True, num_threads=1)
 ```
 
@@ -42,7 +42,7 @@ from dspy.teleprompt import MIPROv2
 
 teleprompter = MIPROv2(prompt_model=prompt_model, task_model=task_model, metric=metric, num_candidates=10, init_temperature=1.0)
 kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=0)
-compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, max_bootstrapped_demos=3, max_labeled_demos=5)
+compiled_prompt_opt = teleprompter.compile(program, trainset=trainset[:TRAIN_NUM], num_trials=100, self.max_bootstrapped_demos=3, self.max_labeled_demos=5)
 eval_score = evaluate(compiled_prompt_opt, devset=valset[:EVAL_NUM], **kwargs)
 ```
 
@@ -88,16 +88,16 @@ class MIPROv2(Teleprompter):
     def _set_hyperparams_from_run_mode(
         self, program, num_trials, minibatch, zeroshot_opt, valset
     ):
-        if self.auto_run_mode is None:
+        if self.auto is None:
             return num_trials, valset, minibatch
 
         num_vars = (
             len(program.predictors()) if zeroshot_opt else len(program.predictors()) * 2
         )  # (multiplying by two to account for few-shot examples + instruction variables)
 
-        num_trials = auto_run_settings[self.auto_run_mode]["num_trials"]
+        num_trials = auto_run_settings[self.auto]["num_trials"]
         valset = create_minibatch(
-            valset, batch_size=auto_run_settings[self.auto_run_mode]["val_size"]
+            valset, batch_size=auto_run_settings[self.auto]["val_size"]
         )
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
         self.num_candidates = int(
@@ -109,32 +109,37 @@ class MIPROv2(Teleprompter):
     def __init__(
         self,
         metric,
-        prompt_model=dspy.settings.lm,
-        task_model=dspy.settings.lm,
+        prompt_model=None,
+        task_model=None,
         teacher_settings={},
-        auto_run_mode=None,
+        max_bootstrapped_demos=4,
+        max_labeled_demos=16,
+        auto=None,
         num_candidates=10,
         num_threads=6,
         max_errors=10,
+        seed=9,
         init_temperature=0.5,
         verbose=False,
         track_stats=True,
         log_dir=None,
         metric_threshold=None,
     ):
-        # Check for valid auto_run_mode
+        # Check for valid auto
         allowed_modes = {None, "light", "medium", "heavy"}
-        if auto_run_mode not in allowed_modes:
+        if auto not in allowed_modes:
             raise ValueError(
-                f"Invalid value for auto_run_mode: {auto_run_mode}. Must be one of {allowed_modes}."
+                f"Invalid value for auto: {auto}. Must be one of {allowed_modes}."
             )
-        self.auto_run_mode = auto_run_mode
+        self.auto = auto
 
         self.num_candidates = num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
-        self.task_model = task_model
-        self.prompt_model = prompt_model
+        self.task_model = task_model if task_model else dspy.settings.lm
+        self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
+        self.max_bootstrapped_demos = max_bootstrapped_demos
+        self.max_labeled_demos = max_labeled_demos
         self.verbose = verbose
         self.track_stats = track_stats
         self.log_dir = log_dir
@@ -152,9 +157,9 @@ class MIPROv2(Teleprompter):
         trainset,
         valset=None,
         num_trials=30,
-        max_bootstrapped_demos=4,
-        max_labeled_demos=16,
-        seed=9,
+        max_bootstrapped_demos=None,
+        max_labeled_demos=None,
+        seed=None,
         minibatch=True,
         minibatch_size=25,
         minibatch_full_eval_steps=10,
@@ -173,7 +178,12 @@ class MIPROv2(Teleprompter):
         ENDC = "\033[0m"  # Resets the color to default
 
         random.seed(seed)
-
+        np.random.seed(seed)
+        
+        if max_bootstrapped_demos or max_labeled_demos:
+            self.max_bootstrapped_demos = max_bootstrapped_demos
+            self.max_labeled_demos = max_labeled_demos
+        
         # Validate inputs
         if not trainset:
             raise ValueError("Trainset cannot be empty.")
@@ -198,14 +208,14 @@ class MIPROv2(Teleprompter):
                 )
 
         # Set hyperparams
-        zeroshot_opt = (max_bootstrapped_demos == 0) and (max_labeled_demos == 0)
+        zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
         num_trials, valset, minibatch = self._set_hyperparams_from_run_mode(
             student, num_trials, minibatch, zeroshot_opt, valset
         )
 
-        if self.auto_run_mode:
+        if self.auto:
             print(
-                f"RUNNING WITH THE FOLLOWING {self.auto_run_mode.upper()} AUTO RUN SETTINGS:\nnum_trials: {num_trials}\nminibatch: {minibatch}\nnum_candidates: {self.num_candidates}\nvalset size: {len(valset)}P"
+                f"\nRUNNING WITH THE FOLLOWING {self.auto.upper()} AUTO RUN SETTINGS:\nnum_trials: {num_trials}\nminibatch: {minibatch}\nnum_candidates: {self.num_candidates}\nvalset size: {len(valset)}\n"
             )
 
         if minibatch and minibatch_size > len(valset):
@@ -289,7 +299,6 @@ class MIPROv2(Teleprompter):
 
         if run:
             # Setup random seeds
-            random.seed(seed)
             np.random.seed(seed)
 
             # Set up program and evaluation function
@@ -304,21 +313,21 @@ class MIPROv2(Teleprompter):
             )
 
             # Determine the number of fewshot examples to use to generate demos for prompt
-            if max_bootstrapped_demos == 0 and max_labeled_demos == 0:
-                max_bootstrapped_demos_for_candidate_gen = (
+            if self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0:
+                self.max_bootstrapped_demos_for_candidate_gen = (
                     BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT
                 )
-                max_labeled_demos_for_candidate_gen = (
+                self.max_labeled_demos_for_candidate_gen = (
                     LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT
                 )
             else:
-                max_bootstrapped_demos_for_candidate_gen = max_bootstrapped_demos
-                max_labeled_demos_for_candidate_gen = max_labeled_demos
+                self.max_bootstrapped_demos_for_candidate_gen = self.max_bootstrapped_demos
+                self.max_labeled_demos_for_candidate_gen = self.max_labeled_demos
 
             # Generate N few shot example sets (these will inform instruction creation, and be used as few-shot examples in our prompt)
             print("Beginning MIPROv2 optimization process...")
             print("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
-            if max_bootstrapped_demos > 0:
+            if self.max_bootstrapped_demos > 0:
                 print(
                     "These will be used for as few-shot examples candidates for our program and for creating instructions.\n"
                 )
@@ -330,8 +339,8 @@ class MIPROv2(Teleprompter):
                     student=program,
                     num_candidate_sets=self.num_candidates,
                     trainset=trainset,
-                    max_labeled_demos=max_labeled_demos_for_candidate_gen,
-                    max_bootstrapped_demos=max_bootstrapped_demos_for_candidate_gen,
+                    max_labeled_demos=self.max_labeled_demos_for_candidate_gen,
+                    max_bootstrapped_demos=self.max_bootstrapped_demos_for_candidate_gen,
                     metric=self.metric,
                     max_errors=self.max_errors,
                     teacher_settings=self.teacher_settings,
@@ -355,7 +364,6 @@ class MIPROv2(Teleprompter):
                 program=program,
                 trainset=trainset,
                 prompt_model=self.prompt_model,
-                # program_code_string=self.program_code_string,
                 view_data_batch_size=view_data_batch_size,
                 program_aware=program_aware_proposer,
                 use_dataset_summary=data_aware_proposer,
@@ -384,7 +392,7 @@ class MIPROv2(Teleprompter):
                 print("\n")
 
             # If we're doing zero-shot, reset demo_candidates to none now that we've used them for instruction proposal
-            if max_bootstrapped_demos == 0 and max_labeled_demos == 0:
+            if self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0:
                 demo_candidates = None
 
             # Initialize variables to track during the optimization process
@@ -405,6 +413,8 @@ class MIPROv2(Teleprompter):
             )
             print(f"Default program score: {default_score}\n")
 
+            scores = []
+            full_eval_scores = [default_score]
             best_score = default_score
             best_program = program.deepcopy()
 
@@ -417,7 +427,7 @@ class MIPROv2(Teleprompter):
                 valset,
             ):
                 def objective(trial):
-                    nonlocal best_program, best_score, best_scoring_trial, trial_logs, total_eval_calls  # Allow access to the outer variables
+                    nonlocal best_program, best_score, best_scoring_trial, trial_logs, total_eval_calls, scores, full_eval_scores  # Allow access to the outer variables
 
                     # Kick off trial
                     if minibatch:
@@ -507,6 +517,8 @@ class MIPROv2(Teleprompter):
                         evaluate,
                     )
 
+                    scores.append(score)
+
                     # Print out a full trace of the program in use
                     if self.verbose:
                         print("Full trace of prompts in use on an example...")
@@ -550,18 +562,28 @@ class MIPROv2(Teleprompter):
 
                     if minibatch:
                         print(
-                            f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}.\n\n"
+                            f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}.\n"
                         )
+                        print(
+                            f"Minibatch Score Trajectory: {', '.join([f'{s}' for s in scores])}"
+                        )
+                        trajectory = ", ".join([f"{s}" for s in full_eval_scores])
+                        print(f"Full Eval Trajectory: {trajectory}")
+                        print(f'{"="*len(f"== Minibatch Trial {trial.number+1} / {num_trials} ==")}\n\n')
                     else:
                         print(f"Score: {score} with parameters {chosen_params}.")
                         if best_score_updated:
                             print(
-                                f"{GREEN}New best score updated!{ENDC} Score: {best_score} on trial {best_scoring_trial}.\n\n"
+                                f"{GREEN}New best score updated!{ENDC} Score: {best_score} on trial {best_scoring_trial}."
                             )
-                        else:
-                            print(
-                                f"Best score so far: {best_score} on trial {best_scoring_trial}.\n\n"
-                            )
+                        print()
+                        print(
+                            f"Score Trajectory: {', '.join([f'{s}' for s in scores])}"
+                        )
+                        print(
+                            f"Best score so far: {best_score} on trial {best_scoring_trial}."
+                        )
+                        print(f'{"="*len(f"===== Trial {trial.number+1} / {num_trials} =====")}\n\n')
 
                     # If we're doing minibatching, check to see if it's time to do a full eval
                     if minibatch and (
@@ -599,6 +621,7 @@ class MIPROv2(Teleprompter):
                             highest_mean_program,
                             evaluate,
                         )
+                        full_eval_scores.append(full_val_score)
 
                         # Log relevant information
                         fully_evaled_param_combos[combo_key] = {
@@ -631,6 +654,10 @@ class MIPROv2(Teleprompter):
                         else:
                             print(f"Full eval score: {full_val_score}")
                             print(f"Best full eval score so far: {best_score}")
+                        print()
+                        trajectory = ", ".join([f"{s}" for s in full_eval_scores])
+                        print(f"Full Eval Trajectory: {trajectory}")
+                        
                         print("=======================\n\n")
 
                     return score
