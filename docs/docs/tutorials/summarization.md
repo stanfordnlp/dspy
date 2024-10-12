@@ -28,6 +28,8 @@ Define two signatures for scoring the summary.
 
 1. The first signature breaks down the summary and assigns defined labels as grades.
 ```
+import dspy
+
 class Breakdown(dspy.Signature):
     """
     Given a passage, break down the passage into key ideas.
@@ -178,7 +180,7 @@ Create the program and evaluate it.
 ```
 program = Summarize()
 
-evaluate = Evaluate(devset=trainset, metric=metric,
+evaluate = dspy.Evaluate(devset=trainset, metric=metric,
                     display_progress=True,
                     display_table=True, provide_traceback=True)
 
