@@ -87,6 +87,7 @@ class MIPROv2(Teleprompter):
         self.max_errors = max_errors
         self.metric_threshold = metric_threshold
         self.seed = seed
+        self.rng = None
 
     def compile(
         self,
@@ -110,8 +111,7 @@ class MIPROv2(Teleprompter):
     ) -> Any:
         # Set random seeds
         seed = seed or self.seed
-        random.seed(seed)
-        np.random.seed(seed)
+        self._set_random_seeds(seed)
 
         # Update max demos if specified
         if max_bootstrapped_demos is not None:
@@ -197,6 +197,12 @@ class MIPROv2(Teleprompter):
         )
 
         return best_program
+    
+    def _set_random_seeds(self,
+        seed
+    ):
+        self.rng = random.Random(seed)
+        np.random.seed(seed)
 
     def _set_hyperparams_from_run_mode(
         self,
@@ -215,7 +221,7 @@ class MIPROv2(Teleprompter):
 
         auto_settings = AUTO_RUN_SETTINGS[self.auto]
         num_trials = auto_settings["num_trials"]
-        valset = create_minibatch(valset, batch_size=auto_settings["val_size"])
+        valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
         self.num_candidates = int(
             np.round(np.min([num_trials * num_vars, (1.5 * num_trials) / num_vars]))
@@ -395,6 +401,7 @@ class MIPROv2(Teleprompter):
                 teacher_settings=self.teacher_settings,
                 seed=seed,
                 metric_threshold=self.metric_threshold,
+                rng=self.rng,
             )
         except Exception as e:
             print(f"Error generating few-shot examples: {e}")
@@ -432,6 +439,7 @@ class MIPROv2(Teleprompter):
             use_instruct_history=False,
             set_history_randomly=False,
             verbose=self.verbose,
+            rng=self.rng
         )
 
         print("\nProposing instructions...\n")
@@ -467,7 +475,7 @@ class MIPROv2(Teleprompter):
         seed: int,
     ) -> Optional[Any]:
         print("Evaluating the default program...\n")
-        default_score = eval_candidate_program(len(valset), valset, program, evaluate)
+        default_score = eval_candidate_program(len(valset), valset, program, evaluate, self.rng)
         print(f"Default program score: {default_score}\n")
 
         # Initialize optimization variables
@@ -521,7 +529,7 @@ class MIPROv2(Teleprompter):
             # Evaluate the candidate program
             batch_size = minibatch_size if minibatch else len(valset)
             score = eval_candidate_program(
-                batch_size, valset, candidate_program, evaluate
+                batch_size, valset, candidate_program, evaluate, self.rng
             )
 
             # Update best score and program
@@ -690,7 +698,7 @@ class MIPROv2(Teleprompter):
             f"Doing full eval on next top averaging program (Avg Score: {mean_score}) from minibatch trials..."
         )
         full_eval_score = eval_candidate_program(
-            len(valset), valset, highest_mean_program, evaluate
+            len(valset), valset, highest_mean_program, evaluate, self.rng
         )
         full_eval_scores.append(full_eval_score)
 

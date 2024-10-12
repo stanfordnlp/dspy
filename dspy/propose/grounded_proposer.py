@@ -259,6 +259,7 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
+        rng=None
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -269,6 +270,7 @@ class GroundedProposer(Proposer):
         self.set_tip_randomly=set_tip_randomly
         self.set_history_randomly=set_history_randomly
         self.verbose = verbose
+        self.rng = rng or random
 
         self.prompt_model = get_prompt_model(prompt_model)
 
@@ -309,7 +311,7 @@ class GroundedProposer(Proposer):
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
-            use_history = random.random() < 0.5
+            use_history = self.rng.random() < 0.5
             self.use_instruct_history = use_history
             if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
 
@@ -327,7 +329,7 @@ class GroundedProposer(Proposer):
                 if self.set_tip_randomly:
                     if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
                     # Randomly select the tip
-                    selected_tip_key = random.choice(list(TIPS.keys()))
+                    selected_tip_key = self.rng.choice(list(TIPS.keys()))
                     selected_tip = TIPS[selected_tip_key]
                     self.use_tip = bool(
                         selected_tip,
