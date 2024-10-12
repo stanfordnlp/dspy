@@ -293,7 +293,7 @@ class GroundedProposer(Proposer):
             except Exception as e:
                 print(f"Error getting data summary: {e}.\n\nRunning without data aware proposer.")
                 self.use_dataset_summary = False
-                print(f"")
+                print("")
 
     def propose_instructions_for_program(
         self,

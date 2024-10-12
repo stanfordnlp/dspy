@@ -16,7 +16,6 @@ from dspy.teleprompt.utils import (
     eval_candidate_program,
     get_program_with_highest_avg_score,
     get_signature,
-    get_task_model_history_for_full_example,
     print_full_program,
     save_candidate_program,
     set_signature,
