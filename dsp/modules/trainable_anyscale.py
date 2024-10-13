@@ -1,8 +1,6 @@
 from pyexpat import model
 import dsp
 from dsp.modules.lm import TrainableLM, TrainingMethod
-from dsp.modules.multi_openai import MultiOpenAI
-from dsp.modules.trainable_openai import openai_data_validation, check_message_lengths, estimate_cost
 from concurrent.futures import Future
 from typing import Any, List, Optional, Literal, Union
 import ujson
@@ -17,7 +15,7 @@ try:
 except ImportError:
     anyscale = None
 
-class TrainableAnyscale(MultiOpenAI, TrainableLM):
+class TrainableAnyscale(TrainableLM):
     """Wrapper around specifically the OpenAI API to finetune.
 
         Args:
@@ -448,3 +446,199 @@ def write_jsonl(filename, data):
     with open(filename, "w") as f:
         for item in data:
             f.write(ujson.dumps(item) + "\n")
+
+# Fine tuning utils - TODO: Find a better spot for these
+
+#-------------------------------------------------------------------------------
+#    Templates for the user-facing strings used by this module
+#-------------------------------------------------------------------------------
+
+_ERR_MSG_DATASET_VALIDATION = """Found errors in the dataset format using the \
+OpenAI API. Here are the number of datapoints for each error type found:
+{err_info}"""
+
+_ERR_MSG_DATASET_VALIDATION_TYPE = """    {key}: {val}"""
+
+_INFO_MSG_DATASET_VALIDATION = """No errors found in the dataset format \
+using the OpenAI API."""
+
+_INFO_MSG_DATAPOINT_LONG = """There are {num} examples that may be over the \
+16,385 token limit, they will be truncated during fine-tuning."""
+
+_INFO_MSG_DATAPOINT_SYSTEM = """There are {num} examples that are missing a \
+system message."""
+
+_INFO_MSG_DATAPOINT_USER = """There are {num} examples that are missing a \
+user message."""
+
+_INFO_MSG_TRAINING = """The charge for finetuning is determined by the number \
+of epochs multiplied by the number of billing tokens in the dataset. Here are \
+the stats for this training dataset:
+    num_billing_tokens: {num_billing_tokens}
+    n_epochs: {n_epochs}
+    num_total_charge_tokens: {training_charge}"""
+
+_INFO_DATA_FILE_UPLOAD = "Uploaded the data file {fname} to the OpenAI servers."
+
+_INFO_MSG_TRAINING_STARTED = "Started training with the following ID: {job_id}"
+
+
+#-------------------------------------------------------------------------------
+#    Helper functions
+#-------------------------------------------------------------------------------
+
+# These utility functions come from: https://cookbook.openai.com/examples/chat_finetuning_data_prep
+def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], AssertionError]:
+    """Validate OpenAI data before sending it to the model.
+
+    Args:
+        dataset: OpenAI data to validate
+
+    Returns:
+        Either a list of errors and their counts or None if no errors are found
+    """
+    # TODO: Move the import outside the function
+
+    # TODO: Counting the number of errors is not very useful, we can consider
+    # raising an error as we run into issues.
+    format_errors = defaultdict(int)
+    for ex in dataset:
+        if not isinstance(ex, dict):
+            format_errors["data_type"] += 1
+            continue
+
+        messages = ex.get("messages", None)
+        if not messages:
+            format_errors["missing_messages_list"] += 1
+            continue
+
+        for message in messages:
+            if "role" not in message or "content" not in message:
+                format_errors["message_missing_key"] += 1
+
+            if any(k not in ("role", "content", "name", "function_call", "weight") for k in message):
+                format_errors["message_unrecognized_key"] += 1
+
+            if message.get("role", None) not in ("system", "user", "assistant", "function"):
+                format_errors["unrecognized_role"] += 1
+
+            content = message.get("content", None)
+            function_call = message.get("function_call", None)
+
+            if (not content and not function_call) or not isinstance(content, str):
+                format_errors["missing_content"] += 1
+
+        if not any(message.get("role", None) == "assistant" for message in messages):
+            format_errors["example_missing_assistant_message"] += 1
+
+    # Raise an error if there are any format errors
+    if format_errors:
+        err_info = ""
+        for k, v in format_errors.items():
+            err_info += _ERR_MSG_DATASET_VALIDATION_TYPE.format(key=k, val=v)
+
+        err_msg = _ERR_MSG_DATASET_VALIDATION.format(err_info=err_info)
+        raise ValueError(err_msg)
+        
+    # If no errors are found, log a message
+    msg = _INFO_MSG_DATASET_VALIDATION
+    print(msg)
+
+
+def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
+    # TODO: Should the import be moved outside? Same with the other functions
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3
+    return num_tokens
+
+
+def num_assistant_tokens_from_messages(messages):
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+
+    num_tokens = 0
+    for message in messages:
+        if message["role"] == "assistant":
+            num_tokens += len(encoding.encode(message["content"]))
+    return num_tokens
+
+
+def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
+    # TODO: Move the import outside the function
+
+    n_missing_system = 0
+    n_missing_user = 0
+    n_messages = []
+    convo_lens = []
+    assistant_message_lens = []
+
+    for ex in dataset:
+        messages = ex["messages"]
+        if not any(message["role"] == "system" for message in messages):
+            n_missing_system += 1
+        if not any(message["role"] == "user" for message in messages):
+            n_missing_user += 1
+        n_messages.append(len(messages))
+        convo_lens.append(num_tokens_from_messages(messages))
+        assistant_message_lens.append(
+            num_assistant_tokens_from_messages(messages))
+    n_too_long = sum([length > 16385 for length in convo_lens])
+
+    if n_too_long > 0:
+        msg = _INFO_MSG_DATAPOINT_LONG.format(num=n_too_long)
+        print(msg)
+
+    if n_missing_system > 0:
+        msg = _INFO_MSG_DATAPOINT_SYSTEM.format(num=n_missing_system)
+        print(msg)
+
+    if n_missing_user > 0:
+        msg = _INFO_MSG_DATAPOINT_USER.format(num=n_missing_user)
+        print(msg)
+
+    return convo_lens
+
+
+def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name=1, convo_lens=None):
+    # TODO: Move the import outside the function
+
+    MAX_TOKENS_PER_EXAMPLE = 16385
+
+    TARGET_EPOCHS = 3
+    MIN_TARGET_EXAMPLES = 100
+    MAX_TARGET_EXAMPLES = 25000
+    MIN_DEFAULT_EPOCHS = 1
+    MAX_DEFAULT_EPOCHS = 25
+
+    # TODO: Can we not fix the above variables as constants?
+    n_epochs = TARGET_EPOCHS
+    n_train_examples = len(dataset)
+    if n_train_examples * TARGET_EPOCHS < MIN_TARGET_EXAMPLES:
+        n_epochs = min(MAX_DEFAULT_EPOCHS,
+                       MIN_TARGET_EXAMPLES // n_train_examples)
+    elif n_train_examples * TARGET_EPOCHS > MAX_TARGET_EXAMPLES:
+        n_epochs = max(MIN_DEFAULT_EPOCHS,
+                       MAX_TARGET_EXAMPLES // n_train_examples)
+
+    if convo_lens is None:
+        convo_lens = check_message_lengths(dataset)
+
+    n_billing_tokens_in_dataset = sum(
+        min(MAX_TOKENS_PER_EXAMPLE, length) for length in convo_lens)
+
+    # TODO would be more informative to share the total price
+    msg = _INFO_MSG_TRAINING.format(
+        num_billing_tokens=n_billing_tokens_in_dataset,
+        n_epochs=n_epochs,
+        training_charge=n_epochs * n_billing_tokens_in_dataset
+    )
+    print(msg)

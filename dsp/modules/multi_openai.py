@@ -58,20 +58,18 @@ class MultiOpenAI(LM):
         super().__init__(model)
         self.provider = api_provider
         self.model_type = model_type
-        self.api_base = api_base
+
         self.system_prompt = system_prompt
-        self.api_key = api_key
 
         self.kwargs = {
             "temperature": 0.0,
-            "max_tokens": 2000,
+            "max_tokens": 150,
             "top_p": 1,
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "n": 1,
             **kwargs,
         }
-        print("in multiopenai", self.kwargs["temperature"])
 
         self.kwargs["model"] = model
         self.history: list[dict[str, Any]] = []
@@ -261,10 +259,3 @@ class MultiOpenAI(LM):
 
         return completions
 
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with the same parameters."""
-        kwargs = {**self.kwargs, **kwargs}
-        model = kwargs.pop("model")
-        print("copying with temp", kwargs["temperature"])
-        new_lm = self.__class__(model, api_base=self.api_base, api_key=self.api_key, api_provider=self.provider, model_type=self.model_type, system_prompt=self.system_prompt, **kwargs)
-        return new_lm
