@@ -14,6 +14,11 @@ from dspy.clients.self_hosted import (
     self_hosted_model_launch,
     self_hosted_model_kill,
 )
+from dspy.clients.anyscale import (
+    is_anyscale_model,
+    anyscale_model_launch,
+    anyscale_model_kill,
+)
 
 
 DISK_CACHE_DIR = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
@@ -92,13 +97,17 @@ class LM:
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
         if is_self_hosted_model(self.model):
-            self_hosted_model_launch(model, self.launch_kwargs)
+            self_hosted_model_launch(self.model, self.launch_kwargs)
+        elif is_anyscale_model(self.model):
+            anyscale_model_launch(self.model, self.launch_kwargs)
         logger.debug(f"`LM.launch()` is called for the auto-launched model {self.model} -- no action is taken.")
 
     def kill(self):
         """Send a request to the provider to kill the model, if needed."""
         if is_self_hosted_model(self.model):
-           self_hosted_model_kill(model, self.launch_kwargs)
+            self_hosted_model_kill(self.model, self.launch_kwargs)
+        elif is_anyscale_model(self.model):
+            anyscale_model_kill(self.model, self.launch_kwargs)
         logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
 
     def finetune(self,
