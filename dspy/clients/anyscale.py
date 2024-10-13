@@ -21,6 +21,22 @@ TRAINING_METHODS_ANYSCALE = [
 ]
 
 #-------------------------------------------------------------------------------
+#    Launching and killing LMs
+#-------------------------------------------------------------------------------
+
+def anyscale_model_launch(model: str, launch_kwargs: Dict[str, Any]):
+    """Launch an AnyScale model."""
+    # TODO: Hardcode resources for launching a select server through docker
+    raise NotImplementedError("Method `anyscale_model_launch` is not implemented.")
+
+
+def anyscale_model_kill(model: str, launch_kwargs: Dict[str, Any]):
+    # TODO: Hardcode resources for killing a select server through docker
+    """Kill an AnyScale model."""
+    raise NotImplementedError("Method `anyscale_model_kill` is not implemented.")
+
+
+#-------------------------------------------------------------------------------
 #    Function and classes required for the fine-tune interface
 #-------------------------------------------------------------------------------
 
