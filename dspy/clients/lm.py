@@ -36,10 +36,7 @@ class LM:
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        completion = self._get_completion_func(cache=cache)
 
         response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
@@ -57,11 +54,17 @@ class LM:
             model_type=self.model_type,
         )
         self.history.append(entry)
-        
+
         return outputs
 
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
+
+    def _get_completion_func(self, cache: bool = False):
+        if self.model_type == "chat":
+            return cached_litellm_completion if cache else litellm_completion
+        else:
+            return cached_litellm_text_completion if cache else litellm_text_completion
 
 
 @functools.lru_cache(maxsize=None)
@@ -156,46 +159,15 @@ class RoutedLM(LM):
         super().__init__(model, **kwargs)
         self.router = router
 
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        cache = kwargs.pop("cache", self.cache)
-        messages = messages or [{"role": "user", "content": prompt}]
-        kwargs = {**self.kwargs, **kwargs}
-
+    def _get_completion_func(self, cache):
         if self.model_type == "chat":
-            completion = (
-                self._cached_router_completion if cache else self._router_completion
-            )
+            return self._cached_router_completion if cache else self._router_completion
         else:
-            completion = (
+            return (
                 self._cached_router_text_completion
                 if cache
                 else self._router_text_completion
             )
-
-        response = completion(
-            ujson.dumps(dict(model=self.model, messages=messages, **kwargs))
-        )
-        outputs = [
-            c.message.content if hasattr(c, "message") else c["text"]
-            for c in response["choices"]
-        ]
-
-        # Follow LM's logging
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(
-            **entry, cost=response.get("_hidden_params", {}).get("response_cost")
-        )
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            model_type=self.model_type,
-        )
-        self.history.append(entry)
-        return outputs
 
     @functools.lru_cache(maxsize=None)
     def _cached_router_completion(self, request):
