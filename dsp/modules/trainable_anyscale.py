@@ -15,7 +15,7 @@ try:
 except ImportError:
     anyscale = None
 
-class TrainableAnyscale(TrainableLM):
+class TrainableAnyscale():
     """Wrapper around specifically the OpenAI API to finetune.
 
         Args:
@@ -42,8 +42,8 @@ class TrainableAnyscale(TrainableLM):
         assert api_base is None, "There is no API base needed for this provider."
         assert anyscale is not None, "You must have the Anyscale SDK installed to use this class."
         api_key, api_base = "", ""
-        super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
-        assert self.provider == "anyscale", "You must use an Anyscale model with this class."
+        # super().__init__(model, api_key=api_key, api_provider=api_provider, api_base=api_base, model_type=model_type, system_prompt=system_prompt, **kwargs)
+        # assert self.provider == "anyscale", "You must use an Anyscale model with this class."
         self.fine_tuning_file_ids = {}
 
     def _verify_datasets(self, dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]]) -> bool:

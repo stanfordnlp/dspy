@@ -8,6 +8,8 @@ from dspy.primitives.program import Program
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import signature_to_template
 
+import concurrent.futures
+
 #-------------------------------------------------------------------------------
 #    Templates for the user-facing strings used by this module
 #-------------------------------------------------------------------------------
@@ -163,14 +165,15 @@ def build_messages_from_trace(
 
     return data
 
-
+def dummy_metric(example, pred, trace=None, frac=1.0):
+    return 1
 
 def bootstrap_data(
         program: Program,
         dataset: List[Example],
         metric: Optional[Callable[
             [Example, Prediction, Optional[List]], Union[bool, int, float]
-        ]] = None,
+        ]] = dummy_metric,
         num_threads = 1,
         max_errors: int = 0
     ) -> List[Dict[str, Any]]:
