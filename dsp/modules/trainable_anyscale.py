@@ -118,6 +118,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         custom_modifications = {
             "model_id": self.kwargs["model"],
             "train_path": train_path,
+            "valid_path": eval_path,
             "logger": {
                 "provider": "wandb",
             },
@@ -125,8 +126,7 @@ class TrainableAnyscale(MultiOpenAI, TrainableLM):
         }
         if kwargs.get("output_dir", None):
             custom_modifications["output_dir"] = kwargs["output_dir"]
-        if eval_path:
-            custom_modifications["valid_path"] = eval_path
+        
 
 
         model_config_data.update(custom_modifications)

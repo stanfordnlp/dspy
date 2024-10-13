@@ -150,6 +150,8 @@ def build_messages_from_trace(
 
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
     data = []
+
+    # TODO: Make sure that this works for multi-stage pipelines
     for pred_ind, (pred, inputs, outputs) in enumerate(trace):
         # Get the demos from the predictor if exclude_demos is False
         demos = [] if exclude_demos else pred.demos
