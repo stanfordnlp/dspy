@@ -39,6 +39,7 @@ HFClientTGI = dsp.HFClientTGI
 HFClientVLLM = HFClientVLLM
 
 Anyscale = dsp.Anyscale
+TrainableAnyscale = dsp.TrainableAnyscale
 Together = dsp.Together
 HFModel = dsp.HFModel
 OllamaLocal = dsp.OllamaLocal

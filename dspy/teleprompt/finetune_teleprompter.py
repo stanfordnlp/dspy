@@ -8,7 +8,6 @@ from dspy.primitives.program import Program
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import signature_to_template
 
-
 #-------------------------------------------------------------------------------
 #    Templates for the user-facing strings used by this module
 #-------------------------------------------------------------------------------
@@ -78,102 +77,8 @@ def prepare_teacher(
 
     return teacher
 
-
-def build_prompt_completion_data_from_trace(
-        trace: List[Dict],
-        exclude_demos: bool=False,
-        try_to_record_lm_kwargs: bool = False,
-        program: Program = None,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-    """Build prompt completion data from a given trace.
-  
-    Args:
-        trace: The trace from which the prompt-completion data will be built.
-        exclude_demos: Exclude the demos from the prompts even if they are
-            present in the trace. Defaults to `False`.
-        try_to_record_lm_kwargs: Whether to record the LM kwargs in the data.
-            Defaults to `False`. If set, the `lm_kwargs` field of the LM used to
-            generate the prompt-completion pair is included in the data. To
-            find the LM, we first check if the predictor that generated the
-            prompt-completion pair has an LM field set (`predictor.lm`). If it
-            does, we record it's kwargs. If it doesn't, we get the kwargs from
-            `dspy.settings.lm`. If `dspy.settings.lm` is not set either, this
-            function will not record the LM kwargs.
-        program: Optional argument used to infer the name of the predictor that
-            generated the prompt-completion pair. If provided, the returned data
-            will include the `predictor_name` field. If not provided, the
-            `predictor_name` field is not included in the data, but the caller
-            of this function can recover this information by using the
-            `predictor_ind` field that' included in the data by default, by
-            building the following dictionary:
-
-            {ind: n for ind, (n, _) in enumerate(program.named_predictors())}
-
-            where `ind` is the index of the predictor in the list returned by
-            the `named_predictors()` method of the program. Defaults to `None`.
-
-    Returns:
-        Data as a list of dictionaries with the keys `prompt`, `completion` and
-        optionally with the keys `predictor_name` and `lm_kwargs`. For a given
-        prompt-completion pair:
-        - The `prompt` field corresponds to the prompt.
-        - The `completion` field corresponds to the completion.
-        - The `predictor_ind` field corresponds to the index of the predictor
-          in the predictor list 
-        - The `predictor_name` field corresponds to the index of the predictor
-          in the list returned by the the named_predictor() method of the
-          program used to generate the trace. This field is included only if
-        the `pred_ind_to_name` argument is provided.
-        - The `lm_kwargs` field corresponds to the LM kwargs that generated the
-          prompt-completion pair. Included only if the `record_lm_kwargs` is
-          set and there is an active LM.
-    """
-    # If the program is provided, build the predictor index to name mapping
-    if program:
-        pred_ind_to_name = {
-            ind: name for ind, (name, _) in enumerate(program.named_predictors())
-        }
-
-    # Build the prompt-completion data
-    data = []
-    for pred_ind, (pred, inputs, outputs) in enumerate(trace):
-        # Get the demos from the predictor if exclude_demos is False
-        demos = [] if exclude_demos else pred.demos
-
-        # Build prompt and completion strings
-        template = signature_to_template(pred.signature)
-        prompt = template(Example(demos=demos, **inputs))
-        completion = template.query(Example(**outputs))
-        
-        # TODO: This part of the code could be improved.
-        # The method we use to build the completion (template.query) is meant to
-        # be used for creating, well, queries, and hence contains field prefixes
-        # (e.g. "Reasoning: Let's think step by step in order to"), which are
-        # also contained in the last piece of the prompt (separated with a new
-        # line) We remove this piece from the completion. This is a hacky
-        # solution since it assumes a particular template format.
-        prompt_last = prompt.split("\n")[-1]
-        completion = completion[len(prompt_last):]
-
-        # Create prompt-completion dictionary and add it to the data; optionally
-        # add the predictor_name key as well as the lm_kwargs.
-        data_dict = dict(prompt=prompt, completion=completion)
-        
-        # Record the predictor index and optionally, name
-        data_dict['predictor_ind'] = pred_ind
-        if program:
-            data_dict['predictor_name'] = pred_ind_to_name[pred_ind]
-
-        # Optionally, record the LM kwargs
-        lm = pred.lm or dspy.settings.lm
-        if try_to_record_lm_kwargs and lm:
-            data_dict['lm_kwargs'] = lm.kwargs
-        data.append(data_dict)
-
-    return data
-
-
-def convert_to_module_level_prompt_completion_data(
+# TODO: fix docstring
+def convert_to_module_level_message_data(
         data: List[Dict],
         keep_data_keys: bool = False,
         exclude_demos: bool = False,
@@ -214,7 +119,7 @@ def convert_to_module_level_prompt_completion_data(
     prompt_completion_data = []
     for data_dict in data:
         trace = data_dict["trace"]
-        trace_prompt_comletion_data = build_prompt_completion_data_from_trace(
+        trace_prompt_comletion_data = build_messages_from_trace(
             trace=trace, exclude_demos=exclude_demos,
             try_to_record_lm_kwargs=try_to_record_lm_kwargs, program=program
         )
@@ -224,6 +129,41 @@ def convert_to_module_level_prompt_completion_data(
             prompt_completion_data.append(prompt_completion_dict)
     return prompt_completion_data
 
+# TODO: fix docstring
+def build_messages_from_trace(
+        trace: List[Dict],
+        exclude_demos: bool=False,
+        try_to_record_lm_kwargs: bool = False,
+        program: Program = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+    """Build messages from a given trace.
+    """
+    messages = []
+    # If the program is provided, build the predictor index to name mapping
+    if program:
+        pred_ind_to_name = {
+            ind: name for ind, (name, _) in enumerate(program.named_predictors())
+        }
+
+    # Build the prompt-completion data
+
+    adapter = dspy.settings.adapter or dspy.ChatAdapter()
+    data = []
+
+    # TODO: Make sure that this works for multi-stage pipelines
+    for pred_ind, (pred, inputs, outputs) in enumerate(trace):
+        # Get the demos from the predictor if exclude_demos is False
+        demos = [] if exclude_demos else pred.demos
+
+        messages = adapter.format(pred.signature, demos, inputs)
+
+        formatted_completion = adapter.format_completion(pred.signature, outputs)
+        messages.append({"role": "assistant", "content": formatted_completion})
+        data.append(messages)
+
+    return data
+
+
 
 def bootstrap_data(
         program: Program,
@@ -232,6 +172,7 @@ def bootstrap_data(
             [Example, Prediction, Optional[List]], Union[bool, int, float]
         ]] = None,
         num_threads = 1,
+        max_errors: int = 0
     ) -> List[Dict[str, Any]]:
     """Bootstrap prediction and trace data for the program using the dataset.
     
@@ -266,28 +207,55 @@ def bootstrap_data(
     info = _INFO_BOOTSTRAP_DATA.format(len(dataset), cname, num_threads)
     logger.info(info)
     evaluator = Evaluate(
-        devset=dataset, num_threads=num_threads, display_progress=True
+        devset=dataset, num_threads=num_threads, display_progress=True, max_errors=max_errors, provide_traceback=True
     )
-    evaluator(program, metric=metric)
-
-    # Re-iterate over the dataset to build the cached prompt-completion data
-    for example_ind, example in enumerate(dataset):
-
-        # Run the program on the example
-        with dspy.context(trace=[]):
-            prediction = program(**example.inputs())
-            trace = dspy.settings.trace
-            score = metric(example, prediction, trace) if metric else None
-
-        # Build the data dictionary and extend the data list
-        data_dict = dict(example=example, prediction=prediction, trace=trace)
-        data_dict['example_ind'] = example_ind
-        if metric:
-            data_dict['score'] = score
-        data.append(data_dict)
+    x = evaluator(program, metric=metric)
+    # print(x)
+    data = process_dataset_threaded(dataset, program, metric, num_threads, max_errors)
     
     return data
 
+def process_dataset_threaded(dataset: List[Any], program: Callable, metric: Optional[Callable] = None, max_workers: int = None, max_errors: int = 0) -> List[Dict[str, Any]]:
+    data = []
+    num_threads = max_workers if max_workers else 10
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+        future_to_example = {executor.submit(process_example, example, i, program, metric): i 
+                             for i, example in enumerate(dataset)}
+        
+        for future in concurrent.futures.as_completed(future_to_example):
+            data_dict = future.result()
+            if data_dict is not None:
+                data.append(data_dict)
+    
+    # Sort the results based on example_ind to maintain original order
+    data.sort(key=lambda x: x['example_ind'])
+    
+    return data
+
+def process_example(example: Any, example_ind: int, program: Callable, metric: Optional[Callable] = None) -> Dict[str, Any]:
+    # print("Processing example:", example_ind)
+    with dspy.context(trace=[]):
+        # print("Running program...", example_ind)
+        try:
+            prediction = program(**example.inputs())
+        except Exception as e:
+            print(f"Error processing example {example_ind}: {e}")
+            return None
+        # print("Getting trace...", example_ind)
+        trace = dspy.settings.trace
+        # print("Getting score...", example_ind)
+        score = metric(example, prediction, trace) if metric else None
+
+    data_dict = {
+        'example': example,
+        'prediction': prediction,
+        'trace': trace,
+        'example_ind': example_ind
+    }
+    if metric:
+        data_dict['score'] = score
+    
+    return data_dict
 
 # TODO: If we can ensure to pass the "round" information every time a call is
 # issued to an LM, we can make repetitive un-cached calls to the same LM without
@@ -302,6 +270,7 @@ def bootstrap_data_for_round(
         sampling_round: int = 0,
         sampling_temperature: Optional[float] = 0.9,
         sampling_temperature_delta: float = 0.001,
+        max_errors: int = 0
     ) -> Union[List[Dict], AssertionError]:
     """ Bootstrap data for the given sampling round.
 
@@ -387,7 +356,8 @@ def bootstrap_data_for_round(
 
     # Ensure that the LM consistency is satisfied, which ensures that either (1)
     # the global LM is set or (2) all the predictors have an LM set.
-    program._assert_lm_consistency()
+    # TODO(isaac): Uncomment this line after the LM consistency property is
+    # program._assert_lm_consistency()
 
     # Deepcopy the program and copy the dataset to avoid modifying the original
     program = program.deepcopy()
@@ -403,8 +373,9 @@ def bootstrap_data_for_round(
 
     # Collect the data for the given round
     with dspy.context(lm=context_lm):
+        # print(context_lm.kwargs)
         data = bootstrap_data(
-            program, dataset, metric=metric, num_threads=num_threads
+            program, dataset, metric=metric, num_threads=num_threads, max_errors=max_errors
         )
     
     # Add the round information to the data

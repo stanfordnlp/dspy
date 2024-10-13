@@ -1,4 +1,11 @@
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, Future
+from copy import deepcopy
+from enum import Enum
+from typing import Optional, Union, List
+import ujson
+
+
 
 
 class LM(ABC):
@@ -48,7 +55,7 @@ class LM(ABC):
         printed = []
         n = n + skip
 
-        for x in reversed(self.history[-100:]):
+        for x in reversed(self.history):
             prompt = x["prompt"]
 
             if prompt != last_prompt:
@@ -78,6 +85,10 @@ class LM(ABC):
                     printed.append((prompt, x))
                 elif provider == "you.com":
                     printed.append((prompt, x["response"]["answer"]))
+                elif provider == "vllm_offline":
+                    printed.append((prompt, x["response"].outputs))
+                elif provider == "vllm":
+                    printed.append((prompt, x["response"]["choices"]))
                 else:
                     printed.append((prompt, x["response"]["choices"]))
 
@@ -117,6 +128,10 @@ class LM(ABC):
                 text = choices[0].message.content
             elif provider == "cloudflare":
                 text = choices[0]
+            elif provider == "vllm":
+                text = choices[0]["message"]["content"]
+            elif provider == "vllm_offline":
+                text = choices[0].text
             else:
                 text = choices[0]["text"]
             printing_value += self.print_green(text, end="") if color_format else text
@@ -154,5 +169,107 @@ class LM(ABC):
         """Returns a copy of the language model with the same parameters."""
         kwargs = {**self.kwargs, **kwargs}
         model = kwargs.pop("model")
+        return self.__class__(model, **kwargs)
 
-        return self.__class__(model=model, **kwargs)
+#-------------------------------------------------------------------------------
+#    Classes for finetuning LMs
+#-------------------------------------------------------------------------------
+
+class TrainingMethod(Enum):
+    # TODO: add docstring
+    SFT = "SFT"
+    Preference = "Preference"
+
+
+"""Dictionary mapping training methods to the data keys they require."""
+TRAINING_METHOD_TO_DATA_KEYS = {
+    TrainingMethod.SFT: ["prompt", "completion"],
+    TrainingMethod.Preference: ["prompt", "chosen", "rejected"],
+}
+
+
+def verify_training_method_data_format(
+    method: TrainingMethod,
+    data_path: str
+) -> Optional[AssertionError]:
+    # TODO: add docstring
+    expected_keys = TRAINING_METHOD_TO_DATA_KEYS[method]
+    data = ujson.load(open(data_path))
+    for ind, data_dict in enumerate(data):
+        err_msg = f"The datapoint at index {ind} is missing the keys required for {method} training."
+        err_msg = f"\n    Expected: {expected_keys}"
+        err_msg = f"\n    Found: {data_dict.keys()}"
+        assert all([key in data_dict for key in expected_keys]), err_msg
+
+
+class TrainableLM(LM, ABC):
+    # TODO: add docstring
+
+    """The training methods supported by this class, should be overwritten."""
+    SUPPORTED_TRAINING_METHODS: List[TrainingMethod] = []
+
+    def get_finetune(
+            self,
+            method: TrainingMethod, 
+            train_path: str,
+            eval_path: Optional[str], 
+            **kwargs
+        ) -> Union[Future['TrainableLM'], Exception]:
+        # TODO: add docstring
+
+        # Input verification
+        assert method in self.SUPPORTED_TRAINING_METHODS
+        # Note: Commenting this out because we do not get our data in prompt completion format
+        # verify_training_method_data_format(method, data_path=train_path)
+        # if eval_path:
+        #     verify_training_method_data_format(method, data_path=eval_path)
+
+        # Create new model that will eventually be obtained through
+        # future.result() when its "start_training" method completes its
+        # execution
+        future: Future['TrainableLM'] = Future()
+        new_lm = deepcopy(self)
+
+        # Capture the current instance in the closure and start the training
+        # process asynchronously
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(
+            new_lm.start_training,
+            future,
+            method=method,
+            train_path=train_path,
+            eval_path=eval_path,
+            **kwargs
+        )
+        executor.shutdown(wait=False)
+
+        return future
+         
+    @abstractmethod
+    def start_training(
+        self,
+        future: Future['TrainableLM'],
+        train_path: str,
+        eval_path: Optional[str],
+        method: TrainingMethod,
+        **kwargs):
+        # TODO: add docstring
+        lname = self.__class__.__name__
+        err_msg = f"{lname} does not implement the 'start_training' method."
+        raise NotImplementedError(err_msg)
+
+    @abstractmethod
+    def stop_training(self):
+        # TODO: add docstring
+        lname = self.__class__.__name__
+        err_msg = f"{lname} does not implement the 'stop_training' method."
+        raise NotImplementedError(err_msg)
+
+def read_jsonl(filename):
+    with open(filename, "r") as f:
+        return [ujson.loads(line) for line in f]
+
+def write_jsonl(filename, data):
+    with open(filename, "w") as f:
+        for item in data:
+            f.write(ujson.dumps(item) + "\n")
