@@ -154,7 +154,6 @@ def cached_litellm_completion(request):
 
 def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
-    print("completion kwargs", kwargs)
     return litellm.completion(cache=cache, **kwargs)
 
 @functools.lru_cache(maxsize=None)
