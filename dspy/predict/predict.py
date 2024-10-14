@@ -288,4 +288,3 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
 # affect execution. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
 # Generally, unless overwritten, we'd see n=None, temperature=None.
-# That will eventually mean we have to learn them.

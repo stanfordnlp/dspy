@@ -44,8 +44,8 @@ class GSM8K:
         rng = random.Random(0)
         rng.shuffle(official_test)
 
-        trainset = official_train
-        devset = official_train[-200:]
+        trainset = official_train[:200]
+        devset = official_train[200:500]
         testset = official_test[:]
 
         import dspy

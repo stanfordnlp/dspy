@@ -63,7 +63,6 @@ class ChatAdapter(Adapter):
                     )
 
         if list(fields.keys()) != list(signature.output_fields.keys()):
-            # print("Expected", list(signature.output_fields.keys()), "but got", fields.keys(), "from", completion)
             raise ValueError(f"Expected {list(signature.output_fields.keys())} but got {fields.keys()}")
 
         return fields
