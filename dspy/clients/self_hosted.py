@@ -1,7 +1,5 @@
 from typing import Dict, Any
 
-from dspy import LM
-from dspy import logger
 from dspy.clients.openai import is_openai_model
 
 

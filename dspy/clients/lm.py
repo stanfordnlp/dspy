@@ -2,13 +2,12 @@ from concurrent.futures import ThreadPoolExecutor
 import functools
 import os
 from pathlib import Path
-import re
 from typing import Any, Dict, List, Optional, Type, Union
 import ujson
 
 
 from dspy import logger
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
+from dspy.clients.finetune import FinetuneJob
 from dspy.clients.self_hosted import (
     is_self_hosted_model,
     self_hosted_model_launch,
@@ -311,12 +310,10 @@ def execute_finetune_job(
         else:
             model = finetune(job=job, **job_kwargs)
         lm = lm.copy(model=model)
+        job.set_result(lm)
     except Exception as err:
         logger.error(err)
         job.set_result(err)
-
-    # Set the result to the launched lm
-    job.set_result(lm)
 
 
 # TODO: Perhaps we shouldn't directly cache the data
@@ -345,18 +342,18 @@ def finetune(
     # Get the fine-tuning provider
     try:
         provider = _get_supported_finetune_provider(model)
+
+        # Get the finetune function
+        provider_finetune_function = get_provider_finetune_function(provider)
+
+        # Fine-tune a new model based on the given model
+        model = provider_finetune_function(
+            job=job,
+            model=model,
+            message_completion_pairs=message_completion_pairs,
+            train_kwargs=train_kwargs,
+        )
     except Exception as err:
         raise err
-
-    # Get the finetune function
-    provider_finetune_function = get_provider_finetune_function(provider)
-
-    # Fine-tune a new model based on the given model
-    model = provider_finetune_function(
-        job=job,
-        model=model,
-        message_completion_pairs=message_completion_pairs,
-        train_kwargs=train_kwargs,
-    )
 
     return model
