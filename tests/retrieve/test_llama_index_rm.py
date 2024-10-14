@@ -3,8 +3,8 @@ import logging
 import pytest
 
 import dspy
-from dsp.modules.dummy_lm import DummyLM
 from dspy.datasets import HotPotQA
+from dspy.utils.dummies import DummyLM
 
 try:
     from llama_index.core import Settings, VectorStoreIndex

@@ -1,17 +1,20 @@
-import textwrap
-import pytest
 import re
+import textwrap
+
+import pytest
+
 import dspy
 from dsp.modules import LM
-from dspy.teleprompt.signature_opt_bayesian import MIPRO
-from dspy.utils.dummies import DummyLM
 from dspy import Example
+from dspy.teleprompt.signature_opt_bayesian import MIPRO
+from dspy.utils.dummies import DSPDummyLM
 
 
 # Define a simple metric function for testing
 def simple_metric(example, prediction, trace=None):
     # Simplified metric for testing: true if prediction matches expected output
     return example.output == prediction.output
+
 
 # Some example data
 capitals = {
@@ -31,10 +34,11 @@ extra_capitals = {
 # Example training and validation sets
 trainset = [
     Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
-    Example(
-        input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"
-    ).with_inputs("input"),
-] + [Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input") for country, capital in capitals.items()]
+    Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+] + [
+    Example(input=f"What is the capital of {country}?", output=capital).with_inputs("input")
+    for country, capital in capitals.items()
+]
 
 
 class ConditionalLM(LM):
@@ -73,11 +77,11 @@ class ConditionalLM(LM):
             # For other questions, the model will answer with the last word of the question.
             else:
                 answer = current_question.split()[-1]
-            
+
             answer = "think deeply.\nOutput: " + answer
 
-        RED, GREEN, RESET = '\033[91m', '\033[92m', '\033[0m'
-        print("=== DummyLM ===")
+        RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
+        print("=== DSPDummyLM ===")
         print(prompt, end="")
         print(f"{RED}{answer}{RESET}")
         print("===")
@@ -108,20 +112,14 @@ class ConditionalLM(LM):
 
     def get_convo(self, index):
         """get the prompt + anwer from the ith message"""
-        return self.history[index]['prompt'] \
-            + " " \
-            + self.history[index]['response']['choices'][0]['text']
+        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
 def test_bayesian_signature_optimizer_initialization():
-    optimizer = MIPRO(
-        metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True
-    )
+    optimizer = MIPRO(metric=simple_metric, num_candidates=10, init_temperature=1.4, verbose=True, track_stats=True)
     assert optimizer.metric == simple_metric, "Metric not correctly initialized"
     assert optimizer.num_candidates == 10, "Incorrect 'num_candidates' parameter initialization"
-    assert (
-        optimizer.init_temperature == 1.4
-    ), "Initial temperature not correctly initialized"
+    assert optimizer.init_temperature == 1.4, "Initial temperature not correctly initialized"
     assert optimizer.verbose is True, "Verbose flag not correctly initialized"
     assert optimizer.track_stats is True, "Track stats flag not correctly initialized"
 
@@ -165,9 +163,7 @@ def test_signature_optimizer_optimization_process():
 
 
 def test_signature_optimizer_bad_lm():
-    dspy.settings.configure(
-        lm=DummyLM([f"Optimized instruction {i}" for i in range(30)])
-    )
+    dspy.settings.configure(lm=DSPDummyLM([f"Optimized instruction {i}" for i in range(30)]))
     student = SimpleModule(signature="input -> output")
     optimizer = MIPRO(
         metric=simple_metric,
@@ -177,7 +173,7 @@ def test_signature_optimizer_bad_lm():
         track_stats=False,
     )
 
-    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DummyLM,
+    # Krista: when the code tries to generate bootstrapped examples, the examples are generated using DSPDummyLM,
     # which only outputs "Optimized instruction i" this means that none of the bootstrapped examples are successful,
     # and therefore the set of examples that we're using to generate new prompts is empty
     with pytest.raises(ValueError):
@@ -233,9 +229,9 @@ def test_optimization_and_output_verification():
         Input:
 
         ---
-        
+
         Follow the following format.
-        
+
         Input: ${input}
         Reasoning: Let's think step by step in order to ${produce the output}. We ...
         Output: ${output}
