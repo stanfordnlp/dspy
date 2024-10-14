@@ -40,22 +40,28 @@ TRAINING_METHOD_TO_DATA_KEYS = {
 }
 
 
-class FinetuneJob(Future):
+class FinetuneJob():
 
     def __init__(self,
         model: str,
-        message_completion_pairs: List[Dict[str, str]],
+        # message_completion_pairs: List[Dict[str, str]],
+        train_path: str,
+        eval_path: Optional[str],
         train_kwargs: Optional[Dict[str, Any]]=None,
     ):
         self.model = model
-        self.message_completion_pairs = message_completion_pairs
+        # self.message_completion_pairs = message_completion_pairs
+        self.train_path = train_path
+        self.eval_path = eval_path
         self.train_kwargs: Dict[str, Any] = train_kwargs or {}
         super().__init__()
     
     def get_kwargs(self):
         return dict(
             model=self.model,
-            message_completion_pairs=self.message_completion_pairs,
+            # message_completion_pairs=self.message_completion_pairs,
+            train_path=self.train_path,
+            eval_path=self.eval_path,
             train_kwargs=self.train_kwargs,
         )
 

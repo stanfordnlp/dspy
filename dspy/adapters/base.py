@@ -3,7 +3,6 @@ class Adapter:
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
-        # print(lm.model)
         outputs = lm(**inputs, **lm_kwargs)
         values = []
 

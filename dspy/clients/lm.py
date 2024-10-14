@@ -110,8 +110,12 @@ class LM:
             anyscale_model_kill(self.model, self.launch_kwargs)
         logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
 
-    def finetune(self,
-            message_completion_pairs: List[Dict[str, str]],
+    async def finetune(self,
+            # message_completion_pairs: List[Dict[str, str]],
+            method: TrainingMethod,
+            train_path: str,
+            eval_path: Optional[str],
+            provider: str = "openai",
             train_kwargs: Optional[Dict[str, Any]]=None,
             launch_kwargs: Optional[Dict[str, Any]]=None,
             cache_finetune: bool = True,
@@ -122,31 +126,18 @@ class LM:
         err = "Fine-tuning is an experimental feature and requires `dspy.settings.experimental = True`."
         assert settings.experimental, err
 
-        # Get the fine-tuning provider, if it is supported
-        try:
-            provider = _get_supported_finetune_provider(self.model)
-        except ValueError as err:
-            raise err
-
         # Initialize the finetune job
         FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
         finetune_job = FinetuneJobClass(
             model=self.model,
-            message_completion_pairs=message_completion_pairs,
+            train_path=train_path,
+            eval_path=eval_path,
             train_kwargs=train_kwargs,
         )
 
-        # Start asyncronous training
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(
-            execute_finetune_job,
-            finetune_job,
-            launch_kwargs=launch_kwargs,
-            cache_finetune=cache_finetune
-        )
-        executor.shutdown(wait=False)
+        job = finetune_job.run_finetune()
 
-        return finetune_job
+        return job
     
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
@@ -163,6 +154,7 @@ def cached_litellm_completion(request):
 
 def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
+    print("completion kwargs", kwargs)
     return litellm.completion(cache=cache, **kwargs)
 
 @functools.lru_cache(maxsize=None)
@@ -229,8 +221,8 @@ from dspy.clients.openai import (
 )
 from dspy.clients.anyscale import (
     FinetuneJobAnyScale,
-    is_anyscale_model,
-    finetune_anyscale
+    # is_anyscale_model,
+    # finetune_anyscale
 )
 
 
@@ -275,44 +267,44 @@ def get_provider_finetune_job_class(provider: str) -> Type[FinetuneJob]:
     return _CLS
 
 
-def get_provider_finetune_function(provider: str) -> callable:
-    """Return the finetune function for the given model."""
-    # Mapping from provider to finetune function
-    _PROVIDER_TO_FINETUNE_FUNCTION = {
-        _PROVIDER_ANYSCALE: finetune_anyscale,
-        _PROVIDER_OPENAI: finetune_openai,
-    }
+# def get_provider_finetune_function(provider: str) -> callable:
+#     """Return the finetune function for the given model."""
+#     # Mapping from provider to finetune function
+#     _PROVIDER_TO_FINETUNE_FUNCTION = {
+#         _PROVIDER_ANYSCALE: finetune_anyscale,
+#         _PROVIDER_OPENAI: finetune_openai,
+#     }
 
-    # Get the finetuning provider
-    finetune_function = _PROVIDER_TO_FINETUNE_FUNCTION[provider]
+#     # Get the finetuning provider
+#     finetune_function = _PROVIDER_TO_FINETUNE_FUNCTION[provider]
 
-    return finetune_function
+#     return finetune_function
 
 
-def execute_finetune_job(
-    job: FinetuneJob[Type[LM]],
-    launch_kwargs: Optional[Dict[str, Any]]=None,
-    cache_finetune: bool=True
-):
-    """Execute the finetune job in a blocking manner."""
-    # Input validation
-    launch_kwargs = launch_kwargs or {}
+# def execute_finetune_job(
+#     job: FinetuneJob[Type[LM]],
+#     launch_kwargs: Optional[Dict[str, Any]]=None,
+#     cache_finetune: bool=True
+# ):
+#     """Execute the finetune job in a blocking manner."""
+#     # Input validation
+#     launch_kwargs = launch_kwargs or {}
 
-    # Execute finetune job
-    job_kwargs = job.get_kwargs()
-    if cache_finetune:
-        try:
-            model = cached_finetune(job=job, **job_kwargs)
-        except ValueError as err:
-            raise err
-    else:
-        model = finetune(job=job, **job_kwargs)
+#     # Execute finetune job
+#     job_kwargs = job.get_kwargs()
+#     if cache_finetune:
+#         try:
+#             model = cached_finetune(job=job, **job_kwargs)
+#         except ValueError as err:
+#             raise err
+#     else:
+#         model = finetune(job=job, **job_kwargs)
 
-    # Launch the LM
-    lm = LM(model=model, **launch_kwargs)
+#     # Launch the LM
+#     lm = LM(model=model, **launch_kwargs)
 
-    # Set the result of the finetuning job to the fine-tuned LM
-    job.set_result(lm)
+#     # Set the result of the finetuning job to the fine-tuned LM
+#     job.set_result(lm)
 
 
 # TODO: Perhaps we shouldn't directly cache the data
