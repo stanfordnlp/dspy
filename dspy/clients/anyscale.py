@@ -8,7 +8,7 @@ from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
     get_finetune_directory,
-    validate_training_data
+    validate_finetune_data,
 )
 
 #-------------------------------------------------------------------------------
@@ -74,7 +74,7 @@ def finetune_anyscale(
     try:
       logger.info("[Finetune] Validate the formatting of the fine-tuning data")
       training_method = TrainingMethod.SFT  # Hardcoded
-      validate_training_data(message_completion_pairs, training_method)
+      validate_finetune_data(message_completion_pairs, training_method)
       time.sleep(5)
       logger.info("[Finetune] Done!")
 

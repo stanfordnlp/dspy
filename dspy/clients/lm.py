@@ -60,8 +60,8 @@ class LM:
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-        self.launch_kwargs = kwargs.pop("launch_kwargs", launch_kwargs or {})
         self.history = []
 
         # TODO: This is error prone!
@@ -90,6 +90,18 @@ class LM:
         self.history.append(entry)
 
         return outputs
+
+    def copy(self, **kwargs):
+        """Create a copy of the current LM with updated kwargs."""
+        kwargs = {
+            "model": self.model,
+            "model_type": self.model_type,
+            "cache": self.cache,
+            "launch_kwargs": self.launch_kwargs,
+            **self.kwargs,
+            **kwargs,
+        }
+        return self.__class__(**kwargs)
     
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
@@ -100,7 +112,9 @@ class LM:
             self_hosted_model_launch(self.model, self.launch_kwargs)
         elif is_anyscale_model(self.model):
             anyscale_model_launch(self.model, self.launch_kwargs)
-        logger.debug(f"`LM.launch()` is called for the auto-launched model {self.model} -- no action is taken.")
+        msg = f"`launch()` is called for the auto-launched model {self.model}"
+        msg += " -- no action is taken!"
+        logger.info(msg)
 
     def kill(self):
         """Send a request to the provider to kill the model, if needed."""
@@ -108,18 +122,20 @@ class LM:
             self_hosted_model_kill(self.model, self.launch_kwargs)
         elif is_anyscale_model(self.model):
             anyscale_model_kill(self.model, self.launch_kwargs)
-        logger.debug(f"`LM.kill()` is called for the auto-launched model {self.model} -- no action is taken.")
+        msg = f"`kill()` is called for the auto-launched model {self.model}"
+        msg += " -- no action is taken!"
+        logger.info(msg)
 
     def finetune(self,
             message_completion_pairs: List[Dict[str, str]],
             train_kwargs: Optional[Dict[str, Any]]=None,
-            launch_kwargs: Optional[Dict[str, Any]]=None,
             cache_finetune: bool = True,
         ) -> FinetuneJob:
         """Start model fine-tuning, if supported."""
         # Fine-tuning is experimental and requires the experimental flag
         from dspy import settings as settings
-        err = "Fine-tuning is an experimental feature and requires `dspy.settings.experimental = True`."
+        err = "Fine-tuning is an experimental feature."
+        err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
         # Get the fine-tuning provider, if it is supported
@@ -141,7 +157,7 @@ class LM:
         executor.submit(
             execute_finetune_job,
             finetune_job,
-            launch_kwargs=launch_kwargs,
+            lm=self,
             cache_finetune=cache_finetune
         )
         executor.shutdown(wait=False)
@@ -280,7 +296,7 @@ def get_provider_finetune_function(provider: str) -> callable:
 
 def execute_finetune_job(
     job: FinetuneJob[Type[LM]],
-    launch_kwargs: Optional[Dict[str, Any]]=None,
+    lm: LM,
     cache_finetune: bool=True
 ):
     """Execute the finetune job in a blocking manner."""
@@ -289,13 +305,12 @@ def execute_finetune_job(
 
     # Execute finetune job
     job_kwargs = job.get_kwargs()
-    logger.error(f"Line 292")
     try:
         if cache_finetune:
             model = cached_finetune(job=job, **job_kwargs)
         else:
             model = finetune(job=job, **job_kwargs)
-        lm = LM(model=model, **launch_kwargs)
+        lm = lm.copy(model=model)
     except Exception as err:
         logger.error(err)
         job.set_result(err)
@@ -325,12 +340,12 @@ def finetune(
     model: str,
     message_completion_pairs: List[Dict[str, str]],
     train_kwargs: Optional[Dict[str, Any]]=None,
-) -> Union[str, ValueError]:
+) -> Union[str, Exception]:
     """Fine-tune a new model based on the given model."""
     # Get the fine-tuning provider
     try:
         provider = _get_supported_finetune_provider(model)
-    except ValueError as err:
+    except Exception as err:
         raise err
 
     # Get the finetune function
