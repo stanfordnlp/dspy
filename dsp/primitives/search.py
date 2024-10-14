@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterable
+from typing import Union
 
 import numpy as np
 
@@ -7,24 +8,33 @@ import dsp
 
 logger = logging.getLogger(__name__)
 
-def retrieve(query: str, k: int, **kwargs) -> list[str]:
+def retrieve(query: str, k: int, with_metadata: bool = False, **kwargs) -> Union[list[str], dict[str, list[str]]]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
+    
     passages = dsp.settings.rm(query, k=k, **kwargs)
-    if not isinstance(passages, Iterable):
-        # it's not an iterable yet; make it one.
-        # TODO: we should unify the type signatures of dspy.Retriever
-        passages = [passages]
-    passages = [psg.long_text for psg in passages]
 
     if dsp.settings.reranker:
         passages_cs_scores = dsp.settings.reranker(query, passages)
         passages_cs_scores_sorted = np.argsort(passages_cs_scores)[::-1]
         passages = [passages[idx] for idx in passages_cs_scores_sorted]
 
+    if with_metadata:
+        passages = {
+            "long_text": [psg.long_text for psg in passages],
+            "metadatas": [psg.metadatas for psg in passages]
+        }
+    else:
+        passages = [psg.long_text for psg in passages]
+
+    if not isinstance(passages, list):
+        # it's not an iterable yet; make it one.
+        # TODO: we should unify the type signatures of dspy.Retriever
+        passages = [passages]
 
     return passages
+
 def retrievewithMetadata(query: str, k: int, **kwargs) -> list[str]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
 
@@ -116,13 +126,13 @@ def retrieveEnsemblewithMetadata(
 
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
-    if not dsp.settings.reranker:
-        return retrieveRerankEnsemblewithMetadata(queries=queries,k=k)
+    if dsp.settings.reranker:
+        return retrieveRerankEnsemblewithMetadata(queries=queries,k=k, **kwargs)
 
     queries = [q for q in queries if q]
 
     if len(queries) == 1:
-        return retrieve(queries[0], k)
+        return retrieve(queries[0], k, with_metadata=True)
     all_queries_passages = []
     for q in queries:
         passages = {}
