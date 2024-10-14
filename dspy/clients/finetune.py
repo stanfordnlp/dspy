@@ -1,12 +1,10 @@
-from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, Future
+from abc import abstractmethod
 from enum import Enum
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import ujson
 
-from dspy import logger
 
 
 # TODO: Move to a centralized location with all the other environment variables

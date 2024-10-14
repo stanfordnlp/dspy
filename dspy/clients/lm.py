@@ -1,8 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
 import functools
 import os
 from pathlib import Path
-import re
 from typing import Any, Dict, List, Optional, Type, Union
 import ujson
 
@@ -215,8 +213,7 @@ def _inspect_history(lm, n: int = 1):
 
 from dspy.clients.openai import (
     FinetuneJobOpenAI,
-    is_openai_model,
-    finetune_openai
+    is_openai_model
 )
 from dspy.clients.anyscale import (
     FinetuneJobAnyScale,

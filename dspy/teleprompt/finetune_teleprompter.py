@@ -6,7 +6,6 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.primitives.prediction import Prediction
-from dspy.signatures.signature import signature_to_template
 
 import concurrent.futures
 
