@@ -1,28 +1,29 @@
+from collections import defaultdict
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+import openai
 
 from dspy import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
-    validate_training_data,
+    TrainingStatus,
+    validate_finetune_data,
     save_data,
 )
 
 
 #-------------------------------------------------------------------------------
-#    Variables
+#    Function and variables to check if a model is an OpenAI model
 #-------------------------------------------------------------------------------
 
-# List of training methods supported by OpenAI
-TRAINING_METHODS_OPENAI = [
-    TrainingMethod.SFT,
-]
+# Provider name
+PROVIDER_OPENAI = "openai"
 
-# TODO: Should we include the TTS/Dall-E models on this list?
-# List of OpenAI model IDs
-OPENAI_MODEL_IDS = model_ids = [
+# List of model IDs
+_MODEL_IDS = [
     "gpt-4o",
     "gpt-4o-2024-08-06",
     "gpt-4o-2024-05-13",
@@ -64,36 +65,15 @@ OPENAI_MODEL_IDS = model_ids = [
 ]
 
 
-#-------------------------------------------------------------------------------
-#    Function and classes required for the fine-tune interface
-#-------------------------------------------------------------------------------
-
-class FinetuneJobOpenAI(FinetuneJob):
-
-    def cancel(self):
-        """Cancel the finetune job."""
-        logger.info("[Finetune] Canceling the OpenAI finetune job")
-        time.sleep(3)
-        logger.info("[Finetune] Done")
-        super().cancel()
-
-    def status(self):
-        """Get the status of the finetune job."""
-        logger.info("[Finetune] Getting the status of the OpenAI finetune job")
-        time.sleep(3)
-        status = "Running"
-        logger.info("[Finetune] Done")
-        return status
-
-
 def is_openai_model(model: str) -> bool:
     """Check if the model is an OpenAI model."""
-    # Filter the "openai/" prefix, if exists
-    if model.startswith("openai/"):
-        model = model[len("openai/"):]
+    # Filter the provider_prefix, if exists
+    provider_prefix = f"{PROVIDER_OPENAI}/"
+    if model.startswith(provider_prefix):
+        model = model[len(provider_prefix):]
 
     # Check if the model is a base OpenAI model
-    if model in OPENAI_MODEL_IDS:
+    if model in _MODEL_IDS:
         return True
 
     # Check if the model is a fine-tuned OpneAI model. Fine-tuned OpenAI models
@@ -104,7 +84,7 @@ def is_openai_model(model: str) -> bool:
     # by making a call to the OpenAI API to be more exact, but this might
     # require an API key with the right permissions. 
     match = re.match(r"ft:([^:]+):", model)
-    if match and match.group(1) in OPENAI_MODEL_IDS:
+    if match and match.group(1) in _MODEL_IDS:
         return True
 
     # If the model is not a base OpenAI model or a fine-tuned OpenAI model, then
@@ -112,62 +92,276 @@ def is_openai_model(model: str) -> bool:
     return False
 
 
+#-------------------------------------------------------------------------------
+#    Function and classes required for the fine-tune interface
+#-------------------------------------------------------------------------------
+
+class FinetuneJobOpenAI(FinetuneJob):
+
+    def __init__(self, *args, **kwargs):
+        self.provider_file_id = None  # TODO: Can we get this using the job_id?
+        self.provider_job_id = None
+        super().__init__(*args, **kwargs)
+
+    def cancel(self):
+        # Cancel the provider job
+        if _does_job_exist(self.provider_job_id):
+            status = _get_training_status(self.provider_job_id)
+            if _is_terminal_training_status(status):
+                err_msg = "Jobs that are complete cannot be canceled."
+                err_msg += f" Job with ID {self.provider_job_id} is done."
+                raise Exception(err_msg)
+            openai.fine_tuning.jobs.cancel(self.provider_job_id)
+            self.provider_job_id = None
+
+        # Delete the provider file
+        # TODO: Should there be a separate clean method?
+        if self.provider_file_id is not None:
+            if _does_file_exist(self.provider_file_id):
+                openai.files.delete(self.provider_file_id)
+            self.provider_file_id = None
+
+        # Call the super's cancel method after the custom cancellation logic
+        super().cancel()
+
+    def status(self) -> TrainingStatus:
+        status = _get_training_status(self.provider_job_id)
+        return status
+
+
 def finetune_openai(
         job: FinetuneJobOpenAI,
         model: str,
         message_completion_pairs: List[Dict[str, str]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-    ) -> str:
-    """Fine-tune an OpenAI model."""
-    # Fake fine-tuning
+    ) -> Union[str, Exception]:
     train_kwargs = train_kwargs or {}
+    train_data = message_completion_pairs
+    train_method = TrainingMethod.SFT  # Note: This could be an argument
 
+    # Validate train data and method
+    logger.info("[Finetune] Validating the formatting of the data")
+    _validate_data(train_data, train_method)
+    logger.info("[Finetune] Done!")
+
+    # Convert to the OpenAI format
+    logger.info("[Finetune] Converting the data to the OpenAI format")
+    # TODO: Should we use the system prompt?
+    train_data = _convert_data(train_data)
+    logger.info("[Finetune] Done!")
+
+    # Save to a file
+    logger.info("[Finetune] Saving the data to a file")
+    data_path = save_data(train_data, provider=PROVIDER_OPENAI)
+    logger.info("[Finetune] Done!")
+
+    # Upload the data to the cloud
+    logger.info("[Finetune] Uploading the data to the provider")
+    provider_file_id = _upload_data(data_path)
+    job.provider_file_id = provider_file_id
+    logger.info("[Finetune] Done!")
+
+    logger.info("[Finetune] Start remote training")
+    # We utilize model and train_kwargs here
+    provider_job_id = _start_remote_training(
+        train_file_id=job.provider_file_id,
+        model=model,
+        train_kwargs=train_kwargs,
+    )
+    job.provider_job_id = provider_job_id
+    # job.provider_job_id = "ftjob-ZdEL1mUDk0dwdDuZJQOng8Vv"
+    logger.info("[Finetune] Done!")
+
+    logger.info("[Finetune] Wait for training to complete")
+    # TODO: Would it be possible to stream the logs?
+    _wait_for_job(job)
+    logger.info("[Finetune] Done!")
+
+    logger.info("[Finetune] Get trained model if the run was a success")
+    model = _get_trained_model(job)
+    logger.info("[Finetune] Done!")
+
+    return model
+
+
+#-------------------------------------------------------------------------------
+#    Custom functions to support the finetune_* function
+#-------------------------------------------------------------------------------
+
+_SUPPORTED_TRAINING_METHODS = [
+    TrainingMethod.SFT,
+]
+
+def _get_training_status(job_id: str) -> Union[TrainingStatus, Exception]:
+    # TODO: Should this type be shared across all fine-tune clients?
+    provider_status_to_training_status = {
+        "validating_files": TrainingStatus.pending,
+        "queued": TrainingStatus.pending,
+        "running": TrainingStatus.running,
+        "succeeded": TrainingStatus.succeeded,
+        "failed": TrainingStatus.failed,
+        "cancelled": TrainingStatus.cancelled,
+    }
+
+    # Check if there is an active job
+    if job_id is None:
+        logger.info("There is no active job.")
+        return TrainingStatus.not_started
+
+    err_msg = f"Job with ID {job_id} does not exist."
+    assert _does_job_exist(job_id), err_msg
+
+    # Retrieve the provider's job and report the status
+    provider_job = openai.fine_tuning.jobs.retrieve(job_id)
+    provider_status = provider_job.status
+    status = provider_status_to_training_status[provider_status]
+
+    return status
+
+
+def _does_job_exist(job_id: str) -> bool:
     try:
-        # Validate the formatting of the fine-tuning data
-        logger.info("[Finetune] Validating the formatting of the data")
-        _validate_data(message_completion_pairs)
-        logger.info("[Finetune] Done!")
-
-        # Validate the formatting of the fine-tuning data
-        logger.error("[Finetune] Saving the data to a file")
-        # data_path = save_data(message_completion_pairs)
-        time.sleep(1)
-        logger.info("[Finetune] Done!")
-    
-        logger.error("[Finetune] Uploading the data to the cloud")
-        time.sleep(1)
-        logger.error("[Finetune] Done!")
-
-        logger.error("[Finetune] Launch training")
-        # We utilize model and train_kwargs here
-        time.sleep(1)
-        logger.error("[Finetune] Done!")
-
-        logger.error("[Finetune] Wait for training to complete")
-        time.sleep(1)
-        logger.error("[Finetune] Done!")
-
-        logger.error("[Finetune] Get trained model client")
-        model = "ft:gpt-4o:2024-08-06:THIS_IS_A_REAL_MODEL!!!"  # Hardcoded
-        time.sleep(1)
-        logger.error("[Finetune] Done!")
-
-        logger.error("[Finetune] Exiting finetune_openai")
-
-        return model
-
+        # TODO: Error handling is vague
+        openai.fine_tuning.jobs.retrieve(job_id)
+        return True
     except Exception as e:
-      logger.error(f"[Finetune] Error: {e}")
-      raise e
+        return False
+
+
+def _does_file_exist(file_id: str) -> bool:
+    try:
+        # TODO: Error handling is vague
+        openai.files.retrieve(file_id)
+        return True
+    except Exception as e:
+        return False
+
+
+def _is_terminal_training_status(status: TrainingStatus) -> bool:
+    return status in [
+        TrainingStatus.succeeded,
+        TrainingStatus.failed,
+        TrainingStatus.cancelled,
+    ]
+
+
+def _validate_data(
+        data: Dict[str, str],
+        train_method: TrainingMethod
+    ) -> Optional[Exception]:
+    # Check if this train method is supported
+    if train_method not in _SUPPORTED_TRAINING_METHODS:
+        err_msg = f"OpenAI does not support the training method {train_method}."
+        raise ValueError(err_msg)
+
+    validate_finetune_data(data, train_method)
+
+
+def _convert_data(
+        data: List[Dict[str, str]],
+        system_prompt: Optional[str]=None,
+    ) -> Union[List[Dict[str, Any]], Exception]:
+    # Item-wise conversion function
+    def _row_converter(d):
+        messages = [
+            {"role": "user", "content": d["prompt"]},
+            {"role": "assistant", "content": d["completion"]}
+        ]
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+        messages_dict = {"messages": messages}
+        return messages_dict
+    
+    # Convert the data to the OpenAI format; validate the converted data
+    converted_data = list(map(_row_converter, data))
+    openai_data_validation(converted_data)
+    return converted_data
+
+
+def _upload_data(data_path: str) -> str:
+    # Upload the data to the provider
+    provider_file = openai.files.create(
+        file=open(data_path, "rb"),
+        purpose="fine-tune",
+    )
+    return provider_file.id
+
+
+def _start_remote_training(
+        train_file_id: str,
+        model: id,
+        train_kwargs: Optional[Dict[str, Any]]=None
+    ) -> str:
+    train_kwargs = train_kwargs or {}
+    provider_job = openai.fine_tuning.jobs.create(
+        model=model,
+        training_file=train_file_id,
+        hyperparameters=train_kwargs,
+    )
+    return provider_job.id
+
+
+def _wait_for_job(
+    job: FinetuneJobOpenAI,
+    poll_frequency: int=60,
+):
+    while not _is_terminal_training_status(job.status()):
+        time.sleep(poll_frequency)
+
+
+def _get_trained_model(job):
+    status = job.status()
+    if status != TrainingStatus.succeeded:
+        err_msg = f"Job status is {status}."
+        err_msg += f" Must be {TrainingStatus.succeeded} to retrieve the model."
+        logger.error(err_msg)
+        raise Exception(err_msg)
+
+    provider_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
+    finetuned_model = provider_job.fine_tuned_model
+    return finetuned_model
 
 
 #-------------------------------------------------------------------------------
-#    Custom functions
+#    OpenAI utility function(s)
 #-------------------------------------------------------------------------------
-def _validate_data(data: Dict[str, str]) -> Optional[Exception]:
-    """Validate the formatting of the fine-tuning data."""
-    # TODO: Hardcoded train method
-    # TODO: Should we skip this validation since the server might have custom
-    # requirements?
-    training_method = TrainingMethod.SFT
-    validate_training_data(data, training_method)
+
+# Adapted from https://cookbook.openai.com/examples/chat_finetuning_data_prep
+def openai_data_validation(dataset: List[dict[str, Any]]):
+    format_errors = defaultdict(int)
+    for ex in dataset:
+        if not isinstance(ex, dict):
+            format_errors["data_type"] += 1
+            continue
+
+        messages = ex.get("messages", None)
+        if not messages:
+            format_errors["missing_messages_list"] += 1
+            continue
+
+        for message in messages:
+            if "role" not in message or "content" not in message:
+                format_errors["message_missing_key"] += 1
+
+            if any(k not in ("role", "content", "name", "function_call", "weight") for k in message):
+                format_errors["message_unrecognized_key"] += 1
+
+            if message.get("role", None) not in ("system", "user", "assistant", "function"):
+                format_errors["unrecognized_role"] += 1
+
+            content = message.get("content", None)
+            function_call = message.get("function_call", None)
+
+            if (not content and not function_call) or not isinstance(content, str):
+                format_errors["missing_content"] += 1
+
+        if not any(message.get("role", None) == "assistant" for message in messages):
+            format_errors["example_missing_assistant_message"] += 1
+
+    # Raise an error if there are any format errors
+    if format_errors:
+        err_msg = "Found errors in the dataset format using the OpenAI API."
+        err_msg += " Here are the number of datapoints for each error type:"
+        for k, v in format_errors.items():
+            err_msg += "\n    {k}: {v}"
+        raise ValueError(err_msg)

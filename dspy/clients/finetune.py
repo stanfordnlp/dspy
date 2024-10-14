@@ -1,10 +1,11 @@
-from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, Future
+from abc import abstractmethod
+from concurrent.futures import Future
 from enum import Enum
 import os
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 import ujson
+
+from datasets.fingerprint import Hasher
 
 from dspy import logger
 
@@ -13,7 +14,7 @@ from dspy import logger
 # Set the directory to save the fine-tuned models
 def get_finetune_directory() -> str:
     """Get the directory to save the fine-tuned models."""
-    alternative_path = os.path.join(Path.home(), '.dspy_finetune')
+    alternative_path = os.path.join(os.getcwd(), '.dspy_finetune')
     # TODO: Should the parent directory be different than those used for
     # inference
     return os.environ.get('DSPY_FINETUNEDIR') or alternative_path
@@ -31,6 +32,16 @@ class TrainingMethod(str, Enum):
     """
     SFT = "SFT"
     Preference = "Preference"
+
+
+class TrainingStatus(str, Enum):
+    """Enum class for remote training status."""
+    not_started = "not_started"
+    pending = "pending"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
 
 
 """Dictionary mapping training methods to the data keys they require."""
@@ -77,27 +88,40 @@ class FinetuneJob(Future):
         raise NotImplementedError("Method `status` is not implemented.")
 
 
-def validate_training_data(
+def validate_finetune_data(
         data: List[Dict[str, Any]],
-        training_method: TrainingMethod
+        train_method: TrainingMethod
     ) -> Optional[AssertionError]:
-    """Validate the training data based on the training method."""
+    """Validate the finetune data based on the training method."""
     # Get the required data keys for the training method
-    required_keys = TRAINING_METHOD_TO_DATA_KEYS[training_method]
+    required_keys = TRAINING_METHOD_TO_DATA_KEYS[train_method]
 
     # Check if the training data has the required keys
     for ind, data_dict in enumerate(data):
-        err_msg = f"The datapoint at index {ind} is missing the keys required for {training_method} training."
+        err_msg = f"The datapoint at index {ind} is missing the keys required for {train_method} training."
         err_msg = f"\n    Expected: {required_keys}"
         err_msg = f"\n    Found: {data_dict.keys()}"
         assert all([key in data_dict for key in required_keys]), err_msg
 
 
-def save_data(data: Dict[str, str]) -> str:
-    # TODO: Assign different names based on the data hash
+def save_data(
+        data: Any,
+        provider: Optional[str]=None,
+    ) -> str:
+    """Save the fine-tuning data to a file."""
+    # Construct the file name based on the data hash
+    hash = Hasher.hash(data)
+    file_name = f"{hash}.jsonl"
+    file_name = f"{provider}_{file_name}" if provider else file_name
+
+    # Find the directory to save the fine-tuning data
     finetune_parent_dir = get_finetune_directory()
-    data_path = os.path.join(finetune_parent_dir, "openai", "train.json")
-    with open(data_path, "w") as f:
+    os.makedirs(finetune_parent_dir, exist_ok=True)
+
+    # Save the data to a file
+    file_path = os.path.join(finetune_parent_dir, file_name)
+    file_path = os.path.abspath(file_path)
+    with open(file_path, "w") as f:
         for item in data:
             f.write(ujson.dumps(item) + "\n")
-    return data_path
+    return file_path

@@ -241,9 +241,6 @@ def _get_supported_finetune_provider(model: str) -> Union[str, ValueError]:
     named `_get_provider` because it does not attempt to find the provider of a
     model if there is no DSPy fine-tuning support for it.
     """
-    if is_self_hosted_model(model):
-        return _PROVIDER_SELF_HOSTED
-
     if is_openai_model(model):
         return _PROVIDER_OPENAI
 
@@ -292,18 +289,18 @@ def execute_finetune_job(
 
     # Execute finetune job
     job_kwargs = job.get_kwargs()
-    if cache_finetune:
-        try:
+    logger.error(f"Line 292")
+    try:
+        if cache_finetune:
             model = cached_finetune(job=job, **job_kwargs)
-        except ValueError as err:
-            raise err
-    else:
-        model = finetune(job=job, **job_kwargs)
+        else:
+            model = finetune(job=job, **job_kwargs)
+        lm = LM(model=model, **launch_kwargs)
+    except Exception as err:
+        logger.error(err)
+        job.set_result(err)
 
-    # Launch the LM
-    lm = LM(model=model, **launch_kwargs)
-
-    # Set the result of the finetuning job to the fine-tuned LM
+    # Set the result to the launched lm
     job.set_result(lm)
 
 
