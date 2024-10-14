@@ -63,6 +63,11 @@ class LM:
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
 
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.kwargs, **kwargs}
+        return self.__class__(model=self.model, **kwargs)
+
 
 @functools.lru_cache(maxsize=None)
 def cached_litellm_completion(request):
