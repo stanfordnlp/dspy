@@ -2,7 +2,7 @@
 Retriever model for chromadb
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 
 import backoff
 import openai
@@ -16,20 +16,6 @@ try:
     ERRORS = (openai.error.RateLimitError, openai.error.ServiceUnavailableError, openai.error.APIError)
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
-
-try:
-    import chromadb
-    import chromadb.utils.embedding_functions as ef
-    from chromadb.api.types import (
-        Embeddable,
-        EmbeddingFunction,
-    )
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
-except ImportError:
-    raise ImportError(
-        "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
-    )
 
 
 class ChromadbRM(Retrieve):
@@ -82,14 +68,29 @@ class ChromadbRM(Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        embedding_function: Optional[
-            EmbeddingFunction[Embeddable]
-        ] = ef.DefaultEmbeddingFunction(),
-        client: Optional[chromadb.Client] = None,
+        embedding_function: Optional[Any] = None,
+        client: Optional[Any] = None,
         k: int = 7,
     ):
-        self._init_chromadb(collection_name, persist_directory, client=client)
+        try:
+            import chromadb
+            import chromadb.utils.embedding_functions as ef
+            from chromadb.api.types import (
+                Embeddable,
+                EmbeddingFunction,
+            )
+            from chromadb.config import Settings
+            from chromadb.utils import embedding_functions
+        except ImportError:
+            raise ImportError(
+                "The chromadb library is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
+            )
+
+        if embedding_function is None:
+            embedding_function = ef.DefaultEmbeddingFunction()
+            
         self.ef = embedding_function
+        self._init_chromadb(collection_name, persist_directory, client=client)
 
         super().__init__(k=k)
 
@@ -97,8 +98,8 @@ class ChromadbRM(Retrieve):
         self,
         collection_name: str,
         persist_directory: str,
-        client: Optional[chromadb.Client] = None,
-    ) -> chromadb.Collection:
+        client: Optional[Any] = None,
+    ) -> Any:
         """Initialize chromadb and return the loaded index.
 
         Args:
@@ -120,6 +121,7 @@ class ChromadbRM(Retrieve):
         )
         self._chromadb_collection = self._chromadb_client.get_or_create_collection(
             name=collection_name,
+            embedding_function=self.ef
         )
 
     @backoff.on_exception(
