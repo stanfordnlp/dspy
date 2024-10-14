@@ -150,15 +150,6 @@ const config: Config = {
       darkTheme: prismThemes.dracula, // Dark theme for code blocks
     },
   },
-  themes: [
-    [
-      require.resolve("@easyops-cn/docusaurus-search-local"),
-      /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
-      ({
-        hashed: true,
-      }),
-    ],
-  ],
   scripts: [
     {
       id: "runllm-widget-script",
