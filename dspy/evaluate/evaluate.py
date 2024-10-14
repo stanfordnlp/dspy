@@ -112,7 +112,7 @@ class Evaluate:
                     except KeyboardInterrupt:
                         self.cancel_jobs.set()
                         dspy.logger.warning("Received KeyboardInterrupt. Cancelling evaluation.")
-                        # Optionally cancel remaining futures
+                        # Cancel remaining futures
                         for f in futures:
                             f.cancel()
                         break
@@ -144,7 +144,7 @@ class Evaluate:
         except KeyboardInterrupt:
             self.cancel_jobs.set()
             dspy.logger.warning("Received KeyboardInterrupt. Cancelling evaluation.")
-            # Optionally cancel remaining futures
+            # Cancel remaining futures
             for f in futures:
                 f.cancel()
             raise
