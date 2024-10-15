@@ -1,9 +1,10 @@
 from typing import Any, Optional, Union
-from dspy.adapters.chat_adapter import _format_field_value
-import pytest
 
 import pydantic
+import pytest
+
 import dspy
+from dspy.adapters.chat_adapter import _format_field_value
 from dspy.functional import TypedPredictor
 from dspy.signatures.signature import signature_to_template
 
@@ -115,7 +116,10 @@ def test_pydantic():
     instance = build_model_instance()
     parsed_instance = parser(instance.model_dump_json())
 
-    formatted_instance = _format_field_value(instance.model_dump_json())
+    formatted_instance = _format_field_value(
+        field_info=dspy.OutputField(),
+        value=instance.model_dump_json(),
+    )
     assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
 
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
@@ -132,7 +136,10 @@ def test_optional_pydantic():
     parsed_instance = parser(instance.model_dump_json())
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
-    formatted_instance = _format_field_value(instance.model_dump_json())
+    formatted_instance = _format_field_value(
+        field_info=dspy.OutputField(),
+        value=instance.model_dump_json(),
+    )
     assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
 
     # Check null case
@@ -153,14 +160,18 @@ def test_nested_pydantic():
     instance = NestedModel(model=build_model_instance())
     parsed_instance = parser(instance.model_dump_json())
 
-    formatted_instance = _format_field_value(instance.model_dump_json())
+    formatted_instance = _format_field_value(
+        field_info=dspy.OutputField(),
+        value=instance.model_dump_json(),
+    )
     assert formatted_instance == instance.model_dump_json(), f"{formatted_instance} != {instance.model_dump_json()}"
 
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
 
 def test_dataclass():
-    from dataclasses import dataclass, asdict
+    from dataclasses import asdict, dataclass
+
     import ujson
 
     @dataclass(frozen=True)
@@ -180,5 +191,10 @@ def test_dataclass():
     parsed_instance = parser('{"string": "foobar", "number": 42, "floating": 3.14, "boolean": true}')
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
-    formatted_instance = _format_field_value(ujson.dumps(asdict(instance)))
-    assert formatted_instance == ujson.dumps(asdict(instance)), f"{formatted_instance} != {ujson.dumps(asdict(instance))}"
+    formatted_instance = _format_field_value(
+        field_info=dspy.OutputField(),
+        value=ujson.dumps(asdict(instance)),
+    )
+    assert formatted_instance == ujson.dumps(
+        asdict(instance)
+    ), f"{formatted_instance} != {ujson.dumps(asdict(instance))}"

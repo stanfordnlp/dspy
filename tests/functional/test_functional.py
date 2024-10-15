@@ -1,4 +1,5 @@
 import datetime
+import json
 import textwrap
 from typing import Annotated, Any, Generic, List, Literal, Optional, TypeVar
 
@@ -450,6 +451,17 @@ def test_multiple_outputs_int():
 
     output = test(input=8, config=dict(n=3)).completions.output
     assert output == [0, 1, 2]
+
+
+def test_list_inputs_and_outputs():
+    lm = DummyLM([{"output": '["0", "1", "2"]'}])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input:list[str] -> output:list[str]")
+    output = test(input=["3", "4", "5"]).completions.output[0]
+
+    # Verify that the format of the output list from the LM was not changed
+    assert output == ["0", "1", "2"]
 
 
 def test_multiple_outputs_int_cot():
