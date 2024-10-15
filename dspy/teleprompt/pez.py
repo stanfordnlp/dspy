@@ -1,68 +1,48 @@
-class PEZFewshot(Teleprompter):
+from typing import Dict, Optional, List
+from dspy.utils.pez_utils import *
+from dspy.teleprompt import LabeledFewShot
+from datasets import load_dataset
+from dspy.teleprompt.bootstrap import BootstrapFewShot
+
+
+class PEZFewshot(BootstrapFewShot):
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
         teacher_settings: Optional[Dict] = None,
-        max_bootstrapped_demos=4,
-        max_labeled_demos=16,
-        max_rounds=1,
-        max_errors=5,
         prompt_len=5,
-        iter=500,
+        _iter=500,
         lr=5e-5,
         weight_decay=1e-4,
         print_step=50,
         loss_weight=1.0,
+        glue_task: str = "sst2",
+        num_prompts: int = 5
     ):
-        """
-        A Teleprompter class that composes a set of demos/examples into an optimized hard prompt
-        using PEZ.
+        super().__init__(
+            metric=metric,
+            metric_threshold=metric_threshold,
+            teacher_settings=teacher_settings
+        )
 
-        Parameters
-        ----------
-        metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison.
-        metric_threshold: optional float, default `None`
-            Threshold to accept or reject bootstrapped demos.
-        teacher_settings: dict, optional
-            Settings for the `teacher` model.
-        max_bootstrapped_demos: int, default 4
-            Maximum number of bootstrapped demos.
-        max_labeled_demos: int, default 16
-            Maximum number of labeled demos to include.
-        prompt_len: int, default 5
-            The number of tokens in the prompt.
-        iter: int, default 500
-            The number of optimization iterations for PEZ.
-        lr: float, default 5e-5
-            Learning rate for PEZ optimizer.
-        weight_decay: float, default 1e-4
-            Weight decay for the optimizer.
-        print_step: int, default 50
-            Print step interval for logging optimization progress.
-        loss_weight: float, default 1.0
-            Weight for the loss term in optimization.
-        """
-        self.metric = metric
-        self.metric_threshold = metric_threshold
-        self.teacher_settings = teacher_settings or {}
-
-        self.max_bootstrapped_demos = max_bootstrapped_demos
-        self.max_labeled_demos = max_labeled_demos
-        self.max_rounds = max_rounds
-        self.max_errors = max_errors
+        # PEZ-specific attributes
         self.prompt_len = prompt_len
-        self.iter = iter
+        self.iter = _iter
         self.lr = lr
         self.weight_decay = weight_decay
         self.print_step = print_step
         self.loss_weight = loss_weight
+        self.glue_task = glue_task
+        self.num_prompts = num_prompts
 
-    def compile(self, student, *, teacher=None, trainset):
+        self.trainset = None
+        self.student = None
+        self.teacher = None
+
+    def    compile(self, student, *, teacher=None, trainset):
         self.trainset = trainset
 
-        # Prepare student and teacher
         self.student = student.reset_copy()
         self.teacher = teacher.deepcopy() if teacher else student.reset_copy()
 
@@ -73,7 +53,6 @@ class PEZFewshot(Teleprompter):
             self.teacher = labeled_fewshot.compile(self.teacher.reset_copy(), trainset=self.trainset)
 
         self._prepare_predictor_mappings()
-        self._bootstrap()
 
         # Optimize prompts using PEZ
         prompt_args = {
@@ -86,7 +65,7 @@ class PEZFewshot(Teleprompter):
             "prompt_bs": 1  # Batch size of prompts to optimize
         }
 
-        # TODO: contact
+        # Use the existing labeled prompts from a GLUE dataset
         self.student._optimized_prompt = optimize_prompt(
             model=self.student,
             preprocess=None,  # assuming text-based, not images
@@ -98,8 +77,34 @@ class PEZFewshot(Teleprompter):
         self.student._compiled = True
         return self.student
 
-    def _get_few_shot_prompts(self):
-        # Generate or get the few-shot prompts from teacher/student
-        return ["Sample prompt 1", "Sample prompt 2"]  # Replace with actual prompt generation logic
+    def _get_few_shot_prompts(self) -> List[str]:
+        """
+        Fetch few-shot examples from a GLUE task.
 
-    # Additional helper methods like _prepare_predictor_mappings(), _bootstrap(), etc.
+        Returns
+        -------
+        List[str]
+            A list of formatted few-shot prompts based on the chosen GLUE task.
+        """
+        dataset = load_dataset("glue", self.glue_task)
+        prompts = []
+
+        # Extract examples from the training set (or validation if needed)
+        for i in range(self.num_prompts):
+            example = dataset["train"][i]
+
+            # Format the prompts depending on the GLUE task
+            if self.glue_task == "sst2":
+                prompts.append(example["sentence"])  # SST-2 has single sentence
+            elif self.glue_task in ["mrpc", "qqp"]:
+                # MRPC and QQP are sentence-pair tasks
+                prompts.append(f"Sentence 1: {example['sentence1']}, Sentence 2: {example['sentence2']}")
+            elif self.glue_task == "cola":
+                # CoLA task has a single sentence and a grammaticality judgment label
+                prompts.append(f"Sentence: {example['sentence']}, Label: {example['label']}")
+            # TODO: Add additional GLUE task handling as needed
+            else:
+                # For tasks with unknown structure, just use the raw text
+                prompts.append(str(example))
+
+        return prompts

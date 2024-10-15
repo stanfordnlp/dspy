@@ -3,11 +3,13 @@ from transformers import RobertaTokenizer, RobertaForSequenceClassification
 from datasets import load_dataset, load_metric
 from dspy.teleprompt import PEZFewshot, PEZFinetune
 
+
 # Step 1: Load the GLUE dataset (SST-2)
 def load_sst2_dataset():
     dataset = load_dataset("glue", "sst2")
     metric = load_metric("glue", "sst2")
     return dataset, metric
+
 
 # Step 2: Initialize tokenizer and model
 def initialize_roberta_model():
@@ -16,11 +18,13 @@ def initialize_roberta_model():
     model = RobertaForSequenceClassification.from_pretrained(model_name)
     return model, tokenizer
 
+
 # Step 3: Define a metric to evaluate during few-shot and fine-tuning
 def compute_accuracy(preds, labels):
     correct = (preds == labels).sum().item()
     total = len(labels)
     return correct / total
+
 
 # Step 4: Compile and optimize prompts with PEZFewshot
 def run_fewshot_training(model, tokenizer, dataset, trainset_size=16):
@@ -34,10 +38,8 @@ def run_fewshot_training(model, tokenizer, dataset, trainset_size=16):
     # Initialize the PEZFewshot teleprompter
     fewshot_optimizer = PEZFewshot(
         metric=metric,
-        max_bootstrapped_demos=4,
-        max_labeled_demos=trainset_size,
         prompt_len=5,
-        iter=500,
+        _iter=500,
         lr=5e-5,
         weight_decay=1e-4,
         print_step=50,
@@ -47,6 +49,7 @@ def run_fewshot_training(model, tokenizer, dataset, trainset_size=16):
     compiled_model = fewshot_optimizer.compile(model, trainset=trainset)
 
     return compiled_model, valset
+
 
 # Step 5: Fine-tune the model with PEZFinetune
 def run_finetuning(compiled_model, dataset):
@@ -60,9 +63,11 @@ def run_finetuning(compiled_model, dataset):
     finetune_optimizer = PEZFinetune(metric=metric)
 
     # Compile and fine-tune the model with optimized prompts
-    finetuned_model = finetune_optimizer.compile(compiled_model, trainset=trainset, valset=valset, target="roberta-large")
+    finetuned_model = finetune_optimizer.compile(compiled_model, trainset=trainset, valset=valset,
+                                                 target="roberta-large")
 
     return finetuned_model, valset
+
 
 # Step 6: Evaluate the fine-tuned model
 def evaluate_model(model, tokenizer, dataset, valset):
@@ -81,6 +86,7 @@ def evaluate_model(model, tokenizer, dataset, valset):
     accuracy = compute_accuracy(preds, valset['label'])
     print(f"Validation Accuracy: {accuracy:.4f}")
 
+
 # Step 7: Main script to run the experiment
 def main():
     # Load dataset and model
@@ -95,6 +101,7 @@ def main():
 
     # Evaluate the fine-tuned model
     evaluate_model(finetuned_model, tokenizer, dataset, valset)
+
 
 if __name__ == "__main__":
     main()

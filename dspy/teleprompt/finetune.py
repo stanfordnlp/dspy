@@ -9,6 +9,7 @@ import dsp
 from dspy.signatures.signature import signature_to_template
 
 from .bootstrap import BootstrapFewShot
+from dspy.teleprompt.pez import PEZFewshot
 
 # from dspy.primitives import Example
 from .teleprompt import Teleprompter
