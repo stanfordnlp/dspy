@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
-import ujson
+import json
 import yaml
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -55,6 +55,7 @@ class FinetuneJobAnyScale(FinetuneJob):
         train_path: str,
         eval_path: Optional[str],
         train_kwargs: Optional[Dict[str, Any]]=None,
+        serve_config_path: str = "serve_1B.yaml"
     ):
         super().__init__(model, train_path, eval_path, train_kwargs)
         self.model = model
@@ -64,7 +65,8 @@ class FinetuneJobAnyScale(FinetuneJob):
         if "model" not in self.train_kwargs:
             self.train_kwargs["model"] = model
         self.job_id = None
-
+        self.serve_config_path = serve_config_path
+    
     def cancel(self):
         """Cancel the finetune job."""
         raise NotImplementedError("Method `cancel` is not implemented.")
@@ -120,13 +122,16 @@ class FinetuneJobAnyScale(FinetuneJob):
 
             storage_uri = model_info["storage_uri"]
             logger.info(f"[Finetune] Copying LoRA weights from {storage_uri}...")
-            model_names = copy_lora_weights(storage_uri, model_info, job_id)
+            model_names, lora_dynamic_path = copy_lora_weights(storage_uri, model_info, job_id)
             logger.info(f"[Finetune] LoRA weights copied. Model names: {model_names}")
 
             logger.info("[Finetune] Setting result in future object...")
             for model_name in model_names:
                 yield model_name
             logger.info("[Finetune] Training process completed successfully.")
+
+            logger.info("[Finetune] Updating model config with the proper dynamic path")
+            update_model_config(lora_dynamic_path, self.serve_config_path)
 
         except Exception as e:
             logger.error(f"[Finetune] Error occurred during training: {str(e)}")
@@ -239,6 +244,21 @@ def is_anyscale_model(model: str) -> bool:
     
 #     return job
 
+def update_model_config(lora_dynamic_path: str, serve_config_path: str):
+    """Update the model config storage location with the job_id."""
+    with open(serve_config_path, "r") as f:
+        serve_config = yaml.safe_load(f)
+    
+    model_config_location = serve_config["applications"][0]["args"]["llm_configs"][0]
+    
+    with open(model_config_location, "r") as f:
+        model_config = yaml.safe_load(f)
+
+    model_config["lora_config"]["dynamic_lora_loading_path"] = lora_dynamic_path
+    
+    with open(model_config_location, "w") as f:
+        yaml.safe_dump(model_config, f)
+    
 
 def verify_datasets(dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]]) -> bool:
     """Verify the training arguments before starting training."""
@@ -433,7 +453,8 @@ def copy_lora_weights(storage_uri, model_info, job_id):
                 logger.info(f"Copied {source_blob.name} to {destination_blob_name}")
 
         logger.info(f"All subfolders copied to: gs://{bucket_name}/{lora_dynamic_path}")
-        return model_names
+        completed_path = f"gs://{bucket_name}/{lora_dynamic_path}"
+        return model_names, completed_path
     
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
@@ -441,12 +462,12 @@ def copy_lora_weights(storage_uri, model_info, job_id):
 
 def read_jsonl(filename):
     with open(filename, "r") as f:
-        return [ujson.loads(line) for line in f]
+        return [json.loads(line) for line in f]
 
 def write_jsonl(filename, data):
     with open(filename, "w") as f:
         for item in data:
-            f.write(ujson.dumps(item) + "\n")
+            f.write(json.dumps(item) + "\n")
 
 # Fine tuning utils
 def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], AssertionError]:
