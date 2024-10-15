@@ -15,8 +15,6 @@ from dspy import logger
 def get_finetune_directory() -> str:
     """Get the directory to save the fine-tuned models."""
     alternative_path = os.path.join(os.getcwd(), '.dspy_finetune')
-    # TODO: Should the parent directory be different than those used for
-    # inference
     return os.environ.get('DSPY_FINETUNEDIR') or alternative_path
 
 
@@ -105,14 +103,14 @@ def validate_finetune_data(
 
 
 def save_data(
-        data: Any,
-        provider: Optional[str]=None,
+        data: List[Dict[str, Any]],
+        provider_name: Optional[str]=None,
     ) -> str:
     """Save the fine-tuning data to a file."""
     # Construct the file name based on the data hash
     hash = Hasher.hash(data)
     file_name = f"{hash}.jsonl"
-    file_name = f"{provider}_{file_name}" if provider else file_name
+    file_name = f"{provider_name}_{file_name}" if provider_name else file_name
 
     # Find the directory to save the fine-tuning data
     finetune_parent_dir = get_finetune_directory()

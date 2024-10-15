@@ -152,7 +152,7 @@ def finetune_openai(
 
     # Save to a file
     logger.info("[Finetune] Saving the data to a file")
-    data_path = save_data(train_data, provider=PROVIDER_OPENAI)
+    data_path = save_data(train_data, provider_name=PROVIDER_OPENAI)
     logger.info("[Finetune] Done!")
 
     # Upload the data to the cloud

@@ -123,7 +123,7 @@ def build_prompt_completion_data_from_trace(
         - The `predictor_name` field corresponds to the index of the predictor
           in the list returned by the the named_predictor() method of the
           program used to generate the trace. This field is included only if
-        the `pred_ind_to_name` argument is provided.
+          the `pred_ind_to_name` argument is provided.
         - The `lm_kwargs` field corresponds to the LM kwargs that generated the
           prompt-completion pair. Included only if the `record_lm_kwargs` is
           set and there is an active LM.
@@ -376,6 +376,7 @@ def bootstrap_data_for_round(
         to the dictionaries:
         - The `round` field corresponds to the `sampling_round` argument.
     """ 
+    # TODO: [DSPy 2.5] Migrate to using "seed" for sampling
     # Helper function to adjust the temperature of the LM. If a None temperature
     # is passed, keep the LM's temperature as is as the base temperature, then
     # adjust the temperature for the given round.

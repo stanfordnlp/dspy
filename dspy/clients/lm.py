@@ -56,6 +56,7 @@ class LM:
             launch_kwargs=None,
             **kwargs
         ):
+        # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
         self.cache = cache
@@ -140,7 +141,7 @@ class LM:
         # Get the fine-tuning provider, if it is supported
         try:
             provider = _get_supported_finetune_provider(self.model)
-        except ValueError as err:
+        except Exception as err:
             raise err
 
         # Initialize the finetune job
@@ -299,12 +300,8 @@ def execute_finetune_job(
     cache_finetune: bool=True
 ):
     """Execute the finetune job in a blocking manner."""
-    # Input validation
-    launch_kwargs = launch_kwargs or {}
-
-    # Execute finetune job
-    job_kwargs = job.get_kwargs()
     try:
+        job_kwargs = job.get_kwargs()
         if cache_finetune:
             model = cached_finetune(job=job, **job_kwargs)
         else:
