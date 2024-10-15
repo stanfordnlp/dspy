@@ -22,15 +22,15 @@ A **DSPy module** is a building block for programs that use LMs.
 
 ### 2) What DSPy Modules are currently built-in?
 
-1. **[`dspy.Predict`](https://dspy-docs.vercel.app/api/modules/Predict)**:
+1. **[`dspy.Predict`](/docs/deep-dive/modules/Predict)**:
 
-2. **[`dspy.ChainOfThought`](https://dspy-docs.vercel.app/api/modules/ChainOfThought)**: 
+2. **[`dspy.ChainOfThought`](/docs/deep-dive/modules/ChainOfThought)**: 
 
-3. **[`dspy.ProgramOfThought`](https://dspy-docs.vercel.app/api/modules/ProgramOfThought)**:
+3. **[`dspy.ProgramOfThought`](/docs/deep-dive/modules/program-of-thought)**:
 
-4. **[`dspy.ReAct`](https://dspy-docs.vercel.app/api/modules/ReAct)**:
+4. **[`dspy.ReAct`](/docs/deep-dive/modules/ReAct)**:
 
-5. **[`dspy.MultiChainComparison`](https://dspy-docs.vercel.app/api/modules/MultiChainComparison)**:
+5. **[`dspy.MultiChainComparison`](/docs/deep-dive/modules/MultiChainComparison)**:
 
 
 We also have some function-style modules:
@@ -41,7 +41,7 @@ We also have some function-style modules:
 
 Let's start with the most fundamental one, `dspy.Predict`. Internally, all of the others are just built using it!
 
-We'll assume you are already at least a little familiar with [DSPy signatures](https://dspy-docs.vercel.app/docs/building-blocks/signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
+We'll assume you are already at least a little familiar with [DSPy signatures](/docs/building-blocks/signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
 To use a module, we first **declare** it by giving it a signature. Then we **call** the module with the input arguments, and extract the output fields!
 
 
@@ -127,7 +127,7 @@ True
 
 The others are very similar, `dspy.ReAct` and `dspy.ProgramOfThought` etc. They mainly change the internal behavior with which your signature is implemented!
 
-Check out further examples in [each module's respective guide](https://dspy-docs.vercel.app/docs/category/modules).
+Check out further examples in [each module's respective guide](/docs/category/modules).
 
 ### 5) How do I compose multiple modules into a bigger program?
 
