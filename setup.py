@@ -12,7 +12,7 @@ setup(
     #replace_package_name_marker
     name="dspy",
     #replace_package_version_marker
-    version="2.5.5", 	
+    version="2.5.8", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	
