@@ -8,327 +8,94 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 In this post, we walk you through a minimal working example using the DSPy library. 
 
-We make use of the [MATH dataset](https://huggingface.co/datasets/hendrycks/competition_math) and the OpenAI `gpt-4o-mini` model to simulate prompting tasks within DSPy.
+We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
 
 ## Setup
 
-Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary data to DSPy Format and configuring our language model:
+Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
 
 ```python
 import dspy
-import random
-import openai
-
-from dspy.datasets import DataLoader
+from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
 # Set up the LM.
-lm = dspy.LM(model='openai/gpt-4o-mini', max_tokens=1200)
-dspy.configure(lm=lm)
+turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
+dspy.settings.configure(lm=turbo)
 
-# Load math questions from the MATH dataset using `DataLoader`
-dl = DataLoader()
-
-math = dl.from_huggingface(
-    "hendrycks/competition_math",
-    input_keys=("problem", )
-)
-
-random.seed(84)
-
-math_subset = random.sample(math['train'], 100)
-math_trainset, math_valset, math_devset = (
-    math_subset[:20],
-    math_subset[20:50],
-    math_subset[50:100]
-)
+# Load math questions from the GSM8K dataset.
+gsm8k = GSM8K()
+gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
 ```
 
-The datasets `math_trainset`, `math_valset`, and `math_devset` are a list of `dspy.Example` which is the standard data format in DSpy necessary for optimization and evaluation. Let's see what one of those datapoint looks like:
+Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
 
 ```python
-print(math_trainset[0])
+print(gsm8k_trainset)
 ```
 
-**Output:**
-```
-Example({'problem': 'Compute $(-64)\\div (-32)$.', 'level': 'Level 1', 'type': 'Prealgebra', 'solution': 'When $y$ is nonzero, we have $(-x)\\div (-y) = x\\div y$, so \\[(-64)\\div (-32) = 64\\div 32= \\boxed{2}.\\]'}) (input_keys={'problem'})
-```
-
-The `math_valset` and `math_devset` also contain lists of `dspy.Examples` in the same format i.e. each example has `problem` and `solution` fields.
+The `gsm8k_trainset` and `gsm8k_devset` datasets contain lists of `dspy.Examples`, with each example having `question` and `answer` fields.
 
 ## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/docs/deep-dive/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/api/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
-cot = dspy.ChainOfThought("problem -> answer")
+class CoT(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.prog = dspy.ChainOfThought("question -> answer")
+    
+    def forward(self, question):
+        return self.prog(question=question)
 ```
 
-You can execute this module by passing `problem` as parameter to the call directly:
+## Compile and Evaluate the Model
+
+With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
 
 ```python
-cot(problem=math_devset[0].problem)
+from dspy.teleprompt import BootstrapFewShot
+
+# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 4-shot examples of our CoT program.
+config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
+
+# Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
+teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
+optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
 ```
 
-**Output:**
-```
-Prediction(
-    reasoning="To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes when rolling four dice. Each die has 6 faces, so the total number of outcomes is \\(6^4 = 1296\\).\n\nNext, we need to determine the number of outcomes where all four dice show the same number. There are 6 possible outcomes for this scenario (one for each number from 1 to 6).\n\nNow, we can find the number of outcomes where not all dice show the same number by subtracting the number of outcomes where they do show the same number from the total number of outcomes:\n\\[\n\\text{Outcomes where not all are the same} = 1296 - 6 = 1290\n\\]\n\nFinally, the probability that not all dice show the same number is given by the ratio of the favorable outcomes to the total outcomes:\n\\[\nP(\\text{not all the same}) = \\frac{1290}{1296}\n\\]\n\nTo simplify this fraction, we can divide both the numerator and the denominator by 6:\n\\[\nP(\\text{not all the same}) = \\frac{215}{216}\n\\]\n\nThus, the probability that when we roll four fair 6-sided dice, they won't all show the same number is \\(\\frac{215}{216}\\).",
-    answer="The probability that when we roll four fair 6-sided dice, they won't all show the same number is \\(\\frac{215}{216}\\)."
-)
-```
+Note that `BootstrapFewShot` is not an optimizing teleprompter, i.e. it simply creates and validates examples for steps of the pipeline (in this case, chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
 
-You can see the prompt along with completion for this call using `inspect_history` method:
+## Evaluate
 
-```python
-lm.inspect_history(n=1)
-```
+Now that we have a compiled (optimized) DSPy program, let's move to evaluating its performance on the dev dataset.
 
-**Output:**
-```
-System message:
-
-Your input fields are:
-1. `problem` (str)
-
-Your output fields are:
-1. `reasoning` (str)
-2. `answer` (str)
-
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## problem ## ]]
-{problem}
-
-[[ ## reasoning ## ]]
-{reasoning}
-
-[[ ## answer ## ]]
-{answer}
-
-[[ ## completed ## ]]
-
-In adhering to this structure, your objective is: 
-        Given the fields `problem`, produce the fields `answer`.
-
-
-User message:
-
-[[ ## problem ## ]]
-What is the probability that when we roll four fair 6-sided dice, they won't all show the same number?
-
-Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
-
-
-Response:
-
-[[ ## reasoning ## ]]
-To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes when rolling four dice. Each die has 6 faces, so the total number of outcomes is \(6^4 = 1296\).
-
-...
-
-[[ ## answer ## ]]
-The probability that when we roll four fair 6-sided dice, they won't all show the same number is \(\frac{215}{216}\).
-
-[[ ## completed ## ]]
-```
-
-In the prompt above there are 3 fields. The `System Message` contains the formatting information of the module, while the `User Message` contains the input question. The `Response` contains the output generated by the model.
-
-## Evaluation Metric
-
-Now that we have a DSPy program, let's move to evaluating its performance and compare it with the optimized model on `math_devset`. Before that, we need a metric to score the solutions. For MATH dataset, it's a bit hard to create a quantitative that works on exact answer/term match. Luckily we can create an LLM judge fairly easily with DSPy:
-
-```python
-llm_judge = dspy.ChainOfThought("question, reference_solution, student_solution -> correct: bool")
-
-def math_metric(gold, pred, trace=None):
-  return llm_judge(question=gold.problem, reference_solution=gold.solution, student_solution=pred.answer).correct
-```
-
-The `:bool` tag in makes sure that the `correct` attribute in output from the module is a boolean. With the metric in place, we can now evaluate the performance of our unoptimized and optimizer models using the `Evaluate` class:
 
 ```python
 from dspy.evaluate import Evaluate
 
 # Set up the evaluator, which can be used multiple times.
-evaluate = Evaluate(
-    devset=math_devset,
-    metric=math_metric,
-    num_threads=4,
-    display_progress=True,
-    display_table=0
-)
+evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, display_progress=True, display_table=0)
 
 # Evaluate our `optimized_cot` program.
-print(f"\nUnoptimized Model Score: {evaluate(cot)}")
+evaluate(optimized_cot)
 ```
-
-**Output:**
-```
-Average Metric: 35 / 50  (70.0): 100%|██████████| 50/50 [01:39<00:00,  1.99s/it]
-Unoptimized Model Score: 70.0
-```
-
-That's a fairly decent score from a vanilla CoT pipeline!! Let's optimize it to perform better on this metric!
-
-## Compile and Evaluate the Model
-
-With our simple program in place, let's move on to compiling it with the [`MIPROv2`](/docs/deep-dive/optimizers/miprov2.md) teleprompter:
-
-```python
-lm.history.clear()  # For fair estimation of optimization cost
-
-tp = dspy.MIPROv2(
-    metric=math_metric,
-    num_candidates=5,
-    init_temperature=0.7,
-    verbose=False,
-    num_threads=4
-)
-compiled_cot = tp.compile(
-    cot, trainset=math_trainset,
-    valset=math_valset,
-    max_bootstrapped_demos=3,
-    max_labeled_demos=3,
-    num_trials=15,
-    requires_permission_to_run=False
-)
-
-print(f"Optimized Model Score: {evaluate(compiled_cot)}")
-```
-
-**Output:**
-```
-Optimized Model Score: 76.0
-```
-
-:::note
-MATH a popular task that the models are directly optimized for resulting in a relatively low gain, however gains are typically larger for harder tasks.
-:::
-
-That's a good gain on a simple CoT pipeline with a relatively limited training/testing dataset!! This should take ~12-15 minutes to complete which you can speed up by increasing the `num_threads` parameter but be careful to not overflow the rate limits of the API. To check the cost of optimization you can execute the following:
-
-```python
-print(f"Optimization Cost: {sum([lm.history[i]['cost'] for i in range(len(lm.history))])}")
-```
-
-**Output:**
-```
-Optimization Cost: 0.32152019999999976
-```
-
-`lm.history` stores the history of your model's interactions, including the cost of each interaction. We can just sum the cost of these interaction and get the total cost of optimization, which is ~32 cents.
-
-:::note
-Make sure that you clear the `lm.history` using `lm.history.clear()` before doing the optimization to get the accurate cost.
-:::
 
 ## Inspect the Model's History
 
-For understanding the `compiled_cot` module's interactions, we can review the most recent generations through inspecting the model's history:
+For a deeper understanding of the model's interactions, we can review the most recent generations through inspecting the model's history:
 
 ```python
-compiled_cot(problem=math_devset[-1].problem)
-dspy.inspect_history(n=1)  # or lm.inspect_history(n=1)
+turbo.inspect_history(n=1)
 ```
 
-**Output:**
-```
-System message:
-
-Your input fields are:
-1. `problem` (str)
-
-Your output fields are:
-1. `reasoning` (str)
-2. `answer` (str)
-
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## problem ## ]]
-{problem}
-
-[[ ## reasoning ## ]]
-{reasoning}
-
-[[ ## answer ## ]]
-{answer}
-
-[[ ## completed ## ]]
-
-In adhering to this structure, your objective is: 
-        Given the fields `problem`, produce the fields `answer`.
-
-
-User message:
-
-[[ ## problem ## ]]
-One-half of one-seventh of $T$ equals one-third of one-fifth of 90. What is the value of $T$?
-
-Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
-
-
-Assistant message:
-
-[[ ## reasoning ## ]]
-To solve for \( T \), we start by translating the problem statement into a mathematical equation. 
-
-...
-
-[[ ## answer ## ]]
-84
-
-[[ ## completed ## ]]
-
-
-User message:
-
-...
-
-
-Assistant message:
-
-...
-
-User message:
-
-...
-
-
-Assistant message:
-
-...
-
-
-User message:
-
-[[ ## problem ## ]]
-What is the probability that when we roll four fair 6-sided dice, they won't all show the same number?
-
-Respond with the corresponding output fields, starting with the field `reasoning`, then `answer`, and then ending with the marker for `completed`.
-
-
-Response:
-
-[[ ## reasoning ## ]]
-To find the probability that when rolling four fair 6-sided dice, they won't all show the same number, we can first calculate the total number of outcomes and then the number of outcomes where all dice show the same number.
-
-...
-
-[[ ## answer ## ]]
-\(\frac{215}{216}\)
-
-[[ ## completed ## ]]
-```
-
-If you see the objective in the above prompt is now modified to an optimal objective and there are "demos" added as examples for the task by the optimizer. And there you have it! You've successfully created a working example using the DSPy library. 
+And there you have it! You've successfully created a working example using the DSPy library. 
 
 This example showcases how to set up your environment, define a custom module, compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations. 
 
 Feel free to adapt and expand upon this example to suit your specific use case while exploring the extensive capabilities of DSPy.
 
-If you want to try what you just built, run `compiled_cot(question='Your Question Here')`.
+If you want to try what you just built, run `optimized_cot(question='Your Question Here')`.
 
 :::note
 For a more comprehensive walkthrough with detailed examples, please refer to the introduction colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb).
