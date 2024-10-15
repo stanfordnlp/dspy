@@ -7,8 +7,6 @@ import ujson
 
 from datasets.fingerprint import Hasher
 
-from dspy import logger
-
 
 # TODO: Move to a centralized location with all the other environment variables
 # Set the directory to save the fine-tuned models

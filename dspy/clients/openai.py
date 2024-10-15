@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import openai
 
-from dspy import logger
+from dspy.utils.logging import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,

@@ -151,17 +151,17 @@ class BaseModule:
     def dump_state(self, save_verbose):
         return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
 
-    def load_state(self, state):
+    def load_state(self, state, use_legacy_loading=False):
         for name, param in self.named_parameters():
-            param.load_state(state[name])
+            param.load_state(state[name], use_legacy_loading=use_legacy_loading)
 
     def save(self, path, save_field_meta=False):
         with open(path, "w") as f:
             f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2))
 
-    def load(self, path):
+    def load(self, path, use_legacy_loading=False):
         with open(path) as f:
-            self.load_state(ujson.loads(f.read()))
+            self.load_state(ujson.loads(f.read()), use_legacy_loading=use_legacy_loading)
 
 
 def postprocess_parameter_name(name, value):

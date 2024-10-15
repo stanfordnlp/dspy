@@ -1,4 +1,6 @@
 from __future__ import annotations  # Used for self type hints
+from functools import lru_cache
+import logging
 import random
 from typing import Optional
 
@@ -8,10 +10,9 @@ import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.program import Module
 from dspy.primitives.prediction import Prediction
+from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
-import logging
-from functools import lru_cache
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
@@ -61,7 +62,13 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self, save_verbose=False):
+    def dump_state(self, save_verbose=None):
+        if save_verbose:
+            logging.warning(
+                "`save_verbose` is deprecated and will be removed in DSPy 2.6.0 release. Currently `save_verbose` "
+                "does nothing."
+            )
+
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -75,33 +82,47 @@ class Predict(Module, Parameter):
 
             state["demos"].append(demo)
 
-        # If `save_verbose` save all field metadata as well.
-        if save_verbose:
-            fields = []
-            for field_key in self.signature.fields.keys():
-                field_metadata = self.signature.fields[field_key]
-                fields.append({
-                    "name":  field_key,
-                    "field_type": field_metadata.json_schema_extra["__dspy_field_type"],
-                    "description": field_metadata.json_schema_extra["desc"],
-                    "prefix": field_metadata.json_schema_extra["prefix"]
-                })
-            state["fields"] = fields
-        
-        # Cache the signature instructions and the last field's name.
-        *_, last_key = self.signature.fields.keys()
-        state["signature_instructions"] = self.signature.instructions
-        state["signature_prefix"] = self.signature.fields[last_key].json_schema_extra["prefix"]
-
-        # Some special stuff for CoT.
+        state["signature"] = self.signature.dump_state()
+        # `extended_signature` is a special field for `Predict`s like CoT.
         if hasattr(self, "extended_signature"):
-            # Cache the signature instructions and the last field's name.
-            state["extended_signature_instructions"] = self.extended_signature.instructions
-            state["extended_signature_prefix"] = self.extended_signature.fields[last_key].json_schema_extra['prefix']
+            state["extended_signature"] = self.extended_signature.dump_state()
 
         return state
 
-    def load_state(self, state):
+    def load_state(self, state, use_legacy_loading=False):
+        """Load the saved state of a `Predict` object.
+
+        Args:
+            state (dict): The saved state of a `Predict` object.
+            use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
+                saved state from a version of DSPy prior to v2.5.3.
+        """
+        if use_legacy_loading:
+            self._load_state_legacy(state)
+            return
+        if "signature" not in state:
+            # Check if the state is from a version of DSPy prior to v2.5.3.
+            raise ValueError(
+                "The saved state is from a version of DSPy prior to v2.5.3. Please use `use_legacy_loading=True` to "
+                "load the state."
+            )
+
+        excluded_keys = ["signature", "extended_signature"]
+        for name, value in state.items():
+            # `excluded_keys` are fields that go through special handling.
+            if name not in excluded_keys:
+                setattr(self, name, value)
+
+        self.signature = self.signature.load_state(state["signature"])
+
+        if "extended_signature" in state:
+            self.extended_signature.load_state(state["extended_signature"])
+
+    def _load_state_legacy(self, state):
+        """Legacy state loading for backwards compatibility.
+
+        This method is used to load the saved state of a `Predict` object from a version of DSPy prior to v2.5.3.
+        """
         for name, value in state.items():
             setattr(self, name, value)
 
@@ -114,7 +135,7 @@ class Predict(Module, Parameter):
             prefix = state["signature_prefix"]
             *_, last_key = self.signature.fields.keys()
             self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
-        
+
         # Some special stuff for CoT.
         if "extended_signature_instructions" in state:
             instructions = state["extended_signature_instructions"]
@@ -124,6 +145,7 @@ class Predict(Module, Parameter):
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
+
 
     def __call__(self, **kwargs):
         return self.forward(**kwargs)

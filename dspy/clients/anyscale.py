@@ -1,9 +1,7 @@
-import re
 import time
 from typing import Any, Dict, List, Optional
 
-import dspy
-from dspy import logger
+from dspy.utils.logging import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,

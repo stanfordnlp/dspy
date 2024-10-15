@@ -24,14 +24,17 @@ This file consists of helper functions for our variety of optimizers.
 ### OPTIMIZER TRAINING UTILS ###
 
 
-def create_minibatch(trainset, batch_size=50):
+def create_minibatch(trainset, batch_size=50, rng=None):
     """Create a minibatch from the trainset."""
 
     # Ensure batch_size isn't larger than the size of the dataset
     batch_size = min(batch_size, len(trainset))
 
-    # Randomly sample indices for the mini-batch
-    sampled_indices = random.sample(range(len(trainset)), batch_size)
+    # If no RNG is provided, fall back to the global random instance
+    rng = rng or random
+
+    # Randomly sample indices for the mini-batch using the provided rng
+    sampled_indices = rng.sample(range(len(trainset)), batch_size)
 
     # Create the mini-batch using the sampled indices
     minibatch = [trainset[i] for i in sampled_indices]
@@ -39,7 +42,7 @@ def create_minibatch(trainset, batch_size=50):
     return minibatch
 
 
-def eval_candidate_program(batch_size, trainset, candidate_program, evaluate):
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
     # Evaluate on the full trainset
     if batch_size >= len(trainset):
@@ -48,7 +51,7 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate):
     else:
         score = evaluate(
             candidate_program,
-            devset=create_minibatch(trainset, batch_size),
+            devset=create_minibatch(trainset, batch_size, rng),
         )
 
     return score
@@ -279,6 +282,7 @@ def create_n_fewshot_demo_sets(
     teacher=None,
     include_non_bootstrapped=True,
     seed=0,
+    rng=None
 ):
     """
     This function is copied from random_search.py, and creates fewshot examples in the same way that random search does.
@@ -292,17 +296,15 @@ def create_n_fewshot_demo_sets(
     # Initialize demo_candidates dictionary
     for i, _ in enumerate(student.predictors()):
         demo_candidates[i] = []
-    
-    starter_seed = seed
-    # Shuffle the trainset with the starter seed
-    random.Random(starter_seed).shuffle(trainset)
+
+    rng = rng or random.Random(seed)
 
     # Go through and create each candidate set
     for seed in range(-3, num_candidate_sets):
 
         print(f"Bootstrapping set {seed+4}/{num_candidate_sets+3}")
 
-        trainset2 = list(trainset)
+        trainset_copy = list(trainset)
 
         if seed == -3 and include_non_bootstrapped:
             # zero-shot
@@ -316,7 +318,7 @@ def create_n_fewshot_demo_sets(
             # labels only
             teleprompter = LabeledFewShot(k=max_labeled_demos)
             program2 = teleprompter.compile(
-                student, trainset=trainset2, sample=labeled_sample,
+                student, trainset=trainset_copy, sample=labeled_sample,
             )
 
         elif seed == -1:
@@ -329,12 +331,12 @@ def create_n_fewshot_demo_sets(
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
             )
-            program2 = program.compile(student, teacher=teacher, trainset=trainset2)
+            program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
 
         else:
             # shuffled few-shot
-            random.Random(seed).shuffle(trainset2)
-            size = random.Random(seed).randint(min_num_samples, max_bootstrapped_demos)
+            rng.shuffle(trainset_copy)
+            size = rng.randint(min_num_samples, max_bootstrapped_demos)
 
             teleprompter = BootstrapFewShot(
                 metric=metric,
@@ -347,7 +349,7 @@ def create_n_fewshot_demo_sets(
             )
 
             program2 = teleprompter.compile(
-                student, teacher=teacher, trainset=trainset2,
+                student, teacher=teacher, trainset=trainset_copy,
             )
 
         for i, _ in enumerate(student.predictors()):

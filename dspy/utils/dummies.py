@@ -1,15 +1,18 @@
 import random
 import re
+from collections import defaultdict
 from typing import Union
 
 import numpy as np
 
-from dsp.modules import LM
+from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
+from dspy.adapters.chat_adapter import field_header_pattern, format_fields
+from dspy.clients.lm import LM
 
 
-class DummyLM(LM):
-    """Dummy language model for unit testing purposes."""
+class DSPDummyLM(DSPLM):
+    """Dummy language model for unit testing purposes subclassing DSP LM class."""
 
     def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
         """Initializes the dummy language model.
@@ -64,7 +67,7 @@ class DummyLM(LM):
                 },
             )
 
-            RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
+            RED, _, RESET = "\033[91m", "\033[92m", "\033[0m"
             print("=== DummyLM ===")
             print(prompt, end="")
             print(f"{RED}{answer}{RESET}")
@@ -92,6 +95,111 @@ class DummyLM(LM):
     def get_convo(self, index) -> str:
         """Get the prompt + anwer from the ith message."""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
+
+
+class DummyLM(LM):
+    """
+    Dummy language model for unit testing purposes.
+
+    Three modes of operation:
+
+    ## 1. List of dictionaries
+
+    If a list of dictionaries is provided, the dummy model will return the next dictionary
+    in the list for each request, formatted according to the `format_fields` function.
+    from the chat adapter.
+
+    ```python
+        lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nred"
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    ## 2. Dictionary of dictionaries
+
+    If a dictionary of dictionaries is provided, the dummy model will return the value
+    corresponding to the key which is contained with the final message of the prompt,
+    formatted according to the `format_fields` function from the chat adapter.
+
+    ```python
+        lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?")
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    ## 3. Follow examples
+
+    If `follow_examples` is set to True, and the prompt contains an example input exactly equal to the prompt,
+    the dummy model will return the output from that example.
+
+    ```python
+        lm = DummyLM([{"answer": "red"}], follow_examples=True)
+        dspy.settings.configure(lm=lm)
+        predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
+        # Output: "[[## answer ##]]\nblue"
+    ```
+
+    """
+
+    def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
+        super().__init__("dummy", "chat", 0.0, 1000, True)
+        self.answers = answers
+        if isinstance(answers, list):
+            self.answers = iter(answers)
+        self.follow_examples = follow_examples
+
+    def _use_example(self, messages):
+        # find all field names
+        fields = defaultdict(int)
+        for message in messages:
+            if "content" in message:
+                if ma := field_header_pattern.match(message["content"]):
+                    fields[message["content"][ma.start() : ma.end()]] += 1
+        # find the fields which are missing from the final turns
+        max_count = max(fields.values())
+        output_fields = [field for field, count in fields.items() if count != max_count]
+
+        # get the output from the last turn that has the output fields as headers
+        final_input = messages[-1]["content"].split("\n\n")[0]
+        for input, output in zip(reversed(messages[:-1]), reversed(messages)):
+            if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
+                return output["content"]
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        # Build the request.
+        outputs = []
+        for _ in range(kwargs.get("n", 1)):
+            messages = messages or [{"role": "user", "content": prompt}]
+            kwargs = {**self.kwargs, **kwargs}
+
+            if self.follow_examples:
+                outputs.append(self._use_example(messages))
+            elif isinstance(self.answers, dict):
+                outputs.append(
+                    next(
+                        (format_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        "No more responses",
+                    )
+                )
+            else:
+                outputs.append(format_fields(next(self.answers, {"answer": "No more responses"})))
+
+            # Logging, with removed api key & where `cost` is None on cache hit.
+            kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
+            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
+            entry = dict(**entry, outputs=outputs, usage=0)
+            entry = dict(**entry, cost=0)
+            self.history.append(entry)
+
+        return outputs
+
+    def get_convo(self, index):
+        """Get the prompt + anwer from the ith message."""
+        return self.history[index]["messages"], self.history[index]["outputs"]
 
 
 def dummy_rm(passages=()) -> callable:

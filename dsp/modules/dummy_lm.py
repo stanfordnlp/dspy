@@ -5,7 +5,7 @@ from dsp.modules import LM
 
 
 # This testing module was moved in PR #735 to patch Arize Phoenix logging
-class DummyLM(LM):
+class DSPDummyLM(LM):
     """Dummy language model for unit testing purposes."""
 
     def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
@@ -61,7 +61,7 @@ class DummyLM(LM):
                 },
             )
 
-            RED, GREEN, RESET = "\033[91m", "\033[92m", "\033[0m"
+            RED, _, RESET = "\033[91m", "\033[92m", "\033[0m"
             print("=== DummyLM ===")
             print(prompt, end="")
             print(f"{RED}{answer}{RESET}")

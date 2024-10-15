@@ -1,12 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import functools
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 import ujson
+import uuid
 
 
-from dspy import logger
+from dspy.utils.logging import logger
 from dspy.clients.finetune import FinetuneJob
 from dspy.clients.self_hosted import (
     is_self_hosted_model,
@@ -19,27 +21,16 @@ from dspy.clients.anyscale import (
     anyscale_model_kill,
 )
 
+import litellm
+from litellm.caching import Cache
 
-DISK_CACHE_DIR = os.environ.get('DSPY_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache')
+DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+litellm.telemetry = False
 
-    
-try:
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning)
-        if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
-             os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-        import litellm  
-        litellm.telemetry = False
+if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
+    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
-    from litellm.caching import Cache
-    litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
-
-except ImportError:
-    class LitellmPlaceholder:
-        def __getattr__(self, _): raise ImportError("The LiteLLM package is not installed. Run `pip install litellm`.")
-
-    litellm = LitellmPlaceholder()
 
 
 #-------------------------------------------------------------------------------
@@ -66,8 +57,9 @@ class LM:
 
         # TODO: This is error prone!
         if "o1-" in model:
-            assert max_tokens >= 5000 and temperature == 1.0, \
-                "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            assert (
+                max_tokens >= 5000 and temperature == 1.0
+            ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
@@ -76,8 +68,10 @@ class LM:
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat": completion = cached_litellm_completion if cache else litellm_completion
-        else: completion = cached_litellm_text_completion if cache else litellm_text_completion
+        if self.model_type == "chat":
+            completion = cached_litellm_completion if cache else litellm_completion
+        else:
+            completion = cached_litellm_text_completion if cache else litellm_text_completion
 
         response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
@@ -87,8 +81,15 @@ class LM:
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
         entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
         entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
+        entry = dict(
+            **entry,
+            timestamp=datetime.now().isoformat(),
+            uuid=str(uuid.uuid4()),
+            model=self.model,
+            model_type=self.model_type,
+        )
         self.history.append(entry)
-
+        
         return outputs
 
     def copy(self, **kwargs):
@@ -169,13 +170,16 @@ class LM:
 def cached_litellm_completion(request):
     return litellm_completion(request, cache={"no-cache": False, "no-store": False})
 
+
 def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(cache=cache, **kwargs)
 
+
 @functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request):
     return litellm_text_completion(request, cache={"no-cache": False, "no-store": False})
+
 
 def litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
@@ -190,29 +194,40 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
     api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = '\n\n'.join([x['content'] for x in kwargs.pop("messages")] + ['BEGIN RESPONSE:'])
+    prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(cache=cache, model=f'text-completion-openai/{model}', api_key=api_key,
-                                   api_base=api_base, prompt=prompt, **kwargs)
+    return litellm.text_completion(
+        cache=cache,
+        model=f"text-completion-openai/{model}",
+        api_key=api_key,
+        api_base=api_base,
+        prompt=prompt,
+        **kwargs,
+    )
 
 
 def _green(text: str, end: str = "\n"):
     return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
 
+
 def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
+
 
 def _inspect_history(lm, n: int = 1):
     """Prints the last n prompts and their completions."""
 
     for item in lm.history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item['prompt']}]
+        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
+        timestamp = item.get("timestamp", "Unknown time")
 
         print("\n\n\n")
+        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
+
         for msg in messages:
             print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg['content'].strip())
+            print(msg["content"].strip())
             print("\n")
 
         print(_red("Response:"))
@@ -221,7 +236,7 @@ def _inspect_history(lm, n: int = 1):
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs)-1} other completions)"
             print(_red(choices_text, end=""))
-        
+
     print("\n\n\n")
 
 
