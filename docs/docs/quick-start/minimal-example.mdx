@@ -37,7 +37,7 @@ The `gsm8k_trainset` and `gsm8k_devset` datasets contain lists of `dspy.Examples
 
 ## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/api/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
+With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/docs/deep-dive/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
 
 ```python
 class CoT(dspy.Module):
@@ -51,7 +51,7 @@ class CoT(dspy.Module):
 
 ## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/api/optimizers/BootstrapFewShot) teleprompter:
+With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/docs/deep-dive/optimizers/bootstrap-fewshot) teleprompter:
 
 ```python
 from dspy.teleprompt import BootstrapFewShot

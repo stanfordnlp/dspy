@@ -114,7 +114,7 @@ We also have some function-style modules:
 6. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
 
 
-Check out further examples in [each module's respective guide](https://dspy-docs.vercel.app/api/category/modules).
+Check out further examples in [each module's respective guide](/docs/category/modules).
 
 
 ## How do I compose multiple modules into a bigger program?
