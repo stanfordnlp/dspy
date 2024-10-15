@@ -1,8 +1,4 @@
----
-sidebar_position: 10
----
-
-# retrieve.SnowflakeRM
+# SnowflakeRM
 
 ### Constructor
 

@@ -1,8 +1,4 @@
----
-sidebar_position: 7
----
-
-# retrieve.MyScaleRM
+# MyScaleRM
 
 ## Constructor
 

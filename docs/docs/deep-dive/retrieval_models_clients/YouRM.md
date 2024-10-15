@@ -1,8 +1,4 @@
----
-sidebar_position: 12
----
-
-# retrieve.YouRM
+# YouRM
 
 ### Constructor
 

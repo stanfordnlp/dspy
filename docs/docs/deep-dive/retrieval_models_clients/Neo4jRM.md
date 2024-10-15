@@ -1,8 +1,4 @@
----
-sidebar_position: 8
----
-
-# retrieve.neo4j_rm
+# Neo4jRM
 
 ### Constructor
 

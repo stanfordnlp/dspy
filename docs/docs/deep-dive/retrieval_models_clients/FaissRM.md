@@ -1,8 +1,4 @@
----
-sidebar_position: 5
----
-
-# retrieve.FaissRM
+# FaissRM
 
 ### Constructor
 

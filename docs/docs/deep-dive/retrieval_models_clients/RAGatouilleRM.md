@@ -1,8 +1,4 @@
----
-sidebar_position: 9
----
-
-# retrieve.RAGatouilleRM
+# RAGatouilleRM
 
 ### Constructor
 
