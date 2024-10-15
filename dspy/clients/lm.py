@@ -65,8 +65,8 @@ class LM:
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with the same parameters."""
-        kwargs = {**self.kwargs, **kwargs}
-        return self.__class__(model=self.model, **kwargs)
+        kwargs = {**self.__dict__, **kwargs}
+        return self.__class__(**kwargs)
 
 
 @functools.lru_cache(maxsize=None)
