@@ -213,7 +213,12 @@ def bootstrap_data(
     )
     x = evaluator(program, metric=metric)
     # print(x)
-    data = process_dataset_threaded(dataset, program, metric, num_threads, max_errors)
+    # data = process_dataset_threaded(dataset, program, metric, num_threads, max_errors)
+    data = []
+    for example in dataset:
+        data_dict = process_example(example, 0, program, metric)
+        if data_dict is not None:
+            data.append(data_dict)
     
     return data
 
