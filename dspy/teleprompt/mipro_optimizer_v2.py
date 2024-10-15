@@ -129,7 +129,10 @@ class MIPROv2(Teleprompter):
             self._print_auto_run_settings(num_trials, minibatch, valset)
 
         if minibatch and minibatch_size > len(valset):
-            raise ValueError(f"Minibatch size cannot exceed the size of the valset. Valset size: {len(valset)}.")
+            raise ValueError(
+                f"Minibatch size cannot exceed the size of the valset. Recevied Valset size = {len(valset)} and "
+                f"minibatch size = {minibatch_size}."
+            )
 
         # Estimate LM calls and get user confirmation
         if requires_permission_to_run:
@@ -401,16 +404,16 @@ class MIPROv2(Teleprompter):
         )
 
         proposer = GroundedProposer(
+            prompt_model=self.prompt_model,
             program=program,
             trainset=trainset,
-            prompt_model=self.prompt_model,
             view_data_batch_size=view_data_batch_size,
-            program_aware=program_aware_proposer,
             use_dataset_summary=data_aware_proposer,
+            program_aware=program_aware_proposer,
             use_task_demos=fewshot_aware_proposer,
+            use_instruct_history=False,
             use_tip=tip_aware_proposer,
             set_tip_randomly=tip_aware_proposer,
-            use_instruct_history=False,
             set_history_randomly=False,
             verbose=self.verbose,
             rng=self.rng,
