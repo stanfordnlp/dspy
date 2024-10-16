@@ -1,7 +1,7 @@
 import copy
-import textwrap
 
 import pydantic
+import pytest
 import ujson
 
 import dspy
@@ -126,9 +126,11 @@ def test_typed_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
+
 def test_signature_fields_after_dump_and_load_state(tmp_path):
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
+
         sentence = dspy.InputField(desc="I am an innocent input!")
         sentiment = dspy.OutputField()
 
@@ -138,6 +140,7 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
 
     class CustomSignature2(dspy.Signature):
         """I am not a pure instruction."""
+
         sentence = dspy.InputField(desc="I am a malicious input!")
         sentiment = dspy.OutputField(desc="I am a malicious output!", prefix="I am a prefix!")
 
@@ -218,3 +221,84 @@ def test_output_only():
     lm = DummyLM([{"output": "short answer"}])
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
+
+
+@pytest.fixture(name="SandwichIdea")
+def sandwich_idea_signature():
+    class SandwichIdea(dspy.Signature):
+        """Based on the meal and dietary requirements, suggest a sandwich idea."""
+
+        meal: str = dspy.InputField()
+        dietary_requiements: str = dspy.InputField()
+        bread: str = dspy.OutputField()
+        protein: str = dspy.OutputField()
+        fat: str = dspy.OutputField()
+        garnish: str = dspy.OutputField()
+        sauce: str = dspy.OutputField()
+
+    return SandwichIdea
+
+
+def test_max_extension_0_no_extension(SandwichIdea):
+    lm = DummyLM(
+        [
+            {"bread": "whole wheat", "protein": "turkey", "fat": "avocado"},
+            {"garnish": "tomato", "sauce": "mustard"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    with pytest.raises(ValueError):
+        Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+
+
+def test_extend_generation(SandwichIdea):
+    lm = DummyLM(
+        [
+            {"bread": "whole wheat", "protein": "turkey", "fat": "avocado"},
+            {"garnish": "tomato", "sauce": "mustard"},
+        ]
+    )
+    dspy.settings.configure(lm=lm, max_extensions=2)
+
+    prediction = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+
+    assert prediction.bread == "whole wheat"
+    assert prediction.protein == "turkey"
+    assert prediction.fat == "avocado"
+    assert prediction.garnish == "tomato"
+    assert prediction.sauce == "mustard"
+
+
+def test_extend_generation_handles_skipped_field(SandwichIdea):
+    lm = DummyLM(
+        [
+            {"bread": "white", "fat": "butter"},
+            {"protein": "ham", "garnish": "tomato", "sauce": "mayo"},
+        ]
+    )
+    dspy.settings.configure(lm=lm, max_extensions=2)
+
+    predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+    assert predictor.bread == "white"
+    assert predictor.protein == "ham"
+    assert predictor.fat == "butter"
+    assert predictor.garnish == "tomato"
+    assert predictor.sauce == "mayo"
+
+
+def test_extend_generation_with_empty_field(SandwichIdea):
+    lm = DummyLM(
+        [
+            {"bread": "white", "fat": ""},
+            {"protein": "ham", "garnish": "tomato", "sauce": "mayo"},
+        ]
+    )
+    dspy.settings.configure(lm=lm, max_extensions=2)
+
+    predictor = Predict(SandwichIdea)(meal="lunch", dietary_requiements="N/A")
+    assert predictor.bread == "white"
+    assert predictor.protein == "ham"
+    assert predictor.fat == ""
+    assert predictor.garnish == "tomato"
+    assert predictor.sauce == "mayo"
