@@ -2,105 +2,432 @@
 sidebar_position: 2
 ---
 
-import AuthorDetails from '@site/src/components/AuthorDetails';
+# Getting Started I: An Example for Basic Question Answering
 
-# Minimal Working Example
+Let's walk through a quick example of **basic question answering** in DSPy. Specifically, let's build **a system for answering Tech questions**, e.g. about Linux or iPhone apps.
 
-In this post, we walk you through a minimal working example using the DSPy library. 
+Install the latest DSPy via `pip install -U dspy` and follow along. If you're looking instead for a conceptual overview of DSPy, this [recent lecture](https://www.youtube.com/live/JEMYuzrKLUw) is a good place to start.
 
-We make use of the [GSM8K dataset](https://huggingface.co/datasets/gsm8k) and the OpenAI GPT-3.5-turbo model to simulate prompting tasks within DSPy.
+### 1) Configuring the DSPy environment.
 
-## Setup
+Let's tell DSPy that we will use OpenAI's `gpt-4o-mini` in our modules. To authenticate, DSPy will look into your `OPENAI_API_KEY`. You can easily swap this out for [other providers or local models](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb).
 
-Before we jump into the example, let's ensure our environment is properly configured. We'll start by importing the necessary modules and configuring our language model:
 
 ```python
 import dspy
-from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
-# Set up the LM.
-turbo = dspy.OpenAI(model='gpt-3.5-turbo-instruct', max_tokens=250)
-dspy.settings.configure(lm=turbo)
-
-# Load math questions from the GSM8K dataset.
-gsm8k = GSM8K()
-gsm8k_trainset, gsm8k_devset = gsm8k.train[:10], gsm8k.dev[:10]
+lm = dspy.LM('openai/gpt-4o-mini')
+dspy.configure(lm=lm)
 ```
 
-Let's take a look at what `gsm8k_trainset` and `gsm8k_devset` are:
+### 2) Exploring some basic DSPy `Module`s.
+
+You can always prompt the LM directly via `lm(prompt="prompt")` or `lm(messages=[...])`. However, DSPy gives you `Modules` as a better way to define your LM functions.
+
+The simplest module is `dspy.Predict`. It takes a [DSPy Signature](), i.e. a structured input/output schema, and gives you back a callable function for the behavior you specified. Let's use the "in-line" notation for signatures to declare a module that takes a `question` (of type `str`) as input and produces a `response` as an output.
+
 
 ```python
-print(gsm8k_trainset)
+qa = dspy.Predict('question: str -> response: str')
+qa(question="what are high memory and low memory on linux?").response
 ```
 
-The `gsm8k_trainset` and `gsm8k_devset` datasets contain lists of `dspy.Examples`, with each example having `question` and `answer` fields.
 
-## Define the Module
 
-With our environment set up, let's define a custom program that utilizes the [`ChainOfThought`](/docs/deep-dive/modules/ChainOfThought) module to perform step-by-step reasoning to generate answers:
+
+    'In Linux, "high memory" and "low memory" refer to different regions of the system\'s memory address space, particularly in the context of 32-bit architectures.\n\n- **Low Memory**: This typically refers to the first 896 MB of memory in a 32-bit system. It is directly accessible by the kernel and is used for kernel data structures and user processes. The low memory region is where most of the system\'s memory management occurs, and it is where the kernel can allocate memory for processes without needing special handling.\n\n- **High Memory**: This refers to memory above the 896 MB threshold in a 32-bit system. The kernel cannot directly access this memory without special mechanisms because of the limitations of the 32-bit address space. High memory is used for user processes that require more memory than what is available in the low memory region. The kernel can manage high memory through techniques like "highmem" support, which allows it to map high memory pages into the kernel\'s address space when needed.\n\nIn summary, low memory is directly accessible by the kernel, while high memory requires additional handling for the kernel to access it, especially in 32-bit systems. In 64-bit systems, this distinction is less relevant as the addressable memory space is significantly larger.'
+
+
+
+Notice how the variable names we specified in the signature defined our input and output argument names and their role.
+
+Now, what did DSPy do to build this `qa` module? Nothing fancy in this example, yet. The module passed your signature, LM, and inputs to an [Adapter](), which is a layer that handles structuring the inputs and parsing structured outputs to fit your signature.
+
+Let's see it directly. You can inspect the `n` last prompts sent by DSPy easily.
+
 
 ```python
-class CoT(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.prog = dspy.ChainOfThought("question -> answer")
+dspy.inspect_history(n=1)
+```
+
     
-    def forward(self, question):
-        return self.prog(question=question)
-```
+    
+    
+        
+    System message:
+    
+    Your input fields are:
+    1. `question` (str)
+    
+    Your output fields are:
+    1. `response` (str)
+    
+    All interactions will be structured in the following way, with the appropriate values filled in.
+    
+    [[ ## question ## ]]
+    {question}
+    
+    [[ ## response ## ]]
+    {response}
+    
+    [[ ## completed ## ]]
+    
+    In adhering to this structure, your objective is: 
+            Given the fields `question`, produce the fields `response`.
+    
+    
+    User message:
+    
+    [[ ## question ## ]]
+    what are high memory and low memory on linux?
+    
+    Respond with the corresponding output fields, starting with the field `response`, and then ending with the marker for `completed`.
+    
+    
+    Response:
+    
+    [[ ## response ## ]]
+    In Linux, "high memory" and "low memory" refer to different regions of the system's memory address space, particularly in the context of 32-bit architectures.
+    
+    - **Low Memory**: This typically refers to the first 896 MB of memory in a 32-bit system. It is directly accessible by the kernel and is used for kernel data structures and user processes. The low memory region is where most of the system's memory management occurs, and it is where the kernel can allocate memory for processes without needing special handling.
+    
+    - **High Memory**: This refers to memory above the 896 MB threshold in a 32-bit system. The kernel cannot directly access this memory without special mechanisms because of the limitations of the 32-bit address space. High memory is used for user processes that require more memory than what is available in the low memory region. The kernel can manage high memory through techniques like "highmem" support, which allows it to map high memory pages into the kernel's address space when needed.
+    
+    In summary, low memory is directly accessible by the kernel, while high memory requires additional handling for the kernel to access it, especially in 32-bit systems. In 64-bit systems, this distinction is less relevant as the addressable memory space is significantly larger. 
+    
+    [[ ## completed ## ]]
+    
+    
+    
+    
+    
 
-## Compile and Evaluate the Model
 
-With our simple program in place, let's move on to compiling it with the [`BootstrapFewShot`](/docs/deep-dive/optimizers/bootstrap-fewshot) teleprompter:
+DSPy has various built-in modules, e.g. `dspy.ChainOfThought`, `dspy.ProgramOfThought`, and `dspy.ReAct`. These are interchangeable with basic `dspy.Predict`: they take your signature, which is specific to your task, and they apply general-purpose prompting techniques and inference-time strategies to it.
+
+For example, `dspy.ChainOfThought` is an easy way to elicit `reasoning` out of your LM before it commits to the outputs requested in your signature.
+
+In the example below, we'll omit `str` types (as the default type is string). You should feel free to experiment with other fields and types, e.g. try `topics: list[str]` or `is_realistic: bool`.
+
 
 ```python
-from dspy.teleprompt import BootstrapFewShot
-
-# Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 4-shot examples of our CoT program.
-config = dict(max_bootstrapped_demos=4, max_labeled_demos=4)
-
-# Optimize! Use the `gsm8k_metric` here. In general, the metric is going to tell the optimizer how well it's doing.
-teleprompter = BootstrapFewShot(metric=gsm8k_metric, **config)
-optimized_cot = teleprompter.compile(CoT(), trainset=gsm8k_trainset)
+cot = dspy.ChainOfThought('question -> response')
+cot(question="should curly braces appear on their own line?")
 ```
 
-Note that `BootstrapFewShot` is not an optimizing teleprompter, i.e. it simply creates and validates examples for steps of the pipeline (in this case, chain-of-thought reasoning) but does not optimize the metric. Other teleprompters like `BootstrapFewShotWithRandomSearch` and `MIPRO` will apply direct optimization.
 
-## Evaluate
 
-Now that we have a compiled (optimized) DSPy program, let's move to evaluating its performance on the dev dataset.
+
+    Prediction(
+        reasoning="The placement of curly braces on their own line is largely a matter of coding style and conventions. In some programming languages and style guides, such as those used in C, C++, and Java, it is common to place opening curly braces on the same line as the control statement (like `if`, `for`, etc.) and closing braces on a new line. However, other styles, such as the Allman style, advocate for placing both opening and closing braces on their own lines. Ultimately, the decision should be based on the team's coding standards or personal preference, as long as it maintains readability and consistency throughout the code.",
+        response="Curly braces can either appear on their own line or not, depending on the coding style you choose to follow. It's important to be consistent with whichever style you adopt."
+    )
+
+
+
+Interestingly, asking for reasoning made the output `response` shorter in this case. Is this a good thing or a bad thing? It depends on what you need: there's no free lunch, but DSPy gives you the tools to experiment with different strategies extremely quickly.
+
+By the way, `dspy.ChainOfThought` is implemented in DSPy, using `dspy.Predict`. This is a good place to `dspy.inspect_history` if you're curious.
+
+### 3) Using DSPy well involves evaluation and iterative development.
+
+You already know a lot about DSPy at this point. If all you want is quick scripting, this much of DSPy already enables a lot. Sprinkling DSPy signatures and modules into your Python control flow is a pretty ergonomic way to just get stuff done with LMs.
+
+That said, you're likely here because you want to build a high-quality system and improve it over time. The way to do that in DSPy is to iterate fast by evaluating the quality of your system and using DSPy's powerful tools, e.g. [Optimizers](). You can learn about the [appropriate development cycle in DSPy here]().
+
+### 4) Manipulating `Example`s in DSPy.
+
+To measure the quality of your DSPy system, you need (1) a bunch of input values, like `question`s for example, and (2) a `metric` that can score the quality of an output from your system. Metrics vary widely. Some metrics need ground-truth labels of ideal outputs, e.g. for classification or question answering. Other metrics are self-supervised, e.g. checking faithfulness or lack of hallucination, perhaps using a DSPy program as a judge of these qualities.
+
+Let's load a dataset of questions and their (pretty long) gold answers. Since we started this notebook with the goal of building **a system for answering Tech questions**, we obtained a bunch of StackExchange-based questions and their correct answers from the [RAG-QA Arena]() dataset. (Learn more about the [development cycle]() if you don't have data for your task.)
 
 
 ```python
-from dspy.evaluate import Evaluate
+import ujson
 
-# Set up the evaluator, which can be used multiple times.
-evaluate = Evaluate(devset=gsm8k_devset, metric=gsm8k_metric, num_threads=4, display_progress=True, display_table=0)
+# Download 500 question--answer pairs from the RAG-QA Arena "Tech" dataset.
+# !wget https://huggingface.co/dspy/cache/resolve/main/ragqa_arena_tech_500.json
 
-# Evaluate our `optimized_cot` program.
-evaluate(optimized_cot)
+with open('ragqa_arena_tech_500.json') as f:
+    data = ujson.load(f)
+
+# Inspect one datapoint.
+data[0]
 ```
 
-## Inspect the Model's History
 
-For a deeper understanding of the model's interactions, we can review the most recent generations through inspecting the model's history:
+
+
+    {'question': 'how to transfer whatsapp voice message to computer?',
+     'response': 'To transfer voice notes from WhatsApp on your device to your computer, you have the option to select the "Share" feature within the app and send the files via Email, Gmail, Bluetooth, or other available services.  \nYou can also move the files onto your phone\'s SD card, connect your phone to your computer via a USB cable, then find and transfer the files via File Explorer on your PC. \nAlternatively, you can choose to attach all the desired voice notes to an email and, from your phone, send them to your own email address.  \nUpon receiving the email on your computer, you can then download the voice note attachments.'}
+
+
+
+Given a simple dict like this, let's create a list of `dspy.Example`s, which is the datatype that carries training (or test) datapoints in DSPy.
+
+When you build a `dspy.Example`, you should generally specify `.with_inputs("field1", "field2", ...)` to indicate which fields are inputs. The other fields are treated as labels or metadata.
+
 
 ```python
-turbo.inspect_history(n=1)
+data = [dspy.Example(**d).with_inputs('question') for d in data]
+
+# Let's pick an `example` here from the data.
+example = data[2]
+example
 ```
 
-And there you have it! You've successfully created a working example using the DSPy library. 
 
-This example showcases how to set up your environment, define a custom module, compile a model, and rigorously evaluate its performance using the provided dataset and teleprompter configurations. 
 
-Feel free to adapt and expand upon this example to suit your specific use case while exploring the extensive capabilities of DSPy.
 
-If you want to try what you just built, run `optimized_cot(question='Your Question Here')`.
+    Example({'question': 'what are high memory and low memory on linux?', 'response': '"High Memory" refers to the application or user space, the memory that user programs can use and which isn\'t permanently mapped in the kernel\'s space, while "Low Memory" is the kernel\'s space, which the kernel can address directly and is permanently mapped. \nThe user cannot access the Low Memory as it is set aside for the required kernel programs.'}) (input_keys={'question'})
 
-:::note
-For a more comprehensive walkthrough with detailed examples, please refer to the introduction colab: [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb).
-:::
 
-***
 
-<AuthorDetails name="Herumb Shandilya"/>
+Now, let's divide the data into:
+
+- Training and Validation sets:
+    - These are the splits you typically give to DSPy optimizers.
+    - Optimizers typically learn directly from the training examples and check their progress using the validation examples.
+    - It's good to have 30--300 examples for training and validation each.
+    - For prompt optimizers in particular, it's often better to pass _more_ validation than training.
+
+- Development and Test sets: The rest, typically on the order of 30--1000, can be used for:
+    - development (i.e., you can inspect them as you iterate on your system) and
+    - testing (final held-out evaluation).
+
+
+```python
+trainset, valset, devset, testset = data[:50], data[50:150], data[150:300], data[300:500]
+
+len(trainset), len(valset), len(devset), len(testset)
+```
+
+
+
+
+    (50, 100, 150, 200)
+
+
+
+### 5) Evaluation in DSPy.
+
+What kind of metric can suit our question-answering task? There are many choices, but since the answer are long, we may ask: How well does the system response _cover_ all key facts in the gold response? And the other way around, how well is the system response _not saying things_ that aren't in the gold response?
+
+That metric is essentially a **semantic F1**, so let's load a `SemanticF1` metric from DSPy. This metric is actually implemented as a [very simple DSPy module]() using whatever LM we're working with.
+
+
+```python
+from dspy.evaluate import SemanticF1
+
+# Instantiate the metric.
+metric = SemanticF1()
+
+# Produce a prediction from our `cot` module, using the `example` above as input.
+pred = cot(**example.inputs())
+
+# Compute the metric score for the prediction.
+score = metric(example, pred)
+
+print(f"Question: \t {example.question}\n")
+print(f"Gold Reponse: \t {example.response}\n")
+print(f"Predicted Response: \t {pred.response}\n")
+print(f"Semantic F1 Score: {score:.2f}")
+```
+
+    Question: 	 what are high memory and low memory on linux?
+    
+    Gold Reponse: 	 "High Memory" refers to the application or user space, the memory that user programs can use and which isn't permanently mapped in the kernel's space, while "Low Memory" is the kernel's space, which the kernel can address directly and is permanently mapped. 
+    The user cannot access the Low Memory as it is set aside for the required kernel programs.
+    
+    Predicted Response: 	 In Linux, "low memory" refers to the memory that is directly accessible by the kernel and user processes, typically the first 4GB on a 32-bit system. "High memory" refers to memory above this limit, which is not directly accessible by the kernel in a 32-bit environment. This distinction is crucial for memory management, particularly in systems with large amounts of RAM, as it influences how memory is allocated and accessed.
+    
+    Semantic F1 Score: 0.80
+
+
+The final DSPy module call above actually happens inside `metric`. You might be curious how it measured the semantic F1 for this example.
+
+
+```python
+dspy.inspect_history(n=1)
+```
+
+    
+    
+    
+        
+    System message:
+    
+    Your input fields are:
+    1. `question` (str)
+    2. `ground_truth` (str)
+    3. `system_response` (str)
+    
+    Your output fields are:
+    1. `reasoning` (str)
+    2. `recall` (float): fraction (out of 1.0) of ground truth covered by the system response
+    3. `precision` (float): fraction (out of 1.0) of system response covered by the ground truth
+    
+    All interactions will be structured in the following way, with the appropriate values filled in.
+    
+    [[ ## question ## ]]
+    {question}
+    
+    [[ ## ground_truth ## ]]
+    {ground_truth}
+    
+    [[ ## system_response ## ]]
+    {system_response}
+    
+    [[ ## reasoning ## ]]
+    {reasoning}
+    
+    [[ ## recall ## ]]
+    {recall}
+    
+    [[ ## precision ## ]]
+    {precision}
+    
+    [[ ## completed ## ]]
+    
+    In adhering to this structure, your objective is: 
+            Compare a system's response to the ground truth to compute its recall and precision.
+            If asked to reason, enumerate key ideas in each response, and whether they are present in the other response.
+    
+    
+    User message:
+    
+    [[ ## question ## ]]
+    what are high memory and low memory on linux?
+    
+    [[ ## ground_truth ## ]]
+    "High Memory" refers to the application or user space, the memory that user programs can use and which isn't permanently mapped in the kernel's space, while "Low Memory" is the kernel's space, which the kernel can address directly and is permanently mapped. 
+    The user cannot access the Low Memory as it is set aside for the required kernel programs.
+    
+    [[ ## system_response ## ]]
+    In Linux, "low memory" refers to the memory that is directly accessible by the kernel and user processes, typically the first 4GB on a 32-bit system. "High memory" refers to memory above this limit, which is not directly accessible by the kernel in a 32-bit environment. This distinction is crucial for memory management, particularly in systems with large amounts of RAM, as it influences how memory is allocated and accessed.
+    
+    Respond with the corresponding output fields, starting with the field `reasoning`, then `recall`, then `precision`, and then ending with the marker for `completed`.
+    
+    
+    Response:
+    
+    [[ ## reasoning ## ]]
+    The system response correctly identifies "low memory" as the memory directly accessible by the kernel and user processes, and it mentions the typical limit of 4GB on a 32-bit system. It also accurately describes "high memory" as the memory above this limit that is not directly accessible by the kernel. However, it does not explicitly mention that "low memory" is set aside for kernel programs, which is a key point in the ground truth. The system response provides a good overview of the concepts but lacks the detail about user access to low memory and the permanent mapping aspect mentioned in the ground truth.
+    
+    [[ ## recall ## ]]
+    0.75
+    
+    [[ ## precision ## ]]
+    0.85
+    
+    [[ ## completed ## ]]
+    
+    
+    
+    
+    
+
+
+For evaluation, you could use the metric above in a simple loop and just average the score. But for nice parallelism and utilities, we can rely on `dspy.Evaluate`.
+
+
+```python
+# Define an evaluator that we can re-use.
+evaluate = dspy.Evaluate(devset=devset, metric=metric, num_threads=24,
+                         display_progress=True, display_table=3)
+
+# Evaluate the Chain-of-Thought program.
+evaluate(cot)
+```
+
+    Average Metric: 59.565342393613165 / 150  (39.7): 100%|██████████| 150/150 [00:00<00:00, 432.92it/s]
+
+
+
+<style type="text/css">
+#T_081c3 th {
+  text-align: left;
+}
+#T_081c3 td {
+  text-align: left;
+}
+#T_081c3_row0_col0, #T_081c3_row0_col1, #T_081c3_row0_col2, #T_081c3_row0_col3, #T_081c3_row0_col4, #T_081c3_row1_col0, #T_081c3_row1_col1, #T_081c3_row1_col2, #T_081c3_row1_col3, #T_081c3_row1_col4, #T_081c3_row2_col0, #T_081c3_row2_col1, #T_081c3_row2_col2, #T_081c3_row2_col3, #T_081c3_row2_col4 {
+  text-align: left;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-width: 400px;
+}
+</style>
+<table id="T_081c3">
+  <thead>
+    <tr>
+      <th class="blank level0" >&nbsp;</th>
+      <th id="T_081c3_level0_col0" class="col_heading level0 col0" >question</th>
+      <th id="T_081c3_level0_col1" class="col_heading level0 col1" >example_response</th>
+      <th id="T_081c3_level0_col2" class="col_heading level0 col2" >reasoning</th>
+      <th id="T_081c3_level0_col3" class="col_heading level0 col3" >pred_response</th>
+      <th id="T_081c3_level0_col4" class="col_heading level0 col4" >SemanticF1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th id="T_081c3_level0_row0" class="row_heading level0 row0" >0</th>
+      <td id="T_081c3_row0_col0" class="data row0 col0" >why is mercurial considered to be easier than git?</td>
+      <td id="T_081c3_row0_col1" class="data row0 col1" >Mercurial's syntax is considered more familiar, especially for those accustomed to SVN, and is well documented. It focuses on interface aspects, which initially makes learning...</td>
+      <td id="T_081c3_row0_col2" class="data row0 col2" >Mercurial is often considered easier than Git for several reasons. Firstly, Mercurial has a simpler command structure and a more consistent user interface, which can...</td>
+      <td id="T_081c3_row0_col3" class="data row0 col3" >Mercurial is considered easier than Git primarily due to its simpler command structure and more consistent user interface, making it more approachable for beginners. Its...</td>
+      <td id="T_081c3_row0_col4" class="data row0 col4" >✔️ [0.545]</td>
+    </tr>
+    <tr>
+      <th id="T_081c3_level0_row1" class="row_heading level0 row1" >1</th>
+      <td id="T_081c3_row1_col0" class="data row1 col0" >open finder window from current terminal location?</td>
+      <td id="T_081c3_row1_col1" class="data row1 col1" >If you type 'open .' in Terminal, it will open the current directory in a Finder window. Alternatively, you can execute the command open `pwd`...</td>
+      <td id="T_081c3_row1_col2" class="data row1 col2" >To open a Finder window from the current terminal location on a Mac, you can use the `open` command followed by a dot (`.`) which...</td>
+      <td id="T_081c3_row1_col3" class="data row1 col3" >You can open a Finder window from your current terminal location by using the following command:
+```
+open .
+```</td>
+      <td id="T_081c3_row1_col4" class="data row1 col4" >✔️ [0.667]</td>
+    </tr>
+    <tr>
+      <th id="T_081c3_level0_row2" class="row_heading level0 row2" >2</th>
+      <td id="T_081c3_row2_col0" class="data row2 col0" >how to import secret gpg key (copied from one machine to another)?</td>
+      <td id="T_081c3_row2_col1" class="data row2 col1" >It is advised that it is necessary to add `--import` to the command line to import the private key and that according to the man...</td>
+      <td id="T_081c3_row2_col2" class="data row2 col2" >To import a secret GPG key that has been copied from one machine to another, you need to ensure that the key is in the...</td>
+      <td id="T_081c3_row2_col3" class="data row2 col3" >To import a secret GPG key that you have copied from one machine to another, follow these steps: 1. **Transfer the Key**: Ensure that the...</td>
+      <td id="T_081c3_row2_col4" class="data row2 col4" >✔️ [0.708]</td>
+    </tr>
+  </tbody>
+</table>
+
+
+
+
+
+<div style='
+    text-align: center;
+    font-size: 16px;
+    font-weight: bold;
+    color: #555;
+    margin: 10px 0;'>
+    ... 147 more rows not displayed ...
+</div>
+
+
+
+
+
+
+    39.71
+
+
+
+### 6) What's next?
+
+In this guide, we built a very simple chain-of-thought module for question answering and evaluated it on a small dataset.
+
+Can we do better? In the next guide, we will build a retrieval-augmented generation (RAG) program in DSPy for the same task.
+
+We'll see how this can boost the score substantially, then we'll use one of the DSPy Optimizers to _compile_ our RAG program to higher-quality prompts, raising our scores even more.
+
+Continue here. [Getting Started II: An Example for Basic RAG]()
