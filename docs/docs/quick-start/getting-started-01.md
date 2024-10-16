@@ -45,51 +45,9 @@ Let's see it directly. You can inspect the `n` last prompts sent by DSPy easily.
 dspy.inspect_history(n=1)
 ```
 
-**Output:**
-``` 
-System message:
+**Output:**   
+See this [gist](https://gist.github.com/okhat/aff3c9788ccddf726fdfeb78e40e5d22)
 
-Your input fields are:
-1. `question` (str)
-
-Your output fields are:
-1. `response` (str)
-
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## question ## ]]
-{question}
-
-[[ ## response ## ]]
-{response}
-
-[[ ## completed ## ]]
-
-In adhering to this structure, your objective is: 
-        Given the fields `question`, produce the fields `response`.
-
-
-User message:
-
-[[ ## question ## ]]
-what are high memory and low memory on linux?
-
-Respond with the corresponding output fields, starting with the field `response`, and then ending with the marker for `completed`.
-
-
-Response:
-
-[[ ## response ## ]]
-In Linux, "high memory" and "low memory" refer to different regions of the system's memory address space, particularly in the context of 32-bit architectures.
-
-- **Low Memory**: This typically refers to the first 896 MB of memory in a 32-bit system. It is directly accessible by the kernel and is used for kernel data structures and user processes. The low memory region is where most of the system's memory management occurs, and it is where the kernel can allocate memory for processes without needing special handling.
-
-- **High Memory**: This refers to memory above the 896 MB threshold in a 32-bit system. The kernel cannot directly access this memory without special mechanisms because of the limitations of the 32-bit address space. High memory is used for user processes that require more memory than what is available in the low memory region. The kernel can manage high memory through techniques like "highmem" support, which allows it to map high memory pages into the kernel's address space when needed.
-
-In summary, low memory is directly accessible by the kernel, while high memory requires additional handling for the kernel to access it, especially in 32-bit systems. In 64-bit systems, this distinction is less relevant as the addressable memory space is significantly larger. 
-
-[[ ## completed ## ]]
-```
 
 DSPy has various built-in modules, e.g. `dspy.ChainOfThought`, `dspy.ProgramOfThought`, and `dspy.ReAct`. These are interchangeable with basic `dspy.Predict`: they take your signature, which is specific to your task, and they apply general-purpose prompting techniques and inference-time strategies to it.
 
@@ -125,14 +83,14 @@ That said, you're likely here because you want to build a high-quality system an
 
 To measure the quality of your DSPy system, you need (1) a bunch of input values, like `question`s for example, and (2) a `metric` that can score the quality of an output from your system. Metrics vary widely. Some metrics need ground-truth labels of ideal outputs, e.g. for classification or question answering. Other metrics are self-supervised, e.g. checking faithfulness or lack of hallucination, perhaps using a DSPy program as a judge of these qualities.
 
-Let's load a dataset of questions and their (pretty long) gold answers. Since we started this notebook with the goal of building **a system for answering Tech questions**, we obtained a bunch of StackExchange-based questions and their correct answers from the RAG-QA Arena dataset. (Learn more about the [development cycle](/docs/building-blocks/solving_your_task) if you don't have data for your task.)
+Let's load a dataset of questions and their (pretty long) gold answers. Since we started this notebook with the goal of building **a system for answering Tech questions**, we obtained a bunch of StackExchange-based questions and their correct answers from the [RAG-QA Arena](https://arxiv.org/abs/2407.13998) dataset. (Learn more about the [development cycle](/docs/building-blocks/solving_your_task) if you don't have data for your task.)
 
 
 ```python
 import ujson
 
 # Download 500 question--answer pairs from the RAG-QA Arena "Tech" dataset.
-# !wget https://huggingface.co/dspy/cache/resolve/main/ragqa_arena_tech_500.json
+!wget https://huggingface.co/dspy/cache/resolve/main/ragqa_arena_tech_500.json
 
 with open('ragqa_arena_tech_500.json') as f:
     data = ujson.load(f)
@@ -233,75 +191,8 @@ The final DSPy module call above actually happens inside `metric`. You might be 
 dspy.inspect_history(n=1)
 ```
 
-**Output:**
-```
-System message:
-
-Your input fields are:
-1. `question` (str)
-2. `ground_truth` (str)
-3. `system_response` (str)
-
-Your output fields are:
-1. `reasoning` (str)
-2. `recall` (float): fraction (out of 1.0) of ground truth covered by the system response
-3. `precision` (float): fraction (out of 1.0) of system response covered by the ground truth
-
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## question ## ]]
-{question}
-
-[[ ## ground_truth ## ]]
-{ground_truth}
-
-[[ ## system_response ## ]]
-{system_response}
-
-[[ ## reasoning ## ]]
-{reasoning}
-
-[[ ## recall ## ]]
-{recall}
-
-[[ ## precision ## ]]
-{precision}
-
-[[ ## completed ## ]]
-
-In adhering to this structure, your objective is: 
-        Compare a system's response to the ground truth to compute its recall and precision.
-        If asked to reason, enumerate key ideas in each response, and whether they are present in the other response.
-
-
-User message:
-
-[[ ## question ## ]]
-what are high memory and low memory on linux?
-
-[[ ## ground_truth ## ]]
-"High Memory" refers to the application or user space, the memory that user programs can use and which isn't permanently mapped in the kernel's space, while "Low Memory" is the kernel's space, which the kernel can address directly and is permanently mapped. 
-The user cannot access the Low Memory as it is set aside for the required kernel programs.
-
-[[ ## system_response ## ]]
-In Linux, "low memory" refers to the memory that is directly accessible by the kernel and user processes, typically the first 4GB on a 32-bit system. "High memory" refers to memory above this limit, which is not directly accessible by the kernel in a 32-bit environment. This distinction is crucial for memory management, particularly in systems with large amounts of RAM, as it influences how memory is allocated and accessed.
-
-Respond with the corresponding output fields, starting with the field `reasoning`, then `recall`, then `precision`, and then ending with the marker for `completed`.
-
-
-Response:
-
-[[ ## reasoning ## ]]
-The system response correctly identifies "low memory" as the memory directly accessible by the kernel and user processes, and it mentions the typical limit of 4GB on a 32-bit system. It also accurately describes "high memory" as the memory above this limit that is not directly accessible by the kernel. However, it does not explicitly mention that "low memory" is set aside for kernel programs, which is a key point in the ground truth. The system response provides a good overview of the concepts but lacks the detail about user access to low memory and the permanent mapping aspect mentioned in the ground truth.
-
-[[ ## recall ## ]]
-0.75
-
-[[ ## precision ## ]]
-0.85
-
-[[ ## completed ## ]]
-```
+**Output:**     
+See this [gist](https://gist.github.com/okhat/57bf86472d1e14812c0ae33fba5353f8)
 
 For evaluation, you could use the metric above in a simple loop and just average the score. But for nice parallelism and utilities, we can rely on `dspy.Evaluate`.
 
@@ -317,8 +208,6 @@ evaluate(cot)
 **Output:**
 ```
 Average Metric: 59.565342393613165 / 150  (39.7): 100%|██████████| 150/150 [00:00<00:00, 432.92it/s]
-[TABLE HERE]
-39.71
 ```
 
 The table you'll get in the output would look like:
