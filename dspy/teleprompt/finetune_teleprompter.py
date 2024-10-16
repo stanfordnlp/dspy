@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
-from dspy import logger
+from dspy.utils.logging import logger
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
@@ -78,6 +78,7 @@ def prepare_teacher(
 
     return teacher
 
+
 # TODO: fix docstring
 def convert_to_module_level_message_data(
         data: List[Dict],
@@ -129,6 +130,7 @@ def convert_to_module_level_message_data(
                 prompt_completion_dict = {**data_dict, **prompt_completion_dict}
             prompt_completion_data.append(prompt_completion_dict)
     return prompt_completion_data
+
 
 # TODO: fix docstring
 def build_messages_from_trace(
@@ -211,9 +213,8 @@ def bootstrap_data(
     evaluator = Evaluate(
         devset=dataset, num_threads=num_threads, display_progress=True, max_errors=max_errors, provide_traceback=True
     )
-    x = evaluator(program, metric=metric)
-    # print(x)
-    # data = process_dataset_threaded(dataset, program, metric, num_threads, max_errors)
+    evaluator(program, metric=metric)
+
     data = []
     for example in dataset:
         data_dict = process_example(example, 0, program, metric)
@@ -222,22 +223,6 @@ def bootstrap_data(
     
     return data
 
-def process_dataset_threaded(dataset: List[Any], program: Callable, metric: Optional[Callable] = None, max_workers: int = None, max_errors: int = 0) -> List[Dict[str, Any]]:
-    data = []
-    num_threads = max_workers if max_workers else 10
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-        future_to_example = {executor.submit(process_example, example, i, program, metric): i 
-                             for i, example in enumerate(dataset)}
-        
-        for future in concurrent.futures.as_completed(future_to_example):
-            data_dict = future.result()
-            if data_dict is not None:
-                data.append(data_dict)
-    
-    # Sort the results based on example_ind to maintain original order
-    data.sort(key=lambda x: x['example_ind'])
-    
-    return data
 
 def process_example(example: Any, example_ind: int, program: Callable, metric: Optional[Callable] = None) -> Dict[str, Any]:
     # print("Processing example:", example_ind)
@@ -352,6 +337,7 @@ def bootstrap_data_for_round(
         to the dictionaries:
         - The `round` field corresponds to the `sampling_round` argument.
     """ 
+    # TODO: [DSPy 2.5] Migrate to using "seed" for sampling
     # Helper function to adjust the temperature of the LM. If a None temperature
     # is passed, keep the LM's temperature as is as the base temperature, then
     # adjust the temperature for the given round.

@@ -1,13 +1,14 @@
 from __future__ import annotations  # Used for self type hints
+from functools import lru_cache
+import logging
 import random
 from typing import Optional
-import logging
-from functools import lru_cache
 
 from pydantic import BaseModel
 
 import dsp
 from dspy.predict.parameter import Parameter
+from dspy.primitives.program import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template

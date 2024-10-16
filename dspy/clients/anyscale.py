@@ -6,14 +6,18 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 import functools
 
-from dspy import logger
+from dspy.utils.logging import logger
 from dspy.clients.finetune import (
     FinetuneJob,
-    TrainingMethod
+    TrainingMethod,
+    save_data,
 )
+from dspy.clients.openai import openai_data_validation, check_message_lengths
 import asyncio
 
 try:
+    # Importing the AnyScale library for users in the AnyScale workspace, where
+    # the library is already installed.
     from anyscale.job import JobConfig
     import anyscale
 except ImportError:
@@ -27,6 +31,9 @@ except ImportError:
 TRAINING_METHODS_ANYSCALE = [
     TrainingMethod.SFT,
 ]
+
+PROVIDER_ANYSCALE = "anyscale"
+
 
 #-------------------------------------------------------------------------------
 #    Launching and killing LMs
@@ -48,24 +55,19 @@ def anyscale_model_kill(model: str, launch_kwargs: Dict[str, Any]):
 #    Function and classes required for the fine-tune interface
 #-------------------------------------------------------------------------------
 
+
+def is_anyscale_model(model: str) -> bool:
+    """Check if the model is an AnyScale model."""
+    # TODO: This needs to be implemented to support fine-tuning
+    logger.info("Is AnyScale model is not implemented, returning False as a default to not break lm.py")
+    return False
+
+
 class FinetuneJobAnyScale(FinetuneJob):
-    def __init__(self,
-        model: str,
-        # message_completion_pairs: List[Dict[str, str]],
-        train_path: str,
-        eval_path: Optional[str],
-        train_kwargs: Optional[Dict[str, Any]]=None,
-        serve_config_path: str = "serve_1B.yaml"
-    ):
-        super().__init__(model, train_path, eval_path, train_kwargs)
-        self.model = model
-        # self.message_completion_pairs = message_completion_pairs
-        self.train_path = train_path
-        self.train_kwargs: Dict[str, Any] = train_kwargs or {}
-        if "model" not in self.train_kwargs:
-            self.train_kwargs["model"] = model
+
+    def __init__(self, *args, **kwargs):
         self.job_id = None
-        self.serve_config_path = serve_config_path
+        super().__init__(*args, **kwargs)
     
     def cancel(self):
         """Cancel the finetune job."""
@@ -78,171 +80,85 @@ class FinetuneJobAnyScale(FinetuneJob):
         """Get the status of the finetune job."""
         raise NotImplementedError("Method `status` is not implemented.")
 
-    async def run_finetune(self):
-        """Start the finetune job."""
-        try:
-            logger.info("[Finetune] Starting training process...")
-            if TrainingMethod.SFT not in TRAINING_METHODS_ANYSCALE:
-                raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
 
-            logger.info("[Finetune] Reading and validating datasets...")
-            # Convert the data from prompt completion to OAI compatible messages
-            train_dataset = read_jsonl(self.train_path)
-            val_dataset = read_jsonl(self.eval_path) if self.eval_path else None
+def finetune_anyscale(
+        job: FinetuneJobAnyScale,
+        model: str,
+        train_data: List[Dict[str, Any]],
+        train_kwargs: Optional[Dict[str, Any]]=None,
+    ) -> Union[str, Exception]:
+    """Start the finetune job."""
+    try:
+        train_kwargs = train_kwargs or {}
+        assert "model" not in train_kwargs, "Model should not be in the train_kwargs"
+        train_kwargs["model"] = model
+        train_method = TrainingMethod.SFT  # Note: This could be an argument
 
-            if not verify_datasets(train_dataset, val_dataset):
-                logger.error("[Finetune] Error: Unable to verify arguments")
-                raise RuntimeError("Unable to verify argument")
-
-            logger.info("[Finetune] Converting data to JSONL format...")
-            for path, dataset in [(self.train_path, train_dataset), (self.eval_path, val_dataset)]:
-                if not (path and dataset):
-                    continue
-                write_jsonl(path, dataset)
-
-            logger.info("[Finetune] Submitting data to remote storage...")
-            remote_train_path, remote_eval_path = submit_data(train_path=self.train_path, eval_path=self.eval_path)
-            logger.info(f"[Finetune] Data submitted. Remote train path: {remote_train_path}, Remote eval path: {remote_eval_path}")
-
-            logger.info("[Finetune] Generating configuration files...")
-            _, compute_config = generate_config_files(train_path=remote_train_path, eval_path=remote_eval_path, **self.train_kwargs)
-            
-            logger.info("[Finetune] Starting remote training...")
-            job_id = start_remote_training(compute_config=compute_config, **self.train_kwargs)
-            self.job_id = job_id
-            logger.info(f"[Finetune] Remote training started. Job ID: {job_id}")
-
-            logger.info("[Finetune] Waiting for training to complete...")
-            await self.wait_for_training()
-            logger.info("[Finetune] Training completed.")
-
-            logger.info("[Finetune] Retrieving model information...")
-            model_info = get_model_info(job_id)
-            logger.info(f"[Finetune] Model info retrieved: {model_info}")
-
-            storage_uri = model_info["storage_uri"]
-            logger.info(f"[Finetune] Copying LoRA weights from {storage_uri}...")
-            model_names, lora_dynamic_path = copy_lora_weights(storage_uri, model_info, job_id)
-            logger.info(f"[Finetune] LoRA weights copied. Model names: {model_names}")
-
-            logger.info("[Finetune] Setting result in future object...")
-            for model_name in model_names:
-                yield model_name
-            logger.info("[Finetune] Training process completed successfully.")
-
-            logger.info("[Finetune] Updating model config with the proper dynamic path")
-            update_model_config(lora_dynamic_path, self.serve_config_path)
-
-        except Exception as e:
-            logger.error(f"[Finetune] Error occurred during training: {str(e)}")
-            raise e
-
-        # executor = ThreadPoolExecutor(max_workers=1)
-        # executor.submit(
-        #     execute_finetune_job,
-        #     finetune_job,
-        #     launch_kwargs=launch_kwargs,
-        #     cache_finetune=cache_finetune
-        # )
-        # executor.shutdown(wait=False)
-    
-    async def wait_for_training(self):
-        """Wait for the training to complete in a non-blocking manner."""
-        loop = asyncio.get_running_loop()
+        logger.info("[Finetune] Starting training process...")
+        if train_method not in TRAINING_METHODS_ANYSCALE:
+            raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
         
-        # Run the blocking `anyscale.job.wait` in a separate thread
+        logger.info("[Finetune] Retrieving the `serve_config_path` if provided, otherwise defaulting to `serve_1B.yaml`...")
+        serve_config_path = train_kwargs.pop("serve_config_path", "serve_1B.yaml")
+
+        logger.info("[Finetune] Validating the dataset format...")
+        if not verify_dataset(train_data):
+            # TODO: Does AnyScale support text completion models?
+            err = "[Finetune] Error: Unable to verify that the dataset is in the correct format."
+            logger.error(err)
+            raise RuntimeError(err)
+
+        logger.info("[Finetune] Converting data to JSONL format...")
+        data_path = save_data(train_data, provider_name=PROVIDER_ANYSCALE)
+
+        logger.info("[Finetune] Submitting data to remote storage...")
+        remote_train_path, _ = submit_data(train_path=data_path, eval_path=None)
+        logger.info(f"[Finetune] Data submitted. Remote train path: {remote_train_path}")
+
+        logger.info("[Finetune] Generating configuration files...")
+        _, compute_config = generate_config_files(train_path=remote_train_path, eval_path=None, **train_kwargs)
         
-        with ThreadPoolExecutor() as pool:
-            await loop.run_in_executor(pool, functools.partial(anyscale.job.wait, id=self.job_id, timeout_s=18000))
+        logger.info("[Finetune] Starting remote training...")
+        job_id = start_remote_training(compute_config=compute_config, **train_kwargs)
+        job.job_id = job_id
+        logger.info(f"[Finetune] Remote training started. Job ID: {job.job_id}")
 
-    
+        logger.info("[Finetune] Waiting for training to complete...")
+        wait_for_training(job.job_id)
+        logger.info("[Finetune] Training completed.")
 
+        logger.info("[Finetune] Retrieving model information...")
+        model_info = get_model_info(job.job_id)
+        logger.info(f"[Finetune] Model info retrieved: {model_info}")
 
-def is_anyscale_model(model: str) -> bool:
-    """Check if the model is an AnyScale model."""
-    logger.info("Is AnyScale model is not implemented, returning False as a default to not break lm.py")
-    return False
+        storage_uri = model_info["storage_uri"]
+        logger.info(f"[Finetune] Copying LoRA weights from {storage_uri}...")
+        model_names, lora_dynamic_path = copy_lora_weights(storage_uri, model_info, job.job_id)
+        logger.info(f"[Finetune] LoRA weights copied. Model names: {model_names}")
 
-# async def _run_finetune(job: FinetuneJobAnyScale):
-#         try:
-#             logger.info("[Finetune] Starting training process...")
-#             if TrainingMethod.SFT not in TRAINING_METHODS_ANYSCALE:
-#                 raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
+        logger.info("[Finetune] Setting result in future object...")
+        last_model_checkpoint = model_names[-1]  # TODO: Is this correct?
+        logger.info("[Finetune] Training process completed successfully.")
 
-#             logger.info("[Finetune] Reading and validating datasets...")
-#             # Convert the data from prompt completion to OAI compatible messages
-#             train_dataset = read_jsonl(train_path)
-#             val_dataset = read_jsonl(eval_path) if eval_path else None
+        # TODO: Is this the right place to call update_model_config?
+        logger.info("[Finetune] Updating model config with the proper dynamic path")
+        update_model_config(lora_dynamic_path, serve_config_path)
 
-#             if not verify_datasets(train_dataset, val_dataset):
-#                 logger.error("[Finetune] Error: Unable to verify arguments")
-#                 raise RuntimeError("Unable to verify argument")
+        return last_model_checkpoint
 
-#             logger.info("[Finetune] Converting data to JSONL format...")
-#             for path, dataset in [(train_path, train_dataset), (eval_path, val_dataset)]:
-#                 if not (path and dataset):
-#                     continue
-#                 write_jsonl(path, dataset)
-
-#             logger.info("[Finetune] Submitting data to remote storage...")
-#             remote_train_path, remote_eval_path = submit_data(train_path=train_path, eval_path=eval_path)
-#             logger.info(f"[Finetune] Data submitted. Remote train path: {remote_train_path}, Remote eval path: {remote_eval_path}")
-
-#             logger.info("[Finetune] Generating configuration files...")
-#             _, compute_config = generate_config_files(train_path=remote_train_path, eval_path=remote_eval_path, **train_kwargs)
-            
-#             logger.info("[Finetune] Starting remote training...")
-#             job_id = start_remote_training(compute_config=compute_config, **train_kwargs)
-#             job.job_id = job_id
-#             logger.info(f"[Finetune] Remote training started. Job ID: {job_id}")
-
-#             logger.info("[Finetune] Waiting for training to complete...")
-#             wait_for_training(job)
-#             logger.info("[Finetune] Training completed.")
-
-#             logger.info("[Finetune] Retrieving model information...")
-#             model_info = get_model_info(job_id)
-#             logger.info(f"[Finetune] Model info retrieved: {model_info}")
-
-#             storage_uri = model_info["storage_uri"]
-#             logger.info(f"[Finetune] Copying LoRA weights from {storage_uri}...")
-#             model_names = copy_lora_weights(storage_uri, model_info, job_id)
-#             logger.info(f"[Finetune] LoRA weights copied. Model names: {model_names}")
-
-#             logger.info("[Finetune] Setting result in future object...")
-#             job.set_result(model_names)
-#             logger.info("[Finetune] Training process completed successfully.")
-
-#         except Exception as e:
-#             logger.error(f"[Finetune] Error occurred during training: {str(e)}")
-#             job.set_exception(e)
+    except Exception as e:
+        logger.error(f"[Finetune] Error occurred during training: {str(e)}")
+        raise e
 
 
-# async def finetune_anyscale(
-#     model: str,
-#     train_path: str,
-#     eval_path: Optional[str],
-#     train_kwargs: Optional[Dict[str, Any]] = None,
-# ) -> FinetuneJobAnyScale:
-#     """
-#     Initiate fine-tuning process for an Anyscale model.
-    
-#     Args:
-#         model (str): The name of the Anyscale model to fine-tune.
-#         message_completion_pairs (List[Dict[str, str]]): List of prompt-completion pairs for training.
-#         train_kwargs (Optional[Dict[str, Any]]): Additional training parameters.
-    
-#     Returns:
-#         FinetuneJobAnyScale: A job object representing the fine-tuning process.
-#     """
-#     train_kwargs = train_kwargs or {}
-    
-    
+#-------------------------------------------------------------------------------
+#    Custom functions to support the finetune_* function
+#-------------------------------------------------------------------------------
 
-#     executor = ThreadPoolExecutor(max_workers=1)
-#     executor.submit(_run_finetune)
-    
-#     return job
+def wait_for_training(job_id):
+    """Wait for the training to complete."""
+    anyscale.job.wait(id=job_id, timeout_s=18000)
+
 
 def update_model_config(lora_dynamic_path: str, serve_config_path: str):
     """Update the model config storage location with the job_id."""
@@ -260,28 +176,18 @@ def update_model_config(lora_dynamic_path: str, serve_config_path: str):
         yaml.safe_dump(model_config, f)
     
 
-def verify_datasets(dataset: List[dict[str, Any]], valset: Optional[List[dict[str, Any]]]) -> bool:
+def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
     """Verify the training arguments before starting training."""
-    def validate_dataset(name, data: dict[str, Any]) -> bool:
-        dataset_validation = openai_data_validation(data)
+    dataset_validation = openai_data_validation(dataset)
 
-        if dataset_validation:
-            logger.error(f"Dataset validation failed: {dataset_validation}")
-            return False
+    if dataset_validation:
+        logger.error(f"Dataset validation failed: {dataset_validation}")
+        return False
 
-        if name == "train":
-            convo_lens = check_message_lengths(data)
-            estimate_cost(data, convo_lens=convo_lens)
-        return True
-
-    datasets = {"train": dataset}
-    if valset:
-        datasets["val"] = valset
-
-    for name, data in datasets.items():
-        if not validate_dataset(name, data):
-            return False
+    # TODO: Is this still useful?
+    convo_lens = check_message_lengths(dataset)
     return True
+
 
 def submit_data(train_path: str, eval_path: Optional[str]):
     """Upload the data to the Workspace cloud storage."""
@@ -308,6 +214,7 @@ def submit_data(train_path: str, eval_path: Optional[str]):
         fine_tuning_file_ids[name] = remote_path
     
     return fine_tuning_file_ids["train"], fine_tuning_file_ids.get("val", None)
+
 
 def generate_config_files(train_path: str, eval_path: Optional[str], **kwargs):
     base_model_yaml_path = kwargs.get("train_config_yaml", None)
@@ -401,16 +308,20 @@ def generate_config_files(train_path: str, eval_path: Optional[str], **kwargs):
 
     return job_runner_config_path, compute_config
 
+
 def start_remote_training(compute_config, **kwargs) -> str:
     job_id: str = anyscale.job.submit(compute_config)
     return job_id
+
 
 def wait_for_training(job):
     logger.info("Waiting for training to complete")
     anyscale.job.wait(id=job.job_id, timeout_s=18000)
 
+
 def get_model_info(job_id):
     return anyscale.llm.model.get(job_id=job_id).to_dict()
+
 
 def copy_lora_weights(storage_uri, model_info, job_id):
     try:
@@ -460,125 +371,14 @@ def copy_lora_weights(storage_uri, model_info, job_id):
         logger.error(f"An error occurred: {str(e)}")
         raise e
 
+
 def read_jsonl(filename):
     with open(filename, "r") as f:
         return [json.loads(line) for line in f]
 
+
+# TODO: Is it true that we don't need this function anymore?
 def write_jsonl(filename, data):
     with open(filename, "w") as f:
         for item in data:
             f.write(json.dumps(item) + "\n")
-
-# Fine tuning utils
-def openai_data_validation(dataset: List[dict[str, Any]]) -> Union[dict[str, Any], AssertionError]:
-    format_errors = defaultdict(int)
-    for ex in dataset:
-        if not isinstance(ex, dict):
-            format_errors["data_type"] += 1
-            continue
-
-        messages = ex.get("messages", None)
-        if not messages:
-            format_errors["missing_messages_list"] += 1
-            continue
-
-        for message in messages:
-            if "role" not in message or "content" not in message:
-                format_errors["message_missing_key"] += 1
-
-            if any(k not in ("role", "content", "name", "function_call", "weight") for k in message):
-                format_errors["message_unrecognized_key"] += 1
-
-            if message.get("role", None) not in ("system", "user", "assistant", "function"):
-                format_errors["unrecognized_role"] += 1
-
-            content = message.get("content", None)
-            function_call = message.get("function_call", None)
-
-            if (not content and not function_call) or not isinstance(content, str):
-                format_errors["missing_content"] += 1
-
-        if not any(message.get("role", None) == "assistant" for message in messages):
-            format_errors["example_missing_assistant_message"] += 1
-
-    if format_errors:
-        return format_errors
-    return None
-
-def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
-    import tiktoken
-    encoding = tiktoken.get_encoding("cl100k_base")
-
-    num_tokens = 0
-    for message in messages:
-        num_tokens += tokens_per_message
-        for key, value in message.items():
-            num_tokens += len(encoding.encode(value))
-            if key == "name":
-                num_tokens += tokens_per_name
-    num_tokens += 3
-    return num_tokens
-
-def num_assistant_tokens_from_messages(messages):
-    import tiktoken
-    encoding = tiktoken.get_encoding("cl100k_base")
-
-    num_tokens = 0
-    for message in messages:
-        if message["role"] == "assistant":
-            num_tokens += len(encoding.encode(message["content"]))
-    return num_tokens
-
-def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
-    n_missing_system = 0
-    n_missing_user = 0
-    n_messages = []
-    convo_lens = []
-    assistant_message_lens = []
-
-    for ex in dataset:
-        messages = ex["messages"]
-        if not any(message["role"] == "system" for message in messages):
-            n_missing_system += 1
-        if not any(message["role"] == "user" for message in messages):
-            n_missing_user += 1
-        n_messages.append(len(messages))
-        convo_lens.append(num_tokens_from_messages(messages))
-        assistant_message_lens.append(num_assistant_tokens_from_messages(messages))
-    n_too_long = sum([length > 16385 for length in convo_lens])
-
-    if n_too_long > 0:
-        logger.info(f"There are {n_too_long} examples that may be over the 16,385 token limit, they will be truncated during fine-tuning.")
-
-    if n_missing_system > 0:
-        logger.info(f"There are {n_missing_system} examples that are missing a system message.")
-
-    if n_missing_user > 0:
-        logger.info(f"There are {n_missing_user} examples that are missing a user message.")
-
-    return convo_lens
-
-def estimate_cost(dataset: dict[str, Any], tokens_per_message=3, tokens_per_name=1, convo_lens=None):
-    MAX_TOKENS_PER_EXAMPLE = 16385
-    TARGET_EPOCHS = 3
-    MIN_TARGET_EXAMPLES = 100
-    MAX_TARGET_EXAMPLES = 25000
-    MIN_DEFAULT_EPOCHS = 1
-    MAX_DEFAULT_EPOCHS = 25
-
-    n_epochs = TARGET_EPOCHS
-    n_train_examples = len(dataset)
-    if n_train_examples * TARGET_EPOCHS < MIN_TARGET_EXAMPLES:
-        n_epochs = min(MAX_DEFAULT_EPOCHS, MIN_TARGET_EXAMPLES // n_train_examples)
-    elif n_train_examples * TARGET_EPOCHS > MAX_TARGET_EXAMPLES:
-        n_epochs = max(MIN_DEFAULT_EPOCHS, MAX_TARGET_EXAMPLES // n_train_examples)
-
-    if convo_lens is None:
-        convo_lens = check_message_lengths(dataset)
-
-    n_billing_tokens_in_dataset = sum(min(MAX_TOKENS_PER_EXAMPLE, length) for length in convo_lens)
-
-    logger.info(f"""The charge for finetuning is determined by the number of epochs multiplied by the number of billing tokens in the dataset. Here are the stats for this training dataset:
-    num_billing_tokens: {n_billing_tokens_in_dataset}
-    n_epochs: {n_epochs}
-    num_total_charge_tokens: {n_epochs * n_billing_tokens_in_dataset}""")

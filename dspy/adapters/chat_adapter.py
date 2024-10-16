@@ -152,10 +152,11 @@ def format_turn(signature, values, role, incomplete=False):
     content.append(format_fields({k: values.get(k, "Not supplied for this particular example.") for k in field_names}))
 
     if role == "user":
-        content.append(f"Respond with the corresponding output fields using the proper format of "
-                         f"[[ ## <field_name> ## ]] followed by the field value. Start with the field "
-                         f"{', then '.join(f'`[[ ## {f} ## ]]`' for f in signature.output_fields)}, "
-                         f"and then ending with the marker for `completed`.")
+        content.append(
+            "Respond with the corresponding output fields, starting with the field "
+            + ", then ".join(f"`{f}`" for f in signature.output_fields)
+            + ", and then ending with the marker for `completed`."
+        )
 
     return {"role": role, "content": "\n\n".join(content).strip()}
 
