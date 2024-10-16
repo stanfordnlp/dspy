@@ -64,9 +64,20 @@ class LM:
         _inspect_history(self, n)
 
     def copy(self, **kwargs):
-        """Returns a copy of the language model with the same parameters."""
-        kwargs = {**self.__dict__, **kwargs}
-        return self.__class__(**kwargs)
+        """Returns a copy of the language model with possibly updated parameters."""
+
+        import copy
+        new_instance = copy.deepcopy(self)
+        new_instance.history = []
+
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(new_instance, key, value)
+            if (key in self.kwargs) or (not hasattr(self, key)):
+                new_instance.kwargs[key] = value
+
+        return new_instance
+
 
 
 @functools.lru_cache(maxsize=None)
