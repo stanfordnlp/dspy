@@ -23,7 +23,7 @@ dspy.configure(lm=lm)
 
 You can always prompt the LM directly via `lm(prompt="prompt")` or `lm(messages=[...])`. However, DSPy gives you `Modules` as a better way to define your LM functions.
 
-The simplest module is `dspy.Predict`. It takes a [DSPy Signature](/docs/building-blocks/2-signatures), i.e. a structured input/output schema, and gives you back a callable function for the behavior you specified. Let's use the "in-line" notation for signatures to declare a module that takes a `question` (of type `str`) as input and produces a `response` as an output.
+The simplest module is `dspy.Predict`. It takes a [DSPy Signature](/docs/building-blocks/signatures), i.e. a structured input/output schema, and gives you back a callable function for the behavior you specified. Let's use the "in-line" notation for signatures to declare a module that takes a `question` (of type `str`) as input and produces a `response` as an output.
 
 ```python
 qa = dspy.Predict('question: str -> response: str')
