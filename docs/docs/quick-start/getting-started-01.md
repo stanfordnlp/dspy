@@ -46,7 +46,7 @@ dspy.inspect_history(n=1)
 ```
 
 **Output:**   
-See this [gist](https://gist.github.com/okhat/aff3c9788ccddf726fdfeb78e40e5d22)
+See this [gist](https://gist.github.com/okhat/aff3c9788ccddf726fdfeb78e40e5d22).
 
 
 DSPy has various built-in modules, e.g. `dspy.ChainOfThought`, `dspy.ProgramOfThought`, and `dspy.ReAct`. These are interchangeable with basic `dspy.Predict`: they take your signature, which is specific to your task, and they apply general-purpose prompting techniques and inference-time strategies to it.
@@ -151,7 +151,7 @@ len(trainset), len(valset), len(devset), len(testset)
 
 What kind of metric can suit our question-answering task? There are many choices, but since the answer are long, we may ask: How well does the system response _cover_ all key facts in the gold response? And the other way around, how well is the system response _not saying things_ that aren't in the gold response?
 
-That metric is essentially a **semantic F1**, so let's load a `SemanticF1` metric from DSPy. This metric is actually implemented as a [very simple DSPy module](/docs/building-blocks/modules) using whatever LM we're working with.
+That metric is essentially a **semantic F1**, so let's load a `SemanticF1` metric from DSPy. This metric is actually implemented as a [very simple DSPy module](https://github.com/stanfordnlp/dspy/blob/77c2e1cceba427c7f91edb2ed5653276fb0c6de7/dspy/evaluate/auto_evaluation.py#L21) using whatever LM we're working with.
 
 
 ```python
@@ -192,7 +192,7 @@ dspy.inspect_history(n=1)
 ```
 
 **Output:**     
-See this [gist](https://gist.github.com/okhat/57bf86472d1e14812c0ae33fba5353f8)
+See this [gist](https://gist.github.com/okhat/57bf86472d1e14812c0ae33fba5353f8).
 
 For evaluation, you could use the metric above in a simple loop and just average the score. But for nice parallelism and utilities, we can rely on `dspy.Evaluate`.
 

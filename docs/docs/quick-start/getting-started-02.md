@@ -93,7 +93,11 @@ class RAG(dspy.Module):
     def forward(self, question):
         context = search(question, k=self.num_docs)
         return self.respond(context=context, question=question)
-  
+```
+
+Let's use the RAG module.
+
+```
 rag = RAG()
 rag(question="what are high memory and low memory on linux?")
 ```
@@ -111,7 +115,7 @@ dspy.inspect_history()
 ```
 
 **Output:**     
-See this [gist](https://gist.github.com/okhat/d807032e138862bb54616dcd2f4d481c)
+See this [gist](https://gist.github.com/okhat/d807032e138862bb54616dcd2f4d481c).
 
 
 In the previous guide with a CoT module, we got nearly 40% in terms of semantic F1 on our `devset`. Would this `RAG` module score better?
@@ -151,7 +155,7 @@ optimized_rag = tp.compile(RAG(), trainset=trainset, valset=valset,
 ```
 
 **Output:**     
-See this [gist](https://gist.github.com/okhat/d6606e480a94c88180441617342699eb)
+See this [gist](https://gist.github.com/okhat/d6606e480a94c88180441617342699eb).
 
 
 The prompt optimization process here is pretty systematic, you can learn about it for example in this paper. Importantly, it's not a magic button. It's very possible that it can overfit your training set for instance and not generalize well to a held-out set, making it essential that we iteratively validate our programs.
