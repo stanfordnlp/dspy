@@ -12,8 +12,7 @@ Install the latest DSPy via `pip install -U dspy` and follow along. You may also
 
 In [Getting Started I: Basic Question Answering](/docs/quick-start/getting-started-01), we've set up the DSPy LM, loaded some data, and loaded a metric for evaluation.
 
-Let's do these again and also download the corpus data that we will use for RAG search. The next cell will seek to download 4 GBs, so it may take a few minutes. A future version of this notebook will come with a cache that allows you to skip downloads and the pytorch installation.
-
+First, let's download the corpus data that we will use for RAG search. The next cell will seek to download 4 GBs, so it may take a few minutes. A future version of this notebook will come with a cache that allows you to skip downloads and the pytorch installation.
 
 ```python
 import os
@@ -34,7 +33,11 @@ for url in urls:
         print(f"Downloading '{filename}'...")
         with requests.get(url, stream=True) as r, open(filename, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+```
 
+Having downloaded these items, let's set up the data and other objects from the previous guide.
+
+```python
 import ujson
 import dspy
 from dspy.evaluate import SemanticF1
@@ -107,63 +110,9 @@ Prediction(
 dspy.inspect_history()
 ```
 
-**Output:**
-```    
-System message:
-    
-Your input fields are:
-1. `context` (str)
-2. `question` (str)
+**Output:**     
+See this [gist](https://gist.github.com/okhat/d807032e138862bb54616dcd2f4d481c)
 
-Your output fields are:
-1. `reasoning` (str)
-2. `response` (str)
-
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## context ## ]]
-{context}
-
-[[ ## question ## ]]
-{question}
-
-[[ ## reasoning ## ]]
-{reasoning}
-
-[[ ## response ## ]]
-{response}
-
-[[ ## completed ## ]]
-
-In adhering to this structure, your objective is: 
-        Given the fields `context`, `question`, produce the fields `response`.
-
-
-User message:
-
-[[ ## context ## ]]
-[1] «As far as I remember, High Memory is used for application space and Low Memory for the kernel. Advantage is that (user-space) applications cant access kernel-space memory.»
-[2] «For the people looking for an explanation in the context of Linux kernel memory space, beware that there are two conflicting definitions of the high/low memory split (unfortunately there is no standard, one has to interpret that in context): High memory defined as the totality of kernel space in VIRTUAL memory. This is a region that only the kernel can access and comprises all virtual addresses greater or equal than PAGE_OFFSET. Low memory refers therefore to the region of the remaining addresses, which correspond to the user-space memory accessible from each user process. For example: on 32-bit x86 with a default PAGE_OFFSET, this means that high memory is any address ADDR with ADDR ≥ 0xC0000000 = PAGE_OFFSET (i.e. higher 1 GB). This is the reason why in Linux 32-bit processes are typically limited to 3 GB. Note that PAGE_OFFSET cannot be configured directly, it depends on the configurable VMSPLIT_x options (source). To summarize: in 32-bit archs, virtual memory is by default split into lower 3 GB (user space) and higher 1 GB (kernel space). For 64 bit, PAGE_OFFSET is not configurable and depends on architectural details that are sometimes detected at runtime during kernel load. On x86_64, PAGE_OFFSET is 0xffff888000000000 for 4-level paging (typical) and 0xff11000000000000 for 5-level paging (source). For ARM64 this is usually 0x8000000000000000. Note though, if KASLR is enabled, this value is intentionally unpredictable. High memory defined as the portion of PHYSICAL memory that cannot be mapped contiguously with the rest of the kernel virtual memory. A portion of the kernel virtual address space can be mapped as a single contiguous chunk into the so-called physical low memory. To fully understand what this means, a deeper knowledge of the Linux virtual memory space is required. I would recommend going through these slides. From the slides: This kind of high/low memory split is only applicable to 32-bit architectures where the installed physical RAM size is relatively high (more than ~1 GB). Otherwise, i.e. when the physical address space is small (<1 GB) or when the virtual memory space is large (64 bits), the whole physical space can be accessed from the kernel virtual memory space. In that case, all physical memory is considered low memory. It is preferable that high memory does not exist at all because the whole physical space can be accessed directly from the kernel, which makes memory management a lot simpler and efficient. This is especially important when dealing with DMAs (which typically require physically contiguous memory). See also the answer by @gilles»
-[3] «Low and High do not refer to whether there is a lot of usage or not. They represent the way it is organized by the system. According to Wikipedia: High Memory is the part of physical memory in a computer which is not directly mapped by the page tables of its operating system kernel. There is no duration for the free command which simply computes a snapshot of the information available. Most people, including programmers, do not need to understand it more clearly as it is managed in a much simpler form through system calls and compiler/interpreter operations.»
-[4] «This is relevant to the Linux kernel; Im not sure how any Unix kernel handles this. The High Memory is the segment of memory that user-space programs can address. It cannot touch Low Memory. Low Memory is the segment of memory that the Linux kernel can address directly. If the kernel must access High Memory, it has to map it into its own address space first. There was a patch introduced recently that lets you control where the segment is. The tradeoff is that you can take addressable memory away from user space so that the kernel can have more memory that it does not have to map before using. Additional resources: http://tldp.org/HOWTO/KernelAnalysis-HOWTO-7.html http://linux-mm.org/HighMemory»
-[5] «HIGHMEM is a range of kernels memory space, but it is NOT memory you access but its a place where you put what you want to access. A typical 32bit Linux virtual memory map is like: 0x00000000-0xbfffffff: user process (3GB) 0xc0000000-0xffffffff: kernel space (1GB) (CPU-specific vector and whatsoever are ignored here). Linux splits the 1GB kernel space into 2 pieces, LOWMEM and HIGHMEM. The split varies from installation to installation. If an installation chooses, say, 512MB-512MB for LOW and HIGH mems, the 512MB LOWMEM (0xc0000000-0xdfffffff) is statically mapped at the kernel boot time; usually the first so many bytes of the physical memory is used for this so that virtual and physical addresses in this range have a constant offset of, say, 0xc0000000. On the other hand, the latter 512MB (HIGHMEM) has no static mapping (although you could leave pages semi-permanently mapped there, but you must do so explicitly in your driver code). Instead, pages are temporarily mapped and unmapped here so that virtual and physical addresses in this range have no consistent mapping. Typical uses of HIGHMEM include single-time data buffers.»
-
-[[ ## question ## ]]
-what are high memory and low memory on linux?
-
-Respond with the corresponding output fields, starting with the field `reasoning`, then `response`, and then ending with the marker for `completed`.
-
-
-Response:
-
-[[ ## reasoning ## ]]
-High memory and low memory in Linux refer to the organization of memory in the system, particularly in the context of the Linux kernel's virtual memory management. High memory is the portion of physical memory that is not directly mapped by the kernel's page tables, meaning that user-space applications cannot access it directly. Low memory, on the other hand, is the part of memory that the kernel can access directly. In a typical 32-bit architecture, the virtual memory is split into 3 GB for user space (low memory) and 1 GB for kernel space (high memory). The distinction is important for memory management, especially when dealing with physical memory that cannot be mapped contiguously. Understanding this split is crucial for developers working with the Linux kernel, as it affects how memory is allocated and accessed.
-
-[[ ## response ## ]]
-In Linux, high memory refers to the portion of physical memory that is not directly mapped by the kernel's page tables, making it inaccessible to user-space applications. Low memory is the segment that the kernel can access directly. In a typical 32-bit architecture, the memory is divided into 3 GB for user space (low memory) and 1 GB for kernel space (high memory). This organization is essential for efficient memory management and affects how the kernel interacts with physical memory, especially in scenarios where contiguous memory is required.
-
-[[ ## completed ## ]]
-```
 
 In the previous guide with a CoT module, we got nearly 40% in terms of semantic F1 on our `devset`. Would this `RAG` module score better?
 
@@ -175,8 +124,6 @@ evaluate(RAG())
 **Output:**
 ```
 Average Metric: 79.44815807647615 / 150  (53.0): 100%|██████████| 150/150 [00:05<00:00, 29.11it/s]
-[TABLE GOES HERE]
-52.97
 ```
 
 | | question | example_response | reasoning | pred_response | SemanticF1 |
@@ -184,6 +131,7 @@ Average Metric: 79.44815807647615 / 150  (53.0): 100%|████████�
 | 0 | why is mercurial considered to be easier than git? | Mercurial's syntax is considered more familiar, especially for those accustomed to SVN, and is well documented. It focuses on interface aspects, which initially makes learning... | Mercurial is considered easier than Git for several reasons. Firstly, its syntax is more familiar to users coming from Subversion (SVN), making the transition smoother.... | Mercurial is considered easier than Git primarily because of its more familiar syntax for users transitioning from systems like Subversion (SVN), its straightforward workflow without... | ✔️ [0.797] |
 | 1 | open finder window from current terminal location? | If you type 'open .' in Terminal, it will open the current directory in a Finder window. Alternatively, you can execute the command open `pwd`... | To open a Finder window from the current terminal location, you can use the command `open .` in the terminal. This command will open a... | You can open a Finder window from your current terminal location by typing the command `open .` in the terminal. This will launch a Finder... | ✔️ [0.857] |
 | 2 | how to import secret gpg key (copied from one machine to another)? | It is advised that it is necessary to add `--import` to the command line to import the private key and that according to the man... | To import a secret GPG key that has been copied from one machine to another, you typically need to use the `gpg --import` command. The... | To import a secret GPG key that you have copied from one machine to another, follow these steps: 1. On the original machine, export your... | |
+
 
 ## Using a DSPy `Optimizer` to improve your RAG prompt.
 
@@ -202,18 +150,9 @@ optimized_rag = tp.compile(RAG(), trainset=trainset, valset=valset,
                            requires_permission_to_run=False)
 ```
 
-**Output:**
-```
-RUNNING WITH THE FOLLOWING MEDIUM AUTO RUN SETTINGS:
-num_trials: 25
-minibatch: True
-num_candidates: 19
-valset size: 100
+**Output:**     
+See this [gist](https://gist.github.com/okhat/d6606e480a94c88180441617342699eb)
 
-...
-  
-Returning best identified program with score 62.57!
-```
 
 The prompt optimization process here is pretty systematic, you can learn about it for example in this paper. Importantly, it's not a magic button. It's very possible that it can overfit your training set for instance and not generalize well to a held-out set, making it essential that we iteratively validate our programs.
 
@@ -245,7 +184,7 @@ If you want to bring a minimized window back into view, you can click on the app
 For users who prefer a behavior similar to Windows, where minimized windows can be accessed through a single shortcut, third-party applications like HyperSwitch or Witch can provide additional functionality to manage window switching more effectively.
 ```
 
-You can use `dspy.inspect_history(n=2)` to view the RAG prompt before optimization(link), after optimization(link), or their diff(link).
+You can use `dspy.inspect_history(n=2)` to view the RAG prompt [before optimization](https://gist.github.com/okhat/5d04648f2226e72e66e26a8cb1456ee4) and [after optimization](https://gist.github.com/okhat/79405b8889b4b07da577ee19f1a3479a).
 
 Concretely, the optimized prompt:
 
@@ -266,14 +205,15 @@ evaluate(optimized_rag)
 **Output:**
 ```
 Average Metric: 92.16999654981839 / 150  (61.4): 100%|██████████| 150/150 [00:00<00:00, 399.21it/s]
-[TABLE HERE]
-61.45
 ```
+
+
 | | question | example_response | reasoning | pred_response | SemanticF1 |
 |---|---|---|---|---|---|
 | 0 | why is mercurial considered to be easier than git? | Mercurial's syntax is considered more familiar, especially for those accustomed to SVN, and is well documented. It focuses on interface aspects, which initially makes learning... | Mercurial is often considered easier than Git due to its user-friendly design and interface, which is particularly appealing to those new to version control systems... | Mercurial is considered easier than Git for several reasons: 1. **Familiar Syntax**: Mercurial's command syntax is often seen as more intuitive, especially for users coming... | ✔️ [0.874] |
 | 1 | open finder window from current terminal location? | If you type 'open .' in Terminal, it will open the current directory in a Finder window. Alternatively, you can execute the command open `pwd`... | To open a Finder window from the current terminal location on a Mac, there are several methods available. The simplest way is to use the... | To open a Finder window from your current terminal location on a Mac, you can use the following methods: 1. **Using Terminal Command**: - Simply... | ✔️ [0.333] |
 | 2 | how to import secret gpg key (copied from one machine to another)? | It is advised that it is necessary to add `--import` to the command line to import the private key and that according to the man... | To import a secret GPG key that has been copied from one machine to another, it is essential to follow a series of steps that... | To import a secret GPG key that you have copied from one machine to another, follow these steps: 1. **Export the Secret Key from the... | |
+
 
 ## Keeping an eye on cost.
 
@@ -314,10 +254,10 @@ But DSPy gives you paths to continue iterating on the quality of your system and
 
 In general, you have the following tools:
 
-1. Explore better system architectures for your program, e.g. what if we ask the LM to generate search queries for the retriever? See this notebook(link) or the STORM pipeline(link).
-2. Explore different prompt optimizers or weight optimizers. See the **[Optimizers Docs](/docs/building-blocks/optimizers)**.
-3. Scale inference time compute using DSPy Optimizers, e.g. this notebook(link).
-4. Cut cost by distilling to a smaller LM, via prompt or weight optimization, e.g. [this notebook](/docs/deep-dive/optimizers/bootstrap-fewshot) or [this notebook](/docs/deep-dive/optimizers/copro).
+1. Explore better system architectures for your program, e.g. what if we ask the LM to generate search queries for the retriever? See this [notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) or the [STORM pipeline](https://arxiv.org/abs/2402.14207) built in DSPy.
+2. Explore different [prompt optimizers](https://arxiv.org/abs/2406.11695) or [weight optimizers](https://arxiv.org/abs/2407.10930). See the **[Optimizers Docs](/docs/building-blocks/optimizers)**.
+3. Scale inference time compute using DSPy Optimizers, e.g. this [notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/agents/multi_agent.ipynb).
+4. Cut cost by distilling to a smaller LM, via prompt or weight optimization, e.g. [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/nli/scone/scone.ipynb) or [this notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/qa/hotpot/multihop_finetune.ipynb).
 
 How do you do decide which ones to proceed with first?
 
