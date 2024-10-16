@@ -53,8 +53,10 @@ dspy.inspect_history(n=1)
     
     
     
-        
-    System message:
+    
+    [34m[2024-10-16T07:57:20.769562][0m
+    
+    [31mSystem message:[0m
     
     Your input fields are:
     1. `question` (str)
@@ -76,7 +78,7 @@ dspy.inspect_history(n=1)
             Given the fields `question`, produce the fields `response`.
     
     
-    User message:
+    [31mUser message:[0m
     
     [[ ## question ## ]]
     what are high memory and low memory on linux?
@@ -84,9 +86,9 @@ dspy.inspect_history(n=1)
     Respond with the corresponding output fields, starting with the field `response`, and then ending with the marker for `completed`.
     
     
-    Response:
+    [31mResponse:[0m
     
-    [[ ## response ## ]]
+    [32m[[ ## response ## ]]
     In Linux, "high memory" and "low memory" refer to different regions of the system's memory address space, particularly in the context of 32-bit architectures.
     
     - **Low Memory**: This typically refers to the first 896 MB of memory in a 32-bit system. It is directly accessible by the kernel and is used for kernel data structures and user processes. The low memory region is where most of the system's memory management occurs, and it is where the kernel can allocate memory for processes without needing special handling.
@@ -95,7 +97,7 @@ dspy.inspect_history(n=1)
     
     In summary, low memory is directly accessible by the kernel, while high memory requires additional handling for the kernel to access it, especially in 32-bit systems. In 64-bit systems, this distinction is less relevant as the addressable memory space is significantly larger. 
     
-    [[ ## completed ## ]]
+    [[ ## completed ## ]][0m
     
     
     
@@ -254,8 +256,10 @@ dspy.inspect_history(n=1)
     
     
     
-        
-    System message:
+    
+    [34m[2024-10-16T07:57:20.812061][0m
+    
+    [31mSystem message:[0m
     
     Your input fields are:
     1. `question` (str)
@@ -294,7 +298,7 @@ dspy.inspect_history(n=1)
             If asked to reason, enumerate key ideas in each response, and whether they are present in the other response.
     
     
-    User message:
+    [31mUser message:[0m
     
     [[ ## question ## ]]
     what are high memory and low memory on linux?
@@ -309,9 +313,9 @@ dspy.inspect_history(n=1)
     Respond with the corresponding output fields, starting with the field `reasoning`, then `recall`, then `precision`, and then ending with the marker for `completed`.
     
     
-    Response:
+    [31mResponse:[0m
     
-    [[ ## reasoning ## ]]
+    [32m[[ ## reasoning ## ]]
     The system response correctly identifies "low memory" as the memory directly accessible by the kernel and user processes, and it mentions the typical limit of 4GB on a 32-bit system. It also accurately describes "high memory" as the memory above this limit that is not directly accessible by the kernel. However, it does not explicitly mention that "low memory" is set aside for kernel programs, which is a key point in the ground truth. The system response provides a good overview of the concepts but lacks the detail about user access to low memory and the permanent mapping aspect mentioned in the ground truth.
     
     [[ ## recall ## ]]
@@ -320,7 +324,7 @@ dspy.inspect_history(n=1)
     [[ ## precision ## ]]
     0.85
     
-    [[ ## completed ## ]]
+    [[ ## completed ## ]][0m
     
     
     
