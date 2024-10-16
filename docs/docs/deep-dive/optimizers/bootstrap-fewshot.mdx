@@ -15,18 +15,25 @@ We'll be making a basic answer generation pipeline over GSM8K dataset that we sa
 ```python
 import dspy
 
-turbo = dspy.OpenAI(model='gpt-3.5-turbo', max_tokens=250)
-dspy.settings.configure(lm=turbo)
+turbo = dspy.LM(model='openai/gpt-3.5-turbo', max_tokens=250)
+dspy.configure(lm=turbo)
 ```
 
 Now that we have the LM client setup it's time to import the train-dev split in `GSM8k` class that DSPy provides us:
 
 ```python
-from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
+import random
+from dspy.datasets import DataLoader
 
-gms8k = GSM8K()
+dl = DataLoader()
 
-trainset, devset = gms8k.train, gms8k.dev
+gsm8k = dl.from_huggingface(
+    "gsm8k",
+    "main",
+    input_keys = ("question",),
+)
+
+trainset, devset = gsm8k['train'], random.sample(gsm8k['test'], 50)
 ```
 
 We'll now define a basic QA inline signature i.e. `question->answer` and pass it to `ChainOfThought` module, that applies necessary addition for CoT style prompting to the Signature.
@@ -64,9 +71,9 @@ Now we have the baseline pipeline ready to use, so let's try using the `Bootstra
 Let's start by importing and initializing our teleprompter, for the metric we'll be using the same `gsm8k_metric` imported and used above:
 
 ```python
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt import BootstrapFewShot
 
-teleprompter = BootstrapFewShotWithRandomSearch(
+teleprompter = BootstrapFewShot(
     metric=gsm8k_metric, 
     max_bootstrapped_demos=8, 
     max_labeled_demos=8,

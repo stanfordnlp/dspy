@@ -187,6 +187,7 @@ class GenerateModuleInstruction(dspy.Module):
         # Summarize the program
         program_description = "Not available"
         module_code = "Not provided"
+        module_description = "Not provided"
         if self.program_aware:
             try:
                 program_description = strip_prefix(
@@ -209,17 +210,17 @@ class GenerateModuleInstruction(dspy.Module):
                         outputs.append(field_name)
 
                 module_code = f"{program.predictors()[pred_i].__class__.__name__}({', '.join(inputs)}) -> {', '.join(outputs)}"
+
+                module_description = self.describe_module(
+                    program_code=self.program_code_string,
+                    program_description=program_description,
+                    program_example=task_demos,
+                    module=module_code,
+                    max_depth=10,
+                ).module_description
             except:
                 if self.verbose: print("Error getting program description. Running without program aware proposer.")
                 self.program_aware = False
-
-        module_description = self.describe_module(
-            program_code=self.program_code_string,
-            program_description=program_description,
-            program_example=task_demos,
-            module=module_code,
-            max_depth=10,
-        ).module_description
 
         # Generate an instruction for our chosen module
         if self.verbose: print(f"task_demos {task_demos}")
@@ -258,6 +259,7 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
+        rng=None
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -268,22 +270,30 @@ class GroundedProposer(Proposer):
         self.set_tip_randomly=set_tip_randomly
         self.set_history_randomly=set_history_randomly
         self.verbose = verbose
+        self.rng = rng or random
 
         self.prompt_model = get_prompt_model(prompt_model)
+
+        self.program_code_string = None
         if self.program_aware:
             try:
                 self.program_code_string = get_dspy_source_code(program)
                 if self.verbose: print("SOURCE CODE:",self.program_code_string)
             except Exception as e:
                 print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
-                self.program_code_string = None
                 self.program_aware = False
-        else:
-            self.program_code_string = None
-        self.data_summary = create_dataset_summary(
-            trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
-        )
-        if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
+
+        self.data_summary  = None
+        if self.use_dataset_summary:
+            try:
+                self.data_summary = create_dataset_summary(
+                    trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
+                )
+                if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
+            except Exception as e:
+                print(f"Error getting data summary: {e}.\n\nRunning without data aware proposer.")
+                self.use_dataset_summary = False
+                print("")
 
     def propose_instructions_for_program(
         self,
@@ -301,7 +311,7 @@ class GroundedProposer(Proposer):
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
-            use_history = random.random() < 0.5
+            use_history = self.rng.random() < 0.5
             self.use_instruct_history = use_history
             if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
 
@@ -319,7 +329,7 @@ class GroundedProposer(Proposer):
                 if self.set_tip_randomly:
                     if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
                     # Randomly select the tip
-                    selected_tip_key = random.choice(list(TIPS.keys()))
+                    selected_tip_key = self.rng.choice(list(TIPS.keys()))
                     selected_tip = TIPS[selected_tip_key]
                     self.use_tip = bool(
                         selected_tip,

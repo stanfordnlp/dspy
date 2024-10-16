@@ -392,6 +392,7 @@ compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_p
 Note: detailed documentation can be found [here](/docs/deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
 
 #### Optimizing with MIPROv2
+This shows how to perform an easy out-of-the box run with `auto=light`, which configures many hyperparameters for you and performs a light optimization run. You can alternatively set `auto=medium` or `auto=heavy` to perform longer optimization runs. The more detailed `MIPROv2` documentation [here](/docs/deep-dive/optimizers/miprov2.md) also provides more information about how to set hyperparameters by hand.
 ```python
 # Import the optimizer
 from dspy.teleprompt import MIPROv2
@@ -399,10 +400,7 @@ from dspy.teleprompt import MIPROv2
 # Initialize optimizer
 teleprompter = MIPROv2(
     metric=gsm8k_metric,
-    num_candidates=7,
-    init_temperature=0.5,
-    verbose=False,
-    num_threads=4,
+    auto="light", # Can choose between light, medium, and heavy optimization runs
 )
 
 # Optimize program
@@ -412,10 +410,6 @@ optimized_program = teleprompter.compile(
     trainset=trainset,
     max_bootstrapped_demos=3,
     max_labeled_demos=4,
-    num_trials=15,
-    minibatch_size=25,
-    minibatch_full_eval_steps=10,
-    minibatch=True, 
     requires_permission_to_run=False,
 )
 
@@ -429,35 +423,31 @@ evaluate(optimized_program, devset=devset[:])
 
 #### Optimizing instructions only with MIPROv2 (0-Shot)
 ```python
-# Import optimizer
+# Import the optimizer
 from dspy.teleprompt import MIPROv2
 
-# Initialize optimizer 
+# Initialize optimizer
 teleprompter = MIPROv2(
     metric=gsm8k_metric,
-    num_candidates=15,
-    init_temperature=0.5,
-    verbose=False,
-    num_threads=4,
+    auto="light", # Can choose between light, medium, and heavy optimization runs
 )
 
-# Perform optimization
-print(f"Optimizing program with MIPRO (0-Shot)...")
-zeroshot_optimized_program = teleprompter.compile(
+# Optimize program
+print(f"Optimizing program with MIPRO...")
+optimized_program = teleprompter.compile(
     program.deepcopy(),
     trainset=trainset,
-    max_bootstrapped_demos=0, # setting demos to 0 for 0-shot optimization
+    max_bootstrapped_demos=0,
     max_labeled_demos=0,
-    num_trials=15,
-    minibatch=False, 
     requires_permission_to_run=False,
 )
 
+# Save optimize program for future use
+optimized_program.save(f"mipro_optimized")
 
-zeroshot_optimized_program.save(f"mipro_0shot_optimized")
-
-print(f"Evaluate optimized program...")
-evaluate(zeroshot_optimized_program, devset=devset[:])
+# Evaluate optimized program
+print(f"Evluate optimized program...")
+evaluate(optimized_program, devset=devset[:])
 ```
 ### Signature Optimizer with Types
 

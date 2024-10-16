@@ -60,6 +60,12 @@ class LM:
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
 
+
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.__dict__, **kwargs}
+        return self.__class__(**kwargs)
+
     def _get_completion_func(self, cache: bool = False):
         if self.model_type == "chat":
             return cached_litellm_completion if cache else litellm_completion
