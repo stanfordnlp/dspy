@@ -24,6 +24,7 @@ from dspy.clients.anyscale import (
 import litellm
 from litellm.caching import Cache
 
+
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
@@ -32,11 +33,6 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 
-
-#-------------------------------------------------------------------------------
-#    LiteLLM Client
-#-------------------------------------------------------------------------------
-        
 class LM:
     def __init__(self, 
             model,
@@ -128,7 +124,7 @@ class LM:
         logger.info(msg)
 
     def finetune(self,
-            message_completion_pairs: List[Dict[str, str]],
+            train_data: List[Dict[str, Any]],
             train_kwargs: Optional[Dict[str, Any]]=None,
             cache_finetune: bool = True,
         ) -> FinetuneJob:
@@ -149,7 +145,7 @@ class LM:
         FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
         finetune_job = FinetuneJobClass(
             model=self.model,
-            message_completion_pairs=message_completion_pairs,
+            train_data=train_data,
             train_kwargs=train_kwargs,
         )
 
@@ -164,6 +160,14 @@ class LM:
         executor.shutdown(wait=False)
 
         return finetune_job
+    
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with the same parameters."""
+        kwargs = {**self.kwargs, **kwargs}
+        # model = kwargs.pop("model") or self.model
+        init_kwargs = dict(model=self.model, model_type=self.model_type, cache=self.cache, temperature=self.kwargs["temperature"], max_tokens=self.kwargs["max_tokens"])
+        init_kwargs = {**init_kwargs, **kwargs}
+        return self.__class__(**init_kwargs)
 
 
 @functools.lru_cache(maxsize=None)
@@ -248,12 +252,12 @@ def _inspect_history(lm, n: int = 1):
 from dspy.clients.openai import (
     FinetuneJobOpenAI,
     is_openai_model,
-    finetune_openai
+    finetune_openai,
 )
 from dspy.clients.anyscale import (
     FinetuneJobAnyScale,
     is_anyscale_model,
-    finetune_anyscale
+    finetune_anyscale,
 )
 
 
@@ -333,13 +337,13 @@ def execute_finetune_job(
 def cached_finetune(
     job,
     model: str,
-    message_completion_pairs: List[Dict[str, str]],
+    train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
 ) -> Union[str, ValueError]:
     return finetune(
         job=job,
         model=model,
-        message_completion_pairs=message_completion_pairs,
+        train_data=train_data,
         train_kwargs=train_kwargs,
     )
 
@@ -347,7 +351,7 @@ def cached_finetune(
 def finetune(
     job,
     model: str,
-    message_completion_pairs: List[Dict[str, str]],
+    train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
 ) -> Union[str, Exception]:
     """Fine-tune a new model based on the given model."""
@@ -362,7 +366,7 @@ def finetune(
         model = provider_finetune_function(
             job=job,
             model=model,
-            message_completion_pairs=message_completion_pairs,
+            train_data=train_data,
             train_kwargs=train_kwargs,
         )
     except Exception as err:

@@ -1,4 +1,3 @@
-# DSPy requirements
 backoff
 datasets
 joblib~=1.3

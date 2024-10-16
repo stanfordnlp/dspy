@@ -62,11 +62,28 @@ class ChatAdapter(Adapter):
                         f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
                     )
 
-        if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
+        if list(fields.keys()) != list(signature.output_fields.keys()):
+            raise ValueError(f"Expected {list(signature.output_fields.keys())} but got {fields.keys()}")
 
         return fields
 
+    def format_completion(self, signature, outputs):
+        reconstructed = []
+        
+        fields_dict = signature.output_fields
+
+        field_name_output_map = {field: outputs[field] for field in fields_dict.keys()}
+
+        for field, value in field_name_output_map.items():
+            reconstructed.append(f"[[ ## {field} ## ]]")
+            reconstructed.append(str(value))
+            reconstructed.append("")  # Add an empty line for separation
+        
+        reconstructed.append("[[ ## completed ## ]]")
+
+        result = "\n".join(reconstructed).strip()
+
+        return result
 
 def format_blob(blob):
     if "\n" not in blob and "«" not in blob and "»" not in blob:

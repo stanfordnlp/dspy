@@ -132,11 +132,10 @@ class FinetuneJobOpenAI(FinetuneJob):
 def finetune_openai(
         job: FinetuneJobOpenAI,
         model: str,
-        message_completion_pairs: List[Dict[str, str]],
+        train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
     ) -> Union[str, Exception]:
     train_kwargs = train_kwargs or {}
-    train_data = message_completion_pairs
     train_method = TrainingMethod.SFT  # Note: This could be an argument
 
     # Validate train data and method
@@ -365,3 +364,59 @@ def openai_data_validation(dataset: List[dict[str, Any]]):
         for k, v in format_errors.items():
             err_msg += "\n    {k}: {v}"
         raise ValueError(err_msg)
+
+
+def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
+    n_missing_system = 0
+    n_missing_user = 0
+    n_messages = []
+    convo_lens = []
+    assistant_message_lens = []
+
+    for ex in dataset:
+        messages = ex["messages"]
+        if not any(message["role"] == "system" for message in messages):
+            n_missing_system += 1
+        if not any(message["role"] == "user" for message in messages):
+            n_missing_user += 1
+        n_messages.append(len(messages))
+        convo_lens.append(num_tokens_from_messages(messages))
+        assistant_message_lens.append(num_assistant_tokens_from_messages(messages))
+    n_too_long = sum([length > 16385 for length in convo_lens])
+
+    if n_too_long > 0:
+        logger.info(f"There are {n_too_long} examples that may be over the 16,385 token limit, they will be truncated during fine-tuning.")
+
+    if n_missing_system > 0:
+        logger.info(f"There are {n_missing_system} examples that are missing a system message.")
+
+    if n_missing_user > 0:
+        logger.info(f"There are {n_missing_user} examples that are missing a user message.")
+
+    return convo_lens
+
+
+def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3
+    return num_tokens
+
+
+def num_assistant_tokens_from_messages(messages):
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+
+    num_tokens = 0
+    for message in messages:
+        if message["role"] == "assistant":
+            num_tokens += len(encoding.encode(message["content"]))
+    return num_tokens

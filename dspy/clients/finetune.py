@@ -2,6 +2,7 @@ from abc import abstractmethod
 from concurrent.futures import Future
 from enum import Enum
 import os
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 import ujson
 
@@ -12,8 +13,12 @@ from datasets.fingerprint import Hasher
 # Set the directory to save the fine-tuned models
 def get_finetune_directory() -> str:
     """Get the directory to save the fine-tuned models."""
-    alternative_path = os.path.join(os.getcwd(), '.dspy_finetune')
-    return os.environ.get('DSPY_FINETUNEDIR') or alternative_path
+    # TODO: Move to a centralized location with all the other env variables
+    dspy_cachedir = os.environ.get("DSPY_CACHEDIR")
+    dspy_cachedir = dspy_cachedir or os.path.join(Path.home(), ".dspy_cache")
+    finetune_dir = os.path.join(dspy_cachedir, 'finetune')
+    finetune_dir = os.path.abspath(finetune_dir)
+    return finetune_dir
 
 
 FINETUNE_DIRECTORY = get_finetune_directory()
@@ -51,18 +56,18 @@ class FinetuneJob(Future):
 
     def __init__(self,
         model: str,
-        message_completion_pairs: List[Dict[str, str]],
+        train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
     ):
         self.model = model
-        self.message_completion_pairs = message_completion_pairs
+        self.train_data = train_data
         self.train_kwargs: Dict[str, Any] = train_kwargs or {}
         super().__init__()
     
     def get_kwargs(self):
         return dict(
             model=self.model,
-            message_completion_pairs=self.message_completion_pairs,
+            train_data=self.train_data,
             train_kwargs=self.train_kwargs,
         )
 
