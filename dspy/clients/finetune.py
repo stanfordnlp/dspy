@@ -58,13 +58,13 @@ class FinetuneJob(Future):
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
         provider: str = "openai",
-        method: TrainingMethod = TrainingMethod.SFT,
+        train_method: TrainingMethod = TrainingMethod.SFT,
     ):
         self.model = model
         self.train_data = train_data
         self.train_kwargs: Dict[str, Any] = train_kwargs or {}
         self.provider = provider
-        self.method = method
+        self.train_method = train_method
         super().__init__()
     
     def get_kwargs(self):
@@ -73,7 +73,7 @@ class FinetuneJob(Future):
             train_data=self.train_data,
             train_kwargs=self.train_kwargs,
             provider=self.provider,
-            method=self.method,
+            train_method=self.train_method,
         )
 
     def __str__(self):

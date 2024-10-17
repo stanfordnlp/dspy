@@ -336,7 +336,7 @@ def cached_finetune(
     train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
     provider: str = "openai",
-    method: TrainingMethod = TrainingMethod.SFT,
+    train_method: TrainingMethod = TrainingMethod.SFT,
 ) -> Union[str, ValueError]:
     return finetune(
         job=job,
@@ -344,14 +344,14 @@ def cached_finetune(
         provider=provider,
         train_data=train_data,
         train_kwargs=train_kwargs,
-        method=method,
+        train_method=train_method,
     )
 
 
 def finetune(
     job,
     model: str,
-    method: TrainingMethod,
+    train_method: TrainingMethod,
     provider: str,
     train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
@@ -366,7 +366,7 @@ def finetune(
         model = provider_finetune_function(
             job=job,
             model=model,
-            method=method,
+            train_method=train_method,
             train_data=train_data,
             train_kwargs=train_kwargs,
         )

@@ -81,10 +81,10 @@ class FinetuneJobAnyScale(FinetuneJob):
 def finetune_anyscale(
         job: FinetuneJobAnyScale,
         model: str,
-        method: TrainingMethod,
+        train_method: TrainingMethod,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-    ) -> List[str]:
+    ) -> str:
     """Start the finetune job."""
     train_kwargs = train_kwargs or {}
     assert "model" not in train_kwargs, "Model should not be in the train_kwargs"
@@ -92,7 +92,7 @@ def finetune_anyscale(
     train_kwargs_copy["model"] = model
 
     logger.info("[Finetune] Starting training process...")
-    if method not in TRAINING_METHODS_ANYSCALE:
+    if train_method not in TRAINING_METHODS_ANYSCALE:
         raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
 
     logger.info("[Finetune] Validating the dataset format...")
