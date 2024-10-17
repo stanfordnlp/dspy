@@ -132,11 +132,12 @@ class FinetuneJobOpenAI(FinetuneJob):
 def finetune_openai(
         job: FinetuneJobOpenAI,
         model: str,
+        method: TrainingMethod,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-    ) -> Union[str, Exception]:
+    ) -> str:
     train_kwargs = train_kwargs or {}
-    train_method = TrainingMethod.SFT  # Note: This could be an argument
+    train_method = TrainingMethod.SFT  # Note: This could be an argument; ignoring method
 
     # Validate train data and method
     logger.info("[Finetune] Validating the formatting of the data")
