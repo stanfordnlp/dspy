@@ -63,7 +63,7 @@ class ChatAdapter(Adapter):
                     )
 
         if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {list(signature.output_fields.keys())} but got {fields.keys()}")
+            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
 
