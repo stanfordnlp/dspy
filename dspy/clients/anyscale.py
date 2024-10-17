@@ -135,7 +135,6 @@ def finetune_anyscale(
     last_model_checkpoint = model_step_pairs[-1][0]
     logger.info("[Finetune] Training process completed successfully.")
 
-    # TODO: Is this the right place to call update_model_config?
     logger.info("[Finetune] Updating model config with the proper dynamic path")
     serve_config_path = train_kwargs.pop("serve_config_path", "serve_1B.yaml")
     update_model_config(lora_dynamic_path, serve_config_path, job_id)
