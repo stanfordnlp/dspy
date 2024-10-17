@@ -60,6 +60,7 @@ class MIPROv2(Teleprompter):
         track_stats: bool = True,
         log_dir: Optional[str] = None,
         metric_threshold: Optional[float] = None,
+        parallel_bootstrapping: bool = False,
     ):
         # Validate 'auto' parameter
         allowed_modes = {None, "light", "medium", "heavy"}
@@ -87,6 +88,7 @@ class MIPROv2(Teleprompter):
         self.metric_threshold = metric_threshold
         self.seed = seed
         self.rng = None
+        self.parallel_bootstrapping = parallel_bootstrapping
 
     def compile(
         self,
@@ -400,7 +402,7 @@ class MIPROv2(Teleprompter):
                 teacher_settings=self.teacher_settings,
                 seed=seed,
                 metric_threshold=self.metric_threshold,
-                rng=self.rng,
+                parallel_bootstrapping=self.parallel_bootstrapping,
             )
         except Exception as e:
             print(f"Error generating few-shot examples: {e}")
