@@ -115,7 +115,7 @@ class Predict(Module, Parameter):
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
-            self.extended_signature.load_state(state["extended_signature"])
+            self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
     def _load_state_legacy(self, state):
         """Legacy state loading for backwards compatibility.

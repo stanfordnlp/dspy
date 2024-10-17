@@ -158,12 +158,20 @@ class LM:
         return finetune_job
     
     def copy(self, **kwargs):
-        """Returns a copy of the language model with the same parameters."""
-        kwargs = {**self.kwargs, **kwargs}
-        # model = kwargs.pop("model") or self.model
-        init_kwargs = dict(model=self.model, model_type=self.model_type, cache=self.cache, temperature=self.kwargs["temperature"], max_tokens=self.kwargs["max_tokens"])
-        init_kwargs = {**init_kwargs, **kwargs}
-        return self.__class__(**init_kwargs)
+        """Returns a copy of the language model with possibly updated parameters."""
+
+        import copy
+        new_instance = copy.deepcopy(self)
+        new_instance.history = []
+
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(new_instance, key, value)
+            if (key in self.kwargs) or (not hasattr(self, key)):
+                new_instance.kwargs[key] = value
+
+        return new_instance
+
 
 
 @functools.lru_cache(maxsize=None)
