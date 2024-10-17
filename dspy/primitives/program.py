@@ -1,3 +1,4 @@
+from dspy.utils.callback import with_callbacks
 import magicattr
 
 import dspy
@@ -16,6 +17,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __init__(self):
         self._compiled = False
 
+    @with_callbacks
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 

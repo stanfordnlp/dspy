@@ -1,4 +1,15 @@
+from dspy.utils.callback import with_callbacks
+
+
 class Adapter:
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        from dspy.utils.callback import with_callbacks
+
+        # Decorate format() and parse() method with with_callbacks
+        cls.format = with_callbacks(cls.format)
+        cls.parse = with_callbacks(cls.parse)
+
     def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)

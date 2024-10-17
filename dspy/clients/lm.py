@@ -14,6 +14,7 @@ from dspy.clients.lm_finetune_utils import (
     execute_finetune_job,
 )
 
+from dspy.utils.callback import with_callbacks
 import litellm
 from litellm.caching import Cache
 
@@ -52,6 +53,7 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)

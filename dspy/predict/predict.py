@@ -9,6 +9,7 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.utils.callback import with_callbacks
 
 
 @lru_cache(maxsize=None)
@@ -114,6 +115,7 @@ class Predict(Module, Parameter):
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
+    @with_callbacks
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
