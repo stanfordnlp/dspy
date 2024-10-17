@@ -9,6 +9,10 @@ from dspy.primitives.module import BaseModule
 class ProgramMeta(type):
     pass
 
+EXPERIMENTAL_ERR_MSG = """Setting or getting the LM of a program is an\
+experimental feature. Please enable the 'dspy.settings.experimental' flag\
+to use these features."""
+
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
@@ -32,9 +36,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             AssertionError: If the dspy experimental setting is not enabled.
         """
         # Check if the experimental setting is enabled
-        err_msg = """Setting or getting the LM of a program is an\
-experimental feature. Please enable the 'dspy.settings.experimental' flag\
-to use these features."""
+        err_msg = EXPERIMENTAL_ERR_MSG
         assert dspy.settings.experimental, err_msg
 
         # Set the LM for all predictors
@@ -50,15 +52,13 @@ to use these features."""
         return [param for _, param in self.named_predictors()]
     
     def set_lm(self, lm):
-        import dspy
-        assert dspy.settings.experimental, "Setting the lm is an experimental feature."
+        assert dspy.settings.experimental, EXPERIMENTAL_ERR_MSG
 
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
-        import dspy
-        assert dspy.settings.experimental, "Getting the lm is an experimental feature."
+        assert dspy.settings.experimental, EXPERIMENTAL_ERR_MSG
 
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
