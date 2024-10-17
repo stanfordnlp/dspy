@@ -7,11 +7,6 @@ from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.primitives.prediction import Prediction
 
-
-#-------------------------------------------------------------------------------
-#    Templates for the user-facing strings used by this module
-#-------------------------------------------------------------------------------
-
 _INFO_DEFAULT_TEACHER = """No teacher provided. Using a copy of the student \
 program as the teacher."""
 
@@ -26,10 +21,6 @@ consistency property."""
 
 _INFO_BOOTSTRAP_DATA = """Bootstrapping data on {} examples with the program \
 {}, with {} threads"""
-
-#-------------------------------------------------------------------------------
-#    Helper functions
-#-------------------------------------------------------------------------------
 
 # TODO: Shared below are useful functions. Similar procedures are implemented
 # separately and used by other DSPy teleprompters. These can be moved to shared

@@ -19,21 +19,12 @@ try:
 except ImportError:
     anyscale = None
 
-#-------------------------------------------------------------------------------
-#    Variables
-#-------------------------------------------------------------------------------
-
 # List of training methods supported by AnyScale
 TRAINING_METHODS_ANYSCALE = [
     TrainingMethod.SFT,
 ]
 
 PROVIDER_ANYSCALE = "anyscale"
-
-
-#-------------------------------------------------------------------------------
-#    Launching and killing LMs
-#-------------------------------------------------------------------------------
 
 def anyscale_model_launch(model: str, launch_kwargs: Dict[str, Any]):
     """Launch an AnyScale model."""
@@ -45,12 +36,6 @@ def anyscale_model_kill(model: str, launch_kwargs: Dict[str, Any]):
     # TODO: Hardcode resources for killing a select server through docker
     """Kill an AnyScale model."""
     raise NotImplementedError("Method `anyscale_model_kill` is not implemented.")
-
-
-#-------------------------------------------------------------------------------
-#    Function and classes required for the fine-tune interface
-#-------------------------------------------------------------------------------
-
 
 def is_anyscale_model(model: str) -> bool:
     """Check if the model is an AnyScale model."""
@@ -141,10 +126,6 @@ def finetune_anyscale(
     job.model_names = model_names
 
     return last_model_checkpoint
-
-#-------------------------------------------------------------------------------
-#    Custom functions to support the finetune_* function
-#-------------------------------------------------------------------------------
 
 def wait_for_training(job_id):
     """Wait for the training to complete."""

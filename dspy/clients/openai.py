@@ -14,11 +14,6 @@ from dspy.clients.finetune import (
     save_data,
 )
 
-
-#-------------------------------------------------------------------------------
-#    Function and variables to check if a model is an OpenAI model
-#-------------------------------------------------------------------------------
-
 # Provider name
 PROVIDER_OPENAI = "openai"
 
@@ -90,11 +85,6 @@ def is_openai_model(model: str) -> bool:
     # If the model is not a base OpenAI model or a fine-tuned OpenAI model, then
     # it is not an OpenAI model.
     return False
-
-
-#-------------------------------------------------------------------------------
-#    Function and classes required for the fine-tune interface
-#-------------------------------------------------------------------------------
 
 class FinetuneJobOpenAI(FinetuneJob):
 
@@ -182,11 +172,6 @@ def finetune_openai(
     logger.info("[Finetune] Done!")
 
     return model
-
-
-#-------------------------------------------------------------------------------
-#    Custom functions to support the finetune_* function
-#-------------------------------------------------------------------------------
 
 _SUPPORTED_TRAINING_METHODS = [
     TrainingMethod.SFT,
@@ -320,11 +305,6 @@ def _get_trained_model(job):
     provider_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
     finetuned_model = provider_job.fine_tuned_model
     return finetuned_model
-
-
-#-------------------------------------------------------------------------------
-#    OpenAI utility function(s)
-#-------------------------------------------------------------------------------
 
 # Adapted from https://cookbook.openai.com/examples/chat_finetuning_data_prep
 def openai_data_validation(dataset: List[dict[str, Any]]):

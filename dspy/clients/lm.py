@@ -9,11 +9,6 @@ import uuid
 
 from dspy.utils.logging import logger
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.self_hosted import (
-    is_self_hosted_model,
-    self_hosted_model_launch,
-    self_hosted_model_kill,
-)
 from dspy.clients.anyscale import (
     is_anyscale_model,
     anyscale_model_launch,
@@ -247,15 +242,10 @@ def _inspect_history(lm, n: int = 1):
 
     print("\n\n\n")
 
-
-#-------------------------------------------------------------------------------
-#    Fine-tune support
-#-------------------------------------------------------------------------------
 # TODO: This part can be moved to a separate module
 
 from dspy.clients.openai import (
     FinetuneJobOpenAI,
-    is_openai_model,
     finetune_openai,
 )
 from dspy.clients.anyscale import (
@@ -266,26 +256,6 @@ from dspy.clients.anyscale import (
 
 _PROVIDER_ANYSCALE = "anyscale"
 _PROVIDER_OPENAI = "openai"
-_SUPPORTED_FINETUNE_PROVIDERS = [
-    _PROVIDER_ANYSCALE,
-    _PROVIDER_OPENAI,
-]
-
-            
-def _get_supported_finetune_provider(model: str) -> Union[str, ValueError]:
-    """Return the finetuning provider for the given model.
-
-    The provider must be in _SUPPORTED_FINETUNE_PROVIDERS. This function is not
-    named `_get_provider` because it does not attempt to find the provider of a
-    model if there is no DSPy fine-tuning support for it.
-    """
-    if is_openai_model(model):
-        return _PROVIDER_OPENAI
-
-    if is_anyscale_model(model):
-        return _PROVIDER_ANYSCALE
-    
-    return ValueError(f"DSPy does not have fine-tuning support for {model}")
 
 
 def get_provider_finetune_job_class(provider: str) -> Type[FinetuneJob]:

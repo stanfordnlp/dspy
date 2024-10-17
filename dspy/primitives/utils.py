@@ -26,10 +26,6 @@ LMs set.
 
 {lm_info}"""
 
-_ERR_MSG_PROGRAM_LM = """Setting or getting the LM of a program is an \
-experimental feature. Please enable the 'dspy.settings.experimental' flag to \
-use these feature."""
-
 _INFO_LM_PROGRAM = """The LM set in 'dspy.settings.lm' is an instance of \
 '{lname}' LMs set for the predictors in the module are:{pred_lm_info}"""
 

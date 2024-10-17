@@ -15,36 +15,6 @@ from dspy.signatures.signature import ensure_signature, signature_to_template
 def warn_once(msg: str):
     logging.warning(msg)
 
-
-#-------------------------------------------------------------------------------
-#    Helper functions
-#-------------------------------------------------------------------------------
-
-def assert_structural_equivalency_for_predictors(
-        predictor1: object,
-        predictor2: object,
-    ):
-    """Assert that the two predictors are structurally equivalent to each other.
-
-    Args:
-        predictor1: The predictor to compare with.
-        predictor2: The predictor to compare with.
-
-    Raises:
-        AssertionError: If the predictors are not structurally equivalent.
-    """
-    # Assert that the objects are predictors
-    assert isinstance(predictor1, Predict)
-    assert isinstance(predictor2, Predict)
-
-    # Assert that the predictors have equivalent signatures
-    assert predictor1.signature.equals(predictor2.signature)
-
-
-#-------------------------------------------------------------------------------
-#    Classes
-#-------------------------------------------------------------------------------
-
 class Predict(Module, Parameter):
     def __init__(self, signature, _parse_values=True, **config):
         self.stage = random.randbytes(8).hex()
