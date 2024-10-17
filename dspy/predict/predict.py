@@ -1,7 +1,6 @@
 from functools import lru_cache
 import logging
 import random
-from typing import Optional
 
 from pydantic import BaseModel
 
