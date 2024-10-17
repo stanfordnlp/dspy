@@ -81,18 +81,6 @@ class LM:
         self.history.append(entry)
         
         return outputs
-
-    def copy(self, **kwargs):
-        """Create a copy of the current LM with updated kwargs."""
-        kwargs = {
-            "model": self.model,
-            "model_type": self.model_type,
-            "cache": self.cache,
-            "launch_kwargs": self.launch_kwargs,
-            **self.kwargs,
-            **kwargs,
-        }
-        return self.__class__(**kwargs)
     
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
