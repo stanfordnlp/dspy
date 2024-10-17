@@ -83,7 +83,6 @@ def finetune_anyscale(
         model: str,
         method: TrainingMethod,
         train_data: List[Dict[str, Any]],
-        eval_data: List[Dict[str, Any]] = None,
         train_kwargs: Optional[Dict[str, Any]]=None,
     ) -> List[str]:
     """Start the finetune job."""
@@ -103,21 +102,14 @@ def finetune_anyscale(
         logger.error(err)
         raise RuntimeError(err)
 
-    if eval_data and not verify_dataset(eval_data):
-        err = "[Finetune] Error: Unable to verify that the eval dataset is in the correct format."
-        logger.error(err)
-        raise RuntimeError(err)
-
     logger.info("[Finetune] Converting data to JSONL format...")
     train_data_path = save_data(train_data, provider_name=PROVIDER_ANYSCALE)
-    eval_data_path = save_data(eval_data, provider_name=PROVIDER_ANYSCALE) if eval_data else None
-
     logger.info("[Finetune] Submitting data to remote storage...")
-    remote_train_path, _ = submit_data(train_path=train_data_path, eval_path=eval_data_path)
+    remote_train_path, _ = submit_data(train_path=train_data_path)
     logger.info(f"[Finetune] Data submitted. Remote train path: {remote_train_path}")
 
     logger.info("[Finetune] Generating configuration files...")
-    _, compute_config = generate_config_files(train_path=remote_train_path, eval_path=None, **train_kwargs_copy)
+    _, compute_config = generate_config_files(train_path=remote_train_path, **train_kwargs_copy)
     
     logger.info("[Finetune] Starting remote training...")
     job_id = start_remote_training(compute_config=compute_config, **train_kwargs_copy)
@@ -190,13 +182,11 @@ def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
     return True
 
 
-def submit_data(train_path: str, eval_path: Optional[str]):
+def submit_data(train_path: str):
     """Upload the data to the Workspace cloud storage."""
     storage = os.environ['ANYSCALE_ARTIFACT_STORAGE']
     
     datasets = {"train": train_path}
-    if eval_path:
-        datasets["val"] = eval_path
 
     fine_tuning_file_ids = {}
     for name, path in datasets.items():
@@ -217,7 +207,7 @@ def submit_data(train_path: str, eval_path: Optional[str]):
     return fine_tuning_file_ids["train"], fine_tuning_file_ids.get("val", None)
 
 
-def generate_config_files(train_path: str, eval_path: Optional[str], **kwargs):
+def generate_config_files(train_path: str, **kwargs):
     base_model_yaml_path = kwargs.get("train_config_yaml", None)
     assert kwargs["model"] is not None, "Model is required to generate the config files"
 
@@ -255,7 +245,6 @@ def generate_config_files(train_path: str, eval_path: Optional[str], **kwargs):
     custom_modifications = {
         "model_id": kwargs["model"],
         "train_path": train_path,
-        "valid_path": eval_path,
         "logger": {
             "provider": "wandb",
         },

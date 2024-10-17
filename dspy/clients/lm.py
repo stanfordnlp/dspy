@@ -125,7 +125,6 @@ class LM:
     def finetune(self,
             train_method: TrainingMethod,
             train_data: List[Dict[str, Any]],
-            eval_data: List[Dict[str, Any]] = None,
             train_kwargs: Optional[Dict[str, Any]]=None,
             cache_finetune: bool = True,
             provider: str = "openai",

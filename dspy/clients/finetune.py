@@ -77,7 +77,7 @@ class FinetuneJob(Future):
         )
 
     def __str__(self):
-        return f"FinetuningJob({self.model})"
+        return f"FinetuningJob({self.to_dict()})"
 
     def __repr__(self):
         return str(self)
