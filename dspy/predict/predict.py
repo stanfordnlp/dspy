@@ -1,4 +1,3 @@
-from __future__ import annotations  # Used for self type hints
 from functools import lru_cache
 import logging
 import random
@@ -25,7 +24,7 @@ def warn_once(msg: str):
 def assert_structural_equivalency_for_predictors(
         predictor1: object,
         predictor2: object,
-    ) -> Optional[AssertionError]:
+    ):
     """Assert that the two predictors are structurally equivalent to each other.
 
     Args:

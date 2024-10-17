@@ -156,11 +156,8 @@ def build_messages_from_trace(
     for pred_ind, (pred, inputs, outputs) in enumerate(trace):
         # Get the demos from the predictor if exclude_demos is False
         demos = [] if exclude_demos else pred.demos
-
         messages = adapter.format(pred.signature, demos, inputs)
-
-        formatted_completion = adapter.format_completion(pred.signature, outputs)
-        messages.append({"role": "assistant", "content": formatted_completion})
+        messages.append(adapter.format_turn(signature=pred.signature, values=outputs, role="assistant", incomplete=False))
         data.append(messages)
 
     return data

@@ -67,23 +67,9 @@ class ChatAdapter(Adapter):
 
         return fields
 
-    def format_completion(self, signature, outputs):
-        reconstructed = []
+    def format_turn(self, signature, values, role, incomplete=False):
+        return format_turn(signature, values, role, incomplete)
         
-        fields_dict = signature.output_fields
-
-        field_name_output_map = {field: outputs[field] for field in fields_dict.keys()}
-
-        for field, value in field_name_output_map.items():
-            reconstructed.append(f"[[ ## {field} ## ]]")
-            reconstructed.append(str(value))
-            reconstructed.append("")  # Add an empty line for separation
-        
-        reconstructed.append("[[ ## completed ## ]]")
-
-        result = "\n".join(reconstructed).strip()
-
-        return result
 
 def format_blob(blob):
     if "\n" not in blob and "«" not in blob and "»" not in blob:
