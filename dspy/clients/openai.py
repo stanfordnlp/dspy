@@ -223,7 +223,7 @@ def _does_job_exist(job_id: str) -> bool:
         # TODO: Error handling is vague
         openai.fine_tuning.jobs.retrieve(job_id)
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -232,7 +232,7 @@ def _does_file_exist(file_id: str) -> bool:
         # TODO: Error handling is vague
         openai.files.retrieve(file_id)
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 

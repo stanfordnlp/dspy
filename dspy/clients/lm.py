@@ -7,9 +7,8 @@ from typing import Any, Dict, List, Optional, Type, Union
 import ujson
 import uuid
 
-
 from dspy.utils.logging import logger
-from dspy.clients.finetune import FinetuneJob
+from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.self_hosted import (
     is_self_hosted_model,
     self_hosted_model_launch,
@@ -124,9 +123,11 @@ class LM:
         logger.info(msg)
 
     def finetune(self,
+            train_method: TrainingMethod,
             train_data: List[Dict[str, Any]],
             train_kwargs: Optional[Dict[str, Any]]=None,
             cache_finetune: bool = True,
+            provider: str = "openai",
         ) -> FinetuneJob:
         """Start model fine-tuning, if supported."""
         # Fine-tuning is experimental and requires the experimental flag
@@ -135,16 +136,11 @@ class LM:
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
-        # Get the fine-tuning provider, if it is supported
-        try:
-            provider = _get_supported_finetune_provider(self.model)
-        except Exception as err:
-            raise err
-
         # Initialize the finetune job
         FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
         finetune_job = FinetuneJobClass(
             model=self.model,
+            provider=provider,
             train_data=train_data,
             train_kwargs=train_kwargs,
         )
@@ -256,7 +252,6 @@ from dspy.clients.openai import (
 )
 from dspy.clients.anyscale import (
     FinetuneJobAnyScale,
-    is_anyscale_model,
     finetune_anyscale,
 )
 
@@ -334,31 +329,36 @@ def execute_finetune_job(
 
 # TODO: Perhaps we shouldn't directly cache the data
 # TODO: Add DiskCache, ignore job
+
 def cached_finetune(
     job,
     model: str,
     train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
+    provider: str = "openai",
+    method: TrainingMethod = TrainingMethod.SFT,
 ) -> Union[str, ValueError]:
     return finetune(
         job=job,
         model=model,
+        provider=provider,
         train_data=train_data,
         train_kwargs=train_kwargs,
+        method=method,
     )
 
 
 def finetune(
     job,
     model: str,
+    method: TrainingMethod,
+    provider: str,
     train_data: List[Dict[str, Any]],
     train_kwargs: Optional[Dict[str, Any]]=None,
 ) -> Union[str, Exception]:
     """Fine-tune a new model based on the given model."""
     # Get the fine-tuning provider
     try:
-        provider = _get_supported_finetune_provider(model)
-
         # Get the finetune function
         provider_finetune_function = get_provider_finetune_function(provider)
 
@@ -366,6 +366,7 @@ def finetune(
         model = provider_finetune_function(
             job=job,
             model=model,
+            method=method,
             train_data=train_data,
             train_kwargs=train_kwargs,
         )
