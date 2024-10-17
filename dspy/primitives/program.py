@@ -49,13 +49,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return [param for _, param in self.named_predictors()]
     
     def set_lm(self, lm):
-        assert dspy.settings.experimental, EXPERIMENTAL_ERR_MSG
+        err_msg = "Setting or getting the LM of a program is an experimental feature. Please enable the 'dspy.settings.experimental' flag to use these features."
+        assert dspy.settings.experimental, err_msg
 
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
-        assert dspy.settings.experimental, EXPERIMENTAL_ERR_MSG
+        err_msg = "Setting or getting the LM of a program is an experimental feature. Please enable the 'dspy.settings.experimental' flag to use these features."
+        assert dspy.settings.experimental, err_msg
 
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
