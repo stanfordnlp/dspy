@@ -1,10 +1,7 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 import json
 import yaml
 import os
-from concurrent.futures import ThreadPoolExecutor
-from collections import defaultdict
-import functools
 
 from dspy.utils.logging import logger
 from dspy.clients.finetune import (
@@ -13,7 +10,6 @@ from dspy.clients.finetune import (
     save_data,
 )
 from dspy.clients.openai import openai_data_validation, check_message_lengths
-import asyncio
 
 try:
     # Importing the AnyScale library for users in the AnyScale workspace, where

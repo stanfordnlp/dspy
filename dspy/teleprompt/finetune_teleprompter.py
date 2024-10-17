@@ -7,7 +7,6 @@ from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.primitives.prediction import Prediction
 
-import concurrent.futures
 
 #-------------------------------------------------------------------------------
 #    Templates for the user-facing strings used by this module

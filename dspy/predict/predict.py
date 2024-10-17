@@ -10,7 +10,6 @@ import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.program import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 
 

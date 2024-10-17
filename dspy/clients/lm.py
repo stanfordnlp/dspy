@@ -253,7 +253,6 @@ from dspy.clients.openai import (
 )
 from dspy.clients.anyscale import (
     FinetuneJobAnyScale,
-    is_anyscale_model,
     finetune_anyscale,
 )
 
@@ -279,7 +278,7 @@ def _get_supported_finetune_provider(model: str) -> Union[str, ValueError]:
     if is_anyscale_model(model):
         return _PROVIDER_ANYSCALE
     
-    return ValueError(f"Unable  {model}")
+    return ValueError(f"DSPy does not have fine-tuning support for {model}")
 
 
 def get_provider_finetune_job_class(provider: str) -> Type[FinetuneJob]:
