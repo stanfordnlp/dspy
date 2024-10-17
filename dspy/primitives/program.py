@@ -20,26 +20,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def set_lm(self, lm: LM):
-        """Set the LM for all predictors in the module.
-
-        This is an experimental method, which requires dsp.settings.experimental
-        to be enabled.
-
-        Args:
-            lm: The LM to set for all predictors.
-
-        Raises:
-            AssertionError: If the dspy experimental setting is not enabled.
-        """
-        # Check if the experimental setting is enabled
-        err_msg = "Setting or getting the LM of a program is an experimental feature. Please enable the 'dspy.settings.experimental' flag to use these features."
-        assert dspy.settings.experimental, err_msg
-
-        # Set the LM for all predictors
-        for _, pred in self.named_predictors():
-            pred.lm = lm
-
     def named_predictors(self):
         from dspy.predict.predict import Predict
 
