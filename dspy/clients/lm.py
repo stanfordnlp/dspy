@@ -45,7 +45,8 @@ class LM:
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-        # TODO: This is error prone!
+        # TODO: Arbitrary model strings could include the substring "o1-". We
+        # should find a more robust way to check for the "o1-" family models.
         if "o1-" in model:
             assert (
                 max_tokens >= 5000 and temperature == 1.0
