@@ -1,12 +1,18 @@
 import magicattr
 
-import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
 
 
 class ProgramMeta(type):
     pass
+    # def __call__(cls, *args, **kwargs):
+    #     obj = super(ProgramMeta, cls).__call__(*args, **kwargs)
+
+    #     if issubclass(cls, Program) and not getattr(obj, "_program_init_called", False):
+    #         obj._base_init()
+    #         obj._program_init_called = True
+    #     return obj
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
@@ -26,29 +32,23 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]
-
+    
     def set_lm(self, lm):
-        if not dspy.settings.experimental:
-            raise ValueError(
-                "Setting or getting the LM of a program is an experimental feature. Please enable the "
-                "'dspy.settings.experimental' flag to use these features."
-            )
+        import dspy
+        assert dspy.settings.experimental, "Setting the lm is an experimental feature."
 
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
-        if not dspy.settings.experimental:
-            raise ValueError(
-                "Setting or getting the LM of a program is an experimental feature. Please enable the "
-                "'dspy.settings.experimental' flag to use these features."
-            )
+        import dspy
+        assert dspy.settings.experimental, "Getting the lm is an experimental feature."
 
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
         if len(set(all_used_lms)) == 1:
             return all_used_lms[0]
-
+        
         raise ValueError("Multiple LMs are being used in the module.")
 
     def __repr__(self):
@@ -94,6 +94,5 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
 def set_attribute_by_name(obj, name, value):
     magicattr.set(obj, name, value)
-
 
 Program = Module

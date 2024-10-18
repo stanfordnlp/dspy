@@ -85,7 +85,6 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -102,7 +101,6 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
