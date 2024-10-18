@@ -92,7 +92,7 @@ class FinetuneJob(Future):
         raise NotImplementedError("Method `status` is not implemented.")
 
 
-def validate_finetune_data(data: List[Dict[str, Any]], train_method: TrainingMethod) -> Optional[AssertionError]:
+def validate_finetune_data(data: List[Dict[str, Any]], train_method: TrainingMethod):
     """Validate the finetune data based on the training method."""
     # Get the required data keys for the training method
     required_keys = TRAINING_METHOD_TO_DATA_KEYS[train_method]
