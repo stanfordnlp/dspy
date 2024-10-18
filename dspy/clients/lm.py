@@ -3,16 +3,15 @@ from datetime import datetime
 import functools
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional
 import ujson
 import uuid
 
 from dspy.utils.logging import logger
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.anyscale import (
-    is_anyscale_model,
-    anyscale_model_launch,
-    anyscale_model_kill,
+from dspy.clients.lm_finetune_utils import (
+    get_provider_finetune_job_class,
+    execute_finetune_job,
 )
 
 import litellm
@@ -28,7 +27,8 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 
 class LM:
-    def __init__(self, 
+    def __init__(
+            self, 
             model,
             model_type='chat', 
             temperature=0.0,
@@ -87,48 +87,39 @@ class LM:
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
-        if is_self_hosted_model(self.model):
-            self_hosted_model_launch(self.model, self.launch_kwargs)
-        elif is_anyscale_model(self.model):
-            anyscale_model_launch(self.model, self.launch_kwargs)
         msg = f"`launch()` is called for the auto-launched model {self.model}"
         msg += " -- no action is taken!"
         logger.info(msg)
 
     def kill(self):
         """Send a request to the provider to kill the model, if needed."""
-        if is_self_hosted_model(self.model):
-            self_hosted_model_kill(self.model, self.launch_kwargs)
-        elif is_anyscale_model(self.model):
-            anyscale_model_kill(self.model, self.launch_kwargs)
         msg = f"`kill()` is called for the auto-launched model {self.model}"
         msg += " -- no action is taken!"
         logger.info(msg)
 
-    def finetune(self,
-            train_method: TrainingMethod,
+    def finetune(
+            self,
             train_data: List[Dict[str, Any]],
             train_kwargs: Optional[Dict[str, Any]]=None,
-            cache_finetune: bool = True,
+            train_method: TrainingMethod = TrainingMethod.SFT,
             provider: str = "openai",
+            cache_finetune: bool = True,
         ) -> FinetuneJob:
         """Start model fine-tuning, if supported."""
-        # Fine-tuning is experimental and requires the experimental flag
         from dspy import settings as settings
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
-        # Initialize the finetune job
         FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
         finetune_job = FinetuneJobClass(
             model=self.model,
-            provider=provider,
             train_data=train_data,
             train_kwargs=train_kwargs,
+            train_method=train_method,
+            provider=provider
         )
 
-        # Start asyncronous training
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(
             execute_finetune_job,
@@ -229,114 +220,3 @@ def _inspect_history(lm, n: int = 1):
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
-
-# TODO: This part can be moved to a separate module
-
-from dspy.clients.openai import (
-    FinetuneJobOpenAI,
-    finetune_openai,
-)
-from dspy.clients.anyscale import (
-    FinetuneJobAnyScale,
-    finetune_anyscale,
-)
-
-
-_PROVIDER_ANYSCALE = "anyscale"
-_PROVIDER_OPENAI = "openai"
-
-
-def get_provider_finetune_job_class(provider: str) -> Type[FinetuneJob]:
-    """Get the FinetuneJob class for the provider."""
-    # Mapping from provider to finetune job type
-    _PROVIDER_TO_FINETUNE_JOB_CLASS = {
-        _PROVIDER_ANYSCALE: FinetuneJobAnyScale,
-        _PROVIDER_OPENAI: FinetuneJobOpenAI,
-    }
-
-    # Get the FinetuneJob class for the provider
-    _CLS = _PROVIDER_TO_FINETUNE_JOB_CLASS[provider]
-
-    return _CLS
-
-
-def get_provider_finetune_function(provider: str) -> callable:
-    """Return the finetune function for the given model."""
-    # Mapping from provider to finetune function
-    _PROVIDER_TO_FINETUNE_FUNCTION = {
-        _PROVIDER_ANYSCALE: finetune_anyscale,
-        _PROVIDER_OPENAI: finetune_openai,
-    }
-
-    # Get the finetuning provider
-    finetune_function = _PROVIDER_TO_FINETUNE_FUNCTION[provider]
-
-    return finetune_function
-
-
-def execute_finetune_job(
-    job: FinetuneJob[Type[LM]],
-    lm: LM,
-    cache_finetune: bool=True
-):
-    """Execute the finetune job in a blocking manner."""
-    try:
-        job_kwargs = job.get_kwargs()
-        if cache_finetune:
-            model = cached_finetune(job=job, **job_kwargs)
-        else:
-            model = finetune(job=job, **job_kwargs)
-        lm = lm.copy(model=model)
-        job.set_result(lm)
-    except Exception as err:
-        logger.error(err)
-        job.set_result(err)
-
-
-# TODO: Perhaps we shouldn't directly cache the data
-# TODO: Add DiskCache, ignore job
-
-def cached_finetune(
-    job,
-    model: str,
-    train_data: List[Dict[str, Any]],
-    train_kwargs: Optional[Dict[str, Any]]=None,
-    provider: str = "openai",
-    train_method: TrainingMethod = TrainingMethod.SFT,
-) -> Union[str, ValueError]:
-    return finetune(
-        job=job,
-        model=model,
-        provider=provider,
-        train_data=train_data,
-        train_kwargs=train_kwargs,
-        train_method=train_method,
-    )
-
-
-def finetune(
-    job,
-    model: str,
-    train_method: TrainingMethod,
-    provider: str,
-    train_data: List[Dict[str, Any]],
-    train_kwargs: Optional[Dict[str, Any]]=None,
-) -> Union[str, Exception]:
-    """Fine-tune a new model based on the given model."""
-    # Get the fine-tuning provider
-    try:
-        # Get the finetune function
-        provider_finetune_function = get_provider_finetune_function(provider)
-
-        # Fine-tune a new model based on the given model
-        model = provider_finetune_function(
-            job=job,
-            model=model,
-            train_method=train_method,
-            train_data=train_data,
-            train_kwargs=train_kwargs,
-        )
-    except Exception as err:
-        raise err
-
-    return model

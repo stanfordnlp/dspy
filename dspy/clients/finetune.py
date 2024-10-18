@@ -9,8 +9,6 @@ import ujson
 from datasets.fingerprint import Hasher
 
 
-# TODO: Move to a centralized location with all the other environment variables
-# Set the directory to save the fine-tuned models
 def get_finetune_directory() -> str:
     """Get the directory to save the fine-tuned models."""
     # TODO: Move to a centralized location with all the other env variables
@@ -57,14 +55,14 @@ class FinetuneJob(Future):
         model: str,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
-        provider: str = "openai",
         train_method: TrainingMethod = TrainingMethod.SFT,
+        provider: str = "openai",
     ):
         self.model = model
         self.train_data = train_data
         self.train_kwargs: Dict[str, Any] = train_kwargs or {}
-        self.provider = provider
         self.train_method = train_method
+        self.provider = provider
         super().__init__()
     
     def get_kwargs(self):
@@ -72,12 +70,9 @@ class FinetuneJob(Future):
             model=self.model,
             train_data=self.train_data,
             train_kwargs=self.train_kwargs,
-            provider=self.provider,
             train_method=self.train_method,
+            provider=self.provider,
         )
-
-    def __str__(self):
-        return f"FinetuningJob({self.to_dict()})"
 
     def __repr__(self):
         return str(self)

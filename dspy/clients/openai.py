@@ -82,8 +82,6 @@ def is_openai_model(model: str) -> bool:
     if match and match.group(1) in _MODEL_IDS:
         return True
 
-    # If the model is not a base OpenAI model or a fine-tuned OpenAI model, then
-    # it is not an OpenAI model.
     return False
 
 class FinetuneJobOpenAI(FinetuneJob):
@@ -122,9 +120,9 @@ class FinetuneJobOpenAI(FinetuneJob):
 def finetune_openai(
         job: FinetuneJobOpenAI,
         model: str,
-        method: TrainingMethod,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
+        train_method: TrainingMethod = TrainingMethod.SFT,
     ) -> str:
     train_kwargs = train_kwargs or {}
     train_method = TrainingMethod.SFT  # Note: This could be an argument; ignoring method

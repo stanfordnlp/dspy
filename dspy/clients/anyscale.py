@@ -12,12 +12,12 @@ from dspy.clients.finetune import (
 from dspy.clients.openai import openai_data_validation, check_message_lengths
 
 try:
-    # Importing the AnyScale library for users in the AnyScale workspace, where
-    # the library is already installed.
-    from anyscale.job import JobConfig
+    # AnyScale fine-tuning requires the following additional imports
     import anyscale
+    from anyscale.job import JobConfig
 except ImportError:
     anyscale = None
+
 
 # List of training methods supported by AnyScale
 TRAINING_METHODS_ANYSCALE = [
@@ -26,16 +26,6 @@ TRAINING_METHODS_ANYSCALE = [
 
 PROVIDER_ANYSCALE = "anyscale"
 
-def anyscale_model_launch(model: str, launch_kwargs: Dict[str, Any]):
-    """Launch an AnyScale model."""
-    # TODO: Hardcode resources for launching a select server through docker
-    raise NotImplementedError("Method `anyscale_model_launch` is not implemented.")
-
-
-def anyscale_model_kill(model: str, launch_kwargs: Dict[str, Any]):
-    # TODO: Hardcode resources for killing a select server through docker
-    """Kill an AnyScale model."""
-    raise NotImplementedError("Method `anyscale_model_kill` is not implemented.")
 
 def is_anyscale_model(model: str) -> bool:
     """Check if the model is an AnyScale model."""
@@ -51,24 +41,13 @@ class FinetuneJobAnyScale(FinetuneJob):
         self.model_names = None
         super().__init__(*args, **kwargs)
 
-    def cancel(self):
-        """Cancel the finetune job."""
-        raise NotImplementedError("Method `cancel` is not implemented.")
-        # Call the super's cancel method after the custom cancellation logic, 
-        # so that the future can be cancelled
-        # super().cancel()
-
-    def status(self):
-        """Get the status of the finetune job."""
-        raise NotImplementedError("Method `status` is not implemented.")
-
 
 def finetune_anyscale(
         job: FinetuneJobAnyScale,
         model: str,
-        train_method: TrainingMethod,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]]=None,
+        train_method: TrainingMethod = TrainingMethod.SFT,
     ) -> str:
     """Start the finetune job."""
     train_kwargs = train_kwargs or {}
@@ -157,8 +136,6 @@ def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
         logger.error(f"Dataset validation failed: {dataset_validation}")
         return False
 
-    # TODO: Is this still useful?
-    convo_lens = check_message_lengths(dataset)
     return True
 
 
