@@ -1,6 +1,6 @@
-from functools import lru_cache
 import logging
 import random
+from functools import lru_cache
 
 from pydantic import BaseModel
 
@@ -14,6 +14,7 @@ from dspy.signatures.signature import ensure_signature, signature_to_template
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
+
 
 class Predict(Module, Parameter):
     def __init__(self, signature, _parse_values=True, **config):
