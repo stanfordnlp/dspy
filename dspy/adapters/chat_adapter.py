@@ -62,9 +62,6 @@ class ChatAdapter(Adapter):
                         f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
                     )
 
-        if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
-
         return fields
 
     def format_turn(self, signature, values, role, incomplete=False):
@@ -140,7 +137,7 @@ def format_turn(signature, values, role, incomplete=False):
     if role == "user":
         content.append(
             "Respond with the corresponding output fields, starting with the field "
-            + ", then ".join(f"`{f}`" for f in signature.output_fields)
+            + ", then ".join(f"`{f}`" for f in signature.output_fields if f not in values)
             + ", and then ending with the marker for `completed`."
         )
 
