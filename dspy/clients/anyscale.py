@@ -9,7 +9,7 @@ from dspy.clients.finetune import (
     TrainingMethod,
     save_data,
 )
-from dspy.clients.openai import openai_data_validation, check_message_lengths
+from dspy.clients.openai import openai_data_validation
 
 try:
     # AnyScale fine-tuning requires the following additional imports

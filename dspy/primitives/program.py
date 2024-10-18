@@ -1,6 +1,5 @@
 import magicattr
 
-from dsp.modules.lm import LM
 import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
