@@ -1,10 +1,9 @@
 from typing import Any, Dict, List, Optional, Type, Union
 
-from dspy.utils.logging import logger
+from dspy.clients.anyscale import FinetuneJobAnyScale, finetune_anyscale
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.openai import FinetuneJobOpenAI, finetune_openai
-from dspy.clients.anyscale import FinetuneJobAnyScale, finetune_anyscale
-
+from dspy.utils.logging import logger
 
 _PROVIDER_ANYSCALE = "anyscale"
 _PROVIDER_OPENAI = "openai"
@@ -30,11 +29,7 @@ def get_provider_finetune_function(provider: str) -> callable:
 
 # Note: Type of LM should be LM. We aren't importing it here to avoid
 # circular imports.
-def execute_finetune_job(
-    job: FinetuneJob,
-    lm: Any,
-    cache_finetune: bool=True
-):
+def execute_finetune_job(job: FinetuneJob, lm: Any, cache_finetune: bool = True):
     """Execute the finetune job in a blocking manner."""
     try:
         job_kwargs = job.get_kwargs()
@@ -54,7 +49,7 @@ def cached_finetune(
     job,
     model: str,
     train_data: List[Dict[str, Any]],
-    train_kwargs: Optional[Dict[str, Any]]=None,
+    train_kwargs: Optional[Dict[str, Any]] = None,
     train_method: TrainingMethod = TrainingMethod.SFT,
     provider: str = "openai",
 ) -> Union[str, Exception]:
@@ -72,7 +67,7 @@ def finetune(
     job,
     model: str,
     train_data: List[Dict[str, Any]],
-    train_kwargs: Optional[Dict[str, Any]]=None,
+    train_kwargs: Optional[Dict[str, Any]] = None,
     train_method: TrainingMethod = TrainingMethod.SFT,
     provider: str = "openai",
 ) -> Union[str, Exception]:

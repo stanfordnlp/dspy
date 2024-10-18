@@ -1,63 +1,21 @@
-from collections import defaultdict
 import re
 import time
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Union
 
 import openai
 
-from dspy.utils.logging import logger
 from dspy.clients.finetune import (
     FinetuneJob,
     TrainingMethod,
     TrainingStatus,
-    validate_finetune_data,
     save_data,
+    validate_finetune_data,
 )
+from dspy.utils.logging import logger
 
 # Provider name
 PROVIDER_OPENAI = "openai"
-
-# List of model IDs
-_MODEL_IDS = [
-    "gpt-4o",
-    "gpt-4o-2024-08-06",
-    "gpt-4o-2024-05-13",
-    "chatgpt-4o-latest",
-    "gpt-4o-mini",
-    "gpt-4o-mini-2024-07-18",
-    "gpt-4o-realtime-preview",
-    "gpt-4o-realtime-preview-2024-10-01",
-    "o1-preview",
-    "o1-preview-2024-09-12",
-    "o1-mini",
-    "o1-mini-2024-09-12",
-    "gpt-4-turbo",
-    "gpt-4-turbo-2024-04-09",
-    "gpt-4-turbo-preview",
-    "gpt-4-0125-preview",
-    "gpt-4-1106-preview",
-    "gpt-4",
-    "gpt-4-0613",
-    "gpt-4-0314",
-    "gpt-3.5-turbo-0125",
-    "gpt-3.5-turbo",
-    "gpt-3.5-turbo-1106",
-    "gpt-3.5-turbo-instruct",
-    "dall-e-3",
-    "dall-e-2",
-    "tts-1",
-    "tts-1-hd",
-    "text-embedding-3-large",
-    "text-embedding-3-small",
-    "text-embedding-ada-002",
-    "omni-moderation-latest",
-    "omni-moderation-2024-09-26",
-    "text-moderation-latest",
-    "text-moderation-stable",
-    "text-moderation-007",
-    "babbage-002",
-    "davinci-002"
-]
 
 
 def is_openai_model(model: str) -> bool:
@@ -65,10 +23,12 @@ def is_openai_model(model: str) -> bool:
     # Filter the provider_prefix, if exists
     provider_prefix = f"{PROVIDER_OPENAI}/"
     if model.startswith(provider_prefix):
-        model = model[len(provider_prefix):]
+        model = model[len(provider_prefix) :]
 
+    client = openai.OpenAI()
+    valid_model_names = [model.id for model in client.models.list().data]
     # Check if the model is a base OpenAI model
-    if model in _MODEL_IDS:
+    if model in valid_model_names:
         return True
 
     # Check if the model is a fine-tuned OpneAI model. Fine-tuned OpenAI models
@@ -77,15 +37,15 @@ def is_openai_model(model: str) -> bool:
     # base model name.
     # TODO: This part can be updated to match the actual fine-tuned model names
     # by making a call to the OpenAI API to be more exact, but this might
-    # require an API key with the right permissions. 
+    # require an API key with the right permissions.
     match = re.match(r"ft:([^:]+):", model)
-    if match and match.group(1) in _MODEL_IDS:
+    if match and match.group(1) in valid_model_names:
         return True
 
     return False
 
-class FinetuneJobOpenAI(FinetuneJob):
 
+class FinetuneJobOpenAI(FinetuneJob):
     def __init__(self, *args, **kwargs):
         self.provider_file_id = None  # TODO: Can we get this using the job_id?
         self.provider_job_id = None
@@ -118,12 +78,12 @@ class FinetuneJobOpenAI(FinetuneJob):
 
 
 def finetune_openai(
-        job: FinetuneJobOpenAI,
-        model: str,
-        train_data: List[Dict[str, Any]],
-        train_kwargs: Optional[Dict[str, Any]]=None,
-        train_method: TrainingMethod = TrainingMethod.SFT,
-    ) -> str:
+    job: FinetuneJobOpenAI,
+    model: str,
+    train_data: List[Dict[str, Any]],
+    train_kwargs: Optional[Dict[str, Any]] = None,
+    train_method: TrainingMethod = TrainingMethod.SFT,
+) -> str:
     train_kwargs = train_kwargs or {}
     train_method = TrainingMethod.SFT  # Note: This could be an argument; ignoring method
 
@@ -171,9 +131,11 @@ def finetune_openai(
 
     return model
 
+
 _SUPPORTED_TRAINING_METHODS = [
     TrainingMethod.SFT,
 ]
+
 
 def _get_training_status(job_id: str) -> Union[TrainingStatus, Exception]:
     # TODO: Should this type be shared across all fine-tune clients?
@@ -228,10 +190,7 @@ def _is_terminal_training_status(status: TrainingStatus) -> bool:
     ]
 
 
-def _validate_data(
-        data: Dict[str, str],
-        train_method: TrainingMethod
-    ) -> Optional[Exception]:
+def _validate_data(data: Dict[str, str], train_method: TrainingMethod) -> Optional[Exception]:
     # Check if this train method is supported
     if train_method not in _SUPPORTED_TRAINING_METHODS:
         err_msg = f"OpenAI does not support the training method {train_method}."
@@ -241,20 +200,17 @@ def _validate_data(
 
 
 def _convert_data(
-        data: List[Dict[str, str]],
-        system_prompt: Optional[str]=None,
-    ) -> Union[List[Dict[str, Any]], Exception]:
+    data: List[Dict[str, str]],
+    system_prompt: Optional[str] = None,
+) -> Union[List[Dict[str, Any]], Exception]:
     # Item-wise conversion function
     def _row_converter(d):
-        messages = [
-            {"role": "user", "content": d["prompt"]},
-            {"role": "assistant", "content": d["completion"]}
-        ]
+        messages = [{"role": "user", "content": d["prompt"]}, {"role": "assistant", "content": d["completion"]}]
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
         messages_dict = {"messages": messages}
         return messages_dict
-    
+
     # Convert the data to the OpenAI format; validate the converted data
     converted_data = list(map(_row_converter, data))
     openai_data_validation(converted_data)
@@ -270,11 +226,7 @@ def _upload_data(data_path: str) -> str:
     return provider_file.id
 
 
-def _start_remote_training(
-        train_file_id: str,
-        model: id,
-        train_kwargs: Optional[Dict[str, Any]]=None
-    ) -> str:
+def _start_remote_training(train_file_id: str, model: id, train_kwargs: Optional[Dict[str, Any]] = None) -> str:
     train_kwargs = train_kwargs or {}
     provider_job = openai.fine_tuning.jobs.create(
         model=model,
@@ -286,7 +238,7 @@ def _start_remote_training(
 
 def _wait_for_job(
     job: FinetuneJobOpenAI,
-    poll_frequency: int=60,
+    poll_frequency: int = 60,
 ):
     while not _is_terminal_training_status(job.status()):
         time.sleep(poll_frequency)
@@ -303,6 +255,7 @@ def _get_trained_model(job):
     provider_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
     finetuned_model = provider_job.fine_tuned_model
     return finetuned_model
+
 
 # Adapted from https://cookbook.openai.com/examples/chat_finetuning_data_prep
 def openai_data_validation(dataset: List[dict[str, Any]]):
@@ -364,7 +317,9 @@ def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
     n_too_long = sum([length > 16385 for length in convo_lens])
 
     if n_too_long > 0:
-        logger.info(f"There are {n_too_long} examples that may be over the 16,385 token limit, they will be truncated during fine-tuning.")
+        logger.info(
+            f"There are {n_too_long} examples that may be over the 16,385 token limit, they will be truncated during fine-tuning."
+        )
 
     if n_missing_system > 0:
         logger.info(f"There are {n_missing_system} examples that are missing a system message.")
@@ -377,6 +332,7 @@ def check_message_lengths(dataset: List[dict[str, Any]]) -> list[int]:
 
 def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
     import tiktoken
+
     encoding = tiktoken.get_encoding("cl100k_base")
 
     num_tokens = 0
@@ -392,6 +348,7 @@ def num_tokens_from_messages(messages, tokens_per_message=3, tokens_per_name=1):
 
 def num_assistant_tokens_from_messages(messages):
     import tiktoken
+
     encoding = tiktoken.get_encoding("cl100k_base")
 
     num_tokens = 0

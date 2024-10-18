@@ -1,11 +1,11 @@
+import os
 from abc import abstractmethod
 from concurrent.futures import Future
 from enum import Enum
-import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import ujson
+from typing import Any, Dict, List, Optional
 
+import ujson
 from datasets.fingerprint import Hasher
 
 
@@ -14,7 +14,7 @@ def get_finetune_directory() -> str:
     # TODO: Move to a centralized location with all the other env variables
     dspy_cachedir = os.environ.get("DSPY_CACHEDIR")
     dspy_cachedir = dspy_cachedir or os.path.join(Path.home(), ".dspy_cache")
-    finetune_dir = os.path.join(dspy_cachedir, 'finetune')
+    finetune_dir = os.path.join(dspy_cachedir, "finetune")
     finetune_dir = os.path.abspath(finetune_dir)
     return finetune_dir
 
@@ -24,17 +24,19 @@ FINETUNE_DIRECTORY = get_finetune_directory()
 
 class TrainingMethod(str, Enum):
     """Enum class for training methods.
-    
+
     When comparing enums, Python checks for object IDs, which means that the
     enums can't be compared directly. Subclassing the Enum class along with the
     str class allows for direct comparison of the enums.
     """
+
     SFT = "SFT"
     Preference = "Preference"
 
 
 class TrainingStatus(str, Enum):
     """Enum class for remote training status."""
+
     not_started = "not_started"
     pending = "pending"
     running = "running"
@@ -49,12 +51,13 @@ TRAINING_METHOD_TO_DATA_KEYS = {
     TrainingMethod.Preference: ["prompt", "chosen", "rejected"],
 }
 
-class FinetuneJob(Future):
 
-    def __init__(self,
+class FinetuneJob(Future):
+    def __init__(
+        self,
         model: str,
         train_data: List[Dict[str, Any]],
-        train_kwargs: Optional[Dict[str, Any]]=None,
+        train_kwargs: Optional[Dict[str, Any]] = None,
         train_method: TrainingMethod = TrainingMethod.SFT,
         provider: str = "openai",
     ):
@@ -64,7 +67,7 @@ class FinetuneJob(Future):
         self.train_method = train_method
         self.provider = provider
         super().__init__()
-    
+
     def get_kwargs(self):
         return dict(
             model=self.model,
@@ -89,26 +92,24 @@ class FinetuneJob(Future):
         raise NotImplementedError("Method `status` is not implemented.")
 
 
-def validate_finetune_data(
-        data: List[Dict[str, Any]],
-        train_method: TrainingMethod
-    ) -> Optional[AssertionError]:
+def validate_finetune_data(data: List[Dict[str, Any]], train_method: TrainingMethod) -> Optional[AssertionError]:
     """Validate the finetune data based on the training method."""
     # Get the required data keys for the training method
     required_keys = TRAINING_METHOD_TO_DATA_KEYS[train_method]
 
     # Check if the training data has the required keys
     for ind, data_dict in enumerate(data):
-        err_msg = f"The datapoint at index {ind} is missing the keys required for {train_method} training."
-        err_msg = f"\n    Expected: {required_keys}"
-        err_msg = f"\n    Found: {data_dict.keys()}"
-        assert all([key in data_dict for key in required_keys]), err_msg
+        if not all([key in data_dict for key in required_keys]):
+            raise ValueError(
+                f"The datapoint at index {ind} is missing the keys required for {train_method} training. Expected: "
+                f"{required_keys}, Found: {data_dict.keys()}"
+            )
 
 
 def save_data(
-        data: List[Dict[str, Any]],
-        provider_name: Optional[str]=None,
-    ) -> str:
+    data: List[Dict[str, Any]],
+    provider_name: Optional[str] = None,
+) -> str:
     """Save the fine-tuning data to a file."""
     # Construct the file name based on the data hash
     hash = Hasher.hash(data)
