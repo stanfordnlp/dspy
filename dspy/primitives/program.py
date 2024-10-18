@@ -1,18 +1,11 @@
 import magicattr
 
+import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
 
-
 class ProgramMeta(type):
     pass
-    # def __call__(cls, *args, **kwargs):
-    #     obj = super(ProgramMeta, cls).__call__(*args, **kwargs)
-
-    #     if issubclass(cls, Program) and not getattr(obj, "_program_init_called", False):
-    #         obj._base_init()
-    #         obj._program_init_called = True
-    #     return obj
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
@@ -34,15 +27,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return [param for _, param in self.named_predictors()]
     
     def set_lm(self, lm):
-        import dspy
-        assert dspy.settings.experimental, "Setting the lm is an experimental feature."
+        err_msg = "Setting or getting the LM of a program is an experimental feature. Please enable the 'dspy.settings.experimental' flag to use these features."
+        assert dspy.settings.experimental, err_msg
 
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
-        import dspy
-        assert dspy.settings.experimental, "Getting the lm is an experimental feature."
+        err_msg = "Setting or getting the LM of a program is an experimental feature. Please enable the 'dspy.settings.experimental' flag to use these features."
+        assert dspy.settings.experimental, err_msg
 
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 

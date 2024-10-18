@@ -67,6 +67,9 @@ class ChatAdapter(Adapter):
 
         return fields
 
+    def format_turn(self, signature, values, role, incomplete=False):
+        return format_turn(signature, values, role, incomplete)
+        
 
 def format_blob(blob):
     if "\n" not in blob and "«" not in blob and "»" not in blob:
