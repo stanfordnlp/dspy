@@ -1,10 +1,10 @@
 import re
 import numpy as np
-from dspy.dspy import LabeledFewShot, BootstrapFewShot
-from dspy.dspy.evaluate.evaluate import *
+from dspy import LabeledFewShot, BootstrapFewShot
+from dspy.evaluate.evaluate import *
 import random
 
-from dspy.dspy.teleprompt.teleprompt import Teleprompter
+from dspy.teleprompt.teleprompt import Teleprompter
 
 
 class Confusion:
@@ -34,14 +34,13 @@ class Confusion:
         self.return_matrix = return_matrix
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-        self.results = {label: [] for label in labels}
 
     def extract_answer_from_prediction(self, prediction):
         response = prediction["response"]
         match = re.search(r"|".join(self.labels), response.lower())
         return match.group(0) if match else None
 
-    def construct_matrix(self):
+    def construct_matrix(self, preds):
         labels = self.labels
 
         # Initialize the confusion matrix
@@ -49,15 +48,15 @@ class Confusion:
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
-            for prediction in self.results[label]:
+            for prediction in preds[label]:
                 answer = self.extract_answer_from_prediction(prediction)
                 if answer in labels:
                     confusion_matrix[idx][labels.index(answer)] += 1
 
         return confusion_matrix
 
-    def get_matthews_corrcoef(self):
-        C = self.construct_matrix()
+    def get_matthews_corrcoef(self, preds, return_cm=False):
+        C = self.construct_matrix(preds)
         # rest is from sklearn
 
         t_sum = C.sum(axis=1, dtype=np.float64)
@@ -69,11 +68,15 @@ class Confusion:
         cov_ytyt = n_samples ** 2 - np.dot(t_sum, t_sum)
 
         if cov_ypyp * cov_ytyt == 0:
-            return 0.0
+            out = 0.0
         else:
-            return cov_ytyp / np.sqrt(cov_ytyt * cov_ypyp)
+            out = cov_ytyp / np.sqrt(cov_ytyt * cov_ypyp)
+            
+        if return_cm:
+            return out, C
+        return out
 
-    def _execute_single_thread(self, wrapped_program, devset, display_progress):
+    def _execute_single_thread(self, wrapped_program, devset, display_progress, preds):
         reordered_devset = []
 
         pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
@@ -81,14 +84,14 @@ class Confusion:
             with logging_redirect_tqdm():
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
-                self.results[arg["response"]].append(prediction)
-                self._update_progress(pbar)
+                preds[arg["response"]].append(prediction)
+                self._update_progress(pbar, preds)
 
         pbar.close()
 
         return reordered_devset
 
-    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress):
+    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress, preds):
         reordered_devset = []
         job_cancelled = "cancelled"
 
@@ -127,8 +130,8 @@ class Confusion:
                     continue
 
                 reordered_devset.append((example_idx, example, prediction))
-                self.results[arg["response"]].append(prediction)
-                self._update_progress(pbar)
+                preds[arg["response"]].append(prediction)
+                self._update_progress(pbar, preds)
             pbar.close()
 
         if self.cancel_jobs.is_set():
@@ -137,8 +140,8 @@ class Confusion:
 
         return reordered_devset
 
-    def _update_progress(self, pbar):
-        mcc = self.get_matthews_corrcoef()
+    def _update_progress(self, pbar, preds):
+        mcc = self.get_matthews_corrcoef(preds)
         pbar.set_description(f"MCC: {mcc:.6f}")
         pbar.update()
 
@@ -201,17 +204,20 @@ class Confusion:
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
 
+        preds = {label: [] for label in self.labels}
+
         if num_threads == 1:
-            reordered_devset = self._execute_single_thread(wrapped_program, devset, display_progress)
+            reordered_devset = self._execute_single_thread(wrapped_program, devset, display_progress, preds)
         else:
             reordered_devset = self._execute_multi_thread(
                 wrapped_program,
                 devset,
                 num_threads,
                 display_progress,
+                preds,
             )
 
-        dspy.logger.info(f"MCC: {self.get_matthews_corrcoef():.6f}")
+        dspy.logger.info(f"MCC: {self.get_matthews_corrcoef(preds):.6f}")
 
         predicted_devset = sorted(reordered_devset)
 
@@ -249,12 +255,12 @@ class Confusion:
                 """
                 display(HTML(message))
 
-        mcc = self.get_matthews_corrcoef()
+        mcc, cm = self.get_matthews_corrcoef(preds, return_cm=True)
 
         if return_matrix and return_outputs:
-            return mcc, results, self.construct_matrix()
+            return mcc, results, cm
         if return_matrix:
-            return mcc, self.construct_matrix()
+            return mcc, cm
         if return_outputs:
             return mcc, results
 
