@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 import numpy as np
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
@@ -34,6 +35,7 @@ class Confusion:
         self.return_matrix = return_matrix
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
+        self.freqs = {k: 1 / v for k, v in Counter([arg["response"] for arg in devset]).items()}
 
     def extract_answer_from_prediction(self, prediction):
         response = prediction["response"]
@@ -44,14 +46,17 @@ class Confusion:
         labels = self.labels
 
         # Initialize the confusion matrix
-        confusion_matrix = np.zeros((len(labels), len(labels)), dtype=int)
+        confusion_matrix = np.zeros((len(labels), len(labels)), dtype=float)
+
+        # Get answers
+        answers = {label: [self.extract_answer_from_prediction(prediction)
+                           for prediction in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
-            for prediction in preds[label]:
-                answer = self.extract_answer_from_prediction(prediction)
-                if answer in labels:
-                    confusion_matrix[idx][labels.index(answer)] += 1
+            for answer in answers[label]:
+                if answer in self.freqs:
+                    confusion_matrix[idx][labels.index(answer)] += self.freqs[label]
 
         return confusion_matrix
 
