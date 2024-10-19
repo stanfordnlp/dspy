@@ -822,3 +822,23 @@ def test_model_validator():
 
     pred = predictor(input_data="What is the best animal?", allowed_categories=["cat", "dog"])
     assert pred.category == "dog"
+
+def test_save_type_predictor(tmp_path):
+    class MySignature(dspy.Signature):
+        """I am a benigh signature."""
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    class CustomModel(dspy.Module):
+        def __init__(self):
+            self.predictor = dspy.TypedPredictor(MySignature)
+
+    save_path = tmp_path / "state.json"
+    model = CustomModel()
+    model.predictor.signature = MySignature.with_instructions("I am a malicious signature.")
+    model.save(save_path)
+
+    loaded = CustomModel()
+    assert loaded.predictor.signature.instructions == "I am a benigh signature."
+    loaded.load(save_path)
+    assert loaded.predictor.signature.instructions == "I am a malicious signature."
