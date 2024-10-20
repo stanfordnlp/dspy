@@ -1,107 +1,38 @@
-import torch
-from transformers import RobertaTokenizer, RobertaForSequenceClassification
-from datasets import load_dataset, load_metric
-from dspy.teleprompt import PEZFewshot, PEZFinetune
+import os
+from datasets import load_dataset
+from dspy.teleprompt.pez import BootstrapFewShotWithPEZ
+from dspy.teleprompt.finetune import BootstrapFinetune
 
+# Load the GLUE SST-2 dataset
+dataset = load_dataset("glue", "sst2")
+trainset = dataset['train']  # Use the training set for few-shot bootstrapping
 
-# Step 1: Load the GLUE dataset (SST-2)
-def load_sst2_dataset():
-    dataset = load_dataset("glue", "sst2")
-    metric = load_metric("glue", "sst2")
-    return dataset, metric
+# Initialize the PEZ-based few-shot optimizer
+fewshot_optimizer = BootstrapFewShotWithPEZ(
+    metric=lambda gold, prediction, trace: gold['label'] == prediction['label'],  # A simple metric comparing labels
+    max_bootstrapped_demos=4,  # Number of bootstrapped examples
+    max_labeled_demos=16,  # Maximum number of labeled demos
+    num_candidate_programs=8,  # Number of candidate programs to test
+    prompt_len=5,  # Number of tokens in the prompt
+    opt_iters=500,  # Number of optimization iterations
+    lr=5e-5,  # Learning rate for optimization
+    weight_decay=1e-4,  # Weight decay for optimization
+    print_step=50,  # Print optimization status every 50 steps
+    loss_weight=1.0  # Loss weight during optimization
+)
 
+# Instantiate the finetuning model (BootstrapFinetune)
+finetune_student = BootstrapFinetune()
 
-# Step 2: Initialize tokenizer and model
-def initialize_roberta_model():
-    model_name = "roberta-large"
-    tokenizer = RobertaTokenizer.from_pretrained(model_name)
-    model = RobertaForSequenceClassification.from_pretrained(model_name)
-    return model, tokenizer
+# Compile the student model with few-shot optimization via PEZ
+teacher_model = "roberta-large"  # Using RoBERTa-large for both prompt optimization and fine-tuning
+compiled_program = fewshot_optimizer.compile(
+    student=finetune_student,
+    teacher=teacher_model,
+    trainset=trainset
+)
 
-
-# Step 3: Define a metric to evaluate during few-shot and fine-tuning
-def compute_accuracy(preds, labels):
-    correct = (preds == labels).sum().item()
-    total = len(labels)
-    return correct / total
-
-
-# Step 4: Compile and optimize prompts with PEZFewshot
-def run_fewshot_training(model, tokenizer, dataset, trainset_size=16):
-    # Get a few-shot training set
-    trainset = dataset['train'].select(range(trainset_size))
-    valset = dataset['validation']
-
-    # Define the metric function
-    metric = lambda example, pred, trace: compute_accuracy(pred.argmax(dim=1).cpu(), example['label'])
-
-    # Initialize the PEZFewshot teleprompter
-    fewshot_optimizer = PEZFewshot(
-        metric=metric,
-        prompt_len=5,
-        _iter=500,
-        lr=5e-5,
-        weight_decay=1e-4,
-        print_step=50,
-    )
-
-    # Compile the model and optimize the prompt using few-shot examples
-    compiled_model = fewshot_optimizer.compile(model, trainset=trainset)
-
-    return compiled_model, valset
-
-
-# Step 5: Fine-tune the model with PEZFinetune
-def run_finetuning(compiled_model, dataset):
-    trainset = dataset['train']
-    valset = dataset['validation']
-
-    # Define the metric function
-    metric = lambda example, pred, trace: compute_accuracy(pred.argmax(dim=1).cpu(), example['label'])
-
-    # Initialize the PEZFinetune teleprompter
-    finetune_optimizer = PEZFinetune(metric=metric)
-
-    # Compile and fine-tune the model with optimized prompts
-    finetuned_model = finetune_optimizer.compile(compiled_model, trainset=trainset, valset=valset,
-                                                 target="roberta-large")
-
-    return finetuned_model, valset
-
-
-# Step 6: Evaluate the fine-tuned model
-def evaluate_model(model, tokenizer, dataset, valset):
-    model.eval()
-
-    # Tokenize the validation set
-    val_encodings = tokenizer(valset['sentence'], truncation=True, padding=True, return_tensors='pt')
-
-    # Run predictions
-    with torch.no_grad():
-        inputs = {key: val_encodings[key].to(model.device) for key in val_encodings}
-        outputs = model(**inputs)
-        preds = outputs.logits.argmax(dim=1).cpu()
-
-    # Calculate accuracy
-    accuracy = compute_accuracy(preds, valset['label'])
-    print(f"Validation Accuracy: {accuracy:.4f}")
-
-
-# Step 7: Main script to run the experiment
-def main():
-    # Load dataset and model
-    dataset, metric = load_sst2_dataset()
-    model, tokenizer = initialize_roberta_model()
-
-    # Run PEZFewshot to generate optimized prompts
-    compiled_model, valset = run_fewshot_training(model, tokenizer, dataset)
-
-    # Fine-tune the model using the optimized prompts
-    finetuned_model, valset = run_finetuning(compiled_model, dataset)
-
-    # Evaluate the fine-tuned model
-    evaluate_model(finetuned_model, tokenizer, dataset, valset)
-
-
-if __name__ == "__main__":
-    main()
+# Now `compiled_program` contains the student model with optimized few-shot prompts
+print("Few-shot optimization and finetuning completed.")
+import ipdb
+ipdb.set_trace()

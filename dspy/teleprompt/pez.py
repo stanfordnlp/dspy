@@ -1,110 +1,188 @@
-from typing import Dict, Optional, List
-from dspy.utils.pez_utils import *
-from dspy.teleprompt import LabeledFewShot
-from datasets import load_dataset
+import random
+from typing import List, Optional, Dict, Tuple
+import torch
+from datasets import Dataset
+
+from dspy.evaluate.evaluate import Evaluate
+from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.bootstrap import BootstrapFewShot
+from dspy.teleprompt.vanilla import LabeledFewShot
+from dspy.utils.pez_utils import optimize_prompt
 
 
-class PEZFewshot(BootstrapFewShot):
+class BootstrapFewShotWithPEZ(Teleprompter):
     def __init__(
-        self,
-        metric=None,
-        metric_threshold=None,
-        teacher_settings: Optional[Dict] = None,
-        prompt_len=5,
-        _iter=500,
-        lr=5e-5,
-        weight_decay=1e-4,
-        print_step=50,
-        loss_weight=1.0,
-        glue_task: str = "sst2",
-        num_prompts: int = 5
+            self,
+            metric,
+            teacher_settings: Optional[Dict] = None,
+            max_bootstrapped_demos: int = 4,
+            max_labeled_demos: int = 16,
+            max_rounds: int = 1,
+            num_candidate_programs: int = 16,
+            num_threads: int = 6,
+            max_errors: int = 10,
+            stop_at_score: Optional[float] = None,
+            metric_threshold: Optional[float] = None,
+            prompt_len: int = 5,
+            opt_iters: int = 500,
+            lr: float = 5e-5,
+            weight_decay: float = 1e-4,
+            print_step: int = 50,
+            loss_weight: float = 1.0,
     ):
-        super().__init__(
-            metric=metric,
-            metric_threshold=metric_threshold,
-            teacher_settings=teacher_settings
-        )
+        self.metric = metric
+        self.teacher_settings = teacher_settings or {}
+        self.max_rounds = max_rounds
+        self.num_threads = num_threads
+        self.stop_at_score = stop_at_score
+        self.metric_threshold = metric_threshold
+        self.max_bootstrapped_demos = max_bootstrapped_demos
+        self.max_labeled_demos = max_labeled_demos
+        self.max_errors = max_errors
+        self.num_candidate_programs = num_candidate_programs
 
-        # PEZ-specific attributes
+        # PEZ-specific parameters for prompt optimization
         self.prompt_len = prompt_len
-        self.iter = _iter
+        self.opt_iters = opt_iters
         self.lr = lr
         self.weight_decay = weight_decay
         self.print_step = print_step
         self.loss_weight = loss_weight
-        self.glue_task = glue_task
-        self.num_prompts = num_prompts
 
-        self.trainset = None
-        self.student = None
-        self.teacher = None
+        print(f"Will attempt to bootstrap {self.num_candidate_programs} candidate sets.")
 
-    def    compile(self, student, *, teacher=None, trainset):
+    def compile(
+            self,
+            student,
+            *,
+            teacher=None,
+            trainset: Dataset,
+            valset: Optional[Dataset] = None,
+            restrict: Optional[List[int]] = None,
+            labeled_sample: bool = True
+    ) -> Teleprompter:
+        """
+        Compile the student program by optimizing bootstrapped few-shot examples using PEZ.
+
+        Parameters:
+        - student: The student model to be trained.
+        - teacher: The teacher model providing the few-shot examples.
+        - trainset: The training set to bootstrap few-shot examples from.
+        - valset: Optional validation set.
+        - restrict: Optionally restrict the number of programs to run.
+        - labeled_sample: Whether to use labeled sampling for few-shot examples.
+
+        Returns:
+        - The fine-tuned student program with optimized prompts.
+        """
         self.trainset = trainset
+        self.valset = valset or trainset
 
-        self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher else student.reset_copy()
+        scores = []
+        all_subscores = []
+        score_data = []
 
-        assert not getattr(self.student, "_compiled", False), "Student must be uncompiled."
+        for seed in range(-3, self.num_candidate_programs):
+            if restrict and seed not in restrict:
+                continue
 
-        if self.max_labeled_demos:
-            labeled_fewshot = LabeledFewShot(k=self.max_labeled_demos)
-            self.teacher = labeled_fewshot.compile(self.teacher.reset_copy(), trainset=self.trainset)
+            trainset_copy = list(self.trainset)
 
-        self._prepare_predictor_mappings()
+            if seed == -3:
+                # zero-shot
+                program = student.reset_copy()
 
-        # Optimize prompts using PEZ
+            elif seed == -2:
+                # labels only
+                teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+                program = teleprompter.compile(student, trainset=trainset_copy, sample=labeled_sample)
+
+            else:
+                random.Random(seed).shuffle(trainset_copy)
+                size = random.Random(seed).randint(1, self.max_bootstrapped_demos)
+
+                # Bootstrap few-shot examples using the teacher
+                optimizer = BootstrapFewShot(
+                    metric=self.metric,
+                    metric_threshold=self.metric_threshold,
+                    max_bootstrapped_demos=size,
+                    max_labeled_demos=self.max_labeled_demos,
+                    teacher_settings=self.teacher_settings,
+                    max_rounds=self.max_rounds,
+                )
+                program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
+
+                # Optimize bootstrapped examples using PEZ
+                bootstrapped_prompts = self._get_bootstrapped_prompts(program)
+                program = self._optimize_with_pez(program, bootstrapped_prompts)
+
+            # Evaluate the program with the optimized prompts
+            evaluate = Evaluate(
+                devset=self.valset,
+                metric=self.metric,
+                num_threads=self.num_threads,
+                max_errors=self.max_errors,
+                display_table=False,
+                display_progress=True,
+            )
+
+            score, subscores = evaluate(program, return_all_scores=True)
+            all_subscores.append(subscores)
+
+            # Update the best program based on scores
+            if len(scores) == 0 or score > max(scores):
+                print(f"New best score: {score} for seed {seed}")
+                best_program = program
+
+            scores.append(score)
+            score_data.append((score, subscores, seed, program))
+
+            if self.stop_at_score and score >= self.stop_at_score:
+                print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
+                break
+
+        # Attach candidate programs to the best program
+        best_program.candidate_programs = sorted(score_data, key=lambda x: x[0], reverse=True)
+        return best_program
+
+    def _get_bootstrapped_prompts(self, program) -> List[str]:
+        """
+        Extract the bootstrapped prompts from the program.
+
+        Returns:
+        - List of bootstrapped prompts.
+        """
+        # This is a placeholder method. Adjust this to fetch bootstrapped prompts.
+        return ["Bootstrapped prompt 1", "Bootstrapped prompt 2"]
+
+    def _optimize_with_pez(self, program, bootstrapped_prompts: List[str]) -> Teleprompter:
+        """
+        Use PEZ to optimize the bootstrapped prompts.
+
+        Parameters:
+        - program: The student program.
+        - bootstrapped_prompts: List of prompts to be optimized.
+
+        Returns:
+        - The program with optimized prompts.
+        """
         prompt_args = {
             "prompt_len": self.prompt_len,
-            "iter": self.iter,
+            "iter": self.opt_iters,
             "lr": self.lr,
             "weight_decay": self.weight_decay,
             "print_step": self.print_step,
             "loss_weight": self.loss_weight,
-            "prompt_bs": 1  # Batch size of prompts to optimize
+            "prompt_bs": 1  # Batch size for optimizing prompts
         }
 
-        # Use the existing labeled prompts from a GLUE dataset
-        self.student._optimized_prompt = optimize_prompt(
-            model=self.student,
-            preprocess=None,  # assuming text-based, not images
+        # Optimize the bootstrapped prompts using PEZ
+        optimized_prompts = optimize_prompt(
+            model=program,
+            preprocess=None,
             args=prompt_args,
             device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-            target_prompts=self._get_few_shot_prompts(),
+            target_prompts=bootstrapped_prompts
         )
 
-        self.student._compiled = True
-        return self.student
-
-    def _get_few_shot_prompts(self) -> List[str]:
-        """
-        Fetch few-shot examples from a GLUE task.
-
-        Returns
-        -------
-        List[str]
-            A list of formatted few-shot prompts based on the chosen GLUE task.
-        """
-        dataset = load_dataset("glue", self.glue_task)
-        prompts = []
-
-        # Extract examples from the training set (or validation if needed)
-        for i in range(self.num_prompts):
-            example = dataset["train"][i]
-
-            # Format the prompts depending on the GLUE task
-            if self.glue_task == "sst2":
-                prompts.append(example["sentence"])  # SST-2 has single sentence
-            elif self.glue_task in ["mrpc", "qqp"]:
-                # MRPC and QQP are sentence-pair tasks
-                prompts.append(f"Sentence 1: {example['sentence1']}, Sentence 2: {example['sentence2']}")
-            elif self.glue_task == "cola":
-                # CoLA task has a single sentence and a grammaticality judgment label
-                prompts.append(f"Sentence: {example['sentence']}, Label: {example['label']}")
-            # TODO: Add additional GLUE task handling as needed
-            else:
-                # For tasks with unknown structure, just use the raw text
-                prompts.append(str(example))
-
-        return prompts
+        return optimized_prompts  # Return the program with optimized prompts
