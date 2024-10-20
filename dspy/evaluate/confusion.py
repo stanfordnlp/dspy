@@ -35,7 +35,8 @@ class Confusion:
         self.return_matrix = return_matrix
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-        self.freqs = {k: 1 / v for k, v in Counter([arg["response"] for arg in devset]).items()}
+        self.freqs = Counter([example["response"] for example in devset])
+        self.inv_freqs = {k: 1 / v for k, v in self.freqs.items()}
 
     def extract_answer_from_prediction(self, prediction):
         response = prediction["response"]
@@ -55,8 +56,8 @@ class Confusion:
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
             for answer in answers[label]:
-                if answer in self.freqs:
-                    confusion_matrix[idx][labels.index(answer)] += self.freqs[label]
+                if answer in self.inv_freqs:
+                    confusion_matrix[idx][labels.index(answer)] += self.inv_freqs[label]
 
         return confusion_matrix
 
@@ -76,9 +77,13 @@ class Confusion:
             out = 0.0
         else:
             out = cov_ytyp / np.sqrt(cov_ytyt * cov_ypyp)
-            
+
         if return_cm:
-            return out, C
+            cm = pd.DataFrame(C,
+                              index=pd.Index(self.labels, name="Actual"),
+                              columns=pd.Index(self.labels, name="Predicted"))
+            cm["support"] = self.freqs
+            return out, cm
         return out
 
     def _execute_single_thread(self, wrapped_program, devset, display_progress, preds):
@@ -380,9 +385,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             print(f"Best score so far: {max(scores)}")
 
             score_data.append((score,
-                               pd.DataFrame(cm,
-                                            index=pd.Index(self.labels, name="Predicted"),
-                                            columns=pd.Index(self.labels, name="Actual")),
+                               cm,
                                seed,
                                program))
 
