@@ -1,4 +1,4 @@
-from typing import Annotated, Type
+from typing import Annotated, Type, Union
 from typing import get_origin, get_args
 
 from pydantic import BaseModel
@@ -34,7 +34,7 @@ class TypedPredictorSignature:
 
             is_default_value_specified, is_marked_as_optional, inner_field = cls._process_field(field)
             if is_marked_as_optional:
-                if not is_default_value_specified or field.default is None:
+                if field.default is None or field.default is PydanticUndefined:
                     field.default = 'null'
                 field.description = inner_field.description
                 field.examples = inner_field.examples
@@ -52,7 +52,7 @@ class TypedPredictorSignature:
 
             is_default_value_specified, is_marked_as_optional, inner_field = cls._process_field(field)
             if is_marked_as_optional:
-                if not is_default_value_specified or field.default is None:
+                if field.default is None or field.default is PydanticUndefined:
                     field.default = 'null'
                 field.description = inner_field.description
                 field.examples = inner_field.examples
@@ -106,10 +106,17 @@ class TypedPredictorSignature:
         inner_type = annotation
         field_info = None
 
-        # Check if it's Optional
-        if hasattr(annotation, '_name') and annotation._name == 'Optional':
-            is_optional = True
-            inner_type = get_args(annotation)[0]
+        # If field is specfied as Optional[Annotated[...]]
+        if get_origin(annotation) is Union:
+            args = get_args(annotation)
+            if type(None) in args:
+                is_optional = True
+                inner_type = args[0] if args[0] is not type(None) else args[1]
+        # Not sure why I added this, perhaps for some aother way of specifying optional fields?
+        # elif hasattr(annotation, '_name') and annotation._name == 'Optional':
+        #     is_optional = True
+        #     inner_type = get_args(annotation)[0]
+
 
         # Check if it's Annotated
         if get_origin(inner_type) is Annotated:

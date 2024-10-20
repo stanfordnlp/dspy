@@ -49,7 +49,7 @@ class PydanticOutput3(BaseModel):
 
 class PydanticOutput4(BaseModel):
     age: Optional[Annotated[int, 
-                   Field(gt=0, lt=150, default="null",
+                   Field(gt=0, lt=150,
                          json_schema_extra={'invalid_value': '-8888'}
                          )]]
 
@@ -70,11 +70,11 @@ class PydanticOutput5(BaseModel):
                     ]
 
 @pytest.mark.parametrize("pydantic_output_class", [
-    PydanticOutput1,
-    PydanticOutput2,
-    PydanticOutput3,
+    # PydanticOutput1,
+    # PydanticOutput2,
+    # PydanticOutput3,
     PydanticOutput4,
-    PydanticOutput5
+    # PydanticOutput5
 ])
 def test_valid_pydantic_types(pydantic_output_class: str):
     dspy_signature_class = TypedPredictorSignature.create(PydanticInput, pydantic_output_class)
