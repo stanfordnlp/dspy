@@ -1,15 +1,25 @@
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import functools
 import os
-import uuid
-from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+import ujson
+import uuid
+
+from dspy.utils.logging import logger
+from dspy.clients.finetune import FinetuneJob, TrainingMethod
+from dspy.clients.lm_finetune_utils import (
+    get_provider_finetune_job_class,
+    execute_finetune_job,
+)
 
 import litellm
-import ujson
 from litellm.caching import Cache
 
-disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
+
+DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
 
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
@@ -17,13 +27,26 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 
 class LM:
-    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    def __init__(
+            self, 
+            model,
+            model_type='chat', 
+            temperature=0.0,
+            max_tokens=1000,
+            cache=True,
+            launch_kwargs=None,
+            **kwargs
+        ):
+        # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
+        # TODO: Arbitrary model strings could include the substring "o1-". We
+        # should find a more robust way to check for the "o1-" family models.
         if "o1-" in model:
             assert (
                 max_tokens >= 5000 and temperature == 1.0
@@ -59,9 +82,71 @@ class LM:
         self.history.append(entry)
         
         return outputs
-
+    
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
+
+    def launch(self):
+        """Send a request to the provider to launch the model, if needed."""
+        msg = f"`launch()` is called for the auto-launched model {self.model}"
+        msg += " -- no action is taken!"
+        logger.info(msg)
+
+    def kill(self):
+        """Send a request to the provider to kill the model, if needed."""
+        msg = f"`kill()` is called for the auto-launched model {self.model}"
+        msg += " -- no action is taken!"
+        logger.info(msg)
+
+    def finetune(
+            self,
+            train_data: List[Dict[str, Any]],
+            train_kwargs: Optional[Dict[str, Any]]=None,
+            train_method: TrainingMethod = TrainingMethod.SFT,
+            provider: str = "openai",
+            cache_finetune: bool = True,
+        ) -> FinetuneJob:
+        """Start model fine-tuning, if supported."""
+        from dspy import settings as settings
+        err = "Fine-tuning is an experimental feature."
+        err += " Set `dspy.settings.experimental` to `True` to use it."
+        assert settings.experimental, err
+
+        FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
+        finetune_job = FinetuneJobClass(
+            model=self.model,
+            train_data=train_data,
+            train_kwargs=train_kwargs,
+            train_method=train_method,
+            provider=provider
+        )
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(
+            execute_finetune_job,
+            finetune_job,
+            lm=self,
+            cache_finetune=cache_finetune
+        )
+        executor.shutdown(wait=False)
+
+        return finetune_job
+    
+    def copy(self, **kwargs):
+        """Returns a copy of the language model with possibly updated parameters."""
+
+        import copy
+        new_instance = copy.deepcopy(self)
+        new_instance.history = []
+
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(new_instance, key, value)
+            if (key in self.kwargs) or (not hasattr(self, key)):
+                new_instance.kwargs[key] = value
+
+        return new_instance
+
 
 
 @functools.lru_cache(maxsize=None)
@@ -83,6 +168,7 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
     kwargs = ujson.loads(request)
 
     # Extract the provider and model from the model string.
+    # TODO: Not all the models are in the format of "provider/model"
     model = kwargs.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 

@@ -84,7 +84,7 @@ class Predict(Module, Parameter):
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
-            self.extended_signature.load_state(state["extended_signature"])
+            self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
     def _load_state_legacy(self, state):
         """Legacy state loading for backwards compatibility.
@@ -113,7 +113,6 @@ class Predict(Module, Parameter):
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
-
 
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
@@ -148,15 +147,18 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
+
         if isinstance(lm, dspy.LM):
             completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
-            warn_once("\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
-                      f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
-                      " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
-                      " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
-                      " \t\tLearn more about the changes and how to migrate at\n"
-                      " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb")
+            warn_once(
+                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
+                " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
+                " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
+                " \t\tLearn more about the changes and how to migrate at\n"
+                " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb"
+            )
 
             if dsp.settings.experimental:
                 completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
@@ -179,7 +181,6 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
-
 
 
 def old_generate(demos, signature, kwargs, config, lm, stage):
@@ -208,7 +209,7 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
 
 
 def new_generate(lm, signature, example, max_depth=6, **kwargs):
-    kwargs['stop'] = tuple(kwargs.get('stop', [])) or ('\n---', )
+    kwargs["stop"] = tuple(kwargs.get("stop", [])) or ("\n---",)
 
     # Generate and extract the fields.
     template = signature_to_template(signature, adapter=dsp.ExperimentalAdapter)
@@ -223,22 +224,28 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     for field_idx, key in enumerate(field_names):
         completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
         completions = completions_ or completions
-        if len(completions_) == 0: break
+        if len(completions_) == 0:
+            break
 
     # If none of the completions is completed (i.e., none has the final field set).
     if len(completions_) == 0:
         # Pick the first completion that has gone farthest.
         completion = completions[0]
 
-        for field_idx_ in range(field_idx+1, len(field_names)):
-            if field_names[field_idx_] in completion: del completion[field_names[field_idx_]]
+        for field_idx_ in range(field_idx + 1, len(field_names)):
+            if field_names[field_idx_] in completion:
+                del completion[field_names[field_idx_]]
 
         # Recurse with greedy decoding.
-        new_kwargs = {**kwargs, "n": 1, "temperature": 0.0,}
+        new_kwargs = {
+            **kwargs,
+            "n": 1,
+            "temperature": 0.0,
+        }
 
         assert max_depth > 0
-        return new_generate(lm, signature, completion, max_depth=max_depth-1, **new_kwargs)
-    
+        return new_generate(lm, signature, completion, max_depth=max_depth - 1, **new_kwargs)
+
     # Keep only output fields.
     completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
 
@@ -247,10 +254,12 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
 
 def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     import dspy
+
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-    return adapter(lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values)
-    
+    return adapter(
+        lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
+    )
 
 
 # TODO: get some defaults during init from the context window?

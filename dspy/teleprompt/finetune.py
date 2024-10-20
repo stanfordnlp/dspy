@@ -24,9 +24,6 @@ if os.environ.get("DSP_NOTEBOOK_CACHEDIR"):
 else:
     training_data_directory = "local_cache/compiler"
 
-if not os.path.exists(training_data_directory):
-    os.makedirs(training_data_directory)
-
 
 """
 TODO: Reduce and document the dependencies.
@@ -60,6 +57,9 @@ class BootstrapFinetune(Teleprompter):
             max_labeled_demos=0,  # FIXME: TODO: Make this zero? or param, with default as 16 or 0?
             teacher_settings=teacher_settings,
         )
+
+        if not os.path.exists(training_data_directory):
+            os.makedirs(training_data_directory)
 
     def compile(
         self,

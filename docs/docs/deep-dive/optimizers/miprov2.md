@@ -1,3 +1,7 @@
+---
+sidebar_position: 6
+---
+
 # `MIPROv2` Optimizer
 
 ## Table of Contents

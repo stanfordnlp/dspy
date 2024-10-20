@@ -55,17 +55,17 @@ const config: Config = {
   // Plugins configuration
   plugins: [
     // Additional plugin for API documentation
-    [
-      '@docusaurus/plugin-content-docs',
-      {
-        id: 'api', // Unique identifier for the API docs
-        path: './api', // Path to the API documentation markdown files
-        routeBasePath: '/api/', // URL route for the API documentation section
-        sidebarPath: require.resolve('./sidebars.ts'), // Path to the API sidebar configuration
-        // URL for the "edit this page" feature for the API docs
-        // editUrl: 'https://github.com/stanfordnlp/dspy/tree/main/api',
-      },
-    ],
+    //[
+    //  '@docusaurus/plugin-content-docs',
+    //  {
+    //    id: 'api', // Unique identifier for the API docs
+    //    path: './api', // Path to the API documentation markdown files
+    //    routeBasePath: '/api/', // URL route for the API documentation section
+    //    sidebarPath: require.resolve('./sidebars.ts'), // Path to the API sidebar configuration
+    //    // URL for the "edit this page" feature for the API docs
+    //    // editUrl: 'https://github.com/stanfordnlp/dspy/tree/main/api',
+    //  },
+    //],
   ],
   // Theme configuration
   themeConfig: {
@@ -95,7 +95,7 @@ const config: Config = {
           "aria-label": "GitHub repository",
         },
         {
-          href: 'https://discord.gg/EBr7T9sH',
+          href: 'https://discord.gg/XCGy2WDCQB',
           position: 'right',
           className: 'header-discord-link',
           'aria-label': 'Discord server',
@@ -136,7 +136,7 @@ const config: Config = {
             },
             {
               label: 'Discord',
-              href: 'https://discord.gg/VzS6RHHK6F',
+              href: 'https://discord.gg/XCGy2WDCQB',
             },
           ],
         },
@@ -150,15 +150,6 @@ const config: Config = {
       darkTheme: prismThemes.dracula, // Dark theme for code blocks
     },
   },
-  themes: [
-    [
-      require.resolve("@easyops-cn/docusaurus-search-local"),
-      /** @type {import("@easyops-cn/docusaurus-search-local").PluginOptions} */
-      ({
-        hashed: true,
-      }),
-    ],
-  ],
   scripts: [
     {
       id: "runllm-widget-script",
