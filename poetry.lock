@@ -1202,6 +1202,19 @@ files = [
 tests = ["asttokens (>=2.1.0)", "coverage", "coverage-enable-subprocess", "ipython", "littleutils", "pytest", "rich"]
 
 [[package]]
+name = "falkordb"
+version = "1.0.9"
+description = "Python client for interacting with FalkorDB database"
+optional = false
+python-versions = "<4.0,>=3.8"
+files = [
+    {file = "falkordb-1.0.9.tar.gz", hash = "sha256:177008e63c7e4d9ebbdfeb8cad24b0e49175bb0f6e96cac9b4ffb641c0eff0f1"},
+]
+
+[package.dependencies]
+redis = ">=5.0.1,<6.0.0"
+
+[[package]]
 name = "fastapi"
 version = "0.115.0"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
@@ -7637,4 +7650,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "21f766292b25fd511d9955521784585546af5feb9b075bcd2a29223b019e4ec1"
+content-hash = "7fe655d9fef7cb91e261f27df95cbcb515dd50b6613088d74281dddd9ae43d60"

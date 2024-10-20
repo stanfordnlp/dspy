@@ -62,7 +62,7 @@ ex:
 
 ```python
 Prediction(
-    passages=['Passage 1 Lorem Ipsum awesome', 'Passage 2 Lorem Ipsum Youppidoo', 'Passage 3 Lorem Ipsum Yassssss']
+    passages=['Passage 1 Lorem Ipsum awesom', 'Passage 2 Lorem Ipsum Youppidoo', 'Passage 3 Lorem Ipsum Yassssss']
 )
 ```
 

@@ -27,7 +27,6 @@ import redis.exceptions
 
 def generate_random_string(length: int) -> str:
     characters = string.ascii_letters
-    # Randomly choose 'length' characters from the pool of possible characters
     random_string = "".join(random.choice(characters) for _ in range(length))
     return random_string
 
