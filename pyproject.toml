@@ -29,12 +29,8 @@ classifiers = [
 dependencies = [
     "torch",
     "numpy",
-    "Pillow", # for PIL
     "sentence-transformers",
     "open_clip_torch",
-    "requests",
-    "ujson",
-    # other existing dependencies
     "backoff~=2.2",
     "joblib~=1.3",
     "openai",

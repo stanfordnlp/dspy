@@ -1,8 +1,6 @@
 import random
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
 import torch
-from datasets import Dataset
-
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.bootstrap import BootstrapFewShot
@@ -56,10 +54,10 @@ class BootstrapFewShotWithPEZ(Teleprompter):
             student,
             *,
             teacher=None,
-            trainset: Dataset,
-            valset: Optional[Dataset] = None,
-            restrict: Optional[List[int]] = None,
-            labeled_sample: bool = True
+            trainset,
+            valset=None,
+            restrict=None,
+            labeled_sample=True
     ) -> Teleprompter:
         """
         Compile the student program by optimizing bootstrapped few-shot examples using PEZ.
@@ -152,8 +150,15 @@ class BootstrapFewShotWithPEZ(Teleprompter):
         Returns:
         - List of bootstrapped prompts.
         """
-        # This is a placeholder method. Adjust this to fetch bootstrapped prompts.
-        return ["Bootstrapped prompt 1", "Bootstrapped prompt 2"]
+        # Assuming `program` has an attribute `demos` containing the bootstrapped examples.
+        bootstrapped_prompts = []
+
+        for name, predictor in program.named_predictors():
+            for demo in predictor.demos:
+                prompt = demo['prompt']  # Assuming 'prompt' key exists in demo dictionary
+                bootstrapped_prompts.append(prompt)
+
+        return bootstrapped_prompts
 
     def _optimize_with_pez(self, program, bootstrapped_prompts: List[str]) -> Teleprompter:
         """

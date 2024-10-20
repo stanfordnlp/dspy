@@ -1,26 +1,11 @@
-import random
-import numpy as np
-import requests
-from io import BytesIO
-from PIL import Image
 from statistics import mean
 import copy
-import json
-from typing import Any, Mapping
-
-import open_clip
 
 import torch
 
 from sentence_transformers.util import (semantic_search,
                                         dot_score,
                                         normalize_embeddings)
-
-
-def read_json(filename: str) -> Mapping[str, Any]:
-    """Returns a Python dict representation of JSON object at input file."""
-    with open(filename) as fp:
-        return json.load(fp)
 
 
 def nn_project(curr_embeds, embedding_layer, print_hits=False):
@@ -55,15 +40,6 @@ def nn_project(curr_embeds, embedding_layer, print_hits=False):
     return projected_embeds, nn_indices
 
 
-def set_random_seed(seed=0):
-    torch.manual_seed(seed + 0)
-    torch.cuda.manual_seed(seed + 1)
-    torch.cuda.manual_seed_all(seed + 2)
-    np.random.seed(seed + 3)
-    torch.cuda.manual_seed_all(seed + 4)
-    random.seed(seed + 5)
-
-
 def decode_ids(input_ids, tokenizer, by_token=False):
     input_ids = input_ids.detach().cpu().numpy()
 
@@ -81,14 +57,6 @@ def decode_ids(input_ids, tokenizer, by_token=False):
             texts.append(tokenizer.decode(input_ids_i))
 
     return texts
-
-
-def download_image(url):
-    try:
-        response = requests.get(url)
-    except:
-        return None
-    return Image.open(BytesIO(response.content)).convert("RGB")
 
 
 def get_target_feature(model, preprocess, tokenizer_funct, device, target_images=None, target_prompts=None):
@@ -231,20 +199,3 @@ def optimize_prompt(model, preprocess, args, device, target_images=None, target_
     learned_prompt = optimize_prompt_loop(model, tokenizer, token_embedding, all_target_features, args, device)
 
     return learned_prompt
-
-
-def measure_similarity(orig_images, images, ref_model, ref_clip_preprocess, device):
-    with torch.no_grad():
-        ori_batch = [ref_clip_preprocess(i).unsqueeze(0) for i in orig_images]
-        ori_batch = torch.concatenate(ori_batch).to(device)
-
-        gen_batch = [ref_clip_preprocess(i).unsqueeze(0) for i in images]
-        gen_batch = torch.concatenate(gen_batch).to(device)
-
-        ori_feat = ref_model.encode_image(ori_batch)
-        gen_feat = ref_model.encode_image(gen_batch)
-
-        ori_feat = ori_feat / ori_feat.norm(dim=1, keepdim=True)
-        gen_feat = gen_feat / gen_feat.norm(dim=1, keepdim=True)
-
-        return (ori_feat @ gen_feat.t()).mean().item()
