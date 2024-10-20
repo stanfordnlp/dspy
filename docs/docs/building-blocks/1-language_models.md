@@ -110,7 +110,7 @@ For any LM, you can configure any of the following attributes at initialization 
 gpt_4o_mini = dspy.LM('openai/gpt-4o-mini', temperature=0.9, max_tokens=3000, stop=None, cache=False)
 ```
 
-By default LMs in DSPy are cached. If you repeat the same call, you will get the same outputs. But you can turn of caching by setting `cache=False` while declaring `dspy.LM` object.
+By default LMs in DSPy are cached. If you repeat the same call, you will get the same outputs. But you can turn off caching by setting `cache=False` while declaring `dspy.LM` object.
 
 ### Using locally hosted LMs
 
