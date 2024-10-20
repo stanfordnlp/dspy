@@ -1,5 +1,6 @@
 import inspect
 import json
+import enum
 import typing
 from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
@@ -228,6 +229,14 @@ class TypedPredictor(dspy.Module):
                         format=lambda x: x if isinstance(x, str) else str(x),
                         parser=type_,
                     )
+                elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
+                        signature = signature.with_updated_fields(
+                            name,
+                            desc=field.json_schema_extra.get("desc", "") 
+                            + f" (Respond with one of: {', '.join(type_.__members__)})",
+                            format=lambda x: x if isinstance(x, str) else str(x),
+                            parser=lambda x: type_(x.strip()),
+                        )
                 else:
                     # Anything else we wrap in a pydantic object
                     if (
