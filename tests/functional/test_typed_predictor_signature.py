@@ -20,7 +20,9 @@ class PydanticOutput1(BaseModel):
     name: Annotated[str,
                     Field(default='NOT_FOUND', max_length=15,
                           title='Name', description='The name of the person',
-                          examples=['John Doe', 'Jane Doe'], invalid_value='INVALID_NAME')
+                          examples=['John Doe', 'Jane Doe'],
+                          json_schema_extra={'invalid_value': 'INVALID_NAME'}
+                         )
                    ]
 
 class PydanticOutput2(BaseModel):
@@ -33,15 +35,23 @@ class PydanticOutput2(BaseModel):
             return -8888
 
     age: Annotated[int, 
-                   Field(gt=0, lt=150, default=-999, invalid_value=-8888)]
+                   Field(gt=0, lt=150, default=-999, 
+                         json_schema_extra={'invalid_value': '-8888'}
+                        )
+                  ]
 
 class PydanticOutput3(BaseModel):
     age: Annotated[int, 
-                   Field(gt=0, lt=150, invalid_value=-8888)] = -999
+                   Field(gt=0, lt=150,
+                         json_schema_extra={'invalid_value': '-8888'}
+                         )
+                  ] = -999
 
 class PydanticOutput4(BaseModel):
     age: Optional[Annotated[int, 
-                   Field(gt=0, lt=150, invalid_value=-8888)]]
+                   Field(gt=0, lt=150, default="null",
+                         json_schema_extra={'invalid_value': '-8888'}
+                         )]]
 
 class PydanticOutput5(BaseModel):
     @field_validator("email", mode="wrap")
@@ -55,7 +65,8 @@ class PydanticOutput5(BaseModel):
     email: Annotated[str, 
                      Field(default='NOT_FOUND', 
                            pattern=r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$',
-                           invalid_value='INVALID_EMAIL')
+                           json_schema_extra={'invalid_value': 'INVALID_EMAIL'}
+                          )
                     ]
 
 @pytest.mark.parametrize("pydantic_output_class", [

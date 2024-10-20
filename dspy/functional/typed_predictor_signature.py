@@ -97,8 +97,6 @@ class TypedPredictorSignature:
         if field_info:
             field_info.annotation = inner_type
             return is_default_value_specified, is_marked_as_optional, field_info
-            # if field_info.json_schema_extra and 'not_found_value' in field_info.json_schema_extra:
-            #     field_info.default = field_info.json_schema_extra['not_found_value']
 
         return is_default_value_specified, is_marked_as_optional, field
 
