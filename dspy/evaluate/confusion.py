@@ -35,8 +35,7 @@ class Confusion:
         self.return_matrix = return_matrix
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-        self.freqs = Counter([example["response"] for example in devset])
-        self.inv_freqs = {k: 1 / v for k, v in self.freqs.items()}
+        self.inv_freqs = {k: 1 / v for k, v in Counter([example["response"] for example in devset]).items()}
 
     def extract_answer_from_prediction(self, prediction):
         response = prediction["response"]
@@ -82,7 +81,6 @@ class Confusion:
             cm = pd.DataFrame(C,
                               index=pd.Index(self.labels, name="Actual"),
                               columns=pd.Index(self.labels, name="Predicted"))
-            cm["support"] = self.freqs
             return out, cm
         return out
 
