@@ -284,7 +284,7 @@ def prepare_instructions(signature: SignatureMeta):
         elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
             desc= f"must be one of: {'; '.join(type_.__members__)}"
         elif hasattr(type_, '__origin__') and type_.__origin__ is Literal:
-            desc = f"must be one of: {'; '.join(type_.__args__)}"
+            desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
         else:
             desc = "must be pareseable according to the following JSON schema: "
             desc += json.dumps(pydantic.TypeAdapter(type_).json_schema())
