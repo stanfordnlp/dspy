@@ -45,10 +45,11 @@ class Confusion:
         return match.group(0) if match else None
 
     def construct_matrix(self, preds, devset):
-        # use answers from devset to get weights
-        weight = {k: 1 / v for k, v in Counter([self.extract(arg) for _, arg in devset]).items()}
-
         labels = self.labels
+
+        # use answers from devset to get weights
+        weight = {k: 1 / v for k, v in Counter([self.extract(arg) for _, arg in devset]).items()} \
+            if self.use_class_weight else {k: 1 for k in labels}
 
         # Initialize the confusion matrix
         confusion_matrix = np.zeros((len(labels), len(labels)), dtype=np.float64)
