@@ -97,6 +97,7 @@ theme:
     - content.tabs.link
     - content.code.annotation
     - content.code.copy
+    - navigation.footer
   language: en
   palette:
     - scheme: default
