@@ -227,21 +227,23 @@ class Confusion:
                 preds,
             )
 
-        dspy.logger.info(f"MCC: {self.get_matthews_corrcoef(preds):.6f}")
+        mcc, cm = self.get_matthews_corrcoef(preds, return_cm=True)
+
+        dspy.logger.info(f"MCC: {mcc:.6f}")
 
         predicted_devset = sorted(reordered_devset)
 
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction) for _, example, prediction in predicted_devset]
 
-        data = [merge_dicts(example, prediction) for _, example, prediction in predicted_devset]
-
-        result_df = pd.DataFrame(data)
-
-        # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
-        result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
-
         if display_table:
+            data = [merge_dicts(example, prediction) for _, example, prediction in predicted_devset]
+
+            result_df = pd.DataFrame(data)
+
+            # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
+            result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
+
             if isinstance(display_table, bool):
                 df_to_display = result_df.copy()
                 truncated_rows = 0
@@ -264,8 +266,6 @@ class Confusion:
                 </div>
                 """
                 display(HTML(message))
-
-        mcc, cm = self.get_matthews_corrcoef(preds, return_cm=True)
 
         if return_matrix and return_outputs:
             return mcc, results, cm
