@@ -220,20 +220,7 @@ def generate_config_files(train_path: str, **kwargs):
 
     ft_path = os.path.join("utils", "ft.py")
     assert kwargs["compute_config"], "Compute config is required to start the finetuning job"
-    compute_config_dict = kwargs.pop("compute_config", {
-        "name": "dspy-llmforge-fine-tuning-job",
-        "entrypoint": f"llmforge anyscale finetune {filename}",
-        "working_dir": ".",
-        "image_uri": "localhost:5555/anyscale/llm-forge:0.5.6",
-        "requirements": [
-            "wandb",
-        ],
-        "env_vars": {
-            "WANDB_API_KEY": os.environ.get("WANDB_API_KEY", ""),
-            "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
-            "HF_HOME": os.environ.get("HF_HOME", ""),
-        }
-    })
+    compute_config_dict = kwargs.pop("compute_config")
     compute_config_dict["env_vars"] = compute_config_dict.get("env_vars", {})
     for env_var in ["WANDB_API_KEY", "HF_TOKEN", "HF_HOME"]:
         if env_var not in compute_config_dict["env_vars"]:
