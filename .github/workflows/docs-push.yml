@@ -23,8 +23,8 @@ jobs:
       - name: Install dependencies and build
         run: |
           cd docs
-          npm install
-          npm run build
+          pip install -r requirements.txt
+          mkdocs build
 
   update-docs-subtree:
     if: github.event_name == 'push'

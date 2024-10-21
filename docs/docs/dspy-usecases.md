@@ -4,15 +4,6 @@ We often get questions like "How are people using DSPy in practice?", both in pr
 
 This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please make a PR.
 
-## Table of Contents
-
-1. [Company Use Cases](#a-few-company-use-cases)
-2. [Research Papers using DSPy](#a-few-papers-using-dspy)
-3. [Open-Source Software using DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
-4. [Providers with DSPy support](#a-few-providers-integrations-and-related-blog-releases)
-5. [Blogs & Videos on using DSPy](#a-few-blogs--videos-on-using-dspy)
-
-
 ## A Few Company Use Cases
 
 | **Name** | **Use Cases** |

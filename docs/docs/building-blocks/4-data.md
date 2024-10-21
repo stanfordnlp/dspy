@@ -149,4 +149,4 @@ testset = train_split[:75]
 trainset = train_split[75:]
 ```
 
-The way you load a huggingface dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets you can refer to the [cheatsheet snippets](/docs/cheatsheet.md#dspy-dataloaders) for loading from HF.
+The way you load a huggingface dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets you can refer to the [cheatsheet snippets](/cheatsheet/#dspy-dataloaders) for loading from HF.

@@ -10,13 +10,13 @@ Let's first make sure you can set up your language model. DSPy support clients f
 
 ## Using `dspy.LM`
 
-:::warning
-Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
+!!! warning
+    Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
 
-Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
+    Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
 
-Any [provider supported in LiteLLM](https://docs.litellm.ai/docs/providers) should work with `dspy.LM`.
-:::
+    Any [provider supported in LiteLLM](https://docs.litellm.ai/docs/providers) should work with `dspy.LM`.
+
 
 ### Setting up the LM client
 
@@ -80,9 +80,9 @@ The default LM above is GPT-3.5, `gpt3_turbo`. What if I want to run a piece of 
 
 Instead of changing the default LM, you can just change it inside a block of code.
 
-:::tip
-Using `dspy.configure` and `dspy.context` is thread-safe!
-:::
+!!! tip
+    Using `dspy.configure` and `dspy.context` is thread-safe!
+
 
 ```python
 # Run with the default LM configured above, i.e. GPT-3.5
@@ -148,9 +148,9 @@ Creating custom LM class is quite straightforward in DSPy. You can inherit from 
 * `__call__`: Call the LM with the given input prompt and return a list of string outputs.
 * `inspect_history`: The history of interactions with the LM. This is optional but is needed by some optimizers in DSPy.
 
-:::tip
-If there is not much overlap in features between your LM and LiteLLM it's better to not inherit and implement all methods from ground up.
-:::
+!!! tip
+    If there is not much overlap in features between your LM and LiteLLM it's better to not inherit and implement all methods from ground up.
+
 
 Let's create an LM for Gemini using `google-generativeai` package from scratch:
 
@@ -225,9 +225,9 @@ Prediction(
 
 ### Defining Custom Adapters
 
-:::warning
-Adapters are low level feature that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
-:::
+!!! warning
+    Adapters are low level feature that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
+
 
 Adapters are a powerful feature in DSPy, allowing you to define custom behavior for your Signatures. 
 
