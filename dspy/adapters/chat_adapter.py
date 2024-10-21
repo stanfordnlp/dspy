@@ -111,6 +111,16 @@ def format_input_list_field_value(value: List[Any]) -> str:
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
 
 
+def _serialize_for_json(value):
+    if isinstance(value, pydantic.BaseModel):
+        return value.model_dump()
+    elif isinstance(value, list):
+        return [_serialize_for_json(item) for item in value]
+    elif isinstance(value, dict):
+        return {key: _serialize_for_json(val) for key, val in value.items()}
+    else:
+        return value
+
 def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
@@ -122,22 +132,15 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Returns:
       The formatted value of the field, represented as a string.
     """
-    dspy_field_type: Literal["input", "output"] = get_dspy_field_type(field_info)
-    if isinstance(value, list):
-        if dspy_field_type == "input" and field_info.annotation is str:
-            # If the field is an input field or has no special type requirements, format it as
-            # numbered list so that it's organized in a way suitable for presenting long context
-            # to an LLM (i.e. not JSON)
-            return format_input_list_field_value(value)
-        else:
-            # If the field is an output field that has strict parsing requirements, format the
-            # value as a stringified JSON Array. This ensures that downstream routines can parse
-            # the field value correctly using methods from the `ujson` or `json` packages.
-            return json.dumps(value)
-    elif isinstance(value, pydantic.BaseModel):
-        return value.model_dump_json()
+
+    if isinstance(value, list) and field_info.annotation is str:
+        # If the field has no special type requirements, format it as a nice numbere list for the LM.
+        return format_input_list_field_value(value)
+    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
+        return json.dumps(_serialize_for_json(value))
     else:
         return str(value)
+
 
 
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
