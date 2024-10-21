@@ -1,0 +1,67 @@
+import unittest
+from unittest.mock import patch, MagicMock
+from visionopenai import GPT4Vision
+
+class TestGPT4Vision(unittest.TestCase):
+    def setUp(self):
+        self.visionopenai = GPT4Vision(api_key="test_api_key")
+
+    def test_encode_image_to_base64(self):
+        # Test case for encoding a valid image file
+        with patch("builtins.open", unittest.mock.mock_open(read_data=b"test_image_data")):
+            base64_data = self.visionopenai.encode_image_to_base64("test_image.png")
+            self.assertEqual(base64_data, "dGVzdF9pbWFnZV9kYXRh")
+
+        # Test case for unsupported image format
+        with self.assertRaises(ValueError):
+            self.visionopenai.encode_image_to_base64("test_image.unsupported")
+
+    def test_prepare_image_data(self):
+        # Test case for URL-based images
+        images = [{"url": "http://example.com/image.png", "width": 800, "height": 600}]
+        image_data = self.visionopenai.prepare_image_data(images)
+        expected_data = [{"type": "image_url", "image_url": {"url": "http://example.com/image.png", "detail": "auto", "width": 800, "height": 600}}]
+        self.assertEqual(image_data, expected_data)
+
+        # Test case for base64-encoded images
+        images = [{"data": "data:image/png;base64,dGVzdF9pbWFnZV9kYXRh", "width": 800, "height": 600}]
+        image_data = self.visionopenai.prepare_image_data(images, is_url=False)
+        expected_data = [{"type": "image_url", "image_url": {"url": "data:image/png;base64,dGVzdF9pbWFnZV9kYXRh", "detail": "auto", "width": 800, "height": 600}}]
+        self.assertEqual(image_data, expected_data)
+
+        # Test case for invalid image dimensions
+        images = [{"url": "http://example.com/image.png", "width": 3000, "height": 3000}]
+        with self.assertRaises(ValueError):
+            self.visionopenai.prepare_image_data(images)
+
+    def test_calculate_image_tokens(self):
+        # Test case for low detail images
+        images = [{"detail": "low", "width": 800, "height": 600}]
+        tokens = self.visionopenai.calculate_image_tokens(images)
+        self.assertEqual(tokens, 85)
+
+        # Test case for high detail images
+        images = [{"detail": "high", "width": 2000, "height": 1500}]
+        tokens = self.visionopenai.calculate_image_tokens(images)
+        self.assertEqual(tokens, 1105)
+
+    @patch("requests.post")
+    def test_basic_request(self, mock_post):
+        # Test case for successful API request
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"choices": [{"message": {"content": "Test response"}}]}
+        mock_post.return_value = mock_response
+
+        prompt = "Test prompt"
+        response = self.visionopenai.basic_request(prompt)
+        self.assertEqual(response, {"choices": [{"message": {"content": "Test response"}}]})
+
+        # Test case for API error
+        mock_response.status_code = 400
+        mock_response.text = "Bad request"
+        with self.assertRaises(ValueError):
+            self.visionopenai.basic_request(prompt)
+
+if __name__ == "__main__":
+    unittest.main()
