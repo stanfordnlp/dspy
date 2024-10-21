@@ -1,10 +1,10 @@
+import random
 import re
-from collections import Counter
+
 import numpy as np
+
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
-import random
-
 from dspy.teleprompt.teleprompt import Teleprompter
 
 
@@ -21,6 +21,7 @@ class Confusion:
             return_matrix=False,
             return_outputs=False,
             provide_traceback=False,
+            use_class_weight=True,
             **_kwargs,
     ):
         self.labels = labels
@@ -35,28 +36,29 @@ class Confusion:
         self.return_matrix = return_matrix
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-        self.inv_freqs = {k: 1 / v for k, v in Counter([example["response"] for example in devset]).items()}
+        self.use_class_weight = use_class_weight
 
-    def extract_answer_from_prediction(self, prediction):
+    def extract_response_from_prediction(self, prediction):
         response = prediction["response"]
         match = re.search(r"|".join(self.labels), response.lower())
         return match.group(0) if match else None
 
     def construct_matrix(self, preds):
+        weight = {label: 1 / len(pred) if self.use_class_weight else 1 for label, pred in preds.items()}
+
         labels = self.labels
 
         # Initialize the confusion matrix
-        confusion_matrix = np.zeros((len(labels), len(labels)), dtype=float)
+        confusion_matrix = np.zeros((len(labels), len(labels)), dtype=np.float64)
 
         # Get answers
-        answers = {label: [self.extract_answer_from_prediction(prediction)
-                           for prediction in preds[label]] for label in labels}
+        responses = {label: [self.extract_response_from_prediction(pred) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
-            for answer in answers[label]:
-                if answer in self.inv_freqs:
-                    confusion_matrix[idx][labels.index(answer)] += self.inv_freqs[label]
+            for response in responses[label]:
+                if response in labels:
+                    confusion_matrix[idx][labels.index(response)] += weight[label]
 
         return confusion_matrix
 
@@ -288,6 +290,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             max_errors=10,
             stop_at_score=None,
             metric_threshold=None,
+            use_class_weight=True,
     ):
         self.labels = labels
         self.teacher_settings = teacher_settings
@@ -301,6 +304,8 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
         self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
+        
+        self.use_class_weight = use_class_weight
 
         print(f"Going to sample between {self.min_num_samples} and {self.max_num_samples} traces per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
@@ -363,6 +368,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
                 max_errors=self.max_errors,
                 display_table=False,
                 display_progress=True,
+                use_class_weight=self.use_class_weight,
             )
 
             score, cm = confusion(program, return_matrix=True)
