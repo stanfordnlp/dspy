@@ -1,5 +1,6 @@
 import random
 import re
+from collections import Counter
 
 import numpy as np
 
@@ -38,13 +39,14 @@ class Confusion:
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
 
-    def extract_response_from_prediction(self, prediction):
+    def extract(self, prediction):
         response = prediction["response"]
         match = re.search(r"|".join(self.labels), response.lower())
         return match.group(0) if match else None
 
-    def construct_matrix(self, preds):
-        weight = {label: 1 / len(pred) if self.use_class_weight else 1 for label, pred in preds.items()}
+    def construct_matrix(self, preds, devset):
+        # use answers from devset to get weights
+        weight = {k: 1 / v for k, v in Counter([self.extract(arg) for _, arg in devset]).items()}
 
         labels = self.labels
 
@@ -52,7 +54,7 @@ class Confusion:
         confusion_matrix = np.zeros((len(labels), len(labels)), dtype=np.float64)
 
         # Get answers
-        responses = {label: [self.extract_response_from_prediction(pred) for pred in preds[label]] for label in labels}
+        responses = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
@@ -62,8 +64,8 @@ class Confusion:
 
         return confusion_matrix
 
-    def get_matthews_corrcoef(self, preds, return_cm=False):
-        C = self.construct_matrix(preds)
+    def get_matthews_corrcoef(self, preds, devset, return_cm=False):
+        C = self.construct_matrix(preds, devset)
         # rest is from sklearn
 
         t_sum = C.sum(axis=1, dtype=np.float64)
@@ -141,7 +143,7 @@ class Confusion:
 
                 reordered_devset.append((example_idx, example, prediction))
                 preds[arg["response"]].append(prediction)
-                self._update_progress(pbar, preds)
+                self._update_progress(pbar, preds, devset)
             pbar.close()
 
         if self.cancel_jobs.is_set():
@@ -150,8 +152,8 @@ class Confusion:
 
         return reordered_devset
 
-    def _update_progress(self, pbar, preds):
-        mcc = self.get_matthews_corrcoef(preds)
+    def _update_progress(self, pbar, preds, devset):
+        mcc = self.get_matthews_corrcoef(preds, devset)
         pbar.set_description(f"MCC: {mcc:.6f}")
         pbar.update()
 
@@ -227,7 +229,7 @@ class Confusion:
                 preds,
             )
 
-        mcc, cm = self.get_matthews_corrcoef(preds, return_cm=True)
+        mcc, cm = self.get_matthews_corrcoef(preds, devset, return_cm=True)
 
         dspy.logger.info(f"MCC: {mcc:.6f}")
 
