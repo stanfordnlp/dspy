@@ -3,7 +3,7 @@ site_name: DSPy
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
 
-
+edit_uri: edit/main/docs/docs/
 docs_dir: 'docs/'
 nav:
   - About DSPy: intro.md
@@ -98,6 +98,7 @@ theme:
     - content.code.annotation
     - content.code.copy
     - navigation.footer
+    - content.action.edit
   language: en
   palette:
     - scheme: default
@@ -114,6 +115,8 @@ theme:
       accent: lime
   icon:
     repo: fontawesome/brands/git-alt
+    edit: material/pencil 
+    view: material/eye
   logo: static/img/dspy_logo.png
   favicon: static/img/logo.png
 
