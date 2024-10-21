@@ -70,9 +70,8 @@ class GenerateSearchQuery(dspy.Signature):
     query = dspy.OutputField()
 ```
 
-:::info
-We could have written `context = GenerateAnswer.signature.context` to avoid duplicating the description of the context field.
-:::
+!!! info
+    We could have written `context = GenerateAnswer.signature.context` to avoid duplicating the description of the context field.
 
 Now that we have the necessary signatures in place, we can start building the Baleen pipeline!
 

@@ -10,7 +10,7 @@ Install the latest DSPy via `pip install -U dspy` and follow along. You may also
 
 ## Continue from Getting Started I.
 
-In [Getting Started I: Basic Question Answering](/docs/quick-start/getting-started-01), we've set up the DSPy LM, loaded some data, and loaded a metric for evaluation.
+In [Getting Started I: Basic Question Answering](/quick-start/getting-started-01), we've set up the DSPy LM, loaded some data, and loaded a metric for evaluation.
 
 First, let's download the corpus data that we will use for RAG search. The next cell will seek to download 4 GBs, so it may take a few minutes. A future version of this notebook will come with a cache that allows you to skip downloads and the pytorch installation.
 
@@ -143,7 +143,7 @@ Off the shelf, our `RAG` module scores 53%. What are our options to make it stro
 
 If there are many sub-modules in your program, all of them will be optimized together. In this case, there's only one: `self.respond = dspy.ChainOfThought('context, question -> response')`
 
-Let's set up and use DSPy's [MIPRO (v2) optimizer](/docs/deep-dive/optimizers/miprov2). The run below has a cost around $1.5 (for the `medium` auto setting) and may take some 20-30 minutes depending on your number of threads.
+Let's set up and use DSPy's [MIPRO (v2) optimizer](/deep-dive/optimizers/miprov2). The run below has a cost around $1.5 (for the `medium` auto setting) and may take some 20-30 minutes depending on your number of threads.
 
 
 ```python
@@ -259,7 +259,7 @@ But DSPy gives you paths to continue iterating on the quality of your system and
 In general, you have the following tools:
 
 1. Explore better system architectures for your program, e.g. what if we ask the LM to generate search queries for the retriever? See this [notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) or the [STORM pipeline](https://arxiv.org/abs/2402.14207) built in DSPy.
-2. Explore different [prompt optimizers](https://arxiv.org/abs/2406.11695) or [weight optimizers](https://arxiv.org/abs/2407.10930). See the **[Optimizers Docs](/docs/building-blocks/optimizers)**.
+2. Explore different [prompt optimizers](https://arxiv.org/abs/2406.11695) or [weight optimizers](https://arxiv.org/abs/2407.10930). See the **[Optimizers Docs](/building-blocks/optimizers)**.
 3. Scale inference time compute using DSPy Optimizers, e.g. this [notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/agents/multi_agent.ipynb).
 4. Cut cost by distilling to a smaller LM, via prompt or weight optimization, e.g. [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/nli/scone/scone.ipynb) or [this notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/qa/hotpot/multihop_finetune.ipynb).
 
@@ -267,4 +267,4 @@ How do you do decide which ones to proceed with first?
 
 The first step is look at your system outputs, which will allow you to identify the sources of lower performance if any. While doing all of this, make sure you continue to refine your metric, e.g. by optimizing against your judgments, and to collect more (or more realistic) data, e.g. from related domains or from putting a demo of your system in front of users.
 
-Learn more about the [development cycle](/docs/building-blocks/solving_your_task) in DSPy.
+Learn more about the [development cycle](/building-blocks/solving_your_task) in DSPy.

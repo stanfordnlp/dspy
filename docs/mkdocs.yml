@@ -1,0 +1,155 @@
+site_name: DSPy
+
+repo_url: https://github.com/stanfordnlp/dspy
+repo_name: stanfordnlp/dspy
+
+
+docs_dir: 'docs/'
+nav:
+  - About DSPy: intro.md
+  - Docs:
+    - Quick Start:
+      - Installation: quick-start/installation.md
+      - Getting Started I: quick-start/getting-started-01.md
+      - Getting Started II: quick-start/getting-started-02.md
+
+    - Building Blocks:
+      - DSPy in 8 Steps: building-blocks/solving_your_task.md
+      - Language Models: building-blocks/1-language_models.md
+      - Signatures: building-blocks/2-signatures.md
+      - Modules: building-blocks/3-modules.md
+      - Data: building-blocks/4-data.md
+      - Metrics: building-blocks/5-metrics.md
+      - Optimizers: building-blocks/6-optimizers.md
+      - Assertions: building-blocks/7-assertions.md
+      - Typed Predictors: building-blocks/8-typed_predictors.md
+  - Tutorials:
+    - Retrieval Augmented Generation: tutorials/rag.md
+    - Multi-Hop QA: tutorials/simplified-baleen.md
+    - Summarization: tutorials/summarization.md
+    - Additional Resources: tutorials/other_tutorial.md
+    - Examples: tutorials/examples.md
+  - Deep Dive:
+    - Data Handling:
+      - Examples in DSPy: deep-dive/data-handling/examples.md
+      - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
+      - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
+    - Signatures:
+      - Understanding Signatures: deep-dive/signature/understanding-signatures.md
+      - Executing Signatures: deep-dive/signature/executing-signatures.md
+    - Modules:
+      - Predict: deep-dive/modules/predict.md
+      - ChainOfThought: deep-dive/modules/chain-of-thought.md
+      - ChainOfThoughtwithHint: deep-dive/modules/chain-of-thought-with-hint.md
+      - ReAct: deep-dive/modules/react.md
+      - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
+      - ProgramOfThought: deep-dive/modules/program-of-thought.md
+      - Assertions: deep-dive/modules/assertions.md
+      - Retreive: deep-dive/modules/retrieve.md
+      - Modules Guide: deep-dive/modules/guide.md
+    - Language Model Clients:
+      - Local Language Model Clients:
+        - HFClientTGI: deep-dive/language_model_clients/lm_local_models/HFClientTGI.md
+        - HFClientVLLM: deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md
+        - MLC: deep-dive/language_model_clients/lm_local_models/MLC.md
+        - Ollama: deep-dive/language_model_clients/lm_local_models/Ollama.md
+        - LlamaCpp: deep-dive/language_model_clients/lm_local_models/LlamaCpp.md
+        - TensorRTLLM: deep-dive/language_model_clients/lm_local_models/TensorRTLLM.md
+    - Retrieval Model Clients:
+      - Azure: deep-dive/retrieval_models_clients/Azure.md
+      - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+      - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
+      - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
+      - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
+      - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
+      - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
+      - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
+      - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
+      - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
+      - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
+      - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
+      - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
+      - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
+      - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
+      - YouRM: deep-dive/retrieval_models_clients/YouRM.md
+    - Assertions: deep-dive/assertions.md
+    - Teleprompters:
+      - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
+      - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
+      - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
+      - Ensemble: deep-dive/optimizers/Ensemble.md
+      - BFRS: deep-dive/optimizers/bfrs.md
+      - CoPro: deep-dive/optimizers/copro.md
+      - MIProV2: deep-dive/optimizers/miprov2.md
+  - FAQ: faqs.md
+  - Cheatsheet: cheatsheet.md
+  - DSPy Usecases: dspy-usecases.md
+
+theme:
+  name: material
+  custom_dir: overrides
+  features:
+    - navigation.tabs
+    - toc.integrate
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  language: en
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+      primary: white
+      accent: black 
+    - scheme: slate 
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode    
+      primary: black
+      accent: lime
+  icon:
+    repo: fontawesome/brands/git-alt
+  logo: static/img/dspy_logo.png
+  favicon: static/img/logo.png
+
+plugins:
+  - social
+  - search
+  - mkdocstrings
+  - blog
+  - mkdocs-jupyter
+  - redirects:
+      redirect_maps:
+        'index.md': 'intro.md'
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/stanfordnlp/dspy
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/XCGy2WDCQB
+
+markdown_extensions:
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.mark
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+
+copyright: |
+  &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>

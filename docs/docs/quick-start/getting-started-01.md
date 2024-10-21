@@ -23,7 +23,7 @@ dspy.configure(lm=lm)
 
 You can always prompt the LM directly via `lm(prompt="prompt")` or `lm(messages=[...])`. However, DSPy gives you `Modules` as a better way to define your LM functions.
 
-The simplest module is `dspy.Predict`. It takes a [DSPy Signature](/docs/building-blocks/signatures), i.e. a structured input/output schema, and gives you back a callable function for the behavior you specified. Let's use the "in-line" notation for signatures to declare a module that takes a `question` (of type `str`) as input and produces a `response` as an output.
+The simplest module is `dspy.Predict`. It takes a [DSPy Signature](/building-blocks/2-signatures), i.e. a structured input/output schema, and gives you back a callable function for the behavior you specified. Let's use the "in-line" notation for signatures to declare a module that takes a `question` (of type `str`) as input and produces a `response` as an output.
 
 ```python
 qa = dspy.Predict('question: str -> response: str')
@@ -37,7 +37,7 @@ qa(question="what are high memory and low memory on linux?").response
 
 Notice how the variable names we specified in the signature defined our input and output argument names and their role.
 
-Now, what did DSPy do to build this `qa` module? Nothing fancy in this example, yet. The module passed your signature, LM, and inputs to an [Adapter](/docs/building-blocks/language_models#structured-lm-output-with-adapters), which is a layer that handles structuring the inputs and parsing structured outputs to fit your signature.
+Now, what did DSPy do to build this `qa` module? Nothing fancy in this example, yet. The module passed your signature, LM, and inputs to an [Adapter](/building-blocks/1-language_models#structured-lm-output-with-adapters), which is a layer that handles structuring the inputs and parsing structured outputs to fit your signature.
 
 Let's see it directly. You can inspect the `n` last prompts sent by DSPy easily.
 
@@ -77,13 +77,13 @@ By the way, `dspy.ChainOfThought` is implemented in DSPy, using `dspy.Predict`. 
 
 You already know a lot about DSPy at this point. If all you want is quick scripting, this much of DSPy already enables a lot. Sprinkling DSPy signatures and modules into your Python control flow is a pretty ergonomic way to just get stuff done with LMs.
 
-That said, you're likely here because you want to build a high-quality system and improve it over time. The way to do that in DSPy is to iterate fast by evaluating the quality of your system and using DSPy's powerful tools, e.g. [Optimizers](/docs/building-blocks/optimizers). You can learn about the [appropriate development cycle in DSPy here](/docs/building-blocks/solving_your_task).
+That said, you're likely here because you want to build a high-quality system and improve it over time. The way to do that in DSPy is to iterate fast by evaluating the quality of your system and using DSPy's powerful tools, e.g. [Optimizers](/building-blocks/6-optimizers). You can learn about the [appropriate development cycle in DSPy here](/building-blocks/solving_your_task).
 
 ## Manipulating `Example`s in DSPy.
 
 To measure the quality of your DSPy system, you need (1) a bunch of input values, like `question`s for example, and (2) a `metric` that can score the quality of an output from your system. Metrics vary widely. Some metrics need ground-truth labels of ideal outputs, e.g. for classification or question answering. Other metrics are self-supervised, e.g. checking faithfulness or lack of hallucination, perhaps using a DSPy program as a judge of these qualities.
 
-Let's load a dataset of questions and their (pretty long) gold answers. Since we started this notebook with the goal of building **a system for answering Tech questions**, we obtained a bunch of StackExchange-based questions and their correct answers from the [RAG-QA Arena](https://arxiv.org/abs/2407.13998) dataset. (Learn more about the [development cycle](/docs/building-blocks/solving_your_task) if you don't have data for your task.)
+Let's load a dataset of questions and their (pretty long) gold answers. Since we started this notebook with the goal of building **a system for answering Tech questions**, we obtained a bunch of StackExchange-based questions and their correct answers from the [RAG-QA Arena](https://arxiv.org/abs/2407.13998) dataset. (Learn more about the [development cycle](/building-blocks/solving_your_task) if you don't have data for your task.)
 
 
 ```python
@@ -226,4 +226,4 @@ Can we do better? In the next guide, we will build a retrieval-augmented generat
 
 We'll see how this can boost the score substantially, then we'll use one of the DSPy Optimizers to _compile_ our RAG program to higher-quality prompts, raising our scores even more.
 
-Continue here. [Getting Started II: An Example for Basic RAG](/docs/quick-start/getting-started-02.md)
+Continue here. [Getting Started II: An Example for Basic RAG](/quick-start/getting-started-02)
