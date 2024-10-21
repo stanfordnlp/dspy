@@ -99,8 +99,7 @@ os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 !!! warning "Important"
     `DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
 
-
-In the AWS lambda deployment, you should disable both DSP_* and DSPY_*.
+    In the AWS lambda deployment, you should disable both DSP_\* and DSPY_\*.
 
 
 ## Advanced Usage
