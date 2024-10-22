@@ -89,7 +89,7 @@ That being said, here's the general guidance on getting started:
 
 ## How do I use an optimizer?
 
-They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](https://dspy-docs.vercel.app/deep-dive/optimizers/), and a full list can be found [here](https://dspy-docs.vercel.app/cheatsheet).
+They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](https://dspy-docs.vercel.app/deep-dive/optimizers/bootstrap-fewshot/), and a full list can be found [here](https://dspy-docs.vercel.app/cheatsheet).
 
 Let's see this with the most common one, `BootstrapFewShotWithRandomSearch`.
 
