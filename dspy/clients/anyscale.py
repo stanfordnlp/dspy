@@ -151,17 +151,16 @@ def generate_config_files(train_path: str, llmforge_config_path: str, job_config
     
     llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
     job_config_dict = yaml.safe_load(open(job_config_path, "r"))
-    
-    model_config_data = llmforge_config.copy()    
-    if "model_id" or "train_path" in model_config_data:
+
+    if "model_id" or "train_path" in llmforge_config:
         logger.warning(f"model_id and train_path inside {llmforge_config_path} are going to be overridden")
     
-    model_config_data["model_id"] = model
-    model_config_data["train_path"] = train_path
-    model_config_data = {k: v for k, v in model_config_data.items() if v is not None}
+    llmforge_config["model_id"] = model
+    llmforge_config["train_path"] = train_path
+    llmforge_config = {k: v for k, v in llmforge_config.items() if v is not None}
 
-    logger.info(f"Model config data: {model_config_data}")
-    yaml.safe_dump(model_config_data, open(llmforge_config_path, "w"))
+    logger.info(f"Model config data: {llmforge_config}")
+    yaml.safe_dump(llmforge_config, open(llmforge_config_path, "w"))
 
     if not job_config_dict.get("env_vars", None):
         job_config_dict["env_vars"] = {}
