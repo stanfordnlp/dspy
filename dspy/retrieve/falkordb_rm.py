@@ -188,7 +188,6 @@ class FalkordbRM(Retrieve):
                 "embedding_node_property": self.embedding_node_property,
                 "k": k,
             }
-            print(params)
             try:
                 records = self.driver.query(
                     DEFAULT_INDEX_QUERY + retrieval_query,

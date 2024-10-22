@@ -47,7 +47,7 @@ You need to define the credentials as environment variables
 
 #### `forward(self, query: [str], k: Optional[int] = None) -> dspy.Prediction`
 
-Search the neo4j vector index for the top `k` passages matching the given query or queries, using embeddings generated via the specified `embedding_model`.
+Search the Falkordb vector index for the top `k` passages matching the given query or queries, using embeddings generated via the specified `embedding_model`.
 
 **Parameters:**
 
@@ -66,7 +66,7 @@ Prediction(
 )
 ```
 
-### Quick Example how to use Neo4j in a local environment.
+### Quick Example how to use Falkordb in a local environment.
 
 ```python
 from dspy.retrieve.falkordb_rm import FalkordbRM
