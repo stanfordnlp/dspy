@@ -54,9 +54,15 @@ def finetune_anyscale(
     assert "model" not in train_kwargs, "Model should not be in the train_kwargs"
     assert "serve_config_path" in train_kwargs, "serve_config_path is required to update the model config"
     assert anyscale.__version__ >= "0.24.65", "Anyscale version >= 0.24.65 is required to use the dataset upload feature"
-
+    assert all([x in train_kwargs for x in ["job_config_path", "llmforge_config_path", "serve_config_path"]]), "All of job_config_path, llmforge_config_path, and serve_config_path are required"
     train_kwargs_copy = train_kwargs.copy()
     train_kwargs_copy["model"] = model
+
+
+    job_config_path = train_kwargs.get("job_config_path", None)
+    llmforge_config_path = train_kwargs.get("llmforge_config_path", None)
+    serve_config_path = train_kwargs.get("serve_config_path", None)
+    # llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
 
     if train_method not in TRAINING_METHODS_ANYSCALE:
         raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
@@ -68,13 +74,17 @@ def finetune_anyscale(
         raise RuntimeError(err)
 
     train_data_path = save_data(train_data, provider_name=PROVIDER_ANYSCALE)
-    remote_train_path = submit_data(train_path=train_data_path, job_config=train_kwargs.get("job_config", {}))
 
-    _, job_config = generate_config_files(train_path=remote_train_path, **train_kwargs_copy)
+    # TODO: Figure out a better pattern
+    job_config_temp = yaml.safe_load(open(job_config_path, "r"))
+    remote_train_path = submit_data(train_path=train_data_path, job_config=job_config_temp)
+
+    job_config = generate_config_files(train_path=remote_train_path, llmforge_config_path=llmforge_config_path, job_config_path=job_config_path, model=model)
+
     # Remove potential duplicate compute config
-    train_kwargs_copy.pop("job_config")
+    # train_kwargs_copy.pop("job_config")
 
-    job.job_id = start_remote_training(job_config=job_config, **train_kwargs_copy)
+    job.job_id = start_remote_training(job_config=job_config)
 
     wait_for_training(job.job_id)
 
@@ -85,8 +95,7 @@ def finetune_anyscale(
     lora_dynamic_path = storage_uri.split(model)[0]
     final_model_name = model + storage_uri.split(model)[1]
 
-    serve_config_path = train_kwargs.pop("serve_config_path")
-    update_model_config(lora_dynamic_path, serve_config_path)
+    update_serve_model_config(lora_dynamic_path, train_kwargs.get("serve_config_path"))
     job.model_names = [final_model_name]
 
     return "openai/" + final_model_name
@@ -94,11 +103,11 @@ def finetune_anyscale(
 def wait_for_training(job_id):
     """Wait for the training to complete."""
     logger.info("[Finetune] Waiting for training to complete...")
-    anyscale.job.wait(id=job_id, timeout_s=18000)
+    anyscale.job.wait(id=job_id)
     logger.info("[Finetune] Training completed.")
 
 
-def update_model_config(lora_dynamic_path: str, serve_config_path: str):
+def update_serve_model_config(lora_dynamic_path: str, serve_config_path: str):
     """Update the model config storage location with the job_id."""
     with open(serve_config_path, "r") as f:
         serve_config = yaml.safe_load(f)
@@ -136,88 +145,39 @@ def submit_data(train_path: str, job_config: Dict[str, Any]):
     return train_path_remote
 
 
-def generate_config_files(train_path: str, **kwargs):
-    base_model_yaml_path = kwargs.get("train_config_yaml", None)
-    assert kwargs["model"] is not None, "Model is required to generate the config files"
-    assert kwargs["job_config"], "Job config is required to start the finetuning job"
+def generate_config_files(train_path: str, llmforge_config_path: str, job_config_path: str, model: str):
+    assert llmforge_config_path, "LLMForge config is required to generate the config files"
+    assert job_config_path, "Job config is required to start the finetuning job"
     
-    use_lora = kwargs.get("use_lora", False)
-    example_dir = ""
-    lora_path = "configs/training/lora" if use_lora else "configs/training/full_param"
-
-
-    if not base_model_yaml_path:
-        def get_yaml_config(model_name):
-            if "llama" in model_name.lower():
-                if "70b" in model_name:
-                    return "llama-3-70b.yaml"
-                elif "13b" in model_name:
-                    return "llama-3-70b.yaml"
-                else:
-                    return "llama-3-8b.yaml"
-            elif "mistral" in model_name.lower():
-                if "mixtral" in model_name.lower():
-                    return "mixtral-8x7b.yaml"
-                else:
-                    return "mistral-7b.yaml"
-            else:
-                raise RuntimeError("No default yaml found for the model")
-
-        default_model_yaml_path = get_yaml_config(kwargs["model"])
-        base_model_yaml_path = os.path.join(example_dir, lora_path, default_model_yaml_path)
-        logger.info(f"Using default yaml template for model: {base_model_yaml_path}")
-        
-    model_config_data = yaml.safe_load(open(base_model_yaml_path, "r"))
-    model_config_data.update(kwargs.get("hyperparameters", {}))
+    llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
+    job_config_dict = yaml.safe_load(open(job_config_path, "r"))
     
-    model_config_data["model_id"] = kwargs["model"]
-
-    custom_modifications = {
-        "model_id": kwargs["model"],
-        "train_path": train_path,
-        "logger": kwargs.get("logging_kwargs", {}),
-        "num_checkpoints_to_keep": 10
-    }
-    if kwargs.get("output_dir", None):
-        custom_modifications["output_dir"] = kwargs["output_dir"]
-
-    model_config_data.update(custom_modifications)
+    model_config_data = llmforge_config.copy()    
+    if "model_id" or "train_path" in model_config_data:
+        logger.warning(f"model_id and train_path inside {llmforge_config_path} are going to be overridden")
+    
+    model_config_data["model_id"] = model
+    model_config_data["train_path"] = train_path
     model_config_data = {k: v for k, v in model_config_data.items() if v is not None}
 
-    def freeze(d):
-        if isinstance(d, dict):
-            return tuple(sorted((key, freeze(value)) for key, value in d.items()))
-        elif isinstance(d, list):
-            return tuple(freeze(value) for value in sorted(d))
-        elif isinstance(d, set):
-            return tuple(freeze(value) for value in sorted(d))
-        return d
-
-    def hash_dict(d):
-        return hash(freeze(d))
-    dict_sorted_hash = hash_dict(model_config_data)
-    if dict_sorted_hash < 0:
-        dict_sorted_hash = -dict_sorted_hash
-    filename = f"model_config_dspy_{dict_sorted_hash}.yaml"
     logger.info(f"Model config data: {model_config_data}")
-    yaml.safe_dump(model_config_data, open(filename, "w"))
+    yaml.safe_dump(model_config_data, open(llmforge_config_path, "w"))
 
-    ft_path = os.path.join("utils", "ft.py")
-    job_config_dict = kwargs.pop("job_config")
-    job_config_dict["env_vars"] = job_config_dict.get("env_vars", {})
-    for env_var in ["WANDB_API_KEY", "HF_TOKEN", "HF_HOME"]:
-        if env_var not in job_config_dict["env_vars"]:
-            job_config_dict["env_vars"][env_var] = os.environ.get(env_var, "")
+    if not job_config_dict.get("env_vars", None):
+        job_config_dict["env_vars"] = {}
 
-    job_config_dict["entrypoint"] = job_config_dict["entrypoint"].format(filename=filename)
+    for env_var in ["HF_TOKEN", "HF_HOME", "WANDB_API_KEY"]:
+        if env_var not in job_config_dict["env_vars"] and os.environ.get(env_var, None):
+            job_config_dict["env_vars"][env_var] = os.environ[env_var]
+    
+
     job_config = JobConfig(**job_config_dict)
 
-    job_runner_config_path = kwargs.get("compute_yaml_path", "job_runner_config.yaml")
 
-    return job_runner_config_path, job_config
+    return job_config
 
 
-def start_remote_training(job_config, **kwargs) -> str:
+def start_remote_training(job_config) -> str:
     logger.info("[Finetune] Starting remote training...")
     job_id: str = anyscale.job.submit(job_config)
     logger.info(f"[Finetune] Remote training started. Job ID: {job_id}")
