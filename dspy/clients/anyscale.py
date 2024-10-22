@@ -80,7 +80,6 @@ def finetune_anyscale(
     job_config = generate_config_files(train_path=remote_train_path, llmforge_config_path=llmforge_config_path, job_config_path=job_config_path, model=model)
 
     # Remove potential duplicate compute config
-    # train_kwargs_copy.pop("job_config")
 
     job.job_id = start_remote_training(job_config=job_config)
 
