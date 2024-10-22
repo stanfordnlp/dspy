@@ -150,9 +150,6 @@ def generate_config_files(train_path: str, llmforge_config_path: str, job_config
     
     llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
     job_config_dict = yaml.safe_load(open(job_config_path, "r"))
-
-    if "model_id" or "train_path" in llmforge_config:
-        logger.warning(f"model_id and train_path inside {llmforge_config_path} are going to be overridden")
     
     llmforge_config["model_id"] = model
     llmforge_config["train_path"] = train_path
