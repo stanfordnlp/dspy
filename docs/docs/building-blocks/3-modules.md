@@ -6,7 +6,7 @@ sidebar_position: 3
 
 A **DSPy module** is a building block for programs that use LMs.
 
-- Each built-in module abstracts a **prompting technique** (like chain of thought or ReAct). Crucially, they are generalized to handle any [DSPy Signature](/2-signatures).
+- Each built-in module abstracts a **prompting technique** (like chain of thought or ReAct). Crucially, they are generalized to handle any [DSPy Signature](/building-blocks/2-signatures).
 
 - A DSPy module has **learnable parameters** (i.e., the little pieces comprising the prompt and the LM weights) and can be invoked (called) to process inputs and return outputs.
 
@@ -17,7 +17,7 @@ A **DSPy module** is a building block for programs that use LMs.
 
 Let's start with the most fundamental module, `dspy.Predict`. Internally, all other DSPy modules are just built using `dspy.Predict`.
 
-We'll assume you are already at least a little familiar with [DSPy signatures](/2-signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
+We'll assume you are already at least a little familiar with [DSPy signatures](/building-blocks/2-signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
 
 To use a module, we first **declare** it by giving it a signature. Then we **call** the module with the input arguments, and extract the output fields!
 

@@ -10,7 +10,7 @@ The standard approach for this challenge in retrieval-augmented NLP literature i
 
 ## Configuring LM and RM
 
-We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](https://dspy-docs.vercel.app/docs/category/language-model-clients) and [RM](https://dspy-docs.vercel.app/docs/category/retrieval-model-clients) APIs and [local models hosting](https://dspy-docs.vercel.app/docs/category/local-language-model-clients).
+We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](/category/language-model-clients) and [RM](/category/retrieval-model-clients) APIs and [local models hosting](/category/local-language-model-clients).
 
 In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
 

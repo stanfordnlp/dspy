@@ -10,7 +10,7 @@ RAG ensures LLMs can dynamically utilize real-time knowledge even if not origina
 
 ## Configuring LM and RM
 
-We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](https://dspy-docs.vercel.app/docs/category/language-model-clients) and [RM](https://dspy-docs.vercel.app/docs/category/retrieval-model-clients) APIs and [local models hosting](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/local_models/HFClientTGI).
+We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](/building-blocks/1-language_models.md) and [RM](/deep-dive/retrieval_models_clients/Azure.md) APIs and [local models hosting](/deep-dive/language_model_clients/local_models/HFClientTGI).
 
 In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
 
@@ -47,7 +47,7 @@ len(trainset), len(devset)
 
 ## Building Signatures
 
-Now that we have the data loaded, let's start defining the [signatures](https://dspy-docs.vercel.app/docs/building-blocks/signatures) for the sub-tasks of our pipeline.
+Now that we have the data loaded, let's start defining the [signatures](/building-blocks/2-signatures) for the sub-tasks of our pipeline.
 
 We can identify our simple input `question` and output `answer`, but since we are building out a RAG pipeline, we wish to utilize some contextual information from our ColBERT corpus. So let's define our signature: `context, question --> answer`.
 
@@ -64,7 +64,7 @@ We include small descriptions for the `context` and `answer` fields to define mo
 
 ## Building the Pipeline
 
-We will build our RAG pipeline as a [DSPy module](https://dspy-docs.vercel.app/docs/building-blocks/modules) which will require two methods:
+We will build our RAG pipeline as a [DSPy module](/building-blocks/3-modules) which will require two methods:
 
 * The `__init__` method will simply declare the sub-modules it needs: `dspy.Retrieve` and `dspy.ChainOfThought`. The latter is defined to implement our `GenerateAnswer` signature.
 * The `forward` method will describe the control flow of answering the question using the modules we have: Given a question, we'll search for the top-3 relevant passages and then feed them as context for answer generation.
@@ -88,7 +88,7 @@ class RAG(dspy.Module):
 
 ##### Compiling the RAG program
 
-Having defined this program, let's now **compile** it. [Compiling a program](https://dspy-docs.vercel.app/docs/building-blocks/optimizers) will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion within the prompt(s).
+Having defined this program, let's now **compile** it. [Compiling a program](/building-blocks/6-optimizers) will update the parameters stored in each module. In our setting, this is primarily in the form of collecting and selecting good demonstrations for inclusion within the prompt(s).
 
 Compiling depends on three things:
 

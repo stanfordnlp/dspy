@@ -59,7 +59,7 @@ This is almost never the recommended way to interact with LMs in DSPy, but it is
 
 ### Using the LM with DSPy signatures
 
-You can also use the LM via DSPy [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures) and [`modules`](https://dspy-docs.vercel.app/docs/building-blocks/modules), which we discuss in more depth in the remaining guides.
+You can also use the LM via DSPy [`signature` (input/output spec)](/building-blocks/2-signatures) and [`modules`](/building-blocks/3-modules), which we discuss in more depth in the remaining guides.
 
 ```python
 # Define a module (ChainOfThought) and assign it a signature (return an answer, given a question).

@@ -16,7 +16,7 @@ The **DSPy** philosophy and abstraction differ significantly from other librarie
 
 ## Basic Usage
 
-**How should I use DSPy for my task?** We wrote a [eight-step guide](https://dspy-docs.vercel.app/docs/building-blocks/solving_your_task) on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+**How should I use DSPy for my task?** We wrote a [eight-step guide](/building-blocks/solving_your_task) on this. In short, using DSPy is an iterative process. You first define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers (`modules`) to use, giving each layer a `signature` (input/output spec), and then calling your modules freely in your Python code. Lastly, you use a DSPy `optimizer` to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
 **How do I convert my complex prompt into a DSPy pipeline?** See the same answer above.
 
@@ -34,7 +34,7 @@ You can specify the generation of long responses as a `dspy.OutputField`. To ens
 
 - **How can I ensure that DSPy doesn't strip new line characters from my inputs or outputs?**
 
-DSPy uses [Signatures](https://dspy-docs.vercel.app/docs/deep-dive/signature/understanding-signatures) to format prompts passed into LMs. In order to ensure that new line characters aren't stripped from longer inputs, you must specify `format=str` when creating a field.
+DSPy uses [Signatures](/deep-dive/signature/understanding-signatures) to format prompts passed into LMs. In order to ensure that new line characters aren't stripped from longer inputs, you must specify `format=str` when creating a field.
 
 ```python
 class UnstrippedSignature(dspy.Signature):
@@ -49,11 +49,11 @@ class UnstrippedSignature(dspy.Signature):
 
 - **How do I define my own metrics? Can metrics return a float?**
 
-You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](https://dspy-docs.vercel.app/docs/building-blocks/metrics) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
+You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](/building-blocks/metrics) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
 
 - **How expensive or slow is compiling??**
 
-To reflect compiling metrics, we highlight an experiment for reference, compiling the [`SimplifiedBaleen`](https://dspy-docs.vercel.app/docs/tutorials/simplified-baleen) using the [`dspy.BootstrapFewShotWithRandomSearch`](https://dspy-docs.vercel.app/docs/deep-dive/teleprompter/bootstrap-fewshot) optimizer on the `gpt-3.5-turbo-1106` model over 7 candidate programs and 10 threads. We report that compiling this program takes around 6 minutes with 3200 API calls, 2.7 million input tokens and 156,000 output tokens, reporting a total cost of $3 USD (at the current pricing of the OpenAI model).
+To reflect compiling metrics, we highlight an experiment for reference, compiling the [`SimplifiedBaleen`](/tutorials/simplified-baleen) using the [`dspy.BootstrapFewShotWithRandomSearch`](/deep-dive/teleprompter/bootstrap-fewshot) optimizer on the `gpt-3.5-turbo-1106` model over 7 candidate programs and 10 threads. We report that compiling this program takes around 6 minutes with 3200 API calls, 2.7 million input tokens and 156,000 output tokens, reporting a total cost of $3 USD (at the current pricing of the OpenAI model).
 
 Compiling DSPy `optimizers` naturally will incur additional LM calls, but we substantiate this overhead with minimalistic executions with the goal of maximizing performance. This invites avenues to enhance performance of smaller models by compiling DSPy programs with larger models to learn enhanced behavior during compile-time and propagate such behavior to the tested smaller model during inference-time.  
 
@@ -115,7 +115,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 You can specify JSON-type descriptions in the `desc` field of the long-form signature `dspy.OutputField` (e.g. `output = dspy.OutputField(desc='key-value pairs')`).
 
-If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](https://dspy-docs.vercel.app/docs/building-blocks/assertions) (or the next question!)
+If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/building-blocks/assertions) (or the next question!)
 
 - **How do I use DSPy assertions?**
 
@@ -172,4 +172,4 @@ At times, DSPy may have hard-coded arguments that are not relevant for your comp
 
 **How can I add my favorite LM or vector store?** 
 
-Check out these walkthroughs on setting up a [Custom LM client](https://dspy-docs.vercel.app/docs/deep-dive/language_model_clients/custom-lm-client) and [Custom RM client](https://dspy-docs.vercel.app/docs/deep-dive/retrieval_models_clients/custom-rm-client).
+Check out these walkthroughs on setting up a [Custom LM client](/deep-dive/language_model_clients/custom-lm-client) and [Custom RM client](/deep-dive/retrieval_models_clients/custom-rm-client).
