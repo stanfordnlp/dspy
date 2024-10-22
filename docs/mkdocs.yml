@@ -136,6 +136,9 @@ extra:
     - icon: fontawesome/brands/discord
       link: https://discord.gg/XCGy2WDCQB
 
+extra_javascript:
+  - "js/runllm-widget.js"
+
 markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
