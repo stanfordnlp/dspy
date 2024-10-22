@@ -98,7 +98,7 @@ class Confusion:
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
                 preds[arg["response"]].append(prediction)
-                self._update_progress(pbar, preds)
+                self._update_progress(pbar, preds, devset)
 
         pbar.close()
 
