@@ -52,9 +52,8 @@ def finetune_anyscale(
     """Start the finetune job."""
     train_kwargs = train_kwargs or {}
     assert "model" not in train_kwargs, "Model should not be in the train_kwargs"
-    assert "serve_config_path" in train_kwargs, "serve_config_path is required to update the model config"
     assert anyscale.__version__ >= "0.24.65", "Anyscale version >= 0.24.65 is required to use the dataset upload feature"
-    assert all([x in train_kwargs for x in ["job_config_path", "llmforge_config_path", "serve_config_path"]]), "All of job_config_path, llmforge_config_path, and serve_config_path are required"
+    assert all([x in train_kwargs for x in ["job_config_path", "llmforge_config_path"]]), "Both job_config_path and llmforge_config_path are required"
     train_kwargs_copy = train_kwargs.copy()
     train_kwargs_copy["model"] = model
 
@@ -62,7 +61,6 @@ def finetune_anyscale(
     job_config_path = train_kwargs.get("job_config_path", None)
     llmforge_config_path = train_kwargs.get("llmforge_config_path", None)
     serve_config_path = train_kwargs.get("serve_config_path", None)
-    # llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
 
     if train_method not in TRAINING_METHODS_ANYSCALE:
         raise NotImplementedError(f"AnyScale can only support {TRAINING_METHODS_ANYSCALE} for the time being")
@@ -75,7 +73,7 @@ def finetune_anyscale(
 
     train_data_path = save_data(train_data, provider_name=PROVIDER_ANYSCALE)
 
-    # TODO: Figure out a better pattern
+    # TODO(Isaac): Figure out a better pattern
     job_config_temp = yaml.safe_load(open(job_config_path, "r"))
     remote_train_path = submit_data(train_path=train_data_path, job_config=job_config_temp)
 
@@ -89,13 +87,15 @@ def finetune_anyscale(
     wait_for_training(job.job_id)
 
     model_info = get_model_info(job.job_id)
+
     # model_info[storage_uri] is a path to your cloud where the best(last if no eval) checkpoint weights are forwarded
     storage_uri = model_info["storage_uri"]
 
     lora_dynamic_path = storage_uri.split(model)[0]
     final_model_name = model + storage_uri.split(model)[1]
-
-    update_serve_model_config(lora_dynamic_path, train_kwargs.get("serve_config_path"))
+    
+    if serve_config_path:
+        update_serve_model_config(lora_dynamic_path, serve_config_path)
     job.model_names = [final_model_name]
 
     return "openai/" + final_model_name
