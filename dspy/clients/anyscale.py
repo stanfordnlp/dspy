@@ -52,6 +52,9 @@ def finetune_anyscale(
     """Start the finetune job."""
     train_kwargs = train_kwargs or {}
     assert "model" not in train_kwargs, "Model should not be in the train_kwargs"
+    assert "serve_config_path" in train_kwargs, "serve_config_path is required to update the model config"
+    assert anyscale.__version__ >= "0.24.65", "Anyscale version >= 0.24.65 is required to use the dataset upload feature"
+
     train_kwargs_copy = train_kwargs.copy()
     train_kwargs_copy["model"] = model
 
@@ -65,13 +68,13 @@ def finetune_anyscale(
         raise RuntimeError(err)
 
     train_data_path = save_data(train_data, provider_name=PROVIDER_ANYSCALE)
-    remote_train_path, _ = submit_data(train_path=train_data_path)
+    remote_train_path = submit_data(train_path=train_data_path, job_config=train_kwargs.get("job_config", {}))
 
-    _, compute_config = generate_config_files(train_path=remote_train_path, **train_kwargs_copy)
+    _, job_config = generate_config_files(train_path=remote_train_path, **train_kwargs_copy)
     # Remove potential duplicate compute config
-    train_kwargs_copy.pop("compute_config")
+    train_kwargs_copy.pop("job_config")
 
-    job.job_id = start_remote_training(compute_config=compute_config, **train_kwargs_copy)
+    job.job_id = start_remote_training(job_config=job_config, **train_kwargs_copy)
 
     wait_for_training(job.job_id)
 
@@ -82,12 +85,10 @@ def finetune_anyscale(
     lora_dynamic_path = storage_uri.split(model)[0]
     final_model_name = model + storage_uri.split(model)[1]
 
-    assert "serve_config_path" in train_kwargs, "serve_config_path is required to update the model config"
     serve_config_path = train_kwargs.pop("serve_config_path")
     update_model_config(lora_dynamic_path, serve_config_path)
     job.model_names = [final_model_name]
 
-    # NOTE: For Litellm we need to prepend "openai/" to the model name
     return "openai/" + final_model_name
 
 def wait_for_training(job_id):
@@ -125,38 +126,21 @@ def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
     return True
 
 
-def submit_data(train_path: str):
-    """Upload the data to the Workspace cloud storage."""
+def submit_data(train_path: str, job_config: Dict[str, Any]):
+    """Upload the data to cloud storage."""
     logger.info("[Finetune] Submitting data to remote storage...")
-    storage = os.environ['ANYSCALE_ARTIFACT_STORAGE']
-    
-    datasets = {"train": train_path}
+    dataset_name = f"dataset-{job_config.get('name', 'dspy-llmforge-fine-tuning-job')}"
+    train_path_remote = anyscale.llm.dataset.upload(train_path, name=dataset_name, cloud=job_config.get("cloud", None)).storage_uri
+    logger.info(f"[Finetune] Data submitted. Remote train path: {train_path_remote}")
 
-    fine_tuning_file_ids = {}
-    for name, path in datasets.items():
-        num_items = len(read_jsonl(path))
-        logger.info(f"Number of items in {name} data: {num_items}")
-
-        remote_path = os.path.join(storage, path.split("/")[-1])
-        logger.info(f"Uploading {name} data to S3 at {remote_path}")
-        if remote_path[:2] == "s3":
-            os.system(f"aws s3 cp {path} {remote_path}")
-        elif remote_path[:2] == "gs":
-            os.system(f"gcloud storage cp {path} {remote_path}")
-        else:
-            os.system(f"cp {path} {remote_path}")
-            logger.info(f"Copied {path} to {remote_path}")
-        fine_tuning_file_ids[name] = remote_path
-
-    logger.info(f"[Finetune] Data submitted. Remote train path: {fine_tuning_file_ids['train']}")
-    
-    return fine_tuning_file_ids["train"], fine_tuning_file_ids.get("val", None)
+    return train_path_remote
 
 
 def generate_config_files(train_path: str, **kwargs):
     base_model_yaml_path = kwargs.get("train_config_yaml", None)
     assert kwargs["model"] is not None, "Model is required to generate the config files"
-
+    assert kwargs["job_config"], "Job config is required to start the finetuning job"
+    
     use_lora = kwargs.get("use_lora", False)
     example_dir = ""
     lora_path = "configs/training/lora" if use_lora else "configs/training/full_param"
@@ -219,24 +203,23 @@ def generate_config_files(train_path: str, **kwargs):
     yaml.safe_dump(model_config_data, open(filename, "w"))
 
     ft_path = os.path.join("utils", "ft.py")
-    assert kwargs["compute_config"], "Compute config is required to start the finetuning job"
-    compute_config_dict = kwargs.pop("compute_config")
-    compute_config_dict["env_vars"] = compute_config_dict.get("env_vars", {})
+    job_config_dict = kwargs.pop("job_config")
+    job_config_dict["env_vars"] = job_config_dict.get("env_vars", {})
     for env_var in ["WANDB_API_KEY", "HF_TOKEN", "HF_HOME"]:
-        if env_var not in compute_config_dict["env_vars"]:
-            compute_config_dict["env_vars"][env_var] = os.environ.get(env_var, "")
+        if env_var not in job_config_dict["env_vars"]:
+            job_config_dict["env_vars"][env_var] = os.environ.get(env_var, "")
 
-    compute_config_dict["entrypoint"] = compute_config_dict["entrypoint"].format(filename=filename)
-    compute_config = JobConfig(**compute_config_dict)
+    job_config_dict["entrypoint"] = job_config_dict["entrypoint"].format(filename=filename)
+    job_config = JobConfig(**job_config_dict)
 
     job_runner_config_path = kwargs.get("compute_yaml_path", "job_runner_config.yaml")
 
-    return job_runner_config_path, compute_config
+    return job_runner_config_path, job_config
 
 
-def start_remote_training(compute_config, **kwargs) -> str:
+def start_remote_training(job_config, **kwargs) -> str:
     logger.info("[Finetune] Starting remote training...")
-    job_id: str = anyscale.job.submit(compute_config)
+    job_id: str = anyscale.job.submit(job_config)
     logger.info(f"[Finetune] Remote training started. Job ID: {job_id}")
     return job_id
 
