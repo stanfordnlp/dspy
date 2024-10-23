@@ -129,6 +129,13 @@ plugins:
   - redirects:
       redirect_maps:
         'index.md': 'intro.md'
+        'docs/tutorials/rag.md': 'tutorials/rag.md'
+        'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
+        'docs/tutorials/summarization.md': 'tutorials/summarization.md'
+        'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
+        'docs/tutorials/examples.md': 'tutorials/examples.md'
+        
+
 extra:
   social:
     - icon: fontawesome/brands/github
