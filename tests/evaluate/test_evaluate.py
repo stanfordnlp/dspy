@@ -124,6 +124,7 @@ def test_evaluate_call_bad():
 @pytest.mark.parametrize(
     "program_with_example",
     [
+        (Predict("question -> answer"), new_example("What is 1+1?", "2")),
         (
             # Create a program that extracts entities from text and returns them as a list,
             # rather than returning a Predictor() wrapper. This is done intentionally to test
