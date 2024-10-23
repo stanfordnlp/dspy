@@ -128,13 +128,42 @@ plugins:
   - mkdocs-jupyter
   - redirects:
       redirect_maps:
+        # Main redirects
         'index.md': 'intro.md'
-        'docs/tutorials/rag.md': 'tutorials/rag.md'
-        'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
-        'docs/tutorials/summarization.md': 'tutorials/summarization.md'
-        'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
-        'docs/tutorials/examples.md': 'tutorials/examples.md'
+        'docs/intro/index.md': 'intro.md'
+        'docs/intro.md': 'intro.md'
+        'docs/faqs/index.md': 'faqs.md'
+        'docs/faqs.md': 'faqs.md'
+        'docs/cheatsheet/index.md': 'cheatsheet.md'
+        'docs/cheatsheet.md': 'cheatsheet.md'
+        'docs/dspy-usecases/index.md': 'dspy-usecases.md'
+        'docs/dspy-usecases.md': 'dspy-usecases.md'
         
+        # Quick Start redirects
+        'docs/quick-start/installation/index.md': 'quick-start/installation.md'
+        'docs/quick-start/installation.md': 'quick-start/installation.md'
+        'docs/quick-start/getting-started-01/index.md': 'quick-start/getting-started-01.md'
+        'docs/quick-start/getting-started-01.md': 'quick-start/getting-started-01.md'
+        'docs/quick-start/getting-started-02/index.md': 'quick-start/getting-started-02.md'
+        'docs/quick-start/getting-started-02.md': 'quick-start/getting-started-02.md'
+
+        # Deep Dive redirects
+        'docs/deep-dive/data-handling/examples/index.md': 'deep-dive/data-handling/examples.md'
+        'docs/deep-dive/data-handling/examples.md': 'deep-dive/data-handling/examples.md'
+        'docs/deep-dive/data-handling/built-in-datasets.md': 'deep-dive/data-handling/built-in-datasets.md'
+        'docs/deep-dive/data-handling/loading-custom-data.md': 'deep-dive/data-handling/loading-custom-data.md'
+
+        # Tutorial redirects
+        'docs/tutorials/rag.md': 'tutorials/rag.md'
+        'docs/tutorials/rag/index.md': 'tutorials/rag.md'
+        'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
+        'docs/tutorials/simplified-baleen/index.md': 'tutorials/simplified-baleen.md'
+        'docs/tutorials/summarization.md': 'tutorials/summarization.md'
+        'docs/tutorials/summarization/index.md': 'tutorials/summarization.md'
+        'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
+        'docs/tutorials/other_tutorial/index.md': 'tutorials/other_tutorial.md'
+        'docs/tutorials/examples.md': 'tutorials/examples.md'
+        'docs/tutorials/examples/index.md': 'tutorials/examples.md'
 
 extra:
   social:
