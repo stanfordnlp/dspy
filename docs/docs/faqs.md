@@ -49,7 +49,7 @@ class UnstrippedSignature(dspy.Signature):
 
 - **How do I define my own metrics? Can metrics return a float?**
 
-You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](/building-blocks/metrics) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
+You can define metrics as simply Python functions that process model generations and evaluate them based on user-defined requirements. Metrics can compare existent data (e.g. gold labels) to model predictions or they can be used to assess various components of an output using validation feedback from LMs (e.g. LLMs-as-Judges). Metrics can return `bool`, `int`, and `float` types scores. Check out the official [Metrics docs](/building-blocks/5-metrics) to learn more about defining custom metrics and advanced evaluations using AI feedback and/or DSPy programs.
 
 - **How expensive or slow is compiling??**
 
@@ -115,7 +115,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 You can specify JSON-type descriptions in the `desc` field of the long-form signature `dspy.OutputField` (e.g. `output = dspy.OutputField(desc='key-value pairs')`).
 
-If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/building-blocks/assertions) (or the next question!)
+If you notice outputs are still not conforming to JSON formatting, try Asserting this constraint! Check out [Assertions](/building-blocks/7-assertions) (or the next question!)
 
 - **How do I use DSPy assertions?**
 
