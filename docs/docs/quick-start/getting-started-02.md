@@ -259,7 +259,7 @@ But DSPy gives you paths to continue iterating on the quality of your system and
 In general, you have the following tools:
 
 1. Explore better system architectures for your program, e.g. what if we ask the LM to generate search queries for the retriever? See this [notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) or the [STORM pipeline](https://arxiv.org/abs/2402.14207) built in DSPy.
-2. Explore different [prompt optimizers](https://arxiv.org/abs/2406.11695) or [weight optimizers](https://arxiv.org/abs/2407.10930). See the **[Optimizers Docs](/building-blocks/optimizers)**.
+2. Explore different [prompt optimizers](https://arxiv.org/abs/2406.11695) or [weight optimizers](https://arxiv.org/abs/2407.10930). See the **[Optimizers Docs](/building-blocks/6-optimizers)**.
 3. Scale inference time compute using DSPy Optimizers, e.g. this [notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/agents/multi_agent.ipynb).
 4. Cut cost by distilling to a smaller LM, via prompt or weight optimization, e.g. [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/nli/scone/scone.ipynb) or [this notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/qa/hotpot/multihop_finetune.ipynb).
 

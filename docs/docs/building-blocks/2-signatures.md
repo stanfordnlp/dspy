@@ -157,4 +157,4 @@ Prediction(
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
 
-You should compose multiple signatures into bigger [DSPy modules](/building-blocks/modules) and [compile these modules into optimized prompts](/building-blocks/optimizers#what-does-a-dspy-optimizer-tune-how-does-it-tune-them) and finetunes.
+You should compose multiple signatures into bigger [DSPy modules](/building-blocks/3-modules) and [compile these modules into optimized prompts](/building-blocks/6-optimizers#what-does-a-dspy-optimizer-tune-how-does-it-tune-them) and finetunes.
