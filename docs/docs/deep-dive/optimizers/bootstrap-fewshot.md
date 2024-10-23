@@ -134,4 +134,3 @@ cot_compiled.save('turbo_gsm8k.json')
 
 9. Other optimizers like `BootstrapFewShotWithOptuna`, `BootstrapFewShotWithRandomSearch` etc. also work on same principles with slight changes in the example discovery process.
 
----
