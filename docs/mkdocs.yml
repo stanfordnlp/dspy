@@ -155,15 +155,11 @@ plugins:
 
         # Tutorial redirects
         'docs/tutorials/rag.md': 'tutorials/rag.md'
-        'docs/tutorials/rag/index.md': 'tutorials/rag.md'
         'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
-        'docs/tutorials/simplified-baleen/index.md': 'tutorials/simplified-baleen.md'
         'docs/tutorials/summarization.md': 'tutorials/summarization.md'
-        'docs/tutorials/summarization/index.md': 'tutorials/summarization.md'
         'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
-        'docs/tutorials/other_tutorial/index.md': 'tutorials/other_tutorial.md'
         'docs/tutorials/examples.md': 'tutorials/examples.md'
-        'docs/tutorials/examples/index.md': 'tutorials/examples.md'
+
 
 extra:
   social:
