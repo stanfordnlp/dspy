@@ -120,13 +120,22 @@ def test_evaluate_call_bad():
     assert score == 0.0
 
 
+@pytest.mark.parametrize(
+    "program_with_example",
+    [
+        (Predict("question -> answer"), new_example("What is 1+1?", "2")),
+        (
+            Predict("text -> entities"),
+            dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
+        ),
+    ],
+)
 @pytest.mark.parametrize("display_table", [True, False, 1])
 @pytest.mark.parametrize("is_in_ipython_notebook_environment", [True, False])
-def test_evaluate_display_table(display_table, is_in_ipython_notebook_environment, capfd):
-    devset = [new_example("What is 1+1?", "2")]
-    program = Predict("question -> answer")
+def test_evaluate_display_table(program_with_example, display_table, is_in_ipython_notebook_environment, capfd):
+    program, example = program_with_example
     ev = Evaluate(
-        devset=devset,
+        devset=[example],
         metric=answer_exact_match,
         display_table=display_table,
     )
@@ -140,4 +149,5 @@ def test_evaluate_display_table(display_table, is_in_ipython_notebook_environmen
         if not is_in_ipython_notebook_environment and display_table:
             # In console environments where IPython is not available, the table should be printed
             # to the console
-            assert "What is 1+1?" in out
+            example_input = next(iter(example.inputs().values()))
+            assert example_input in out
