@@ -134,11 +134,7 @@ plugins:
         'docs/tutorials/summarization.md': 'tutorials/summarization.md'
         'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
         'docs/tutorials/examples.md': 'tutorials/examples.md'
-        # Adding redirects for other potential docs paths
-        'docs/quick-start/installation.md': 'quick-start/installation.md'
-        'docs/quick-start/getting-started-01.md': 'quick-start/getting-started-01.md'
-        'docs/quick-start/getting-started-02.md': 'quick-start/getting-started-02.md'
-        'docs/building-blocks/solving_your_task.md': 'building-blocks/solving_your_task.md'
+        
 
 extra:
   social:
