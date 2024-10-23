@@ -8,6 +8,7 @@ import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
+from dspy.functional import TypedPredictor
 from dspy.predict import Predict
 from dspy.utils.dummies import DummyLM
 
@@ -123,9 +124,8 @@ def test_evaluate_call_bad():
 @pytest.mark.parametrize(
     "program_with_example",
     [
-        (Predict("question -> answer"), new_example("What is 1+1?", "2")),
         (
-            Predict("text -> entities"),
+            lambda text: TypedPredictor("text: str -> entities: List[str]")(text=text).entities,
             dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
         ),
     ],
@@ -134,9 +134,20 @@ def test_evaluate_call_bad():
 @pytest.mark.parametrize("is_in_ipython_notebook_environment", [True, False])
 def test_evaluate_display_table(program_with_example, display_table, is_in_ipython_notebook_environment, capfd):
     program, example = program_with_example
+    example_input = next(iter(example.inputs().values()))
+    example_output = {key: value for key, value in example.toDict().items() if key not in example.inputs()}
+
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                example_input: example_output,
+            }
+        )
+    )
+
     ev = Evaluate(
         devset=[example],
-        metric=answer_exact_match,
+        metric=lambda example, pred, **kwargs: example == pred,
         display_table=display_table,
     )
     assert ev.display_table == display_table
