@@ -12,7 +12,6 @@ nav:
       - Installation: quick-start/installation.md
       - Getting Started I: quick-start/getting-started-01.md
       - Getting Started II: quick-start/getting-started-02.md
-
     - Building Blocks:
       - DSPy in 8 Steps: building-blocks/solving_your_task.md
       - Language Models: building-blocks/1-language_models.md
@@ -30,6 +29,10 @@ nav:
     - Additional Resources: tutorials/other_tutorial.md
     - Examples: tutorials/examples.md
   - Concepts:
+    - Data Handling:
+      - Examples in DSPy: deep-dive/data-handling/examples.md
+      - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
+      - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
     - Signatures:
       - Understanding Signatures: deep-dive/signature/understanding-signatures.md
       - Executing Signatures: deep-dive/signature/executing-signatures.md
@@ -77,10 +80,6 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-    - Data Handling:
-      - Examples in DSPy: deep-dive/data-handling/examples.md
-      - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
-      - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
   - FAQ: faqs.md
   - Cheatsheet: cheatsheet.md
   - DSPy Usecases: dspy-usecases.md
@@ -134,6 +133,7 @@ plugins:
         'docs/tutorials/summarization.md': 'tutorials/summarization.md'
         'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
         'docs/tutorials/examples.md': 'tutorials/examples.md'
+        'docs/deep-dive/modules/assertions.md': 'docs/building-blocks/7-assertions.md'
         
 
 extra:
