@@ -7,12 +7,11 @@ edit_uri: edit/main/docs/docs/
 docs_dir: 'docs/'
 nav:
   - About DSPy: intro.md
-  - Docs:
+  - Getting Started:
     - Quick Start:
       - Installation: quick-start/installation.md
       - Getting Started I: quick-start/getting-started-01.md
       - Getting Started II: quick-start/getting-started-02.md
-
     - Building Blocks:
       - DSPy in 8 Steps: building-blocks/solving_your_task.md
       - Language Models: building-blocks/1-language_models.md
@@ -29,7 +28,7 @@ nav:
     - Summarization: tutorials/summarization.md
     - Additional Resources: tutorials/other_tutorial.md
     - Examples: tutorials/examples.md
-  - Deep Dive:
+  - Concepts:
     - Data Handling:
       - Examples in DSPy: deep-dive/data-handling/examples.md
       - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
@@ -47,6 +46,15 @@ nav:
       - Assertions: deep-dive/modules/assertions.md
       - Retreive: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
+    - Optimizers (formerly Teleprompters):
+      - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
+      - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
+      - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
+      - Ensemble: deep-dive/optimizers/Ensemble.md
+      - BFRS: deep-dive/optimizers/bfrs.md
+      - CoPro: deep-dive/optimizers/copro.md
+      - MIProV2: deep-dive/optimizers/miprov2.md
+    - Assertions: deep-dive/assertions.md
     - Language Model Clients:
       - Local Language Model Clients:
         - HFClientTGI: deep-dive/language_model_clients/lm_local_models/HFClientTGI.md
@@ -72,15 +80,6 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-    - Assertions: deep-dive/assertions.md
-    - Teleprompters:
-      - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
-      - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
-      - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
-      - Ensemble: deep-dive/optimizers/Ensemble.md
-      - BFRS: deep-dive/optimizers/bfrs.md
-      - CoPro: deep-dive/optimizers/copro.md
-      - MIProV2: deep-dive/optimizers/miprov2.md
   - FAQ: faqs.md
   - Cheatsheet: cheatsheet.md
   - DSPy Usecases: dspy-usecases.md
@@ -174,7 +173,8 @@ plugins:
         'docs/deep-dive/modules/react.md': 'deep-dive/modules/react.md'
         'docs/deep-dive/modules/multi-chain-comparison.md': 'deep-dive/modules/multi-chain-comparison.md'
         'docs/deep-dive/modules/program-of-thought.md': 'deep-dive/modules/program-of-thought.md'
-        'docs/deep-dive/modules/assertions.md': 'deep-dive/modules/assertions.md'
+        'docs/deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
+        'deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
         'docs/deep-dive/modules/retrieve.md': 'deep-dive/modules/retrieve.md'
         'docs/deep-dive/modules/guide.md': 'deep-dive/modules/guide.md'
         
