@@ -155,7 +155,6 @@ plugins:
         'docs/tutorials/summarization.md': 'tutorials/summarization.md'
         'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
         'docs/tutorials/examples.md': 'tutorials/examples.md'
-        'docs/deep-dive/modules/assertions.md': 'docs/building-blocks/7-assertions.md'
         
         # Deep Dive redirects
         # Data Handling
@@ -174,7 +173,8 @@ plugins:
         'docs/deep-dive/modules/react.md': 'deep-dive/modules/react.md'
         'docs/deep-dive/modules/multi-chain-comparison.md': 'deep-dive/modules/multi-chain-comparison.md'
         'docs/deep-dive/modules/program-of-thought.md': 'deep-dive/modules/program-of-thought.md'
-        'docs/deep-dive/modules/assertions.md': 'deep-dive/modules/assertions.md'
+        'docs/deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
+        'deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
         'docs/deep-dive/modules/retrieve.md': 'deep-dive/modules/retrieve.md'
         'docs/deep-dive/modules/guide.md': 'deep-dive/modules/guide.md'
         
