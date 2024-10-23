@@ -7,7 +7,7 @@ edit_uri: edit/main/docs/docs/
 docs_dir: 'docs/'
 nav:
   - About DSPy: intro.md
-  - Installation:
+  - Getting Started:
     - Quick Start:
       - Installation: quick-start/installation.md
       - Getting Started I: quick-start/getting-started-01.md
