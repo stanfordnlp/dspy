@@ -23,6 +23,7 @@ class Confusion:
             return_outputs=False,
             provide_traceback=False,
             use_class_weight=True,
+            output_field_name="response",
             **_kwargs,
     ):
         self.labels = labels
@@ -38,9 +39,10 @@ class Confusion:
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
+        self.output_field_name = output_field_name
 
     def extract(self, prediction):
-        response = prediction["response"]
+        response = prediction[self.output_field_name]
         match = re.search(r"|".join(self.labels), response.lower())
         return match.group(0) if match else None
 
@@ -97,7 +99,7 @@ class Confusion:
             with logging_redirect_tqdm():
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg["response"]].append(prediction)
+                preds[arg[self.output_field_name]].append(prediction)
                 self._update_progress(pbar, preds, devset)
 
         pbar.close()
@@ -143,7 +145,7 @@ class Confusion:
                     continue
 
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg["response"]].append(prediction)
+                preds[arg[self.output_field_name]].append(prediction)
                 self._update_progress(pbar, preds, devset)
             pbar.close()
 
@@ -294,6 +296,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             stop_at_score=None,
             metric_threshold=None,
             use_class_weight=True,
+            output_field_name="response",
     ):
         self.labels = labels
         self.teacher_settings = teacher_settings
@@ -309,6 +312,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
         self.max_labeled_demos = max_labeled_demos
         
         self.use_class_weight = use_class_weight
+        self.output_field_name = output_field_name
 
         print(f"Going to sample between {self.min_num_samples} and {self.max_num_samples} traces per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
@@ -372,6 +376,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
                 display_table=False,
                 display_progress=True,
                 use_class_weight=self.use_class_weight,
+                output_field_name=self.output_field_name,
             )
 
             score, cm = confusion(program, return_matrix=True)
