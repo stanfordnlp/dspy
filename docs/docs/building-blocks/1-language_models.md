@@ -116,14 +116,90 @@ By default LMs in DSPy are cached. If you repeat the same call, you will get the
 
 Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as well. This works great for open LMs from HuggingFace hosted locally with SGLang, VLLM, or HF Text-Generation-Inference.
 
-```python
-sglang_port = 7501
-sglang_url = f"http://localhost:{sglang_port}/v1"
-sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+#### Setting up SGLang
 
-# You could also use text mode, in which the prompts are *not* formatted as messages.
-sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
-```
+1. **Install SGLang (adapted from SGLang [documentation](https://sglang.readthedocs.io/en/latest/install.html)):**
+
+   ```bash
+   pip install "sglang[all]"
+   pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
+   ```
+
+2. **Login to HuggingFace:**
+
+   ```bash
+   huggingface-cli login
+   ```
+
+    You may need to set your HuggingFace API token to access gated models:
+
+   ```bash
+   export HUGGINGFACEHUB_API_TOKEN=your_api_token
+   ```
+
+   Also, ensure your cache directory is accessible:
+
+   ```bash
+   export TRANSFORMERS_CACHE=/path/to/your/cache
+   ```
+
+3. **Launch the SGLang server:**
+
+   Replace `meta-llama/Meta-Llama-3-8B-Instruct` with the model you wish to launch. 
+
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server \
+     --model-path meta-llama/Meta-Llama-3-8B-Instruct \
+     --port 7501 \
+   ```
+
+4. **Connect to the SGLang server via `dspy.LM`:**
+
+    ```python
+    sglang_port = 7501
+    sglang_url = f"http://localhost:{sglang_port}/v1"
+    sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+
+    # You could also use text mode, in which the prompts are *not* formatted as messages.
+    sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
+    ```
+
+    For further details on customizing the SGLang configuration, please refer to the [SGLang documentation](https://sglang.readthedocs.io/en/latest/backend.html#additional-server-arguments).
+
+#
+Additionally, you can also host models locally through Ollama.
+
+#### Setting Up Ollama (adapted from Ollama [documentation](https://github.com/ollama/ollama))
+
+
+1. **Install Ollama:**
+
+
+   ```bash
+   curl -fsSL https://ollama.ai/install.sh | sh
+   ```
+
+2. **Launch the Ollama server:**
+
+    Replace `llama3.2:1b` with the model you wish to launch. 
+
+   ```bash
+   ollama run llama3.2:1b
+   ```
+
+   If the model isn't in GGUF format, you'll need to convert it first, following corresponding Ollama [instructions](https://github.com/ollama/ollama?tab=readme-ov-file#import-from-gguf).
+
+    If you wish to download the model manually and load it into Ollama, please follow the corresponding Ollama import [instructions](https://github.com/ollama/ollama/blob/main/docs/import.md).
+
+3. **Connect to the Ollama server via `dspy.LM`:**
+
+   ```python
+   ollama_port = 11434 
+   ollama_url = f"http://localhost:{ollama_port}"
+   ollama_llm = dspy.LM(model="ollama/llama3.2:1b", api_base=ollama_url)
+   ```
+
+   For further details on customizing the Ollama configuration, please refer to the LiteLLM [Ollama documentation](https://docs.litellm.ai/docs/providers/ollama).
 
 ### Inspecting output and usage metadata
 
