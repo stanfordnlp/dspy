@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
 from datetime import datetime
 import functools
 import os
@@ -7,12 +7,15 @@ from typing import Any, Dict, List, Optional
 import ujson
 import uuid
 
-from dspy.utils.logging import logger
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import (
-    get_provider_finetune_job_class,
-    execute_finetune_job,
+import dspy
+from dspy.adapters.base import Adapter
+from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.utils_finetune import (
+  DataFormat,
+  validate_data_format,
+  infer_data_format
 )
+from dspy.utils.logging import logger
 
 import litellm
 from litellm.caching import Cache
@@ -35,6 +38,7 @@ class LM:
             max_tokens=1000,
             cache=True,
             launch_kwargs=None,
+            provider=None,
             **kwargs
         ):
         # Remember to update LM.copy() if you modify the constructor!
@@ -42,6 +46,7 @@ class LM:
         self.model_type = model_type
         self.cache = cache
         self.launch_kwargs = launch_kwargs or {}
+        self.provider = provider or Provider()
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
@@ -87,51 +92,66 @@ class LM:
         _inspect_history(self, n)
 
     def launch(self):
-        """Send a request to the provider to launch the model, if needed."""
-        msg = f"`launch()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
+        self.provider.launch(self.model, self.launch_kwargs)
 
     def kill(self):
-        """Send a request to the provider to kill the model, if needed."""
-        msg = f"`kill()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
+        self.provider.kill(self.model, self.launch_kwargs)
 
     def finetune(
             self,
             train_data: List[Dict[str, Any]],
             train_kwargs: Optional[Dict[str, Any]]=None,
-            train_method: TrainingMethod = TrainingMethod.SFT,
-            provider: str = "openai",
-            cache_finetune: bool = True,
-        ) -> FinetuneJob:
-        """Start model fine-tuning, if supported."""
+            data_format: Optional[DataFormat] = None,
+        ) -> TrainingJob:
         from dspy import settings as settings
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
-        FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
-        finetune_job = FinetuneJobClass(
+        err = f"Provider {self.provider} does not support fine-tuning."
+        assert self.provider.finetunable, err
+
+        # Perform data validation before starting the async job to fail early
+        # TODO: Should this be performed by the providers?
+        train_kwargs = train_kwargs or {}
+        if not data_format:
+            adapter = self.infer_adapter()
+            data_format = infer_data_format(adapter)
+        validate_data_format(data=train_data, data_format=data_format)
+
+        # TODO(ask team): We can quickly add caching, but doing so requires
+        # adding functions that just call other functions as we had in the last
+        # iteration, unless people have other ideas.
+        job = self.provider.TrainingJob(
             model=self.model,
             train_data=train_data,
             train_kwargs=train_kwargs,
-            train_method=train_method,
-            provider=provider
+            data_format=data_format
         )
+        asyncio.create_task(self._run_finetune_job(job=job))
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(
-            execute_finetune_job,
-            finetune_job,
-            lm=self,
-            cache_finetune=cache_finetune
-        )
-        executor.shutdown(wait=False)
+        return job
 
-        return finetune_job
+    async def _run_finetune_job(self, job: TrainingJob):
+        # TODO: We should listen for keyboard interrupts somewhere.
+        try:
+            model = self.provider.finetune(job=job)
+            lm = self.copy(model=model)
+            job.set_result(lm)
+        except Exception as err:
+            logger.error(err)
+            job.set_result(err)
     
+    def infer_adapter(self) -> Adapter:
+        if dspy.settings.adapter:
+            return dspy.settings.adapter
+
+        model_type_to_adapter = {
+            "chat": dspy.ChatAdapter(),
+        }
+        model_type = self.model_type
+        return model_type_to_adapter[model_type]
+        
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
 
