@@ -227,7 +227,11 @@ class Evaluate:
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
         data = [
-            dict(example) | {"prediction": prediction, "correct": score}
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if isinstance(prediction, dict)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
             for _, example, prediction, score in predicted_devset
         ]
 
@@ -274,6 +278,23 @@ class Evaluate:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
+
+
+def merge_dicts(d1, d2) -> dict:
+    merged = {}
+    for k, v in d1.items():
+        if k in d2:
+            merged[f"example_{k}"] = v
+        else:
+            merged[k] = v
+
+    for k, v in d2.items():
+        if k in d1:
+            merged[f"pred_{k}"] = v
+        else:
+            merged[k] = v
+
+    return merged
 
 
 def truncate_cell(content) -> str:
