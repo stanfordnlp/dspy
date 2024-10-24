@@ -3,8 +3,8 @@ import logging
 import pytest
 
 import dspy
-from dsp.modules.dummy_lm import DummyLM
 from dspy.datasets import HotPotQA
+from dspy.utils.dummies import DummyLM
 
 try:
     from llama_index.core import Settings, VectorStoreIndex
@@ -21,7 +21,7 @@ except ImportError:
 @pytest.fixture()
 def rag_setup() -> dict:
     """Builds the necessary fixtures to test LI"""
-    pytest.importorskip("llamaindex")
+    pytest.importorskip("llama_index")
     dataset = HotPotQA(train_seed=1, train_size=8, eval_seed=2023, dev_size=4, test_size=0)
     trainset = [x.with_inputs("question") for x in dataset.train]
     devset = [x.with_inputs("question") for x in dataset.dev]
@@ -46,7 +46,7 @@ def rag_setup() -> dict:
 
 def test_lirm_as_rm(rag_setup):
     """Test the retriever as retriever method"""
-    pytest.importorskip("llamaindex")
+    pytest.importorskip("llama_index")
     retriever = rag_setup.get("retriever")
     test_res_li = retriever.retrieve("At My Window was released by which American singer-songwriter?")
     rm = rag_setup.get("rm")
@@ -59,3 +59,25 @@ def test_lirm_as_rm(rag_setup):
     assert isinstance(test_res_dspy, list), "Ensuring the results are a list from the DSPy retriever"
 
     assert len(test_res_li) == len(test_res_dspy), "Rough equality check of the results"
+
+
+def test_save_load_llama_index_rag(rag_setup, tmp_path):
+    pytest.importorskip("llama_index")
+
+    class RAG(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.retriever = dspy.Retrieve(k=3)
+            self.cot = dspy.ChainOfThought("question, context -> answer")
+
+    rag = RAG()
+    rag.retriever.k = 4
+
+    file_path = tmp_path / "rag.json"
+    rag.save(file_path)
+    loaded_rag = RAG()
+    # Before loading, the retriever k should be 3.
+    assert loaded_rag.retriever.k == 3
+    # After loading, the retriever k should be 4.
+    loaded_rag.load(file_path)
+    assert loaded_rag.retriever.k == 4

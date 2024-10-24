@@ -96,6 +96,10 @@ class SignatureMeta(type(BaseModel)):
     def instructions(cls) -> str:
         return inspect.cleandoc(getattr(cls, "__doc__", ""))
 
+    @instructions.setter
+    def instructions(cls, instructions: str) -> None:
+        setattr(cls, "__doc__", instructions)
+
     def with_instructions(cls, instructions: str) -> Type["Signature"]:
         return Signature(cls.fields, instructions)
 
@@ -158,6 +162,28 @@ class SignatureMeta(type(BaseModel)):
 
         new_fields = dict(input_fields + output_fields)
         return Signature(new_fields, cls.instructions)
+
+    def dump_state(cls):
+        state = {"instructions": cls.instructions, "fields": []}
+        for field in cls.fields:
+            state["fields"].append(
+                {
+                    "prefix": cls.fields[field].json_schema_extra["prefix"],
+                    "description": cls.fields[field].json_schema_extra["desc"],
+                }
+            )
+
+        return state
+
+    def load_state(cls, state):
+        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+
+        signature_copy.instructions = state["instructions"]
+        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
+            field.json_schema_extra["prefix"] = saved_field["prefix"]
+            field.json_schema_extra["desc"] = saved_field["description"]
+
+        return signature_copy
 
     def equals(cls, other) -> bool:
         """Compare the JSON schema of two Pydantic models."""

@@ -10,9 +10,9 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(	
     #replace_package_name_marker
-    name="dspy-ai",
+    name="dspy",
     #replace_package_version_marker
-    version="2.5.2", 	
+    version="2.5.15", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	
@@ -39,7 +39,8 @@ setup(
         "snowflake": ["snowflake-snowpark-python"],
         "fastembed": ["fastembed"],
         "groq": ["groq~=0.8.0"],
-        "langfuse": ["langfuse~=2.36.1"]
+        "langfuse": ["langfuse~=2.36.1"],
+        "pgvector": ["psycopg2~=2.9.9","pgvector~=0.2.5"]
     },
     classifiers=[	
         "Development Status :: 3 - Alpha",	

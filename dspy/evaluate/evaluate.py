@@ -191,12 +191,16 @@ class Evaluate:
                     current_error_count = self.error_count
                 if current_error_count >= self.max_errors:
                     raise e
-                
+
                 if self.provide_traceback:
-                    dspy.logger.error(f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}")
+                    dspy.logger.error(
+                        f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}"
+                    )
                 else:
-                    dspy.logger.error(f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace.")
-                
+                    dspy.logger.error(
+                        f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
+                    )
+
                 return example_idx, example, {}, 0.0
             finally:
                 if creating_new_thread:
@@ -222,8 +226,20 @@ class Evaluate:
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
+        def prediction_is_dictlike(prediction):
+            try:
+                dict(prediction)
+                return True
+            except Exception:
+                return False
+
         data = [
-            merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
+            for _, example, prediction, score in predicted_devset
         ]
 
         result_df = pd.DataFrame(data)
@@ -303,7 +319,9 @@ def stylize_metric_name(df: pd.DataFrame, metric_name: str) -> pd.DataFrame:
     :param df: The pandas DataFrame for which to stylize cell contents.
     :param metric_name: The name of the metric for which to stylize DataFrame cell contents.
     """
-    df[metric_name] = df[metric_name].apply(lambda x: f"✔️ [{x}]" if x else str)
+    df[metric_name] = df[metric_name].apply(
+        lambda x: f"✔️ [{x:.3f}]" if x and isinstance(x, float) else f"✔️ [{x}]" if x else ""
+    )
     return df
 
 

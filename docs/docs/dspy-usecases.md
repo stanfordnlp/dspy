@@ -4,15 +4,6 @@ We often get questions like "How are people using DSPy in practice?", both in pr
 
 This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please make a PR.
 
-## Table of Contents
-
-1. [Company Use Cases](#a-few-company-use-cases)
-2. [Research Papers using DSPy](#a-few-papers-using-dspy)
-3. [Open-Source Software using DSPy](#a-few-repositories-or-other-oss-examples-using-dspy)
-4. [Providers with DSPy support](#a-few-providers-integrations-and-related-blog-releases)
-5. [Blogs & Videos on using DSPy](#a-few-blogs--videos-on-using-dspy)
-
-
 ## A Few Company Use Cases
 
 | **Name** | **Use Cases** |
@@ -32,6 +23,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Normal Computing](https://www.normalcomputing.com/)** | Translate specs from chip companies from English to intermediate formal languages |
 | **[Procure.FYI](https://www.procure.fyi/)** | Process messy, publicly available technology spending and pricing data via DSPy. |
 | **[RadiantLogic](https://www.radiantlogic.com/)** | AI Data Assistant. DSPy is used for the agent that routes the query, the context extraction module, the text-to-sql conversion engine, and the table summarization module. |
+| **[Raia](https://raiahealth.com/)** | Using DSPy for AI-powered Personal Healthcare Agents. |
 | **[Hyperlint](https://hyperlint.com)** | Uses DSPy to generate technical documentation. DSPy helps to fetch relevant information and synthesize that into tutorials. |
 | **[Starops](https://staropshq.com/) & [Saya](https://heysaya.ai/)** | Building research documents given a user's corpus. Generate prompts to create more articles from example articles. |
 | **[Tessel AI](https://tesselai.com/)** | Enhancing human-machine interaction with data use cases. |
@@ -39,6 +31,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Howie](https://howie.ai)** | Using DSPy to automate meeting scheduling through email. |
 | **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
 | **[Trampoline AI](https://trampoline.ai)** | Uses DSPy to power their data-augmentation and LM pipelines. |
+| **[Pretrain](https://pretrain.com)** | Uses DSPy to automatically optimize AI performance towards user-defined tasks based on uploaded examples. |
 
 WIP. This list mainly includes companies that have public posts or have OKed being included for specific products so far.
 

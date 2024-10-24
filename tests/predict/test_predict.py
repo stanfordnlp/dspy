@@ -1,10 +1,12 @@
+import copy
+import textwrap
+
+import pydantic
+import ujson
+
 import dspy
 from dspy import Predict, Signature, TypedPredictor
 from dspy.utils.dummies import DummyLM
-import copy
-import textwrap
-import pydantic
-import ujson
 
 
 def test_initialization_with_string_signature():
@@ -39,20 +41,10 @@ def test_lm_after_dump_and_load_state():
 
 def test_call_method():
     predict_instance = Predict("input -> output")
-    lm = DummyLM(["test output"])
+    lm = DummyLM([{"output": "test output"}])
     dspy.settings.configure(lm=lm)
     result = predict_instance(input="test input")
     assert result.output == "test output"
-    assert lm.get_convo(-1) == (
-        "Given the fields `input`, produce the fields `output`.\n"
-        "\n---\n\n"
-        "Follow the following format.\n\n"
-        "Input: ${input}\n"
-        "Output: ${output}\n"
-        "\n---\n\n"
-        "Input: test input\n"
-        "Output: test output"
-    )
 
 
 def test_instructions_after_dump_and_load_state():
@@ -134,17 +126,38 @@ def test_typed_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
+def test_signature_fields_after_dump_and_load_state(tmp_path):
+    class CustomSignature(dspy.Signature):
+        """I am just an instruction."""
+        sentence = dspy.InputField(desc="I am an innocent input!")
+        sentiment = dspy.OutputField()
+
+    file_path = tmp_path / "tmp.json"
+    original_instance = Predict(CustomSignature)
+    original_instance.save(file_path)
+
+    class CustomSignature2(dspy.Signature):
+        """I am not a pure instruction."""
+        sentence = dspy.InputField(desc="I am a malicious input!")
+        sentiment = dspy.OutputField(desc="I am a malicious output!", prefix="I am a prefix!")
+
+    new_instance = Predict(CustomSignature2)
+    assert new_instance.signature.dump_state() != original_instance.signature.dump_state()
+    # After loading, the fields should be the same.
+    new_instance.load(file_path)
+    assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
+
 
 def test_forward_method():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([]))
+    dspy.settings.configure(lm=DummyLM([{"answer": "No more responses"}]))
     result = program(question="What is 1+1?").answer
     assert result == "No more responses"
 
 
 def test_forward_method2():
     program = Predict("question -> answer1, answer2")
-    dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
+    dspy.settings.configure(lm=DummyLM([{"answer1": "my first answer", "answer2": "my second answer"}]))
     result = program(question="What is 1+1?")
     assert result.answer1 == "my first answer"
     assert result.answer2 == "my second answer"
@@ -159,7 +172,7 @@ def test_config_management():
 
 def test_multi_output():
     program = Predict("question -> answer", n=2)
-    dspy.settings.configure(lm=DummyLM(["my first answer", "my second answer"]))
+    dspy.settings.configure(lm=DummyLM([{"answer": "my first answer"}, {"answer": "my second answer"}]))
     results = program(question="What is 1+1?")
     assert results.completions.answer[0] == "my first answer"
     assert results.completions.answer[1] == "my second answer"
@@ -170,8 +183,8 @@ def test_multi_output2():
     dspy.settings.configure(
         lm=DummyLM(
             [
-                "my 0 answer\nAnswer 2: my 2 answer",
-                "my 1 answer\nAnswer 2: my 3 answer",
+                {"answer1": "my 0 answer", "answer2": "my 2 answer"},
+                {"answer1": "my 1 answer", "answer2": "my 3 answer"},
             ],
         )
     )
@@ -202,21 +215,6 @@ def test_output_only():
 
     predictor = Predict(OutputOnlySignature)
 
-    lm = DummyLM(["short answer"])
+    lm = DummyLM([{"output": "short answer"}])
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
-
-    assert lm.get_convo(-1) == textwrap.dedent(
-        """\
-        Given the fields , produce the fields `output`.
-        
-        ---
-        
-        Follow the following format.
-        
-        Output: ${output}
-        
-        ---
-        
-        Output: short answer"""
-    )

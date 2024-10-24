@@ -98,11 +98,19 @@ class TypedPredictor(dspy.Module):
             explain_errors: If True, the model will try to explain the errors it encounters.
         """
         super().__init__()
-        self.signature = ensure_signature(signature, instructions)
+        signature = ensure_signature(signature, instructions)
         self.predictor = dspy.Predict(signature, _parse_values=False)
         self.max_retries = max_retries
         self.wrap_json = wrap_json
         self.explain_errors = explain_errors
+
+    @property
+    def signature(self) -> dspy.Signature:
+        return self.predictor.signature
+
+    @signature.setter
+    def signature(self, value: dspy.Signature):
+        self.predictor.signature = value
 
     def copy(self) -> "TypedPredictor":
         return TypedPredictor(

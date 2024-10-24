@@ -9,7 +9,7 @@ try:
     from psycopg2 import sql
 except ImportError:
     raise ImportError(
-        "The 'pgvector' extra is required to use PgVectorRM. Install it with `pip install dspy-ai[pgvector]`",
+        "The 'pgvector' extra is required to use PgVectorRM. Install it with `pip install dspy-ai[pgvector]`. Also, try `pip install pgvector psycopg2`.",
     )
 try:
     import openai

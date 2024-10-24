@@ -1,8 +1,9 @@
 import dspy
-from dspy.predict import Predict
-from dspy.utils.dummies import DummyLM
 from dspy import Example
+from dspy.predict import Predict
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.utils.dummies import DummyLM
+
 
 class SimpleModule(dspy.Module):
     def __init__(self, signature):
@@ -12,8 +13,10 @@ class SimpleModule(dspy.Module):
     def forward(self, **kwargs):
         return self.predictor(**kwargs)
 
+
 def simple_metric(example, prediction, trace=None):
     return example.output == prediction.output
+
 
 def test_basic_workflow():
     """Test to ensure the basic compile flow runs without errors."""
@@ -34,4 +37,3 @@ def test_basic_workflow():
         Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
     ]
     optimizer.compile(student, teacher=teacher, trainset=trainset)
-

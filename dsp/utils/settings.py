@@ -1,7 +1,29 @@
 import threading
+from copy import deepcopy
 from contextlib import contextmanager
 
 from dsp.utils.utils import dotdict
+
+DEFAULT_CONFIG = dotdict(
+    lm=None,
+    adapter=None,
+    rm=None,
+    branch_idx=0,
+    reranker=None,
+    compiled_lm=None,
+    force_reuse_cached_compilation=False,
+    compiling=False,
+    skip_logprobs=False,
+    trace=[],
+    release=0,
+    bypass_assert=False,
+    bypass_suggest=False,
+    assert_failures=0,
+    suggest_failures=0,
+    langchain_history=[],
+    experimental=False,
+    backoff_time=10,
+)
 
 
 class Settings:
@@ -25,27 +47,9 @@ class Settings:
             #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
             #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
             #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
-            config = dotdict(
-                lm=None,
-                adapter=None,
-                rm=None,
-                branch_idx=0,
-                reranker=None,
-                compiled_lm=None,
-                force_reuse_cached_compilation=False,
-                compiling=False,  # TODO: can probably be removed
-                skip_logprobs=False,
-                trace=[],
-                release=0,
-                bypass_assert=False,
-                bypass_suggest=False,
-                assert_failures=0,
-                suggest_failures=0,
-                langchain_history=[],
-                experimental=False,
-                backoff_time = 10
-            )
-            cls._instance.__append(config)
+
+            # make a deepcopy of the default config to avoid modifying the default config
+            cls._instance.__append(deepcopy(DEFAULT_CONFIG))
 
         return cls._instance
 

@@ -8,6 +8,7 @@ import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
+from dspy.functional import TypedPredictor
 from dspy.predict import Predict
 from dspy.utils.dummies import DummyLM
 
@@ -34,7 +35,14 @@ def test_evaluate_initialization():
 
 
 def test_evaluate_call():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"}))
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        )
+    )
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -48,7 +56,7 @@ def test_evaluate_call():
 
 
 def test_multithread_evaluate_call():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "2", "What is 2+2?": "4"}))
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -65,13 +73,13 @@ def test_multithread_evaluate_call():
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
     # slow LM that sleeps for 1 second before returning the answer
     class SlowLM(DummyLM):
-        def __call__(self, prompt, **kwargs):
+        def __call__(self, *args, **kwargs):
             import time
 
             time.sleep(1)
-            return super().__call__(prompt, **kwargs)
+            return super().__call__(*args, **kwargs)
 
-    dspy.settings.configure(lm=SlowLM({"What is 1+1?": "2", "What is 2+2?": "4"}))
+    dspy.settings.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
 
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -101,7 +109,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
 
 
 def test_evaluate_call_bad():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": "0", "What is 2+2?": "0"}))
+    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     ev = Evaluate(
@@ -113,14 +121,38 @@ def test_evaluate_call_bad():
     assert score == 0.0
 
 
+@pytest.mark.parametrize(
+    "program_with_example",
+    [
+        (Predict("question -> answer"), new_example("What is 1+1?", "2")),
+        (
+            # Create a program that extracts entities from text and returns them as a list,
+            # rather than returning a Predictor() wrapper. This is done intentionally to test
+            # the case where the program does not output a dictionary-like object because
+            # Evaluate() has failed for this case in the past
+            lambda text: TypedPredictor("text: str -> entities: List[str]")(text=text).entities,
+            dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
+        ),
+    ],
+)
 @pytest.mark.parametrize("display_table", [True, False, 1])
 @pytest.mark.parametrize("is_in_ipython_notebook_environment", [True, False])
-def test_evaluate_display_table(display_table, is_in_ipython_notebook_environment, capfd):
-    devset = [new_example("What is 1+1?", "2")]
-    program = Predict("question -> answer")
+def test_evaluate_display_table(program_with_example, display_table, is_in_ipython_notebook_environment, capfd):
+    program, example = program_with_example
+    example_input = next(iter(example.inputs().values()))
+    example_output = {key: value for key, value in example.toDict().items() if key not in example.inputs()}
+
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                example_input: example_output,
+            }
+        )
+    )
+
     ev = Evaluate(
-        devset=devset,
-        metric=answer_exact_match,
+        devset=[example],
+        metric=lambda example, pred, **kwargs: example == pred,
         display_table=display_table,
     )
     assert ev.display_table == display_table
@@ -133,4 +165,5 @@ def test_evaluate_display_table(display_table, is_in_ipython_notebook_environmen
         if not is_in_ipython_notebook_environment and display_table:
             # In console environments where IPython is not available, the table should be printed
             # to the console
-            assert "What is 1+1?" in out
+            example_input = next(iter(example.inputs().values()))
+            assert example_input in out

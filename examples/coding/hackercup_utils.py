@@ -3,6 +3,9 @@ import asyncio
 import multiprocessing
 import concurrent.futures
 from typing import Optional
+import os
+import sys
+import traceback
 
 """
 Note that this code is largely based off of the code here:
@@ -33,21 +36,24 @@ def extract_code(code_str):
     return code.strip()
 
 
-import traceback
 
 
 def run_with_timeout(code: str, input: Optional[str], timeout: int):
     def target_fn(input, return_dict):
         vars = {}
         try:
+            # Redirect stdout to silence print statements
+            sys.stdout = open(os.devnull, 'w')
             exec(code, vars)
             fn = vars.get("solve", lambda x: x)
             return_dict["result"] = fn(input)
         except Exception as e:
             return_dict["error"] = str(e)
-            return_dict["stack_trace"] = (
-                traceback.format_exc()
-            )  # Capture the stack trace
+            return_dict["stack_trace"] = traceback.format_exc()
+        finally:
+            # Restore stdout to its original setting
+            sys.stdout.close()
+            sys.stdout = sys.__stdout__
 
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
@@ -74,7 +80,6 @@ def run_with_timeout(code: str, input: Optional[str], timeout: int):
         }
 
     return {"result": return_dict.get("result"), "error": None, "stack_trace": None}
-
 
 async def arun(
     code: Optional[str] = None, input: Optional[str] = None, timeout: int = 60

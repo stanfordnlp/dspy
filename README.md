@@ -1,5 +1,5 @@
 <p align="center">
-  <img align="center" src="docs/images/DSPy8.png" width="460px" />
+  <img align="center" src="docs/docs/static/img/dspy_logo.png" width="460px" />
 </p>
 <p align="left">
 
@@ -38,7 +38,7 @@ To make this more systematic and much more powerful, **DSPy** does two things. F
 
 ### Table of Contents
 
-If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/VzS6RHHK6F) for the community.
+If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/XCGy2WDCQB) for the community.
 
 1. **[Installation](#1-installation)**
 1. **[Tutorials & Documentation](#2-documentation)**
@@ -61,7 +61,7 @@ Ditto! **DSPy** gives you the right general-purpose modules (e.g., `ChainOfThoug
 
 **What if I have a better idea for prompting or synthetic data generation?** Perfect. We encourage you to think if it's best expressed as a module or an optimizer, and we'd love to merge it in DSPy so everyone can use it. DSPy is not a complete project; it's an ongoing effort to create structure (modules and optimizers) in place of hacky prompt and pipeline engineering tricks.
 
-**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically.
+**What does DSPy stand for?** It's a long story but the backronym now is **D**eclarative **S**elf-improving Language **P**rograms, p**y**thonically. We also go by **D**eclaratively **S**elf-improving **Py**thon, which is simpler :D
 
 ## 1) Installation
 
@@ -116,6 +116,7 @@ The DSPy documentation is divided into **tutorials** (step-by-step illustration 
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
 - **Tracing & Optimization Tracking in DSPy** with Parea AI: [Tutorial on tracing & evaluating a DSPy RAG program](https://docs.parea.ai/tutorials/dspy-rag-trace-evaluate/tutorial)
 - [DSPy: Not Your Average Prompt Engineering](https://jina.ai/news/dspy-not-your-average-prompt-engineering), why it's crucial for future prompt engineering, and yet why it is challenging for prompt engineers to learn.
+- [CS 194/294-196 (LLM Agents) - Lecture 5, Omar Khattab](https://www.youtube.com/watch?v=JEMYuzrKLUw)
 
 ### B) Guides
 
