@@ -28,8 +28,6 @@ BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=Outpu
 
 
 class ChatAdapter(Adapter):
-    def __init__(self):
-        pass
 
     def format(self, signature, demos, inputs):
         messages = []
@@ -82,9 +80,19 @@ class ChatAdapter(Adapter):
 
         return fields
 
-    def format_turn(self, signature, values, role, incomplete=False):
-        return format_turn(signature, values, role, incomplete)
-        
+    # TODO(double check)
+    def format_finetune_data(self, signature, demos, inputs, outputs):
+        # Get system + user messages
+        messages = self.format(signature, demos, inputs)
+
+        # Add the assistant message
+        role = "assistant"
+        incomplete = False
+        assistant_message = format_turn(signature, outputs, role, incomplete)
+        messages.append(assistant_message)
+
+        # Wrap the messages in a dictionary with a "messages" key
+        return dict(messages=messages)
 
 def format_blob(blob):
     if "\n" not in blob and "«" not in blob and "»" not in blob:
