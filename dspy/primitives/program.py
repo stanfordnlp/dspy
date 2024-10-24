@@ -3,11 +3,40 @@ import magicattr
 import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
-
+import asyncio
+from functools import wraps
 
 class ProgramMeta(type):
     pass
 
+def handle_async(func):
+    """
+    Decorator that handles both sync and async calls transparently.
+    If the decorated function is called from an async context, runs async.
+    If called from a sync context, runs sync.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        is_async = asyncio.iscoroutinefunction(func)
+        
+        # If we're not in an async context, run synchronously
+        if not is_async:
+            return func(*args, **kwargs)
+            
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+            
+        if loop and loop.is_running():
+            # We're in an async context, return coroutine
+            return func(*args, **kwargs)
+        else:
+            # We're not in an async context, run in new loop
+            return asyncio.run(func(*args, **kwargs))
+            
+    return wrapper
 
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
@@ -16,9 +45,24 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __init__(self):
         self._compiled = False
 
+    @handle_async
     def __call__(self, *args, **kwargs):
+        if dspy.settings.async_mode:
+            return self.forward_internal(*args, **kwargs)
+        # print("Calling sync, ", *args, **kwargs)
         return self.forward(*args, **kwargs)
 
+    async def forward_internal(self, *args, **kwargs):
+        """Internal method that handles async execution of forward"""
+        if hasattr(self, 'forward'):
+            # Convert all calls within forward to their async versions
+            # with AsyncContext():
+            result = self.forward(*args, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        raise NotImplementedError("No forward method defined for this module")
+    
     def named_predictors(self):
         from dspy.predict.predict import Predict
 

@@ -7,9 +7,9 @@ from pydantic import BaseModel
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module
+from dspy.primitives.program import Module, handle_async
 from dspy.signatures.signature import ensure_signature, signature_to_template
-
+import asyncio
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
@@ -114,7 +114,11 @@ class Predict(Module, Parameter):
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
+    @handle_async
     def __call__(self, **kwargs):
+        import dspy
+        if dspy.settings.async_mode:
+            return self.forward_internal(**kwargs)
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
@@ -150,6 +154,68 @@ class Predict(Module, Parameter):
 
         if isinstance(lm, dspy.LM):
             completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+        else:
+            warn_once(
+                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
+                " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
+                " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
+                " \t\tLearn more about the changes and how to migrate at\n"
+                " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb"
+            )
+
+            if dsp.settings.experimental:
+                completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
+            else:
+                completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
+
+        pred = Prediction.from_completions(completions, signature=signature)
+
+        if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
+            trace = dsp.settings.trace
+            trace.append((self, {**kwargs}, pred))
+
+        return pred
+    # if AsyncContext.is_async():
+    #         return await v2_5_generate_async(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+    #     else:
+    #         return v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+    async def forward_internal(self, **kwargs):
+        assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
+
+        # Extract the three privileged keyword arguments.
+        new_signature = ensure_signature(kwargs.pop("new_signature", None))
+        signature = ensure_signature(kwargs.pop("signature", self.signature))
+        demos = kwargs.pop("demos", self.demos)
+        config = dict(**self.config, **kwargs.pop("config", {}))
+
+        # Get the right LM to use.
+        lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+        assert lm is not None, "No LM is loaded."
+
+        # If temperature is 0.0 but its n > 1, set temperature to 0.7.
+        temperature = config.get("temperature")
+        temperature = lm.kwargs["temperature"] if temperature is None else temperature
+        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
+
+        if (temperature is None or temperature <= 0.15) and num_generations > 1:
+            config["temperature"] = 0.7
+
+        if new_signature is not None:
+            signature = new_signature
+
+        if not all(k in kwargs for k in signature.input_fields):
+            present = [k for k in signature.input_fields if k in kwargs]
+            missing = [k for k in signature.input_fields if k not in kwargs]
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+
+        import dspy
+
+        if isinstance(lm, dspy.LM):
+            if dspy.settings.async_mode:
+                completions = await v2_5_generate_async(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+            else:
+                completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
                 "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
@@ -261,6 +327,40 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
 
+async def v2_5_generate_async(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+    """
+    Async version of v2_5_generate that handles async LM calls.
+    Maintains the same interface and functionality as the sync version.
+    """
+    import dspy
+    adapter = dspy.settings.adapter or dspy.ChatAdapter()
+    
+    # If the adapter has an async call method, use it
+    if hasattr(adapter, '_async_call'):
+        return await adapter._async_call(
+            lm, 
+            lm_kwargs=lm_kwargs, 
+            signature=signature, 
+            demos=demos, 
+            inputs=inputs, 
+            _parse_values=_parse_values
+        )
+    raise NotImplementedError("No async adapter found")
+    
+    # If no async adapter, run sync adapter in executor to avoid blocking
+    def sync_adapter_call():
+        return adapter(
+            lm, 
+            lm_kwargs=lm_kwargs, 
+            signature=signature, 
+            demos=demos, 
+            inputs=inputs, 
+            _parse_values=_parse_values
+        )
+    
+    # Run sync adapter in thread pool if it's potentially blocking
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, sync_adapter_call)
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

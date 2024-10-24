@@ -13,6 +13,7 @@ from dspy.clients.lm_finetune_utils import (
     get_provider_finetune_job_class,
     execute_finetune_job,
 )
+from dspy.primitives.program import handle_async
 
 import litellm
 from litellm.caching import Cache
@@ -52,7 +53,50 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    
+    
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        """Async completion method"""
+        cache = kwargs.pop("cache", self.cache)
+        messages = messages or [{"role": "user", "content": prompt}]
+        kwargs = {**self.kwargs, **kwargs}
+
+        # Make the request and handle LRU & disk caching.
+        # NOTE(isaac): I removed caching
+        if self.model_type == "chat":
+            completion = async_litellm_completion
+        else:
+            completion = async_litellm_text_completion
+
+        response = await completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
+        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+
+        # Logging, with removed api key & where `cost` is None on cache hit.
+        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
+        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
+        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
+        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
+        entry = dict(
+            **entry,
+            timestamp=datetime.now().isoformat(),
+            uuid=str(uuid.uuid4()),
+            model=self.model,
+            model_type=self.model_type,
+        )
+        self.history.append(entry)
+        
+        return outputs
+
+    @handle_async
     def __call__(self, prompt=None, messages=None, **kwargs):
+        """
+        Main entry point that handles both sync and async calls.
+        Uses handle_async decorator to automatically switch between modes.
+        """
+        import dspy
+        if dspy.settings.async_mode:
+            return self.acall(prompt, messages, **kwargs)
+        
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]
@@ -60,9 +104,9 @@ class LM:
 
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
+            completion = litellm_completion
         else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+            completion = litellm_text_completion
 
         response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
@@ -158,6 +202,9 @@ def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(cache=cache, **kwargs)
 
+async def async_litellm_completion(request, cache={"no-cache": True, "no-store": True}):
+    kwargs = ujson.loads(request)
+    return await litellm.acompletion(cache=cache, **kwargs)
 
 @functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request):
@@ -187,6 +234,9 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
         prompt=prompt,
         **kwargs,
     )
+
+async def async_litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
+    raise NotImplementedError("Async text completion is not implemented yet.")
 
 
 def _green(text: str, end: str = "\n"):
