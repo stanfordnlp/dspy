@@ -89,7 +89,7 @@ Example object with Non-Input fields only: Example({'summary': 'This is a summar
 
 ## Loading Dataset from sources
 
-One of the most convinient way to import dataset in DSPy is by using `DataLoader`. The first step is to declare an object, this object can then be used to call utilities to load datasets in different formats:
+One of the most convenient way to import datasets in DSPy is by using `DataLoader`. The first step is to declare an object, this object can then be used to call utilities to load datasets in different formats:
 
 ```python
 from dspy.datasets import DataLoader
@@ -127,19 +127,18 @@ pandas_dataset = dl.from_pandas(
 )
 ```
 
-These are some supported formats that `DataLoader` supports to load from file directly, in backend most of these methods are leveraging `load_dataset` method from `datasets` library to load these formats. But when working with text data you often use HuggingFace datasets, in order to import HF datasets in list of `Example` format we can use `from_huggingface` method:
+These are some formats that `DataLoader` supports to load from file directly. In the backend, most of these methods leverage the `load_dataset` method from `datasets` library to load these formats. But when working with text data you often use HuggingFace datasets, in order to import HF datasets in list of `Example` format we can use `from_huggingface` method:
 
 ```python
 blog_alpaca = dl.from_huggingface(
-    "intertwine-expel/expel-blog"
+    "intertwine-expel/expel-blog",
     input_keys=("title",)
 )
 ```
 
-You can access the dataset of the splits by calling key of the corresponding split:
+You can access the splits of the dataset by accessing the corresponding key:
 
 ```python
-from  
 train_split = blog_alpaca['train']
 
 # Since this is the only split in the dataset we can split this into 
@@ -149,4 +148,4 @@ testset = train_split[:75]
 trainset = train_split[75:]
 ```
 
-The way you load a huggingface dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets you can refer to the [cheatsheet snippets](/cheatsheet/#dspy-dataloaders) for loading from HF.
+The way you load a HuggingFace dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets, you can refer to the [cheatsheet snippets](/cheatsheet/#dspy-dataloaders) for loading from HF.

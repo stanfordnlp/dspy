@@ -149,7 +149,7 @@ len(trainset), len(valset), len(devset), len(testset)
 
 ## Evaluation in DSPy.
 
-What kind of metric can suit our question-answering task? There are many choices, but since the answer are long, we may ask: How well does the system response _cover_ all key facts in the gold response? And the other way around, how well is the system response _not saying things_ that aren't in the gold response?
+What kind of metric can suit our question-answering task? There are many choices, but since the answers are long, we may ask: How well does the system response _cover_ all key facts in the gold response? And the other way around, how well is the system response _not saying things_ that aren't in the gold response?
 
 That metric is essentially a **semantic F1**, so let's load a `SemanticF1` metric from DSPy. This metric is actually implemented as a [very simple DSPy module](https://github.com/stanfordnlp/dspy/blob/77c2e1cceba427c7f91edb2ed5653276fb0c6de7/dspy/evaluate/auto_evaluation.py#L21) using whatever LM we're working with.
 

@@ -12,7 +12,7 @@ Install the latest DSPy via `pip install -U dspy` and follow along. You may also
 
 In [Getting Started I: Basic Question Answering](/quick-start/getting-started-01), we've set up the DSPy LM, loaded some data, and loaded a metric for evaluation.
 
-First, let's download the corpus data that we will use for RAG search. The next cell will seek to download 4 GBs, so it may take a few minutes. A future version of this notebook will come with a cache that allows you to skip downloads and the pytorch installation.
+First, let's download the corpus data that we will use for RAG search. The next cell will seek to download 4 GBs, so it may take a few minutes. A future version of this notebook will come with a cache that allows you to skip downloads and the PyTorch installation.
 
 ```python
 import os
@@ -160,7 +160,7 @@ See this [gist](https://gist.github.com/okhat/d6606e480a94c88180441617342699eb).
 
 The prompt optimization process here is pretty systematic, you can learn about it for example in this paper. Importantly, it's not a magic button. It's very possible that it can overfit your training set for instance and not generalize well to a held-out set, making it essential that we iteratively validate our programs.
 
-Let's check on example here, asking the same question to the baseline `rag = RAG()` program, which was not optimized, and to the `optimized_rag = MIPROv2(..)(..)` program, after prompt optimization.
+Let's check on an example here, asking the same question to the baseline `rag = RAG()` program, which was not optimized, and to the `optimized_rag = MIPROv2(..)(..)` program, after prompt optimization.
 
 
 ```python
@@ -263,8 +263,8 @@ In general, you have the following tools:
 3. Scale inference time compute using DSPy Optimizers, e.g. this [notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/agents/multi_agent.ipynb).
 4. Cut cost by distilling to a smaller LM, via prompt or weight optimization, e.g. [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/nli/scone/scone.ipynb) or [this notebook](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/qa/hotpot/multihop_finetune.ipynb).
 
-How do you do decide which ones to proceed with first?
+How do you decide which ones to proceed with first?
 
-The first step is look at your system outputs, which will allow you to identify the sources of lower performance if any. While doing all of this, make sure you continue to refine your metric, e.g. by optimizing against your judgments, and to collect more (or more realistic) data, e.g. from related domains or from putting a demo of your system in front of users.
+The first step is to look at your system outputs, which will allow you to identify the sources of lower performance if any. While doing all of this, make sure you continue to refine your metric, e.g. by optimizing against your judgments, and to collect more (or more realistic) data, e.g. from related domains or from putting a demo of your system in front of users.
 
 Learn more about the [development cycle](/building-blocks/solving_your_task) in DSPy.

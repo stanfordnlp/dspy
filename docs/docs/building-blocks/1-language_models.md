@@ -6,7 +6,7 @@ sidebar_position: 2
 
 The most powerful features in DSPy revolve around algorithmically optimizing the prompts (or weights) of LMs, especially when you're building programs that use the LMs within a pipeline.
 
-Let's first make sure you can set up your language model. DSPy support clients for many remote and local LMs.
+Let's first make sure you can set up your language model. DSPy supports clients for many remote and local LMs.
 
 ## Using `dspy.LM`
 
@@ -89,7 +89,7 @@ Instead of changing the default LM, you can just change it inside a block of cod
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 print('GPT-3.5:', response.answer)
 
-gpt4_turbo = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=300)
+gpt4_turbo = dspy.LM(model='gpt-4-1106-preview', max_tokens=300)
 
 # Run with GPT-4 instead
 with dspy.context(lm=gpt4_turbo):
@@ -218,7 +218,7 @@ dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost
 
 ## Creating Custom LM Class
 
-Creating custom LM class is quite straightforward in DSPy. You can inherit from the `dspy.LM` class or create a new class with a similar interface. You'll need to implement/override the three methods:
+Creating a custom LM class is quite straightforward in DSPy. You can inherit from the `dspy.LM` class or create a new class with a similar interface. You'll need to implement/override these three methods:
 
 * `__init__`: Initialize the LM with the given `model` and other keyword arguments.
 * `__call__`: Call the LM with the given input prompt and return a list of string outputs.
@@ -302,16 +302,16 @@ Prediction(
 ### Defining Custom Adapters
 
 !!! warning
-    Adapters are low level feature that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
+    Adapters are low-level features that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
 
 
 Adapters are a powerful feature in DSPy, allowing you to define custom behavior for your Signatures. 
 
 For example, you could define an Adapter that automatically converts the input to uppercase before passing it to the LM. This is a simple example, but it shows how you can create custom Adapters that modify the inputs or outputs of your LMs.
 
-You'll need to inherit the base `Adapter` class and implement two method to create a usable custom Adapter:
+You'll need to inherit the base `Adapter` class and implement two methods to create a usable custom Adapter:
 
-* `format`: This method is responsible for formatting the input for the LM. This method takes `signature`, `demos` and `inputs` as input parameters. Demos are in-context examples set manually or through example. The output of this function can be a string prompt supported by completions function, list of message dictionary or any format that the LM you are using supports.
+* `format`: This method is responsible for formatting the input for the LM. This method takes `signature`, `demos` and `inputs` as input parameters. Demos are in-context examples set manually or through example. The output of this function can be a string prompt supported by completions function, a list of message dictionaries or any format that the LM you are using supports.
 
 * `parse`: This method is responsible for parsing the output of the LM. This method takes `signature`, `completions` and `_parse_values` as input parameters.
 
@@ -353,7 +353,7 @@ class UpperCaseAdapter(Adapter):
         return output_dict
 ```
 
-Let's understand the `UpperCaseAdapter` class. The `format` method takes `signature`, `demos`, and `inputs` as input parameters. It then constructs a prompt by combining the system prompt, format instruction prompt, and input fields. It then converts the prompt to uppercase. 
+Let's understand the `UpperCaseAdapter` class. The `format` method takes `signature`, `demos`, and `inputs` as input parameters. It constructs a prompt by combining the system prompt, format instruction prompt, and input fields, and then converts the prompt to uppercase. 
 
 The `parse` method takes `signature`, `completions`, and `_parse_values` as input parameters. It then extracts the output fields from the completions and returns them as a dictionary.
 
