@@ -19,14 +19,6 @@ class LM(ABC):
 
         self.history = []
 
-    def __init_subclass__(cls, **kwargs) -> None:
-        super().__init_subclass__(**kwargs)
-        from dspy.utils.callback import with_callbacks
-
-        # Decorate __call__ method with with_callbacks
-        if hasattr(cls, "__call__"):
-            cls.__call__ = with_callbacks(cls.__call__)
-
     @abstractmethod
     def basic_request(self, prompt, **kwargs):
         pass

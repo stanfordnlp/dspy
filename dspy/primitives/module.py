@@ -5,8 +5,6 @@ from collections.abc import Generator
 
 import ujson
 
-from dspy.utils.callback import with_callbacks
-
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
 # named_sub_modules for the time being.
 
