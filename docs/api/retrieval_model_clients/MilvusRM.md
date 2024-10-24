@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 # retrieve.MilvusRM
@@ -20,13 +20,14 @@ MilvusRM(
 ```
 
 **Parameters:**
+
 - `collection_name (str)`: The name of the Milvus collection to query against.
 - `uri (str, optional)`: The Milvus connection uri. Defaults to "http://localhost:19530".
 - `token (str, optional)`: The Milvus connection token. Defaults to None.
 - `db_name (str, optional)`: The Milvus database name. Defaults to "default".
 - `embedding_function (callable, optional)`: The function to convert a list of text to embeddings.
-    The embedding function should take a list of text strings as input and output a list of embeddings.
-    Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY and use OpenAI's embedding model "text-embedding-3-small" with the default dimension.
+  The embedding function should take a list of text strings as input and output a list of embeddings.
+  Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY and use OpenAI's embedding model "text-embedding-3-small" with the default dimension.
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
 
 ### Methods
@@ -36,10 +37,12 @@ MilvusRM(
 Search the Milvus collection for the top `k` passages matching the given query or queries, using embeddings generated via the default OpenAI embedding or the specified `embedding_function`.
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with schema `[{"id": str, "score": float, "long_text": str, "metadatas": dict }]`
 
 ### Quickstart
@@ -70,7 +73,6 @@ results = retriever_model("Explore the significance of quantum computing", k=5)
 for result in results:
     print("Document:", result.long_text, "\n")
 ```
-
 
 #### Customized Embedding Function
 

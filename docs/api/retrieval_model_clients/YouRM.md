@@ -1,5 +1,5 @@
 ---
-sidebar_position: 11
+sidebar_position: 12
 ---
 
 # retrieve.YouRM
@@ -25,15 +25,15 @@ YouRM(
 **Parameters:**
 
 - `ydc_api_key` (Optional[str]): you.com API key, if `YDC_API_KEY` is not set in the environment
-- `k` (int): If ``endpoint="search"``, the max snippets to return per search hit.
-       If ``endpoint="news"``, the max articles to return.
+- `k` (int): If `endpoint="search"`, the max snippets to return per search hit.
+  If `endpoint="news"`, the max articles to return.
 - `endpoint` (Literal["search", "news"]): you.com endpoints
 - `num_web_results` (Optional[int]): The max number of web results to return, must be under 20
 - `safesearch` (Optional[Literal["off", "moderate", "strict"]]): Safesearch settings, one of "off", "moderate", "strict", defaults to moderate
 - `country` (Optional[str]): Country code, ex: 'US' for United States, see API reference for more info
 - `search_lang` (Optional[str]): (News API) Language codes, ex: 'en' for English, see API reference for more info
 - `ui_lang` (Optional[str]): (News API) User interface language for the response, ex: 'en' for English.
-                        See API reference for more info
+  See API reference for more info
 - `spellcheck` (Optional[bool]): (News API) Whether to spell check query or not, defaults to True
 
 ### Methods
@@ -43,7 +43,6 @@ YouRM(
 If `endpoint="search"`, search the web for the top `k` snippets matching the given query or queries.
 
 If `endpoint="news"`, search the web for the top `k` articles matching the given query or queries.
-
 
 **Parameters:**
 
@@ -59,7 +58,6 @@ If `endpoint="news"`, search the web for the top `k` articles matching the given
 Obtain a You.com API key from [https://api.you.com/](https://api.you.com/).
 
 Export this key to an environment variable `YDC_API_KEY`.
-
 
 ```python
 from dspy.retrieve.you_rm import YouRM

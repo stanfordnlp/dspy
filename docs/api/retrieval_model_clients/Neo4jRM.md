@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # retrieve.neo4j_rm
@@ -34,13 +34,13 @@ You need to define the credentials as environment variables:
 - `OPENAI_API_KEY` (_str_): Specifies the API key required for authenticiating with OpenAI's services.
 
 **Parameters:**
+
 - `index_name` (_str_): Specifies the name of the vector index to be used within Neo4j for organizing and querying data.
 - `text_node_property` (_str_, _optional_): Defines the specific property of nodes that will be returned.
 - `k` (_int_, _optional_): The number of top results to return from the retrieval operation. It defaults to 5 if not explicitly specified.
 - `retrieval_query` (_str_, _optional_): A custom query string provided for retrieving data. If not provided, a default query tailored to the `text_node_property` will be used.
 - `embedding_provider` (_str_, _optional_): The name of the service provider for generating embeddings. Defaults to "openai" if not specified.
 - `embedding_model` (_str_, _optional_): The specific embedding model to use from the provider. By default, it uses the "text-embedding-ada-002" model from OpenAI.
-
 
 ### Methods
 
@@ -49,21 +49,23 @@ You need to define the credentials as environment variables:
 Search the neo4j vector index for the top `k` passages matching the given query or queries, using embeddings generated via the specified `embedding_model`.
 
 **Parameters:**
-- `query` (str_): The query.
+
+- `query` (str\_): The query.
 - `k` (_Optional[int]_, _optional_): The number of results to retrieve. If not specified, defaults to the value set during initialization.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages as a list of string with the prediction signature.
 
 ex:
+
 ```python
 Prediction(
     passages=['Passage 1 Lorem Ipsum awesome', 'Passage 2 Lorem Ipsum Youppidoo', 'Passage 3 Lorem Ipsum Yassssss']
 )
 ```
 
-### Quick Example how to use Neo4j in a local environment. 
-
+### Quick Example how to use Neo4j in a local environment.
 
 ```python
 from dspy.retrieve.neo4j_rm import Neo4jRM

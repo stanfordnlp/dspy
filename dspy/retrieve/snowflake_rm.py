@@ -96,7 +96,7 @@ class SnowflakeRM(dspy.Retrieve):
 
             if len(retrieval_columns) == 1:
                 passages.extend(
-                    dotdict({"long_text": passage[self.retrieval_columns[0]]}) for passage in response_chunks["results"]
+                    dotdict({"long_text": passage[retrieval_columns[0]]}) for passage in response_chunks["results"]
                 )
             else:
                 passages.extend(dotdict({"long_text": str(passage)}) for passage in response_chunks["results"])

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 # retrieve.FaissRM
@@ -17,6 +17,7 @@ FaissRM(
 ```
 
 **Parameters:**
+
 - `document_chunks` (_List[str]_): a list of strings that comprises the corpus to search. You cannot add/insert/upsert to this list after creating this FaissRM object.
 - `vectorizer` (_dsp.modules.sentence_vectorizer.BaseSentenceVectorizer_, _optional_): If not provided, a dsp.modules.sentence_vectorizer.SentenceTransformersVectorizer object is created and used.
 - `k` (_int_, _optional_): The number of top passages to retrieve. Defaults to 3.
@@ -28,15 +29,16 @@ FaissRM(
 Search the FaissRM vector database for the top `k` passages matching the given query or queries, using embeddings generated via the vectorizer specified at FaissRM construction time
 
 **Parameters:**
+
 - `query_or_queries` (_Union[str, List[str]]_): The query or list of queries to search for.
 
 **Returns:**
+
 - `dspy.Prediction`: Contains the retrieved passages, each represented as a `dotdict` with a `long_text` attribute and an `index` attribute. The `index` attribute is the index in the document_chunks array provided to this FaissRM object at construction time.
 
 ### Quickstart with the default vectorizer
 
 The **FaissRM** module provides a retriever that uses an in-memory Faiss vector database. This module does not include a vectorizer; instead it supports any subclass of **dsp.modules.sentence_vectorizer.BaseSentenceVectorizer**. If a vectorizer is not provided, an instance of **dsp.modules.sentence_vectorizer.SentenceTransformersVectorizer** is created and used by **FaissRM**. Note that the default embedding model for **SentenceTransformersVectorizer** is **all-MiniLM-L6-v2**
-
 
 ```python
 import dspy
