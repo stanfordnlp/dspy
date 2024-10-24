@@ -50,11 +50,11 @@ class Confusion:
         labels = self.labels
 
         # use answers from devset to get weights
-        weight = {k: 1 / v for k, v in Counter([self.extract(arg) for _, arg in devset]).items()} \
+        weight = {k: 1 / v for k, v in Counter([arg for _, arg in devset]).items()} \
             if self.use_class_weight else {k: 1 for k in labels}
 
         # Initialize the confusion matrix
-        confusion_matrix = np.zeros((len(labels), len(labels)), dtype=np.float64)
+        confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
 
         # Get answers
         responses = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
