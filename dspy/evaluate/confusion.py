@@ -50,7 +50,7 @@ class Confusion:
         labels = self.labels
 
         # use answers from devset to get weights
-        weight = {k: 1 / v for k, v in Counter([arg for _, arg in devset]).items()} \
+        weight = {k: 1 / v for k, v in Counter([arg[self.output_field_name] for _, arg in devset]).items()} \
             if self.use_class_weight else {k: 1 for k in labels}
 
         # Initialize the confusion matrix
