@@ -1,11 +1,17 @@
 import re
+from typing import Any
+from dsp.adapters.base_template import Field
+from dspy.signatures.signature import Signature
+from .base import Adapter
+from .image_utils import encode_image, is_image
+
 import ast
 import json
 import enum
 import inspect
 import pydantic
 import textwrap
-
+from itertools import chain
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 from typing import Any, Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
@@ -26,16 +32,16 @@ class FieldInfoWithName(NamedTuple):
 # Built-in field indicating that a chat turn has been completed.
 BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=OutputField())
 
-
 class ChatAdapter(Adapter):
-    def __init__(self):
-        pass
+    """
+    ChatAdapter is used to format and parse data for chat-based LLMs.
+    """
 
-    def format(self, signature, demos, inputs):
-        messages = []
+    def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
 
         # Extract demos where some of the output_fields are not filled in.
-        incomplete_demos = [demo for demo in demos if not all(k in demo for k in signature.fields)]
+        incomplete_demos = [demo for demo in demos if not all(k in demo and demo[k] is not None for k in signature.fields)]
         complete_demos = [demo for demo in demos if demo not in incomplete_demos]
         incomplete_demos = [
             demo
@@ -45,14 +51,14 @@ class ChatAdapter(Adapter):
 
         demos = incomplete_demos + complete_demos
 
-        messages.append({"role": "system", "content": prepare_instructions(signature)})
+        prepared_instructions = prepare_instructions(signature)
+        messages.append({"role": "system", "content": prepared_instructions})
 
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         messages.append(format_turn(signature, inputs, role="user"))
-
         return messages
 
     def parse(self, signature, completion, _parse_values=True):
@@ -78,6 +84,7 @@ class ChatAdapter(Adapter):
                     )
 
         if fields.keys() != signature.output_fields.keys():
+            print("Expected", signature.output_fields.keys(), "but got", fields.keys(), "from", completion)
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
@@ -110,6 +117,17 @@ def format_input_list_field_value(value: List[Any]) -> str:
 
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
 
+def format_field(field_name, field_value):
+    if is_image(field_value):
+        image_data = encode_image(field_value)
+        return [
+            {"type": "text", "text": f"[[ ## {field_name} ## ]]\n"},
+            {"type": "image_url", "image_url": {"url": image_data}}
+        ]
+    
+    if isinstance(field_value, list):
+        field_value = format_list(field_value)
+    return [{"type": "text", "text": f"[[ ## {field_name} ## ]]\n{field_value}"}]
 
 def _serialize_for_json(value):
     if isinstance(value, pydantic.BaseModel):
@@ -183,7 +201,8 @@ def parse_value(value, annotation):
     return TypeAdapter(annotation).validate_python(parsed_value)
 
 
-def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomplete=False) -> Dict[str, str]:
+def format_turn(signature, values, role, incomplete=False): 
+    fields_to_collapse = []      
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
@@ -204,7 +223,7 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
     if role == "user":
         fields: Dict[str, FieldInfo] = signature.input_fields
         if incomplete:
-            content.append("This is an example of the task, though some input or output fields are not supplied.")
+            fields_to_collapse.append({"type": "text", "text": "This is an example of the task, though some input or output fields are not supplied."})
     else:
         fields: Dict[str, FieldInfo] = signature.output_fields
         # Add the built-in field indicating that the chat turn has been completed
@@ -215,7 +234,48 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
         field_names: KeysView = fields.keys()
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
+    
+    fields_to_collapse.extend([
+        format_field(k, values.get(k, "Not supplied for this particular example."))
+        for k in field_names
+    ])
 
+    if role == "user":
+        output_fields = list(signature.output_fields.keys())
+        if output_fields:
+            fields_to_collapse.append({
+                "type": "text",
+                "text": (f"Respond with the corresponding output fields using the proper format of "
+                         f"[[ ## <field_name> ## ]] followed by the field value. Start with the field "
+                         f"{', then '.join(f'`{f}`' for f in output_fields)}, "
+                         f"and then ending with the marker for `completed`.")
+            })
+        
+    # flatmap the list if any items are lists otherwise keep the item
+    flattened_list = list(chain.from_iterable(
+        item if isinstance(item, list) else [item] for item in fields_to_collapse
+    ))
+
+    fields_to_collapse = flattened_list
+    # Collapse all consecutive text messages into a single message.
+    collapsed_messages = []
+    for item in flattened_list:
+        if item["type"] == "image_url" or (collapsed_messages and collapsed_messages[-1]["type"] != "text"):
+            collapsed_messages.append(item)
+        elif collapsed_messages and collapsed_messages[-1]["type"] == "text":
+            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
+        else:
+            collapsed_messages.append(item)
+
+    # If all the messages are text, collapse them into a single message.
+    if all(message["type"] == "text" for message in collapsed_messages):
+        content = "\n\n".join(message["text"] for message in collapsed_messages)
+    else:
+        content = collapsed_messages
+
+    return {"role": role, "content": content}
+
+    # TODO(isaac): Figure out this merge conflict
     formatted_fields = format_fields(
         fields_with_values={
             FieldInfoWithName(name=field_name, info=field_info): values.get(
@@ -259,7 +319,7 @@ def get_annotation_name(annotation):
         return f"{get_annotation_name(origin)}[{args_str}]"
 
 
-def enumerate_fields(fields):
+def enumerate_fields(fields: dict[str, Field]) -> str:
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")

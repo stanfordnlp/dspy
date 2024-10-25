@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import functools
+from .base_lm import BaseLM
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,7 +27,7 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 
-class LM:
+class LM(BaseLM):
     def __init__(
             self, 
             model,
@@ -82,9 +83,6 @@ class LM:
         self.history.append(entry)
         
         return outputs
-    
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
@@ -187,37 +185,3 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
         prompt=prompt,
         **kwargs,
     )
-
-
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-
-def _inspect_history(lm, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in lm.history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
-        outputs = item["outputs"]
-        timestamp = item.get("timestamp", "Unknown time")
-
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
-
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg["content"].strip())
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
-
-    print("\n\n\n")
