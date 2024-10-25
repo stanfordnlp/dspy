@@ -1,3 +1,4 @@
+from dspy.utils.callback import with_callbacks
 
 
 class Adapter:
