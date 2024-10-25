@@ -43,7 +43,11 @@ def _inspect_history(lm, n: int = 1):
                         if c["type"] == "text":
                             print(c["text"].strip())
                         elif c["type"] == "image_url":
-                            print("<IMAGE URL>\n")
+                            if "base64" in c["image_url"].get("url", ""):
+                                len_base64 = len(c["image_url"]["url"].split("base64,")[1])
+                                print(f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>\n")
+                            else:
+                                print(f"<image_url: {c['image_url']['url']}>\n")
             print("\n")
 
         print(_red("Response:"))

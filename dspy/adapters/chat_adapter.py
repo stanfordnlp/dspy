@@ -17,7 +17,7 @@ from pydantic.fields import FieldInfo
 from typing import Any, Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
-from ..signatures.field import OutputField
+from ..signatures.field import OutputField, Image
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
 
@@ -43,6 +43,7 @@ class ChatAdapter(Adapter):
         # Extract demos where some of the output_fields are not filled in.
         incomplete_demos = [demo for demo in demos if not all(k in demo and demo[k] is not None for k in signature.fields)]
         complete_demos = [demo for demo in demos if demo not in incomplete_demos]
+        # Filter out demos that don't have at least one input and one output field.
         incomplete_demos = [
             demo
             for demo in incomplete_demos
@@ -117,18 +118,6 @@ def format_input_list_field_value(value: List[Any]) -> str:
 
     return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
 
-def format_field(field_name, field_value):
-    if is_image(field_value):
-        image_data = encode_image(field_value)
-        return [
-            {"type": "text", "text": f"[[ ## {field_name} ## ]]\n"},
-            {"type": "image_url", "image_url": {"url": image_data}}
-        ]
-    
-    if isinstance(field_value, list):
-        field_value = format_list(field_value)
-    return [{"type": "text", "text": f"[[ ## {field_name} ## ]]\n{field_value}"}]
-
 def _serialize_for_json(value):
     if isinstance(value, pydantic.BaseModel):
         return value.model_dump()
@@ -139,7 +128,7 @@ def _serialize_for_json(value):
     else:
         return value
 
-def _format_field_value(field_info: FieldInfo, value: Any) -> str:
+def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.
@@ -150,18 +139,26 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Returns:
       The formatted value of the field, represented as a string.
     """
-
+    string_value = None
     if isinstance(value, list) and field_info.annotation is str:
-        # If the field has no special type requirements, format it as a nice numbere list for the LM.
-        return format_input_list_field_value(value)
+        # If the field has no special type requirements, format it as a nice numbered list for the LM.
+        string_value = format_input_list_field_value(value)
     elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
-        return json.dumps(_serialize_for_json(value))
+        string_value = json.dumps(_serialize_for_json(value))
     else:
-        return str(value)
+        string_value = str(value)
+
+    if not assume_text and (is_image(value) or isinstance(value, Image) or field_info.annotation == Image):
+        return {"type": "image_url", "image_url": {"url": encode_image(value)}}
+
+    if assume_text:
+        return string_value
+    else:
+        return {"type": "text", "text": string_value}
 
 
 
-def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
+def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> str:
     """
     Formats the values of the specified fields according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
@@ -175,11 +172,19 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     """
     output = []
     for field, field_value in fields_with_values.items():
-        formatted_field_value = _format_field_value(field_info=field.info, value=field_value)
-        output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
-
-    return "\n\n".join(output).strip()
-
+        formatted_field_value = _format_field_value(field_info=field.info, value=field_value, assume_text=assume_text)
+        if assume_text:
+            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+        else:
+            output.append({"type": "text", "text": f"[[ ## {field.name} ## ]]\n"})
+            if isinstance(formatted_field_value, dict) and formatted_field_value.get("type") == "image_url":
+                output.append(formatted_field_value)
+            else:
+                output[-1]["text"] += formatted_field_value["text"]
+    if assume_text:
+        return "\n\n".join(output)
+    else:
+        return output
 
 def parse_value(value, annotation):
     if annotation is str:
@@ -229,26 +234,29 @@ def format_turn(signature, values, role, incomplete=False):
         # Add the built-in field indicating that the chat turn has been completed
         fields[BuiltInCompletedOutputFieldInfo.name] = BuiltInCompletedOutputFieldInfo.info
         values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
-
+    field_names: KeysView = fields.keys()
     if not incomplete:
-        field_names: KeysView = fields.keys()
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
     
-    fields_to_collapse.extend([
-        format_field(k, values.get(k, "Not supplied for this particular example."))
-        for k in field_names
-    ])
+    fields_to_collapse.extend(format_fields(
+        fields_with_values={
+            FieldInfoWithName(name=field_name, info=field_info): values.get(
+                field_name, "Not supplied for this particular example."
+            )
+            for field_name, field_info in fields.items()
+        },
+        assume_text=False
+    ))
 
     if role == "user":
         output_fields = list(signature.output_fields.keys())
         if output_fields:
             fields_to_collapse.append({
                 "type": "text",
-                "text": (f"Respond with the corresponding output fields using the proper format of "
-                         f"[[ ## <field_name> ## ]] followed by the field value. Start with the field "
-                         f"{', then '.join(f'`{f}`' for f in output_fields)}, "
-                         f"and then ending with the marker for `completed`.")
+                "text": "Respond with the corresponding output fields, starting with the field "
+                + ", then ".join(f"`{f}`" for f in signature.output_fields)
+                + ", and then ending with the marker for `completed`."
             })
         
     # flatmap the list if any items are lists otherwise keep the item
@@ -259,11 +267,13 @@ def format_turn(signature, values, role, incomplete=False):
     fields_to_collapse = flattened_list
     # Collapse all consecutive text messages into a single message.
     collapsed_messages = []
+    # import rich
+    # rich.print(flattened_list)
     for item in flattened_list:
-        if item["type"] == "image_url" or (collapsed_messages and collapsed_messages[-1]["type"] != "text"):
+        if item.get("type") == "image_url" or (collapsed_messages and collapsed_messages[-1].get("type") != "text"):
             collapsed_messages.append(item)
-        elif collapsed_messages and collapsed_messages[-1]["type"] == "text":
-            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
+        elif collapsed_messages and collapsed_messages[-1].get("type") == "text":
+            collapsed_messages[-1]["text"] += "\n" + item["text"]
         else:
             collapsed_messages.append(item)
 
@@ -274,36 +284,6 @@ def format_turn(signature, values, role, incomplete=False):
         content = collapsed_messages
 
     return {"role": role, "content": content}
-
-    # TODO(isaac): Figure out this merge conflict
-    formatted_fields = format_fields(
-        fields_with_values={
-            FieldInfoWithName(name=field_name, info=field_info): values.get(
-                field_name, "Not supplied for this particular example."
-            )
-            for field_name, field_info in fields.items()
-        }
-    )
-    content.append(formatted_fields)
-
-    if role == "user":
-        # def type_info(v):
-        #     return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" \
-        #         if v.annotation is not str else ""
-        # 
-        # content.append(
-        #     "Respond with the corresponding output fields, starting with the field "
-        #     + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
-        #     + ", and then ending with the marker for `[[ ## completed ## ]]`."
-        # )
-
-        content.append(
-            "Respond with the corresponding output fields, starting with the field "
-            + ", then ".join(f"`{f}`" for f in signature.output_fields)
-            + ", and then ending with the marker for `completed`."
-        )
-
-    return {"role": role, "content": "\n\n".join(content).strip()}
 
 
 def get_annotation_name(annotation):
@@ -360,20 +340,19 @@ def prepare_instructions(signature: SignatureMeta):
             fields_with_values={
                 FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
                 for field_name, field_info in fields.items()
-            }
+            },
+            assume_text=True
         )
 
     parts.append(format_signature_fields_for_instructions(signature.input_fields))
     parts.append(format_signature_fields_for_instructions(signature.output_fields))
-    parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
+    parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}, assume_text=True))
 
     instructions = textwrap.dedent(signature.instructions)
     objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")
 
-    # parts.append("You will receive some input fields in each interaction. " +
-    #              "Respond only with the corresponding output fields, starting with the field " +
-    #              ", then ".join(f"`{f}`" for f in signature.output_fields) +
-    #              ", and then ending with the marker for `completed`.")
+    # import rich
+    # rich.print(parts)
 
     return "\n\n".join(parts).strip()
