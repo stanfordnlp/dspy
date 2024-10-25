@@ -23,7 +23,7 @@ class Confusion:
             return_outputs=False,
             provide_traceback=False,
             use_class_weight=True,
-            output_field_name="response",
+            output_field="response",
             **_kwargs,
     ):
         self.labels = labels
@@ -39,10 +39,9 @@ class Confusion:
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
-        self.output_field_name = output_field_name
+        self.output_field = output_field
 
-    def extract(self, prediction):
-        response = prediction[self.output_field_name]
+    def extract(self, response):
         match = re.search(r"|".join(self.labels), response.lower())
         return match.group(0) if match else None
 
@@ -50,20 +49,20 @@ class Confusion:
         labels = self.labels
 
         # use answers from devset to get weights
-        weight = {k: 1 / v for k, v in Counter([arg[self.output_field_name] for _, arg in devset]).items()} \
+        weight = {k: 1 / v for k, v in Counter([arg[self.output_field] for _, arg in devset]).items()} \
             if self.use_class_weight else {k: 1 for k in labels}
 
         # Initialize the confusion matrix
         confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
 
         # Get answers
-        responses = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
+        answers = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
-            for response in responses[label]:
-                if response in labels:
-                    confusion_matrix[idx][labels.index(response)] += weight[label]
+            for answer in answers[label]:
+                if answer in labels:
+                    confusion_matrix[idx][labels.index(answer)] += weight[label]
 
         return confusion_matrix
 
@@ -99,7 +98,7 @@ class Confusion:
             with logging_redirect_tqdm():
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field_name]].append(prediction)
+                preds[arg[self.output_field]].append(prediction[self.output_field])
                 self._update_progress(pbar, preds, devset)
 
         pbar.close()
@@ -145,7 +144,7 @@ class Confusion:
                     continue
 
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field_name]].append(prediction)
+                preds[arg[self.output_field]].append(prediction[self.output_field])
                 self._update_progress(pbar, preds, devset)
             pbar.close()
 
@@ -296,7 +295,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             stop_at_score=None,
             metric_threshold=None,
             use_class_weight=True,
-            output_field_name="response",
+            output_field="response",
     ):
         self.labels = labels
         self.teacher_settings = teacher_settings
@@ -312,7 +311,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
         self.max_labeled_demos = max_labeled_demos
         
         self.use_class_weight = use_class_weight
-        self.output_field_name = output_field_name
+        self.output_field = output_field
 
         print(f"Going to sample between {self.min_num_samples} and {self.max_num_samples} traces per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
@@ -376,7 +375,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
                 display_table=False,
                 display_progress=True,
                 use_class_weight=self.use_class_weight,
-                output_field_name=self.output_field_name,
+                output_field=self.output_field,
             )
 
             score, cm = confusion(program, return_matrix=True)
