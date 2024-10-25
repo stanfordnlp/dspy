@@ -1,6 +1,8 @@
+from typing import List
 import magicattr
 
 import dspy
+from dspy.predict.parallel import Parallel
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
 
@@ -90,6 +92,43 @@ class Module(BaseModule, metaclass=ProgramMeta):
     #         print("Done")
 
     #     return new_copy
+
+    def batch(
+        self,
+        examples: List[dspy.Example],
+        batch_size: int = 32,
+        max_errors: int = 10,
+        return_failed_examples: bool = False,
+        provide_traceback: bool = False,
+    ) -> Any:
+        """
+        Processes a list of dspy.Example instances in parallel using the Parallel module.
+
+        :param examples: List of dspy.Example instances to process.
+        :param batch_size: Number of threads to use for parallel processing.
+        :param max_errors: Maximum number of errors allowed before stopping execution.
+        :param return_failed_examples: Whether to return failed examples and exceptions.
+        :param provide_traceback: Whether to include traceback information in error logs.
+        :return: List of results, and optionally failed examples and exceptions.
+        """
+        # Create a list of execution pairs (self, example)
+        exec_pairs = [(self.forward, example.inputs()) for example in examples]
+
+        # Create an instance of Parallel
+        parallel_executor = Parallel(
+            batch_size=batch_size,
+            max_errors=max_errors,
+            return_failed_examples=return_failed_examples,
+            provide_traceback=provide_traceback,
+        )
+
+        # Execute the forward method of Parallel
+        if return_failed_examples:
+            results, failed_examples, exceptions = parallel_executor.forward(exec_pairs)
+            return results, failed_examples, exceptions
+        else:
+            results = parallel_executor.forward(exec_pairs)
+            return results
 
 
 def set_attribute_by_name(obj, name, value):
