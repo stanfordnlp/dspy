@@ -1,3 +1,4 @@
+from dspy.utils.callback import with_callbacks
 
 
 class Adapter:
@@ -6,6 +7,7 @@ class Adapter:
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
+        from dspy.utils.callback import with_callbacks
 
         # Decorate format() and parse() method with with_callbacks
         cls.format = with_callbacks(cls.format)
