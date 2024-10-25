@@ -13,6 +13,39 @@ logger = logging.getLogger(__name__)
 
 
 class BaseCallback:
+    """
+    A base class for defining callback handlers for DSPy components.
+
+    To use a callback, subclass this class and implement the desired handlers. Each handler
+    will be called at the appropriate time before/after the execution of the corresponding component.
+
+    For example, if you want to print a message before and after an LM is called, implement
+    the on_llm_start and on_lm_end handler and set the callback to the global settings.
+
+    ```
+    import dspy
+    from dspy.utils.callback import BaseCallback
+
+    class LoggingCallback(BaseCallback):
+
+        def on_lm_start(self, call_id, instance, inputs):
+            print(f"LM is called with inputs: {inputs}")
+
+        def on_lm_end(self, call_id, outputs, exception):
+            print(f"LM is finished with outputs: {outputs}")
+
+    dspy.settings.configure(
+        callbacks=[LoggingCallback()]
+    )
+
+    cot = dspy.ChainOfThought("question -> answer")
+    cot(question="What is the meaning of life?")
+
+    # > LM is called with inputs: {'question': 'What is the meaning of life?'}
+    # > LM is finished with outputs: {'answer': '42'}
+    ```
+    """
+
     def on_module_start(
         self,
         call_id: str,
