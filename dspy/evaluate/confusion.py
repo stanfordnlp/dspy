@@ -48,14 +48,18 @@ class Confusion:
     def construct_matrix(self, preds, devset):
         labels = self.labels
 
-        # use answers from devset to get weights
-        weight = {k: 1 / v for k, v in Counter([arg[self.output_field] for _, arg in devset]).items()} \
-            if self.use_class_weight else {k: 1 for k in labels}
+        if self.use_class_weight:
+            # use devset to get weights
+            classes = [arg[self.output_field] for _, arg in devset]
+            class_counts = Counter(classes)
+            weight = {k: 1 / v for k, v in class_counts.items()}
+        else:
+            weight = {k: 1 for k in labels}
 
         # Initialize the confusion matrix
         confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
 
-        # Get answers
+        # Get model answers
         answers = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
