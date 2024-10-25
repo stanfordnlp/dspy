@@ -14,7 +14,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
 
-    def __init__(self):
+    def __init__(self, callbacks=None):
+        self.callbacks = callbacks or []
         self._compiled = False
 
     @with_callbacks

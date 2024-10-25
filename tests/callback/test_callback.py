@@ -77,6 +77,35 @@ def test_callback_injection(args, kwargs):
     assert callback.calls[1]["outputs"] == 6
 
 
+def test_callback_injection_local():
+    class Target(dspy.Module):
+        @with_callbacks
+        def forward(self, x: int, y: str, z: float) -> int:
+            time.sleep(0.1)
+            return x + int(y) + int(z)
+
+    callback = MyCallback()
+
+    target_1 = Target(callbacks=[callback])
+    result = target_1.forward(1, "2", 3.0)
+
+    assert result == 6
+
+    assert len(callback.calls) == 2
+    assert callback.calls[0]["handler"] == "on_module_start"
+    assert callback.calls[0]["inputs"] == {"x": 1, "y": "2", "z": 3.0}
+    assert callback.calls[1]["handler"] == "on_module_end"
+    assert callback.calls[1]["outputs"] == 6
+
+    callback.calls = []
+
+    target_2 = Target()
+    result = target_2.forward(1, "2", 3.0)
+
+    # Other instance should not trigger the callback
+    assert not callback.calls
+
+
 def test_callback_error_handling():
     class Target(dspy.Module):
         @with_callbacks

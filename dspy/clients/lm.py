@@ -36,6 +36,7 @@ class LM:
             max_tokens=1000,
             cache=True,
             launch_kwargs=None,
+            callbacks=None,
             **kwargs
         ):
         # Remember to update LM.copy() if you modify the constructor!
@@ -45,6 +46,7 @@ class LM:
         self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self.callbacks = callbacks or []
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.

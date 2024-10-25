@@ -18,10 +18,11 @@ def warn_once(msg: str):
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, **config):
+    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self.callbacks = callbacks or []
         self._parse_values = _parse_values
         self.reset()
 

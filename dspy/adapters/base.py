@@ -2,6 +2,9 @@ from dspy.utils.callback import with_callbacks
 
 
 class Adapter:
+    def __init__(self, callbacks=None):
+        self.callbacks = callbacks or []
+
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
         from dspy.utils.callback import with_callbacks

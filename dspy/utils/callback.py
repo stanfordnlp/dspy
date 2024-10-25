@@ -20,7 +20,7 @@ class BaseCallback:
     will be called at the appropriate time before/after the execution of the corresponding component.
 
     For example, if you want to print a message before and after an LM is called, implement
-    the on_llm_start and on_lm_end handler and set the callback to the global settings.
+    the on_llm_start and on_lm_end handler and set the callback to the global settings using `dspy.settings.configure`.
 
     ```
     import dspy
@@ -43,6 +43,21 @@ class BaseCallback:
 
     # > LM is called with inputs: {'question': 'What is the meaning of life?'}
     # > LM is finished with outputs: {'answer': '42'}
+    ```
+
+    Another way to set the callback is to pass it directly to the component constructor.
+    In this case, the callback will only be triggered for that specific instance.
+
+    ```
+    lm = dspy.LM("gpt-3.5-turbo", callbacks=[LoggingCallback()])
+    lm(question="What is the meaning of life?")
+
+    # > LM is called with inputs: {'question': 'What is the meaning of life?'}
+    # > LM is finished with outputs: {'answer': '42'}
+
+    lm_2 = dspy.LM("gpt-3.5-turbo")
+    lm_2(question="What is the meaning of life?")
+    # No logging here
     ```
     """
 
@@ -186,7 +201,8 @@ class BaseCallback:
 def with_callbacks(fn):
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
-        callbacks = dspy.settings.get("callbacks", [])
+        # Combine global and local (per-instance) callbacks
+        callbacks = dspy.settings.get("callbacks", []) + getattr(self, "callbacks", [])
 
         # if no callbacks are provided, just call the function
         if not callbacks:
