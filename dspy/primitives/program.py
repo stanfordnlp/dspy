@@ -1,4 +1,5 @@
 from typing import List
+from dspy.utils.callback import with_callbacks
 import magicattr
 
 import dspy
@@ -15,9 +16,11 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
 
-    def __init__(self):
+    def __init__(self, callbacks=None):
+        self.callbacks = callbacks or []
         self._compiled = False
 
+    @with_callbacks
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 

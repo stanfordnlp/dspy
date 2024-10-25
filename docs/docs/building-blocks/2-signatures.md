@@ -124,7 +124,7 @@ Prediction(
 )
 ```
 
-**Tip:** There's nothing wrong with specifying your requests to the LM more clearly. Class-based Signatures help you with that. However, don't prematurely tune the keywords of the your signature by hand. The DSPy optimizers will likely do a better job (and will transfer better across LMs).
+**Tip:** There's nothing wrong with specifying your requests to the LM more clearly. Class-based Signatures help you with that. However, don't prematurely tune the keywords of your signature by hand. The DSPy optimizers will likely do a better job (and will transfer better across LMs).
 
 
 ### Example D: A metric that evaluates faithfulness to citations
