@@ -14,6 +14,7 @@ from dspy.clients.lm_finetune_utils import (
     execute_finetune_job,
 )
 
+from dspy.utils.callback import with_callbacks
 import litellm
 from litellm.caching import Cache
 
@@ -35,6 +36,7 @@ class LM:
             max_tokens=1000,
             cache=True,
             launch_kwargs=None,
+            callbacks=None,
             **kwargs
         ):
         # Remember to update LM.copy() if you modify the constructor!
@@ -44,6 +46,7 @@ class LM:
         self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self.callbacks = callbacks or []
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
@@ -52,6 +55,7 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)

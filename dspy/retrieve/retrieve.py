@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
+from dspy.utils.callback import with_callbacks
 
 
 def single_query_passage(passages):
@@ -21,9 +22,10 @@ class Retrieve(Parameter):
     input_variable = "query"
     desc = "takes a search query and returns one or more potentially relevant passages from a corpus"
 
-    def __init__(self, k=3):
+    def __init__(self, k=3, callbacks=None):
         self.stage = random.randbytes(8).hex()
         self.k = k
+        self.callbacks = callbacks or []
 
     def reset(self):
         pass
@@ -37,6 +39,7 @@ class Retrieve(Parameter):
         for name, value in state.items():
             setattr(self, name, value)
 
+    @with_callbacks
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
