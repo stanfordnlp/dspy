@@ -1,16 +1,11 @@
 import random
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 import dspy
-from dspy.adapters.base import Adapter
-from dspy.clients.lm import LM, TrainingJob
-from dspy.clients.utils_finetune import infer_data_format
-from dspy.evaluate.evaluate import Evaluate
+from dspy.clients.lm import LM
 from dspy.primitives.example import Example
-from dspy.predict.predict import Predict
 from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.utils.logging import logger
 
 
 from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune
@@ -19,11 +14,12 @@ from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 
 class BetterTogether(Teleprompter):
 
+    # TODO: Is this required
     def __init__(self,
         metric: Callable,
         prompt_optimizer: Optional[Teleprompter] = None,
         weight_optimizer: Optional[Teleprompter] = None,
-        random_seed: Optional[int] = None,
+        seed: Optional[int] = None,
       ):
         """TODO: Docstring"""
         err = "This is an experimental optimizer."
@@ -32,7 +28,7 @@ class BetterTogether(Teleprompter):
 
         self.prompt_optimizer = prompt_optimizer if prompt_optimizer else BootstrapFewShotWithRandomSearch(metric=metric)
         self.weight_optimizer = weight_optimizer if weight_optimizer else BootstrapFinetune()
-        self.rng = random.Random(random_seed)
+        self.rng = random.Random(seed)
 
     def compile(
         self,

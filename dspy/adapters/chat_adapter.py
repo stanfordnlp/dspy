@@ -80,7 +80,7 @@ class ChatAdapter(Adapter):
 
         return fields
 
-    # TODO(double check)
+    # TODO(PR): Looks ok?
     def format_finetune_data(self, signature, demos, inputs, outputs):
         # Get system + user messages
         messages = self.format(signature, demos, inputs)

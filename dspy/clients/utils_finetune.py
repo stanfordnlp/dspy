@@ -56,7 +56,6 @@ def save_data(
     return file_path
 
 
-# TODO: We can add cache to this function.
 def validate_data_format(
         data: List[Dict[str, Any]],
         data_format: DataFormat,
@@ -88,10 +87,7 @@ def validate_data_format(
         log_path = os.path.abspath(log_path)
         write_lines(log_path, data_dict_errors)
 
-        err = (
-            "Data format errors found.",
-            f" For more details, see the log file: {log_path}"
-        )
+        err = f"Data format errors found.  For more details, see the log file: {log_path}"
         raise ValueError(err)
 
 
@@ -108,10 +104,7 @@ def find_data_errors_completion(
     
     for key in keys:
         if not isinstance(data_dict[key], str):
-            return (
-                f"Expected `{key}` to be of type `str`.",
-                f" Found: {type(data_dict[key])}"
-            )
+            return f"Expected `{key}` to be of type `str`. Found: {type(data_dict[key])}"
 
 
 # Following functions are modified from the OpenAI cookbook:
@@ -127,12 +120,9 @@ def find_data_error_chat(
         return f"Expected Keys: {expected_keys}; Found Keys: {found_keys}"
 
     if not isinstance(messages["messages"], list):
-        return (
-            "The value of the `messages` key should be a list instance.",
-            f" Found: {type(messages["messages"])}"
-        )
+        return f"The value of the `messages` key should be a list instance. Found: {type(messages['messages'])}"
 
-    for ind, message in enumerate(messages):
+    for ind, message in enumerate(messages["messages"]):
         err = find_data_error_chat_message(message)
         if err:
             return f"Error in message at index {ind}: {err}"
@@ -154,7 +144,4 @@ def find_data_error_chat_message(
         return f"Expected Roles: {expected_roles}; Found Role: {found_role}"
 
     if not isinstance(message["content"], str):
-        return (
-            "Expected Content Type: `str`",
-            f"; Found Content Type: {type(message["content"])}"
-        )
+        return f"Expected Content Type: `str`; Found Content Type: {type(message['content'])}"

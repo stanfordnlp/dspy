@@ -1,15 +1,15 @@
-import asyncio
 from datetime import datetime
 import functools
 import os
 from pathlib import Path
+import threading
 from typing import Any, Dict, List, Optional
 import ujson
 import uuid
 
-import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.openai import OpenAIProvider
 from dspy.clients.utils_finetune import (
   DataFormat,
   validate_data_format,
@@ -41,17 +41,20 @@ class LM:
             provider=None,
             **kwargs
         ):
-        # Remember to update LM.copy() if you modify the constructor!
+        if launch_kwargs is not None or provider is not None:
+            import dspy
+            assert dspy.settings.experimental, "The `launch_kwargs` and `provider` arguments are experimental. Set `dspy.settings.experimental` to `True` to use them."
+
         self.model = model
         self.model_type = model_type
         self.cache = cache
         self.launch_kwargs = launch_kwargs or {}
-        self.provider = provider or Provider()
+        self.provider = provider or self.infer_provider()
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-        # TODO: Arbitrary model strings could include the substring "o1-". We
-        # should find a more robust way to check for the "o1-" family models.
+        # TODO(bug): Arbitrary model strings could include the substring "o1-".
+        # We should find a more robust way to check for the "o1-" family models.
         if "o1-" in model:
             assert (
                 max_tokens >= 5000 and temperature == 1.0
@@ -111,38 +114,56 @@ class LM:
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
-        # Perform data validation before starting the async job to fail early
-        # TODO: Should this be performed by the providers?
+        # Perform data validation before starting the thread to fail early
         train_kwargs = train_kwargs or {}
         if not data_format:
             adapter = self.infer_adapter()
             data_format = infer_data_format(adapter)
         validate_data_format(data=train_data, data_format=data_format)
 
-        # TODO(ask team): We can quickly add caching, but doing so requires
+        # TODO(PR): We can quickly add caching, but doing so requires
         # adding functions that just call other functions as we had in the last
         # iteration, unless people have other ideas.
+        def thread_function_wrapper():
+            return self._run_finetune_job(job)
+
+        thread = threading.Thread(target=thread_function_wrapper)
         job = self.provider.TrainingJob(
+            thread=thread,
             model=self.model,
             train_data=train_data,
             train_kwargs=train_kwargs,
             data_format=data_format
         )
-        asyncio.create_task(self._run_finetune_job(job=job))
+        thread.start()
 
         return job
 
-    async def _run_finetune_job(self, job: TrainingJob):
-        # TODO: We should listen for keyboard interrupts somewhere.
+    def _run_finetune_job(self, job: TrainingJob):
+        # TODO(enhance): We should listen for keyboard interrupts somewhere.
+        # Requires TrainingJob.cancel() to be implemented for each provider.
         try:
-            model = self.provider.finetune(job=job)
+            model = self.provider.finetune(
+                job=job,
+                model=job.model,
+                train_data=job.train_data,
+                train_kwargs=job.train_kwargs,
+                data_format=job.data_format
+            )
             lm = self.copy(model=model)
             job.set_result(lm)
         except Exception as err:
             logger.error(err)
             job.set_result(err)
     
+    def infer_provider(self) -> Provider:
+        if OpenAIProvider.is_provider_model(self.model):
+            return OpenAIProvider()
+        # TODO(PR): Should we handle AnyScale models here
+        return Provider()
+    
     def infer_adapter(self) -> Adapter:
+        import dspy
         if dspy.settings.adapter:
             return dspy.settings.adapter
 

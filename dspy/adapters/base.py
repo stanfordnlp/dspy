@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-# TODO(PR Reviewers): Should this be an abstract class? It looks like __call__
+# TODO(PR): Should this be an abstract class? It looks like __call__
 # expects .format and .parse to be implemented by the subclasses. We
 # additionally use .format_turn for fine-tuning. Relatedly, did we want to
 # rename this method?

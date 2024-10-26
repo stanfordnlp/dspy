@@ -9,11 +9,11 @@ from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
 from dspy.utils.logging import logger
 
 
-class FinetuneJobOpenAI(TrainingJob):
+class TrainingJobOpenAI(TrainingJob):
     def __init__(self, *args, **kwargs):
-        self.provider_file_id = None  # TODO: Can we get this using the job_id?
-        self.provider_job_id = None
         super().__init__(*args, **kwargs)
+        self.provider_file_id = None
+        self.provider_job_id = None
 
     def cancel(self):
         # Cancel the provider job
@@ -27,7 +27,6 @@ class FinetuneJobOpenAI(TrainingJob):
             self.provider_job_id = None
 
         # Delete the provider file
-        # TODO: Should there be a separate clean method?
         if self.provider_file_id is not None:
             if OpenAIProvider.does_file_exist(self.provider_file_id):
                 openai.files.delete(self.provider_file_id)
@@ -43,7 +42,10 @@ class FinetuneJobOpenAI(TrainingJob):
 
 class OpenAIProvider(Provider):
     
-    finetunable = True
+    def __init__(self):
+        super().__init__()
+        self.finetunable = True
+        self.TrainingJob = TrainingJobOpenAI
 
     @staticmethod
     def is_provider_model(model: str) -> bool:
@@ -62,9 +64,9 @@ class OpenAIProvider(Provider):
         # models have the prefix "ft:<BASE_MODEL_NAME>:", followed by a string
         # specifying the fine-tuned model. The following RegEx pattern is used
         # to match the base model name.
-        # TODO: This part can be updated to match the actual fine-tuned model
-        # names by making a call to the OpenAI API to be more exact, but this
-        # might require an API key with the right permissions.
+        # TODO(enhance): This part can be updated to match the actual fine-tuned
+        # model names by making a call to the OpenAI API to be more exact, but
+        # this might require an API key with the right permissions.
         match = re.match(r"ft:([^:]+):", model)
         if match and match.group(1) in valid_model_names:
             return True
@@ -72,27 +74,19 @@ class OpenAIProvider(Provider):
         return False
 
     @staticmethod
-    def get_finetune_job(
+    def finetune(
+        job: TrainingJobOpenAI,
         model: str,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None
-    ) -> TrainingJob:
-        return FinetuneJobOpenAI(
-            model=model,
-            train_data=train_data,
-            train_kwargs=train_kwargs,
-            data_format=data_format,
-        )
-
-    @staticmethod
-    def finetune(job: FinetuneJobOpenAI) -> str:
+        data_format: Optional[DataFormat] = None,
+    ) -> str:
         logger.info("[Finetune] Validating the data format")
-        OpenAIProvider._validate_data_format(job.data_format)
+        OpenAIProvider.validate_data_format(data_format)
         logger.info("[Finetune] Done!")
 
         logger.info("[Finetune] Saving the data to a file")
-        data_path = save_data(job.train_data)
+        data_path = save_data(train_data)
         logger.info("[Finetune] Done!")
 
         logger.info("[Finetune] Uploading the data to the provider")
@@ -103,16 +97,14 @@ class OpenAIProvider(Provider):
         logger.info("[Finetune] Start remote training")
         provider_job_id = OpenAIProvider.start_remote_training(
             train_file_id=job.provider_file_id,
-            model=job.model,
-            train_kwargs=job.train_kwargs,
+            model=model,
+            train_kwargs=train_kwargs,
         )
         job.provider_job_id = provider_job_id
-        # TODO: Remove this line after testing
-        # job.provider_job_id = "ftjob-ZdEL1mUDk0dwdDuZJQOng8Vv"
         logger.info("[Finetune] Done!")
 
         logger.info("[Finetune] Wait for training to complete")
-        # TODO: Would it be possible to stream the logs?
+        # TODO(feature): Could we stream OAI logs?
         OpenAIProvider.wait_for_job(job)
         logger.info("[Finetune] Done!")
 
@@ -125,7 +117,8 @@ class OpenAIProvider(Provider):
     @staticmethod
     def does_job_exist(job_id: str) -> bool:
         try:
-            # TODO: Error handling is vague
+            # TODO(nit): This call may fail for other reasons. We should check
+            # the error message to ensure that the job does not exist.
             openai.fine_tuning.jobs.retrieve(job_id)
             return True
         except Exception:
@@ -134,7 +127,8 @@ class OpenAIProvider(Provider):
     @staticmethod
     def does_file_exist(file_id: str) -> bool:
         try:
-            # TODO: Error handling is vague
+            # TODO(nit): This call may fail for other reasons. We should check
+            # the error message to ensure that the file does not exist.
             openai.files.retrieve(file_id)
             return True
         except Exception:
@@ -210,10 +204,12 @@ class OpenAIProvider(Provider):
 
     @staticmethod
     def wait_for_job(
-        job: FinetuneJobOpenAI,
-        poll_frequency: int = 60,
+        job: TrainingJobOpenAI,
+        poll_frequency: int = 20,
     ):
-        while not OpenAIProvider.is_terminal_training_status(job.status()):
+        done = False
+        while not done:
+            done = OpenAIProvider.is_terminal_training_status(job.status())
             time.sleep(poll_frequency)
 
 
@@ -223,7 +219,6 @@ class OpenAIProvider(Provider):
         if status != TrainingStatus.succeeded:
             err_msg = f"Job status is {status}."
             err_msg += f" Must be {TrainingStatus.succeeded} to retrieve model."
-            logger.error(err_msg)
             raise Exception(err_msg)
 
         provider_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
