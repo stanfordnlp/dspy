@@ -152,7 +152,8 @@ class Predict(Module, Parameter):
             completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
-                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
+                "underperform, and are about to be deleted. ***\n"
                 f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
                 " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
                 " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
