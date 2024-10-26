@@ -1,5 +1,4 @@
 from .avatar_optimizer import *
-from .better_together import BetterTogether
 from .bootstrap import *
 from .bootstrap_finetune import BootstrapFinetune
 from .copro_optimizer import COPRO
