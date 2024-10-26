@@ -1,4 +1,3 @@
-import re
 import ast
 import json
 import enum
@@ -14,7 +13,6 @@ from pydantic.fields import FieldInfo
 from typing import Any, Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
-from ..signatures.field import OutputField
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
 

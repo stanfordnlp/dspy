@@ -42,7 +42,8 @@ dependencies = [
     "jinja2",
     "magicattr~=0.1.6",
     "litellm",
-    "diskcache"
+    "diskcache",
+    "json-repair"
 ]
 
 [project.optional-dependencies]
@@ -135,7 +136,7 @@ jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
 litellm = "1.49.1"
 diskcache = "^5.6.0"
-
+json-repair = "^0.30.0
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
