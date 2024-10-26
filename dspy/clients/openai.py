@@ -52,10 +52,10 @@ class OpenAIProvider(Provider):
         # Filter the provider_prefix, if exists
         provider_prefix = "openai/"
         if model.startswith(provider_prefix):
-            model = model[len(provider_prefix) :]
+            model = model[len(provider_prefix):]
 
-        client = openai.OpenAI()
-        valid_model_names = [model.id for model in client.models.list().data]
+        valid_model_names = [model.id for model in openai.models.list()]
+
         # Check if the model is a base OpenAI model
         if model in valid_model_names:
             return True
