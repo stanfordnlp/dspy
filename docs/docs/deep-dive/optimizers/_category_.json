@@ -1,8 +1,8 @@
 {
-    "label": "Teleprompters",
+    "label": "Optimizers",
     "position": 7,
     "link": {
       "type": "generated-index",
-      "description": "Teleprompters are powerful optimizers (included in DSPy) that can learn to bootstrap and select effective prompts for the modules of any program. (The \"tele-\" in the name means \"at a distance\", i.e., automatic prompting at a distance.)"
+      "description": "Optimizers are powerful constructs (included in DSPy) that can learn to bootstrap and select effective prompts for the modules of any program."
     }
 }

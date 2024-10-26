@@ -137,7 +137,8 @@ def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
 def submit_data(train_path: str, job_config: Dict[str, Any]):
     """Upload the data to cloud storage."""
     logger.info("[Finetune] Submitting data to remote storage...")
-    dataset_name = f"dataset-{job_config.get('name', 'dspy-llmforge-fine-tuning-job')}"
+    dataset_suffix = os.path.basename(train_path).split(".")[0]
+    dataset_name = f"dataset-{job_config.get('name', dataset_suffix)}"
     train_path_remote = anyscale.llm.dataset.upload(train_path, name=dataset_name, cloud=job_config.get("cloud", None)).storage_uri
     logger.info(f"[Finetune] Data submitted. Remote train path: {train_path_remote}")
 

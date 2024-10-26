@@ -1,3 +1,4 @@
-from .dummies import *
-from .logging import *
-from .caching import *
+from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.dummies import *
+from dspy.utils.logging import *
+from dspy.utils.caching import *

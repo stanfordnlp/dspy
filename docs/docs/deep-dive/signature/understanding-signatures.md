@@ -2,8 +2,6 @@
 sidebar_position: 1
 ---
 
-import AuthorDetails from '@site/src/components/AuthorDetails';
-
 # Understanding Signatures
 
 A DSPy Signature is the most basic form of task description which simply requires inputs and outputs and optionally, a small description about them and the task too.
@@ -119,5 +117,3 @@ As you can see, the instruction is more well-defined by our task's instruction i
 ![Class Based Prompt Creation](./img/class_based_prompt_creation.png)
 
 ***
-
-<AuthorDetails name="Herumb Shandilya"/>

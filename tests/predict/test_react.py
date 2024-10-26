@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 
 import dspy
-from dspy.utils.dummies import dummy_rm
+from dspy.utils.dummies import DummyLM, dummy_rm
 
 
 def test_example_no_tools():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    lm = dspy.utils.DummyLM(
+    lm = DummyLM(
         [
             {"Thought_1": "Initial thoughts", "Action_1": "Finish[blue]"},
         ]
@@ -26,7 +26,7 @@ def test_example_no_tools():
 
 def test_example_search():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    lm = dspy.utils.DummyLM(
+    lm = DummyLM(
         [
             {"Thought_1": "Initial thoughts", "Action_1": "Search[the color of the sky]"},
             {"Thought_2": "More thoughts", "Action_2": "Finish[blue]\n\n"},
@@ -89,7 +89,7 @@ class DummyTool2:
 
 
 def test_custom_tools():
-    lm = dspy.utils.DummyLM(
+    lm = DummyLM(
         [
             {"Thought_1": "Initial thoughts", "Action_1": "Tool1[foo]"},
             {"Thought_2": "More thoughts", "Action_2": "Tool2[bar]"},

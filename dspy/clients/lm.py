@@ -1,11 +1,16 @@
-from datetime import datetime
 import functools
 import os
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 import threading
 from typing import Any, Dict, List, Optional
+
+import litellm
 import ujson
-import uuid
+from litellm.caching import Cache
+
 
 from dspy.adapters.base import Adapter
 from dspy.clients.provider import Provider, TrainingJob
@@ -15,15 +20,14 @@ from dspy.clients.utils_finetune import (
   validate_data_format,
   infer_data_format
 )
+from dspy.utils.callback import with_callbacks
 from dspy.utils.logging import logger
-
-import litellm
-from litellm.caching import Cache
 
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
+
 
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
@@ -39,6 +43,7 @@ class LM:
             cache=True,
             launch_kwargs=None,
             provider=None,
+            callbacks=None,
             **kwargs
         ):
         if launch_kwargs is not None or provider is not None:
@@ -50,6 +55,7 @@ class LM:
         self.cache = cache
         self.launch_kwargs = launch_kwargs or {}
         self.provider = provider or self.infer_provider()
+        self.callbacks = callbacks or []
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
@@ -60,6 +66,7 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
