@@ -13,7 +13,10 @@ The ClarifaiRM module requires the `clarifai` Python package. If not already ins
 pip install clarifai
 ```
 
-**Note:** Before using ClarifaiRM, ensure you have:
+**Note:** 
+
+Before using ClarifaiRM, ensure you have:
+
 1. Created a Clarifai account and application
 2. Ingested your documents into the application
 3. Obtained your User ID, App ID, and Personal Access Token (PAT)
@@ -38,7 +41,9 @@ ClarifaiRM(
 )
 ```
 
-**Note:** The PAT can be provided either directly to the constructor or through the `CLARIFAI_PAT` environment variable. For security best practices, using environment variables is recommended.
+**Note:** 
+
+The PAT can be provided either directly to the constructor or through the `CLARIFAI_PAT` environment variable. For security best practices, using environment variables is recommended.
 
 ## Under the Hood
 
@@ -163,7 +168,10 @@ except Exception as e:
     print(f"Error occurred: {e}")
 ```
 
-**Note:** These examples assume you have:
+**Note:** 
+
+These examples assume you have:
+
 - A properly configured Clarifai application
 - Valid authentication credentials
 - Documents already ingested into your Clarifai app
