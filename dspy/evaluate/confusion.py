@@ -214,7 +214,7 @@ class Confusion:
                         f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
                     )
 
-                return example_idx, example, {}, 0.0
+                return example_idx, example, {self.output_field: "error"}
             finally:
                 if creating_new_thread:
                     del thread_stacks[threading.get_ident()]
