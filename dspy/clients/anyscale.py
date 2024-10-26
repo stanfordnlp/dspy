@@ -6,7 +6,7 @@ import os
 from dspy.utils.logging import logger
 from dspy.clients.finetune import (
     FinetuneJob,
-    TrainingMethod,
+    # TrainingMethod,
     save_data,
 )
 from dspy.clients.openai import openai_data_validation
