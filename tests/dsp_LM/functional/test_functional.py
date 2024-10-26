@@ -329,27 +329,27 @@ def test_custom_model_validate_json():
     )
 
 
-# def test_raises():
-#     class TravelInformation(BaseModel):
-#         origin: str = Field(pattern=r"^[A-Z]{3}$")
-#         destination: str = Field(pattern=r"^[A-Z]{3}$")
-#         date: datetime.date
+def test_raises():
+    class TravelInformation(BaseModel):
+        origin: str = Field(pattern=r"^[A-Z]{3}$")
+        destination: str = Field(pattern=r"^[A-Z]{3}$")
+        date: datetime.date
 
-#     @predictor
-#     def flight_information(email: str) -> TravelInformation:
-#         pass
+    @predictor
+    def flight_information(email: str) -> TravelInformation:
+        pass
 
-#     lm = DSPDummyLM(
-#         [
-#             "A list of bad inputs",
-#             '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
-#             '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
-#         ]
-#     )
-#     dspy.settings.configure(lm=lm)
+    lm = DSPDummyLM(
+        [
+            "A list of bad inputs",
+            '{"origin": "JF0", "destination": "LAX", "date": "2022-12-25"}',
+            '{"origin": "JFK", "destination": "LAX", "date": "bad date"}',
+        ]
+    )
+    dspy.settings.configure(lm=lm)
 
-#     with pytest.raises(ValueError):
-#         flight_information(email="Some email")
+    with pytest.raises(ValueError):
+        flight_information(email="Some email")
 
 
 def test_multi_errors():
@@ -405,54 +405,54 @@ def test_multi_errors():
     )
 
 
-# def test_field_validator():
-#     class UserDetails(BaseModel):
-#         name: str
-#         age: int
+def test_field_validator():
+    class UserDetails(BaseModel):
+        name: str
+        age: int
 
-#         @field_validator("name")
-#         @classmethod
-#         def validate_name(cls, v):
-#             if v.upper() != v:
-#                 raise ValueError("Name must be in uppercase.")
-#             return v
+        @field_validator("name")
+        @classmethod
+        def validate_name(cls, v):
+            if v.upper() != v:
+                raise ValueError("Name must be in uppercase.")
+            return v
 
-#     @predictor
-#     def get_user_details() -> UserDetails:
-#         pass
+    @predictor
+    def get_user_details() -> UserDetails:
+        pass
 
-#     # Keep making the mistake (lower case name) until we run
-#     # out of retries.
-#     lm = DSPDummyLM(
-#         [
-#             '{"name": "lower case name", "age": 25}',
-#         ]
-#         * 10
-#     )
-#     dspy.settings.configure(lm=lm)
+    # Keep making the mistake (lower case name) until we run
+    # out of retries.
+    lm = DSPDummyLM(
+        [
+            '{"name": "lower case name", "age": 25}',
+        ]
+        * 10
+    )
+    dspy.settings.configure(lm=lm)
 
-#     with pytest.raises(ValueError):
-#         get_user_details()
+    with pytest.raises(ValueError):
+        get_user_details()
 
-#     print(lm.get_convo(-1))
-#     assert lm.get_convo(-1) == textwrap.dedent(
-#         """\
-#         Given the fields , produce the fields `get_user_details`.
+    print(lm.get_convo(-1))
+    assert lm.get_convo(-1) == textwrap.dedent(
+        """\
+        Given the fields , produce the fields `get_user_details`.
 
-#         ---
+        ---
 
-#         Follow the following format.
+        Follow the following format.
 
-#         Past Error in Get User Details: An error to avoid in the future
-#         Past Error (2) in Get User Details: An error to avoid in the future
-#         Get User Details: ${get_user_details}. Respond with a single JSON object. JSON Schema: {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
+        Past Error in Get User Details: An error to avoid in the future
+        Past Error (2) in Get User Details: An error to avoid in the future
+        Get User Details: ${get_user_details}. Respond with a single JSON object. JSON Schema: {"properties": {"name": {"title": "Name", "type": "string"}, "age": {"title": "Age", "type": "integer"}}, "required": ["name", "age"], "title": "UserDetails", "type": "object"}
 
-#         ---
+        ---
 
-#         Past Error in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
-#         Past Error (2) in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
-#         Get User Details: {"name": "lower case name", "age": 25}"""
-#     )
+        Past Error in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
+        Past Error (2) in Get User Details: Value error, Name must be in uppercase.: name (error type: value_error)
+        Get User Details: {"name": "lower case name", "age": 25}"""
+    )
 
 
 def test_annotated_field():

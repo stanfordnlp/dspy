@@ -153,6 +153,7 @@ class TypedPredictor(dspy.Module):
                 "json_schema -> json_object",
                 "Make a very succinct json object that validates with the following schema",
             ),
+            _parse_values=False,
         )(json_schema=schema).json_object
         # We use the parser to make sure the json object is valid.
         try:
@@ -220,6 +221,7 @@ class TypedPredictor(dspy.Module):
             task_description=task_description,
             language_model_output=model_output,
             error=error,
+            _parse_values=False,
         ).advice
 
     def _prepare_signature(self) -> dspy.Signature:
