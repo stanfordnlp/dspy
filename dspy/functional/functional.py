@@ -1,16 +1,22 @@
-import inspect
 import json
-import typing
-from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
-
-import pydantic
 import ujson
+import logging
+import inspect
+import typing
+import pydantic
+
+from functools import lru_cache
 from pydantic.fields import FieldInfo
+from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
 import dspy
 from dsp.adapters import passages2text
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
+
+@lru_cache(maxsize=None)
+def warn_once(msg: str):
+    logging.warning(msg)
 
 
 def predictor(*args: tuple, **kwargs) -> Callable[..., dspy.Module]:
@@ -98,6 +104,16 @@ class TypedPredictor(dspy.Module):
             explain_errors: If True, the model will try to explain the errors it encounters.
         """
         super().__init__()
+
+        # Warn: deprecation warning.
+        warn_once(
+                "\t*** Since DSPy 2.5.16+, TypedPredictors are now deprecated, underperform, and are about to be removed! ***\n"
+                "Please use standard predictors, e.g. dspy.Predict and dspy.ChainOfThought.\n"
+                "They now support type annotations and other features of TypedPredictors and "
+                "tend to work much better out of the box.\n"
+                "Please let us know if you face any issues: https://github.com/stanfordnlp/dspy/issues"
+            )
+
         signature = ensure_signature(signature, instructions)
         self.predictor = dspy.Predict(signature, _parse_values=False)
         self.max_retries = max_retries

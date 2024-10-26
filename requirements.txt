@@ -14,3 +14,4 @@ ujson
 httpx
 magicattr~=0.1.6
 diskcache
+json-repair
