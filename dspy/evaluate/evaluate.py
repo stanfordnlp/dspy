@@ -226,8 +226,20 @@ class Evaluate:
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
+        def prediction_is_dictlike(prediction):
+            try:
+                dict(prediction)
+                return True
+            except Exception:
+                return False
+
         data = [
-            merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
+            for _, example, prediction, score in predicted_devset
         ]
 
         result_df = pd.DataFrame(data)

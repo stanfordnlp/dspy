@@ -6,17 +6,17 @@ sidebar_position: 2
 
 The most powerful features in DSPy revolve around algorithmically optimizing the prompts (or weights) of LMs, especially when you're building programs that use the LMs within a pipeline.
 
-Let's first make sure you can set up your language model. DSPy support clients for many remote and local LMs.
+Let's first make sure you can set up your language model. DSPy supports clients for many remote and local LMs.
 
 ## Using `dspy.LM`
 
-:::warning
-Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
+!!! warning
+    Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
 
-Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
+    Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
 
-Any [provider supported in LiteLLM](https://docs.litellm.ai/docs/providers) should work with `dspy.LM`.
-:::
+    Any [provider supported in LiteLLM](https://docs.litellm.ai/docs/providers) should work with `dspy.LM`.
+
 
 ### Setting up the LM client
 
@@ -59,7 +59,7 @@ This is almost never the recommended way to interact with LMs in DSPy, but it is
 
 ### Using the LM with DSPy signatures
 
-You can also use the LM via DSPy [`signature` (input/output spec)](https://dspy-docs.vercel.app/docs/building-blocks/signatures) and [`modules`](https://dspy-docs.vercel.app/docs/building-blocks/modules), which we discuss in more depth in the remaining guides.
+You can also use the LM via DSPy [`signature` (input/output spec)](/building-blocks/2-signatures) and [`modules`](/building-blocks/3-modules), which we discuss in more depth in the remaining guides.
 
 ```python
 # Define a module (ChainOfThought) and assign it a signature (return an answer, given a question).
@@ -80,16 +80,16 @@ The default LM above is GPT-3.5, `gpt3_turbo`. What if I want to run a piece of 
 
 Instead of changing the default LM, you can just change it inside a block of code.
 
-:::tip
-Using `dspy.configure` and `dspy.context` is thread-safe!
-:::
+!!! tip
+    Using `dspy.configure` and `dspy.context` is thread-safe!
+
 
 ```python
 # Run with the default LM configured above, i.e. GPT-3.5
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 print('GPT-3.5:', response.answer)
 
-gpt4_turbo = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=300)
+gpt4_turbo = dspy.LM(model='gpt-4-1106-preview', max_tokens=300)
 
 # Run with GPT-4 instead
 with dspy.context(lm=gpt4_turbo):
@@ -116,14 +116,90 @@ By default LMs in DSPy are cached. If you repeat the same call, you will get the
 
 Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as well. This works great for open LMs from HuggingFace hosted locally with SGLang, VLLM, or HF Text-Generation-Inference.
 
-```python
-sglang_port = 7501
-sglang_url = f"http://localhost:{sglang_port}/v1"
-sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+#### Setting up SGLang
 
-# You could also use text mode, in which the prompts are *not* formatted as messages.
-sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
-```
+1. **Install SGLang (adapted from SGLang [documentation](https://sglang.readthedocs.io/en/latest/install.html)):**
+
+   ```bash
+   pip install "sglang[all]"
+   pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
+   ```
+
+2. **Login to HuggingFace:**
+
+   ```bash
+   huggingface-cli login
+   ```
+
+    You may need to set your HuggingFace API token to access gated models:
+
+   ```bash
+   export HUGGINGFACEHUB_API_TOKEN=your_api_token
+   ```
+
+   Also, ensure your cache directory is accessible:
+
+   ```bash
+   export TRANSFORMERS_CACHE=/path/to/your/cache
+   ```
+
+3. **Launch the SGLang server:**
+
+   Replace `meta-llama/Meta-Llama-3-8B-Instruct` with the model you wish to launch. 
+
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server \
+     --model-path meta-llama/Meta-Llama-3-8B-Instruct \
+     --port 7501 \
+   ```
+
+4. **Connect to the SGLang server via `dspy.LM`:**
+
+    ```python
+    sglang_port = 7501
+    sglang_url = f"http://localhost:{sglang_port}/v1"
+    sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+
+    # You could also use text mode, in which the prompts are *not* formatted as messages.
+    sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
+    ```
+
+    For further details on customizing the SGLang configuration, please refer to the [SGLang documentation](https://sglang.readthedocs.io/en/latest/backend.html#additional-server-arguments).
+
+#
+Additionally, you can also host models locally through Ollama.
+
+#### Setting Up Ollama (adapted from Ollama [documentation](https://github.com/ollama/ollama))
+
+
+1. **Install Ollama:**
+
+
+   ```bash
+   curl -fsSL https://ollama.ai/install.sh | sh
+   ```
+
+2. **Launch the Ollama server:**
+
+    Replace `llama3.2:1b` with the model you wish to launch. 
+
+   ```bash
+   ollama run llama3.2:1b
+   ```
+
+   If the model isn't in GGUF format, you'll need to convert it first, following corresponding Ollama [instructions](https://github.com/ollama/ollama?tab=readme-ov-file#import-from-gguf).
+
+    If you wish to download the model manually and load it into Ollama, please follow the corresponding Ollama import [instructions](https://github.com/ollama/ollama/blob/main/docs/import.md).
+
+3. **Connect to the Ollama server via `dspy.LM`:**
+
+   ```python
+   ollama_port = 11434 
+   ollama_url = f"http://localhost:{ollama_port}"
+   ollama_llm = dspy.LM(model="ollama/llama3.2:1b", api_base=ollama_url)
+   ```
+
+   For further details on customizing the Ollama configuration, please refer to the LiteLLM [Ollama documentation](https://docs.litellm.ai/docs/providers/ollama).
 
 ### Inspecting output and usage metadata
 
@@ -142,15 +218,15 @@ dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost
 
 ## Creating Custom LM Class
 
-Creating custom LM class is quite straightforward in DSPy. You can inherit from the `dspy.LM` class or create a new class with a similar interface. You'll need to implement/override the three methods:
+Creating a custom LM class is quite straightforward in DSPy. You can inherit from the `dspy.LM` class or create a new class with a similar interface. You'll need to implement/override these three methods:
 
 * `__init__`: Initialize the LM with the given `model` and other keyword arguments.
 * `__call__`: Call the LM with the given input prompt and return a list of string outputs.
 * `inspect_history`: The history of interactions with the LM. This is optional but is needed by some optimizers in DSPy.
 
-:::tip
-If there is not much overlap in features between your LM and LiteLLM it's better to not inherit and implement all methods from ground up.
-:::
+!!! tip
+    If there is not much overlap in features between your LM and LiteLLM it's better to not inherit and implement all methods from ground up.
+
 
 Let's create an LM for Gemini using `google-generativeai` package from scratch:
 
@@ -225,17 +301,17 @@ Prediction(
 
 ### Defining Custom Adapters
 
-:::warning
-Adapters are low level feature that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
-:::
+!!! warning
+    Adapters are low-level features that change the way input and output is handled by DSPy, it's not recommended to build and use custom Adapters unless you are sure of what you are doing.
+
 
 Adapters are a powerful feature in DSPy, allowing you to define custom behavior for your Signatures. 
 
 For example, you could define an Adapter that automatically converts the input to uppercase before passing it to the LM. This is a simple example, but it shows how you can create custom Adapters that modify the inputs or outputs of your LMs.
 
-You'll need to inherit the base `Adapter` class and implement two method to create a usable custom Adapter:
+You'll need to inherit the base `Adapter` class and implement two methods to create a usable custom Adapter:
 
-* `format`: This method is responsible for formatting the input for the LM. This method takes `signature`, `demos` and `inputs` as input parameters. Demos are in-context examples set manually or through example. The output of this function can be a string prompt supported by completions function, list of message dictionary or any format that the LM you are using supports.
+* `format`: This method is responsible for formatting the input for the LM. This method takes `signature`, `demos` and `inputs` as input parameters. Demos are in-context examples set manually or through example. The output of this function can be a string prompt supported by completions function, a list of message dictionaries or any format that the LM you are using supports.
 
 * `parse`: This method is responsible for parsing the output of the LM. This method takes `signature`, `completions` and `_parse_values` as input parameters.
 
@@ -277,7 +353,7 @@ class UpperCaseAdapter(Adapter):
         return output_dict
 ```
 
-Let's understand the `UpperCaseAdapter` class. The `format` method takes `signature`, `demos`, and `inputs` as input parameters. It then constructs a prompt by combining the system prompt, format instruction prompt, and input fields. It then converts the prompt to uppercase. 
+Let's understand the `UpperCaseAdapter` class. The `format` method takes `signature`, `demos`, and `inputs` as input parameters. It constructs a prompt by combining the system prompt, format instruction prompt, and input fields, and then converts the prompt to uppercase. 
 
 The `parse` method takes `signature`, `completions`, and `_parse_values` as input parameters. It then extracts the output fields from the completions and returns them as a dictionary.
 

@@ -23,6 +23,7 @@ DEFAULT_CONFIG = dotdict(
     langchain_history=[],
     experimental=False,
     backoff_time=10,
+    callbacks=[],
 )
 
 

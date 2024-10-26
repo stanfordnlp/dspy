@@ -9,6 +9,7 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.utils.callback import with_callbacks
 
 
 @lru_cache(maxsize=None)
@@ -17,10 +18,11 @@ def warn_once(msg: str):
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, **config):
+    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self.callbacks = callbacks or []
         self._parse_values = _parse_values
         self.reset()
 
@@ -114,6 +116,7 @@ class Predict(Module, Parameter):
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
+    @with_callbacks
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
