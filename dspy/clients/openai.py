@@ -9,6 +9,49 @@ from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
 from dspy.utils.logging import logger
 
 
+_OPENAI_MODELS = [
+  'gpt-4-turbo',
+  'gpt-4-turbo-2024-04-09',
+  'tts-1',
+  'tts-1-1106',
+  'chatgpt-4o-latest',
+  'dall-e-2',
+  'whisper-1',
+  'gpt-3.5-turbo-instruct',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0125',
+  'babbage-002',
+  'davinci-002',
+  'gpt-4o-mini-2024-07-18',
+  'gpt-4o',
+  'dall-e-3',
+  'gpt-4o-mini',
+  'gpt-4o-2024-08-06',
+  'gpt-4o-2024-05-13',
+  'o1-preview',
+  'gpt-4o-audio-preview-2024-10-01',
+  'o1-mini-2024-09-12',
+  'gpt-4o-audio-preview',
+  'tts-1-hd',
+  'tts-1-hd-1106',
+  'o1-preview-2024-09-12',
+  'o1-mini',
+  'gpt-4-1106-preview',
+  'text-embedding-ada-002',
+  'gpt-3.5-turbo-16k',
+  'text-embedding-3-small',
+  'text-embedding-3-large',
+  'gpt-4o-realtime-preview-2024-10-01',
+  'gpt-4o-realtime-preview',
+  'gpt-3.5-turbo-1106',
+  'gpt-4-0613',
+  'gpt-4-turbo-preview',
+  'gpt-4-0125-preview',
+  'gpt-4',
+  'gpt-3.5-turbo-instruct-0914'
+]
+
+
 class TrainingJobOpenAI(TrainingJob):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -54,9 +97,11 @@ class OpenAIProvider(Provider):
         if model.startswith(provider_prefix):
             model = model[len(provider_prefix):]
 
-        valid_model_names = [model.id for model in openai.models.list()]
-
         # Check if the model is a base OpenAI model
+        # TODO(enhance) The following list can be replaced with
+        # openai.models.list(), but doing so might require a key. Is there a
+        # way to get the list of models without a key?
+        valid_model_names = _OPENAI_MODELS
         if model in valid_model_names:
             return True
 
