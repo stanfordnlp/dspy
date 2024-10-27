@@ -31,6 +31,7 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+GLOBAL_HISTORY = []
 
 class LM:
     def __init__(
@@ -94,11 +95,12 @@ class LM:
             model_type=self.model_type,
         )
         self.history.append(entry)
+        GLOBAL_HISTORY.append(entry)
         
         return outputs
     
     def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
+        _inspect_history(self.history, n)
 
     def launch(self):
         self.provider.launch(self.model, self.launch_kwargs)
@@ -246,10 +248,10 @@ def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
 
-def _inspect_history(lm, n: int = 1):
+def _inspect_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in lm.history[-n:]:
+    for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
