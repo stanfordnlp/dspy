@@ -103,7 +103,7 @@ class Evaluate:
                     program._suggest_failures += dspy.settings.get("suggest_failures")
 
                 return example_idx, example, prediction, score
-            except Exception as e:
+            except Exception:
                 return example_idx, example, {}, 0.0
 
         results = executor.execute(process_item, devset)
