@@ -98,7 +98,7 @@ class ParallelExecutor:
 
     def _update_progress(self, pbar, nresults, ntotal):
         if self.compare_results:
-            pbar.set_description(f"Average Metric: {nresults:.2f} / {ntotal} ({round(100 * nresults / ntotal, 1)}%)")
+            pbar.set_description(f"Average Metric: {nresults:.2f} / {ntotal} ({round(100 * nresults / ntotal, 1) if ntotal > 0 else 0}%)")
         else:
             pbar.set_description(f"Processed {nresults} / {ntotal} examples")
         pbar.update()
