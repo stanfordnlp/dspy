@@ -149,6 +149,17 @@ plugins:
         'docs/building-blocks/6-optimizers.md': 'building-blocks/6-optimizers.md'
         'docs/building-blocks/7-assertions.md': 'building-blocks/7-assertions.md'
         'docs/building-blocks/8-typed_predictors.md': 'building-blocks/8-typed_predictors.md'
+
+        # Additional Building Blocks redirects for non-numbered versions
+        'docs/building-blocks/0_solving_your_task.md': 'building-blocks/solving_your_task.md'
+        'docs/building-blocks/language_models.md': 'building-blocks/1-language_models.md'
+        'docs/building-blocks/signatures.md': 'building-blocks/2-signatures.md'
+        'docs/building-blocks/modules.md': 'building-blocks/3-modules.md'
+        'docs/building-blocks/data.md': 'building-blocks/4-data.md'
+        'docs/building-blocks/metrics.md': 'building-blocks/5-metrics.md'
+        'docs/building-blocks/optimizers.md': 'building-blocks/6-optimizers.md'
+        'docs/building-blocks/assertions.md': 'building-blocks/7-assertions.md'
+        'docs/building-blocks/typed_predictors.md': 'building-blocks/8-typed_predictors.md'
         
         # Tutorials redirects
         'docs/tutorials/rag.md': 'tutorials/rag.md'
@@ -174,8 +185,6 @@ plugins:
         'docs/deep-dive/modules/react.md': 'deep-dive/modules/react.md'
         'docs/deep-dive/modules/multi-chain-comparison.md': 'deep-dive/modules/multi-chain-comparison.md'
         'docs/deep-dive/modules/program-of-thought.md': 'deep-dive/modules/program-of-thought.md'
-        'docs/deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
-        'deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
         'docs/deep-dive/modules/retrieve.md': 'deep-dive/modules/retrieve.md'
         'docs/deep-dive/modules/guide.md': 'deep-dive/modules/guide.md'
         
