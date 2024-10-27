@@ -48,8 +48,8 @@ class Confusion:
     def construct_matrix(self, preds, devset):
         labels = self.labels
 
+        # Calculate class weights
         if self.use_class_weight:
-            # use devset to get weights
             classes = [arg[self.output_field] for _, arg in devset]
             class_counts = Counter(classes)
             weight = {k: 1 / v for k, v in class_counts.items()}
