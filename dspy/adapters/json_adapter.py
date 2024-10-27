@@ -308,10 +308,10 @@ def prepare_instructions(signature: SignatureMeta):
             }
         )
     
-    parts.append("Inputs:")
+    parts.append("Inputs will have the following structure:")
     parts.append(format_signature_fields_for_instructions('user', signature.input_fields))
-    parts.append("Outputs, which you will respond with in one JSON object:")
-    parts.append(format_signature_fields_for_instructions('user', signature.output_fields))
+    parts.append("Outputs will be a JSON object with the following fields.")
+    parts.append(format_signature_fields_for_instructions('assistant', signature.output_fields))
     # parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
 
     instructions = textwrap.dedent(signature.instructions)
