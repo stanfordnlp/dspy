@@ -82,7 +82,7 @@ class ParallelExecutor:
                     break
                 result = function(item)
                 results.append(result)
-                pbar.update()
+                self._update_progress(pbar, len(results), len(data))
         pbar.close()
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Execution was cancelled due to errors.")
@@ -90,8 +90,13 @@ class ParallelExecutor:
         return results
 
 
+    def _update_progress(self, pbar, nresults, ntotal):
+        pbar.set_description(f"Processed {nresults} / {ntotal} examples")
+        pbar.update()
+
+
     def _execute_multi_thread(self, function, data):
-        results = []
+        results = [None] * len(data)  # Pre-allocate results list to maintain order
         job_cancelled = "cancelled"
 
         @contextlib.contextmanager
@@ -109,13 +114,14 @@ class ParallelExecutor:
             # reset to the default handler
             signal.signal(signal.SIGINT, default_handler)
 
-        def cancellable_function(item):
+        def cancellable_function(index_item):
+            index, item = index_item
             if self.cancel_jobs.is_set():
-                return job_cancelled
-            return function(item)
+                return index, job_cancelled
+            return index, function(item)
 
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor, interrupt_handler_manager():
-            futures = {executor.submit(cancellable_function, item): item for item in data}
+            futures = {executor.submit(cancellable_function, pair): pair for pair in enumerate(data)}
             pbar = tqdm.tqdm(
                 total=len(data),
                 dynamic_ncols=True,
@@ -123,11 +129,11 @@ class ParallelExecutor:
                 file=sys.stdout,
             )
             for future in as_completed(futures):
-                result = future.result()
+                index, result = future.result()
                 if result is job_cancelled:
                     continue
-                results.append(result)
-                pbar.update()
+                results[index] = result
+                self._update_progress(pbar, len([r for r in results if r is not None]), len(data))
             pbar.close()
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Execution was cancelled due to errors.")

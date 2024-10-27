@@ -98,8 +98,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def batch(
         self,
-        examples: List[dspy.Example],
-        batch_size: int = 32,
+        examples,
+        num_threads: int = 32,
         max_errors: int = 10,
         return_failed_examples: bool = False,
         provide_traceback: bool = False,
@@ -119,7 +119,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         # Create an instance of Parallel
         parallel_executor = Parallel(
-            batch_size=batch_size,
+            num_threads=num_threads,
             max_errors=max_errors,
             return_failed_examples=return_failed_examples,
             provide_traceback=provide_traceback,
