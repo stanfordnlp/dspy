@@ -66,6 +66,7 @@ nav:
     - Retrieval Model Clients:
       - Azure: deep-dive/retrieval_models_clients/Azure.md
       - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+      - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
       - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
       - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
       - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
@@ -189,6 +190,7 @@ plugins:
         # Retrieval Model Clients
         'docs/deep-dive/retrieval_models_clients/Azure.md': 'deep-dive/retrieval_models_clients/Azure.md'
         'docs/deep-dive/retrieval_models_clients/ChromadbRM.md': 'deep-dive/retrieval_models_clients/ChromadbRM.md'
+        'docs/deep-dive/retrieval_models_clients/ClarifaiRM.md': 'deep-dive/retrieval_models_clients/ClarifaiRM.md'
         'docs/deep-dive/retrieval_models_clients/ColBERTv2.md': 'deep-dive/retrieval_models_clients/ColBERTv2.md'
         'docs/deep-dive/retrieval_models_clients/custom-rm-client.md': 'deep-dive/retrieval_models_clients/custom-rm-client.md'
         'docs/deep-dive/retrieval_models_clients/DatabricksRM.md': 'deep-dive/retrieval_models_clients/DatabricksRM.md'
