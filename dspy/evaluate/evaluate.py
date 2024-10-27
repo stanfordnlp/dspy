@@ -47,7 +47,7 @@ class Evaluate:
         max_errors=5,
         return_all_scores=False,
         return_outputs=False,
-        provide_traceback=False,
+        provide_traceback=True,
         **_kwargs,
     ):
         self.devset = devset
