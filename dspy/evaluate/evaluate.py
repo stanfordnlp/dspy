@@ -91,17 +91,20 @@ class Evaluate:
         )
 
         def process_item(item):
-            example_idx, example = item
-            prediction = program(**example.inputs())
-            score = metric(example, prediction)
+            try:
+                example_idx, example = item
+                prediction = program(**example.inputs())
+                score = metric(example, prediction)
 
-            # Increment assert and suggest failures to program's attributes
-            if hasattr(program, "_assert_failures"):
-                program._assert_failures += dspy.settings.get("assert_failures")
-            if hasattr(program, "_suggest_failures"):
-                program._suggest_failures += dspy.settings.get("suggest_failures")
+                # Increment assert and suggest failures to program's attributes
+                if hasattr(program, "_assert_failures"):
+                    program._assert_failures += dspy.settings.get("assert_failures")
+                if hasattr(program, "_suggest_failures"):
+                    program._suggest_failures += dspy.settings.get("suggest_failures")
 
-            return example_idx, example, prediction, score
+                return example_idx, example, prediction, score
+            except Exception as e:
+                return example_idx, example, {}, 0.0
 
         results = executor.execute(process_item, devset)
         reordered_devset = [r for r in results if r is not None]
