@@ -17,11 +17,13 @@ class ParallelExecutor:
         max_errors=5,
         display_progress=False,
         provide_traceback=False,
+        compare_results=False,
     ):
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
+        self.compare_results = compare_results
 
         self.error_count = 0
         self.error_lock = threading.Lock()
@@ -82,7 +84,11 @@ class ParallelExecutor:
                     break
                 result = function(item)
                 results.append(result)
-                self._update_progress(pbar, len(results), len(data))
+                if self.compare_results:
+                    # Assumes score is the last element of the result tuple
+                    self._update_progress(pbar, sum([r[-1] for r in results if r is not None]), len([r for r in data if r is not None]))
+                else:
+                    self._update_progress(pbar, len(results), len(data))
         pbar.close()
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Execution was cancelled due to errors.")
@@ -91,7 +97,10 @@ class ParallelExecutor:
 
 
     def _update_progress(self, pbar, nresults, ntotal):
-        pbar.set_description(f"Processed {nresults} / {ntotal} examples")
+        if self.compare_results:
+            pbar.set_description(f"Average Metric: {nresults:.2f} / {ntotal} ({round(100 * nresults / ntotal, 1)}%)")
+        else:
+            pbar.set_description(f"Processed {nresults} / {ntotal} examples")
         pbar.update()
 
 
@@ -128,12 +137,19 @@ class ParallelExecutor:
                 disable=not self.display_progress,
                 file=sys.stdout,
             )
+
             for future in as_completed(futures):
                 index, result = future.result()
+            
                 if result is job_cancelled:
                     continue
                 results[index] = result
-                self._update_progress(pbar, len([r for r in results if r is not None]), len(data))
+
+                if self.compare_results:
+                    # Assumes score is the last element of the result tuple
+                    self._update_progress(pbar, sum([r[-1] for r in results if r is not None]), len([r for r in results if r is not None]))
+                else:
+                    self._update_progress(pbar, len([r for r in results if r is not None]), len(data))
             pbar.close()
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Execution was cancelled due to errors.")

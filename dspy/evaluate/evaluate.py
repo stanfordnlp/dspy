@@ -87,6 +87,7 @@ class Evaluate:
             display_progress=display_progress,
             max_errors=self.max_errors,
             provide_traceback=self.provide_traceback,
+            compare_results=True,
         )
 
         def process_item(item):
