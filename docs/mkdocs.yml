@@ -21,32 +21,30 @@ nav:
     - Debugging: tutorials/debugging.md # New file and we can for now just getting it from the FAQs
   - Components:
     - Overview: building-blocks/solving_your_task.md
-    - Language Models: building-blocks/1-language_models.md
-    - Signatures: building-blocks/2-signatures.md
-    - Modules: building-blocks/3-modules.md
-    - Data: building-blocks/4-data.md
     - Metrics: building-blocks/5-metrics.md
-    - Optimizers: building-blocks/6-optimizers.md
-    - Assertions: building-blocks/7-assertions.md
     - Typed Predictors: building-blocks/8-typed_predictors.md
     - Data Handling:
+      - Overview: building-blocks/4-data.md
       - Examples in DSPy: deep-dive/data-handling/examples.md
       - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
       - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
     - Signatures:
+      - Overview: building-blocks/2-signatures.md
       - Understanding Signatures: deep-dive/signature/understanding-signatures.md
       - Executing Signatures: deep-dive/signature/executing-signatures.md
     - Modules:
+      - Overview: building-blocks/3-modules.md
       - Predict: deep-dive/modules/predict.md
       - ChainOfThought: deep-dive/modules/chain-of-thought.md
-      - ChainOfThoughtwithHint: deep-dive/modules/chain-of-thought-with-hint.md
+      - ChainOfThoughtWithHint: deep-dive/modules/chain-of-thought-with-hint.md
       - ReAct: deep-dive/modules/react.md
       - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
       - ProgramOfThought: deep-dive/modules/program-of-thought.md
       - Assertions: deep-dive/modules/assertions.md
-      - Retreive: deep-dive/modules/retrieve.md
+      - Retrieve: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
     - Language Model Clients:
+      - Overview: building-blocks/1-language_models.md
       - Local Language Model Clients:
         - HFClientTGI: deep-dive/language_model_clients/lm_local_models/HFClientTGI.md
         - HFClientVLLM: deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md
@@ -71,8 +69,11 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-    - Assertions: deep-dive/assertions.md
+    - Assertions:
+      - Overview: building-blocks/7-assertions.md
+      - Assertions: deep-dive/assertions.md
     - Optimizers (formerly Teleprompters):
+      - Overview: building-blocks/6-optimizers.md
       - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
       - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
       - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
@@ -81,7 +82,7 @@ nav:
       - CoPro: deep-dive/optimizers/copro.md
       - MIProV2: deep-dive/optimizers/miprov2.md
   - Community:
-    - Content & Tutorials: dspy-usecases.md  # Existing file
+    - Use cases & Tutorials: dspy-usecases.md  # Existing file
     - Related Projects: community/related-projects.md  # New file and split the dspy-usecases
     - Companies using DSPy: community/companies-using-dspy.md  # New file and split the dspy-usecases
     - Contributing: # we should bring it from the FAQs
