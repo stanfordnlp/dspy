@@ -1,4 +1,3 @@
-from typing import List
 from dspy.utils.callback import with_callbacks
 import magicattr
 
