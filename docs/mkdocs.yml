@@ -137,8 +137,6 @@ plugins:
   - mkdocs-jupyter
   - redirects:
       redirect_maps:
-  - redirects:
-      redirect_maps:
         'index.md': 'intro.md'
         # Intro page redirects
         'docs/intro.md': 'intro.md'
