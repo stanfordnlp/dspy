@@ -53,7 +53,7 @@ def format_answers(answers: Union[str, list]) -> Optional[str]:
         ValueError: when is not of type list or str
 
     Returns:
-        _type_: Optiona[str]
+        _type_: Optional[str]
     """
     if isinstance(answers, list):
         if len(answers) >= 1:

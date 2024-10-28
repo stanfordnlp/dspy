@@ -23,7 +23,7 @@ mappings = {
 }
 
 dataset = load_dataset("buio/heart-disease")
-fullset = []
+fullest = []
 
 for x in dataset["train"]:
     for key, value in x.items():
@@ -35,13 +35,13 @@ for x in dataset["train"]:
     x["answer"] = x["target"]
     del x["target"]
 
-    fullset.append(dspy.Example(**x).with_inputs(*inputs))
+    fullest.append(dspy.Example(**x).with_inputs(*inputs))
 
-random.Random(0).shuffle(fullset)
+random.Random(0).shuffle(fullest)
 
-trainset = fullset[:120]
+trainset = fullest[:120]
 devset = trainset
-testset = fullset[120:]
+testset = fullest[120:]
 
 
 class HeartDiseaseInput(dspy.Signature):
@@ -53,7 +53,7 @@ class HeartDiseaseInput(dspy.Signature):
     trestbps = dspy.InputField(
         desc="Resting blood pressure (in mm Hg on admission to the hospital)"
     )
-    chol = dspy.InputField(desc="Serum cholestoral in mg/dl")
+    chol = dspy.InputField(desc="Serum cholesterol in mg/dl")
     fbs = dspy.InputField(desc="Fasting blood sugar > 120 mg/dl (true or false)")
     restecg = dspy.InputField(
         desc="Resting electrocardiographic results (normal, ST-T wave abnormality, left ventricular hypertrophy)"

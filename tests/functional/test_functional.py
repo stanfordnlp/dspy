@@ -502,7 +502,7 @@ def test_literal():
     assert f() == "2"
 
 
-def test_literal_missmatch():
+def test_literal_mismatch():
     lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
@@ -527,7 +527,7 @@ def test_literal_int():
     assert f() == 2
 
 
-def test_literal_int_missmatch():
+def test_literal_int_mismatch():
     lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
@@ -823,7 +823,7 @@ def test_model_validator():
         category: str = dspy.OutputField()
 
         @model_validator(mode="after")
-        def check_cateogry(self):
+        def check_category(self):
             if self.category not in self.allowed_categories:
                 raise ValueError(f"category not in {self.allowed_categories}")
             return self

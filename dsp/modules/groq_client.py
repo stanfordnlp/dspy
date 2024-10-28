@@ -96,7 +96,7 @@ class GroqLM(LM):
         on_backoff=backoff_hdlr,
     )
     def request(self, prompt: str, **kwargs):
-        """Handles retreival of model completions whilst handling rate limiting and caching."""
+        """Handles retrieval of model completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
             del kwargs["model_type"]
 
@@ -106,7 +106,7 @@ class GroqLM(LM):
         return choice.message.content
 
     def chat_request(self, **kwargs):
-        """Handles retreival of model completions whilst handling rate limiting and caching."""
+        """Handles retrieval of model completions whilst handling rate limiting and caching."""
         response = self.client.chat.completions.create(**kwargs)
         return response
 

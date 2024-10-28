@@ -17,14 +17,14 @@ except ImportError:
 
 
 class SnowflakeRM(dspy.Retrieve):
-    """A retrieval module that uses Snowlfake's Cortex Search service to return the top relevant passages for a given query.
+    """A retrieval module that uses Snowflake's Cortex Search service to return the top relevant passages for a given query.
 
     Assumes that a Snowflake Cortex Search endpoint has been configured by the use.
 
     For more information on configuring the Cortex Search service, visit: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview
 
     Args:
-        snowflake_sesssion (object): Snowflake Snowpark session for accessing the service.
+        snowflake_session (object): Snowflake Snowpark session for accessing the service.
         cortex_search_service(str): Name of the Cortex Search service to be used.
         snowflake_database (str): The name of the Snowflake table containing document embeddings.
         snowflake_schema (str): The name of the Snowflake table containing document embeddings.
@@ -241,7 +241,7 @@ class GenerateFilter(dspy.Signature):
     Sample Values: {"industry":["biotechnology","healthcare","agriculture"],"HQ":["NY, US","CA,US","FL,US"],"date":["01/01,1999","01/01/2024"]}
     Answer: {"@or":[{"@eq":{"year":"2021"}},{"@eq":{"year":"2022"}},{"@eq":{"year":"2023"}},{"@eq":{"year":"2024"}}]}
 
-    Query: Wha is the sentiment of Biotech CEO's of companies based in New York?
+    Query: What is the sentiment of Biotech CEO's of companies based in New York?
     Attributes: industry,hq,date
     Sample Values: {"industry":["biotechnology","healthcare","agriculture"],"HQ":["NY, US","CA,US","FL,US"],"date":["01/01,1999","01/01/2024"]}
     Answer: {"@and": [ { "@eq": { "industry"": "biotechnology" } }, { "@eq": { "HQ": "NY,US" } }]}

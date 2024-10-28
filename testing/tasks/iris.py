@@ -33,27 +33,27 @@ class IrisClassifierTask(BaseTask):
         # Read in the conditional HotpotQA dataset from nfl_datasets as a csv from nfl_datasets/conditional_hotpotqa
         dataset = load_dataset("hitorilabs/iris")
 
-        fullset = [
+        fullest = [
             dspy.Example(**{k: str(round(v, 2)) for k, v in example.items()})
             for example in dataset["train"]
         ]
-        fullset = [
+        fullest = [
             dspy.Example(
                 **{
                     **x,
                     "answer": ["setosa", "versicolor", "virginica"][int(x["species"])],
                 }
             )
-            for x in fullset
+            for x in fullest
         ]
-        fullset = [
+        fullest = [
             x.with_inputs("petal_length", "petal_width", "sepal_length", "sepal_width")
-            for x in fullset
+            for x in fullest
         ]
 
-        random.Random(0).shuffle(fullset)
-        # self.trainset, self.devset, self.testset = fullset[:25], fullset[20:75], fullset[75:]
-        self.trainset, self.testset = fullset[:75], fullset[75:]
+        random.Random(0).shuffle(fullest)
+        # self.trainset, self.devset, self.testset = fullest[:25], fullest[20:75], fullest[75:]
+        self.trainset, self.testset = fullest[:75], fullest[75:]
 
         # Set up metrics
         NUM_THREADS = 16
