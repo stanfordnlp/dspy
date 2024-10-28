@@ -84,7 +84,7 @@ class Evaluate:
 
         executor = ParallelExecutor(
             num_threads=num_threads,
-            display_progress=display_progress,
+            disable_progress_bar=not display_progress,
             max_errors=self.max_errors,
             provide_traceback=self.provide_traceback,
             compare_results=True,
