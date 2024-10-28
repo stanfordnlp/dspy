@@ -18,7 +18,7 @@ nav:
     - Summarization: tutorials/summarization.md
     - Additional Resources: tutorials/other_tutorial.md
     - Examples: tutorials/examples.md
-    - Debugging: tutorials/debugging.md # New file and we can for now just getting it from the FAQs
+    - Debugging: tutorials/debugging.md
   - Components:
     - Overview: building-blocks/solving_your_task.md
     - Signatures:
@@ -83,13 +83,12 @@ nav:
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
     
   - Community:
-    - Usecases & Tutorials: dspy-usecases.md  # Existing file
-    - Related Projects: community/related-projects.md  # New file and split the dspy-usecases
-    - Companies using DSPy: community/companies-using-dspy.md  # New file and split the dspy-usecases
-    - Contributing: # we should bring it from the FAQs
+    - Tutorials: community/tutorials.md 
+    - Use Cases: community/related-projects.md  
+    - Contributing: 
       - Roadmap: roadmap.md
-      - How to get involved: community/how-to-contribute.md  # New file
-      - Development setup: community/development-setup.md  # New file
+      - How to get involved: community/how-to-contribute.md  
+      - Development setup: community/development-setup.md  
   - FAQ: faqs.md
   - Cheatsheet: cheatsheet.md
 
