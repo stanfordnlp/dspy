@@ -168,7 +168,7 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
 
 
 
-def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
+def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     """
     Formats the values of the specified fields according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
@@ -180,6 +180,13 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     Returns:
       The joined formatted values of the fields, represented as a string.
     """
+
+    if role == "assistant":
+        d = fields_with_values.items()
+        d = {k.name: _serialize_for_json(v) for k, v in d}
+
+        return json.dumps(_serialize_for_json(d), indent=2)
+
     output = []
     for field, field_value in fields_with_values.items():
         formatted_field_value = _format_field_value(field_info=field.info, value=field_value)
@@ -219,6 +226,7 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
 
     formatted_fields = format_fields(
+        role=role,
         fields_with_values={
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
@@ -269,7 +277,7 @@ def prepare_instructions(signature: SignatureMeta):
     parts = []
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
-    # parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+    parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
     def field_metadata(field_name, field_info):
         type_ = field_info.annotation
@@ -291,16 +299,19 @@ def prepare_instructions(signature: SignatureMeta):
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
         return f"{{{field_name}}}{desc}"
 
-    def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+    def format_signature_fields_for_instructions(role, fields: Dict[str, FieldInfo]):
         return format_fields(
+            role=role,
             fields_with_values={
                 FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
                 for field_name, field_info in fields.items()
             }
         )
-
-    parts.append(format_signature_fields_for_instructions(signature.input_fields))
-    parts.append(format_signature_fields_for_instructions(signature.output_fields))
+    
+    parts.append("Inputs will have the following structure:")
+    parts.append(format_signature_fields_for_instructions('user', signature.input_fields))
+    parts.append("Outputs will be a JSON object with the following fields.")
+    parts.append(format_signature_fields_for_instructions('assistant', signature.output_fields))
     # parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
 
     instructions = textwrap.dedent(signature.instructions)

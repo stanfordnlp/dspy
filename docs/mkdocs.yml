@@ -6,7 +6,7 @@ repo_name: stanfordnlp/dspy
 edit_uri: edit/main/docs/docs/
 docs_dir: 'docs/'
 nav:
-  - Home: 
+  - Home:
       - intro.md
   - Quick Start:
     - Installation: quick-start/installation.md
@@ -67,6 +67,7 @@ nav:
     - Retrieval Model Clients:
       - Azure: deep-dive/retrieval_models_clients/Azure.md
       - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+      - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
       - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
       - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
       - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
@@ -81,14 +82,14 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-    
+
   - Community:
-    - Tutorials: community/tutorials.md 
-    - Use Cases: community/related-projects.md  
-    - Contributing: 
+    - Tutorials: community/tutorials.md
+    - Use Cases: community/related-projects.md
+    - Contributing:
       - Roadmap: roadmap.md
-      - How to get involved: community/how-to-contribute.md  
-      - Development setup: community/development-setup.md  
+      - How to get involved: community/how-to-contribute.md
+      - Development setup: community/development-setup.md
   - FAQ: faqs.md
   - Cheatsheet: cheatsheet.md
 
@@ -159,23 +160,34 @@ plugins:
         'docs/building-blocks/7-assertions.md': 'building-blocks/7-assertions.md'
         'docs/building-blocks/8-typed_predictors.md': 'building-blocks/8-typed_predictors.md'
 
+        # Additional Building Blocks redirects for non-numbered versions
+        'docs/building-blocks/0_solving_your_task.md': 'building-blocks/solving_your_task.md'
+        'docs/building-blocks/language_models.md': 'building-blocks/1-language_models.md'
+        'docs/building-blocks/signatures.md': 'building-blocks/2-signatures.md'
+        'docs/building-blocks/modules.md': 'building-blocks/3-modules.md'
+        'docs/building-blocks/data.md': 'building-blocks/4-data.md'
+        'docs/building-blocks/metrics.md': 'building-blocks/5-metrics.md'
+        'docs/building-blocks/optimizers.md': 'building-blocks/6-optimizers.md'
+        'docs/building-blocks/assertions.md': 'building-blocks/7-assertions.md'
+        'docs/building-blocks/typed_predictors.md': 'building-blocks/8-typed_predictors.md'
+
         # Tutorials redirects
         'docs/tutorials/rag.md': 'tutorials/rag.md'
         'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
         'docs/tutorials/summarization.md': 'tutorials/summarization.md'
         'docs/tutorials/other_tutorial.md': 'tutorials/other_tutorial.md'
         'docs/tutorials/examples.md': 'tutorials/examples.md'
-
+        
         # Deep Dive redirects
         # Data Handling
         'docs/deep-dive/data-handling/examples.md': 'deep-dive/data-handling/examples.md'
         'docs/deep-dive/data-handling/built-in-datasets.md': 'deep-dive/data-handling/built-in-datasets.md'
         'docs/deep-dive/data-handling/loading-custom-data.md': 'deep-dive/data-handling/loading-custom-data.md'
-
+        
         # Signatures
         'docs/deep-dive/signature/understanding-signatures.md': 'deep-dive/signature/understanding-signatures.md'
         'docs/deep-dive/signature/executing-signatures.md': 'deep-dive/signature/executing-signatures.md'
-
+        
         # Modules
         'docs/deep-dive/modules/predict.md': 'deep-dive/modules/predict.md'
         'docs/deep-dive/modules/chain-of-thought.md': 'deep-dive/modules/chain-of-thought.md'
@@ -187,7 +199,7 @@ plugins:
         'deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
         'docs/deep-dive/modules/retrieve.md': 'deep-dive/modules/retrieve.md'
         'docs/deep-dive/modules/guide.md': 'deep-dive/modules/guide.md'
-
+        
         # Language Model Clients
         'docs/deep-dive/language_model_clients/lm_local_models/HFClientTGI.md': 'deep-dive/language_model_clients/lm_local_models/HFClientTGI.md'
         'docs/deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md': 'deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md'
@@ -195,10 +207,11 @@ plugins:
         'docs/deep-dive/language_model_clients/lm_local_models/Ollama.md': 'deep-dive/language_model_clients/lm_local_models/Ollama.md'
         'docs/deep-dive/language_model_clients/lm_local_models/LlamaCpp.md': 'deep-dive/language_model_clients/lm_local_models/LlamaCpp.md'
         'docs/deep-dive/language_model_clients/lm_local_models/TensorRTLLM.md': 'deep-dive/language_model_clients/lm_local_models/TensorRTLLM.md'
-
+        
         # Retrieval Model Clients
         'docs/deep-dive/retrieval_models_clients/Azure.md': 'deep-dive/retrieval_models_clients/Azure.md'
         'docs/deep-dive/retrieval_models_clients/ChromadbRM.md': 'deep-dive/retrieval_models_clients/ChromadbRM.md'
+        'docs/deep-dive/retrieval_models_clients/ClarifaiRM.md': 'deep-dive/retrieval_models_clients/ClarifaiRM.md'
         'docs/deep-dive/retrieval_models_clients/ColBERTv2.md': 'deep-dive/retrieval_models_clients/ColBERTv2.md'
         'docs/deep-dive/retrieval_models_clients/custom-rm-client.md': 'deep-dive/retrieval_models_clients/custom-rm-client.md'
         'docs/deep-dive/retrieval_models_clients/DatabricksRM.md': 'deep-dive/retrieval_models_clients/DatabricksRM.md'
@@ -230,7 +243,7 @@ plugins:
         'docs/faqs.md': 'faqs.md'
         'docs/cheatsheet.md': 'cheatsheet.md'
         'docs/dspy-usecases.md': 'dspy-usecases.md'
-        
+
 
 extra:
   social:
