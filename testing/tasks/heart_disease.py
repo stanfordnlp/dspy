@@ -23,7 +23,7 @@ mappings = {
 }
 
 dataset = load_dataset("buio/heart-disease")
-fullest = []
+fullset = []
 
 for x in dataset["train"]:
     for key, value in x.items():
@@ -35,13 +35,13 @@ for x in dataset["train"]:
     x["answer"] = x["target"]
     del x["target"]
 
-    fullest.append(dspy.Example(**x).with_inputs(*inputs))
+    fullset.append(dspy.Example(**x).with_inputs(*inputs))
 
-random.Random(0).shuffle(fullest)
+random.Random(0).shuffle(fullset)
 
-trainset = fullest[:120]
+trainset = fullset[:120]
 devset = trainset
-testset = fullest[120:]
+testset = fullset[120:]
 
 
 class HeartDiseaseInput(dspy.Signature):
