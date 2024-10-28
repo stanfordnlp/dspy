@@ -78,6 +78,7 @@ nav:
       - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
       - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
       - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
+      - Vectararm: deep-dive/retrieval_models_clients/Vectararm.md
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
