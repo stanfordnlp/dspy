@@ -13,12 +13,14 @@ class Parallel:
         max_errors: int = 10,
         return_failed_examples: bool = False,
         provide_traceback: bool = False,
+        disable_progress_bar: bool = False,
     ):
         super().__init__()
         self.num_threads = num_threads
         self.max_errors = max_errors
         self.return_failed_examples = return_failed_examples
         self.provide_traceback = provide_traceback
+        self.disable_progress_bar = disable_progress_bar
 
         self.error_count = 0
         self.error_lock = threading.Lock()
@@ -32,15 +34,18 @@ class Parallel:
 
         executor = ParallelExecutor(
             num_threads=num_threads,
-            display_progress=True,
             max_errors=self.max_errors,
             provide_traceback=self.provide_traceback,
+            disable_progress_bar=self.disable_progress_bar,
         )
 
         def process_pair(pair):
             module, example = pair
 
-            result = module(**example.inputs())
+            if isinstance(example, Example):
+                result = module(**example.inputs())
+            elif isinstance(example, dict):
+                result = module(**example)
             return result
 
         # Execute the processing function over the execution pairs

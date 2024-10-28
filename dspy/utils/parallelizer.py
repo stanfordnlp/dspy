@@ -15,12 +15,12 @@ class ParallelExecutor:
         self,
         num_threads,
         max_errors=5,
-        display_progress=False,
+        disable_progress_bar=False,
         provide_traceback=False,
         compare_results=False,
     ):
         self.num_threads = num_threads
-        self.display_progress = display_progress
+        self.disable_progress_bar = disable_progress_bar
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
         self.compare_results = compare_results
@@ -75,7 +75,7 @@ class ParallelExecutor:
         pbar = tqdm.tqdm(
             total=len(data),
             dynamic_ncols=True,
-            disable=not self.display_progress,
+            disable=self.disable_progress_bar,
             file=sys.stdout,
         )
         for item in data:
@@ -110,18 +110,23 @@ class ParallelExecutor:
 
         @contextlib.contextmanager
         def interrupt_handler_manager():
-            """Sets the cancel_jobs event when a SIGINT is received."""
-            default_handler = signal.getsignal(signal.SIGINT)
+            """Sets the cancel_jobs event when a SIGINT is received, only in the main thread."""
+            if threading.current_thread() is threading.main_thread():
+                default_handler = signal.getsignal(signal.SIGINT)
 
-            def interrupt_handler(sig, frame):
-                self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling execution.")
-                default_handler(sig, frame)
+                def interrupt_handler(sig, frame):
+                    self.cancel_jobs.set()
+                    dspy.logger.warning("Received SIGINT. Cancelling execution.")
+                    default_handler(sig, frame)
 
-            signal.signal(signal.SIGINT, interrupt_handler)
-            yield
-            # reset to the default handler
-            signal.signal(signal.SIGINT, default_handler)
+                signal.signal(signal.SIGINT, interrupt_handler)
+                try:
+                    yield
+                finally:
+                    signal.signal(signal.SIGINT, default_handler)
+            else:
+                # If not in the main thread, skip setting signal handlers
+                yield
 
         def cancellable_function(index_item):
             index, item = index_item
@@ -134,7 +139,7 @@ class ParallelExecutor:
             pbar = tqdm.tqdm(
                 total=len(data),
                 dynamic_ncols=True,
-                disable=not self.display_progress,
+                disable=self.disable_progress_bar,
                 file=sys.stdout,
             )
 

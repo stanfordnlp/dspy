@@ -102,6 +102,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         max_errors: int = 10,
         return_failed_examples: bool = False,
         provide_traceback: bool = False,
+        disable_progress_bar: bool = False,
     ) -> Any:
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
@@ -114,7 +115,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         :return: List of results, and optionally failed examples and exceptions.
         """
         # Create a list of execution pairs (self, example)
-        exec_pairs = [(self.forward, example.inputs()) for example in examples]
+        exec_pairs = [(self, example.inputs()) for example in examples]
 
         # Create an instance of Parallel
         parallel_executor = Parallel(
@@ -122,6 +123,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             max_errors=max_errors,
             return_failed_examples=return_failed_examples,
             provide_traceback=provide_traceback,
+            disable_progress_bar=disable_progress_bar,
         )
 
         # Execute the forward method of Parallel
