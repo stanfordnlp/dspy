@@ -1,22 +1,22 @@
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 import functools
 import os
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import ujson
-import uuid
-
-from dspy.utils.logging import logger
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import (
-    get_provider_finetune_job_class,
-    execute_finetune_job,
-)
 
 import litellm
+import ujson
 from litellm.caching import Cache
 
+from dspy.clients.finetune import FinetuneJob, TrainingMethod
+from dspy.clients.lm_finetune_utils import (
+    execute_finetune_job,
+    get_provider_finetune_job_class,
+)
+from dspy.utils.callback import with_callbacks
+from dspy.utils.logging import logger
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
@@ -25,6 +25,7 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+GLOBAL_HISTORY = []
 
 class LM:
     def __init__(
@@ -35,6 +36,7 @@ class LM:
             max_tokens=1000,
             cache=True,
             launch_kwargs=None,
+            callbacks=None,
             **kwargs
         ):
         # Remember to update LM.copy() if you modify the constructor!
@@ -44,6 +46,7 @@ class LM:
         self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self.callbacks = callbacks or []
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
@@ -52,6 +55,7 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -80,11 +84,12 @@ class LM:
             model_type=self.model_type,
         )
         self.history.append(entry)
+        GLOBAL_HISTORY.append(entry)
         
         return outputs
     
     def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
+        _inspect_history(self.history, n)
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
@@ -197,10 +202,10 @@ def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
 
-def _inspect_history(lm, n: int = 1):
+def _inspect_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in lm.history[-n:]:
+    for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")

@@ -8,7 +8,7 @@ Using DSPy well for solving a new task is just doing good machine learning with 
 
 What this means is that it's an iterative process. You make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
 
-As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](/docs/building-blocks/modules) to use, giving each layer a [`signature` (input/output spec)](/docs/building-blocks/signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`](/docs/building-blocks/optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
+As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](/building-blocks/3-modules) to use, giving each layer a [`signature` (input/output spec)](/building-blocks/2-signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`](/building-blocks/6-optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
 
 ## 1) Define your task.
@@ -31,7 +31,7 @@ What should your DSPy program do? Can it just be a simple chain-of-thought step?
 
 Is there a typical workflow for solving your problem in multiple well-defined steps? Or do you want a fully open-ended LM (or open-ended tool use with agents) for your task?
 
-Think about this space but always start simple. Almost every task should probably start with just a single [dspy.ChainofThought](/docs/deep-dive/modules/ChainOfThought) module, and then add complexity incrementally as you go.
+Think about this space but always start simple. Almost every task should probably start with just a single [dspy.ChainofThought](/deep-dive/modules/chain-of-thought) module, and then add complexity incrementally as you go.
 
 Then write your (initial) DSPy program. Again: start simple, and let the next few steps guide any complexity you will add.
 
@@ -39,7 +39,7 @@ Then write your (initial) DSPy program. Again: start simple, and let the next fe
 
 By this point, you probably have a few examples of the task you're trying to solve.
 
-Run them through your pipeline. Consider using a large and powerful LM at this point, or a couple of different LMs, just to understand what's possible. (DSPy will make swapping these LMs pretty easy - [LM Guide](/docs/building-blocks/language_models).)
+Run them through your pipeline. Consider using a large and powerful LM at this point, or a couple of different LMs, just to understand what's possible. (DSPy will make swapping these LMs pretty easy - [LM Guide](/building-blocks/1-language_models).)
 
 At this point, you're still using your pipeline zero-shot, so it will be far from perfect. DSPy will help you optimize the instructions, few-shot examples, and even weights of your LM calls below, but understanding where things go wrong in zero-shot usage will go a long way.
 
@@ -47,7 +47,7 @@ Record the interesting (both easy and hard) examples you try: even if you don't 
 
 ## 4) Define your data.
 
-Now it's time to more formally declare your training and validation data for DSPy evaluation and optimization - [Data Guide](/docs/building-blocks/data).
+Now it's time to more formally declare your training and validation data for DSPy evaluation and optimization - [Data Guide](/building-blocks/4-data).
 
 You can use DSPy optimizers usefully with as few as 10 examples, but having 50-100 examples (or even better, 300-500 examples) goes a long way.
 
@@ -62,7 +62,7 @@ If there's data whose licenses are permissive enough, we suggest you use them. O
 
 What makes outputs from your system good or bad? Invest in defining metrics and improving them over time incrementally. It's really hard to consistently improve what you aren't able to define.
 
-A metric is just a function that will take examples from your data and take the output of your system, and return a score that quantifies how good the output is - [Metric Guide](/docs/building-blocks/metrics).
+A metric is just a function that will take examples from your data and take the output of your system, and return a score that quantifies how good the output is - [Metric Guide](/building-blocks/5-metrics).
 
 For simple tasks, this could be just "accuracy" or "exact match" or "F1 score". This may be the case for simple classification or short-form QA tasks.
 
@@ -79,17 +79,17 @@ Look at the outputs and the metric scores. This will probably allow you to spot 
 
 ## 7) Compile with a DSPy optimizer.
 
-Given some data and a metric, we can now optimize the program you built - [Optimizer Guide](/docs/building-blocks/optimizers).
+Given some data and a metric, we can now optimize the program you built - [Optimizer Guide](/building-blocks/6-optimizers).
 
 DSPy includes many optimizers that do different things. Remember: DSPy optimizers will create examples of each step, craft instructions, and/or update LM weights. In general, you don't need to have labels for your pipeline steps, but your data examples need to have input values and whatever labels your metric requires (e.g., no labels if your metric is reference-free, but final output labels otherwise in most cases).
 
 Here's the general guidance on getting started:
 
-* If you have very little data, e.g. 10 examples of your task, use [`BootstrapFewShot`](/docs/deep-dive/optimizers/bootstrap-fewshot)
+* If you have very little data, e.g. 10 examples of your task, use [`BootstrapFewShot`](/deep-dive/optimizers/bootstrap-fewshot)
 
-* If you have slightly more data, e.g. 50 examples of your task, use [`BootstrapFewShotWithRandomSearch`](/docs/deep-dive/optimizers/bfrs).
+* If you have slightly more data, e.g. 50 examples of your task, use [`BootstrapFewShotWithRandomSearch`](/deep-dive/optimizers/bfrs).
 
-* If you have more data than that, e.g. 300 examples or more, use [`MIPRO`](/docs/deep-dive/optimizers/miprov2).
+* If you have more data than that, e.g. 300 examples or more, use [`MIPRO`](/deep-dive/optimizers/miprov2).
 
 * If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very efficient program, compile that down to a small LM with `BootstrapFinetune`.
 
@@ -97,7 +97,7 @@ Here's the general guidance on getting started:
 
 At this point, you are either very happy with everything (we've seen quite a few people get it right on first try with DSPy) or, more likely, you've made a lot of progress but you don't like something about the final program or the metric.
 
-At this point, go back to step 1 and revisit the major questions. Did you define your task well? Do you need to collect (or find online) more data for your problem? Do you want to update your metric? And do you want to use a more sophisticated optimizer? Do you need to consider advanced features like [DSPy Assertions](/docs/building-blocks/assertions)? Or, perhaps most importantly, do you want to add some more complexity or steps in your DSPy program itself? Do you want to use multiple optimizers in a sequence?
+At this point, go back to step 1 and revisit the major questions. Did you define your task well? Do you need to collect (or find online) more data for your problem? Do you want to update your metric? And do you want to use a more sophisticated optimizer? Do you need to consider advanced features like [DSPy Assertions](/building-blocks/7-assertions)? Or, perhaps most importantly, do you want to add some more complexity or steps in your DSPy program itself? Do you want to use multiple optimizers in a sequence?
 
 Iterative development is key. DSPy gives you the pieces to do that incrementally: iterating on your data, your program structure, your assertions, your metric, and your optimization steps.
 

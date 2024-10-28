@@ -4,18 +4,6 @@ sidebar_position: 6
 
 # `MIPROv2` Optimizer
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Example Usage](#example-usage)
-   - [Setting up a Sample Pipeline](#setting-up-a-sample-pipeline)
-   - [Optimizing with MIPROv2](#optimizing-with-miprov2)
-   - [Optimizing instructions only with MIPROv2 (0-Shot)](#optimizing-instructions-only-with-miprov2-0-shot)
-   - [Optimizing with MIPROv2 (Advanced)](#optimizing-with-miprov2-advanced)
-3. [Parameters](#parameters)
-   - [Initialization Parameters](#initialization-parameters)
-   - [Compile Method Specific Parameters](#compile-method-specific-parameters)
-4. [How MIPROv2 Works](#how-miprov2-works)
-
 ## Overview
 
 `MIPROv2` (<u>M</u>ultiprompt <u>I</u>nstruction <u>PR</u>oposal <u>O</u>ptimizer Version 2) is an prompt optimizer capable of optimizing both instructions and few-shot examples jointly. It does this by bootstrapping few-shot example candidates, proposing instructions grounded in different dynamics of the task, and finding an optimized combination of these options using Bayesian Optimization. It can be used for optimizing few-shot examples & instructions jointly, or just instructions for 0-shot optimization.
@@ -24,7 +12,7 @@ sidebar_position: 6
 
 ### Setting up a Sample Pipeline
 
-We'll be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](https://dspy-docs.vercel.app/docs/quick-start/minimal-example), we won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+We'll be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](/quick-start/minimal-example), we won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
 
 ```python
 import dspy

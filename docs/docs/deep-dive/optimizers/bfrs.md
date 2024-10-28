@@ -23,7 +23,7 @@ In terms of API `BootstrapFewShotWithRandomSearch` teleprompter is quite similar
 
 ## Working Example
 
-Let's take the example of optimizing a simple CoT pipeline for GSM8k dataset, we'll take the example in [BootstrapFewShot](/docs/deep-dive/optimizers/bootstrap-fewshot.mdx) as our running example for optimizers. We're gonna assume our data and pipeline is same as the on in `BootstrapFewShot` article. So let's start by intializing the optimizer:
+Let's take the example of optimizing a simple CoT pipeline for GSM8k dataset, we'll take the example in [BootstrapFewShot](/deep-dive/optimizers/bootstrap-fewshot) as our running example for optimizers. We're gonna assume our data and pipeline is same as the on in `BootstrapFewShot` article. So let's start by intializing the optimizer:
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch

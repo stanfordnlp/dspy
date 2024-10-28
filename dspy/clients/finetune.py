@@ -4,6 +4,7 @@ from concurrent.futures import Future
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from dspy.utils.logging import logger
 
 import ujson
 from datasets.fingerprint import Hasher
@@ -111,6 +112,7 @@ def save_data(
     provider_name: Optional[str] = None,
 ) -> str:
     """Save the fine-tuning data to a file."""
+    logger.info("[Finetune] Converting data to JSONL format...")
     # Construct the file name based on the data hash
     hash = Hasher.hash(data)
     file_name = f"{hash}.jsonl"

@@ -1,16 +1,22 @@
-import inspect
 import json
-import typing
-from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
-
-import pydantic
 import ujson
+import logging
+import inspect
+import typing
+import pydantic
+
+from functools import lru_cache
 from pydantic.fields import FieldInfo
+from typing import Annotated, Callable, List, Tuple, Union  # noqa: UP035
 
 import dspy
 from dsp.adapters import passages2text
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature, make_signature
+
+@lru_cache(maxsize=None)
+def warn_once(msg: str):
+    logging.warning(msg)
 
 
 def predictor(*args: tuple, **kwargs) -> Callable[..., dspy.Module]:
@@ -98,11 +104,29 @@ class TypedPredictor(dspy.Module):
             explain_errors: If True, the model will try to explain the errors it encounters.
         """
         super().__init__()
-        self.signature = ensure_signature(signature, instructions)
+
+        # Warn: deprecation warning.
+        warn_once(
+                "\t*** Since DSPy 2.5.16+, TypedPredictors are now deprecated, underperform, and are about to be removed! ***\n"
+                "Please use standard predictors, e.g. dspy.Predict and dspy.ChainOfThought.\n"
+                "They now support type annotations and other features of TypedPredictors and "
+                "tend to work much better out of the box.\n"
+                "Please let us know if you face any issues: https://github.com/stanfordnlp/dspy/issues"
+            )
+
+        signature = ensure_signature(signature, instructions)
         self.predictor = dspy.Predict(signature, _parse_values=False)
         self.max_retries = max_retries
         self.wrap_json = wrap_json
         self.explain_errors = explain_errors
+
+    @property
+    def signature(self) -> dspy.Signature:
+        return self.predictor.signature
+
+    @signature.setter
+    def signature(self, value: dspy.Signature):
+        self.predictor.signature = value
 
     def copy(self) -> "TypedPredictor":
         return TypedPredictor(
@@ -129,6 +153,7 @@ class TypedPredictor(dspy.Module):
                 "json_schema -> json_object",
                 "Make a very succinct json object that validates with the following schema",
             ),
+            _parse_values=False,
         )(json_schema=schema).json_object
         # We use the parser to make sure the json object is valid.
         try:
@@ -196,6 +221,7 @@ class TypedPredictor(dspy.Module):
             task_description=task_description,
             language_model_output=model_output,
             error=error,
+            _parse_values=False,
         ).advice
 
     def _prepare_signature(self) -> dspy.Signature:

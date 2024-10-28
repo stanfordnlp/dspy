@@ -9,7 +9,7 @@ DSPy is a machine learning framework, so you must think about your **automatic m
 
 ## What is a metric and how do I define a metric for my task?
 
-A metric is just a function that will take examples from your data and take the output of your system, and return a score that quantifies how good the output is. What makes outputs from your system good or bad? 
+A metric is just a function that will take examples from your data and the output of your system and return a score that quantifies how good the output is. What makes outputs from your system good or bad? 
 
 For simple tasks, this could be just "accuracy" or "exact match" or "F1 score". This may be the case for simple classification or short-form QA tasks.
 
@@ -52,7 +52,7 @@ def validate_context_and_answer(example, pred, trace=None):
         return answer_match and context_match
 ```
 
-Defining a good metric is an iterative process, so doing some initial evaluations and looking at your data and your outputs are key.
+Defining a good metric is an iterative process, so doing some initial evaluations and looking at your data and outputs is key.
 
 
 ## Evaluation
