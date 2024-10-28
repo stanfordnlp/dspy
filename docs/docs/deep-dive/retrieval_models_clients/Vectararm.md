@@ -3,12 +3,14 @@
 [Vectara](https://vectara.com/) is a modern vector database and search platform that provides advanced retrieval capabilities through its search API. DSPy has integrated VectaraRM to enable efficient semantic search and retrieval with features like contextual snippets, multi-corpus search, and lexical interpolation.
 
 To support passage retrieval, VectaraRM assumes that documents have been properly ingested into a Vectara corpus with the following:
+
 - Text data properly indexed and stored
 - Appropriate corpus configurations set up in the Vectara platform
 - Valid authentication credentials with appropriate permissions
 - Proper sentence segmentation for contextual retrieval
 
 The VectaraRM module requires the following:
+
 - Python's built-in `json` and `requests` packages for API communication
 - A Vectara account with API access
 - At least one configured corpus with indexed documents
