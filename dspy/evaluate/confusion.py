@@ -13,7 +13,6 @@ class Confusion:
     def __init__(
             self,
             *,
-            labels,
             devset,
             num_threads=1,
             display_progress=False,
@@ -26,7 +25,6 @@ class Confusion:
             output_field="response",
             **_kwargs,
     ):
-        self.labels = labels
         self.devset = devset
         self.num_threads = num_threads
         self.display_progress = display_progress
@@ -41,16 +39,19 @@ class Confusion:
         self.use_class_weight = use_class_weight
         self.output_field = output_field
 
-    def extract(self, response):
-        match = re.search(r"|".join(self.labels), response.lower())
+    def extract(self, response, labels):
+        match = re.search(r"|".join(labels), response.lower())
         return match.group(0) if match else None
 
-    def construct_matrix(self, preds, devset):
-        labels = self.labels
+    def construct_labels_and_matrix(self, devset, preds=None):
+        classes = [arg[self.output_field] for _, arg in devset]
+        labels = np.unique(classes).tolist()
+
+        if preds is None:
+            return labels
 
         # Calculate class weights
         if self.use_class_weight:
-            classes = [arg[self.output_field] for _, arg in devset]
             class_counts = Counter(classes)
             weight = {k: 1 / v for k, v in class_counts.items()}
         else:
@@ -60,7 +61,7 @@ class Confusion:
         confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
 
         # Get model answers
-        answers = {label: [self.extract(pred) for pred in preds[label]] for label in labels}
+        answers = {label: [self.extract(pred, labels) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
@@ -68,10 +69,10 @@ class Confusion:
                 if answer in labels:
                     confusion_matrix[idx][labels.index(answer)] += weight[label]
 
-        return confusion_matrix
+        return labels, confusion_matrix
 
-    def get_matthews_corrcoef(self, preds, devset, return_cm=False):
-        C = self.construct_matrix(preds, devset)
+    def get_matthews_corrcoef(self, devset, preds, return_cm=False):
+        labels, C = self.construct_labels_and_matrix(devset, preds)
 
         # <sklearn.metrics.matthews_corrcoef>
         t_sum = C.sum(axis=1, dtype=np.float64)
@@ -92,8 +93,8 @@ class Confusion:
 
         if return_cm:
             cm = pd.DataFrame(C,
-                              index=pd.Index(self.labels, name="Actual"),
-                              columns=pd.Index(self.labels, name="Predicted"))
+                              index=pd.Index(labels, name="Actual"),
+                              columns=pd.Index(labels, name="Predicted"))
             return out, cm
         return out
 
@@ -162,7 +163,7 @@ class Confusion:
         return reordered_devset
 
     def _update_progress(self, pbar, preds, devset):
-        mcc = self.get_matthews_corrcoef(preds, devset)
+        mcc = self.get_matthews_corrcoef(devset, preds)
         pbar.set_description(f"MCC: {mcc:.6f}")
         pbar.update()
 
@@ -224,8 +225,10 @@ class Confusion:
 
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
+        
+        labels = self.construct_labels_and_matrix(devset)
 
-        preds = {label: [] for label in self.labels}
+        preds = {label: [] for label in labels}
 
         if num_threads == 1:
             reordered_devset = self._execute_single_thread(wrapped_program, devset, display_progress, preds)
@@ -238,7 +241,7 @@ class Confusion:
                 preds,
             )
 
-        mcc, cm = self.get_matthews_corrcoef(preds, devset, return_cm=True)
+        mcc, cm = self.get_matthews_corrcoef(devset, preds, return_cm=True)
 
         dspy.logger.info(f"MCC: {mcc:.6f}")
 
@@ -291,7 +294,6 @@ class Confusion:
 class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
             self,
-            labels,
             teacher_settings={},
             max_bootstrapped_demos=4,
             max_labeled_demos=16,
@@ -304,7 +306,6 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             use_class_weight=True,
             output_field="response",
     ):
-        self.labels = labels
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
@@ -375,7 +376,6 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
             confusion = Confusion(
-                labels=self.labels,
                 devset=self.valset,
                 num_threads=self.num_threads,
                 max_errors=self.max_errors,
