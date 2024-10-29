@@ -280,11 +280,12 @@ def format_turn(signature, values, role, incomplete=False):
         item if isinstance(item, list) else [item] for item in fields_to_collapse
     ))
 
-    fields_to_collapse = flattened_list
+    if all(message.get("type", None) == "text" for message in flattened_list):
+        content = "\n\n".join(message.get("text") for message in flattened_list)
+        return {"role": role, "content": content}
+
     # Collapse all consecutive text messages into a single message.
     collapsed_messages = []
-    # import rich
-    # rich.print(flattened_list)
     for item in flattened_list:
         if item.get("type") == "image_url" or (collapsed_messages and collapsed_messages[-1].get("type") != "text"):
             collapsed_messages.append(item)
@@ -293,13 +294,7 @@ def format_turn(signature, values, role, incomplete=False):
         else:
             collapsed_messages.append(item)
 
-    # If all the messages are text, collapse them into a single message.
-    if all(message["type"] == "text" for message in collapsed_messages):
-        content = "\n\n".join(message["text"] for message in collapsed_messages)
-    else:
-        content = collapsed_messages
-
-    return {"role": role, "content": content}
+    return {"role": role, "content": collapsed_messages}
 
 
 def get_annotation_name(annotation):
