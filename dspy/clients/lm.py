@@ -47,7 +47,7 @@ class LM:
         Create a new language model instance for use with DSPy modules and programs.
 
         Args:
-            model: The model to use. This should be a string of the form "llm_provider/llm_name"
+            model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
                    supported by LiteLLM. For example, ``"openai/gpt-4o"``.
             model_type: The type of the model, either ``"chat"`` or ``"completions"``.
             temperature: The sampling temperature to use when generating responses.
