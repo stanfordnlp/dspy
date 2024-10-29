@@ -9,6 +9,7 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.utils.callback import with_callbacks
 
 
 from dspy.adapters.image_utils import is_image, encode_image
@@ -19,10 +20,11 @@ def warn_once(msg: str):
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, **config):
+    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self.callbacks = callbacks or []
         self._parse_values = _parse_values
         self.reset()
 
@@ -119,6 +121,7 @@ class Predict(Module, Parameter):
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
+    @with_callbacks
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
@@ -157,7 +160,8 @@ class Predict(Module, Parameter):
             completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
-                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
+                "underperform, and are about to be deleted. ***\n"
                 f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
                 " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
                 " improve the consistency of LM outputs, especially when using chat LMs. \n\n"

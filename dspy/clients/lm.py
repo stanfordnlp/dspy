@@ -1,23 +1,23 @@
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 import functools
 from .base_lm import BaseLM
 import os
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import ujson
-import uuid
-
-from dspy.utils.logging import logger
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import (
-    get_provider_finetune_job_class,
-    execute_finetune_job,
-)
 
 import litellm
+import ujson
 from litellm.caching import Cache
 
+from dspy.clients.finetune import FinetuneJob, TrainingMethod
+from dspy.clients.lm_finetune_utils import (
+    execute_finetune_job,
+    get_provider_finetune_job_class,
+)
+from dspy.utils.callback import with_callbacks
+from dspy.utils.logging import logger
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
@@ -26,6 +26,7 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+GLOBAL_HISTORY = []
 
 class LM(BaseLM):
     def __init__(
@@ -36,6 +37,7 @@ class LM(BaseLM):
             max_tokens=1000,
             cache=True,
             launch_kwargs=None,
+            callbacks=None,
             **kwargs
         ):
         # Remember to update LM.copy() if you modify the constructor!
@@ -45,6 +47,7 @@ class LM(BaseLM):
         self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self.callbacks = callbacks or []
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
@@ -53,6 +56,7 @@ class LM(BaseLM):
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -81,6 +85,7 @@ class LM(BaseLM):
             model_type=self.model_type,
         )
         self.history.append(entry)
+        GLOBAL_HISTORY.append(entry)
         
         return outputs
 
