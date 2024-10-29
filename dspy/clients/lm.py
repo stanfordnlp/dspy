@@ -33,7 +33,7 @@ class LM:
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
-        launch_kwargs=None,
+        launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 7,
         **kwargs,
@@ -49,7 +49,6 @@ class LM:
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
-            launch_kwargs: Additional keyword arguments to pass to the model launch request.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
