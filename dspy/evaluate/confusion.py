@@ -72,20 +72,23 @@ class Confusion:
 
     def get_matthews_corrcoef(self, preds, devset, return_cm=False):
         C = self.construct_matrix(preds, devset)
-        # rest is from sklearn
 
+        #<sklearn.metrics.matthews_corrcoef>
         t_sum = C.sum(axis=1, dtype=np.float64)
         p_sum = C.sum(axis=0, dtype=np.float64)
-        n_correct = np.trace(C, dtype=np.float64)
         n_samples = p_sum.sum()
-        cov_ytyp = n_correct * n_samples - np.dot(t_sum, p_sum)
-        cov_ypyp = n_samples ** 2 - np.dot(p_sum, p_sum)
-        cov_ytyt = n_samples ** 2 - np.dot(t_sum, t_sum)
+        n_samples_2 = n_samples ** 2
+        cov_ypyp = n_samples_2 - np.dot(p_sum, p_sum)
+        cov_ytyt = n_samples_2 - np.dot(t_sum, t_sum)
+        prod = cov_ypyp * cov_ytyt
 
-        if cov_ypyp * cov_ytyt == 0:
+        if prod == 0:
             out = 0.0
         else:
-            out = cov_ytyp / np.sqrt(cov_ytyt * cov_ypyp)
+            n_correct = np.trace(C, dtype=np.float64)
+            cov_ytyp = n_correct * n_samples - np.dot(t_sum, p_sum)
+            out = cov_ytyp / np.sqrt(prod)
+        #</sklearn.metrics.matthews_corrcoef>
 
         if return_cm:
             cm = pd.DataFrame(C,
