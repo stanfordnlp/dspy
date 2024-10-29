@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Union
 from dsp.adapters.base_template import Field
 from dspy.signatures.signature import Signature
 from .base import Adapter
@@ -141,7 +141,7 @@ def _serialize_for_json(value):
     else:
         return value
 
-def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str:
+def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> Union[str, dict]:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.
@@ -161,17 +161,16 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
     else:
         string_value = str(value)
 
-    if not assume_text and (is_image(value) or isinstance(value, Image) or field_info.annotation == Image):
-        return {"type": "image_url", "image_url": {"url": encode_image(value)}}
-
     if assume_text:
         return string_value
+    elif (is_image(value) or isinstance(value, Image) or field_info.annotation == Image):
+        return {"type": "image_url", "image_url": {"url": encode_image(value)}}
     else:
         return {"type": "text", "text": string_value}
 
 
 
-def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> str:
+def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> Union[str, List[dict]]:
     """
     Formats the values of the specified fields according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
@@ -181,7 +180,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
       fields_with_values: A dictionary mapping information about a field to its corresponding
                           value.
     Returns:
-      The joined formatted values of the fields, represented as a string.
+      The joined formatted values of the fields, represented as a string or a list of dicts
     """
     output = []
     for field, field_value in fields_with_values.items():
