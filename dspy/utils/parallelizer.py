@@ -40,11 +40,18 @@ class ParallelExecutor:
 
     def _wrap_function(self, function):
         # Wrap the function with threading context and error handling
-        def wrapped(item):
+        def wrapped(item, parent_id=None):
             thread_stacks = dspy.settings.stack_by_thread
-            creating_new_thread = threading.get_ident() not in thread_stacks
+            current_thread_id = threading.get_ident()
+            
+            creating_new_thread = current_thread_id not in thread_stacks
+
             if creating_new_thread:
-                thread_stacks[threading.get_ident()] = list(dspy.settings.main_stack)
+                # If we have a parent thread ID, copy its stack
+                if parent_id and parent_id in thread_stacks:
+                    thread_stacks[current_thread_id] = list(thread_stacks[parent_id])
+                else:
+                    thread_stacks[current_thread_id] = list(dspy.settings.main_stack)
 
             try:
                 return function(item)
@@ -128,14 +135,16 @@ class ParallelExecutor:
                 # If not in the main thread, skip setting signal handlers
                 yield
 
-        def cancellable_function(index_item):
+        def cancellable_function(index_item, parent_id=None):
             index, item = index_item
             if self.cancel_jobs.is_set():
                 return index, job_cancelled
-            return index, function(item)
+            return index, function(item, parent_id)
+        
+        parent_id = threading.get_ident() if threading.current_thread() is not threading.main_thread() else None
 
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor, interrupt_handler_manager():
-            futures = {executor.submit(cancellable_function, pair): pair for pair in enumerate(data)}
+            futures = {executor.submit(cancellable_function, pair, parent_id): pair for pair in enumerate(data)}
             pbar = tqdm.tqdm(
                 total=len(data),
                 dynamic_ncols=True,
