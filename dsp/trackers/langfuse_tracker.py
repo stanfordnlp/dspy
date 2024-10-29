@@ -8,7 +8,7 @@ from dsp.trackers.base import BaseTracker
 try:
     from langfuse.client import Langfuse
     from langfuse.decorators import observe
-except ImportError:
+except ImportError or NameError:
     def observe():
         def decorator(func):
             return func
@@ -26,51 +26,54 @@ class LangfuseTracker(BaseTracker):
                  threads: Optional[int] = None, flush_at: Optional[int] = None, flush_interval: Optional[int] = None,
                  max_retries: Optional[int] = None, timeout: Optional[int] = None, enabled: Optional[bool] = None,
                  httpx_client: Optional[httpx.Client] = None, sdk_integration: str = "default") -> None:
-        super().__init__()
-        self.version = version
-        self.session_id = session_id
-        self.user_id = user_id
-        self.trace_name = trace_name
-        self.release = release
-        self.metadata = metadata
-        self.tags = tags
+        try:
+            super().__init__()
+            self.version = version
+            self.session_id = session_id
+            self.user_id = user_id
+            self.trace_name = trace_name
+            self.release = release
+            self.metadata = metadata
+            self.tags = tags
 
-        self.root_span = None
-        self.langfuse = None
+            self.root_span = None
+            self.langfuse = None
 
-        prio_public_key = public_key or os.environ.get("LANGFUSE_PUBLIC_KEY")
-        prio_secret_key = secret_key or os.environ.get("LANGFUSE_SECRET_KEY")
-        prio_host = host or os.environ.get(
-            "LANGFUSE_HOST", "https://cloud.langfuse.com"
-        )
+            prio_public_key = public_key or os.environ.get("LANGFUSE_PUBLIC_KEY")
+            prio_secret_key = secret_key or os.environ.get("LANGFUSE_SECRET_KEY")
+            prio_host = host or os.environ.get(
+                "LANGFUSE_HOST", "https://cloud.langfuse.com"
+            )
 
-        args = {
-            "public_key": prio_public_key,
-            "secret_key": prio_secret_key,
-            "host": prio_host,
-            "debug": debug,
-        }
+            args = {
+                "public_key": prio_public_key,
+                "secret_key": prio_secret_key,
+                "host": prio_host,
+                "debug": debug,
+            }
 
-        if release is not None:
-            args["release"] = release
-        if threads is not None:
-            args["threads"] = threads
-        if flush_at is not None:
-            args["flush_at"] = flush_at
-        if flush_interval is not None:
-            args["flush_interval"] = flush_interval
-        if max_retries is not None:
-            args["max_retries"] = max_retries
-        if timeout is not None:
-            args["timeout"] = timeout
-        if enabled is not None:
-            args["enabled"] = enabled
-        if httpx_client is not None:
-            args["httpx_client"] = httpx_client
-        args["sdk_integration"] = sdk_integration
+            if release is not None:
+                args["release"] = release
+            if threads is not None:
+                args["threads"] = threads
+            if flush_at is not None:
+                args["flush_at"] = flush_at
+            if flush_interval is not None:
+                args["flush_interval"] = flush_interval
+            if max_retries is not None:
+                args["max_retries"] = max_retries
+            if timeout is not None:
+                args["timeout"] = timeout
+            if enabled is not None:
+                args["enabled"] = enabled
+            if httpx_client is not None:
+                args["httpx_client"] = httpx_client
+            args["sdk_integration"] = sdk_integration
 
-        self.langfuse = Langfuse(**args)
-        self._task_manager = self.langfuse.task_manager
+            self.langfuse = Langfuse(**args)
+            self._task_manager = self.langfuse.task_manager
+        except Exception:
+            self.log.info("langfuse create fail, langfuse is not installed or configured properly error.")
 
     def call(self, i, o, name=None, **kwargs):
         return self.langfuse.trace(input=i, output=o, name=name, metadata=kwargs)
