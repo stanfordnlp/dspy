@@ -85,6 +85,18 @@ class ChatAdapter(Adapter):
 
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
+
+    def format_fields(self, signature, values):
+        fields_with_values = {
+            FieldInfoWithName(name=field_name, info=field_info): values.get(
+                field_name, "Not supplied for this particular example."
+            )
+            for field_name, field_info in signature.fields.items()
+            if field_name in values
+        }
+
+        return format_fields(fields_with_values)
+        
         
 
 def format_blob(blob):
@@ -228,21 +240,22 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
     content.append(formatted_fields)
 
     if role == "user":
-        # def type_info(v):
-        #     return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" \
-        #         if v.annotation is not str else ""
-        # 
-        # content.append(
-        #     "Respond with the corresponding output fields, starting with the field "
-        #     + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
-        #     + ", and then ending with the marker for `[[ ## completed ## ]]`."
-        # )
+        def type_info(v):
+            return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" \
+                if v.annotation is not str else ""
+        
+        if not incomplete:
+            content.append(
+                "Respond with the corresponding output fields, starting with the field "
+                + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
+                + ", and then ending with the marker for `[[ ## completed ## ]]`."
+            )
 
-        content.append(
-            "Respond with the corresponding output fields, starting with the field "
-            + ", then ".join(f"`{f}`" for f in signature.output_fields)
-            + ", and then ending with the marker for `completed`."
-        )
+            # content.append(
+            #     "Respond with the corresponding output fields, starting with the field "
+            #     + ", then ".join(f"`{f}`" for f in signature.output_fields)
+            #     + ", and then ending with the marker for `completed`."
+            # )
 
     return {"role": role, "content": "\n\n".join(content).strip()}
 
