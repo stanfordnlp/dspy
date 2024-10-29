@@ -26,6 +26,11 @@ GLOBAL_HISTORY = []
 
 
 class LM:
+    """
+    A language model supporting chat and completions requests for use with DSPy
+    modules and programs.
+    """
+
     def __init__(
         self,
         model: str,
@@ -35,7 +40,7 @@ class LM:
         cache: bool = True,
         launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 7,
+        num_retries: int = 8,
         **kwargs,
     ):
         """
