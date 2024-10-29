@@ -90,7 +90,7 @@ class JsonAdapter(Adapter):
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
     
-    def format_fields(self, signature, values):
+    def format_fields(self, signature, values, role):
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
@@ -99,8 +99,7 @@ class JsonAdapter(Adapter):
             if field_name in values
         }
 
-        return format_fields(role='user', fields_with_values=fields_with_values)
-
+        return format_fields(role=role, fields_with_values=fields_with_values)
         
 
 def parse_value(value, annotation):

@@ -86,7 +86,7 @@ class ChatAdapter(Adapter):
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
 
-    def format_fields(self, signature, values):
+    def format_fields(self, signature, values, role):
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
