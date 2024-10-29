@@ -9,7 +9,7 @@ os.environ["LANGFUSE_PUBLIC_KEY"] = ""
 os.environ["LANGFUSE_SECRET_KEY"] = ""
 os.environ["LANGFUSE_HOST"] = ""
 
-turbo = dspy.OpenAI(api_key="your api key")
+turbo = dspy.OpenAI(api_key="your-api-key")
 
 
 class RAG(dspy.Module):
@@ -23,7 +23,7 @@ class RAG(dspy.Module):
 
 
 def test_langfuse():
-    prompt = "what is the meaning of life?"
+    prompt = "nihaoma"
     result = turbo(prompt)
     print(result)
 

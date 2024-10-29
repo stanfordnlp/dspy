@@ -17,12 +17,13 @@ os.environ["LANGFUSE_HOST"] = ""
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["COHERE_API_KEY"] = ""
 
-# set callbacks
-litellm.success_callback = ["langfuse"]
-litellm.failure_callback = ["langfuse"]
+if importlib.util.find_spec("langfuse"):
+    # set callbacks
+    litellm.success_callback = ["langfuse"]
+    litellm.failure_callback = ["langfuse"]
 
-
-lm = dspy.LM('openai/gpt-4o-mini')
+# set up the Litellm client
+lm = dspy.LM('openai/gpt-4o-mini', api_key="your-api-key")
 dspy.configure(lm=lm)
 
 
