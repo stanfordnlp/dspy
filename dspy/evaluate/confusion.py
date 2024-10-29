@@ -73,7 +73,7 @@ class Confusion:
     def get_matthews_corrcoef(self, preds, devset, return_cm=False):
         C = self.construct_matrix(preds, devset)
 
-        #<sklearn.metrics.matthews_corrcoef>
+        # <sklearn.metrics.matthews_corrcoef>
         t_sum = C.sum(axis=1, dtype=np.float64)
         p_sum = C.sum(axis=0, dtype=np.float64)
         n_samples = p_sum.sum()
@@ -88,7 +88,7 @@ class Confusion:
             n_correct = np.trace(C, dtype=np.float64)
             cov_ytyp = n_correct * n_samples - np.dot(t_sum, p_sum)
             out = cov_ytyp / np.sqrt(prod)
-        #</sklearn.metrics.matthews_corrcoef>
+        # </sklearn.metrics.matthews_corrcoef>
 
         if return_cm:
             cm = pd.DataFrame(C,
@@ -316,7 +316,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
         self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
-        
+
         self.use_class_weight = use_class_weight
         self.output_field = output_field
 
