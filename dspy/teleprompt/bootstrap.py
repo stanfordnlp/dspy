@@ -150,7 +150,7 @@ class BootstrapFewShot(Teleprompter):
             for round_idx in range(self.max_rounds):
                 bootstrap_attempts += 1
 
-                if success := self._bootstrap_one_example(example, round_idx):
+                if self._bootstrap_one_example(example, round_idx):
                     bootstrapped[example_idx] = True
                     break
 
