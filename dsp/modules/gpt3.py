@@ -4,15 +4,8 @@ import logging
 from typing import Any, Literal, Optional, cast
 import backoff
 import httpx
-try:
-    """
-    If there is any error in the langfuse configuration, it will turn to request the real address(openai or azure endpoint)
-    """
-    import langfuse
-    from langfuse.openai import openai
-    logging.info(f"You are using Langfuse,version{langfuse.__version__}")
-except:
-    import openai
+import openai
+from dsp.trackers.langfuse_tracker import observe
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory, cache_turn_on
 from dsp.modules.lm import LM
@@ -118,6 +111,7 @@ class GPT3(LM):
             total_tokens = usage_data.get("total_tokens")
             logging.debug(f"OpenAI Response Token Usage: {total_tokens}")
 
+    @observe()
     def basic_request(self, prompt: str, **kwargs):
         raw_kwargs = kwargs
 
@@ -157,6 +151,7 @@ class GPT3(LM):
         max_time=settings.backoff_time,
         on_backoff=backoff_hdlr,
     )
+    @observe()
     def request(self, prompt: str, **kwargs):
         """Handles retrieval of GPT-3 completions whilst handling rate limiting and caching."""
         if "model_type" in kwargs:
