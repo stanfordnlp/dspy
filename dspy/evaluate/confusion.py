@@ -225,7 +225,7 @@ class Confusion:
 
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
-        
+
         labels = self.construct_labels_and_matrix(devset)
 
         preds = {label: [] for label in labels}
