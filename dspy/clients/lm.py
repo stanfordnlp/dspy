@@ -4,18 +4,15 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import ujson
 from litellm.caching import Cache
 
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import (
-    execute_finetune_job,
-    get_provider_finetune_job_class,
-)
-from dspy.utils.callback import with_callbacks
+from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
+from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.logging import logger
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
@@ -27,18 +24,37 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 GLOBAL_HISTORY = []
 
+
 class LM:
     def __init__(
-            self, 
-            model,
-            model_type='chat', 
-            temperature=0.0,
-            max_tokens=1000,
-            cache=True,
-            launch_kwargs=None,
-            callbacks=None,
-            **kwargs
-        ):
+        self,
+        model: str,
+        model_type: Literal["chat", "completions"] = "chat",
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        cache: bool = True,
+        launch_kwargs=None,
+        callbacks: Optional[List[BaseCallback]] = None,
+        num_retries: int = 7,
+        **kwargs,
+    ):
+        """
+        Create a new language model instance for use with DSPy modules and programs.
+
+        Args:
+            model: The model to use. This should be a string of the form "llm_provider/llm_name"
+                   supported by LiteLLM. For example, ``"openai/gpt-4o"``.
+            model_type: The type of the model, either ``"chat"`` or ``"completions"``.
+            temperature: The sampling temperature to use when generating responses.
+            max_tokens: The maximum number of tokens to generate per response.
+            cache: Whether to cache the model responses for reuse to improve performance
+                   and reduce costs.
+            launch_kwargs: Additional keyword arguments to pass to the model launch request.
+            callbacks: A list of callback functions to run before and after each request.
+            num_retries: The number of times to retry a request if it fails transiently due to
+                         network error, rate limiting, etc. Requests are retried with exponential
+                         backoff.
+        """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
@@ -47,6 +63,7 @@ class LM:
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
         self.callbacks = callbacks or []
+        self.num_retries = num_retries
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
@@ -68,7 +85,10 @@ class LM:
         else:
             completion = cached_litellm_text_completion if cache else litellm_text_completion
 
-        response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
+        response = completion(
+            request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
+            num_retries=self.num_retries,
+        )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
@@ -85,9 +105,9 @@ class LM:
         )
         self.history.append(entry)
         GLOBAL_HISTORY.append(entry)
-        
+
         return outputs
-    
+
     def inspect_history(self, n: int = 1):
         _inspect_history(self.history, n)
 
@@ -104,15 +124,16 @@ class LM:
         logger.info(msg)
 
     def finetune(
-            self,
-            train_data: List[Dict[str, Any]],
-            train_kwargs: Optional[Dict[str, Any]]=None,
-            train_method: TrainingMethod = TrainingMethod.SFT,
-            provider: str = "openai",
-            cache_finetune: bool = True,
-        ) -> FinetuneJob:
+        self,
+        train_data: List[Dict[str, Any]],
+        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_method: TrainingMethod = TrainingMethod.SFT,
+        provider: str = "openai",
+        cache_finetune: bool = True,
+    ) -> FinetuneJob:
         """Start model fine-tuning, if supported."""
         from dspy import settings as settings
+
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
@@ -123,24 +144,20 @@ class LM:
             train_data=train_data,
             train_kwargs=train_kwargs,
             train_method=train_method,
-            provider=provider
+            provider=provider,
         )
 
         executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(
-            execute_finetune_job,
-            finetune_job,
-            lm=self,
-            cache_finetune=cache_finetune
-        )
+        executor.submit(execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune)
         executor.shutdown(wait=False)
 
         return finetune_job
-    
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
 
         import copy
+
         new_instance = copy.deepcopy(self)
         new_instance.history = []
 
@@ -153,23 +170,35 @@ class LM:
         return new_instance
 
 
-
 @functools.lru_cache(maxsize=None)
-def cached_litellm_completion(request):
-    return litellm_completion(request, cache={"no-cache": False, "no-store": False})
+def cached_litellm_completion(request, num_retries: int):
+    return litellm_completion(
+        request,
+        cache={"no-cache": False, "no-store": False},
+        num_retries=num_retries,
+    )
 
 
-def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
+def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
-    return litellm.completion(cache=cache, **kwargs)
+    return litellm.completion(
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        cache=cache,
+        **kwargs,
+    )
 
 
 @functools.lru_cache(maxsize=None)
-def cached_litellm_text_completion(request):
-    return litellm_text_completion(request, cache={"no-cache": False, "no-store": False})
+def cached_litellm_text_completion(request, num_retries: int):
+    return litellm_text_completion(
+        request,
+        num_retries=num_retries,
+        cache={"no-cache": False, "no-store": False},
+    )
 
 
-def litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
 
     # Extract the provider and model from the model string.
@@ -190,6 +219,8 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
         **kwargs,
     )
 
