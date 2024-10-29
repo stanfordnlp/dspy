@@ -100,7 +100,6 @@ class JsonAdapter(Adapter):
         }
 
         return format_fields(role=role, fields_with_values=fields_with_values)
-
         
 
 def parse_value(value, annotation):
