@@ -1,13 +1,7 @@
 import abc
 from dspy.utils.callback import with_callbacks
 
-
 class Adapter:
-    """
-    Base class for all Adapters.
-    Adapters are used to format and parse data for different types of LLMs.
-    """
-
     @abc.abstractmethod
     def format(self, signature, demos, inputs):
         """
@@ -20,12 +14,6 @@ class Adapter:
         Parse the output data from the LLM.
         """
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
-        inputs = self.format(signature, demos, inputs)
-        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-
-
-class Adapter:
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
 
@@ -52,8 +40,8 @@ class Adapter:
             return values
 
         except Exception as e:
-            from .json_adapter import JsonAdapter
-            if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            from .json_adapter import JSONAdapter
+            if _parse_values and not isinstance(self, JSONAdapter):
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
