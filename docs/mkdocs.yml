@@ -32,7 +32,7 @@ nav:
       - ReAct: deep-dive/modules/react.md
       - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
       - ProgramOfThought: deep-dive/modules/program-of-thought.md
-      - Assertions: deep-dive/modules/assertions.md
+      - Assertions: deep-dive/assertions.md
       - Retreive: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
     - Metrics and Assertions:
