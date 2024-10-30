@@ -84,7 +84,7 @@ nav:
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
 
   - Community:
-    - Tutorials: community/tutorials.md
+    - Community Resources: community/tutorials.md
     - Use Cases: community/related-projects.md
     - Contributing:
       - Roadmap: roadmap.md

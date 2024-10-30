@@ -1,4 +1,4 @@
-# Tutorials
+# Resources
 
 This is the list of tutorials and blog posts on DSPy. If you would like to add your own tutorial, please make a PR.
 
