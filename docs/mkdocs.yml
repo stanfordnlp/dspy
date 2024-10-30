@@ -18,7 +18,6 @@ nav:
     - Summarization: tutorials/summarization.md
     - Additional Resources: tutorials/other_tutorial.md
     - Examples: tutorials/examples.md
-    - Debugging: tutorials/debugging.md
   - Components:
     - Overview: building-blocks/solving_your_task.md
     - Signatures:
@@ -89,7 +88,7 @@ nav:
     - Contributing:
       - Roadmap: roadmap.md
       - How to get involved: community/how-to-contribute.md
-  - FAQ: faqs.md
+  - FAQ & Troubleshooting: faqs.md
   - Cheatsheet: cheatsheet.md
 
 theme:
