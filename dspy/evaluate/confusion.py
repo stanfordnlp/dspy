@@ -12,12 +12,11 @@ from dspy.teleprompt.teleprompt import Teleprompter
 
 def most_votes(votes):
     """Only returns a value if there is a single winner."""
-    if votes:
-        counts = Counter(votes)
-        max_count = max(counts.values())
-        winners = [label for label, count in counts.items() if count == max_count]
-        if len(winners) == 1:
-            return winners[0]
+    counts = Counter(votes)
+    max_count = max(counts.values())
+    winners = [label for label, count in counts.items() if count == max_count]
+    if len(winners) == 1:
+        return winners[0]
 
 
 class Confusion:
