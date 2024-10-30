@@ -12,7 +12,7 @@ class Tool:
         annotations_func = func if inspect.isfunction(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, '__name__', type(func).__name__)
-        self.desc = desc or getattr(func, '__doc__', None) or getattr(annotations_func, '__doc__', "No description")
+        self.desc = desc or getattr(func, '__doc__', None) or getattr(annotations_func, '__doc__', "")
         self.args = {
             k: v.schema() if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel)
             else get_annotation_name(v)
@@ -50,10 +50,10 @@ class ReAct(Module):
         tools["finish"] = Tool(func=lambda **kwargs: "Completed.", name="finish", desc=finish_desc, args=finish_args)
 
         for idx, tool in enumerate(tools.values()):
-            desc = tool.desc.replace("\n", "  ")
             args = tool.args if hasattr(tool, 'args') else str({tool.input_variable: str})
-            desc = f"whose description is <desc>{desc}</desc>. It takes arguments {args} in JSON format."
-            instr.append(f"({idx+1}) {tool.name}, {desc}")
+            desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace('\n', "  ")
+            desc += f" It takes arguments {args} in JSON format."
+            instr.append(f"({idx+1}) {tool.name}{desc}")
 
         signature_ = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))

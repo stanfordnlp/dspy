@@ -39,7 +39,7 @@ class LM:
         cache: bool = True,
         launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 8,
+        num_retries: int = 3,
         **kwargs,
     ):
         """
@@ -186,7 +186,6 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
     kwargs = ujson.loads(request)
     return litellm.completion(
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
         cache=cache,
         **kwargs,
     )
@@ -223,7 +222,6 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
         **kwargs,
     )
 
