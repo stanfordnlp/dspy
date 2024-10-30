@@ -6,9 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
+import importlib_metadata
 import litellm
 import ujson
 from litellm.caching import Cache
+from packaging.version import Version
 
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
@@ -187,6 +189,7 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
     return litellm.completion(
         num_retries=num_retries,
         cache=cache,
+        **_get_litellm_retry_strategy_kwargs(),
         **kwargs,
     )
 
@@ -222,8 +225,24 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
+        **_get_litellm_retry_strategy_kwargs(),
         **kwargs,
     )
+
+
+def _get_litellm_retry_strategy_kwargs() -> Dict[str, str]:
+    """
+    Returns retry strategy strategy kwargs for LiteLLM.
+    """
+    litellm_version = importlib_metadata.version("litellm")
+    if Version(litellm_version) >= Version("1.51.3"):
+        # Enable retries with exponential backoff via the `retry_strategy` flag, which
+        # requires LiteLLM version >= 1.51.3
+        return {"retry_strategy": "exponential_backoff_retry"}
+    else:
+        # Otherwise, use the LiteLLM default retry strategy (fixed interval retries)
+        # in older LiteLLM versions where the `retry_strategy` flag is not available
+        return {}
 
 
 def _green(text: str, end: str = "\n"):

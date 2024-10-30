@@ -11,7 +11,7 @@ def test_lm_chat_respects_max_retries():
 
     assert litellm_completion_api.call_count == 1
     assert litellm_completion_api.call_args[1]["max_retries"] == 17
-    # assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"
+    assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"
 
 
 def test_lm_completions_respects_max_retries():
@@ -22,4 +22,4 @@ def test_lm_completions_respects_max_retries():
 
     assert litellm_completion_api.call_count == 1
     assert litellm_completion_api.call_args[1]["max_retries"] == 17
-    # assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"
+    assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"

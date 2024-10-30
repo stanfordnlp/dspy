@@ -1,7 +1,11 @@
 backoff
 datasets
+diskcache
+httpx
 joblib~=1.3
-litellm<=1.49.1
+json-repair
+litellm<=1.51.3
+magicattr~=0.1.6
 openai
 optuna
 pandas
@@ -11,7 +15,3 @@ requests
 structlog
 tqdm
 ujson
-httpx
-magicattr~=0.1.6
-diskcache
-json-repair
