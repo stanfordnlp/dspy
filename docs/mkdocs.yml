@@ -89,7 +89,6 @@ nav:
     - Contributing:
       - Roadmap: roadmap.md
       - How to get involved: community/how-to-contribute.md
-      - Development setup: community/development-setup.md
   - FAQ: faqs.md
   - Cheatsheet: cheatsheet.md
 
