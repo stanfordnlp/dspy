@@ -71,9 +71,8 @@ class Confusion:
 
     def _extract(self, response, labels):
         found = findall(r"|".join(labels), response.lower())
-        if not found:
-            return None
-        return self.match(found)
+        if found:
+            return self.match(found)
 
     def construct_labels_and_matrix(self, devset, preds=None):
         classes = [arg[self.output_field].lower() for _, arg in devset]
