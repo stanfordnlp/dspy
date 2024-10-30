@@ -1,12 +1,23 @@
+import inspect
 import random
-import re
 from collections import Counter
+from re import findall
 
 import numpy as np
 
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
 from dspy.teleprompt.teleprompt import Teleprompter
+
+
+def most_votes(votes):
+    """Only returns a value if there is a single winner."""
+    if votes:
+        counts = Counter(votes)
+        max_count = max(counts.values())
+        winners = [label for label, count in counts.items() if count == max_count]
+        if len(winners) == 1:
+            return winners[0]
 
 
 class Confusion:
@@ -23,6 +34,8 @@ class Confusion:
             provide_traceback=False,
             use_class_weight=True,
             output_field="response",
+            extract=None,
+            match="first",
             **_kwargs,
     ):
         self.devset = devset
@@ -38,13 +51,32 @@ class Confusion:
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
         self.output_field = output_field
+        if extract is None:
+            self.extract = self._extract
+            if callable(match):
+                self.match = match
+            elif match == "first":
+                self.match = lambda x: x[0]
+            elif match == "last":
+                self.match = lambda x: x[-1]
+            elif match == "most":
+                self.match = most_votes
+            else:
+                raise ValueError(f"Invalid match function: {match}")
+        elif not callable(extract) or len(inspect.signature(extract).parameters) != 2:
+            raise ValueError("The extract function must be callable and have two parameters (response and labels).")
+        else:
+            self.extract = extract
+            # match field is ignored
 
-    def extract(self, response, labels):
-        match = re.search(r"|".join(labels), response.lower())
-        return match.group(0) if match else None
+    def _extract(self, response, labels):
+        found = findall(r"|".join(labels), response.lower())
+        if not found:
+            return None
+        return self.match(found)
 
     def construct_labels_and_matrix(self, devset, preds=None):
-        classes = [arg[self.output_field] for _, arg in devset]
+        classes = [arg[self.output_field].lower() for _, arg in devset]
         labels = np.unique(classes).tolist()
 
         if preds is None:
@@ -106,7 +138,7 @@ class Confusion:
             with logging_redirect_tqdm():
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field]].append(prediction[self.output_field])
+                preds[arg[self.output_field]].append(prediction.get(self.output_field, "error"))
                 self._update_progress(pbar, preds, devset)
 
         pbar.close()
@@ -152,7 +184,7 @@ class Confusion:
                     continue
 
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field]].append(prediction[self.output_field])
+                preds[arg[self.output_field]].append(prediction.get(self.output_field, "error"))
                 self._update_progress(pbar, preds, devset)
             pbar.close()
 
