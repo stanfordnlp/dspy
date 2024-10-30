@@ -12,12 +12,6 @@ nav:
     - Installation: quick-start/installation.md
     - Quick Start: quick-start/getting-started-01.md
     - Build your first pipeline: quick-start/getting-started-02.md
-  - Tutorials:
-    - Retrieval Augmented Generation: tutorials/rag.md
-    - Multi-Hop QA: tutorials/simplified-baleen.md
-    - Summarization: tutorials/summarization.md
-    - Additional Resources: tutorials/other_tutorial.md
-    - Examples: tutorials/examples.md
   - Components:
     - Overview: building-blocks/solving_your_task.md
     - Signatures:
@@ -81,15 +75,20 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-
+  - Tutorials:
+      - Retrieval Augmented Generation: tutorials/rag.md
+      - Multi-Hop QA: tutorials/simplified-baleen.md
+      - Summarization: tutorials/summarization.md
+      - Additional Resources: tutorials/other_tutorial.md
+      - Examples: tutorials/examples.md
   - Community:
-    - Community Resources: community/tutorials.md
-    - Use Cases: community/related-projects.md
-    - Contributing:
-      - Roadmap: roadmap.md
-      - How to get involved: community/how-to-contribute.md
-  - FAQ & Troubleshooting: faqs.md
-  - Cheatsheet: cheatsheet.md
+    - Community Resources: community/community-resources.md
+    - Use Cases: community/use-cases.md
+    - Roadmap: roadmap.md
+    - Contributing: community/how-to-contribute.md
+  - FAQ:
+    - FAQ: faqs.md
+    - Cheatsheet: cheatsheet.md
 
 theme:
   name: material
