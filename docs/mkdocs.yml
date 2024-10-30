@@ -6,47 +6,47 @@ repo_name: stanfordnlp/dspy
 edit_uri: edit/main/docs/docs/
 docs_dir: 'docs/'
 nav:
-  - About DSPy: intro.md
-  - Getting Started:
-    - Quick Start:
-      - Installation: quick-start/installation.md
-      - Getting Started I: quick-start/getting-started-01.md
-      - Getting Started II: quick-start/getting-started-02.md
-    - Building Blocks:
-      - DSPy in 8 Steps: building-blocks/solving_your_task.md
-      - Language Models: building-blocks/1-language_models.md
-      - Signatures: building-blocks/2-signatures.md
-      - Modules: building-blocks/3-modules.md
-      - Data: building-blocks/4-data.md
-      - Metrics: building-blocks/5-metrics.md
-      - Optimizers: building-blocks/6-optimizers.md
-      - Assertions: building-blocks/7-assertions.md
-      - Typed Predictors: building-blocks/8-typed_predictors.md
+  - Home:
+      - intro.md
+  - Quick Start:
+    - Installation: quick-start/installation.md
+    - Quick Start: quick-start/getting-started-01.md
+    - Build your first pipeline: quick-start/getting-started-02.md
   - Tutorials:
     - Retrieval Augmented Generation: tutorials/rag.md
     - Multi-Hop QA: tutorials/simplified-baleen.md
     - Summarization: tutorials/summarization.md
     - Additional Resources: tutorials/other_tutorial.md
     - Examples: tutorials/examples.md
-  - Concepts:
+  - Components:
+    - Overview: building-blocks/solving_your_task.md
+    - Signatures:
+      - Overview: building-blocks/2-signatures.md
+      - Understanding Signatures: deep-dive/signature/understanding-signatures.md
+      - Executing Signatures: deep-dive/signature/executing-signatures.md
     - Data Handling:
+      - Overview: building-blocks/4-data.md
       - Examples in DSPy: deep-dive/data-handling/examples.md
       - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
       - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
-    - Signatures:
-      - Understanding Signatures: deep-dive/signature/understanding-signatures.md
-      - Executing Signatures: deep-dive/signature/executing-signatures.md
     - Modules:
+      - Overview: building-blocks/3-modules.md
       - Predict: deep-dive/modules/predict.md
+      - Typed Predictors: building-blocks/8-typed_predictors.md
       - ChainOfThought: deep-dive/modules/chain-of-thought.md
       - ChainOfThoughtwithHint: deep-dive/modules/chain-of-thought-with-hint.md
       - ReAct: deep-dive/modules/react.md
       - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
       - ProgramOfThought: deep-dive/modules/program-of-thought.md
-      # - Assertions: deep-dive/modules/assertions.md
+      - Assertions: deep-dive/modules/assertions.md
       - Retreive: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
-    - Optimizers (formerly Teleprompters):
+    - Metrics and Assertions:
+      - Overview: building-blocks/7-assertions.md
+      - Metrics: building-blocks/5-metrics.md
+      - Assertions: deep-dive/assertions.md
+    - Optimizers:
+      - Overview: building-blocks/6-optimizers.md
       - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
       - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
       - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
@@ -54,8 +54,8 @@ nav:
       - BFRS: deep-dive/optimizers/bfrs.md
       - CoPro: deep-dive/optimizers/copro.md
       - MIProV2: deep-dive/optimizers/miprov2.md
-    - Assertions: deep-dive/assertions.md
     - Language Model Clients:
+      - Overview: building-blocks/1-language_models.md
       - Local Language Model Clients:
         - HFClientTGI: deep-dive/language_model_clients/lm_local_models/HFClientTGI.md
         - HFClientVLLM: deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md
@@ -81,16 +81,24 @@ nav:
       - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
       - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-  - FAQ: faqs.md
+
+  - Community:
+    - Community Resources: community/tutorials.md
+    - Use Cases: community/related-projects.md
+    - Contributing:
+      - Roadmap: roadmap.md
+      - How to get involved: community/how-to-contribute.md
+  - FAQ & Troubleshooting: faqs.md
   - Cheatsheet: cheatsheet.md
-  - DSPy Usecases: dspy-usecases.md
 
 theme:
   name: material
   custom_dir: overrides
   features:
     - navigation.tabs
-    - toc.integrate
+    - navigation.path
+    - navigation.indexes
+    - toc.follow
     - navigation.top
     - search.suggest
     - search.highlight
@@ -133,12 +141,12 @@ plugins:
         'docs/intro.md': 'intro.md'
         'docs/intro/index.md': 'intro.md'
 
-        
+
         # Quick Start redirects
         'docs/quick-start/installation.md': 'quick-start/installation.md'
         'docs/quick-start/getting-started-01.md': 'quick-start/getting-started-01.md'
         'docs/quick-start/getting-started-02.md': 'quick-start/getting-started-02.md'
-        
+
         # Building Blocks redirects
         'docs/building-blocks/solving_your_task.md': 'building-blocks/solving_your_task.md'
         'docs/building-blocks/1-language_models.md': 'building-blocks/1-language_models.md'
@@ -160,7 +168,7 @@ plugins:
         'docs/building-blocks/optimizers.md': 'building-blocks/6-optimizers.md'
         'docs/building-blocks/assertions.md': 'building-blocks/7-assertions.md'
         'docs/building-blocks/typed_predictors.md': 'building-blocks/8-typed_predictors.md'
-        
+
         # Tutorials redirects
         'docs/tutorials/rag.md': 'tutorials/rag.md'
         'docs/tutorials/simplified-baleen.md': 'tutorials/simplified-baleen.md'
@@ -185,6 +193,8 @@ plugins:
         'docs/deep-dive/modules/react.md': 'deep-dive/modules/react.md'
         'docs/deep-dive/modules/multi-chain-comparison.md': 'deep-dive/modules/multi-chain-comparison.md'
         'docs/deep-dive/modules/program-of-thought.md': 'deep-dive/modules/program-of-thought.md'
+        'docs/deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
+        'deep-dive/modules/assertions.md': 'building-blocks/7-assertions.md'
         'docs/deep-dive/modules/retrieve.md': 'deep-dive/modules/retrieve.md'
         'docs/deep-dive/modules/guide.md': 'deep-dive/modules/guide.md'
         
@@ -214,10 +224,10 @@ plugins:
         'docs/deep-dive/retrieval_models_clients/WatsonDiscovery.md': 'deep-dive/retrieval_models_clients/WatsonDiscovery.md'
         'docs/deep-dive/retrieval_models_clients/WeaviateRM.md': 'deep-dive/retrieval_models_clients/WeaviateRM.md'
         'docs/deep-dive/retrieval_models_clients/YouRM.md': 'deep-dive/retrieval_models_clients/YouRM.md'
-        
+
         # Assertions
         'docs/deep-dive/assertions.md': 'deep-dive/assertions.md'
-        
+
         # Teleprompters
         'docs/deep-dive/optimizers/LabeledFewShot.md': 'deep-dive/optimizers/LabeledFewShot.md'
         'docs/deep-dive/optimizers/bootstrap-fewshot.md': 'deep-dive/optimizers/bootstrap-fewshot.md'
@@ -226,11 +236,12 @@ plugins:
         'docs/deep-dive/optimizers/bfrs.md': 'deep-dive/optimizers/bfrs.md'
         'docs/deep-dive/optimizers/copro.md': 'deep-dive/optimizers/copro.md'
         'docs/deep-dive/optimizers/miprov2.md': 'deep-dive/optimizers/miprov2.md'
-        
+
         # Additional pages redirects
         'docs/faqs.md': 'faqs.md'
         'docs/cheatsheet.md': 'cheatsheet.md'
         'docs/dspy-usecases.md': 'dspy-usecases.md'
+
 
 extra:
   social:
