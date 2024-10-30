@@ -659,7 +659,7 @@ class MIPROv2(Teleprompter):
             )
             set_signature(predictor, updated_signature)
             trial_logs[trial_num][f"{i}_predictor_instruction"] = instruction_idx
-            chosen_params.append(f"Predictor {i+1}: Instruction {instruction_idx}")
+            chosen_params.append(f"Predictor {i}: Instruction {instruction_idx}")
 
             # Select demos if available
             if demo_candidates:
@@ -668,7 +668,7 @@ class MIPROv2(Teleprompter):
                 )
                 predictor.demos = demo_candidates[i][demos_idx]
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
-                chosen_params.append(f"Predictor {i+1}: Few-Shot Set {demos_idx}")
+                chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
 
         return chosen_params
 
