@@ -1,4 +1,5 @@
 import functools
+import importlib.metadata
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -6,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-import importlib_metadata
 import litellm
 import ujson
 from litellm.caching import Cache
@@ -234,7 +234,7 @@ def _get_litellm_retry_strategy_kwargs() -> Dict[str, str]:
     """
     Returns retry strategy strategy kwargs for LiteLLM.
     """
-    litellm_version = importlib_metadata.version("litellm")
+    litellm_version = importlib.metadata.version("litellm")
     if Version(litellm_version) >= Version("1.51.3"):
         # Enable retries with exponential backoff via the `retry_strategy` flag, which
         # requires LiteLLM version >= 1.51.3
