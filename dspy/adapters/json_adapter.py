@@ -89,6 +89,17 @@ class JsonAdapter(Adapter):
 
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
+    
+    def format_fields(self, signature, values, role):
+        fields_with_values = {
+            FieldInfoWithName(name=field_name, info=field_info): values.get(
+                field_name, "Not supplied for this particular example."
+            )
+            for field_name, field_info in signature.fields.items()
+            if field_name in values
+        }
+
+        return format_fields(role=role, fields_with_values=fields_with_values)
         
 
 def parse_value(value, annotation):
@@ -241,6 +252,7 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
             return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" \
                 if v.annotation is not str else ""
         
+        # TODO: Consider if not incomplete:
         content.append(
             "Respond with a JSON object in the following order of fields: "
             + ", then ".join(f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items())
