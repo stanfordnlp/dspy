@@ -27,14 +27,13 @@ GLOBAL_HISTORY = []
 
 class LM:
     """
-    A language model supporting chat and completions requests for use with DSPy
-    modules and programs.
+    A language model supporting chat or text completion requests for use with DSPy modules.
     """
 
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "completions"] = "chat",
+        model_type: Literal["chat", "text"] = "chat",
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
@@ -49,7 +48,7 @@ class LM:
         Args:
             model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
                    supported by LiteLLM. For example, ``"openai/gpt-4o"``.
-            model_type: The type of the model, either ``"chat"`` or ``"completions"``.
+            model_type: The type of the model, either ``"chat"`` or ``"text"``.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
