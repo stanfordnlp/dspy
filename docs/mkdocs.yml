@@ -85,9 +85,8 @@ nav:
   - Community:
     - Community Resources: community/community-resources.md
     - Use Cases: community/use-cases.md
-    - Contributing:
-      - Roadmap: roadmap.md
-      - How to get involved: community/how-to-contribute.md
+    - Roadmap: roadmap.md
+    - Contributing: community/how-to-contribute.md
   - FAQs:
     - FAQ: faqs.md
     - Cheatsheet: cheatsheet.md
