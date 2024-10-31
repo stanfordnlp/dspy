@@ -1,7 +1,6 @@
 from enum import Enum
 import numpy as np
 from scipy.spatial.distance import euclidean, cityblock
-from typing import List
 
 class SimilarityMetric(str, Enum):
     """Supported similarity metrics."""

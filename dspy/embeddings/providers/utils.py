@@ -19,7 +19,7 @@ def validate_api_response(response: Dict[str, Any], dimensions: Optional[int] = 
         raise ValueError("Missing embeddings in response")
         
     if dimensions and any(len(emb) != dimensions for emb in embeddings):
-        raise ValueError(f"Incorrect embedding dimensions")
+        raise ValueError("Incorrect embedding dimensions")
         
     return embeddings
 

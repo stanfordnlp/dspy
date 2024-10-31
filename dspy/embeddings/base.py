@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List, Union, Optional, Dict, Any
+from typing import List, Union, Optional
 import numpy as np
 import torch
 from .config import EmbeddingConfig, OutputFormat
 from .metrics import SimilarityMetric, cosine_similarity, euclidean_similarity, manhattan_similarity
-import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
