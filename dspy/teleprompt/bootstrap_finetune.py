@@ -13,7 +13,24 @@ from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.logging import logger
 
 
-class BootstrapFinetune(Teleprompter):
+class FinetuneTeleprompter(Teleprompter):
+
+    def __init__(
+        self,
+        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
+    ):
+        self.train_kwargs: Dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
+
+    @staticmethod
+    def convert_to_lm_dict(arg) -> Dict[LM, Any]:
+        non_empty_dict = arg and isinstance(arg, dict)
+        if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
+            return arg
+        # Default to using the same value for all LMs
+        return defaultdict(lambda: arg)
+
+
+class BootstrapFinetune(FinetuneTeleprompter):
 
     # TODO(PR) check with team
     def __init__(
@@ -35,66 +52,64 @@ class BootstrapFinetune(Teleprompter):
         err += " Set `dspy.settings.experimental` to `True` to use it."
         err += " Constructor arguments subject to change."
         assert dspy.settings.experimental, err
-
+        
+        super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
-        self.train_kwargs = self.convert_to_lm_dict(train_kwargs or {})
-        self.adapter = self.convert_to_lm_dict(adapter)
+        self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
-
-    @staticmethod
-    def convert_to_lm_dict(arg) -> Dict[LM, Any]:
-        non_empty_dict = arg and isinstance(arg, dict)
-        if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
-            return arg
-        # Default to using the same value for all LMs
-        return defaultdict(lambda: arg)
     
     def compile(self, student: Program, trainset: List[Example], teacher: Optional[Program] = None) -> Program:
-        logger.info("Preparing the student and teacher programs...")
+        # TODO: Print statements can be converted to logger.info if we ensure
+        # that the default DSPy logger logs info level messages in notebook
+        # environments.
+        print("[BootstrapFinetune] Preparing the student and teacher programs...")
+        student = prepare_student(student)
         teacher = prepare_teacher(student, teacher)
-        set_predictor_lms(student)
-        set_predictor_lms(teacher)
-        logger.info("Done.")
+        set_missing_predictor_lms(student)
+        set_missing_predictor_lms(teacher)
 
-        logger.info("Bootstrapping data...")
+        print("[BootstrapFinetune] Bootstrapping data...")
         trace_data = bootstrap_trace_data(program=teacher, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
-        logger.info("Done.")
 
-        logger.info("Preparing the train data...")
+        print("[BootstrapFinetune] Preparing the train data...")
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind)
+                print(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_kwargs=self.train_kwargs[pred.lm], data_format=data_format)
                 key_to_data[training_key] = finetune_kwargs
-        logger.info("Done.")
         
-        logger.info("Starting LM fine-tuning...")
+        print("[BootstrapFinetune] Starting LM fine-tuning...")
         # TODO(feature): We could run batches of fine-tuning jobs in sequence
         # to avoid exceeding the number of threads.
         err = f"BootstrapFinetune requires `num_threads` to be bigger than or equal to the number of fine-tuning jobs. There are {len(key_to_data)} fine-tuning jobs to start, but the number of threads is: {self.num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will be equal to the number of predictors in the student program. If the `multitask` flag is set to True, the number of fine-tuning jobs will be equal to: 1 if there is only a context LM, or the number of unique LMs attached to the predictors in the student program. In any case, the number of fine-tuning jobs will be less than or equal to the number of predictors."
         assert len(key_to_data) <= self.num_threads, err
-        logger.info(f"{len(key_to_data)} fine-tuning jobs to start.")
+        print(f"[BootstrapFinetune] {len(key_to_data)} fine-tuning job(s) to start")
         key_to_lm = self.finetune_lms(key_to_data)
-        logger.info("Done.")
 
-        logger.info("Updating the student program with the fine-tuned LMs...")
+        print("[BootstrapFinetune] Updating the student program with the fine-tuned LMs...")
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
             pred.lm = key_to_lm[training_key]
-        logger.info("Done.")
-
+            # TODO: What should the correct behavior be here? Should
+            # BootstrapFinetune modify the prompt demos according to the 
+            # train data?
+            pred.demos = [] if self.exclude_demos else pred.demos
+        
+        print("[BootstrapFinetune] BootstrapFinetune has finished compiling the student program")
+        student._compiled = True
         return student
 
     @staticmethod
     def finetune_lms(finetune_dict) -> Dict[Any, LM]:
         num_jobs = len(finetune_dict)
-        logger.info(f"Starting {num_jobs} fine-tuning jobs...")
+        print(f"[BootstrapFinetune] Starting {num_jobs} fine-tuning jobs...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
         # coming from different fine-tune threads.
 
@@ -107,14 +122,16 @@ class BootstrapFinetune(Teleprompter):
         for ind, (key, job) in enumerate(key_to_job.items()):
             key_to_lm[key] = job.result()
             job.thread.join()
-            logger.info(f"Job {ind + 1}/{num_jobs} completed.")
+            print(f"Job {ind + 1}/{num_jobs} completed.")
 
         return key_to_lm
 
     def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: Optional[int] = None):
-        # TODO(nit) Log dataset details/size
+        # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
+            print(f"[BootstrapFinetune] Collected data for {len(trace_data)} examples")
             trace_data = [d for d in trace_data if d["score"]]
+            print(f"[BootstrapFinetune] After filtering for score, {len(trace_data)} examples remain")
 
         data = []
         adapter = self.adapter[lm] or lm.infer_adapter()
@@ -208,7 +225,7 @@ def bootstrap_trace_data_one_example(
 # Note: Shared below are useful functions for preparing student/teacher programs
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
-def set_predictor_lms(program: Program) -> Program:
+def set_missing_predictor_lms(program: Program) -> Program:
     # If the predictors do not have LMs, set them to the global LM
     for pred in program.predictors():
         if not pred.lm:
@@ -217,17 +234,27 @@ def set_predictor_lms(program: Program) -> Program:
     return program
 
 
+def prepare_student(student: Program) -> Program:
+    print("Ensuring that the student is not compiled")
+    assert not student._compiled, "The student program should not be compiled"
+
+    # TODO: Should we use reset_copy here? How would it affect the student
+    # program's predictor LMs, if they are set?
+    student = student.deepcopy()
+    return student
+
+
 def prepare_teacher(student: Program, teacher: Program = None) -> Program:
     if teacher is None:
-        logger.info("No teacher provided. Using a copy of the student program as the teacher.")
+        print("No teacher provided. Using a copy of the student program as the teacher.")
         return student.deepcopy()
     else:
         teacher = teacher.deepcopy()
 
-    logger.info("Ensuring that the student and teacher are are structurally equivalent.")
+    print("Ensuring that the student and teacher are are structurally equivalent.")
     assert_structural_equivalency(student, teacher)
 
-    logger.info("Ensuring that the student and teacher programs do not share predictors.")
+    print("Ensuring that the student and teacher programs do not share predictors.")
     assert_no_shared_predictor(student, teacher)
 
     return teacher
