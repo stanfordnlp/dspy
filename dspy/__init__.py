@@ -5,15 +5,17 @@ from .predict import *
 from .primitives import *
 from .retrieve import *
 from .signatures import *
-from .utils.logging import logger, set_log_output
 
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
+from dspy.utils.logging import configure_dspy_loggers
 
 settings = dsp.settings
+
+configure_dspy_loggers(__name__)
 
 # LM = dsp.LM
 

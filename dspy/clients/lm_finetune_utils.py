@@ -1,9 +1,11 @@
+import logging
 from typing import Any, Dict, List, Optional, Type, Union
 
 from dspy.clients.anyscale import FinetuneJobAnyScale, finetune_anyscale
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.openai import FinetuneJobOpenAI, finetune_openai
-from dspy.utils.logging import logger
+
+logger = logging.getLogger(__name__)
 
 _PROVIDER_ANYSCALE = "anyscale"
 _PROVIDER_OPENAI = "openai"
