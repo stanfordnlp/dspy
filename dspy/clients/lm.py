@@ -1,9 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-import functools
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import functools
+import os
+
+from litellm.caching import Cache
+import async_lru
+import litellm
 import ujson
 import uuid
 
@@ -15,11 +19,10 @@ from dspy.clients.lm_finetune_utils import (
 )
 from dspy.primitives.program import handle_async
 
-import litellm
-from litellm.caching import Cache
 
-
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(
+    Path.home(), ".dspy_cache"
+)
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
 
@@ -29,15 +32,15 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 class LM:
     def __init__(
-            self, 
-            model,
-            model_type='chat', 
-            temperature=0.0,
-            max_tokens=1000,
-            cache=True,
-            launch_kwargs=None,
-            **kwargs
-        ):
+        self,
+        model,
+        model_type="chat",
+        temperature=0.0,
+        max_tokens=1000,
+        cache=True,
+        launch_kwargs=None,
+        **kwargs,
+    ):
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
@@ -53,8 +56,6 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
-    
-    
     async def acall(self, prompt=None, messages=None, **kwargs):
         """Async completion method"""
         cache = kwargs.pop("cache", self.cache)
@@ -62,29 +63,43 @@ class LM:
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        # NOTE(isaac): I removed caching
         if self.model_type == "chat":
-            completion = async_litellm_completion
+            completion = (
+                cached_async_litellm_completion if cache else async_litellm_completion
+            )
         else:
-            completion = async_litellm_text_completion
+            completion = (
+                cached_async_litellm_text_completion
+                if cache
+                else async_litellm_text_completion
+            )
 
-        response = await completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
-        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        response = await completion(
+            ujson.dumps(dict(model=self.model, messages=messages, **kwargs))
+        )
+        outputs = [
+            c.message.content if hasattr(c, "message") else c["text"]
+            for c in response["choices"]
+        ]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            model_type=self.model_type,
+        self.history.append(
+            {
+                "prompt": prompt,
+                "messages": messages,
+                "kwargs": kwargs,
+                "response": response,
+                "outputs": outputs,
+                "usage": dict(response["usage"]),
+                "cost": response.get("_hidden_params", {}).get("response_cost"),
+                "timestamp": datetime.now().isoformat(),
+                "uuid": str(uuid.uuid4()),
+                "model": self.model,
+                "model_type": self.model_type,
+            }
         )
-        self.history.append(entry)
-        
+
         return outputs
 
     @handle_async
@@ -94,11 +109,12 @@ class LM:
         Uses handle_async decorator to automatically switch between modes.
         """
         import dspy
+
         if dspy.settings.async_mode:
             return self.acall(prompt, messages, **kwargs)
-        
+
         # Build the request.
-        cache = kwargs.pop("cache", self.cache)
+        _cache = kwargs.pop("cache", self.cache)  # not a valid kwarg for LiteLLM
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
@@ -108,25 +124,33 @@ class LM:
         else:
             completion = litellm_text_completion
 
-        response = completion(ujson.dumps(dict(model=self.model, messages=messages, **kwargs)))
-        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        response = completion(
+            ujson.dumps(dict(model=self.model, messages=messages, **kwargs))
+        )
+        outputs = [
+            c.message.content if hasattr(c, "message") else c["text"]
+            for c in response["choices"]
+        ]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            model_type=self.model_type,
+        self.history.append(
+            {
+                "prompt": prompt,
+                "messages": messages,
+                "kwargs": kwargs,
+                "response": response,
+                "outputs": outputs,
+                "usage": dict(response["usage"]),
+                "cost": response.get("_hidden_params", {}).get("response_cost"),
+                "timestamp": datetime.now().isoformat(),
+                "uuid": str(uuid.uuid4()),
+                "model": self.model,
+                "model_type": self.model_type,
+            }
         )
-        self.history.append(entry)
-        
+
         return outputs
-    
+
     def inspect_history(self, n: int = 1):
         _inspect_history(self, n)
 
@@ -143,15 +167,16 @@ class LM:
         logger.info(msg)
 
     def finetune(
-            self,
-            train_data: List[Dict[str, Any]],
-            train_kwargs: Optional[Dict[str, Any]]=None,
-            train_method: TrainingMethod = TrainingMethod.SFT,
-            provider: str = "openai",
-            cache_finetune: bool = True,
-        ) -> FinetuneJob:
+        self,
+        train_data: List[Dict[str, Any]],
+        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_method: TrainingMethod = TrainingMethod.SFT,
+        provider: str = "openai",
+        cache_finetune: bool = True,
+    ) -> FinetuneJob:
         """Start model fine-tuning, if supported."""
         from dspy import settings as settings
+
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
@@ -162,24 +187,22 @@ class LM:
             train_data=train_data,
             train_kwargs=train_kwargs,
             train_method=train_method,
-            provider=provider
+            provider=provider,
         )
 
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(
-            execute_finetune_job,
-            finetune_job,
-            lm=self,
-            cache_finetune=cache_finetune
+            execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune
         )
         executor.shutdown(wait=False)
 
         return finetune_job
-    
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
 
         import copy
+
         new_instance = copy.deepcopy(self)
         new_instance.history = []
 
@@ -192,7 +215,6 @@ class LM:
         return new_instance
 
 
-
 @functools.lru_cache(maxsize=None)
 def cached_litellm_completion(request):
     return litellm_completion(request, cache={"no-cache": False, "no-store": False})
@@ -202,13 +224,24 @@ def litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(cache=cache, **kwargs)
 
+
+@async_lru.alru_cache(maxsize=None)
+async def cached_async_litellm_completion(request):
+    return await async_litellm_completion(
+        request, cache={"no-cache": False, "no-store": False}
+    )
+
+
 async def async_litellm_completion(request, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return await litellm.acompletion(cache=cache, **kwargs)
 
+
 @functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request):
-    return litellm_text_completion(request, cache={"no-cache": False, "no-store": False})
+    return litellm_text_completion(
+        request, cache={"no-cache": False, "no-store": False}
+    )
 
 
 def litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
@@ -224,7 +257,9 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
     api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
+    prompt = "\n\n".join(
+        [x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"]
+    )
 
     return litellm.text_completion(
         cache=cache,
@@ -235,7 +270,17 @@ def litellm_text_completion(request, cache={"no-cache": True, "no-store": True})
         **kwargs,
     )
 
-async def async_litellm_text_completion(request, cache={"no-cache": True, "no-store": True}):
+
+@async_lru.alru_cache(maxsize=None)
+async def cached_async_litellm_text_completion(request):
+    return await async_litellm_text_completion(
+        request, cache={"no-cache": False, "no-store": False}
+    )
+
+
+async def async_litellm_text_completion(
+    request, cache={"no-cache": True, "no-store": True}
+):
     raise NotImplementedError("Async text completion is not implemented yet.")
 
 

@@ -1,13 +1,17 @@
-import magicattr
+from functools import wraps
+import asyncio
+import inspect
 
 import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
-import asyncio
-from functools import wraps
+
+import magicattr
+
 
 class ProgramMeta(type):
     pass
+
 
 def handle_async(func):
     """
@@ -15,28 +19,28 @@ def handle_async(func):
     If the decorated function is called from an async context, runs async.
     If called from a sync context, runs sync.
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
-        is_async = asyncio.iscoroutinefunction(func)
-        
         # If we're not in an async context, run synchronously
-        if not is_async:
+        if not asyncio.iscoroutinefunction(func):
             return func(*args, **kwargs)
-            
+
         # Check if we're in an async context
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
-            
+
         if loop and loop.is_running():
             # We're in an async context, return coroutine
             return func(*args, **kwargs)
         else:
             # We're not in an async context, run in new loop
             return asyncio.run(func(*args, **kwargs))
-            
+
     return wrapper
+
 
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
@@ -54,7 +58,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     async def forward_internal(self, *args, **kwargs):
         """Internal method that handles async execution of forward"""
-        if hasattr(self, 'forward'):
+        if hasattr(self, "forward"):
             # Convert all calls within forward to their async versions
             # with AsyncContext():
             result = self.forward(*args, **kwargs)
@@ -62,11 +66,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 result = await result
             return result
         raise NotImplementedError("No forward method defined for this module")
-    
+
     def named_predictors(self):
         from dspy.predict.predict import Predict
 
-        return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
+        return [
+            (name, param)
+            for name, param in self.named_parameters()
+            if isinstance(param, Predict)
+        ]
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]
