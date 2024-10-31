@@ -33,6 +33,22 @@ class DSPyLoggingStream:
 
 DSPY_LOGGING_STREAM = DSPyLoggingStream()
 
+def disable_logging():
+    """
+    Disables the `DSPyLoggingStream` used by event logging APIs throughout DSPy
+    (`eprint()`, `logger.info()`, etc), silencing all subsequent event logs.
+    """
+    DSPY_LOGGING_STREAM.enabled = False
+
+
+def enable_logging():
+    """
+    Enables the `DSPyLoggingStream` used by event logging APIs throughout DSPy
+    (`eprint()`, `logger.info()`, etc), emitting all subsequent event logs. This
+    reverses the effects of `disable_logging()`.
+    """
+    DSPY_LOGGING_STREAM.enabled = True
+
 def configure_dspy_loggers(root_module_name):
     logging.config.dictConfig(
         {

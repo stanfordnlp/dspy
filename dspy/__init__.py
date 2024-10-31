@@ -11,7 +11,7 @@ from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
-from dspy.utils.logging import configure_dspy_loggers
+from dspy.utils.logging import configure_dspy_loggers, disable_logging, enable_logging
 
 settings = dsp.settings
 

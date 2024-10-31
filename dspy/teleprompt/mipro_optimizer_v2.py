@@ -1,6 +1,5 @@
 import logging
 import random
-import sys
 import textwrap
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -362,10 +361,10 @@ class MIPROv2(Teleprompter):
         """
         )
 
-        logger.info(user_message)
-        sys.stdout.flush()
-        logger.info(user_confirmation_message)
-        user_input = input("Do you wish to continue? (y/n): ").strip().lower()
+        user_input = input(
+            f"{user_message}\n{user_confirmation_message}\n"
+            "Do you wish to continue? (y/n): "
+        ).strip().lower()
         return user_input == "y"
 
     def _bootstrap_fewshot_examples(
