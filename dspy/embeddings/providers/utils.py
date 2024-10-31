@@ -1,5 +1,5 @@
 import hashlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any,Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,3 +22,6 @@ def validate_api_response(response: Dict[str, Any], dimensions: Optional[int] = 
         raise ValueError(f"Incorrect embedding dimensions")
         
     return embeddings
+
+
+    
