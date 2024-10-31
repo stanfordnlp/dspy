@@ -165,7 +165,6 @@ class LM:
     def infer_provider(self) -> Provider:
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
-        # TODO(PR): Should we handle AnyScale models here
         # TODO(PR): Keeping this function here will require us to import all
         # providers in this file. Is this okay?
         return Provider()

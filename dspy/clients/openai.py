@@ -126,36 +126,33 @@ class OpenAIProvider(Provider):
         train_kwargs: Optional[Dict[str, Any]] = None,
         data_format: Optional[DataFormat] = None,
     ) -> str:
-        logger.info("[Finetune] Validating the data format")
+        print("[OpenAI Provider] Validating the data format")
         OpenAIProvider.validate_data_format(data_format)
-        logger.info("[Finetune] Done!")
 
-        logger.info("[Finetune] Saving the data to a file")
+        print("[OpenAI Provider] Saving the data to a file")
         data_path = save_data(train_data)
-        logger.info("[Finetune] Done!")
+        print(f"[OpenAI Provider] Data saved to {data_path}")
 
-        logger.info("[Finetune] Uploading the data to the provider")
+        print("[OpenAI Provider] Uploading the data to the provider")
         provider_file_id = OpenAIProvider.upload_data(data_path)
         job.provider_file_id = provider_file_id
-        logger.info("[Finetune] Done!")
 
-        logger.info("[Finetune] Start remote training")
+        print("[OpenAI Provider] Starting remote training")
         provider_job_id = OpenAIProvider.start_remote_training(
             train_file_id=job.provider_file_id,
             model=model,
             train_kwargs=train_kwargs,
         )
         job.provider_job_id = provider_job_id
-        logger.info("[Finetune] Done!")
+        print(f"[OpenAI Provider] Job started with the OpenAI Job ID {provider_job_id}")
 
-        logger.info("[Finetune] Wait for training to complete")
+        print("[OpenAI Provider] Waiting for training to complete")
         # TODO(feature): Could we stream OAI logs?
         OpenAIProvider.wait_for_job(job)
-        logger.info("[Finetune] Done!")
 
-        logger.info("[Finetune] Get trained model if the run was a success")
+        print("[OpenAI Provider] Attempting to retrieve the trained model")
         model = OpenAIProvider.get_trained_model(job)
-        logger.info("[Finetune] Done!")
+        print(f"[OpenAI Provider] Model retrieved: {model}")
 
         return model
 
@@ -201,7 +198,7 @@ class OpenAIProvider(Provider):
 
         # Check if there is an active job
         if job_id is None:
-            logger.info("There is no active job.")
+            print("There is no active job.")
             return TrainingStatus.not_started
 
         err_msg = f"Job with ID {job_id} does not exist."
