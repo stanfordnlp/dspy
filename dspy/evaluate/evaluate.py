@@ -1,10 +1,9 @@
-import contextlib
-import signal
 import sys
 import threading
 import traceback
 import types
 from typing import Any
+import contextvars
 
 import pandas as pd
 import tqdm
@@ -94,45 +93,61 @@ class Evaluate:
         reordered_devset = []
         job_cancelled = "cancelled"
 
-        # context manger to handle sigint
-        @contextlib.contextmanager
-        def interrupt_handler_manager():
-            """Sets the cancel_jobs event when a SIGINT is received."""
-            default_handler = signal.getsignal(signal.SIGINT)
-
-            def interrupt_handler(sig, frame):
-                self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
-                default_handler(sig, frame)
-
-            signal.signal(signal.SIGINT, interrupt_handler)
-            yield
-            # reset to the default handler
-            signal.signal(signal.SIGINT, default_handler)
-
         def cancellable_wrapped_program(idx, arg):
             # If the cancel_jobs event is set, return the cancelled_job literal
             if self.cancel_jobs.is_set():
                 return None, None, job_cancelled, None
             return wrapped_program(idx, arg)
 
-        with ThreadPoolExecutor(max_workers=num_threads) as executor, interrupt_handler_manager():
-            futures = {executor.submit(cancellable_wrapped_program, idx, arg) for idx, arg in devset}
-            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
+        try:
+            with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                futures = {executor.submit(cancellable_wrapped_program, idx, arg) for idx, arg in devset}
+                pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
 
-            for future in as_completed(futures):
-                example_idx, example, prediction, score = future.result()
+                for future in as_completed(futures):
+                    if self.cancel_jobs.is_set():
+                        break  # Exit the loop if jobs are cancelled
+                    try:
+                        example_idx, example, prediction, score = future.result()
+                    except KeyboardInterrupt:
+                        self.cancel_jobs.set()
+                        dspy.logger.warning("Received KeyboardInterrupt. Cancelling evaluation.")
+                        # Cancel remaining futures
+                        for f in futures:
+                            f.cancel()
+                        break
+                    except Exception as e:
+                        # Handle exceptions in worker threads
+                        with self.error_lock:
+                            self.error_count += 1
+                            current_error_count = self.error_count
+                        if current_error_count >= self.max_errors:
+                            raise e
+                        if self.provide_traceback:
+                            dspy.logger.error(
+                                f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{arg}\n\nStack trace:\n\t{traceback.format_exc()}"
+                            )
+                        else:
+                            dspy.logger.error(
+                                f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
+                            )
+                        continue  # Skip this future and continue
 
-                # use the cancelled_job literal to check if the job was cancelled - use "is" not "=="
-                # in case the prediction is "cancelled" for some reason.
-                if prediction is job_cancelled:
-                    continue
+                    if prediction is job_cancelled:
+                        continue
 
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
-            pbar.close()
+                    reordered_devset.append((example_idx, example, prediction, score))
+                    ncorrect += score
+                    ntotal += 1
+                    self._update_progress(pbar, ncorrect, ntotal)
+                pbar.close()
+        except KeyboardInterrupt:
+            self.cancel_jobs.set()
+            dspy.logger.warning("Received KeyboardInterrupt. Cancelling evaluation.")
+            # Cancel remaining futures
+            for f in futures:
+                f.cancel()
+            raise
 
         if self.cancel_jobs.is_set():
             dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
@@ -164,21 +179,22 @@ class Evaluate:
         return_outputs = return_outputs if return_outputs is not None else self.return_outputs
         results = []
 
+        # Initialize context variable for the stack
+        stack_var = contextvars.ContextVar('stack', default=dspy.settings.main_stack)
+
         def wrapped_program(example_idx, example):
-            # NOTE: TODO: Won't work if threads create threads!
-            thread_stacks = dspy.settings.stack_by_thread
-            creating_new_thread = threading.get_ident() not in thread_stacks
-            if creating_new_thread:
-                thread_stacks[threading.get_ident()] = list(dspy.settings.main_stack)
+            # Use the context variable to manage the stack
+            stack = stack_var.get()
+            # No need to check for thread identity or manually manage stacks
 
             try:
-                prediction = program(**example.inputs())
-                score = metric(
-                    example,
-                    prediction,
-                )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
+                # Set the context variable for the current thread
+                token = stack_var.set(list(stack))  # Copy the current stack
 
-                # increment assert and suggest failures to program's attributes
+                prediction = program(**example.inputs())
+                score = metric(example, prediction)
+
+                # Increment assert and suggest failures to program's attributes
                 if hasattr(program, "_assert_failures"):
                     program._assert_failures += dspy.settings.get("assert_failures")
                 if hasattr(program, "_suggest_failures"):
@@ -203,8 +219,8 @@ class Evaluate:
 
                 return example_idx, example, {}, 0.0
             finally:
-                if creating_new_thread:
-                    del thread_stacks[threading.get_ident()]
+                # Reset the context variable to the previous state
+                stack_var.reset(token)
 
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()

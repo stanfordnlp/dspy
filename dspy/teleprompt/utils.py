@@ -6,6 +6,7 @@ import random
 import shutil
 import sys
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 
 try:
@@ -287,32 +288,32 @@ def create_n_fewshot_demo_sets(
     teacher=None,
     include_non_bootstrapped=True,
     seed=0,
-    rng=None
+    parallel_bootstrapping=False,
 ):
     """
-    This function is copied from random_search.py, and creates fewshot examples in the same way that random search does.
-    This allows us to take advantage of using the same fewshot examples when we use the same random seed in our optimizers.
+    This function creates few-shot examples in the same way that random search does.
+    If parallel_bootstrapping is True, it parallelizes the bootstrapping process over the seeds.
     """
     demo_candidates = {}
 
-    # Account for confusing way this is set up, where we add in 3 more candidate sets to the N specified
-    num_candidate_sets -= 3
+    # Account for the way this is set up, where we add in 3 more candidate sets to the N specified
+    total_candidate_sets = num_candidate_sets + 3
 
     # Initialize demo_candidates dictionary
     for i, _ in enumerate(student.predictors()):
         demo_candidates[i] = []
 
-    rng = rng or random.Random(seed)
+    # Prepare the list of seeds
+    seeds = list(range(-3, num_candidate_sets))
 
-    # Go through and create each candidate set
-    for seed in range(-3, num_candidate_sets):
+    # Define the function to create a candidate set for a given seed
+    def create_candidate(seed):
+        trainset_copy = list(trainset)  # Copy of trainset
 
-        print(f"Bootstrapping set {seed+4}/{num_candidate_sets+3}")
-
-        trainset_copy = list(trainset)
+        print(f"Bootstrapping set {seed + 4}/{total_candidate_sets}")
 
         if seed == -3 and include_non_bootstrapped:
-            # zero-shot
+            # Zero-shot
             program2 = student.reset_copy()
 
         elif (
@@ -320,14 +321,14 @@ def create_n_fewshot_demo_sets(
             and max_labeled_demos > 0
             and include_non_bootstrapped
         ):
-            # labels only
+            # Labels only
             teleprompter = LabeledFewShot(k=max_labeled_demos)
             program2 = teleprompter.compile(
                 student, trainset=trainset_copy, sample=labeled_sample,
             )
 
         elif seed == -1:
-            # unshuffled few-shot
+            # Unshuffled few-shot
             program = BootstrapFewShot(
                 metric=metric,
                 max_errors=max_errors,
@@ -339,9 +340,9 @@ def create_n_fewshot_demo_sets(
             program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
 
         else:
-            # shuffled few-shot
-            rng.shuffle(trainset_copy)
-            size = rng.randint(min_num_samples, max_bootstrapped_demos)
+            # Shuffled few-shot
+            random.Random(seed).shuffle(trainset_copy)
+            size = random.Random(seed).randint(min_num_samples, max_bootstrapped_demos)
 
             teleprompter = BootstrapFewShot(
                 metric=metric,
@@ -357,8 +358,44 @@ def create_n_fewshot_demo_sets(
                 student, teacher=teacher, trainset=trainset_copy,
             )
 
+        # Collect the demos for each predictor
+        predictor_demos = {}
         for i, _ in enumerate(student.predictors()):
-            demo_candidates[i].append(program2.predictors()[i].demos)
+            predictor_demos[i] = program2.predictors()[i].demos
+
+        return seed, predictor_demos
+
+    if parallel_bootstrapping:
+        # Use ThreadPoolExecutor to parallelize the creation of candidate sets
+        num_threads = total_candidate_sets  # As per your request
+
+        # Dictionary to store the results in order
+        seed_to_result = {}
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            future_to_seed = {executor.submit(create_candidate, s): s for s in seeds}
+            for future in as_completed(future_to_seed):
+                seed = future_to_seed[future]
+                try:
+                    seed_result, predictor_demos = future.result()
+                    seed_to_result[seed] = predictor_demos
+                except Exception as e:
+                    print(f"Error creating candidate set for seed {seed}: {e}")
+                    # Handle exceptions as needed
+
+        # After all threads have completed, collect the results in order
+        for seed in sorted(seed_to_result.keys()):
+            predictor_demos = seed_to_result[seed]
+            for i in demo_candidates:
+                demo_candidates[i].append(predictor_demos[i])
+
+    else:
+        # Sequential execution
+        for seed in seeds:
+            seed_result, predictor_demos = create_candidate(seed)
+            # Append the demos to demo_candidates
+            for i in demo_candidates:
+                demo_candidates[i].append(predictor_demos[i])
 
     return demo_candidates
 
