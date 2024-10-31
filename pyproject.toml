@@ -43,7 +43,8 @@ dependencies = [
     "magicattr~=0.1.6",
     "litellm",
     "diskcache",
-    "json-repair"
+    "json-repair",
+    "tenacity>=8.2.3",
 ]
 
 [project.optional-dependencies]
