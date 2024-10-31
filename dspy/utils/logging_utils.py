@@ -1,8 +1,10 @@
 import logging
+import logging.config
 import sys
 
 LOGGING_LINE_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 LOGGING_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
+
 
 class DSPyLoggingStream:
     """
@@ -31,7 +33,9 @@ class DSPyLoggingStream:
     def enabled(self, value):
         self._enabled = value
 
+
 DSPY_LOGGING_STREAM = DSPyLoggingStream()
+
 
 def disable_logging():
     """
@@ -48,6 +52,7 @@ def enable_logging():
     reverses the effects of `disable_logging()`.
     """
     DSPY_LOGGING_STREAM.enabled = True
+
 
 def configure_dspy_loggers(root_module_name):
     logging.config.dictConfig(
