@@ -75,3 +75,37 @@ Ensemble = dspy.teleprompt.Ensemble
 def inspect_history(*args, **kwargs):
     from dspy.clients.lm import GLOBAL_HISTORY, _inspect_history
     return _inspect_history(GLOBAL_HISTORY, *args, **kwargs)
+
+
+
+from typing import Optional
+import logging
+from .embeddings import LiteEmbedder, EmbeddingConfig
+
+logger = logging.getLogger(__name__)
+
+class DSPy:
+    """Main DSPy interface class."""
+    
+    def __init__(self):
+        self._embedder = None
+        
+    @staticmethod
+    def LiteEmbedder(
+        model: str,
+        api_key: str,
+        dimensions: Optional[int] = None,
+        config: Optional[EmbeddingConfig] = None,
+        **kwargs
+    ) -> LiteEmbedder:
+        """Create a LiteEmbedder instance."""
+        return LiteEmbedder(
+            model=model,
+            api_key=api_key,
+            dimensions=dimensions,
+            config=config,
+            **kwargs
+        )
+
+# Create global instance
+dspy = DSPy()
