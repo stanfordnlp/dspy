@@ -1,5 +1,5 @@
 import pydantic
-
+from dspy.adapters.image_utils import encode_image
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
@@ -55,6 +55,10 @@ class Image(str):
 
     def __repr__(self):
         return f"Image({super().__repr__()})"
+    
+    @classmethod
+    def from_url(cls, url: str, download_images: bool = False):
+        return cls(encode_image(url, download_images))
 
 
 class OldField:
