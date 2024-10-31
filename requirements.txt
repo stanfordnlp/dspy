@@ -17,3 +17,4 @@ tenacity>=8.2.3
 tqdm
 ujson
 torch
+scipy
