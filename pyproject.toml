@@ -43,7 +43,8 @@ dependencies = [
     "magicattr~=0.1.6",
     "litellm",
     "diskcache",
-    "json-repair"
+    "json-repair",
+    "tenacity>=8.2.3",
 ]
 
 [project.optional-dependencies]
@@ -137,6 +138,7 @@ magicattr = "^0.1.6"
 litellm = "1.49.1"
 diskcache = "^5.6.0"
 json-repair = "^0.30.0"
+tenacity = ">=8.2.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"

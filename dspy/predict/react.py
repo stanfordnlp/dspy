@@ -12,7 +12,7 @@ class Tool:
         annotations_func = func if inspect.isfunction(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, '__name__', type(func).__name__)
-        self.desc = desc or getattr(func, '__doc__', None) or getattr(annotations_func, '__doc__', "No description")
+        self.desc = desc or getattr(func, '__doc__', None) or getattr(annotations_func, '__doc__', "")
         self.args = {
             k: v.schema() if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel)
             else get_annotation_name(v)
@@ -47,13 +47,13 @@ class ReAct(Module):
 
         finish_desc = f"Signals that the final outputs, i.e. {outputs_}, are now available and marks the task as complete."
         finish_args = {} #k: v.annotation for k, v in signature.output_fields.items()}
-        tools["finish"] = Tool(func=lambda **kwargs: kwargs, name="finish", desc=finish_desc, args=finish_args)
+        tools["finish"] = Tool(func=lambda **kwargs: "Completed.", name="finish", desc=finish_desc, args=finish_args)
 
         for idx, tool in enumerate(tools.values()):
-            desc = tool.desc.replace("\n", "  ")
             args = tool.args if hasattr(tool, 'args') else str({tool.input_variable: str})
-            desc = f"whose description is <desc>{desc}</desc>. It takes arguments {args} in JSON format."
-            instr.append(f"({idx+1}) {tool.name}, {desc}")
+            desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace('\n', "  ")
+            desc += f" It takes arguments {args} in JSON format."
+            instr.append(f"({idx+1}) {tool.name}{desc}")
 
         signature_ = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
@@ -77,10 +77,8 @@ class ReAct(Module):
 
         def format(trajectory_: dict[str, Any], last_iteration: bool):
             adapter = dspy.settings.adapter or dspy.ChatAdapter()
-            blob = adapter.format_fields(dspy.Signature(f"{', '.join(trajectory_.keys())} -> x"), trajectory_)
-            warning = f"\n\nWarning: The maximum number of iterations ({self.max_iters}) has been reached."
-            warning += " You must now produce the finish action."
-            return blob + (warning if last_iteration else "")
+            signature_ = dspy.Signature(f"{', '.join(trajectory_.keys())} -> x")
+            return adapter.format_fields(signature_, trajectory_, role='user')
 
         for idx in range(self.max_iters):
             pred = self.react(**input_args, trajectory=format(trajectory, last_iteration=(idx == self.max_iters-1)))
