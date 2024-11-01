@@ -158,10 +158,13 @@ Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as wel
     ```python
     sglang_port = 7501
     sglang_url = f"http://localhost:{sglang_port}/v1"
-    sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url)
+
+    # To avoid potential errors from LiteLLM when querying the SGLang endpoint, you may need to set api_key = ""
+
+    sglang_llama = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, api_key = "")
 
     # You could also use text mode, in which the prompts are *not* formatted as messages.
-    sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
+    sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text', api_key = "")
     ```
 
     For further details on customizing the SGLang configuration, please refer to the [SGLang documentation](https://sgl-project.github.io/backend/backend.html#additional-server-arguments).
