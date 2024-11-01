@@ -1,4 +1,5 @@
 import functools
+from .base_lm import BaseLM
 import logging
 import os
 import uuid
@@ -26,8 +27,7 @@ GLOBAL_HISTORY = []
 
 logger = logging.getLogger(__name__)
 
-
-class LM:
+class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
@@ -112,9 +112,6 @@ class LM:
         GLOBAL_HISTORY.append(entry)
 
         return outputs
-
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self.history, n)
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
@@ -226,37 +223,3 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         num_retries=num_retries,
         **kwargs,
     )
-
-
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-
-def _inspect_history(history, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
-        outputs = item["outputs"]
-        timestamp = item.get("timestamp", "Unknown time")
-
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
-
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg["content"].strip())
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
-
-    print("\n\n\n")

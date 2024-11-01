@@ -12,6 +12,8 @@ from dspy.signatures.signature import ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
 
 
+from dspy.adapters.image_utils import Image
+
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
@@ -47,7 +49,11 @@ class Predict(Module, Parameter):
             demo = demo.copy()
 
             for field in demo:
-                if isinstance(demo[field], BaseModel):
+                # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
+                # It does matter for images
+                if isinstance(demo[field], Image):
+                    demo[field] = demo[field].model_dump()
+                elif isinstance(demo[field], BaseModel):
                     demo[field] = demo[field].model_dump_json()
 
             state["demos"].append(demo)
@@ -56,7 +62,6 @@ class Predict(Module, Parameter):
         # `extended_signature` is a special field for `Predict`s like CoT.
         if hasattr(self, "extended_signature"):
             state["extended_signature"] = self.extended_signature.dump_state()
-
         return state
 
     def load_state(self, state, use_legacy_loading=False):
@@ -82,7 +87,16 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-
+        
+        # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
+        for demo in self.demos:
+            for field in demo:
+                if isinstance(demo[field], dict) and "url" in demo[field]:
+                    url = demo[field]["url"]
+                    if not isinstance(url, str):
+                        raise ValueError(f"Image URL must be a string, got {type(url)}")
+                    demo[field] = Image(url=url)
+                    
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
