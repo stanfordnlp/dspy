@@ -100,7 +100,7 @@ class LM:
             completion = async_litellm_text_completion
 
         response = await completion(
-            dict(model=self.model, messages=messages, **kwargs),
+            dict(model=self.model, messages=messages, num_retries=self.num_retries, **kwargs),
             cache=cache,
         )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
