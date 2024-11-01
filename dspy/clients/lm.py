@@ -113,7 +113,6 @@ class LM:
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
             completion = litellm_completion
         else:
@@ -211,17 +210,22 @@ class LM:
         return new_instance
 
 
-class RequestLRUCache(OrderedDict):
+class LMRequestLRUCache(OrderedDict):
     def __init__(self, maxsize: int):
         self.maxsize = maxsize
         super().__init__()
 
     def __setitem__(self, request: dict, value):
         key = self.cache_key(request)
+
         if key in self:
             self.move_to_end(key)
-        else:
-            super().__setitem__(key, value)
+            return
+
+        if len(self) == self.maxsize:
+            self.popitem(last=False)
+
+        super().__setitem__(key, value)
 
     def __getitem__(self, request: dict):
         key = self.cache_key(request)
@@ -231,14 +235,26 @@ class RequestLRUCache(OrderedDict):
         key = self.cache_key(request)
         return super().__contains__(key)
 
+    def get(self, request: dict, default=None):
+        key = self.cache_key(request)
+        return super().get(key, default)
+
+    def __delitem__(self, request: dict):
+        key = self.cache_key(request)
+        super().__delitem__(key)
+
+    def pop(self, request: dict, default=None):
+        key = self.cache_key(request)
+        return super().pop(key, default)
+
     @staticmethod
     def cache_key(request: dict) -> str:
         return hashlib.sha256(ujson.dumps(request, sort_keys=True).encode()).hexdigest()
 
 
-def get_request_cache(
-    default_cache=RequestLRUCache(maxsize=10_000_000),
-) -> RequestLRUCache:
+def request_cache(
+    default_cache=LMRequestLRUCache(maxsize=10_000_000),
+) -> LMRequestLRUCache:
     return dspy.settings.request_cache or default_cache
 
 
@@ -246,14 +262,14 @@ def litellm_completion(request: dict, cache=False):
     if not cache:
         return litellm.completion(**request, cache={"no-cache": True, "no-store": True})
 
-    if response := get_request_cache().get(request, None):
+    if response := request_cache().get(request, None):
         return response
 
     response = litellm.completion(
         **request,
         cache={"no-cache": False, "no-store": False},
     )
-    get_request_cache()[request] = response
+    request_cache()[request] = response
 
     return response
 
@@ -265,7 +281,7 @@ async def async_litellm_completion(request: dict, cache=False):
             cache={"no-cache": True, "no-store": True},
         )
 
-    if response := get_request_cache().get(request, None):
+    if response := request_cache().get(request, None):
         return response
 
     response = await litellm.acompletion(
@@ -273,7 +289,7 @@ async def async_litellm_completion(request: dict, cache=False):
         cache={"no-cache": False, "no-store": False},
     )
 
-    get_request_cache()[request] = response
+    request_cache()[request] = response
 
     return response
 
@@ -311,7 +327,7 @@ def litellm_text_completion(request: dict, cache=False):
 
     params = _prepare_litellm_text_completion_params(request.copy())
     response = litellm.text_completion(**params, cache=cache)
-    get_request_cache()[request] = response
+    request_cache()[request] = response
 
     return response
 
@@ -325,7 +341,7 @@ async def async_litellm_text_completion(request: dict, cache=False):
 
     params = _prepare_litellm_text_completion_params(request.copy())
     response = await litellm.atext_completion(**params, cache=cache)
-    get_request_cache()[request] = response
+    request_cache()[request] = response
 
     return response
 

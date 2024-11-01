@@ -31,15 +31,17 @@ class ReAct(Module):
         outputs_ = ", ".join([f"`{k}`" for k in self.output_fields.keys()])
 
         instr = []
-        
+
         if self.signature.instructions is not None:
             instr.append(f"{self.signature.instructions}\n")
-        
-        instr.extend([
-            f"You will be given {inputs_} and you will respond with {outputs_}.\n",
-            "To do this, you will interleave Thought, Action, and Observation steps.\n",
-            "Thought can reason about the current situation, and Action can be the following types:\n",
-        ])
+
+        instr.extend(
+            [
+                f"You will be given {inputs_} and you will respond with {outputs_}.\n",
+                "To do this, you will interleave Thought, Action, and Observation steps.\n",
+                "Thought can reason about the current situation, and Action can be the following types:\n",
+            ]
+        )
 
         self.tools["Finish"] = dspy.Example(
             name="Finish",
@@ -102,7 +104,9 @@ class ReAct(Module):
             if action_name == "Finish":
                 return action_val
 
-            result = self.tools[action_name](action_val)  #result must be a str, list, or tuple
+            result = self.tools[action_name](
+                action_val
+            )  # result must be a str, list, or tuple
             # Handle the case where 'passages' attribute is missing
             output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
 
@@ -118,13 +122,36 @@ class ReAct(Module):
         for hop in range(self.max_iters):
             # with dspy.settings.context(show_guidelines=(i <= 2)):
             output = self.react[hop](**args)
-            output[f'Action_{hop + 1}'] = output[f'Action_{hop + 1}'].split('\n')[0]
+            output[f"Action_{hop + 1}"] = output[f"Action_{hop + 1}"].split("\n")[0]
 
             if action_val := self.act(output, hop):
                 break
             args.update(output)
 
         observations = [args[key] for key in args if key.startswith("Observation")]
-        
+
         # assumes only 1 output field for now - TODO: handling for multiple output fields
-        return dspy.Prediction(observations=observations, **{list(self.output_fields.keys())[0]: action_val or ""})
+        return dspy.Prediction(
+            observations=observations,
+            **{list(self.output_fields.keys())[0]: action_val or ""},
+        )
+
+    async def aforward(self, **kwargs):
+        args = {key: kwargs[key] for key in self.input_fields.keys() if key in kwargs}
+
+        for hop in range(self.max_iters):
+            # with dspy.settings.context(show_guidelines=(i <= 2)):
+            output = await self.react[hop](**args)
+            output[f"Action_{hop + 1}"] = output[f"Action_{hop + 1}"].split("\n")[0]
+
+            if action_val := self.act(output, hop):
+                break
+            args.update(output)
+
+        observations = [args[key] for key in args if key.startswith("Observation")]
+
+        # assumes only 1 output field for now - TODO: handling for multiple output fields
+        return dspy.Prediction(
+            observations=observations,
+            **{list(self.output_fields.keys())[0]: action_val or ""},
+        )

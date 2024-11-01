@@ -30,18 +30,35 @@ class ChainOfThought(Module):
 
         # Add "rationale" field to the output signature.
         if isinstance(dspy.settings.lm, dspy.LM) or dspy.settings.experimental:
-            extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
+            extended_signature = signature.prepend(
+                "reasoning", rationale_type, type_=str
+            )
         else:
-            extended_signature = signature.prepend("rationale", rationale_type, type_=str)
-        
+            extended_signature = signature.prepend(
+                "rationale", rationale_type, type_=str
+            )
+
         self._predict = dspy.Predict(extended_signature, **config)
         self._predict.extended_signature = extended_signature
 
     def forward(self, **kwargs):
         assert self.activated in [True, False]
 
-        signature = kwargs.pop("new_signature", self._predict.extended_signature if self.activated else self.signature)
+        signature = kwargs.pop(
+            "new_signature",
+            self._predict.extended_signature if self.activated else self.signature,
+        )
         return self._predict(signature=signature, **kwargs)
+
+    async def aforward(self, **kwargs):
+        assert self.activated in [True, False]
+
+        signature = kwargs.pop(
+            "new_signature",
+            self._predict.extended_signature if self.activated else self.signature,
+        )
+        # Since _predict will be async, we can just call it
+        return await self._predict(signature=signature, **kwargs)
 
     @property
     def demos(self):

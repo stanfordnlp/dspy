@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 
+import pytest
+
 import dspy
-from dspy.utils.dummies import DSPDummyLM, dummy_rm
+from dspy.utils.dummies import DummyLM, dummy_rm
 
 
 def test_example_no_tools():
     # Create a simple dataset which the model will use with the Retrieve tool.
-    lm = DSPDummyLM(
+    lm = DummyLM(
         [
-            "Initial thoughts",  # Thought_1
-            "Finish[blue]",  # Action_1
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Finish[blue]",
+            },
         ]
     )
     dspy.settings.configure(lm=lm, rm=dummy_rm())
@@ -24,26 +28,42 @@ def test_example_no_tools():
     result = program(question=question)
     assert result.answer == "blue"
 
-    # For debugging
-    print("---")
-    for row in lm.history:
-        print(row["prompt"])
-        print("Response:", row["response"]["choices"][0]["text"])
-        print("---")
 
-    assert lm.get_convo(-1).endswith(
-        "Question: What is the color of the sky?\n" "Thought 1: Initial thoughts\n" "Action 1: Finish[blue]"
+@pytest.mark.asyncio
+async def test_async_example_no_tools():
+    lm = DummyLM(
+        [
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Finish[blue]",
+            },
+        ]
     )
+    dspy.settings.configure(lm=lm, rm=dummy_rm(), async_mode=True)
+
+    program = dspy.ReAct("question -> answer")
+
+    # Check default tools
+    assert isinstance(program.tools["Finish"], dspy.Example)
+
+    # Call the ReAct module on a particular input
+    question = "What is the color of the sky?"
+    result = await program(question=question)
+    assert result.answer == "blue"
 
 
 def test_example_search():
     # Createa a simple dataset which the model will use with the Retrieve tool.
-    lm = DSPDummyLM(
+    lm = DummyLM(
         [
-            "Initial thoughts",  # Thought_1
-            "Search[the color of the sky]",  # Thought_1
-            "More thoughts",  # Thought_2
-            "Finish[blue]",  # Action_2
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Search[the color of the sky]",
+            },
+            {
+                "Thought_2": "More thoughts",
+                "Action_2": "Finish[blue]",
+            },
         ]
     )
     rm = dummy_rm(
@@ -70,20 +90,44 @@ def test_example_search():
     result = program(question=question)
     assert result.answer == "blue"
 
-    # For debugging
-    print(lm.get_convo(-1))
 
-    assert lm.get_convo(-1).endswith(
-        "Question: What is the color of the sky?\n\n"
-        "Thought 1: Initial thoughts\n\n"
-        "Action 1: Search[the color of the sky]\n\n"
-        "Observation 1:\n"
-        "[1] «We all know the color of the sky is blue.»\n"
-        "[2] «Somethng about the sky colors»\n"
-        "[3] «This sentence is completely irellevant to answer the question.»\n\n"
-        "Thought 2: More thoughts\n\n"
-        "Action 2: Finish[blue]"
+@pytest.mark.asyncio
+async def test_async_example_search():
+    lm = DummyLM(
+        [
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Search[the color of the sky]",
+            },
+            {
+                "Thought_2": "More thoughts",
+                "Action_2": "Finish[blue]",
+            },
+        ]
     )
+    rm = dummy_rm(
+        [
+            "We all know the color of the sky is blue.",
+            "Somethng about the sky colors",
+            "This sentence is completely irellevant to answer the question.",
+            "Let's add some more sentences to act as summy passages.",
+            "Let's add some more sentences to act as summy passages.",
+            "Let's add some more sentences to act as summy passages.",
+        ]
+    )
+    dspy.settings.configure(lm=lm, rm=rm, async_mode=True)
+
+    program = dspy.ReAct("question -> answer")
+
+    # Check default tools
+    assert len(program.tools) == 2
+    assert isinstance(program.tools["Search"], dspy.Retrieve)
+    assert isinstance(program.tools["Finish"], dspy.Example)
+
+    # Call the ReAct module on a particular input
+    question = "What is the color of the sky?"
+    result = await program(question=question)
+    assert result.answer == "blue"
 
 
 class DummyTool1:
@@ -118,14 +162,20 @@ class DummyTool2:
 
 
 def test_custom_tools():
-    lm = DSPDummyLM(
+    lm = DummyLM(
         [
-            "Initial thoughts",
-            "Tool1[foo]",
-            "More thoughts",
-            "Tool2[bar]",
-            "Even more thoughts",
-            "Finish[baz]",
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Tool1[foo]",
+            },
+            {
+                "Thought_2": "More thoughts",
+                "Action_2": "Tool2[bar]",
+            },
+            {
+                "Thought_3": "Even more thoughts",
+                "Action_3": "Finish[baz]",
+            },
         ]
     )
     dspy.settings.configure(lm=lm)
@@ -141,14 +191,36 @@ def test_custom_tools():
     # each tool should be called only once
     assert tool1.num_calls == 1
     assert tool2.num_calls == 1
-    assert lm.get_convo(-1).endswith(
-        "Question: What is the color of the sky?\n\n"
-        "Thought 1: Initial thoughts\n\n"
-        "Action 1: Tool1[foo]\n\n"
-        "Observation 1: tool 1 output\n\n"
-        "Thought 2: More thoughts\n\n"
-        "Action 2: Tool2[bar]\n\n"
-        "Observation 2: tool 2 output\n\n"
-        "Thought 3: Even more thoughts\n\n"
-        "Action 3: Finish[baz]"
+
+
+@pytest.mark.asyncio
+async def test_async_custom_tools():
+    lm = DummyLM(
+        [
+            {
+                "Thought_1": "Initial thoughts",
+                "Action_1": "Tool1[foo]",
+            },
+            {
+                "Thought_2": "More thoughts",
+                "Action_2": "Tool2[bar]",
+            },
+            {
+                "Thought_3": "Even more thoughts",
+                "Action_3": "Finish[baz]",
+            },
+        ]
     )
+    dspy.settings.configure(lm=lm, async_mode=True)
+
+    tool1 = DummyTool1()
+    tool2 = DummyTool2()
+    program = dspy.ReAct("question -> answer", tools=[tool1, tool2])
+
+    question = "What is the color of the sky?"
+    result = await program(question=question)
+    assert result.answer == "baz"
+
+    # each tool should be called only once
+    assert tool1.num_calls == 1
+    assert tool2.num_calls == 1

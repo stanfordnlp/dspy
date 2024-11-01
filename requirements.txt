@@ -12,6 +12,5 @@ pydantic~=2.0
 regex
 requests
 structlog
-tenacity
 tqdm
 ujson

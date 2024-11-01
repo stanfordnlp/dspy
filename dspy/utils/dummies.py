@@ -7,15 +7,22 @@ import numpy as np
 
 from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
-from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
+from dspy.adapters.chat_adapter import (
+    FieldInfoWithName,
+    field_header_pattern,
+    format_fields,
+)
 from dspy.clients.lm import LM
+from dspy.primitives.program import handle_async
 from dspy.signatures.field import OutputField
 
 
 class DSPDummyLM(DSPLM):
     """Dummy language model for unit testing purposes subclassing DSP LM class."""
 
-    def __init__(self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False):
+    def __init__(
+        self, answers: Union[list[str], dict[str, str]], follow_examples: bool = False
+    ):
         """Initializes the dummy language model.
 
         Parameters:
@@ -45,13 +52,17 @@ class DSPDummyLM(DSPLM):
                     # We take the last answer, as the first one is just from
                     # the "Follow the following format" section.
                     answer = possible_answers[-1]
-                    print(f"DummyLM got found previous example for {prefix} with value {answer=}")
+                    print(
+                        f"DummyLM got found previous example for {prefix} with value {answer=}"
+                    )
                 else:
                     print(f"DummyLM couldn't find previous example for {prefix=}")
 
             if answer is None:
                 if isinstance(self.answers, dict):
-                    answer = next((v for k, v in self.answers.items() if k in prompt), None)
+                    answer = next(
+                        (v for k, v in self.answers.items() if k in prompt), None
+                    )
                 else:
                     if len(self.answers) > 0:
                         answer = self.answers[0]
@@ -95,7 +106,11 @@ class DSPDummyLM(DSPLM):
 
     def get_convo(self, index) -> str:
         """Get the prompt + anwer from the ith message."""
-        return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
+        return (
+            self.history[index]["prompt"]
+            + " "
+            + self.history[index]["response"]["choices"][0]["text"]
+        )
 
 
 class DummyLM(LM):
@@ -146,7 +161,11 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
+    def __init__(
+        self,
+        answers: Union[list[dict[str, str]], dict[str, dict[str, str]]],
+        follow_examples: bool = False,
+    ):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
@@ -167,10 +186,17 @@ class DummyLM(LM):
         # get the output from the last turn that has the output fields as headers
         final_input = messages[-1]["content"].split("\n\n")[0]
         for input, output in zip(reversed(messages[:-1]), reversed(messages)):
-            if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
+            if (
+                any(field in output["content"] for field in output_fields)
+                and final_input in input["content"]
+            ):
                 return output["content"]
 
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        """
+        It would be better to have .call and .acall and then __call__ delegates
+        """
+
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
             return format_fields(
                 fields_with_values={
@@ -190,19 +216,89 @@ class DummyLM(LM):
             elif isinstance(self.answers, dict):
                 outputs.append(
                     next(
-                        (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        (
+                            format_answer_fields(v)
+                            for k, v in self.answers.items()
+                            if k in messages[-1]["content"]
+                        ),
                         "No more responses",
                     )
                 )
             else:
-                outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
+                outputs.append(
+                    format_answer_fields(
+                        next(self.answers, {"answer": "No more responses"})
+                    )
+                )
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
-            entry = dict(**entry, outputs=outputs, usage=0)
-            entry = dict(**entry, cost=0)
-            self.history.append(entry)
+            self.history.append(
+                {
+                    "prompt": prompt,
+                    "messages": messages,
+                    "kwargs": kwargs,
+                    "outputs": outputs,
+                    "usage": 0,
+                    "cost": 0,
+                }
+            )
+
+        return outputs
+
+    @handle_async
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        import dspy
+
+        if dspy.settings.async_mode:
+            return self.acall(prompt, messages, **kwargs)
+
+        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+            return format_fields(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=OutputField()): value
+                    for field_name, value in field_names_and_values.items()
+                }
+            )
+
+        # Build the request.
+        outputs = []
+        for _ in range(kwargs.get("n", 1)):
+            messages = messages or [{"role": "user", "content": prompt}]
+            kwargs = {**self.kwargs, **kwargs}
+
+            if self.follow_examples:
+                outputs.append(self._use_example(messages))
+            elif isinstance(self.answers, dict):
+                outputs.append(
+                    next(
+                        (
+                            format_answer_fields(v)
+                            for k, v in self.answers.items()
+                            if k in messages[-1]["content"]
+                        ),
+                        "No more responses",
+                    )
+                )
+            else:
+                outputs.append(
+                    format_answer_fields(
+                        next(self.answers, {"answer": "No more responses"})
+                    )
+                )
+
+            # Logging, with removed api key & where `cost` is None on cache hit.
+            kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
+            self.history.append(
+                {
+                    "prompt": prompt,
+                    "messages": messages,
+                    "kwargs": kwargs,
+                    "outputs": outputs,
+                    "usage": 0,
+                    "cost": 0,
+                }
+            )
 
         return outputs
 
@@ -254,7 +350,9 @@ class DummyVectorizer:
     def __call__(self, texts: list[str]) -> np.ndarray:
         vecs = []
         for text in texts:
-            grams = [text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)]
+            grams = [
+                text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)
+            ]
             vec = [0] * self.max_length
             for gram in grams:
                 vec[self._hash(gram)] += 1
@@ -262,5 +360,7 @@ class DummyVectorizer:
 
         vecs = np.array(vecs, dtype=np.float32)
         vecs -= np.mean(vecs, axis=1, keepdims=True)
-        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10  # Added epsilon to avoid division by zero
+        vecs /= (
+            np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10
+        )  # Added epsilon to avoid division by zero
         return vecs

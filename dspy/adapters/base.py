@@ -36,7 +36,6 @@ class Adapter:
             dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
         )
 
-        # Get completions - this is the async part
         outputs = lm(**inputs, **lm_kwargs)
 
         # Parse outputs - parsing is sync operation
@@ -58,6 +57,19 @@ class Adapter:
         """
         if dspy.settings.async_mode:
             return self._async_call(
-                lm, lm_kwargs, signature, demos, inputs, _parse_values
+                lm,
+                lm_kwargs,
+                signature,
+                demos,
+                inputs,
+                _parse_values,
             )
-        return self._sync_call(lm, lm_kwargs, signature, demos, inputs, _parse_values)
+
+        return self._sync_call(
+            lm,
+            lm_kwargs,
+            signature,
+            demos,
+            inputs,
+            _parse_values,
+        )

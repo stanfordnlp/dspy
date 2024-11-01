@@ -3,8 +3,8 @@ import textwrap
 import pytest
 
 import dspy
-from dspy import Predict, Signature, TypedPredictor
-from dspy.utils.dummies import DSPDummyLM
+from dspy import Predict
+from dspy.utils.dummies import DSPDummyLM, DummyLM
 
 
 def test_call_method():
@@ -28,7 +28,7 @@ def test_call_method():
 @pytest.mark.asyncio
 async def test_async_call_method():
     predict = Predict("input -> output")
-    lm = DSPDummyLM(["test output"])
+    lm = DummyLM([{"output": "test output"}])
     dspy.settings.configure(lm=lm, async_mode=True)
     result = await predict(input="test input")
     assert result.output == "test output"

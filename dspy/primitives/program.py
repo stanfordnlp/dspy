@@ -52,20 +52,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
     @handle_async
     def __call__(self, *args, **kwargs):
         if dspy.settings.async_mode:
-            return self.forward_internal(*args, **kwargs)
-        # print("Calling sync, ", *args, **kwargs)
-        return self.forward(*args, **kwargs)
+            return self.aforward(*args, **kwargs)
 
-    async def forward_internal(self, *args, **kwargs):
-        """Internal method that handles async execution of forward"""
-        if hasattr(self, "forward"):
-            # Convert all calls within forward to their async versions
-            # with AsyncContext():
-            result = self.forward(*args, **kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            return result
-        raise NotImplementedError("No forward method defined for this module")
+        return self.forward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict

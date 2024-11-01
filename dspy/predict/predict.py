@@ -9,7 +9,6 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module, handle_async
 from dspy.signatures.signature import ensure_signature, signature_to_template
-import asyncio
 
 
 @lru_cache(maxsize=None)
@@ -126,7 +125,7 @@ class Predict(Module, Parameter):
         import dspy
 
         if dspy.settings.async_mode:
-            return self.forward_internal(**kwargs)
+            return self.aforward(**kwargs)
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
@@ -200,14 +199,15 @@ class Predict(Module, Parameter):
 
         return pred
 
-    # if AsyncContext.is_async():
-    #         return await v2_5_generate_async(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
-    #     else:
-    #         return v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
-    async def forward_internal(self, **kwargs):
+    async def aforward(self, **kwargs):
+        import dspy
+
         assert (
             not dsp.settings.compiling
         ), "It's no longer ever the case that .compiling is True"
+        assert (
+            dspy.settings.async_mode
+        ), "Async mode must be enabled to use async predict"
 
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
@@ -242,33 +242,10 @@ class Predict(Module, Parameter):
                 f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
             )
 
-        import dspy
-
-        if isinstance(lm, dspy.LM):
-            assert (
-                dspy.settings.async_mode
-            ), "Async mode must be enabled to use async predict"
-            completions = await v2_5_generate_async(
-                lm, config, signature, demos, kwargs, _parse_values=self._parse_values
-            )
-        else:
-            warn_once(
-                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
-                f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
-                " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
-                " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
-                " \t\tLearn more about the changes and how to migrate at\n"
-                " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb"
-            )
-
-            if dsp.settings.experimental:
-                completions = new_generate(
-                    lm, signature, dsp.Example(demos=demos, **kwargs), **config
-                )
-            else:
-                completions = old_generate(
-                    demos, signature, kwargs, config, self.lm, self.stage
-                )
+        assert isinstance(lm, dspy.LM), "Async mode is only supported for dspy.LM"
+        completions = await v2_5_generate_async(
+            lm, config, signature, demos, kwargs, _parse_values=self._parse_values
+        )
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -368,23 +345,26 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     return completions
 
 
-def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+def v2_5_generate(
+    *args,
+    _parse_values=True,
+    **kwargs,
+):
     import dspy
 
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
     return adapter(
-        lm,
-        lm_kwargs=lm_kwargs,
-        signature=signature,
-        demos=demos,
-        inputs=inputs,
+        *args,
+        **kwargs,
         _parse_values=_parse_values,
     )
 
 
 async def v2_5_generate_async(
-    lm, lm_kwargs, signature, demos, inputs, _parse_values=True
+    *args,
+    _parse_values=True,
+    **kwargs,
 ):
     """
     Async version of v2_5_generate that handles async LM calls.
@@ -394,18 +374,14 @@ async def v2_5_generate_async(
 
     adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-    # If the adapter has an async call method, use it
-    if hasattr(adapter, "_async_call"):
-        return await adapter._async_call(
-            lm,
-            lm_kwargs=lm_kwargs,
-            signature=signature,
-            demos=demos,
-            inputs=inputs,
-            _parse_values=_parse_values,
-        )
+    if not hasattr(adapter, "_async_call"):
+        raise NotImplementedError("No async adapter found")
 
-    raise NotImplementedError("No async adapter found")
+    return await adapter._async_call(
+        *args,
+        **kwargs,
+        _parse_values=_parse_values,
+    )
 
 
 # TODO: get some defaults during init from the context window?
