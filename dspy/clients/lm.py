@@ -35,7 +35,7 @@ class LM:
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text"] = "chat",
+        model_type: Literal["chat", "text", "vision"] = "chat",
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
@@ -50,7 +50,7 @@ class LM:
         Args:
             model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
                    supported by LiteLLM. For example, ``"openai/gpt-4o"``.
-            model_type: The type of the model, either ``"chat"`` or ``"text"``.
+            model_type: The type of the model, either ``"chat"``, ``"vision"`` or ``"text"``.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
@@ -87,6 +87,8 @@ class LM:
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
+        if self.model_type == "vision":
+            completion = cached_litellm_vision_completion if cache else litellm_vision_completion
         else:
             completion = cached_litellm_text_completion if cache else litellm_text_completion
 
@@ -227,6 +229,31 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         **kwargs,
     )
 
+@functools.lru_cache(maxsize=None)
+def cached_litellm_vision_completion(request, num_retries: int):
+    return litellm_vision_completion(
+        request,
+        num_retries=num_retries,
+        cache={"no-cache": False, "no-store": False},
+    )
+
+def litellm_vision_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
+    kwargs = ujson.loads(request)
+
+    # Extract the provider and model from the model string.
+    # TODO: Not all the models are in the format of "provider/model"
+    model = kwargs.pop("model").split("/", 1)
+    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
+
+    if not litellm.supports_vision(model):
+        raise Exception(f"The model '{model}' does not support vision.")
+
+    return litellm.completion(
+        num_retries=num_retries,
+        cache=cache,
+        model=model,
+        **kwargs,
+    )
 
 def _green(text: str, end: str = "\n"):
     return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
