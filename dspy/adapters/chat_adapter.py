@@ -3,7 +3,7 @@ from typing import Any, Union
 from dsp.adapters.base_template import Field
 from dspy.signatures.signature import Signature
 from .base import Adapter
-from .image_utils import encode_image, is_image
+from .image_utils import encode_image
 
 import ast
 import json
@@ -163,7 +163,7 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
 
     if assume_text:
         return string_value
-    elif (is_image(value) or isinstance(value, Image) or field_info.annotation == Image):
+    elif (isinstance(value, Image) or field_info.annotation == Image):
         return {"type": "image_url", "image_url": {"url": encode_image(value)}}
     else:
         return {"type": "text", "text": string_value}

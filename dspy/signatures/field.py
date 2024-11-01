@@ -57,8 +57,8 @@ class Image(str):
         return f"Image({super().__repr__()})"
     
     @classmethod
-    def from_url(cls, url: str, download_images: bool = False):
-        return cls(encode_image(url, download_images))
+    def from_url(cls, url: str, download: bool = False):
+        return cls(encode_image(url, download))
 
 
 class OldField:
