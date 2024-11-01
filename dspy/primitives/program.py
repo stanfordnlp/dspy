@@ -1,5 +1,3 @@
-from functools import wraps
-import asyncio
 
 import magicattr
 

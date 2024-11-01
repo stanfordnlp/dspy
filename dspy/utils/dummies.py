@@ -14,7 +14,6 @@ from dspy.adapters.chat_adapter import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
-from dspy.utils.callback import with_callbacks
 
 
 class DSPDummyLM(DSPLM):
