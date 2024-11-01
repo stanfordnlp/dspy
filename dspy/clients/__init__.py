@@ -1,5 +1,6 @@
 from .lm import LM
 from .base_lm import BaseLM
+from .embedding import Embedding
 import litellm
 import os
 from pathlib import Path

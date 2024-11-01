@@ -34,7 +34,7 @@ def test_litellm_embedding():
         mock_litellm.assert_called_once_with(model=model, input=inputs, caching=True)
 
         assert len(result) == len(inputs)
-        assert result == mock_embeddings
+        np.testing.assert_allclose(result, mock_embeddings)
 
 
 def test_callable_embedding():
@@ -54,7 +54,7 @@ def test_callable_embedding():
     embedding = Embedding(mock_embedding_fn)
     result = embedding(inputs)
 
-    assert result == expected_embeddings
+    np.testing.assert_allclose(result, expected_embeddings)
 
 
 def test_invalid_model_type():
