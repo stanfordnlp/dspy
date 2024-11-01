@@ -118,7 +118,7 @@ Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as wel
 
 #### Setting up SGLang
 
-1. **Install SGLang (adapted from SGLang [documentation](https://sglang.readthedocs.io/en/latest/install.html)):**
+1. **Install SGLang (adapted from SGLang [documentation](https://sgl-project.github.io/starts/install.html)):**
 
    ```bash
    pip install "sglang[all]"
@@ -164,7 +164,7 @@ Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as wel
     sglang_llama_text = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct", api_base=sglang_url, model_type='text')
     ```
 
-    For further details on customizing the SGLang configuration, please refer to the [SGLang documentation](https://sglang.readthedocs.io/en/latest/backend.html#additional-server-arguments).
+    For further details on customizing the SGLang configuration, please refer to the [SGLang documentation](https://sgl-project.github.io/backend/backend.html#additional-server-arguments).
 
 #
 Additionally, you can also host models locally through Ollama.
