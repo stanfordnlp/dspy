@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from collections import defaultdict
@@ -12,10 +13,11 @@ from dspy.clients.finetune import (
     save_data,
     validate_finetune_data,
 )
-from dspy.utils.logging import logger
 
 # Provider name
 PROVIDER_OPENAI = "openai"
+
+logger = logging.getLogger(__name__)
 
 
 def is_openai_model(model: str) -> bool:
