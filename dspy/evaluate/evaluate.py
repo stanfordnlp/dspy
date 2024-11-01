@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import signal
 import sys
 import threading
@@ -41,6 +42,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 
+
+logger = logging.getLogger(__name__)
 
 class Evaluate:
     def __init__(
@@ -102,7 +105,7 @@ class Evaluate:
 
             def interrupt_handler(sig, frame):
                 self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
+                logger.warning("Received SIGINT. Cancelling evaluation.")
                 default_handler(sig, frame)
 
             signal.signal(signal.SIGINT, interrupt_handler)
@@ -135,7 +138,7 @@ class Evaluate:
             pbar.close()
 
         if self.cancel_jobs.is_set():
-            dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
+            logger.warning("Evaluation was cancelled. The results may be incomplete.")
             raise KeyboardInterrupt
 
         return reordered_devset, ncorrect, ntotal
@@ -193,11 +196,11 @@ class Evaluate:
                     raise e
 
                 if self.provide_traceback:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}"
                     )
                 else:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
                     )
 
@@ -219,7 +222,7 @@ class Evaluate:
                 display_progress,
             )
 
-        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 

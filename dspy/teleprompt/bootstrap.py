@@ -1,11 +1,14 @@
-import dspy
-import tqdm
+import logging
 import random
 import threading
-
 from typing import Dict, Optional
-from .vanilla import LabeledFewShot
+
+import tqdm
+
+import dspy
+
 from .teleprompt import Teleprompter
+from .vanilla import LabeledFewShot
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -27,6 +30,8 @@ from .teleprompt import Teleprompter
 # This is important for "multi-use" modules.
 
 # TODO: Add baselines=[...]
+
+logger = logging.getLogger(__name__)
 
 class BootstrapFewShot(Teleprompter):
     def __init__(
@@ -207,7 +212,7 @@ class BootstrapFewShot(Teleprompter):
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
                 raise e
-            dspy.logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
+            logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
             for step in trace:
