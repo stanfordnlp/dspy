@@ -86,7 +86,6 @@ class ChatAdapter(Adapter):
                     )
 
         if fields.keys() != signature.output_fields.keys():
-            print("Expected", signature.output_fields.keys(), "but got", fields.keys(), "from", completion)
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
@@ -401,8 +400,5 @@ def prepare_instructions(signature: SignatureMeta):
     instructions = textwrap.dedent(signature.instructions)
     objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")
-
-    # import rich
-    # rich.print(parts)
 
     return "\n\n".join(parts).strip()

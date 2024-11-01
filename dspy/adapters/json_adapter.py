@@ -151,8 +151,6 @@ def format_input_list_field_value(value: List[Any]) -> str:
 def _serialize_for_json(value):
     if isinstance(value, pydantic.BaseModel):
         return value.model_dump()
-    # elif isinstance(value, Image):
-    #     raise NotImplementedError("Images are not yet supported in JSON mode.")
     elif isinstance(value, list):
         return [_serialize_for_json(item) for item in value]
     elif isinstance(value, dict):
