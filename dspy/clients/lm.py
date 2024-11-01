@@ -5,23 +5,14 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import ujson
-from litellm.caching import Cache
 
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
 from dspy.utils.callback import BaseCallback, with_callbacks
-
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
-litellm.telemetry = False
-
-if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 GLOBAL_HISTORY = []
 
