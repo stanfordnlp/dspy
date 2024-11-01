@@ -1,10 +1,12 @@
 import random
 from typing import Dict, List, Optional, Union
 
+from asyncer import asyncify
+
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import with_async_callbacks, with_callbacks
 
 
 def single_query_passage(passages):
@@ -39,9 +41,21 @@ class Retrieve(Parameter):
         for name, value in state.items():
             setattr(self, name, value)
 
-    @with_callbacks
     def __call__(self, *args, **kwargs):
+        import dspy
+
+        if dspy.settings.async_mode:
+            return self.__aforward(*args, **kwargs)
+
+        return self.__forward(*args, **kwargs)
+
+    @with_callbacks
+    def __forward(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    @with_async_callbacks
+    async def __aforward(self, *args, **kwargs):
+        return await asyncify(self.forward)(*args, **kwargs)
 
     def forward(
         self,
@@ -77,7 +91,10 @@ class Retrieve(Parameter):
             return Prediction(passages=passages)
         else:
             passages = dsp.retrieveEnsemblewithMetadata(
-                queries, k=k, by_prob=by_prob, **kwargs,
+                queries,
+                k=k,
+                by_prob=by_prob,
+                **kwargs,
             )
             if isinstance(passages[0], List):
                 pred_returns = []

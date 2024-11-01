@@ -1,3 +1,4 @@
+asyncer==0.0.8
 backoff
 datasets
 diskcache

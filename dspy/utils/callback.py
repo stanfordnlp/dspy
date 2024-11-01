@@ -5,6 +5,8 @@ import uuid
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, Optional
 
+from asyncer import asyncify
+
 import dspy
 
 ACTIVE_CALL_ID = ContextVar("active_call_id", default=None)
@@ -189,6 +191,63 @@ class BaseCallback:
             exception: If an exception is raised during the execution, it will be stored here.
         """
         pass
+
+
+def with_async_callbacks(fn):
+    @functools.wraps(fn)
+    async def wrapper(instance, *args, **kwargs):
+        # Combine global and local (per-instance) callbacks.
+        callbacks = dspy.settings.get("callbacks", []) + getattr(
+            instance, "callbacks", []
+        )
+
+        # If no callbacks are provided, just call the function
+        if not callbacks:
+            return await fn(instance, *args, **kwargs)
+
+        # Generate call ID as the unique identifier for the call, this is useful for instrumentation.
+        call_id = uuid.uuid4().hex
+
+        inputs = inspect.getcallargs(fn, instance, *args, **kwargs)
+        inputs.pop("self", None)  # Not logging self as input
+        inputs.pop("cls", None)  # Not logging cls as input
+
+        for callback in callbacks:
+            try:
+                await asyncify(_get_on_start_handler(callback, instance, fn))(
+                    call_id=call_id, instance=instance, inputs=inputs
+                )
+
+            except Exception as e:
+                logger.warning(f"Error when calling callback {callback}: {e}")
+
+        results = None
+        exception = None
+        try:
+            parent_call_id = ACTIVE_CALL_ID.get()
+            # Active ID must be set right before the function is called, not before calling the callbacks.
+            ACTIVE_CALL_ID.set(call_id)
+            results = await fn(instance, *args, **kwargs)
+            return results
+        except Exception as e:
+            exception = e
+            raise exception
+        finally:
+            # Execute the end handlers even if the function call raises an exception.
+            ACTIVE_CALL_ID.set(parent_call_id)
+            for callback in callbacks:
+                try:
+                    await asyncify(_get_on_end_handler(callback, instance, fn))(
+                        call_id=call_id,
+                        outputs=results,
+                        exception=exception,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}."
+                    )
+
+    return wrapper
 
 
 def with_callbacks(fn):

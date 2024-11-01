@@ -17,8 +17,7 @@ from dspy.clients.lm_finetune_utils import (
     execute_finetune_job,
     get_provider_finetune_job_class,
 )
-from dspy.primitives.program import handle_async
-from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.callback import BaseCallback, with_async_callbacks, with_callbacks
 from dspy.utils.logging import logger
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(
@@ -83,6 +82,15 @@ class LM:
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        if dspy.settings.async_mode:
+            return self.__acall(prompt, messages, **kwargs)
+        return self.__call(prompt, messages, **kwargs)
+
+    @with_async_callbacks
+    async def __acall(self, prompt=None, messages=None, **kwargs):
+        return await self.acall(prompt, messages, **kwargs)
+
     async def acall(self, prompt=None, messages=None, **kwargs):
         """Async completion method"""
         cache: bool = kwargs.pop("cache", self.cache)
@@ -123,18 +131,11 @@ class LM:
 
         return outputs
 
-    @handle_async
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        """
-        Main entry point that handles both sync and async calls.
-        Uses handle_async decorator to automatically switch between modes.
-        """
-        import dspy
+    def __call(self, prompt=None, messages=None, **kwargs):
+        return self.call(prompt, messages, **kwargs)
 
-        if dspy.settings.async_mode:
-            return self.acall(prompt, messages, **kwargs)
-
+    def call(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache: bool = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]

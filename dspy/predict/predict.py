@@ -7,9 +7,9 @@ from pydantic import BaseModel
 import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module, handle_async
+from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import with_async_callbacks, with_callbacks
 
 
 @lru_cache(maxsize=None)
@@ -121,15 +121,6 @@ class Predict(Module, Parameter):
             self.extended_signature = self.extended_signature.with_updated_fields(
                 last_key, prefix=prefix
             )
-
-    @handle_async
-    @with_callbacks
-    def __call__(self, **kwargs):
-        import dspy
-
-        if dspy.settings.async_mode:
-            return self.aforward(**kwargs)
-        return self.forward(**kwargs)
 
     def forward(self, **kwargs):
         assert (

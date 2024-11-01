@@ -13,7 +13,6 @@ from dspy.adapters.chat_adapter import (
     format_fields,
 )
 from dspy.clients.lm import LM
-from dspy.primitives.program import handle_async
 from dspy.signatures.field import OutputField
 from dspy.utils.callback import with_callbacks
 
@@ -194,66 +193,12 @@ class DummyLM(LM):
                 return output["content"]
 
     async def acall(self, prompt=None, messages=None, **kwargs):
+        return self.call(prompt, messages, **kwargs)
+
+    def call(self, prompt=None, messages=None, **kwargs):
         """
         It would be better to have .call and .acall and then __call__ delegates
         """
-
-        def format_answer_fields(field_names_and_values: Dict[str, Any]):
-            return format_fields(
-                fields_with_values={
-                    FieldInfoWithName(name=field_name, info=OutputField()): value
-                    for field_name, value in field_names_and_values.items()
-                }
-            )
-
-        # Build the request.
-        outputs = []
-        for _ in range(kwargs.get("n", 1)):
-            messages = messages or [{"role": "user", "content": prompt}]
-            kwargs = {**self.kwargs, **kwargs}
-
-            if self.follow_examples:
-                outputs.append(self._use_example(messages))
-            elif isinstance(self.answers, dict):
-                outputs.append(
-                    next(
-                        (
-                            format_answer_fields(v)
-                            for k, v in self.answers.items()
-                            if k in messages[-1]["content"]
-                        ),
-                        "No more responses",
-                    )
-                )
-            else:
-                outputs.append(
-                    format_answer_fields(
-                        next(self.answers, {"answer": "No more responses"})
-                    )
-                )
-
-            # Logging, with removed api key & where `cost` is None on cache hit.
-            kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            self.history.append(
-                {
-                    "prompt": prompt,
-                    "messages": messages,
-                    "kwargs": kwargs,
-                    "outputs": outputs,
-                    "usage": 0,
-                    "cost": 0,
-                }
-            )
-
-        return outputs
-
-    @with_callbacks
-    @handle_async
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        import dspy
-
-        if dspy.settings.async_mode:
-            return self.acall(prompt, messages, **kwargs)
 
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
             return format_fields(

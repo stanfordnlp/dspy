@@ -6,39 +6,11 @@ import magicattr
 import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
+from dspy.utils.callback import with_async_callbacks, with_callbacks
 
 
 class ProgramMeta(type):
     pass
-
-
-def handle_async(func):
-    """
-    Decorator that handles both sync and async calls transparently.
-    If the decorated function is called from an async context, runs async.
-    If called from a sync context, runs sync.
-    """
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # If we're not in an async context, run synchronously
-        if not asyncio.iscoroutinefunction(func):
-            return func(*args, **kwargs)
-
-        # Check if we're in an async context
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            # We're in an async context, return coroutine
-            return func(*args, **kwargs)
-        else:
-            # We're not in an async context, run in new loop
-            return asyncio.run(func(*args, **kwargs))
-
-    return wrapper
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
@@ -49,12 +21,19 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self.callbacks = callbacks or []
         self._compiled = False
 
-    @handle_async
     def __call__(self, *args, **kwargs):
         if dspy.settings.async_mode:
-            return self.aforward(*args, **kwargs)
+            return self.__aforward(*args, **kwargs)
 
+        return self.__forward(*args, **kwargs)
+
+    @with_callbacks
+    def __forward(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    @with_async_callbacks
+    async def __aforward(self, *args, **kwargs):
+        return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict

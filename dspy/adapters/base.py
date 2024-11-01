@@ -1,7 +1,6 @@
 import dspy
 
-from dspy.primitives.program import handle_async
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import with_async_callbacks, with_callbacks
 
 
 class Adapter:
@@ -15,6 +14,7 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
+    @with_async_callbacks
     async def _async_call(
         self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True
     ):
@@ -43,13 +43,13 @@ class Adapter:
             from .json_adapter import JsonAdapter
 
             if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(
+                return await JsonAdapter()(
                     lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values
                 )
             raise e
 
+    @with_callbacks
     def _sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
-        """Internal async implementation"""
         # Format inputs - formatting is sync operation
         inputs = self.format(signature, demos, inputs)
         inputs = (
@@ -78,12 +78,7 @@ class Adapter:
                 )
             raise e
 
-    @handle_async
     def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
-        """
-        Main entry point that handles both sync and async calls.
-        Uses handle_async decorator to automatically switch between modes.
-        """
         if dspy.settings.async_mode:
             return self._async_call(
                 lm,

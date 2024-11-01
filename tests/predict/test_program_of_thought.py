@@ -1,5 +1,3 @@
-import textwrap
-
 import dspy
 from dspy import ProgramOfThought, Signature
 from dspy.utils import DummyLM
@@ -26,7 +24,10 @@ def test_pot_code_generation():
 def test_pot_code_generation_with_error():
     lm = DummyLM(
         [
-            {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+0/0\n```"},
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nresult = 1+0/0\n```",
+            },
             {"reasoning": "Reason_B", "generated_code": "```python\nresult = 1+1\n```"},
             {"reasoning": "Reason_C", "answer": "2"},
         ]

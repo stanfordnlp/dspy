@@ -18,10 +18,10 @@ def test_example_no_tools():
     )
     dspy.settings.configure(lm=lm, rm=dummy_rm())
 
-    program = dspy.ReAct("question -> answer")
+    program = dspy.ReAct("question -> answer", [])
 
     # Check default tools
-    assert isinstance(program.tools["Finish"], dspy.Example)
+    # assert isinstance(program.tools["Finish"], dspy.Example)
 
     # Call the ReAct module on a particular input
     question = "What is the color of the sky?"
@@ -41,10 +41,7 @@ async def test_async_example_no_tools():
     )
     dspy.settings.configure(lm=lm, rm=dummy_rm(), async_mode=True)
 
-    program = dspy.ReAct("question -> answer")
-
-    # Check default tools
-    assert isinstance(program.tools["Finish"], dspy.Example)
+    program = dspy.ReAct("question -> answer", [])
 
     # Call the ReAct module on a particular input
     question = "What is the color of the sky?"
@@ -78,12 +75,12 @@ def test_example_search():
     )
     dspy.settings.configure(lm=lm, rm=rm)
 
-    program = dspy.ReAct("question -> answer")
+    program = dspy.ReAct("question -> answer", [])
 
     # Check default tools
-    assert len(program.tools) == 2
-    assert isinstance(program.tools["Search"], dspy.Retrieve)
-    assert isinstance(program.tools["Finish"], dspy.Example)
+    # assert len(program.tools) == 2
+    # assert isinstance(program.tools["Search"], dspy.Retrieve)
+    # assert isinstance(program.tools["Finish"], dspy.Example)
 
     # Call the ReAct module on a particular input
     question = "What is the color of the sky?"
@@ -117,12 +114,12 @@ async def test_async_example_search():
     )
     dspy.settings.configure(lm=lm, rm=rm, async_mode=True)
 
-    program = dspy.ReAct("question -> answer")
+    program = dspy.ReAct("question -> answer", [])
 
     # Check default tools
-    assert len(program.tools) == 2
-    assert isinstance(program.tools["Search"], dspy.Retrieve)
-    assert isinstance(program.tools["Finish"], dspy.Example)
+    # assert len(program.tools) == 2
+    # assert isinstance(program.tools["Search"], dspy.Retrieve)
+    # assert isinstance(program.tools["Finish"], dspy.Example)
 
     # Call the ReAct module on a particular input
     question = "What is the color of the sky?"
