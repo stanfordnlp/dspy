@@ -23,32 +23,7 @@ class FieldInfoWithName(NamedTuple):
 
 
 class JsonAdapter(Adapter):
-    async def _async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
-        inputs = self.format(signature, demos, inputs)
-        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-
-        try:
-            provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
-                outputs = await lm.acall(**inputs, **lm_kwargs, response_format={"type": "json_object"})
-            else:
-                outputs = await lm.acall(**inputs, **lm_kwargs)
-
-        except litellm.UnsupportedParamsError:
-            outputs = await lm.acall(**inputs, **lm_kwargs)
-
-        values = []
-
-        for output in outputs:
-            value = self.parse(signature, output, _parse_values=_parse_values)
-            assert set(value.keys()) == set(
-                signature.output_fields.keys()
-            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-            values.append(value)
-
-        return values
-
-    def _sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+    def __sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
@@ -61,6 +36,31 @@ class JsonAdapter(Adapter):
 
         except litellm.UnsupportedParamsError:
             outputs = lm(**inputs, **lm_kwargs)
+
+        values = []
+
+        for output in outputs:
+            value = self.parse(signature, output, _parse_values=_parse_values)
+            assert set(value.keys()) == set(
+                signature.output_fields.keys()
+            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
+            values.append(value)
+
+        return values
+
+    async def __async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+        inputs = self.format(signature, demos, inputs)
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+
+        try:
+            provider = lm.model.split("/", 1)[0] or "openai"
+            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+                outputs = await lm.acall(**inputs, **lm_kwargs, response_format={"type": "json_object"})
+            else:
+                outputs = await lm.acall(**inputs, **lm_kwargs)
+
+        except litellm.UnsupportedParamsError:
+            outputs = await lm.acall(**inputs, **lm_kwargs)
 
         values = []
 
@@ -91,14 +91,7 @@ class JsonAdapter(Adapter):
 
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
-            messages.append(
-                format_turn(
-                    signature,
-                    demo,
-                    role="assistant",
-                    incomplete=demo in incomplete_demos,
-                )
-            )
+            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         messages.append(format_turn(signature, inputs, role="user"))
 

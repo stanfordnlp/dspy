@@ -326,7 +326,7 @@ async def v2_5_generate_async(
     if not hasattr(adapter, "_async_call"):
         raise NotImplementedError("No async adapter found")
 
-    return await adapter._async_call(
+    return await adapter.__async_call(
         *args,
         **kwargs,
         _parse_values=_parse_values,
