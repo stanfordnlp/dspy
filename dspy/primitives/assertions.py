@@ -1,10 +1,12 @@
 import inspect
+import logging
 import uuid
 from typing import Any
 
 import dsp
 import dspy
 
+logger = logging.getLogger(__name__)
 #################### Assertion Helpers ####################
 
 
@@ -82,10 +84,10 @@ class Assert(Constraint):
             if self.result:
                 return True
             elif dspy.settings.bypass_assert:
-                dspy.logger.error(f"AssertionError: {self.msg}")
+                logger.error(f"AssertionError: {self.msg}")
                 return True
             else:
-                dspy.logger.error(f"AssertionError: {self.msg}")
+                logger.error(f"AssertionError: {self.msg}")
                 raise DSPyAssertionError(
                     id=self.id,
                     msg=self.msg,
@@ -105,10 +107,10 @@ class Suggest(Constraint):
             if self.result:
                 return True
             elif dspy.settings.bypass_suggest:
-                dspy.logger.info(f"SuggestionFailed: {self.msg}")
+                logger.info(f"SuggestionFailed: {self.msg}")
                 return True
             else:
-                dspy.logger.info(f"SuggestionFailed: {self.msg}")
+                logger.info(f"SuggestionFailed: {self.msg}")
                 raise DSPySuggestionError(
                     id=self.id,
                     msg=self.msg,
@@ -248,7 +250,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                 dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
 
                             if dspy.settings.backtrack_to is None:
-                                dspy.logger.error("Module not found in trace. If passing a DSPy Signature, please specify the intended module for the assertion (e.g., use `target_module = self.my_module(my_signature)` instead of `target_module =  my_signature`).")
+                                logger.error("Module not found in trace. If passing a DSPy Signature, please specify the intended module for the assertion (e.g., use `target_module = self.my_module(my_signature)` instead of `target_module =  my_signature`).")
 
                             # save unique feedback message for predictor
                             if error_msg not in dspy.settings.predictor_feedbacks.setdefault(
@@ -277,7 +279,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                             error_op.pop("_assert_traces", None)
 
                         else:
-                            dspy.logger.error(
+                            logger.error(
                                 "UNREACHABLE: No trace available, this should not happen. Is this run time?",
                             )
 
@@ -316,7 +318,7 @@ def assert_transform_module(
             "Module must have a forward method to have assertions handled.",
         )
     if getattr(module, "_forward", False):
-        dspy.logger.info(
+        logger.info(
             f"Module {module.__class__.__name__} already has a _forward method. Skipping...",
         )
         pass  # TODO warning: might be overwriting a previous _forward method
