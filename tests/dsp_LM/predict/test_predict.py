@@ -1,9 +1,6 @@
-import copy
 import textwrap
 
-import pydantic
 import pytest
-import ujson
 
 import dspy
 from dspy import Predict, Signature, TypedPredictor
@@ -26,6 +23,15 @@ def test_call_method():
         "Input: test input\n"
         "Output: test output"
     )
+
+
+@pytest.mark.asyncio
+async def test_async_call_method():
+    predict = Predict("input -> output")
+    lm = DSPDummyLM(["test output"])
+    dspy.settings.configure(lm=lm, async_mode=True)
+    result = await predict(input="test input")
+    assert result.output == "test output"
 
 
 def test_forward_method():

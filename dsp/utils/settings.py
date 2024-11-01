@@ -23,6 +23,7 @@ DEFAULT_CONFIG = dotdict(
     langchain_history=[],
     experimental=False,
     backoff_time=10,
+    async_mode=False,
 )
 
 
@@ -42,7 +43,9 @@ class Settings:
             cls._instance.main_tid = threading.get_ident()
             cls._instance.main_stack = []
             cls._instance.stack_by_thread = {}
-            cls._instance.stack_by_thread[threading.get_ident()] = cls._instance.main_stack
+            cls._instance.stack_by_thread[threading.get_ident()] = (
+                cls._instance.main_stack
+            )
 
             #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
             #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
