@@ -1,15 +1,11 @@
+import dspy
+import tqdm
 import random
 import threading
+
 from typing import Dict, Optional
-
-import tqdm
-
-import dsp
-import dspy
-from dspy.primitives import Example
-
-from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
+from .teleprompt import Teleprompter
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
@@ -94,7 +90,9 @@ class BootstrapFewShot(Teleprompter):
 
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
+
+        # NOTE: behavior change on Oct 28, 2024. Deep copy instead of reset copy for the student-as-teacher.
+        self.teacher = teacher.deepcopy() if teacher is not None else student.deepcopy()
 
         assert getattr(self.student, "_compiled", False) is False, "Student must be uncompiled."
 
@@ -141,23 +139,24 @@ class BootstrapFewShot(Teleprompter):
 
     def _bootstrap(self, *, max_bootstraps=None):
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
+        bootstrap_attempts = 0
 
         bootstrapped = {}
         self.name2traces = {name: [] for name in self.name2predictor}
 
-        for round_idx in range(self.max_rounds):
-            for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-                if len(bootstrapped) >= max_bootstraps:
+        for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
+            if len(bootstrapped) >= max_bootstraps: break
+
+            for round_idx in range(self.max_rounds):
+                bootstrap_attempts += 1
+
+                if self._bootstrap_one_example(example, round_idx):
+                    bootstrapped[example_idx] = True
                     break
 
-                if example_idx not in bootstrapped:
-                    success = self._bootstrap_one_example(example, round_idx)
-
-                    if success:
-                        bootstrapped[example_idx] = True
-
         print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
+            f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
         )
 
         # Unbootstrapped training examples
@@ -172,23 +171,23 @@ class BootstrapFewShot(Teleprompter):
         # score = evaluate(self.metric, display_table=False, display_progress=True)
 
     def _bootstrap_one_example(self, example, round_idx=0):
-        name2traces = self.name2traces
+        name2traces = {} #self.name2traces
         teacher = self.teacher  # .deepcopy()
         predictor_cache = {}
 
         try:
-            with dsp.settings.context(trace=[], **self.teacher_settings):
-                lm = dsp.settings.lm
+            with dspy.settings.context(trace=[], **self.teacher_settings):
+                lm = dspy.settings.lm
                 lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
                 new_settings = dict(lm=lm) if round_idx > 0 else {}
 
-                with dsp.settings.context(**new_settings):
+                with dspy.settings.context(**new_settings):
                     for name, predictor in teacher.named_predictors():
                         predictor_cache[name] = predictor.demos
                         predictor.demos = [x for x in predictor.demos if x != example]
 
                     prediction = teacher(**example.inputs())
-                    trace = dsp.settings.trace
+                    trace = dspy.settings.trace
 
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
@@ -213,7 +212,7 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = Example(augmented=True, **inputs, **outputs)
+                demo = dspy.Example(augmented=True, **inputs, **outputs)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
@@ -230,7 +229,18 @@ class BootstrapFewShot(Teleprompter):
                     #     f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
                     # ) from e
 
+                name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
+        
+            # Update the traces
+            for name, demos in name2traces.items():
+                from datasets.fingerprint import Hasher
+                # If there are multiple traces for the same predictor in the sample example,
+                # sample 50/50 from the first N-1 traces or the last trace.
+                if len(demos) > 1:
+                    rng = random.Random(Hasher.hash(tuple(demos)))
+                    demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
+                self.name2traces[name].extend(demos)
 
         return success
 

@@ -15,6 +15,7 @@ from dspy.adapters.chat_adapter import (
 from dspy.clients.lm import LM
 from dspy.primitives.program import handle_async
 from dspy.signatures.field import OutputField
+from dspy.utils.callback import with_callbacks
 
 
 class DSPDummyLM(DSPLM):
@@ -246,6 +247,7 @@ class DummyLM(LM):
 
         return outputs
 
+    @with_callbacks
     @handle_async
     def __call__(self, prompt=None, messages=None, **kwargs):
         import dspy

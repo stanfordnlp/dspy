@@ -1,12 +1,11 @@
 from functools import wraps
 import asyncio
-import inspect
+
+import magicattr
 
 import dspy
 from dspy.primitives.assertions import *
 from dspy.primitives.module import BaseModule
-
-import magicattr
 
 
 class ProgramMeta(type):
@@ -46,7 +45,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
 
-    def __init__(self):
+    def __init__(self, callbacks=None):
+        self.callbacks = callbacks or []
         self._compiled = False
 
     @handle_async

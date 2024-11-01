@@ -1,25 +1,25 @@
+from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
-from collections import OrderedDict
 from datetime import datetime
-import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+import hashlib
 import os
-
-from litellm.caching import Cache
-import litellm
 import ujson
 import uuid
 
+import litellm
+from litellm.caching import Cache
+
 import dspy
-from dspy.utils.logging import logger
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.lm_finetune_utils import (
-    get_provider_finetune_job_class,
     execute_finetune_job,
+    get_provider_finetune_job_class,
 )
 from dspy.primitives.program import handle_async
-
+from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.logging import logger
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(
     Path.home(), ".dspy_cache"
@@ -30,18 +30,42 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+GLOBAL_HISTORY = deque([], maxlen=10_000_000)
+
 
 class LM:
+    """
+    A language model supporting chat or text completion requests for use with DSPy modules.
+    """
+
     def __init__(
         self,
-        model,
-        model_type="chat",
-        temperature=0.0,
-        max_tokens=1000,
-        cache=True,
-        launch_kwargs=None,
+        model: str,
+        model_type: Literal["chat", "text"] = "chat",
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        cache: bool = True,
+        launch_kwargs: Optional[Dict[str, Any]] = None,
+        callbacks: Optional[List[BaseCallback]] = None,
+        num_retries: int = 3,
         **kwargs,
     ):
+        """
+        Create a new language model instance for use with DSPy modules and programs.
+
+        Args:
+            model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
+                   supported by LiteLLM. For example, ``"openai/gpt-4o"``.
+            model_type: The type of the model, either ``"chat"`` or ``"text"``.
+            temperature: The sampling temperature to use when generating responses.
+            max_tokens: The maximum number of tokens to generate per response.
+            cache: Whether to cache the model responses for reuse to improve performance
+                   and reduce costs.
+            callbacks: A list of callback functions to run before and after each request.
+            num_retries: The number of times to retry a request if it fails transiently due to
+                         network error, rate limiting, etc. Requests are retried with exponential
+                         backoff.
+        """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
@@ -49,6 +73,8 @@ class LM:
         self.launch_kwargs = launch_kwargs or {}
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self.callbacks = callbacks or []
+        self.num_retries = num_retries
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
@@ -79,25 +105,26 @@ class LM:
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        self.history.append(
-            {
-                "prompt": prompt,
-                "messages": messages,
-                "kwargs": kwargs,
-                "response": response,
-                "outputs": outputs,
-                "usage": dict(response["usage"]),
-                "cost": response.get("_hidden_params", {}).get("response_cost"),
-                "timestamp": datetime.now().isoformat(),
-                "uuid": str(uuid.uuid4()),
-                "model": self.model,
-                "model_type": self.model_type,
-            }
-        )
+        entry = {
+            "prompt": prompt,
+            "messages": messages,
+            "kwargs": kwargs,
+            "response": response,
+            "outputs": outputs,
+            "usage": dict(response["usage"]),
+            "cost": response.get("_hidden_params", {}).get("response_cost"),
+            "timestamp": datetime.now().isoformat(),
+            "uuid": str(uuid.uuid4()),
+            "model": self.model,
+            "model_type": self.model_type,
+        }
+        self.history.append(entry)
+        GLOBAL_HISTORY.append(entry)
 
         return outputs
 
     @handle_async
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         """
         Main entry point that handles both sync and async calls.
@@ -128,26 +155,26 @@ class LM:
         ]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
-        self.history.append(
-            {
-                "prompt": prompt,
-                "messages": messages,
-                "kwargs": kwargs,
-                "response": response,
-                "outputs": outputs,
-                "usage": dict(response["usage"]),
-                "cost": response.get("_hidden_params", {}).get("response_cost"),
-                "timestamp": datetime.now().isoformat(),
-                "uuid": str(uuid.uuid4()),
-                "model": self.model,
-                "model_type": self.model_type,
-            }
-        )
+        entry = {
+            "prompt": prompt,
+            "messages": messages,
+            "kwargs": kwargs,
+            "response": response,
+            "outputs": outputs,
+            "usage": dict(response["usage"]),
+            "cost": response.get("_hidden_params", {}).get("response_cost"),
+            "timestamp": datetime.now().isoformat(),
+            "uuid": str(uuid.uuid4()),
+            "model": self.model,
+            "model_type": self.model_type,
+        }
+        self.history.append(entry)
+        GLOBAL_HISTORY.append(entry)
 
         return outputs
 
     def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
+        _inspect_history(self.history, n)
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
@@ -354,10 +381,10 @@ def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
 
-def _inspect_history(lm, n: int = 1):
+def _inspect_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in lm.history[-n:]:
+    for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")

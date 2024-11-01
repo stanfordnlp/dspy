@@ -25,6 +25,7 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     async_mode=False,
     request_cache=None,
+    callbacks=[],
 )
 
 

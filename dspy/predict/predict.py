@@ -9,6 +9,7 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module, handle_async
 from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.utils.callback import with_callbacks
 
 
 @lru_cache(maxsize=None)
@@ -17,10 +18,11 @@ def warn_once(msg: str):
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, **config):
+    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
+        self.callbacks = callbacks or []
         self._parse_values = _parse_values
         self.reset()
 
@@ -121,6 +123,7 @@ class Predict(Module, Parameter):
             )
 
     @handle_async
+    @with_callbacks
     def __call__(self, **kwargs):
         import dspy
 
@@ -174,7 +177,8 @@ class Predict(Module, Parameter):
             )
         else:
             warn_once(
-                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated. ***\n"
+                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
+                "underperform, and are about to be deleted. ***\n"
                 f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
                 " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
                 " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
