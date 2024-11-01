@@ -9,8 +9,7 @@ from io import BytesIO
 import dspy
 from dspy import Predict
 from dspy.utils.dummies import DummyLM
-from dspy.adapters.image_utils import encode_image
-import re
+import tempfile
 
 @pytest.fixture
 def sample_pil_image():
@@ -219,3 +218,23 @@ def test_invalid_image_input(sample_url):
         class_labels=["dog", "cat", "bird"]
     )
     assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
+
+
+def test_predictor_save_load(sample_url, sample_pil_image):
+    signature = "image: dspy.Image -> caption: str"
+    examples = [
+        dspy.Example(image=dspy.Image.from_url(sample_url)),
+        dspy.Example(image=sample_pil_image)
+    ]
+    lm = DummyLM([{"caption": "A golden retriever"}])
+    dspy.settings.configure(lm=lm)
+    predictor = dspy.Predict(signature)
+    optimizer = dspy.teleprompt.LabeledFewShot()
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples[:1])
+    # Test dump state with save verbose = True and False
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+        compiled_predictor.save(temp_file.name)
+        loaded_predictor = dspy.Predict(signature)
+        loaded_predictor.load(temp_file.name)
+    
+    assert isinstance(loaded_predictor.demos[0]["image"], dspy.Image)

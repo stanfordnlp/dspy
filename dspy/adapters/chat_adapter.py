@@ -3,7 +3,7 @@ from typing import Any, Union
 from dsp.adapters.base_template import Field
 from dspy.signatures.signature import Signature
 from .base import Adapter
-from .image_utils import encode_image
+from .image_utils import encode_image, Image
 
 import ast
 import json
@@ -18,7 +18,7 @@ from pydantic.fields import FieldInfo
 from typing import Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
-from ..signatures.field import OutputField, Image
+from ..signatures.field import OutputField
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
 
@@ -164,7 +164,23 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
     if assume_text:
         return string_value
     elif (isinstance(value, Image) or field_info.annotation == Image):
-        return {"type": "image_url", "image_url": {"url": encode_image(value)}}
+        # This validation should happen somewhere else
+        # Safe to import PIL here because it's only imported when an image is actually being formatted
+        try:
+            import PIL
+        except ImportError:
+            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
+        image_value = value
+        if not isinstance(image_value, Image):
+            if isinstance(image_value, dict) and "url" in image_value:
+                image_value = image_value["url"]
+            elif isinstance(image_value, str):
+                image_value = encode_image(image_value)
+            elif isinstance(image_value, PIL.Image.Image):
+                image_value = encode_image(image_value)
+            assert isinstance(image_value, str)
+            image_value = Image(url=image_value)
+        return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
 

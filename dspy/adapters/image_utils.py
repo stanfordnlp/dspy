@@ -4,12 +4,45 @@ import os
 from typing import Union
 import requests
 from urllib.parse import urlparse
+import pydantic
 
 try:
-    from PIL import Image
+    from PIL import Image as PILImage
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
+
+class Image(pydantic.BaseModel):
+    url: str
+        
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, values):
+        # Allow the model to accept either a URL string or a dictionary with a single 'url' key
+        if isinstance(values, str):
+            # if a string, assume it’s the URL directly and wrap it in a dict
+            return {"url": values}
+        elif isinstance(values, dict) and set(values.keys()) == {"url"}:
+            # if it's a dict, ensure it has only the 'url' key
+            return values
+        elif isinstance(values, cls):
+            return values.model_dump()
+        else:
+            raise TypeError("Expected a string URL or a dictionary with a key 'url'.")
+
+    # If all my inits just call encode_image, should that be in this class
+    @classmethod
+    def from_url(cls, url: str, download: bool = False):
+        return cls(url=encode_image(url, download))
+    
+    @classmethod
+    def from_file(cls, file_path: str):
+        return cls(url=encode_image(file_path))
+    
+    @classmethod
+    def from_PIL(cls, pil_image):
+        import PIL
+        return cls(url=encode_image(PIL.Image.open(pil_image)))
 
 def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
@@ -19,7 +52,7 @@ def is_url(string: str) -> bool:
     except ValueError:
         return False
 
-def encode_image(image: Union[str, bytes, 'Image.Image'], download_images: bool = False) -> str:
+def encode_image(image: Union[str, bytes, 'PILImage.Image', dict], download_images: bool = False) -> str:
     """
     Encode an image to a base64 data URI.
 
@@ -33,7 +66,10 @@ def encode_image(image: Union[str, bytes, 'Image.Image'], download_images: bool 
     Raises:
         ValueError: If the image type is not supported.
     """
-    if isinstance(image, str):
+    if isinstance(image, dict) and "url" in image:
+        # NOTE: Not doing other validation for now
+        return image["url"]
+    elif isinstance(image, str):
         if image.startswith("data:image/"):
             # Already a data URI
             return image
@@ -50,7 +86,7 @@ def encode_image(image: Union[str, bytes, 'Image.Image'], download_images: bool 
         else:
             # Unsupported string format
             raise ValueError(f"Unsupported image string: {image}")
-    elif PIL_AVAILABLE and isinstance(image, Image.Image):
+    elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
     elif isinstance(image, bytes):
@@ -59,6 +95,8 @@ def encode_image(image: Union[str, bytes, 'Image.Image'], download_images: bool 
             raise ImportError("Pillow is required to process image bytes.")
         img = Image.open(io.BytesIO(image))
         return _encode_pil_image(img)
+    elif isinstance(image, Image):
+        return image.url
     else:
         raise ValueError(f"Unsupported image type: {type(image)}")
 
