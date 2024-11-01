@@ -62,7 +62,6 @@ class Predict(Module, Parameter):
         # `extended_signature` is a special field for `Predict`s like CoT.
         if hasattr(self, "extended_signature"):
             state["extended_signature"] = self.extended_signature.dump_state()
-        print("state in dump", state)
         return state
 
     def load_state(self, state, use_legacy_loading=False):
@@ -93,7 +92,6 @@ class Predict(Module, Parameter):
         for demo in self.demos:
             for field in demo:
                 if isinstance(demo[field], dict) and "url" in demo[field]:
-                    # Validate the URL before creating Image object
                     url = demo[field]["url"]
                     if not isinstance(url, str):
                         raise ValueError(f"Image URL must be a string, got {type(url)}")

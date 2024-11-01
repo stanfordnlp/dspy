@@ -302,11 +302,22 @@ def format_turn(signature, values, role, incomplete=False):
     # Collapse all consecutive text messages into a single message.
     collapsed_messages = []
     for item in flattened_list:
-        if item.get("type") == "image_url" or (collapsed_messages and collapsed_messages[-1].get("type") != "text"):
+        # First item is always added
+        if not collapsed_messages:
             collapsed_messages.append(item)
-        elif collapsed_messages and collapsed_messages[-1].get("type") == "text":
-            collapsed_messages[-1]["text"] += "\n" + item["text"]
+            continue
+        
+        # If current item is image, add to collapsed_messages
+        if item.get("type") == "image_url":
+            if collapsed_messages[-1].get("type") == "text":
+                collapsed_messages[-1]["text"] += "\n"
+            collapsed_messages.append(item)
+        # If previous item is text and current item is text, append to previous item
+        elif collapsed_messages[-1].get("type") == "text":
+            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
+        # If previous item is not text(aka image), add current item as a new item
         else:
+            item["text"] = "\n\n" + item["text"]
             collapsed_messages.append(item)
 
     return {"role": role, "content": collapsed_messages}
