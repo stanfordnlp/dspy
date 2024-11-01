@@ -1,4 +1,3 @@
-async-lru
 backoff
 datasets
 diskcache
