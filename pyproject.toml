@@ -150,6 +150,7 @@ black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
+pillow = "^10.1.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
