@@ -30,13 +30,9 @@ class ChainOfThought(Module):
 
         # Add "rationale" field to the output signature.
         if isinstance(dspy.settings.lm, dspy.LM) or dspy.settings.experimental:
-            extended_signature = signature.prepend(
-                "reasoning", rationale_type, type_=str
-            )
+            extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
         else:
-            extended_signature = signature.prepend(
-                "rationale", rationale_type, type_=str
-            )
+            extended_signature = signature.prepend("rationale", rationale_type, type_=str)
 
         self._predict = dspy.Predict(extended_signature, **config)
         self._predict.extended_signature = extended_signature

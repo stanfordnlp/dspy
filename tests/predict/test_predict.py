@@ -126,9 +126,11 @@ def test_typed_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
+
 def test_signature_fields_after_dump_and_load_state(tmp_path):
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
+
         sentence = dspy.InputField(desc="I am an innocent input!")
         sentiment = dspy.OutputField()
 
@@ -138,6 +140,7 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
 
     class CustomSignature2(dspy.Signature):
         """I am not a pure instruction."""
+
         sentence = dspy.InputField(desc="I am a malicious input!")
         sentiment = dspy.OutputField(desc="I am a malicious output!", prefix="I am a prefix!")
 

@@ -19,16 +19,11 @@ class Tool:
         annotations_func = func if inspect.isfunction(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, "__name__", type(func).__name__)
-        self.desc = (
-            desc
-            or getattr(func, "__doc__", None)
-            or getattr(annotations_func, "__doc__", "")
-        )
+        self.desc = desc or getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
         self.args = {
             k: (
                 v.schema()
-                if isinstance((origin := get_origin(v) or v), type)
-                and issubclass(origin, BaseModel)
+                if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel)
                 else get_annotation_name(v)
             )
             for k, v in (args or get_type_hints(annotations_func)).items()
@@ -48,10 +43,7 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        tools = [
-            t if isinstance(t, Tool) or hasattr(t, "input_variable") else Tool(t)
-            for t in tools
-        ]
+        tools = [t if isinstance(t, Tool) or hasattr(t, "input_variable") else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
         inputs_ = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
@@ -66,7 +58,9 @@ class ReAct(Module):
             ]
         )
 
-        finish_desc = f"Signals that the final outputs, i.e. {outputs_}, are now available and marks the task as complete."
+        finish_desc = (
+            f"Signals that the final outputs, i.e. {outputs_}, are now available and marks the task as complete."
+        )
         finish_args = {}  # k: v.annotation for k, v in signature.output_fields.items()}
         tools["finish"] = Tool(
             func=lambda **kwargs: "Completed.",
@@ -76,14 +70,8 @@ class ReAct(Module):
         )
 
         for idx, tool in enumerate(tools.values()):
-            args = (
-                tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
-            )
-            desc = (
-                f", whose description is <desc>{tool.desc}</desc>."
-                if tool.desc
-                else "."
-            ).replace("\n", "  ")
+            args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
+            desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
             instr.append(f"({idx+1}) {tool.name}{desc}")
 
@@ -91,15 +79,13 @@ class ReAct(Module):
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append(
-                "next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())]
-            )
+            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
 
-        fallback_signature = dspy.Signature(
-            {**signature.input_fields, **signature.output_fields}
-        ).append("trajectory", dspy.InputField(), type_=str)
+        fallback_signature = dspy.Signature({**signature.input_fields, **signature.output_fields}).append(
+            "trajectory", dspy.InputField(), type_=str
+        )
 
         self.tools = tools
         self.react = dspy.Predict(signature_)
@@ -116,9 +102,7 @@ class ReAct(Module):
         for idx in range(self.max_iters):
             pred = self.react(
                 **input_args,
-                trajectory=format(
-                    trajectory, last_iteration=(idx == self.max_iters - 1)
-                ),
+                trajectory=format(trajectory, last_iteration=(idx == self.max_iters - 1)),
             )
 
             trajectory[f"thought_{idx}"] = pred.next_thought
@@ -126,18 +110,14 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](
-                    **pred.next_tool_args
-                )
+                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract = self.extract(
-            **input_args, trajectory=format(trajectory, last_iteration=False)
-        )
+        extract = self.extract(**input_args, trajectory=format(trajectory, last_iteration=False))
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
@@ -151,9 +131,7 @@ class ReAct(Module):
         for idx in range(self.max_iters):
             pred = await self.react(
                 **input_args,
-                trajectory=format(
-                    trajectory, last_iteration=(idx == self.max_iters - 1)
-                ),
+                trajectory=format(trajectory, last_iteration=(idx == self.max_iters - 1)),
             )
 
             trajectory[f"thought_{idx}"] = pred.next_thought
@@ -161,16 +139,12 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = await self.tools[
-                    pred.next_tool_name
-                ](**pred.next_tool_args)
+                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract = await self.extract(
-            **input_args, trajectory=format(trajectory, last_iteration=False)
-        )
+        extract = await self.extract(**input_args, trajectory=format(trajectory, last_iteration=False))
         return dspy.Prediction(trajectory=trajectory, **extract)

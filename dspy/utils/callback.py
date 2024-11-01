@@ -197,9 +197,7 @@ def with_async_callbacks(fn):
     @functools.wraps(fn)
     async def wrapper(instance, *args, **kwargs):
         # Combine global and local (per-instance) callbacks.
-        callbacks = dspy.settings.get("callbacks", []) + getattr(
-            instance, "callbacks", []
-        )
+        callbacks = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
 
         # If no callbacks are provided, just call the function
         if not callbacks:
@@ -254,9 +252,7 @@ def with_callbacks(fn):
     @functools.wraps(fn)
     def wrapper(instance, *args, **kwargs):
         # Combine global and local (per-instance) callbacks.
-        callbacks = dspy.settings.get("callbacks", []) + getattr(
-            instance, "callbacks", []
-        )
+        callbacks = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
 
         # If no callbacks are provided, just call the function
         if not callbacks:
@@ -271,9 +267,7 @@ def with_callbacks(fn):
 
         for callback in callbacks:
             try:
-                _get_on_start_handler(callback, instance, fn)(
-                    call_id=call_id, instance=instance, inputs=inputs
-                )
+                _get_on_start_handler(callback, instance, fn)(call_id=call_id, instance=instance, inputs=inputs)
 
             except Exception as e:
                 logger.warning(f"Error when calling callback {callback}: {e}")
@@ -307,9 +301,7 @@ def with_callbacks(fn):
     return wrapper
 
 
-def _get_on_start_handler(
-    callback: BaseCallback, instance: Any, fn: Callable
-) -> Callable:
+def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
     if isinstance(instance, dspy.LM):
         return callback.on_lm_start
@@ -320,17 +312,13 @@ def _get_on_start_handler(
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_start
         else:
-            raise ValueError(
-                f"Unsupported adapter method for using callback: {fn.__name__}."
-            )
+            raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
 
     # We treat everything else as a module.
     return callback.on_module_start
 
 
-def _get_on_end_handler(
-    callback: BaseCallback, instance: Any, fn: Callable
-) -> Callable:
+def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
     if isinstance(instance, (dspy.LM)):
         return callback.on_lm_end
@@ -341,8 +329,6 @@ def _get_on_end_handler(
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_end
         else:
-            raise ValueError(
-                f"Unsupported adapter method for using callback: {fn.__name__}."
-            )
+            raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
     # We treat everything else as a module.
     return callback.on_module_end

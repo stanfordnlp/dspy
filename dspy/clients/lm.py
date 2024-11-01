@@ -20,9 +20,7 @@ from dspy.clients.lm_finetune_utils import (
 from dspy.utils.callback import BaseCallback, with_async_callbacks, with_callbacks
 from dspy.utils.logging import logger
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(
-    Path.home(), ".dspy_cache"
-)
+DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
 
@@ -106,10 +104,7 @@ class LM:
             dict(model=self.model, messages=messages, **kwargs),
             cache=cache,
         )
-        outputs = [
-            c.message.content if hasattr(c, "message") else c["text"]
-            for c in response["choices"]
-        ]
+        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
@@ -150,10 +145,7 @@ class LM:
             dict(model=self.model, messages=messages, **kwargs),
             cache=cache,
         )
-        outputs = [
-            c.message.content if hasattr(c, "message") else c["text"]
-            for c in response["choices"]
-        ]
+        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         entry = {
@@ -214,9 +206,7 @@ class LM:
         )
 
         executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(
-            execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune
-        )
+        executor.submit(execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune)
         executor.shutdown(wait=False)
 
         return finetune_job
@@ -333,9 +323,7 @@ def _prepare_litellm_text_completion_params(request: dict):
     api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = "\n\n".join(
-        [x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"]
-    )
+    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return {
         "model": f"text-completion-openai/{model}",

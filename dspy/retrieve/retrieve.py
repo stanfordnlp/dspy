@@ -76,11 +76,7 @@ class Retrieve(Parameter):
         # k = k if k is not None else self.k
         # passages = dsp.retrieveEnsemble(queries, k=k,**kwargs)
         # return Prediction(passages=passages)
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split("\n")[0].strip() for query in queries]
 
         # print(queries)
@@ -99,11 +95,7 @@ class Retrieve(Parameter):
             if isinstance(passages[0], List):
                 pred_returns = []
                 for query_passages in passages:
-                    passages_dict = {
-                        key: []
-                        for key in list(query_passages[0].keys())
-                        if key != "tracking_idx"
-                    }
+                    passages_dict = {key: [] for key in list(query_passages[0].keys()) if key != "tracking_idx"}
                     for psg in query_passages:
                         for key, value in psg.items():
                             if key == "tracking_idx":
@@ -124,7 +116,9 @@ class Retrieve(Parameter):
 class RetrieveThenRerank(Parameter):
     name = "Search"
     input_variable = "query"
-    desc = "takes a search query and returns one or more potentially relevant passages followed by reranking from a corpus"
+    desc = (
+        "takes a search query and returns one or more potentially relevant passages followed by reranking from a corpus"
+    )
 
     def __init__(self, k=3):
         self.stage = random.randbytes(8).hex()
@@ -152,11 +146,7 @@ class RetrieveThenRerank(Parameter):
         with_metadata: bool = False,
         **kwargs,
     ) -> Union[List[str], Prediction, List[Prediction]]:
-        queries = (
-            [query_or_queries]
-            if isinstance(query_or_queries, str)
-            else query_or_queries
-        )
+        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [query.strip().split("\n")[0].strip() for query in queries]
 
         # print(queries)

@@ -15,15 +15,11 @@ class Adapter:
         cls.parse = with_callbacks(cls.parse)
 
     @with_async_callbacks
-    async def _async_call(
-        self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True
-    ):
+    async def _async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         """Internal async implementation"""
         # Format inputs - formatting is sync operation
         inputs = self.format(signature, demos, inputs)
-        inputs = (
-            dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-        )
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         assert dspy.settings.async_mode, "Async mode is not enabled"
         outputs = await lm.acall(**inputs, **lm_kwargs)
@@ -43,18 +39,14 @@ class Adapter:
             from .json_adapter import JsonAdapter
 
             if _parse_values and not isinstance(self, JsonAdapter):
-                return await JsonAdapter()(
-                    lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values
-                )
+                return await JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
     @with_callbacks
     def _sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         # Format inputs - formatting is sync operation
         inputs = self.format(signature, demos, inputs)
-        inputs = (
-            dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-        )
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         outputs = lm(**inputs, **lm_kwargs)
 
@@ -73,9 +65,7 @@ class Adapter:
             from .json_adapter import JsonAdapter
 
             if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(
-                    lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values
-                )
+                return JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):

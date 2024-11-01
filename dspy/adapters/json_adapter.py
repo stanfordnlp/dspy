@@ -23,22 +23,14 @@ class FieldInfoWithName(NamedTuple):
 
 
 class JsonAdapter(Adapter):
-    async def _async_call(
-        self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True
-    ):
+    async def _async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
-        inputs = (
-            dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-        )
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(
-                model=lm.model, custom_llm_provider=provider
-            ):
-                outputs = await lm.acall(
-                    **inputs, **lm_kwargs, response_format={"type": "json_object"}
-                )
+            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+                outputs = await lm.acall(**inputs, **lm_kwargs, response_format={"type": "json_object"})
             else:
                 outputs = await lm.acall(**inputs, **lm_kwargs)
 
@@ -58,18 +50,12 @@ class JsonAdapter(Adapter):
 
     def _sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
-        inputs = (
-            dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-        )
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(
-                model=lm.model, custom_llm_provider=provider
-            ):
-                outputs = lm(
-                    **inputs, **lm_kwargs, response_format={"type": "json_object"}
-                )
+            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+                outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
             else:
                 outputs = lm(**inputs, **lm_kwargs)
 
@@ -91,15 +77,12 @@ class JsonAdapter(Adapter):
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
-        incomplete_demos = [
-            demo for demo in demos if not all(k in demo for k in signature.fields)
-        ]
+        incomplete_demos = [demo for demo in demos if not all(k in demo for k in signature.fields)]
         complete_demos = [demo for demo in demos if demo not in incomplete_demos]
         incomplete_demos = [
             demo
             for demo in incomplete_demos
-            if any(k in demo for k in signature.input_fields)
-            and any(k in demo for k in signature.output_fields)
+            if any(k in demo for k in signature.input_fields) and any(k in demo for k in signature.output_fields)
         ]
 
         demos = incomplete_demos + complete_demos
@@ -107,11 +90,7 @@ class JsonAdapter(Adapter):
         messages.append({"role": "system", "content": prepare_instructions(signature)})
 
         for demo in demos:
-            messages.append(
-                format_turn(
-                    signature, demo, role="user", incomplete=demo in incomplete_demos
-                )
-            )
+            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(
                 format_turn(
                     signature,
@@ -135,9 +114,7 @@ class JsonAdapter(Adapter):
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
         if fields.keys() != signature.output_fields.keys():
-            raise ValueError(
-                f"Expected {signature.output_fields.keys()} but got {fields.keys()}"
-            )
+            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
 
@@ -227,11 +204,7 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbere list for the LM.
         return format_input_list_field_value(value)
-    elif (
-        isinstance(value, pydantic.BaseModel)
-        or isinstance(value, dict)
-        or isinstance(value, list)
-    ):
+    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
         return json.dumps(_serialize_for_json(value))
     else:
         return str(value)
@@ -258,17 +231,13 @@ def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -
 
     output = []
     for field, field_value in fields_with_values.items():
-        formatted_field_value = _format_field_value(
-            field_info=field.info, value=field_value
-        )
+        formatted_field_value = _format_field_value(field_info=field.info, value=field_value)
         output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
 
     return "\n\n".join(output).strip()
 
 
-def format_turn(
-    signature: SignatureMeta, values: Dict[str, Any], role, incomplete=False
-) -> Dict[str, str]:
+def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomplete=False) -> Dict[str, str]:
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
@@ -289,9 +258,7 @@ def format_turn(
     if role == "user":
         fields: Dict[str, FieldInfo] = signature.input_fields
         if incomplete:
-            content.append(
-                "This is an example of the task, though some input or output fields are not supplied."
-            )
+            content.append("This is an example of the task, though some input or output fields are not supplied.")
     else:
         fields: Dict[str, FieldInfo] = signature.output_fields
 
@@ -323,9 +290,7 @@ def format_turn(
         # TODO: Consider if not incomplete:
         content.append(
             "Respond with a JSON object in the following order of fields: "
-            + ", then ".join(
-                f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items()
-            )
+            + ", then ".join(f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items())
             + "."
         )
 
@@ -350,11 +315,7 @@ def enumerate_fields(fields):
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
         parts[-1] += f" ({get_annotation_name(v.annotation)})"
-        parts[-1] += (
-            f": {v.json_schema_extra['desc']}"
-            if v.json_schema_extra["desc"] != f"${{{k}}}"
-            else ""
-        )
+        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
 
     return "\n".join(parts).strip()
 
@@ -362,12 +323,8 @@ def enumerate_fields(fields):
 def prepare_instructions(signature: SignatureMeta):
     parts = []
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
-    parts.append(
-        "Your output fields are:\n" + enumerate_fields(signature.output_fields)
-    )
-    parts.append(
-        "All interactions will be structured in the following way, with the appropriate values filled in."
-    )
+    parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
+    parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
     def field_metadata(field_name, field_info):
         type_ = field_info.annotation
@@ -393,21 +350,15 @@ def prepare_instructions(signature: SignatureMeta):
         return format_fields(
             role=role,
             fields_with_values={
-                FieldInfoWithName(name=field_name, info=field_info): field_metadata(
-                    field_name, field_info
-                )
+                FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
                 for field_name, field_info in fields.items()
             },
         )
 
     parts.append("Inputs will have the following structure:")
-    parts.append(
-        format_signature_fields_for_instructions("user", signature.input_fields)
-    )
+    parts.append(format_signature_fields_for_instructions("user", signature.input_fields))
     parts.append("Outputs will be a JSON object with the following fields.")
-    parts.append(
-        format_signature_fields_for_instructions("assistant", signature.output_fields)
-    )
+    parts.append(format_signature_fields_for_instructions("assistant", signature.output_fields))
     # parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
 
     instructions = textwrap.dedent(signature.instructions)

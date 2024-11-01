@@ -1,4 +1,3 @@
-
 import magicattr
 
 import dspy
@@ -36,11 +35,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def named_predictors(self):
         from dspy.predict.predict import Predict
 
-        return [
-            (name, param)
-            for name, param in self.named_parameters()
-            if isinstance(param, Predict)
-        ]
+        return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
     def predictors(self):
         return [param for _, param in self.named_predictors()]

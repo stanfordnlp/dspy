@@ -85,9 +85,7 @@ class Predict(Module, Parameter):
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
-            self.extended_signature = self.extended_signature.load_state(
-                state["extended_signature"]
-            )
+            self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
     def _load_state_legacy(self, state):
         """Legacy state loading for backwards compatibility.
@@ -110,21 +108,15 @@ class Predict(Module, Parameter):
         # Some special stuff for CoT.
         if "extended_signature_instructions" in state:
             instructions = state["extended_signature_instructions"]
-            self.extended_signature = self.extended_signature.with_instructions(
-                instructions
-            )
+            self.extended_signature = self.extended_signature.with_instructions(instructions)
 
         if "extended_signature_prefix" in state:
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.extended_signature.fields.keys()
-            self.extended_signature = self.extended_signature.with_updated_fields(
-                last_key, prefix=prefix
-            )
+            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
     def forward(self, **kwargs):
-        assert (
-            not dsp.settings.compiling
-        ), "It's no longer ever the case that .compiling is True"
+        assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
 
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
@@ -139,12 +131,7 @@ class Predict(Module, Parameter):
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
-        num_generations = (
-            config.get("n")
-            or lm.kwargs.get("n")
-            or lm.kwargs.get("num_generations")
-            or 1
-        )
+        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
@@ -155,16 +142,12 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            print(
-                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
-            )
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
 
         if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(
-                lm, config, signature, demos, kwargs, _parse_values=self._parse_values
-            )
+            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
                 "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
@@ -177,13 +160,9 @@ class Predict(Module, Parameter):
             )
 
             if dsp.settings.experimental:
-                completions = new_generate(
-                    lm, signature, dsp.Example(demos=demos, **kwargs), **config
-                )
+                completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
             else:
-                completions = old_generate(
-                    demos, signature, kwargs, config, self.lm, self.stage
-                )
+                completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -196,12 +175,8 @@ class Predict(Module, Parameter):
     async def aforward(self, **kwargs):
         import dspy
 
-        assert (
-            not dsp.settings.compiling
-        ), "It's no longer ever the case that .compiling is True"
-        assert (
-            dspy.settings.async_mode
-        ), "Async mode must be enabled to use async predict"
+        assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
+        assert dspy.settings.async_mode, "Async mode must be enabled to use async predict"
 
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
@@ -216,12 +191,7 @@ class Predict(Module, Parameter):
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
         temperature = lm.kwargs["temperature"] if temperature is None else temperature
-        num_generations = (
-            config.get("n")
-            or lm.kwargs.get("n")
-            or lm.kwargs.get("num_generations")
-            or 1
-        )
+        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
@@ -232,14 +202,10 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            print(
-                f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}."
-            )
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         assert isinstance(lm, dspy.LM), "Async mode is only supported for dspy.LM"
-        completions = await v2_5_generate_async(
-            lm, config, signature, demos, kwargs, _parse_values=self._parse_values
-        )
+        completions = await v2_5_generate_async(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -279,9 +245,7 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
         completions.append({})
         for field in template.fields:
             if field.output_variable not in kwargs.keys():
-                completions[-1][field.output_variable] = getattr(
-                    c, field.output_variable
-                )
+                completions[-1][field.output_variable] = getattr(c, field.output_variable)
 
     return completions
 
@@ -295,16 +259,12 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     completions = lm(prompt, **kwargs)
     completions = [template.extract(example, p) for p in completions]
 
-    assert all(
-        set(signature.input_fields).issubset(set(c.keys())) for c in completions
-    ), "Missing input keys."
+    assert all(set(signature.input_fields).issubset(set(c.keys())) for c in completions), "Missing input keys."
 
     # Find the completions that are most complete.
     field_names = [field.input_variable for field in template.fields]
     for field_idx, key in enumerate(field_names):
-        completions_ = [
-            c for c in completions if key in c.keys() and c[key] is not None
-        ]
+        completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
         completions = completions_ or completions
         if len(completions_) == 0:
             break
@@ -326,15 +286,10 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
         }
 
         assert max_depth > 0
-        return new_generate(
-            lm, signature, completion, max_depth=max_depth - 1, **new_kwargs
-        )
+        return new_generate(lm, signature, completion, max_depth=max_depth - 1, **new_kwargs)
 
     # Keep only output fields.
-    completions = [
-        {k: v for k, v in c.items() if k in signature.output_fields}
-        for c in completions
-    ]
+    completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
 
     return completions
 
