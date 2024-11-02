@@ -88,7 +88,10 @@ class LM:
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
         if self.model_type == "vision":
-            completion = cached_litellm_vision_completion if cache else litellm_vision_completion
+            provider, model = get_model_provider(self.model)
+            if not litellm.supports_vision(model):
+                raise Exception(f"The model '{model}' does not support vision.")
+            completion = cached_litellm_completion if cache else litellm_completion
         else:
             completion = cached_litellm_text_completion if cache else litellm_text_completion
 
@@ -185,7 +188,6 @@ def cached_litellm_completion(request, num_retries: int):
         num_retries=num_retries,
     )
 
-
 def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(
@@ -193,7 +195,6 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
         cache=cache,
         **kwargs,
     )
-
 
 @functools.lru_cache(maxsize=None)
 def cached_litellm_text_completion(request, num_retries: int):
@@ -203,14 +204,10 @@ def cached_litellm_text_completion(request, num_retries: int):
         cache={"no-cache": False, "no-store": False},
     )
 
-
 def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
 
-    # Extract the provider and model from the model string.
-    # TODO: Not all the models are in the format of "provider/model"
-    model = kwargs.pop("model").split("/", 1)
-    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
+    provider, model = get_model_provider(kwargs.pop("model"))
 
     # Use the API key and base from the kwargs, or from the environment.
     api_key = kwargs.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
@@ -229,31 +226,12 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         **kwargs,
     )
 
-@functools.lru_cache(maxsize=None)
-def cached_litellm_vision_completion(request, num_retries: int):
-    return litellm_vision_completion(
-        request,
-        num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
-    )
-
-def litellm_vision_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-
+def get_model_provider(model_string) -> tuple:
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
-    model = kwargs.pop("model").split("/", 1)
+    model = model_string.split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
-
-    if not litellm.supports_vision(model):
-        raise Exception(f"The model '{model}' does not support vision.")
-
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
-        model=model,
-        **kwargs,
-    )
+    return provider, model
 
 def _green(text: str, end: str = "\n"):
     return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
