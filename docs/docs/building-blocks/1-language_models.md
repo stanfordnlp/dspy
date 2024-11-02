@@ -118,7 +118,7 @@ Any OpenAI-compatible endpoint is easy to set up with an `openai/` prefix as wel
 
 #### Setting up SGLang
 
-1. **Install SGLang (adapted from SGLang [documentation](https://sgl-project.github.io/starts/install.html)):**
+1. **Install SGLang (adapted from SGLang [documentation](https://sgl-project.github.io/start/install.html)):**
 
    ```bash
    pip install "sglang[all]"
