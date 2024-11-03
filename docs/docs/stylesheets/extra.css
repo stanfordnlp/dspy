@@ -1,0 +1,33 @@
+/* Custom styles for logo */
+.md-logo {
+    width: auto !important;
+    height: 1.5rem !important; /* Reduced from 1.8rem */
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.md-logo img {
+    width: auto !important;
+    height: 1.5rem !important; /* Reduced from 1.8rem */
+    object-fit: contain !important;
+}
+
+/* Adjust header to accommodate logo */
+.md-header__inner {
+    padding: 0.5rem !important;
+}
+
+/* Responsive adjustments */
+@media screen and (min-width: 76.25em) {
+    .md-logo {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+    .md-logo img {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+}
+
+/* Dark mode specific adjustments */
+[data-md-color-scheme="slate"] .md-logo img {
+    filter: brightness(0.9);
+}

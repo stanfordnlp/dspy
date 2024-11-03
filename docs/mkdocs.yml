@@ -1,4 +1,4 @@
-site_name: DSPy
+site_name: DSPy Documentation
 
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
@@ -81,12 +81,27 @@ nav:
       - Summarization: tutorials/summarization.md
       - Additional Resources: tutorials/other_tutorial.md
       - Examples: tutorials/examples.md
-  - Community:
+  - '' : '' 
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - "Community":
     - Community Resources: community/community-resources.md
     - Use Cases: community/use-cases.md
     - Roadmap: roadmap.md
     - Contributing: community/how-to-contribute.md
-  - FAQ:
+  - "FAQ":
     - FAQ: faqs.md
     - Cheatsheet: cheatsheet.md
 
@@ -126,6 +141,12 @@ theme:
     view: material/eye
   logo: static/img/dspy_logo.png
   favicon: static/img/logo.png
+
+
+extra_css:
+  - stylesheets/extra.css
+
+
 
 plugins:
   - social
@@ -240,6 +261,9 @@ plugins:
         'docs/faqs.md': 'faqs.md'
         'docs/cheatsheet.md': 'cheatsheet.md'
         'docs/dspy-usecases.md': 'dspy-usecases.md'
+
+
+  
 
 
 extra:

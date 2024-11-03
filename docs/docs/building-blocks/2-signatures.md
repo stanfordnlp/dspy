@@ -8,13 +8,11 @@ When we assign tasks to LMs in DSPy, we specify the behavior we need as a Signat
 
 **A signature is a declarative specification of input/output behavior of a DSPy module.** Signatures allow you to tell the LM _what_ it needs to do, rather than specify _how_ we should ask the LM to do it.
 
-
 You're probably familiar with function signatures, which specify the input and output arguments and their types. DSPy signatures are similar, but the differences are that:
 
 - While typical function signatures just _describe_ things, DSPy Signatures _define and control the behavior_ of modules.
 
 - The field names matter in DSPy Signatures. You express semantic roles in plain English: a `question` is different from an `answer`, a `sql_query` is different from `python_code`.
-
 
 ## Why should I use a DSPy Signature?
 
@@ -24,33 +22,39 @@ You're probably familiar with function signatures, which specify the input and o
 
 Writing signatures is far more modular, adaptive, and reproducible than hacking at prompts or finetunes. The DSPy compiler will figure out how to build a highly-optimized prompt for your LM (or finetune your small LM) for your signature, on your data, and within your pipeline. In many cases, we found that compiling leads to better prompts than humans write. Not because DSPy optimizers are more creative than humans, but simply because they can try more things and tune the metrics directly.
 
-
 ## **Inline** DSPy Signatures
 
-Signatures can be defined as a short string, with argument names that define semantic roles for inputs/outputs.
+Signatures can be defined as a short string, with argument names and types that define semantic roles for inputs/outputs.
 
-1. Question Answering: `"question -> answer"`
+1. Question Answering: `"question: str -> answer: str"`
 
-2. Sentiment Classification: `"sentence -> sentiment"`
+2. Sentiment Classification: `"sentence: str -> sentiment: Literal['positive', 'negative']"`
 
-3. Summarization: `"document -> summary"`
+3. Summarization: `"document: str -> summary: str"`
 
-Your signatures can also have multiple input/output fields.
+Your signatures can also have multiple input/output fields with types:
 
-4. Retrieval-Augmented Question Answering: `"context, question -> answer"`
+4. Retrieval-Augmented Question Answering: `"context: List[str], question: str -> answer: str"`
 
-5. Multiple-Choice Question Answering with Reasoning: `"question, choices -> reasoning, selection"`
-
+5. Multiple-Choice Question Answering with Reasoning: `"question: str, choices: List[str] -> reasoning: str, selection: int"`
 
 **Tip:** For fields, any valid variable names work! Field names should be semantically meaningful, but start simple and don't prematurely optimize keywords! Leave that kind of hacking to the DSPy compiler. For example, for summarization, it's probably fine to say `"document -> summary"`, `"text -> gist"`, or `"long_context -> tldr"`.
 
-
-### Example A: Sentiment Classification
+### Example A: Sentiment Classification (with Types)
 
 ```python
-sentence = "it's a charming and often affecting journey."  # example from the SST-2 dataset.
+from typing import Literal
 
-classify = dspy.Predict('sentence -> sentiment')
+class SentimentClassifier(dspy.Signature):
+    """Classify the sentiment of the given text."""
+    
+    sentence: str = dspy.InputField()
+    sentiment: Literal['Positive', 'Negative'] = dspy.OutputField()
+
+# Example from the SST-2 dataset
+sentence = "it's a charming and often affecting journey."
+
+classify = dspy.Predict(SentimentClassifier)
 classify(sentence=sentence).sentiment
 ```
 **Output:**
@@ -58,14 +62,22 @@ classify(sentence=sentence).sentiment
 'Positive'
 ```
 
-
-### Example B: Summarization
+### Example B: Summarization (with Types)
 
 ```python
-# Example from the XSum dataset.
+from typing import Dict, List
+
+class Summarizer(dspy.Signature):
+    """Generate a concise summary of the input document."""
+    
+    document: str = dspy.InputField()
+    keywords: List[str] = dspy.OutputField(desc="Key topics in the document")
+    summary: str = dspy.OutputField()
+
+# Example from the XSum dataset
 document = """The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."""
 
-summarize = dspy.ChainOfThought('document -> summary')
+summarize = dspy.ChainOfThought(Summarizer)
 response = summarize(document=document)
 
 print(response.summary)
@@ -74,7 +86,6 @@ print(response.summary)
 ```text
 The 21-year-old Lee made seven appearances and scored one goal for West Ham last season. He had loan spells in League One with Blackpool and Colchester United, scoring twice for the latter. He has now signed a contract with Barnsley, but the length of the contract has not been revealed.
 ```
-
 
 Many DSPy modules (except `dspy.Predict`) return auxiliary information by expanding your signature under the hood.
 
@@ -85,7 +96,7 @@ print("Rationale:", response.rationale)
 ```
 **Output:**
 ```text
-Rationale: produce the summary. We need to highlight the key points about Lee's performance for West Ham, his loan spells in League One, and his new contract with Barnsley. We also need to mention that his contract length has not been disclosed.
+Rationale: Let's analyze the key points and produce the summary. We need to highlight Lee's performance for West Ham, his loan spells in League One, and his new contract with Barnsley. We also need to mention that his contract length has not been disclosed.
 ```
 
 ## **Class-based** DSPy Signatures
@@ -98,19 +109,16 @@ For some advanced tasks, you need more verbose signatures. This is typically to:
 
 3. Supply constraints on an output field, expressed as a `desc` keyword argument for `dspy.OutputField`.
 
-
-### Example C: Classification
-
-Notice how the docstring contains (minimal) instructions, which in this case are necessary to have a fully-defined task.
-
-Some optimizers in DSPy, like `COPRO`, can take this simple docstring and then generate more effective variants if needed.
+### Example C: Classification with Types
 
 ```python
+from typing import Literal
+
 class Emotion(dspy.Signature):
     """Classify emotion among sadness, joy, love, anger, fear, surprise."""
     
-    sentence = dspy.InputField()
-    sentiment = dspy.OutputField()
+    sentence: str = dspy.InputField()
+    sentiment: Literal['sadness', 'joy', 'love', 'anger', 'fear', 'surprise'] = dspy.OutputField()
 
 sentence = "i started feeling a little vulnerable when the giant spotlight started blinding me"  # from dair-ai/emotion
 
@@ -126,16 +134,18 @@ Prediction(
 
 **Tip:** There's nothing wrong with specifying your requests to the LM more clearly. Class-based Signatures help you with that. However, don't prematurely tune the keywords of your signature by hand. The DSPy optimizers will likely do a better job (and will transfer better across LMs).
 
-
 ### Example D: A metric that evaluates faithfulness to citations
 
 ```python
+from typing import List, Dict, bool
+
 class CheckCitationFaithfulness(dspy.Signature):
     """Verify that the text is based on the provided context."""
 
-    context = dspy.InputField(desc="facts here are assumed to be true")
-    text = dspy.InputField()
-    faithfulness = dspy.OutputField(desc="True/False indicating if text is faithful to context")
+    context: str = dspy.InputField(desc="facts here are assumed to be true")
+    text: str = dspy.InputField()
+    faithfulness: bool = dspy.OutputField(desc="True/False indicating if text is faithful to context")
+    evidence: Dict[str, List[str]] = dspy.OutputField(desc="Supporting evidence for claims")
 
 context = "The 21-year-old made seven appearances for the Hammers and netted his only goal for them in a Europa League qualification round match against Andorran side FC Lustrains last season. Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. The length of Lee's contract with the promoted Tykes has not been revealed. Find all the latest football transfers on our dedicated page."
 
@@ -147,14 +157,14 @@ faithfulness(context=context, text=text)
 **Output:**
 ```text
 Prediction(
-    rationale="produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.",
-    faithfulness='False'
+    rationale="Let's check the claims against the context. The text states Lee scored 3 goals for Colchester United, but the context clearly states 'He scored twice for the U's'. This is a direct contradiction.",
+    faithfulness=False,
+    evidence={'goal_count': ['scored twice for the U's']}
 )
 ```
 
-
 ## Using signatures to build modules & compiling them
 
-While signatures are convenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
+While signatures with type annotations are convenient for prototyping with structured inputs/outputs, that's not the main reason to use them!
 
 You should compose multiple signatures into bigger [DSPy modules](/building-blocks/3-modules) and [compile these modules into optimized prompts](/building-blocks/6-optimizers#what-does-a-dspy-optimizer-tune-how-does-it-tune-them) and finetunes.
