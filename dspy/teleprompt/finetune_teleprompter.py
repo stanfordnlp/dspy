@@ -62,10 +62,10 @@ def convert_to_module_level_message_data(
     prompt_completion_data = []
     for data_dict in data:
         trace = data_dict["trace"]
-        trace_prompt_comletion_data = build_messages_from_trace(
+        trace_prompt_completion_data = build_messages_from_trace(
             trace=trace, exclude_demos=exclude_demos, try_to_record_lm_kwargs=try_to_record_lm_kwargs, program=program
         )
-        for prompt_completion_dict in trace_prompt_comletion_data:
+        for prompt_completion_dict in trace_prompt_completion_data:
             if keep_data_keys:
                 prompt_completion_dict = {**data_dict, **prompt_completion_dict}
             prompt_completion_data.append(prompt_completion_dict)

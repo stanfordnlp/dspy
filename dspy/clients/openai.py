@@ -33,7 +33,7 @@ def is_openai_model(model: str) -> bool:
     if model in valid_model_names:
         return True
 
-    # Check if the model is a fine-tuned OpneAI model. Fine-tuned OpenAI models
+    # Check if the model is a fine-tuned OpenAI model. Fine-tuned OpenAI models
     # have the prefix "ft:<BASE_MODEL_NAME>:", followed by a string specifying
     # the fine-tuned model. The following RegEx pattern is used to match the
     # base model name.

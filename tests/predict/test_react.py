@@ -5,7 +5,7 @@ from dspy.utils.dummies import DummyLM, dummy_rm
 
 
 # def test_example_no_tools():
-#     # Createa a simple dataset which the model will use with the Retrieve tool.
+#     # Create a simple dataset which the model will use with the Retrieve tool.
 #     lm = DummyLM(
 #         [
 #             {"Thought_1": "Initial thoughts", "Action_1": "Finish[blue]"},
@@ -25,7 +25,7 @@ from dspy.utils.dummies import DummyLM, dummy_rm
 
 
 # def test_example_search():
-#     # Createa a simple dataset which the model will use with the Retrieve tool.
+#     # Create a simple dataset which the model will use with the Retrieve tool.
 #     lm = DummyLM(
 #         [
 #             {"Thought_1": "Initial thoughts", "Action_1": "Search[the color of the sky]"},
@@ -35,7 +35,7 @@ from dspy.utils.dummies import DummyLM, dummy_rm
 #     rm = dummy_rm(
 #         [
 #             "We all know the color of the sky is blue.",
-#             "Somethng about the sky colors",
+#             "Something about the sky colors",
 #             "This sentence is completely irellevant to answer the question.",
 #             "Let's add some more sentences to act as summy passages.",
 #             "Let's add some more sentences to act as summy passages.",

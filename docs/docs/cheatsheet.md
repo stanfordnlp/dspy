@@ -230,7 +230,7 @@ def gsm8k_metric(gold, pred, trace=None) -> int:
 class FactJudge(dspy.Signature):
     """Judge if the answer is factually correct based on the context."""
 
-    context = dspy.InputField(desc="Context for the prediciton")
+    context = dspy.InputField(desc="Context for the prediction")
     question = dspy.InputField(desc="Question to be answered")
     answer = dspy.InputField(desc="Answer for the question")
     factually_correct = dspy.OutputField(desc="Is the answer factually correct based on the context?", prefix="Factual[Yes/No]:")
@@ -417,7 +417,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -446,7 +446,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 ### Signature Optimizer with Types
