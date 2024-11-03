@@ -10,14 +10,11 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
-
-
 from dspy.adapters.image_utils import Image
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
-
 
 class Predict(Module, Parameter):
     def __init__(self, signature, _parse_values=True, callbacks=None, **config):
@@ -71,10 +68,13 @@ class Predict(Module, Parameter):
             state (dict): The saved state of a `Predict` object.
             use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
                 saved state from a version of DSPy prior to v2.5.3.
+        Returns:
+            self: Returns self to allow method chaining
         """
         if use_legacy_loading:
             self._load_state_legacy(state)
-            return
+            return self
+            
         if "signature" not in state:
             # Check if the state is from a version of DSPy prior to v2.5.3.
             raise ValueError(
@@ -102,10 +102,14 @@ class Predict(Module, Parameter):
         if "extended_signature" in state:
             self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
+        return self
+
     def _load_state_legacy(self, state):
         """Legacy state loading for backwards compatibility.
 
         This method is used to load the saved state of a `Predict` object from a version of DSPy prior to v2.5.3.
+        Returns:
+            self: Returns self to allow method chaining
         """
         for name, value in state.items():
             setattr(self, name, value)
@@ -129,6 +133,21 @@ class Predict(Module, Parameter):
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
+
+        return self
+
+    def load(self, path, return_self=False):
+        """Load a saved state from a file.
+        
+        Args:
+            path (str): Path to the saved state file
+            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards compatibility.
+        
+        Returns:
+            Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
+        """
+        super().load(path)
+        return self if return_self else None
 
     @with_callbacks
     def __call__(self, **kwargs):
@@ -213,8 +232,6 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
         with dsp.settings.context(lm=lm, query_only=True):
             x, C = dsp.generate(template, **config)(x, stage=stage)
 
-    # assert stage in x, "The generated (input, output) example was not stored"
-
     completions = []
 
     for c in C:
@@ -278,7 +295,6 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     return adapter(
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
-
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
