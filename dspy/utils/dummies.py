@@ -95,7 +95,7 @@ class DSPDummyLM(DSPLM):
         return [choice["text"] for choice in choices]
 
     def get_convo(self, index) -> str:
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
@@ -209,7 +209,7 @@ class DummyLM(LM):
         return outputs
 
     def get_convo(self, index):
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["messages"], self.history[index]["outputs"]
 
 

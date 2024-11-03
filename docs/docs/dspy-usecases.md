@@ -58,27 +58,27 @@ WIP. This list mainly includes companies that have public posts or have OKed bei
 
 | **Name** | **Description/Link** |
 |---|---|
-| **Stanford CS 224U Homework** | [Github](https://github.com/cgpotts/cs224u/blob/main/hw_openqa.ipynb) |
-| **STORM Report Generation (10,000 GitHub stars)** | [Github](https://github.com/stanford-oval/storm) |
-| **DSPy Redteaming** | [Github](https://github.com/haizelabs/dspy-redteam) |
-| **DSPy Theory of Mind** |  [Github](https://github.com/plastic-labs/dspy-opentom) |
-| **Indic cross-lingual Natural Language Inference** |  [Github](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb) |
-| **Optimizing LM for Text2SQL using DSPy** | [Github](https://github.com/jjovalle99/DSPy-Text2SQL) |
+| **Stanford CS 224U Homework** | [GitHub](https://github.com/cgpotts/cs224u/blob/main/hw_openqa.ipynb) |
+| **STORM Report Generation (10,000 GitHub stars)** | [GitHub](https://github.com/stanford-oval/storm) |
+| **DSPy Redteaming** | [GitHub](https://github.com/haizelabs/dspy-redteam) |
+| **DSPy Theory of Mind** |  [GitHub](https://github.com/plastic-labs/dspy-opentom) |
+| **Indic cross-lingual Natural Language Inference** |  [GitHub](https://github.com/saifulhaq95/DSPy-Indic/blob/main/indicxlni.ipynb) |
+| **Optimizing LM for Text2SQL using DSPy** | [GitHub](https://github.com/jjovalle99/DSPy-Text2SQL) |
 | **DSPy PII Masking Demo by Eric Ness** | [Colab](https://colab.research.google.com/drive/1KZR1sGTp_RLWUJPAiK1FKPKI-Qn9neUm?usp=sharing) |
-| **DSPy on BIG-Bench Hard Example** |  [Github](https://drchrislevy.github.io/posts/dspy/dspy.html) |
-| **Building a chess playing agent using DSPy** |  [Github](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
-| **Ittia Research Fact Checking** | [Github](https://github.com/ittia-research/check) |
-| **Strategic Debate via Tree-of-Thought** | [Github](https://github.com/zbambergerNLP/strategic-debate-tot) |
-| **Sanskrit to English Translation App**| [Github](https://github.com/ganarajpr/sanskrit-translator-dspy) |
-| **DSPy for extracting features from PDFs on arXiv**| [Github](https://github.com/S1M0N38/dspy-arxiv) |
-| **DSPygen: DSPy in Ruby on Rails**| [Github](https://github.com/seanchatmangpt/dspygen) |
-| **DSPy Inspector**| [Github](https://github.com/Neoxelox/dspy-inspector) |
-| **DSPy with FastAPI**| [Github](https://github.com/diicellman/dspy-rag-fastapi) |
-| **DSPy for Indian Languages**| [Github](https://github.com/saifulhaq95/DSPy-Indic) |
-| **Hurricane: Blog Posts with Generative Feedback Loops!**| [Github](https://github.com/weaviate-tutorials/Hurricane) |
-| **RAG example using DSPy, Gradio, FastAPI, and Ollama**| [Github](https://github.com/diicellman/dspy-gradio-rag) |
-| **Synthetic Data Generation**| [Github](https://colab.research.google.com/drive/1CweVOu0qhTC0yOfW5QkLDRIKuAuWJKEr?usp=sharing) |
-| **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
+| **DSPy on BIG-Bench Hard Example** |  [GitHub](https://drchrislevy.github.io/posts/dspy/dspy.html) |
+| **Building a chess playing agent using DSPy** |  [GitHub](https://medium.com/thoughts-on-machine-learning/building-a-chess-playing-agent-using-dspy-9b87c868f71e) |
+| **Ittia Research Fact Checking** | [GitHub](https://github.com/ittia-research/check) |
+| **Strategic Debate via Tree-of-Thought** | [GitHub](https://github.com/zbambergerNLP/strategic-debate-tot) |
+| **Sanskrit to English Translation App**| [GitHub](https://github.com/ganarajpr/sanskrit-translator-dspy) |
+| **DSPy for extracting features from PDFs on arXiv**| [GitHub](https://github.com/S1M0N38/dspy-arxiv) |
+| **DSPygen: DSPy in Ruby on Rails**| [GitHub](https://github.com/seanchatmangpt/dspygen) |
+| **DSPy Inspector**| [GitHub](https://github.com/Neoxelox/dspy-inspector) |
+| **DSPy with FastAPI**| [GitHub](https://github.com/diicellman/dspy-rag-fastapi) |
+| **DSPy for Indian Languages**| [GitHub](https://github.com/saifulhaq95/DSPy-Indic) |
+| **Hurricane: Blog Posts with Generative Feedback Loops!**| [GitHub](https://github.com/weaviate-tutorials/Hurricane) |
+| **RAG example using DSPy, Gradio, FastAPI, and Ollama**| [GitHub](https://github.com/diicellman/dspy-gradio-rag) |
+| **Synthetic Data Generation**| [GitHub](https://colab.research.google.com/drive/1CweVOu0qhTC0yOfW5QkLDRIKuAuWJKEr?usp=sharing) |
+| **Self Discover**| [GitHub](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 
 TODO: This list in particular is highly incomplete. There are a couple dozen other good ones.
 
