@@ -1,5 +1,4 @@
 import pytest
-from dspy.utils.inspect_global_history import inspect_history
 from dspy.utils.dummies import DummyLM
 from dspy.clients.base_lm import GLOBAL_HISTORY
 import dspy
@@ -37,7 +36,7 @@ def test_inspect_history_with_n(capsys):
     predictor(query="Second")
     predictor(query="Third")
     
-    inspect_history(n=2)
+    dspy.inspect_history(n=2)
     # Test getting last 2 entries
     out, err = capsys.readouterr()
     assert not "First" in out
@@ -50,27 +49,10 @@ def test_inspect_empty_history(capsys):
     dspy.settings.configure(lm=lm)
     
     # Test inspecting empty history
-    inspect_history()
+    dspy.inspect_history()
     history = GLOBAL_HISTORY
     assert len(history) == 0
     assert isinstance(history, list)
-
-def test_inspect_history_with_invalid_n(capsys):
-    lm = DummyLM([{"response": "Test"}])
-    dspy.settings.configure(lm=lm)
-    
-    predictor = dspy.Predict("query: str -> response: str")
-    predictor(query="Test query")
-    
-    # Test with negative n
-    with pytest.raises(ValueError):
-        inspect_history(n=-1)
-    
-    # Test with n=0
-    with pytest.raises(ValueError):
-        inspect_history(n=0)
-    out, err = capsys.readouterr()
-    assert out.strip() == ""
 
 def test_inspect_history_n_larger_than_history(capsys):
     lm = DummyLM([{"response": "First"}, {"response": "Second"}])
@@ -81,6 +63,6 @@ def test_inspect_history_n_larger_than_history(capsys):
     predictor(query="Query 2")
     
     # Request more entries than exist
-    inspect_history(n=5)
+    dspy.inspect_history(n=5)
     history = GLOBAL_HISTORY
     assert len(history) == 2  # Should return all available entries

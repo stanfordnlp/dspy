@@ -28,19 +28,21 @@ def _green(text: str, end: str = "\n"):
 def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
+def _blue(text: str, end: str = "\n"):
+    return "\x1b[34m" + str(text) + "\x1b[0m" + end
 
-def _inspect_history(history, n: int = 1, skip: int = 0):
+
+def _inspect_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
-    if skip < 0:
-        raise ValueError("skip must be non-negative integers")
-    elif n <= 0:
-        raise ValueError("n must be a positive integer")
-    history_slice = history[-n-skip:-skip] if skip > 0 else history[-n:]
-    for item in reversed(history_slice):
+
+    for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
+        timestamp = item.get("timestamp", "Unknown time")
 
         print("\n\n\n")
+        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
+
         for msg in messages:
             print(_red(f"{msg['role'].capitalize()} message:"))
             if isinstance(msg["content"], str):
@@ -51,11 +53,13 @@ def _inspect_history(history, n: int = 1, skip: int = 0):
                         if c["type"] == "text":
                             print(c["text"].strip())
                         elif c["type"] == "image_url":
+                            image_str = ""
                             if "base64" in c["image_url"].get("url", ""):
                                 len_base64 = len(c["image_url"]["url"].split("base64,")[1])
-                                print(f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>")
+                                image_str = f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>"
                             else:
-                                print(f"<image_url: {c['image_url']['url']}>")
+                                image_str = f"<image_url: {c['image_url']['url']}>"
+                            print(_blue(image_str.strip()))
             print("\n")
 
         print(_red("Response:"))
@@ -66,3 +70,7 @@ def _inspect_history(history, n: int = 1, skip: int = 0):
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
+
+def inspect_history(*args, **kwargs):
+    """The global history shared across all LMs."""
+    return _inspect_history(GLOBAL_HISTORY, *args, **kwargs)

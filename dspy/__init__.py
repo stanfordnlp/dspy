@@ -12,7 +12,6 @@ from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
-from dspy.utils.inspect_global_history import inspect_history
 settings = dsp.settings
 
 configure_dspy_loggers(__name__)
