@@ -205,6 +205,7 @@ class DummyLM(LM):
             entry = dict(**entry, outputs=outputs, usage=0)
             entry = dict(**entry, cost=0)
             self.history.append(entry)
+            self.update_global_history(entry)
 
         return outputs
 

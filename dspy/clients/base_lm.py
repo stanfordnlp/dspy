@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+GLOBAL_HISTORY = []
 
 class BaseLM(ABC):
     def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
@@ -13,8 +14,11 @@ class BaseLM(ABC):
     def __call__(self, prompt=None, messages=None, **kwargs):
         pass
 
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self, n)
+    def inspect_history(self, n: int = 1, skip: int = 0):
+        _inspect_history(self.history, n, skip)
+
+    def update_global_history(self, entry):
+        GLOBAL_HISTORY.append(entry)
 
 
 def _green(text: str, end: str = "\n"):
@@ -25,10 +29,14 @@ def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
 
 
-def _inspect_history(lm, n: int = 1):
+def _inspect_history(history, n: int = 1, skip: int = 0):
     """Prints the last n prompts and their completions."""
-
-    for item in reversed(lm.history[-n:]):
+    if skip < 0:
+        raise ValueError("skip must be non-negative integers")
+    elif n <= 0:
+        raise ValueError("n must be a positive integer")
+    history_slice = history[-n-skip:-skip] if skip > 0 else history[-n:]
+    for item in reversed(history_slice):
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
 

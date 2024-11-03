@@ -23,8 +23,6 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
-GLOBAL_HISTORY = []
-
 logger = logging.getLogger(__name__)
 
 class LM(BaseLM):
@@ -109,7 +107,7 @@ class LM(BaseLM):
             model_type=self.model_type,
         )
         self.history.append(entry)
-        GLOBAL_HISTORY.append(entry)
+        self.update_global_history(entry)
 
         return outputs
 
