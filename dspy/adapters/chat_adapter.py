@@ -175,6 +175,27 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
 
     return "\n\n".join(output).strip()
 
+def format_image_fields(fields_with_values: Dict[str, FieldInfo]) -> List:
+    """
+    Formats the image field according to the vision litellm syntax. Creates an image object per field.
+
+    Args:
+      fields_with_values: A dictionary mapping information about a field to its corresponding
+                          value.
+    Returns:
+      List of image objects.
+    """
+    output = []
+    for field, field_value in fields_with_values.items():
+        formatted_field_value = _format_field_value(field_info=field.info, value=field_value)
+        output.append({
+            "type": "image_url",
+            "image_url": {
+                "url": str(formatted_field_value)
+            }
+        })
+
+    return output
 
 def parse_value(value, annotation):
     if annotation is str:
@@ -215,7 +236,8 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
     content = []
 
     if role == "user":
-        fields: Dict[str, FieldInfo] = signature.input_fields
+        fields: Dict[str, FieldInfo] = {k: v for k, v in signature.input_fields.items() if not v.json_schema_extra.get('is_image_url', False)}
+        image_fields: Dict[str, FieldInfo] = {k: v for k, v in signature.input_fields.items() if v.json_schema_extra.get('is_image_url', False)}
         if incomplete:
             content.append("This is an example of the task, though some input or output fields are not supplied.")
     else:
@@ -256,6 +278,18 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
             #     + ", then ".join(f"`{f}`" for f in signature.output_fields)
             #     + ", and then ending with the marker for `completed`."
             # )
+
+    if image_fields:
+        image_content = [{ "type": "text", "text": "\n\n".join(content).strip()}]
+        image_content.extend(format_image_fields(
+            fields_with_values={
+                FieldInfoWithName(name=field_name, info=field_info): values.get(
+                    field_name, "Not supplied for this particular example."
+                )
+                for field_name, field_info in image_fields.items()
+            }
+        ))
+        content = json.dumps(image_content)
 
     return {"role": role, "content": "\n\n".join(content).strip()}
 
