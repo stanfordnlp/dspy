@@ -45,12 +45,15 @@ class Retrieve(Parameter):
 
     def forward(
         self,
-        query_or_queries: Union[str, List[str]],
+        query_or_queries: Union[str, List[str]] = None,
+        query: Optional[str] = None,
         k: Optional[int] = None,
         by_prob: bool = True,
         with_metadata: bool = False,
         **kwargs,
     ) -> Union[List[str], Prediction, List[Prediction]]:
+        query_or_queries = query_or_queries or query
+
         # queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         # queries = [query.strip().split('\n')[0].strip() for query in queries]
 

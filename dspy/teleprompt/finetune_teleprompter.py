@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
@@ -5,7 +6,8 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Program
-from dspy.utils.logging import logger
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: Shared below are useful functions. Similar procedures are implemented
