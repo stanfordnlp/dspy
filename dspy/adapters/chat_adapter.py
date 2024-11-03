@@ -201,10 +201,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
     for field, field_value in fields_with_values.items():
         formatted_field_value = _format_field_value(field_info=field.info, value=field_value, assume_text=assume_text)
         if assume_text:
-            output.append(f"[[ ## {field.name} ## ]]")
-            # This conditional is specifically for the completed field, which is always the last field
-            if field_value:
-                output[-1] += f"\n{formatted_field_value}"
+            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
         else:
             output.append({"type": "text", "text": f"[[ ## {field.name} ## ]]\n"})
             if isinstance(formatted_field_value, dict) and formatted_field_value.get("type") == "image_url":
@@ -212,7 +209,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
             else:
                 output[-1]["text"] += formatted_field_value["text"]
     if assume_text:
-        return "\n\n".join(output)
+        return "\n\n".join(output).strip()
     else:
         return output
 
