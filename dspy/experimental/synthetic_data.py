@@ -41,7 +41,7 @@ class SyntheticDataGenerator:
 
     def _define_or_infer_fields(self):
         """Define fields to generate if a schema class is provided.
-        Infer fields to generate if an inital sample of examples is provided.
+        Infer fields to generate if an initial sample of examples is provided.
 
         Returns:
             dict: dictionary of fields to generate

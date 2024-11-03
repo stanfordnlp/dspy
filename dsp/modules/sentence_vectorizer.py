@@ -211,7 +211,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
 
 
 class FastEmbedVectorizer(BaseSentenceVectorizer):
-    """Sentence vectorizer implementaion using FastEmbed - https://qdrant.github.io/fastembed."""
+    """Sentence vectorizer implementation using FastEmbed - https://qdrant.github.io/fastembed."""
 
     def __init__(
         self,

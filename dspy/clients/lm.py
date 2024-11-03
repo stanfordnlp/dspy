@@ -14,9 +14,9 @@ from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
 from dspy.utils.callback import BaseCallback, with_callbacks
 
-GLOBAL_HISTORY = []
 
 logger = logging.getLogger(__name__)
+
 
 class LM(BaseLM):
     """
@@ -100,7 +100,7 @@ class LM(BaseLM):
             model_type=self.model_type,
         )
         self.history.append(entry)
-        GLOBAL_HISTORY.append(entry)
+        self.update_global_history(entry)
 
         return outputs
 

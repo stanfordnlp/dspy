@@ -141,7 +141,7 @@ class SignatureMeta(type(BaseModel)):
         return cls.insert(-1, name, field, type_)
 
     def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
-        # It's posisble to set the type as annotation=type in pydantic.Field(...)
+        # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
             type_ = field.annotation

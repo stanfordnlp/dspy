@@ -46,7 +46,7 @@ class Predict(Parameter):
 
 This method serves as a wrapper for the `forward` method. It allows making predictions using the `Predict` class by providing keyword arguments.
 
-**Paramters:**
+**Parameters:**
 - `**kwargs`: Keyword arguments required for prediction.
 
 **Returns:**
