@@ -14,8 +14,8 @@ class BaseLM(ABC):
     def __call__(self, prompt=None, messages=None, **kwargs):
         pass
 
-    def inspect_history(self, n: int = 1, skip: int = 0):
-        _inspect_history(self.history, n, skip)
+    def inspect_history(self, n: int = 1):
+        _inspect_history(self.history, n)
 
     def update_global_history(self, entry):
         GLOBAL_HISTORY.append(entry)
@@ -71,6 +71,6 @@ def _inspect_history(history, n: int = 1):
 
     print("\n\n\n")
 
-def inspect_history(*args, **kwargs):
+def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
-    return _inspect_history(GLOBAL_HISTORY, *args, **kwargs)
+    return _inspect_history(GLOBAL_HISTORY, n)
