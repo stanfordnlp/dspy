@@ -399,7 +399,6 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append(format_signature_fields_for_instructions(signature.input_fields))
     parts.append(format_signature_fields_for_instructions(signature.output_fields))
     parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}, assume_text=True))
-    print(format_fields({BuiltInCompletedOutputFieldInfo: ""}, assume_text=True))
     instructions = textwrap.dedent(signature.instructions)
     objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")
