@@ -47,7 +47,7 @@ class CoTPipeline(dspy.Module):
         result = self.predictor(question=question)
         return dspy.Prediction(
             answer=result.answer,
-            reasoning=result.rationale,
+            reasoning=result.reasoning,
         )
 ```
 
