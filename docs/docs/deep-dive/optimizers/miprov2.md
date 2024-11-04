@@ -88,7 +88,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -119,7 +119,7 @@ zeroshot_optimized_program = teleprompter.compile(
 zeroshot_optimized_program.save(f"mipro_zeroshot_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(zeroshot_optimized_program, devset=devset[:])
 ```
 
@@ -156,7 +156,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -170,7 +170,7 @@ evaluate(optimized_program, devset=devset[:])
 | `prompt_model`     | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for prompt generation.                                                                                            |
 | `task_model`       | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for task execution.                                                                                               |
 | `auto`       | `Optional[str]`       | None                        | If set to `light`, `medium`, or `heavy`, this will automatically configure the following hyperparameters: `num_candidates`, `num_trials`, `minibatch`, and will also cap the size of `valset` up to 100, 300, and 1000 for `light`, `medium`, and `heavy` runs respectively.                                                            |
-| `num_candidates`   | `int`      | `10`                                                   | Number of candidate instructions & few-shot examples to generate and evaluate for each predictor. If `num_candidates=10`, this means for a 2 module LM program we'll be optimizing over 10 candidates x 2 modules x 2 variables (few-shot ex. and instructions for each module)= 40 total variables. Therfore, if we increase `num_candidates`, we will probably want to increase `num_trials` as well (see Compile parameters).                                                                          |
+| `num_candidates`   | `int`      | `10`                                                   | Number of candidate instructions & few-shot examples to generate and evaluate for each predictor. If `num_candidates=10`, this means for a 2 module LM program we'll be optimizing over 10 candidates x 2 modules x 2 variables (few-shot ex. and instructions for each module)= 40 total variables. Therefore, if we increase `num_candidates`, we will probably want to increase `num_trials` as well (see Compile parameters).                                                                          |
 | `num_threads`      | `int`      |  `6`                                       | Threads to use for evaluation.                                                                                               |
 | `max_errors`       | `int`      | `10`                                                 | Maximum errors during an evaluation run that can be made before throwing an Exception.                                       |
 | `teacher_settings` | `dict`       | `{}`                                                 | Settings to use for the teacher model that bootstraps few-shot examples. An example dict would be `{lm=<dspy.LM object>}`. If your LM program with your default model is struggling to bootstrap any examples, it could be worth using a more powerful teacher model for bootstrapping.                                                     |
@@ -210,7 +210,7 @@ At a high level, `MIPROv2` works by creating both few-shot examples and new inst
 These steps are broken down in more detail below:
 1) **Bootstrap Few-Shot Examples**: The same bootstrapping technique used in `BootstrapFewshotWithRandomSearch` is used to create few-shot examples. This works by randomly sampling examples from your training set, which are then run through your LM program. If the output from the program is correct for this example, it is kept as a valid few-shot example candidate. Otherwise, we try another example until we've curated the specified amount of few-shot example candidates. This step creates `num_candidates` sets of `max_bootstrapped_demos` bootstrapped examples and `max_labeled_demos` basic examples sampled from the training set.
 2) **Propose Instruction Candidates**. Next, we propose instruction candidates for each predictor in the program. This is done using another LM program as a proposer, which bootstraps & summarizes relevant information about the task to generate high quality instructions. Specifically, the instruction proposer includes (1) a generated summary of properties of the training dataset, (2) a generated summary of your LM program's code and the specific predictor that an instruction is being generated for, (3) the previously bootstrapped few-shot examples to show reference inputs / outputs for a given predictor and (4) a randomly sampled tip for generation (i.e. "be creative", "be concise", etc.) to help explore the feature space of potential instructions.
-3. **Find an Optimized Combination of Few-Shot Examples & Instructions**. Finally, now that we've created these few-shot examples and instructions, we use Bayesian Optimization to choose which set of these would work best for each predictor in our program. This works by running a series of `num_trials` trials, where a new set of prompts are evaluated over our validation set at each trial. This helps the Bayesian Optimizer learn which combination of prompts work best over time. If `minibatch` is set to `True` (which it is by default), then the new set of prompts are only evaluated on a minibatch of size `minibatch_size` at each trial which generally allows for more efficient exploration / exploitation. The best averaging set of prompts is then evalauted on the full validation set every `minibatch_full_eval_steps` get a less noisey performance benchmark. At the end of the optimization process, the LM program with the set of prompts that performed best on the full validation set is returned.
+3. **Find an Optimized Combination of Few-Shot Examples & Instructions**. Finally, now that we've created these few-shot examples and instructions, we use Bayesian Optimization to choose which set of these would work best for each predictor in our program. This works by running a series of `num_trials` trials, where a new set of prompts are evaluated over our validation set at each trial. This helps the Bayesian Optimizer learn which combination of prompts work best over time. If `minibatch` is set to `True` (which it is by default), then the new set of prompts are only evaluated on a minibatch of size `minibatch_size` at each trial which generally allows for more efficient exploration / exploitation. The best averaging set of prompts is then evaluated on the full validation set every `minibatch_full_eval_steps` get a less noisey performance benchmark. At the end of the optimization process, the LM program with the set of prompts that performed best on the full validation set is returned.
 
 
 For those interested in more details, more information on `MIPROv2` along with a study on `MIPROv2` compared with other DSPy optimizers can be found in [this paper](https://arxiv.org/abs/2406.11695). 

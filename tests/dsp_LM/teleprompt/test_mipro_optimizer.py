@@ -111,7 +111,7 @@ class ConditionalLM(LM):
         return [choice["text"] for choice in response["choices"]]
 
     def get_convo(self, index):
-        """get the prompt + anwer from the ith message"""
+        """get the prompt + answer from the ith message"""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 

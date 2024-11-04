@@ -43,7 +43,8 @@ dependencies = [
     "magicattr~=0.1.6",
     "litellm",
     "diskcache",
-    "json-repair"
+    "json-repair",
+    "tenacity>=8.2.3",
 ]
 
 [project.optional-dependencies]
@@ -142,6 +143,7 @@ falkordb = "^1.0.9"
 
 
 json-repair = "^0.30.0"
+tenacity = ">=8.2.3"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -154,6 +156,7 @@ black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
+pillow = "^10.1.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]

@@ -23,6 +23,8 @@ def test_load_gated_model(mocker: MockerFixture):
 
 def test_load_ungated_model(mocker: MockerFixture):
     conf = MockConfig(architectures=["ConditionalGeneration"])
+    # Mock the environment to ensure no default token is used
+    mocker.patch.dict('os.environ', {}, clear=True)  # Clear environment variables
     mocker.patch("transformers.AutoModelForSeq2SeqLM.from_pretrained")
     mocker.patch("transformers.AutoConfig.from_pretrained", return_value=conf)
     mocker.patch("transformers.AutoTokenizer.from_pretrained")

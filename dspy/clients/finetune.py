@@ -1,14 +1,15 @@
+import logging
 import os
 from abc import abstractmethod
 from concurrent.futures import Future
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from dspy.utils.logging import logger
 
 import ujson
 from datasets.fingerprint import Hasher
 
+logger = logging.getLogger(__name__)
 
 def get_finetune_directory() -> str:
     """Get the directory to save the fine-tuned models."""

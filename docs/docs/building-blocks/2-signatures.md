@@ -78,10 +78,10 @@ The 21-year-old Lee made seven appearances and scored one goal for West Ham last
 
 Many DSPy modules (except `dspy.Predict`) return auxiliary information by expanding your signature under the hood.
 
-For example, `dspy.ChainOfThought` also adds a `rationale` field that includes the LM's reasoning before it generates the output `summary`.
+For example, `dspy.ChainOfThought` also adds a `reasoning` field that includes the LM's reasoning before it generates the output `summary`.
 
 ```python
-print("Rationale:", response.rationale)
+print("Rationale:", response.reasoning)
 ```
 **Output:**
 ```text
@@ -147,7 +147,7 @@ faithfulness(context=context, text=text)
 **Output:**
 ```text
 Prediction(
-    rationale="produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.",
+    reasoning="produce the faithfulness. We know that Lee had two loan spells in League One last term, with Blackpool and then Colchester United. He scored twice for the U's but was unable to save them from relegation. However, there is no mention of him scoring three goals for Colchester United.",
     faithfulness='False'
 )
 ```

@@ -56,4 +56,4 @@ Builds and publishes the package to pypi.
 1. Publishes the package to pypi.
 
 
-\* The package name is updated by the worfklow to allow the same files to be used to build both the pypi and test-pypi packages.
+\* The package name is updated by the workflow to allow the same files to be used to build both the pypi and test-pypi packages.

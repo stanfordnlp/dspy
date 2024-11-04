@@ -419,7 +419,7 @@ class MIPRO(Teleprompter):
             module = student.deepcopy()
             evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
 
-            # In the case where the bootstrapped and labeled demos are set to 0, we'll stil bootstrap examples to use in our meta prompt
+            # In the case where the bootstrapped and labeled demos are set to 0, we'll still bootstrap examples to use in our meta prompt
             if (
                 max_bootstrapped_demos == 0 and max_labeled_demos == 0
             ):  # TODO: address case when max_bootstrapped alone is 0
