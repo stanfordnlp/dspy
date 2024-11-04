@@ -91,6 +91,30 @@ def TypedChainOfThought(signature, instructions=None, reasoning=None, *, max_ret
         max_retries=max_retries,
     )
 
+def TypedChainOfThoughtWithHint(signature, instructions=None, reasoning=None, hint=None, *, max_retries=3) -> dspy.Module:  # noqa: N802
+    """Just like TypedChainOfThought, but with hint."""
+    signature = ensure_signature(signature, instructions)
+    output_keys = ", ".join(signature.output_fields.keys())
+
+    default_rationale = dspy.OutputField(
+        prefix="Reasoning: Let's think step by step in order to",
+        desc="${produce the " + output_keys + "}. We ...",
+    )
+    reasoning = reasoning or default_rationale
+    
+    # Extended signature to include reasoning and optionally hint
+    extended_signature1 = signature.prepend("reasoning", reasoning)
+    
+    DEFAULT_HINT_TYPE = dspy.OutputField()
+    extended_signature2 = extended_signature1.insert(-2, "hint", DEFAULT_HINT_TYPE, type_=str)
+
+    # Choose signature based on whether hint is provided
+    selected_signature = extended_signature2 if hint else extended_signature1
+
+    return TypedPredictor(
+        selected_signature,
+        max_retries=max_retries,
+    )
 
 class TypedPredictor(dspy.Module):
     def __init__(self, signature, instructions=None, *, max_retries=3, wrap_json=False, explain_errors=False):
