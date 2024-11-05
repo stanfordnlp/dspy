@@ -1,5 +1,6 @@
-from collections import deque
 from abc import ABC, abstractmethod
+from collections import deque
+from itertools import islice
 
 GLOBAL_HISTORY = deque([], maxlen=10_000_000)
 
@@ -37,8 +38,11 @@ def _blue(text: str, end: str = "\n"):
 
 def _inspect_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
+    history_len = len(history)
+    start = max(0, history_len - n)
+    stop = history_len
 
-    for item in history[-n:]:
+    for item in islice(history, start, stop):
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")

@@ -242,9 +242,6 @@ def test_chainable_load(tmp_path):
 
     assert chainable.signature.dump_state() == original.signature.dump_state()
 
-    result = Predict("question -> answer").load(file_path)
-    assert result is None
-
 
 def test_load_state_chaining():
     """Test that load_state returns self for chaining."""

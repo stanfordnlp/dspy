@@ -179,7 +179,7 @@ class Predict(Module, Parameter):
         import dspy
 
         if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+            completions = get_adapter()(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
                 "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
@@ -237,7 +237,7 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         assert isinstance(lm, dspy.LM), "Async mode is only supported for dspy.LM"
-        completions = await v2_5_generate_async(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+        completions = await get_adapter()(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -324,43 +324,10 @@ def new_generate(lm, signature, example, max_depth=6, **kwargs):
     return completions
 
 
-def v2_5_generate(
-    *args,
-    _parse_values=True,
-    **kwargs,
-):
+def get_adapter():
     import dspy
 
-    adapter = dspy.settings.adapter or dspy.ChatAdapter()
-
-    return adapter(
-        *args,
-        **kwargs,
-        _parse_values=_parse_values,
-    )
-
-
-async def v2_5_generate_async(
-    *args,
-    _parse_values=True,
-    **kwargs,
-):
-    """
-    Async version of v2_5_generate that handles async LM calls.
-    Maintains the same interface and functionality as the sync version.
-    """
-    import dspy
-
-    adapter = dspy.settings.adapter or dspy.ChatAdapter()
-
-    if not hasattr(adapter, "_async_call"):
-        raise NotImplementedError("No async adapter found")
-
-    return await adapter.__async_call(
-        *args,
-        **kwargs,
-        _parse_values=_parse_values,
-    )
+    return dspy.settings.adapter or dspy.ChatAdapter()
 
 
 # TODO: get some defaults during init from the context window?
