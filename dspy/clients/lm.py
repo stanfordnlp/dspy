@@ -181,8 +181,11 @@ class _ProviderAPIConfig:
 
 def _extract_provider_api_config(model: str, llm_kwargs: Dict[str, Any]) -> _ProviderAPIConfig:
     """
-    Extract the API configurations from the specified LLM keyword arguments for the provider
-    corresponding to the given model.
+    Extract the API configurations from the specified LLM keyword arguments (`llm_kwargs`) for the
+    provider corresponding to the given model.
+
+    Note: The API configurations are removed from the specified `llm_kwargs`, if present, mutating
+    the input dictionary.
     """
     provider = _get_provider(model)
     api_key = llm_kwargs.pop("api_key", None) or os.getenv(f"{provider.upper()}_API_KEY")
