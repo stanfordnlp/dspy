@@ -1,9 +1,22 @@
-import dspy
+import abc
 
+import dspy
 from dspy.utils.callback import with_async_callbacks, with_callbacks
 
 
 class Adapter:
+    @abc.abstractmethod
+    def format(self, signature, demos, inputs):
+        """
+        Format the input data for the LLM.
+        """
+
+    @abc.abstractmethod
+    def parse(self, signature, completion):
+        """
+        Parse the output data from the LLM.
+        """
+
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
 
@@ -24,13 +37,11 @@ class Adapter:
 
     @with_callbacks
     def __sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values):
-        # Format inputs - formatting is sync operation
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         outputs = lm(**inputs, **lm_kwargs)
 
-        # Parse outputs - parsing is sync operation
         try:
             values = []
             for output in outputs:
@@ -42,23 +53,21 @@ class Adapter:
 
             return values
         except Exception as e:
-            from .json_adapter import JsonAdapter
+            from .json_adapter import JSONAdapter
 
-            if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            if _parse_values and not isinstance(self, JSONAdapter):
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
     @with_async_callbacks
     async def __async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values):
         """Internal async implementation"""
-        # Format inputs - formatting is sync operation
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         assert dspy.settings.async_mode, "Async mode is not enabled"
         outputs = await lm.acall(**inputs, **lm_kwargs)
 
-        # Parse outputs - parsing is sync operation
         try:
             values = []
             for output in outputs:
@@ -70,8 +79,8 @@ class Adapter:
 
             return values
         except Exception as e:
-            from .json_adapter import JsonAdapter
+            from .json_adapter import JSONAdapter
 
-            if _parse_values and not isinstance(self, JsonAdapter):
-                return await JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            if _parse_values and not isinstance(self, JSONAdapter):
+                return await JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e

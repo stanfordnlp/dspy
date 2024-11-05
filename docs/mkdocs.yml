@@ -33,7 +33,7 @@ nav:
       - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
       - ProgramOfThought: deep-dive/modules/program-of-thought.md
       - Assertions: deep-dive/assertions.md
-      - Retreive: deep-dive/modules/retrieve.md
+      - Retrieve: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
     - Metrics and Assertions:
       - Overview: building-blocks/7-assertions.md

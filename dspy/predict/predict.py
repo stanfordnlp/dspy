@@ -9,6 +9,7 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.adapters.image_utils import Image
 
 
 @lru_cache(maxsize=None)
@@ -46,7 +47,11 @@ class Predict(Module, Parameter):
             demo = demo.copy()
 
             for field in demo:
-                if isinstance(demo[field], BaseModel):
+                # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
+                # It does matter for images
+                if isinstance(demo[field], Image):
+                    demo[field] = demo[field].model_dump()
+                elif isinstance(demo[field], BaseModel):
                     demo[field] = demo[field].model_dump_json()
 
             state["demos"].append(demo)
@@ -55,7 +60,6 @@ class Predict(Module, Parameter):
         # `extended_signature` is a special field for `Predict`s like CoT.
         if hasattr(self, "extended_signature"):
             state["extended_signature"] = self.extended_signature.dump_state()
-
         return state
 
     def load_state(self, state, use_legacy_loading=False):
@@ -65,10 +69,13 @@ class Predict(Module, Parameter):
             state (dict): The saved state of a `Predict` object.
             use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
                 saved state from a version of DSPy prior to v2.5.3.
+        Returns:
+            self: Returns self to allow method chaining
         """
         if use_legacy_loading:
             self._load_state_legacy(state)
-            return
+            return self
+
         if "signature" not in state:
             # Check if the state is from a version of DSPy prior to v2.5.3.
             raise ValueError(
@@ -82,15 +89,28 @@ class Predict(Module, Parameter):
             if name not in excluded_keys:
                 setattr(self, name, value)
 
+        # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
+        for demo in self.demos:
+            for field in demo:
+                if isinstance(demo[field], dict) and "url" in demo[field]:
+                    url = demo[field]["url"]
+                    if not isinstance(url, str):
+                        raise ValueError(f"Image URL must be a string, got {type(url)}")
+                    demo[field] = Image(url=url)
+
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
             self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
+        return self
+
     def _load_state_legacy(self, state):
         """Legacy state loading for backwards compatibility.
 
         This method is used to load the saved state of a `Predict` object from a version of DSPy prior to v2.5.3.
+        Returns:
+            self: Returns self to allow method chaining
         """
         for name, value in state.items():
             setattr(self, name, value)
@@ -114,6 +134,18 @@ class Predict(Module, Parameter):
             prefix = state["extended_signature_prefix"]
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
+
+    def load(self, path):
+        """Load a saved state from a file.
+
+        Args:
+            path (str): Path to the saved state file
+
+        Returns:
+            Predict: Returns self to allow method chaining
+        """
+        super().load(path)
+        return self
 
     def forward(self, **kwargs):
         assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
@@ -236,8 +268,6 @@ def old_generate(demos, signature, kwargs, config, lm, stage):
         # Note: query_only=True means the instructions and examples are not included.
         with dsp.settings.context(lm=lm, query_only=True):
             x, C = dsp.generate(template, **config)(x, stage=stage)
-
-    # assert stage in x, "The generated (input, output) example was not stored"
 
     completions = []
 

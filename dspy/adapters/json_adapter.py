@@ -13,6 +13,7 @@ from pydantic.fields import FieldInfo
 from typing import Any, Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
+from ..adapters.image_utils import Image
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
 
@@ -22,7 +23,10 @@ class FieldInfoWithName(NamedTuple):
     info: FieldInfo
 
 
-class JsonAdapter(Adapter):
+class JSONAdapter(Adapter):
+    def __init__(self):
+        pass
+
     def __sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
@@ -197,6 +201,8 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbere list for the LM.
         return format_input_list_field_value(value)
+    if field_info.annotation is Image:
+        raise NotImplementedError("Images are not yet supported in JSON mode.")
     elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
         return json.dumps(_serialize_for_json(value))
     else:

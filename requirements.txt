@@ -13,7 +13,6 @@ pandas
 pydantic~=2.0
 regex
 requests
-structlog
 tenacity>=8.2.3
 tqdm
 ujson

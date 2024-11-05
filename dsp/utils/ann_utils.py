@@ -100,12 +100,12 @@ def create_faiss_index(
             the difference between a vector and the reconstruction that can be
             decoded from its representation in the index.
         in_list_dist_type: type of distance to calculate simmilarities within one IVF.
-            Can be `IP` (for inner product) or `L2` distance. Case insensetive.
+            Can be `IP` (for inner product) or `L2` distance. Case insensitive.
             If the index type is bruteforce (`n_objects` < 20_000), this variable will define
-            the distane type for that bruteforce index. `centroid_dist_type` will be ignored.
+            the distance type for that bruteforce index. `centroid_dist_type` will be ignored.
         centroid_dist_type: type of distance to calculate simmilarities between a query 
             and cluster centroids. Can be `IP` (for inner product) or `L2` distance.
-            Case insensetive.
+            Case insensitive.
     Returns: untrained FAISS-index
     """
     if n_objects < 20_000:

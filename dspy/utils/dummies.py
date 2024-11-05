@@ -98,7 +98,7 @@ class DSPDummyLM(DSPLM):
         return [choice["text"] for choice in choices]
 
     def get_convo(self, index) -> str:
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
@@ -214,21 +214,21 @@ class DummyLM(LM):
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            self.history.append(
-                {
-                    "prompt": prompt,
-                    "messages": messages,
-                    "kwargs": kwargs,
-                    "outputs": outputs,
-                    "usage": 0,
-                    "cost": 0,
-                }
-            )
+            entry = {
+                "prompt": prompt,
+                "messages": messages,
+                "kwargs": kwargs,
+                "outputs": outputs,
+                "usage": 0,
+                "cost": 0,
+            }
+            self.history.append(entry)
+            self.update_global_history(entry)
 
         return outputs
 
     def get_convo(self, index):
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["messages"], self.history[index]["outputs"]
 
 

@@ -1,4 +1,4 @@
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +17,8 @@ from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_fi
 from dspy.utils.callback import BaseCallback, with_async_callbacks, with_callbacks
 import dspy
 
+from .base_lm import BaseLM
+
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 litellm.telemetry = False
@@ -24,12 +26,11 @@ litellm.telemetry = False
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
-GLOBAL_HISTORY = deque([], maxlen=10_000_000)
 
 logger = logging.getLogger(__name__)
 
 
-class LM:
+class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
@@ -121,7 +122,7 @@ class LM:
             "model_type": self.model_type,
         }
         self.history.append(entry)
-        GLOBAL_HISTORY.append(entry)
+        self.update_global_history(entry)
 
         return outputs
 
@@ -161,12 +162,9 @@ class LM:
             "model_type": self.model_type,
         }
         self.history.append(entry)
-        GLOBAL_HISTORY.append(entry)
+        self.update_global_history(entry)
 
         return outputs
-
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self.history, n)
 
     def launch(self):
         """Send a request to the provider to launch the model, if needed."""
@@ -359,37 +357,3 @@ async def async_litellm_text_completion(request: dict, cache=False):
     request_cache()[request] = response
 
     return response
-
-
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-
-def _inspect_history(history, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
-        outputs = item["outputs"]
-        timestamp = item.get("timestamp", "Unknown time")
-
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
-
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg["content"].strip())
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
-
-    print("\n\n\n")

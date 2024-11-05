@@ -67,12 +67,12 @@ response.completions.answer
 
 Let's discuss the output object here.
 
-The `dspy.ChainOfThought` module will generally inject a `rationale` before the output field(s) of your signature.
+The `dspy.ChainOfThought` module will generally inject a `reasoning` before the output field(s) of your signature.
 
-Let's inspect the (first) rationale and answer!
+Let's inspect the (first) reasoning and answer!
 
 ```python
-print(f"Rationale: {response.rationale}")
+print(f"Reasoning: {response.reasoning}")
 print(f"Answer: {response.answer}")
 ```
 **Output:**
@@ -86,7 +86,7 @@ This is accessible whether we request one or many completions.
 We can also access the different completions as a list of `Prediction`s or as several lists, one for each field.
 
 ```python
-response.completions[3].rationale == response.completions.rationale[3]
+response.completions[3].reasoning == response.completions.reasoning[3]
 ```
 **Output:**
 ```text

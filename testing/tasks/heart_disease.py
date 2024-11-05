@@ -53,7 +53,7 @@ class HeartDiseaseInput(dspy.Signature):
     trestbps = dspy.InputField(
         desc="Resting blood pressure (in mm Hg on admission to the hospital)"
     )
-    chol = dspy.InputField(desc="Serum cholestoral in mg/dl")
+    chol = dspy.InputField(desc="Serum cholesterol in mg/dl")  # Nov 2nd, 2024: fixed typo from `cholesteral`
     fbs = dspy.InputField(desc="Fasting blood sugar > 120 mg/dl (true or false)")
     restecg = dspy.InputField(
         desc="Resting electrocardiographic results (normal, ST-T wave abnormality, left ventricular hypertrophy)"
