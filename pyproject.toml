@@ -148,6 +148,7 @@ pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
+pytest-asyncio = "^0.24.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
