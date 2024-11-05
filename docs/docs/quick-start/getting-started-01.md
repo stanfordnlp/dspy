@@ -167,7 +167,7 @@ pred = cot(**example.inputs())
 score = metric(example, pred)
 
 print(f"Question: \t {example.question}\n")
-print(f"Gold Reponse: \t {example.response}\n")
+print(f"Gold Response: \t {example.response}\n")
 print(f"Predicted Response: \t {pred.response}\n")
 print(f"Semantic F1 Score: {score:.2f}")
 ```
@@ -176,7 +176,7 @@ print(f"Semantic F1 Score: {score:.2f}")
 ```
 Question: 	 what are high memory and low memory on linux?
 
-Gold Reponse: 	 "High Memory" refers to the application or user space, the memory that user programs can use and which isn't permanently mapped in the kernel's space, while "Low Memory" is the kernel's space, which the kernel can address directly and is permanently mapped. 
+Gold Response: 	 "High Memory" refers to the application or user space, the memory that user programs can use and which isn't permanently mapped in the kernel's space, while "Low Memory" is the kernel's space, which the kernel can address directly and is permanently mapped. 
 The user cannot access the Low Memory as it is set aside for the required kernel programs.
 
 Predicted Response: 	 In Linux, "low memory" refers to the memory that is directly accessible by the kernel and user processes, typically the first 4GB on a 32-bit system. "High memory" refers to memory above this limit, which is not directly accessible by the kernel in a 32-bit environment. This distinction is crucial for memory management, particularly in systems with large amounts of RAM, as it influences how memory is allocated and accessed.

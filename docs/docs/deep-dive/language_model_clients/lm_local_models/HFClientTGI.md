@@ -81,7 +81,7 @@ The constructor initializes the `HFModel` base class to support the handling of 
 - `model` (_str_): ID of Hugging Face model connected to the TGI server.
 - `port` (_int_ or _list_): Port for communicating to the TGI server. This can be a single port number (`8080`) or a list of TGI ports (`[8080, 8081, 8082]`) to route the requests to.
 - `url` (_str_): Base URL of hosted TGI server. This will often be `"http://localhost"`.
-- `http_request_kwargs` (_dict_): Dictionary of additional keyword agruments to pass to the HTTP request function to the TGI server. This is `None` by default. 
+- `http_request_kwargs` (_dict_): Dictionary of additional keyword arguments to pass to the HTTP request function to the TGI server. This is `None` by default. 
 - `**kwargs`: Additional keyword arguments to configure the TGI client.
 
 Example of the TGI constructor:

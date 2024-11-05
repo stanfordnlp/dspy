@@ -1,7 +1,19 @@
+import abc
 from dspy.utils.callback import with_callbacks
 
-
 class Adapter:
+    @abc.abstractmethod
+    def format(self, signature, demos, inputs):
+        """
+        Format the input data for the LLM.
+        """
+
+    @abc.abstractmethod
+    def parse(self, signature, completion):
+        """
+        Parse the output data from the LLM.
+        """
+
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
 
@@ -19,6 +31,7 @@ class Adapter:
         outputs = lm(**inputs_, **lm_kwargs)
         values = []
 
+        
         try:
             for output in outputs:
                 value = self.parse(signature, output, _parse_values=_parse_values)
@@ -27,8 +40,8 @@ class Adapter:
             return values
 
         except Exception as e:
-            from .json_adapter import JsonAdapter
-            if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            from .json_adapter import JSONAdapter
+            if _parse_values and not isinstance(self, JSONAdapter):
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
