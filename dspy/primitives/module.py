@@ -167,6 +167,7 @@ class BaseModule:
     def load(self, path, use_legacy_loading=False):
         with open(path) as f:
             self.load_state(ujson.loads(f.read()), use_legacy_loading=use_legacy_loading)
+        return self
 
 
 def postprocess_parameter_name(name, value):

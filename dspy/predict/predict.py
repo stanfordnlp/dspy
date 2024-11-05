@@ -135,19 +135,6 @@ class Predict(Module, Parameter):
             *_, last_key = self.extended_signature.fields.keys()
             self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
 
-    def load(self, path):
-        """Load a saved state from a file.
-
-        Args:
-            path (str): Path to the saved state file
-
-        Returns:
-            Predict: Returns self to allow method chaining
-        """
-        clone = self.deepcopy()
-        clone.load(path)
-        return clone
-
     def forward(self, **kwargs):
         assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
 
