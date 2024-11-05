@@ -200,6 +200,8 @@ def _get_litellm_router(model: str, num_retries: int) -> Router:
         TimeoutErrorRetries=num_retries,
         RateLimitErrorRetries=num_retries,
         InternalServerErrorRetries=num_retries,
+        # We don't retry on errors that are unlikely to be transient
+        # (e.g. bad request, invalid auth credentials)
         BadRequestErrorRetries=0,
         AuthenticationErrorRetries=0,
         ContentPolicyViolationErrorRetries=0,
