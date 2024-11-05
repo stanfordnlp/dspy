@@ -1,20 +1,40 @@
 from unittest import mock
 
+import pytest
 from litellm.router import RetryPolicy
 
 from dspy.clients.lm import LM, _get_litellm_router
 
 
-def test_lm_chat_respects_max_retries():
+@pytest.mark.parametrize("keys_in_env_vars", [True, False])
+def test_lm_chat_respects_max_retries(keys_in_env_vars, monkeypatch):
     model_name = "openai/gpt4o"
     num_retries = 17
     temperature = 0.5
     max_tokens = 100
     prompt = "Hello, world!"
+    api_version = "2024-02-01"
+    api_key = "apikey"
 
-    lm = LM(
-        model=model_name, model_type="chat", num_retries=num_retries, temperature=temperature, max_tokens=max_tokens
-    )
+    lm_kwargs = {
+        "model": model_name,
+        "model_type": "chat",
+        "num_retries": num_retries,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if keys_in_env_vars:
+        api_base = "http://testfromenv.com"
+        monkeypatch.setenv("OPENAI_API_KEY", api_key)
+        monkeypatch.setenv("OPENAI_API_BASE", api_base)
+        monkeypatch.setenv("OPENAI_API_VERSION", api_version)
+    else:
+        api_base = "http://test.com"
+        lm_kwargs["api_key"] = api_key
+        lm_kwargs["api_base"] = api_base
+        lm_kwargs["api_version"] = api_version
+
+    lm = LM(**lm_kwargs)
 
     MockRouter = mock.MagicMock()
     mock_completion = mock.MagicMock()
@@ -29,6 +49,9 @@ def test_lm_chat_respects_max_retries():
                     "model_name": model_name,
                     "litellm_params": {
                         "model": model_name,
+                        "api_key": api_key,
+                        "api_base": api_base,
+                        "api_version": api_version,
                     },
                 }
             ],
@@ -50,25 +73,39 @@ def test_lm_chat_respects_max_retries():
         )
 
 
-def test_lm_completions_respects_max_retries():
-    model_name = "openai/gpt-3.5-turbo"
-    expected_model = "text-completion-" + model_name
+@pytest.mark.parametrize("keys_in_env_vars", [True, False])
+def test_lm_completions_respects_max_retries(keys_in_env_vars, monkeypatch):
+    model_name = "azure/gpt-3.5-turbo"
+    expected_model = "text-completion-openai/" + model_name.split("/")[-1]
     num_retries = 17
     temperature = 0.5
     max_tokens = 100
     prompt = "Hello, world!"
-    api_base = "http://test.com"
+    api_version = "2024-02-01"
     api_key = "apikey"
+    azure_ad_token = "adtoken"
 
-    lm = LM(
-        model=model_name,
-        model_type="text",
-        num_retries=num_retries,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        api_base=api_base,
-        api_key=api_key,
-    )
+    lm_kwargs = {
+        "model": model_name,
+        "model_type": "text",
+        "num_retries": num_retries,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if keys_in_env_vars:
+        api_base = "http://testfromenv.com"
+        monkeypatch.setenv("AZURE_API_KEY", api_key)
+        monkeypatch.setenv("AZURE_API_BASE", api_base)
+        monkeypatch.setenv("AZURE_API_VERSION", api_version)
+        monkeypatch.setenv("AZURE_AD_TOKEN", azure_ad_token)
+    else:
+        api_base = "http://test.com"
+        lm_kwargs["api_key"] = api_key
+        lm_kwargs["api_base"] = api_base
+        lm_kwargs["api_version"] = api_version
+        lm_kwargs["azure_ad_token"] = azure_ad_token
+
+    lm = LM(**lm_kwargs)
 
     MockRouter = mock.MagicMock()
     mock_text_completion = mock.MagicMock()
@@ -83,6 +120,10 @@ def test_lm_completions_respects_max_retries():
                     "model_name": expected_model,
                     "litellm_params": {
                         "model": expected_model,
+                        "api_key": api_key,
+                        "api_base": api_base,
+                        "api_version": api_version,
+                        "azure_ad_token": azure_ad_token,
                     },
                 }
             ],
@@ -100,7 +141,5 @@ def test_lm_completions_respects_max_retries():
             prompt=prompt + "\n\nBEGIN RESPONSE:",
             temperature=temperature,
             max_tokens=max_tokens,
-            api_key=api_key,
-            api_base=api_base,
             cache=mock.ANY,
         )
