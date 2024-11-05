@@ -83,6 +83,8 @@ def test_lm_completions_respects_max_retries():
                     "model_name": expected_model,
                     "litellm_params": {
                         "model": expected_model,
+                        "api_key": api_key,
+                        "api_base": api_base,
                     },
                 }
             ],
@@ -100,7 +102,5 @@ def test_lm_completions_respects_max_retries():
             prompt=prompt + "\n\nBEGIN RESPONSE:",
             temperature=temperature,
             max_tokens=max_tokens,
-            api_key=api_key,
-            api_base=api_base,
             cache=mock.ANY,
         )

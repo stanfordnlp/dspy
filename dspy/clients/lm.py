@@ -296,10 +296,10 @@ def cached_litellm_text_completion(request, num_retries: int):
 
 def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
-    model = kwargs.pop("model").split("/", 1)
-    text_completion_model_name = f"text-completion-openai/{model}"
-
-    api_config = _extract_provider_api_config(model=kwargs["model"], **kwargs)
+    model = kwargs.pop("model")
+    api_config = _extract_provider_api_config(model=model, llm_kwargs=kwargs)
+    model_name = model.split("/", 1)[-1]
+    text_completion_model_name = f"text-completion-openai/{model_name}"
 
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
