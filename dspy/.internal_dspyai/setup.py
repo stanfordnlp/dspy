@@ -8,7 +8,7 @@ setup(
     #replace_package_name_marker
     name="dspy-ai",
     #replace_package_version_marker
-    version="2.5.8", 	
+    version="2.5.25", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	

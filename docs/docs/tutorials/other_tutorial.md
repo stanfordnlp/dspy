@@ -26,3 +26,4 @@ sidebar_position: 99999
 - Interviews: [Weaviate Podcast in-person](https://www.youtube.com/watch?v=CDung1LnLbY), and you can find 6-7 other remote podcasts on YouTube from a few different perspectives/audiences.
 - **Tracing in DSPy** with Arize Phoenix: [Tutorial for tracing your prompts and the steps of your DSPy programs](https://colab.research.google.com/github/Arize-ai/phoenix/blob/main/tutorials/tracing/dspy_tracing_tutorial.ipynb)
 - **Tracing & Optimization Tracking in DSPy** with Parea AI: [Tutorial on tracing & evaluating a DSPy RAG program](https://docs.parea.ai/tutorials/dspy-rag-trace-evaluate/tutorial)
+- **Prompt Optimization with DSPy and G-Eval Metrics** by Alberto Romero: [Medium article](https://medium.com/@a-romero/prompt-optimization-with-dspy-and-g-eval-metrics-e7d0bdd21b8b), [Repo](https://github.com/a-romero/dspy-risk-assessment), [Video](https://youtu.be/kK30U-XiiNI)

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.5.15"
+version="2.5.25"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -38,7 +38,6 @@ dependencies = [
     "requests",
     "optuna",
     "pydantic~=2.0",
-    "structlog",
     "jinja2",
     "magicattr~=0.1.6",
     "litellm",
@@ -130,7 +129,6 @@ groq = { version = "^0.4.2", optional = true }
 rich = "^13.7.1"
 psycopg2 = { version = "^2.9.9", optional = true }
 pgvector = { version = "^0.2.5", optional = true }
-structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
