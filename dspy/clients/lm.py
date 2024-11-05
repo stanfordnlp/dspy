@@ -8,7 +8,9 @@ from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import ujson
+from litellm import Router
 from litellm.caching import Cache
+from litellm.router import RetryPolicy
 
 from dspy.clients.finetune import FinetuneJob, TrainingMethod
 from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
@@ -39,7 +41,7 @@ class LM:
         cache: bool = True,
         launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 3,
+        num_retries: int = 8,
         **kwargs,
     ):
         """
@@ -184,11 +186,50 @@ def cached_litellm_completion(request, num_retries: int):
 
 def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
-    return litellm.completion(
-        num_retries=num_retries,
+    router = _get_litellm_router(model=kwargs["model"], num_retries=num_retries)
+    return router.completion(
         cache=cache,
-        retry_strategy="exponential_backoff_retry",
         **kwargs,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def _get_litellm_router(model: str, num_retries: int) -> Router:
+    """
+    Get a LiteLLM router for the given model with the specified number of retries
+    for transient errors.
+
+    Args:
+        model: The name of the LiteLLM model to query (e.g. 'openai/gpt-4').
+        num_retries: The number of times to retry a request if it fails transiently due to
+                     network error, rate limiting, etc. Requests are retried with exponential
+                     backoff.
+    Returns:
+        A LiteLLM router instance that can be used to query the given model.
+    """
+    retry_policy = RetryPolicy(
+        TimeoutErrorRetries=num_retries,
+        RateLimitErrorRetries=num_retries,
+        InternalServerErrorRetries=num_retries,
+        BadRequestErrorRetries=0,
+        AuthenticationErrorRetries=0,
+        ContentPolicyViolationErrorRetries=0,
+    )
+
+    return Router(
+        # LiteLLM routers must specify a `model_list`, which maps model names passed
+        # to `completions()` into actual LiteLLM model names. For our purposes, the
+        # model name is the same as the LiteLLM model name, so we add a single
+        # entry to the `model_list` that maps the model name to itself
+        model_list=[
+            {
+                "model_name": model,
+                "litellm_params": {
+                    "model": model,
+                },
+            }
+        ],
+        retry_policy=retry_policy,
     )
 
 
@@ -208,6 +249,7 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
     # TODO: Not all the models are in the format of "provider/model"
     model = kwargs.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
+    text_completion_model_name = f"text-completion-openai/{model}"
 
     # Use the API key and base from the kwargs, or from the environment.
     api_key = kwargs.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
@@ -216,14 +258,13 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(
+    router = _get_litellm_router(model=text_completion_model_name, num_retries=num_retries)
+    return router.text_completion(
         cache=cache,
-        model=f"text-completion-openai/{model}",
+        model=text_completion_model_name,
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
         **kwargs,
     )
 
