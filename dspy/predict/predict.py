@@ -144,8 +144,9 @@ class Predict(Module, Parameter):
         Returns:
             Predict: Returns self to allow method chaining
         """
-        super().load(path)
-        return self
+        clone = self.deepcopy()
+        clone.load(path)
+        return clone
 
     def forward(self, **kwargs):
         assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
