@@ -33,6 +33,7 @@ class LM(BaseLM):
         launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
+        suppress_debug_info: bool = True,
         **kwargs,
     ):
         """
@@ -60,6 +61,9 @@ class LM(BaseLM):
         self.history = []
         self.callbacks = callbacks or []
         self.num_retries = num_retries
+
+        #turned off by default to avoid LiteLLM logging during every LM call
+        litellm.suppress_debug_info = suppress_debug_info
 
         # TODO: Arbitrary model strings could include the substring "o1-". We
         # should find a more robust way to check for the "o1-" family models.
