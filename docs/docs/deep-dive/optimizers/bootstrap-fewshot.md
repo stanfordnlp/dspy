@@ -8,7 +8,7 @@ When compiling a DSPy program, we generally invoke an optimizer that takes the p
 
 ## Setting up a Sample Pipeline
 
-We will be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](https://dspy-docs.vercel.app/docs/quick-start/minimal-example). We won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+We will be making a basic answer generation pipeline over the GSM8K dataset. We won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
 
 ```python
 import dspy
