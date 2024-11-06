@@ -151,6 +151,11 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
     Returns:
       The formatted value of the field, represented as a string.
     """
+    # Check if it's a List[Image] type
+    origin = get_origin(field_info.annotation)
+    args = get_args(field_info.annotation)
+    is_image_list = origin is list and args and args[0] == Image
+
     string_value = None
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
@@ -162,6 +167,32 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
 
     if assume_text:
         return string_value
+    elif is_image_list:
+        try:
+            import PIL
+        except ImportError:
+            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
+
+        # Handle empty list case
+        if not value:
+            return {"type": "text", "text": "[]"}
+
+        # Convert each image in the list
+        formatted_images = []
+        idx = 1
+        for img in value:
+            image_value = img
+            if isinstance(image_value, dict) and "url" in image_value:
+                image_value = image_value["url"]
+            elif isinstance(image_value, str):
+                image_value = encode_image(image_value)
+            elif isinstance(image_value, PIL.Image.Image):
+                image_value = encode_image(image_value)
+            assert isinstance(image_value, str)
+            image_value = Image(url=image_value)
+            formatted_images.append({"type": "text", "text": f"[{idx}]"})
+            formatted_images.append({"type": "image_url", "image_url": image_value.model_dump()})
+        return formatted_images
     elif (isinstance(value, Image) or field_info.annotation == Image):
         # This validation should happen somewhere else
         # Safe to import PIL here because it's only imported when an image is actually being formatted
@@ -204,7 +235,9 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
             output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
         else:
             output.append({"type": "text", "text": f"[[ ## {field.name} ## ]]\n"})
-            if isinstance(formatted_field_value, dict) and formatted_field_value.get("type") == "image_url":
+            if isinstance(formatted_field_value, list) and formatted_field_value[1].get("type") == "image_url":
+                output.append(formatted_field_value)
+            elif isinstance(formatted_field_value, dict) and formatted_field_value.get("type") == "image_url":
                 output.append(formatted_field_value)
             else:
                 output[-1]["text"] += formatted_field_value["text"]
