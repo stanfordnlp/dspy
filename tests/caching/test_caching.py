@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 import dspy
-from tests.test_utils.server import mock_litellm_server, read_server_request_logs
+from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
 
 
 @pytest.fixture()
@@ -33,8 +33,8 @@ def temporary_populated_cache_dir(monkeypatch):
         yield cache_dir_path
 
 
-def test_lm_calls_are_cached_across_lm_instances(mock_litellm_server, temporary_blank_cache_dir):
-    api_base, server_log_file_path = mock_litellm_server
+def test_lm_calls_are_cached_across_lm_instances(litellm_test_server, temporary_blank_cache_dir):
+    api_base, server_log_file_path = litellm_test_server
 
     # Call 2 LM instances with the same model & text and verify that only one API request is sent
     # to the LiteLLM server
@@ -50,13 +50,13 @@ def test_lm_calls_are_cached_across_lm_instances(mock_litellm_server, temporary_
         api_key="fakekey",
     )
     lm2("Example query")
-    request_logs = read_server_request_logs(server_log_file_path)
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 1
 
     # Call one of the LMs with new text and verify that a new API request is sent to the
     # LiteLLM server
     lm1("New query")
-    request_logs = read_server_request_logs(server_log_file_path)
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 2
 
     # Create a new LM instance with a different model and query it twice with the original text.
@@ -68,16 +68,16 @@ def test_lm_calls_are_cached_across_lm_instances(mock_litellm_server, temporary_
     )
     lm3("Example query")
     lm3("Example query")
-    request_logs = read_server_request_logs(server_log_file_path)
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 3
 
 
-def test_lm_calls_are_cached_across_interpreter_sessions(mock_litellm_server, temporary_populated_cache_dir):
+def test_lm_calls_are_cached_across_interpreter_sessions(litellm_test_server, temporary_populated_cache_dir):
     """
     Verifies that LM calls are cached across interpreter sessions. Pytest test cases effectively
     simulate separate interpreter sessions.
     """
-    api_base, server_log_file_path = mock_litellm_server
+    api_base, server_log_file_path = litellm_test_server
 
     lm1 = dspy.LM(
         model="openai/dspy-test-model",
@@ -86,5 +86,5 @@ def test_lm_calls_are_cached_across_interpreter_sessions(mock_litellm_server, te
     )
     lm1("Example query")
 
-    request_logs = read_server_request_logs(server_log_file_path)
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 0
