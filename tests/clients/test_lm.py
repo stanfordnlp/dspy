@@ -1,9 +1,9 @@
 from unittest import mock
 
 import pytest
-from litellm.router import RetryPolicy
+# from litellm.router import RetryPolicy
 
-from dspy.clients.lm import LM, _get_litellm_router
+# from dspy.clients.lm import LM, _get_litellm_router
 
 
 # @pytest.mark.parametrize("keys_in_env_vars", [True, False])
