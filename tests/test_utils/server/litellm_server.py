@@ -10,19 +10,19 @@ LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR = "LITELLM_TEST_SERVER_LOG_FILE_PATH"
 class DSPyTestModel(CustomLLM):
     def completion(self, *args, **kwargs) -> litellm.ModelResponse:
         _append_request_to_log_file(kwargs)
-        return litellm.completion(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": "Hello world"}],
-            mock_response="Hi!",
-        )  # type: ignore
+        return _get_mock_llm_response()
 
     async def acompletion(self, *args, **kwargs) -> litellm.ModelResponse:
         _append_request_to_log_file(kwargs)
-        return litellm.completion(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": "Hello world"}],
-            mock_response="Hi!",
-        )
+        return _get_mock_llm_response()
+
+
+def _get_mock_llm_response():
+    return litellm.completion(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": "Hello world"}],
+        mock_response="Hi!",
+    )
 
 
 def _append_request_to_log_file(completion_kwargs):
