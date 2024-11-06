@@ -2,6 +2,9 @@ model_list:
   - model_name: "dspy-test-model"
     litellm_params:
       model: "dspy-test-provider/dspy-test-model"
+  - model_name: "dspy-test-model-2"
+    litellm_params:
+      model: "dspy-test-provider/dspy-test-model"
 
 litellm_settings:
   custom_provider_map:
