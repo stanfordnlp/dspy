@@ -239,7 +239,7 @@ class MIPROv2(Teleprompter):
                 raise ValueError(
                     "Trainset must have at least 2 examples if no valset specified."
                 )
-            valset_size = min(500, max(1, int(len(trainset) * 0.80)))
+            valset_size = min(1000, max(1, int(len(trainset) * 0.80)))
             cutoff = len(trainset) - valset_size
             valset = trainset[cutoff:]
             trainset = trainset[:cutoff]

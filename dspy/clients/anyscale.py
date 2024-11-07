@@ -7,7 +7,7 @@ import logging
 
 from dspy.clients.finetune import (
     FinetuneJob,
-    TrainingMethod,
+    # TrainingMethod,
     save_data,
 )
 from dspy.clients.openai import openai_data_validation
@@ -32,7 +32,7 @@ PROVIDER_ANYSCALE = "anyscale"
 def is_anyscale_model(model: str) -> bool:
     """Check if the model is an AnyScale model."""
     # TODO: This needs to be implemented to support fine-tuning
-    logger.info("Is AnyScale model is not implemented, returning False as a default to not break lm.py")
+    print("Is AnyScale model is not implemented, returning False as a default to not break lm.py")
     return False
 
 
@@ -103,9 +103,9 @@ def finetune_anyscale(
 
 def wait_for_training(job_id):
     """Wait for the training to complete."""
-    logger.info("[Finetune] Waiting for training to complete...")
+    print("[Finetune] Waiting for training to complete...")
     anyscale.job.wait(id=job_id)
-    logger.info("[Finetune] Training completed.")
+    print("[Finetune] Training completed.")
 
 
 def update_serve_model_config(lora_dynamic_path: str, serve_config_path: str):
@@ -126,7 +126,7 @@ def update_serve_model_config(lora_dynamic_path: str, serve_config_path: str):
 
 def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
     """Verify the training arguments before starting training."""
-    logger.info("[Finetune] Verifying dataset...")
+    print("[Finetune] Verifying dataset...")
     dataset_validation = openai_data_validation(dataset)
 
     if dataset_validation:
@@ -138,11 +138,11 @@ def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
 
 def submit_data(train_path: str, job_config: Dict[str, Any]):
     """Upload the data to cloud storage."""
-    logger.info("[Finetune] Submitting data to remote storage...")
+    print("[Finetune] Submitting data to remote storage...")
     dataset_suffix = os.path.basename(train_path).split(".")[0]
     dataset_name = f"dataset-{job_config.get('name', dataset_suffix)}"
     train_path_remote = anyscale.llm.dataset.upload(train_path, name=dataset_name, cloud=job_config.get("cloud", None)).storage_uri
-    logger.info(f"[Finetune] Data submitted. Remote train path: {train_path_remote}")
+    print(f"[Finetune] Data submitted. Remote train path: {train_path_remote}")
 
     return train_path_remote
 
@@ -158,7 +158,7 @@ def generate_config_files(train_path: str, llmforge_config_path: str, job_config
     llmforge_config["train_path"] = train_path
     llmforge_config = {k: v for k, v in llmforge_config.items() if v is not None}
 
-    logger.info(f"Model config data: {llmforge_config}")
+    print(f"Model config data: {llmforge_config}")
     yaml.safe_dump(llmforge_config, open(llmforge_config_path, "w"))
 
     if not job_config_dict.get("env_vars", None):
@@ -176,21 +176,21 @@ def generate_config_files(train_path: str, llmforge_config_path: str, job_config
 
 
 def start_remote_training(job_config) -> str:
-    logger.info("[Finetune] Starting remote training...")
+    print("[Finetune] Starting remote training...")
     job_id: str = anyscale.job.submit(job_config)
-    logger.info(f"[Finetune] Remote training started. Job ID: {job_id}")
+    print(f"[Finetune] Remote training started. Job ID: {job_id}")
     return job_id
 
 
 def wait_for_training(job_id):
-    logger.info("Waiting for training to complete")
+    print("Waiting for training to complete")
     anyscale.job.wait(id=job_id, timeout_s=18000)
 
 
 def get_model_info(job_id):
-    logger.info("[Finetune] Retrieving model information from Anyscale Models SDK...")
+    print("[Finetune] Retrieving model information from Anyscale Models SDK...")
     info = anyscale.llm.model.get(job_id=job_id).to_dict()
-    logger.info(f"[Finetune] Model info retrieved: {info}")
+    print(f"[Finetune] Model info retrieved: {info}")
     return info
 
 def read_jsonl(filename):

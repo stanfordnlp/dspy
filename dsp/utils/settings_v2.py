@@ -73,7 +73,7 @@ def main():
             futures = {executor.submit(thread_wrapper, sample_program, parent_tid, arg) for arg in range(3)}
 
             for future in as_completed(futures):
-                res = future.result()
+                future.result()
 
         print(f"Main thread {parent_tid} config after threads: {dsp_settings._get_current_config()}")
 

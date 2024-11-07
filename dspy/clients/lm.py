@@ -3,15 +3,22 @@ from .base_lm import BaseLM
 import logging
 import os
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+import threading
 from typing import Any, Dict, List, Literal, Optional
 import dspy
 import litellm
 import ujson
 
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
+from dspy.adapters.base import Adapter
+from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.openai import OpenAIProvider
+from dspy.clients.utils_finetune import (
+  DataFormat,
+  validate_data_format,
+  infer_data_format
+)
+
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 
@@ -33,6 +40,7 @@ class LM(BaseLM):
         launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
+        provider=None,
         **kwargs,
     ):
         """
@@ -56,6 +64,8 @@ class LM(BaseLM):
         self.model_type = model_type
         self.cache = cache
         self.launch_kwargs = launch_kwargs or {}
+        self.provider = provider or self.infer_provider()
+        self.callbacks = callbacks or []
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
         self.callbacks = callbacks or []
@@ -64,8 +74,8 @@ class LM(BaseLM):
         #turned off by default to avoid LiteLLM logging during every LM call
         litellm.suppress_debug_info = dspy.settings.suppress_debug_info
 
-        # TODO: Arbitrary model strings could include the substring "o1-". We
-        # should find a more robust way to check for the "o1-" family models.
+        # TODO(bug): Arbitrary model strings could include the substring "o1-".
+        # We should find a more robust way to check for the "o1-" family models.
         if "o1-" in model:
             assert (
                 max_tokens >= 5000 and temperature == 1.0
@@ -108,47 +118,86 @@ class LM(BaseLM):
         return outputs
 
     def launch(self):
-        """Send a request to the provider to launch the model, if needed."""
-        msg = f"`launch()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
+        self.provider.launch(self.model, self.launch_kwargs)
 
     def kill(self):
-        """Send a request to the provider to kill the model, if needed."""
-        msg = f"`kill()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
+        self.provider.kill(self.model, self.launch_kwargs)
 
     def finetune(
-        self,
-        train_data: List[Dict[str, Any]],
-        train_kwargs: Optional[Dict[str, Any]] = None,
-        train_method: TrainingMethod = TrainingMethod.SFT,
-        provider: str = "openai",
-        cache_finetune: bool = True,
-    ) -> FinetuneJob:
-        """Start model fine-tuning, if supported."""
+            self,
+            train_data: List[Dict[str, Any]],
+            train_kwargs: Optional[Dict[str, Any]]=None,
+            data_format: Optional[DataFormat] = None,
+        ) -> TrainingJob:
         from dspy import settings as settings
 
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
-        FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
-        finetune_job = FinetuneJobClass(
+        err = f"Provider {self.provider} does not support fine-tuning."
+        assert self.provider.finetunable, err
+
+        # Perform data validation before starting the thread to fail early
+        train_kwargs = train_kwargs or {}
+        if not data_format:
+            adapter = self.infer_adapter()
+            data_format = infer_data_format(adapter)
+        validate_data_format(data=train_data, data_format=data_format)
+
+        # TODO(PR): We can quickly add caching, but doing so requires
+        # adding functions that just call other functions as we had in the last
+        # iteration, unless people have other ideas.
+        def thread_function_wrapper():
+            return self._run_finetune_job(job)
+
+        thread = threading.Thread(target=thread_function_wrapper)
+        job = self.provider.TrainingJob(
+            thread=thread,
             model=self.model,
             train_data=train_data,
             train_kwargs=train_kwargs,
-            train_method=train_method,
-            provider=provider,
+            data_format=data_format
         )
+        thread.start()
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune)
-        executor.shutdown(wait=False)
+        return job
 
-        return finetune_job
+    def _run_finetune_job(self, job: TrainingJob):
+        # TODO(enhance): We should listen for keyboard interrupts somewhere.
+        # Requires TrainingJob.cancel() to be implemented for each provider.
+        try:
+            model = self.provider.finetune(
+                job=job,
+                model=job.model,
+                train_data=job.train_data,
+                train_kwargs=job.train_kwargs,
+                data_format=job.data_format
+            )
+            lm = self.copy(model=model)
+            job.set_result(lm)
+        except Exception as err:
+            logger.error(err)
+            job.set_result(err)
+    
+    def infer_provider(self) -> Provider:
+        if OpenAIProvider.is_provider_model(self.model):
+            return OpenAIProvider()
+        # TODO(PR): Keeping this function here will require us to import all
+        # providers in this file. Is this okay?
+        return Provider()
+    
+    def infer_adapter(self) -> Adapter:
+        import dspy
+        if dspy.settings.adapter:
+            return dspy.settings.adapter
 
+        model_type_to_adapter = {
+            "chat": dspy.ChatAdapter(),
+        }
+        model_type = self.model_type
+        return model_type_to_adapter[model_type]
+        
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
 
