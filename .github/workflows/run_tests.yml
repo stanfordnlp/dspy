@@ -22,9 +22,9 @@ jobs:
       - uses: actions/setup-python@v5
       - name: Ruff Fix Attempt
         id: ruff_fix
-        uses: astral-sh/ruff-action@v1
+        uses: chartboost/ruff-action@v1
         with:
-          args: check --fix-only --exit-non-zero-on-fix
+          args: check --fix-only --diff --exit-non-zero-on-fix
         continue-on-error: true
       - name: Fail Workflow if Ruff Fix Failed
         if: steps.ruff_fix.outcome == 'failure'
