@@ -4,7 +4,6 @@ from threading import Thread
 from typing import Any, Dict, List, Optional
 
 from dspy.clients.utils_finetune import DataFormat
-from dspy.utils.logging import logger
 
 
 class TrainingJob(Future):
