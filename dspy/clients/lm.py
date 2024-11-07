@@ -1,26 +1,22 @@
 import functools
-from .base_lm import BaseLM
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime
-import threading
 from typing import Any, Dict, List, Literal, Optional
-import dspy
+
 import litellm
 import ujson
 
+import dspy
 from dspy.adapters.base import Adapter
-from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.utils_finetune import (
-  DataFormat,
-  validate_data_format,
-  infer_data_format
-)
-
+from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
 from dspy.utils.callback import BaseCallback, with_callbacks
 
+from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +59,6 @@ class LM(BaseLM):
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.launch_kwargs = launch_kwargs or {}
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -117,18 +112,18 @@ class LM(BaseLM):
 
         return outputs
 
-    def launch(self):
-        self.provider.launch(self.model, self.launch_kwargs)
+    def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
+        self.provider.launch(self.model, **launch_kwargs)
 
-    def kill(self):
-        self.provider.kill(self.model, self.launch_kwargs)
+    def kill(self, kill_kwargs: Optional[Dict[str, Any]] = None):
+        self.provider.kill(self.model, **kill_kwargs)
 
     def finetune(
-            self,
-            train_data: List[Dict[str, Any]],
-            train_kwargs: Optional[Dict[str, Any]]=None,
-            data_format: Optional[DataFormat] = None,
-        ) -> TrainingJob:
+        self,
+        train_data: List[Dict[str, Any]],
+        train_kwargs: Optional[Dict[str, Any]] = None,
+        data_format: Optional[DataFormat] = None,
+    ) -> TrainingJob:
         from dspy import settings as settings
 
         err = "Fine-tuning is an experimental feature."
@@ -153,11 +148,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         job = self.provider.TrainingJob(
-            thread=thread,
-            model=self.model,
-            train_data=train_data,
-            train_kwargs=train_kwargs,
-            data_format=data_format
+            thread=thread, model=self.model, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
         )
         thread.start()
 
@@ -172,23 +163,24 @@ class LM(BaseLM):
                 model=job.model,
                 train_data=job.train_data,
                 train_kwargs=job.train_kwargs,
-                data_format=job.data_format
+                data_format=job.data_format,
             )
             lm = self.copy(model=model)
             job.set_result(lm)
         except Exception as err:
             logger.error(err)
             job.set_result(err)
-    
+
     def infer_provider(self) -> Provider:
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
         # TODO(PR): Keeping this function here will require us to import all
         # providers in this file. Is this okay?
         return Provider()
-    
+
     def infer_adapter(self) -> Adapter:
         import dspy
+
         if dspy.settings.adapter:
             return dspy.settings.adapter
 
@@ -197,7 +189,7 @@ class LM(BaseLM):
         }
         model_type = self.model_type
         return model_type_to_adapter[model_type]
-        
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
 
