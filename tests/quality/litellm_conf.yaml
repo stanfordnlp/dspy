@@ -7,27 +7,67 @@ model_list:
       model: "<litellm_provider>/<litellm_model_name>"
       api_key: "api key"
       api_base: "<api_base>"
+  - model_name: "gpt-4-turbo"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
   - model_name: "gpt-4o"
     litellm_params:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
       # api_base: "<api_base>"
-  - model_name: "llama-3.1-70b"
+  - model_name: "gpt-4o-mini"
     litellm_params:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
       # api_base: "<api_base>"
-  - model_name: "llama-3.1-90b"
+  - model_name: "gpt-o1"
     litellm_params:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
       # api_base: "<api_base>"
-  - model_name: "claude-3-5-sonnet"
+  - model_name: "gpt-o1-mini"
     litellm_params:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
       # api_base: "<api_base>"
-  - model_name: "claude-3-5-haiku"
+  - model_name: "claude-3.5-sonnet"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "claude-3.5-haiku"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "gemini-1.5-pro"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "gemini-1.5-flash"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.1-405b-instruct"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.1-70b-instruct"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.1-8b-instruct"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.2-3b-instruct"
     litellm_params:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
