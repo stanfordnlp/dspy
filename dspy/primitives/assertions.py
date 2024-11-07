@@ -224,7 +224,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                     except (DSPySuggestionError, DSPyAssertionError) as e:
                         if not current_error:
                             current_error = e
-                        error_id, error_msg, error_target_module, error_state = (
+                        _error_id, error_msg, error_target_module, error_state = (
                             e.id,
                             e.msg,
                             e.target_module,
@@ -273,7 +273,7 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                                 )
 
                             # save latest failure trace for predictor per suggestion
-                            error_ip = error_state[1]
+                            error_state[1]
                             error_op = error_state[2].__dict__["_store"]
                             error_op.pop("_assert_feedback", None)
                             error_op.pop("_assert_traces", None)
