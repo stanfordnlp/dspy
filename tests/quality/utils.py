@@ -14,7 +14,7 @@ JUDGE_MODEL_NAME = "judge"
 
 def assert_program_output_correct(program_output: Any, grading_guidelines: str):
     """
-    With the help of an LLM judge, assert that the specified output of a DSPy program is correct
+    With the help of an LLM judge, assert that the specified output of a DSPy program is correct,
     according to the specified grading guidelines.
 
     Args:
@@ -32,10 +32,12 @@ def assert_program_output_correct(program_output: Any, grading_guidelines: str):
 
 def known_failing_models(models: List[str]):
     """
-    Decorator to allow specific test cases to fail for certain models.
+    Decorator to allow specific test cases to fail for certain models. This is useful when a
+    model is known to be unable to perform a specific task (e.g. output formatting with complex
+    schemas) to the required standard.
 
     Args:
-        models: List of model names for which the tes case is allowed to fail.
+        models: List of model names for which the test case is allowed to fail.
     """
 
     def decorator(test_func):
