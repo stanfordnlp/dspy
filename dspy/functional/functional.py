@@ -62,7 +62,7 @@ class _StripOutput(dspy.Module):
 
 
 class FunctionalModule(dspy.Module):
-    """To use the @cot and @predictor decorators, your module needs to inheret form this class."""
+    """To use the @cot and @predictor decorators, your module needs to inherit form this class."""
 
     def __init__(self):
         super().__init__()
@@ -208,7 +208,7 @@ class TypedPredictor(dspy.Module):
 
             task_description: str = dspy.InputField(desc="What I asked the model to do")
             language_model_output: str = dspy.InputField(desc="The output of the model")
-            error: str = dspy.InputField(desc="The validation error trigged by the models output")
+            error: str = dspy.InputField(desc="The validation error triggered by the models output")
             explanation: str = dspy.OutputField(desc="Explain what the model did wrong")
             advice: str = dspy.OutputField(
                 desc="Instructions for the model to do better next time. A single paragraph.",

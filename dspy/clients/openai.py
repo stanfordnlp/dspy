@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -6,7 +7,6 @@ import openai
 
 from dspy.clients.provider import TrainingJob, Provider
 from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
-from dspy.utils.logging import logger
 
 
 _OPENAI_MODELS = [

@@ -1,9 +1,10 @@
-from typing import Any, Dict, List, Optional
 import json
-import yaml
 import os
+from typing import Any, Dict, List, Optional
 
-from dspy.utils.logging import logger
+import yaml
+import logging
+
 from dspy.clients.finetune import (
     FinetuneJob,
     # TrainingMethod,
@@ -18,6 +19,7 @@ try:
 except ImportError:
     anyscale = None
 
+logger = logging.getLogger(__name__)
 
 # List of training methods supported by AnyScale
 TRAINING_METHODS_ANYSCALE = [
