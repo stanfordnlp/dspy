@@ -1,0 +1,34 @@
+model_list:
+  # The model to use for judging the correctness of program
+  # outputs throughout quality test suites. We recommend using
+  # a high quality model as the judge, e.g. GPT-4
+  - model_name: "judge"
+    litellm_params:
+      model: "<litellm_provider>/<litellm_model_name>"
+      api_key: "api key"
+      api_base: "<api_base>"
+  - model_name: "gpt-4o"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.1-70b"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "llama-3.1-90b"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "claude-3-5-sonnet"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
+  - model_name: "claude-3-5-haiku"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # api_base: "<api_base>"
