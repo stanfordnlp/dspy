@@ -1,4 +1,3 @@
-import dsp
 import dspy
 
 from .predict import Module

@@ -4,7 +4,6 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from pathlib import Path
 import threading
 from typing import Any, Dict, List, Literal, Optional
 import dspy

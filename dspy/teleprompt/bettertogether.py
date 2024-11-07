@@ -12,7 +12,6 @@ from dspy.teleprompt.bootstrap_finetune import (
   BootstrapFinetune, set_missing_predictor_lms, prepare_student
 )
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
-from dspy.utils.logging import logger
 
 
 class BetterTogether(Teleprompter):

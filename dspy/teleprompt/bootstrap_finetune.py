@@ -10,7 +10,6 @@ from dspy.primitives.example import Example
 from dspy.predict.predict import Predict
 from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.utils.logging import logger
 
 
 class FinetuneTeleprompter(Teleprompter):
