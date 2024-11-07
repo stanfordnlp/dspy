@@ -23,12 +23,12 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     
     try:
         signature = completions.signature
-    except:
+    except Exception:
         signature = None
     
     if not field:
         if signature:
-            field = signature.output_fields[-1]
+            field = list(signature.output_fields.keys())[-1]
         else:
             field = list(completions[0].keys())[-1]
 
