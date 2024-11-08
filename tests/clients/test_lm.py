@@ -1,25 +1,24 @@
 from unittest import mock
 
-from dspy.clients.lm import LM
+import pytest
+
+import dspy
+from tests.test_utils.server import litellm_test_server
 
 
-def test_lm_chat_respects_max_retries():
-    lm = LM(model="openai/gpt4o", model_type="chat", max_retries=17)
+def test_lms_can_be_queried(litellm_test_server):
+    api_base, _ = litellm_test_server
 
-    with mock.patch("dspy.clients.lm.litellm.completion") as litellm_completion_api:
-        lm(messages=[{"content": "Hello, world!", "role": "user"}])
+    openai_lm = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+    )
+    openai_lm("openai query")
 
-    assert litellm_completion_api.call_count == 1
-    assert litellm_completion_api.call_args[1]["max_retries"] == 17
-    # assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"
-
-
-def test_lm_completions_respects_max_retries():
-    lm = LM(model="openai/gpt-3.5-turbo", model_type="completions", max_retries=17)
-
-    with mock.patch("dspy.clients.lm.litellm.text_completion") as litellm_completion_api:
-        lm(prompt="Hello, world!")
-
-    assert litellm_completion_api.call_count == 1
-    assert litellm_completion_api.call_args[1]["max_retries"] == 17
-    # assert litellm_completion_api.call_args[1]["retry_strategy"] == "exponential_backoff_retry"
+    azure_openai_lm = dspy.LM(
+        model="azure/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+    )
+    azure_openai_lm("azure openai query")

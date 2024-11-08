@@ -62,7 +62,7 @@ class _StripOutput(dspy.Module):
 
 
 class FunctionalModule(dspy.Module):
-    """To use the @cot and @predictor decorators, your module needs to inheret form this class."""
+    """To use the @cot and @predictor decorators, your module needs to inherit form this class."""
 
     def __init__(self):
         super().__init__()
@@ -208,7 +208,7 @@ class TypedPredictor(dspy.Module):
 
             task_description: str = dspy.InputField(desc="What I asked the model to do")
             language_model_output: str = dspy.InputField(desc="The output of the model")
-            error: str = dspy.InputField(desc="The validation error trigged by the models output")
+            error: str = dspy.InputField(desc="The validation error triggered by the models output")
             explanation: str = dspy.OutputField(desc="Explain what the model did wrong")
             advice: str = dspy.OutputField(
                 desc="Instructions for the model to do better next time. A single paragraph.",
@@ -261,16 +261,21 @@ class TypedPredictor(dspy.Module):
                         and typing.get_origin(type_) not in (list, tuple)  # To support Python 3.9
                         and issubclass(type_, pydantic.BaseModel)
                     ):
-                        to_json = lambda x: x.model_dump_json()
-                        from_json = lambda x, type_=type_: type_.model_validate_json(x)
+                        def to_json(x):
+                            return x.model_dump_json()
+                        def from_json(x, type_=type_):
+                            return type_.model_validate_json(x)
                         schema = json.dumps(type_.model_json_schema())
                     else:
                         adapter = pydantic.TypeAdapter(type_)
-                        to_json = lambda x: adapter.serializer.to_json(x)
-                        from_json = lambda x, type_=adapter: type_.validate_json(x)
+                        def to_json(x):
+                            return adapter.serializer.to_json(x)
+                        def from_json(x, type_=adapter):
+                            return type_.validate_json(x)
                         schema = json.dumps(adapter.json_schema())
                     if self.wrap_json:
-                        to_json = lambda x, inner=to_json: "```json\n" + inner(x) + "\n```\n"
+                        def to_json(x, inner=to_json):
+                            return "```json\n" + inner(x) + "\n```\n"
                         schema = "```json\n" + schema + "\n```"
                     signature = signature.with_updated_fields(
                         name,
@@ -283,24 +288,27 @@ class TypedPredictor(dspy.Module):
                     )
             else:  # If input field
                 is_json = False
-                format_ = lambda x: x if isinstance(x, str) else str(x)
+                def format_(x):
+                    return x if isinstance(x, str) else str(x)
                 if type_ in (List[str], list[str], Tuple[str], tuple[str]):
                     format_ = passages2text
                 # Special formatting for lists of known types. Maybe the output fields sohuld have this too?
                 elif typing.get_origin(type_) in (List, list, Tuple, tuple):
                     (inner_type,) = typing.get_args(type_)
                     if inspect.isclass(inner_type) and issubclass(inner_type, pydantic.BaseModel):
-                        format_ = (
-                            lambda x: x if isinstance(x, str) else "[" + ",".join(i.model_dump_json() for i in x) + "]"
-                        )
+                        def format_(x):
+                            return x if isinstance(x, str) else "[" + ",".join(i.model_dump_json() for i in x) + "]"
                     else:
-                        format_ = lambda x: x if isinstance(x, str) else json.dumps(x)
+                        def format_(x):
+                            return x if isinstance(x, str) else json.dumps(x)
                     is_json = True
                 elif inspect.isclass(type_) and issubclass(type_, pydantic.BaseModel):
-                    format_ = lambda x: x if isinstance(x, str) else x.model_dump_json()
+                    def format_(x):
+                        return x if isinstance(x, str) else x.model_dump_json()
                     is_json = True
                 if self.wrap_json and is_json:
-                    format_ = lambda x, inner=format_: x if isinstance(x, str) else "```json\n" + inner(x) + "\n```\n"
+                    def format_(x, inner=format_):
+                        return x if isinstance(x, str) else "```json\n" + inner(x) + "\n```\n"
                 signature = signature.with_updated_fields(name, format=format_)
 
         return signature

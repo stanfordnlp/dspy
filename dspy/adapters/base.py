@@ -1,19 +1,8 @@
-import abc
+from abc import ABC, abstractmethod
+
 from dspy.utils.callback import with_callbacks
 
-class Adapter:
-    @abc.abstractmethod
-    def format(self, signature, demos, inputs):
-        """
-        Format the input data for the LLM.
-        """
-
-    @abc.abstractmethod
-    def parse(self, signature, completion):
-        """
-        Parse the output data from the LLM.
-        """
-
+class Adapter(ABC):
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
 
@@ -31,7 +20,6 @@ class Adapter:
         outputs = lm(**inputs_, **lm_kwargs)
         values = []
 
-        
         try:
             for output in outputs:
                 value = self.parse(signature, output, _parse_values=_parse_values)
@@ -45,3 +33,13 @@ class Adapter:
                 return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
+    @abstractmethod
+    def format(self, signature, demos, inputs):
+       raise NotImplementedError
+
+    @abstractmethod
+    def parse(self, signature, completion, _parse_values):
+       raise NotImplementedError
+
+    def format_finetune_data(self, signature, demos, inputs, outputs):
+        raise NotImplementedError

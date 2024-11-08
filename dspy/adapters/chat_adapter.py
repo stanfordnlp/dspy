@@ -34,10 +34,6 @@ class FieldInfoWithName(NamedTuple):
 BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=OutputField())
 
 class ChatAdapter(Adapter):
-    """
-    ChatAdapter is used to format and parse data for chat-based LLMs.
-    """
-
     def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
@@ -90,6 +86,19 @@ class ChatAdapter(Adapter):
 
         return fields
 
+    # TODO(PR): Looks ok?
+    def format_finetune_data(self, signature, demos, inputs, outputs):
+        # Get system + user messages
+        messages = self.format(signature, demos, inputs)
+
+        # Add the assistant message
+        role = "assistant"
+        incomplete = False
+        assistant_message = format_turn(signature, outputs, role, incomplete)
+        messages.append(assistant_message)
+
+        # Wrap the messages in a dictionary with a "messages" key
+        return dict(messages=messages)
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
 
@@ -209,7 +218,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
             else:
                 output[-1]["text"] += formatted_field_value["text"]
     if assume_text:
-        return "\n\n".join(output)
+        return "\n\n".join(output).strip()
     else:
         return output
 
@@ -396,7 +405,6 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append(format_signature_fields_for_instructions(signature.input_fields))
     parts.append(format_signature_fields_for_instructions(signature.output_fields))
     parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}, assume_text=True))
-
     instructions = textwrap.dedent(signature.instructions)
     objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")

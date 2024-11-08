@@ -19,7 +19,7 @@ from dspy.signatures.field import InputField, OutputField
 def make_info(signature: type[Signature]) -> BaseModel:
     """Creates a SignatureInfo pydantic type, that describes the Signature.
 
-    Returns an instnce of this type, with the instructions and field descriptions of the input type.
+    Returns an instance of this type, with the instructions and field descriptions of the input type.
     """
     # First, create the SignatureInfo type
     fields = {
@@ -82,7 +82,7 @@ def make_initial_signature(n_prompts: int) -> type[Signature]:
         - You are an expert mathematician.
         - You are a professor of mathematics.
         Task Descriptions:
-        - Be consise in your answer.
+        - Be concise in your answer.
         - Be as clear as possible.
         - Use lots of creativity.
         Closers:
