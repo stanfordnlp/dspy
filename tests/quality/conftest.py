@@ -81,4 +81,4 @@ def pytest_runtest_makereport(item, call):
 
     if should_ignore_failure and rep.failed:
         rep.outcome = "passed"
-        rep.wasxfail = f"Ignoring failure for known failing model '{item.model_name}'"
+        rep.wasxfail = "Ignoring failure for known failing model"
