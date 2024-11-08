@@ -62,7 +62,7 @@ jobs:
         with:
           args: check --fix-only
       - name: Run tests with pytest
-        run: poetry run pytest tests/ --ignore=tests/quality
+        run: poetry run pytest tests/ --ignore=tests/reliability
 
   build_poetry:
     name: Build Poetry
