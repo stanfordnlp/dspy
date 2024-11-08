@@ -52,7 +52,7 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
 Some tests may be expected to fail with certain models, especially in challenging cases. These known failures are logged but do not affect the overall test result. This setup allows us to keep track of model-specific limitations without obstructing general test outcomes. Models that are known to fail a particular test case are specified using the `@known_failing_models` decorator. For example:
 
 ```
-@known_failing_models("llama-3.2-3b-instruct")
+@known_failing_models(["llama-3.2-3b-instruct"])
 def test_program_with_complex_deeply_nested_output_structure():
     ...
 ```
