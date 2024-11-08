@@ -234,14 +234,16 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
       ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
     content = []
+    fields: Dict[str, FieldInfo] = {}
+    image_fields: Dict[str, FieldInfo] = {}
 
     if role == "user":
-        fields: Dict[str, FieldInfo] = {k: v for k, v in signature.input_fields.items() if not v.json_schema_extra.get('is_image_url', False)}
-        image_fields: Dict[str, FieldInfo] = {k: v for k, v in signature.input_fields.items() if v.json_schema_extra.get('is_image_url', False)}
+        fields.update({k: v for k, v in signature.input_fields.items() if not v.json_schema_extra.get('is_image_url', False)})
+        image_fields.update({k: v for k, v in signature.input_fields.items() if v.json_schema_extra.get('is_image_url', False)})
         if incomplete:
             content.append("This is an example of the task, though some input or output fields are not supplied.")
     else:
-        fields: Dict[str, FieldInfo] = signature.output_fields
+        fields.update(signature.output_fields)
         # Add the built-in field indicating that the chat turn has been completed
         fields[BuiltInCompletedOutputFieldInfo.name] = BuiltInCompletedOutputFieldInfo.info
         values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
@@ -289,9 +291,11 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
                 for field_name, field_info in image_fields.items()
             }
         ))
-        content = json.dumps(image_content)
+        content = image_content
+    else:
+        content = "\n\n".join(content).strip()
 
-    return {"role": role, "content": "\n\n".join(content).strip()}
+    return {"role": role, "content": content}
 
 
 def get_annotation_name(annotation):
