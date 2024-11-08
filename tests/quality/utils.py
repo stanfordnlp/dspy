@@ -96,13 +96,17 @@ def _parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
 
         model_dict = {}
         for conf_entry in conf["model_list"]:
+            model_name = conf_entry.get("model_name")
+            if model_name is None:
+                raise ValueError("Model name missing in quality_conf.yaml")
+
             litellm_params = conf_entry.get("litellm_params")
             if litellm_params is not None:
-                model_dict[conf_entry["model_name"]] = litellm_params
+                model_dict[model_name] = litellm_params
             else:
                 print(
-                    "Skipping all test cases for model without LiteLLM parameters"
-                    " ('litellm_params' section of conf file is missing)."
+                    f"Skipping all test cases for model {model_name} without LiteLLM parameters"
+                    f" ('litellm_params' section of conf file is missing)."
                 )
 
         adapter = conf.get("adapter")
