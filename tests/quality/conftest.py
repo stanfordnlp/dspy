@@ -78,8 +78,7 @@ def pytest_runtest_makereport(item, call):
     rep = outcome.get_result()
 
     should_ignore_failure = getattr(item, "should_ignore_failure", False)
-    model_name = getattr(item, "model_name", "<unknown>")
 
     if should_ignore_failure and rep.failed:
         rep.outcome = "passed"
-        rep.wasxfail = f"Ignoring failure for known failing model '{model_name}'"
+        rep.wasxfail = f"Ignoring failure for known failing model '{item.model_name}'"
