@@ -17,7 +17,6 @@ nav:
     - Signatures:
       - Overview: building-blocks/2-signatures.md
       - Understanding Signatures: deep-dive/signature/understanding-signatures.md
-      - Executing Signatures: deep-dive/signature/executing-signatures.md
     - Data Handling:
       - Overview: building-blocks/4-data.md
       - Examples in DSPy: deep-dive/data-handling/examples.md
