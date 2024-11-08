@@ -165,7 +165,7 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = format_input_list_field_value(value)
     elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
-        string_value = json.dumps(_serialize_for_json(value))
+        string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
     else:
         string_value = str(value)
 
