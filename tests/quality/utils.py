@@ -56,7 +56,7 @@ def known_failing_models(models: List[str]):
 def _judge_dspy_configuration():
     module_dir = os.path.dirname(os.path.abspath(__file__))
     conf_path = os.path.join(module_dir, "quality_conf.yaml")
-    quality_conf = _parse_quality_conf_yaml(conf_path)
+    quality_conf = parse_quality_conf_yaml(conf_path)
     judge_params = quality_conf.models.get(JUDGE_MODEL_NAME)
     if judge_params is None:
         raise ValueError(f"No LiteLLM configuration found for judge model: {JUDGE_MODEL_NAME}")
@@ -89,7 +89,7 @@ class QualityTestConf(pydantic.BaseModel):
 
 
 @lru_cache(maxsize=None)
-def _parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
+def parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
     try:
         with open(conf_file_path, "r") as file:
             conf = yaml.safe_load(file)
