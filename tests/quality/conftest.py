@@ -4,7 +4,7 @@ import pytest
 
 import dspy
 from tests.conftest import clear_settings
-from tests.quality.utils import _parse_quality_conf_yaml
+from tests.quality.utils import parse_quality_conf_yaml
 
 # Standard list of models that should be used for periodic DSPy quality testing
 MODEL_LIST = [
@@ -45,7 +45,7 @@ def configure_model(request):
     """
     module_dir = os.path.dirname(os.path.abspath(__file__))
     conf_path = os.path.join(module_dir, "quality_conf.yaml")
-    quality_conf = _parse_quality_conf_yaml(conf_path)
+    quality_conf = parse_quality_conf_yaml(conf_path)
 
     if quality_conf.adapter.lower() == "chat":
         adapter = dspy.ChatAdapter()
