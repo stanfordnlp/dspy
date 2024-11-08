@@ -203,7 +203,6 @@ plugins:
         
         # Signatures
         'docs/deep-dive/signature/understanding-signatures.md': 'deep-dive/signature/understanding-signatures.md'
-        'docs/deep-dive/signature/executing-signatures.md': 'deep-dive/signature/executing-signatures.md'
         
         # Modules
         'docs/deep-dive/modules/predict.md': 'deep-dive/modules/predict.md'
