@@ -48,15 +48,12 @@ class DatabricksProvider(Provider):
         return False
 
     @staticmethod
-    def kill(model: str, launch_kwargs: Optional[Dict[str, Any]] = None):
-        pass
-
-    @staticmethod
     def deploy_finetuned_model(
         model: str,
         data_format: Optional[DataFormat] = None,
         databricks_host: Optional[str] = None,
         databricks_token: Optional[str] = None,
+        deploy_timeout: int = 900,
     ):
         workspace_client = _get_workspace_client()
         model_version = next(workspace_client.model_versions.list(model)).version
@@ -89,12 +86,17 @@ class DatabricksProvider(Provider):
         get_endpoint_response = requests.get(
             url=f"{databricks_host}/api/2.0/serving-endpoints/{model_name}", json={"name": model_name}, headers=headers
         )
+
         if get_endpoint_response.status_code == 200:
+            logger.info(
+                f"Serving endpoint {model_name} already exists, updating it instead of creating a new one."
+            )
             # The serving endpoint already exists, we will update it instead of creating a new one.
             data = {
                 "served_entities": [
                     {
-                        "entity_name": model_name,
+                        "name": model_name,
+                        "entity_name": model,
                         "entity_version": model_version,
                         "min_provisioned_throughput": min_provisioned_throughput,
                         "max_provisioned_throughput": max_provisioned_throughput,
@@ -108,12 +110,16 @@ class DatabricksProvider(Provider):
                 headers=headers,
             )
         else:
+            logger.info(
+                f"Creating serving endpoint {model_name} on Databricks model serving!"
+            )
             # Send the POST request to create the serving endpoint
             data = {
                 "name": model_name,
                 "config": {
                     "served_entities": [
                         {
+                            "name": model_name,
                             "entity_name": model,
                             "entity_version": model_version,
                             "min_provisioned_throughput": min_provisioned_throughput,
@@ -125,10 +131,17 @@ class DatabricksProvider(Provider):
 
             response = requests.post(url=f"{databricks_host}/api/2.0/serving-endpoints", json=data, headers=headers)
 
-        logger.info(response)
-        if response.status_code != 200:
+        if response.status_code == 200:
+            logger.info(
+                f"Successfully started creating/updating serving endpoint {model_name} on Databricks model serving!"
+            )
+        else:
             raise ValueError(f"Failed to create serving endpoint: {response.json()}.")
 
+        logger.info(
+            f"Waiting for serving endpoint {model_name} to be ready, this might take a few minutes... You can check "
+            f"the status of the endpoint at {databricks_host}/ml/endpoints/{model_name}"
+        )
         from openai import OpenAI
 
         client = OpenAI(
@@ -136,7 +149,8 @@ class DatabricksProvider(Provider):
             base_url=f"{databricks_host}/serving-endpoints",
         )
         # Wait for the deployment to be ready.
-        while True:
+        num_retries = deploy_timeout // 60
+        for _ in range(num_retries):
             try:
                 if data_format == DataFormat.chat:
                     client.chat.completions.create(
@@ -144,9 +158,15 @@ class DatabricksProvider(Provider):
                     )
                 elif data_format == DataFormat.completion:
                     client.completions.create(prompt="hi", model=model_name, max_tokens=1)
+                logger.info(f"Databricks model serving endpoint {model_name} is ready!")
                 return
             except Exception:
                 time.sleep(60)
+
+        raise ValueError(
+            f"Failed to create serving endpoint {model_name} on Databricks model serving platform within "
+            f"{deploy_timeout} seconds."
+        )
 
     @staticmethod
     def finetune(
@@ -189,7 +209,9 @@ class DatabricksProvider(Provider):
         databricks_token = train_kwargs.pop("databricks_token", None)
 
         skip_deploy = train_kwargs.pop("skip_deploy", False)
+        deploy_timeout = train_kwargs.pop("deploy_timeout", 900)
 
+        logger.info("Starting finetuning on Databricks... this might take a few minutes to finish.")
         finetuning_run = fm.create(
             model=model,
             **train_kwargs,
@@ -201,36 +223,45 @@ class DatabricksProvider(Provider):
         while True:
             job.run = fm.get(job.run)
             if job.run.status.display_name == "Completed":
+                logger.info("Finetuning run completed successfully!")
                 break
             elif job.run.status.display_name == "Failed":
                 raise ValueError(
                     f"Finetuning run failed with status: {job.run.status.display_name}. Please check the Databricks "
-                    f"workspace for more details. Finetuning job's metadata: {job.run}。"
+                    f"workspace for more details. Finetuning job's metadata: {job.run}."
                 )
             else:
                 time.sleep(60)
+
         if skip_deploy:
             return None
 
         job.launch_started = True
         model_to_deploy = train_kwargs.get("register_to")
         job.endpoint_name = model_to_deploy.replace(".", "_")
-        DatabricksProvider.deploy_finetuned_model(model_to_deploy, data_format, databricks_host, databricks_token)
+        DatabricksProvider.deploy_finetuned_model(
+            model_to_deploy, data_format, databricks_host, databricks_token, deploy_timeout
+        )
         job.launch_completed = True
         # The finetuned model name should be in the format: "databricks/<endpoint_name>".
         return f"databricks/{job.endpoint_name}"
 
     @staticmethod
     def upload_data(train_data: List[Dict[str, Any]], databricks_unity_catalog_path: str, data_format: DataFormat):
+        logger.info("Uploading finetuning data to Databricks Unity Catalog...")
         file_path = _save_data_to_local_file(train_data, data_format)
 
         w = _get_workspace_client()
         _create_directory_in_databricks_unity_catalog(w, databricks_unity_catalog_path)
 
-        with open(file_path, "rb") as f:
-            target_path = os.path.join(databricks_unity_catalog_path, os.path.basename(file_path))
-            w.files.upload(target_path, f, overwrite=True)
-        return target_path
+        try:
+            with open(file_path, "rb") as f:
+                target_path = os.path.join(databricks_unity_catalog_path, os.path.basename(file_path))
+                w.files.upload(target_path, f, overwrite=True)
+            logger.info("Successfully uploaded finetuning data to Databricks Unity Catalog!")
+            return target_path
+        except Exception as e:
+            raise ValueError(f"Failed to upload finetuning data to Databricks Unity Catalog: {e}")
 
 
 def _get_workspace_client() -> "WorkspaceClient":

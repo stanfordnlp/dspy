@@ -33,10 +33,10 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
-        launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
         provider=None,
+        finetuning_model: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -54,6 +54,9 @@ class LM(BaseLM):
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
                          backoff.
+            provider: The provider to use. If not specified, the provider will be inferred from the model.
+            finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
+                from the models available for inference.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
@@ -65,6 +68,7 @@ class LM(BaseLM):
         self.history = []
         self.callbacks = callbacks or []
         self.num_retries = num_retries
+        self.finetuning_model = finetuning_model
 
         #turned off by default to avoid LiteLLM logging during every LM call
         litellm.suppress_debug_info = dspy.settings.suppress_debug_info
@@ -147,8 +151,9 @@ class LM(BaseLM):
             return self._run_finetune_job(job)
 
         thread = threading.Thread(target=thread_function_wrapper)
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
-            thread=thread, model=self.model, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
+            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
         )
         thread.start()
 

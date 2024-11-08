@@ -83,7 +83,7 @@ class TrainingJobOpenAI(TrainingJob):
 
 
 class OpenAIProvider(Provider):
-
+    
     def __init__(self):
         super().__init__()
         self.finetunable = True

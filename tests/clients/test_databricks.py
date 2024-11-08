@@ -1,3 +1,9 @@
+"""Test the Databricks finetuning and deployment.
+
+This test requires valid Databricks credentials, so it is skipped on github actions. Right now it is only used for
+manual testing.
+"""
+
 from dspy.clients.databricks import (
     DatabricksProvider,
     _create_directory_in_databricks_unity_catalog,

@@ -50,7 +50,7 @@ class Provider:
         print(msg)
 
     @staticmethod
-    def kill(model: str, launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(model: str, kill_kwargs: Optional[Dict[str, Any]] = None):
         msg = f"`kill()` is called for the auto-launched model `{model}`"
         msg += " -- no action is taken!"
         print(msg)
@@ -62,6 +62,5 @@ class Provider:
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]] = None,
         data_format: Optional[Union[DataFormat, str]] = None,
-        **kwargs,
     ) -> str:
         raise NotImplementedError
