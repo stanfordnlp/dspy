@@ -4,7 +4,7 @@ from typing import List
 import pydantic
 
 import dspy
-from tests.quality.utils import assert_program_output_correct, known_failing_models
+from tests.reliability.utils import assert_program_output_correct, known_failing_models
 
 
 def test_qa_with_pydantic_answer_model():

@@ -55,9 +55,9 @@ def known_failing_models(models: List[str]):
 @contextmanager
 def _judge_dspy_configuration():
     module_dir = os.path.dirname(os.path.abspath(__file__))
-    conf_path = os.path.join(module_dir, "quality_conf.yaml")
-    quality_conf = parse_quality_conf_yaml(conf_path)
-    judge_params = quality_conf.models.get(JUDGE_MODEL_NAME)
+    conf_path = os.path.join(module_dir, "reliability_conf.yaml")
+    reliability_conf = parse_reliability_conf_yaml(conf_path)
+    judge_params = reliability_conf.models.get(JUDGE_MODEL_NAME)
     if judge_params is None:
         raise ValueError(f"No LiteLLM configuration found for judge model: {JUDGE_MODEL_NAME}")
 
@@ -83,13 +83,13 @@ def _get_judge_program():
     return dspy.Predict(JudgeSignature)
 
 
-class QualityTestConf(pydantic.BaseModel):
+class ReliabilityTestConf(pydantic.BaseModel):
     adapter: str
     models: Dict[str, Any]
 
 
 @lru_cache(maxsize=None)
-def parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
+def parse_reliability_conf_yaml(conf_file_path: str) -> ReliabilityTestConf:
     try:
         with open(conf_file_path, "r") as file:
             conf = yaml.safe_load(file)
@@ -98,7 +98,7 @@ def parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
         for conf_entry in conf["model_list"]:
             model_name = conf_entry.get("model_name")
             if model_name is None:
-                raise ValueError("Model name missing in quality_conf.yaml")
+                raise ValueError("Model name missing in reliability_conf.yaml")
 
             litellm_params = conf_entry.get("litellm_params")
             if litellm_params is not None:
@@ -111,8 +111,8 @@ def parse_quality_conf_yaml(conf_file_path: str) -> QualityTestConf:
 
         adapter = conf.get("adapter")
         if adapter is None:
-            raise ValueError("No adapter configuration found in quality_conf.yaml")
+            raise ValueError("No adapter configuration found in reliability_conf.yaml")
 
-        return QualityTestConf(adapter=adapter, models=model_dict)
+        return ReliabilityTestConf(adapter=adapter, models=model_dict)
     except Exception as e:
         raise ValueError(f"Error parsing LiteLLM configuration file: {conf_file_path}") from e

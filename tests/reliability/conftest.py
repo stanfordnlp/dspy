@@ -4,9 +4,9 @@ import pytest
 
 import dspy
 from tests.conftest import clear_settings
-from tests.quality.utils import parse_quality_conf_yaml
+from tests.reliability.utils import parse_reliability_conf_yaml
 
-# Standard list of models that should be used for periodic DSPy quality testing
+# Standard list of models that should be used for periodic DSPy reliability testing
 MODEL_LIST = [
     "gpt-4o",
     "gpt-4o-mini",
@@ -26,8 +26,8 @@ MODEL_LIST = [
 
 def pytest_generate_tests(metafunc):
     """
-    Hook to parameterize quality test cases with each model defined in the
-    quality tests YAML configuration
+    Hook to parameterize reliability test cases with each model defined in the
+    reliability tests YAML configuration
     """
     known_failing_models = getattr(metafunc.function, "_known_failing_models", [])
 
@@ -44,24 +44,24 @@ def configure_model(request):
     before executing a test case.
     """
     module_dir = os.path.dirname(os.path.abspath(__file__))
-    conf_path = os.path.join(module_dir, "quality_conf.yaml")
-    quality_conf = parse_quality_conf_yaml(conf_path)
+    conf_path = os.path.join(module_dir, "reliability_conf.yaml")
+    reliability_conf = parse_reliability_conf_yaml(conf_path)
 
-    if quality_conf.adapter.lower() == "chat":
+    if reliability_conf.adapter.lower() == "chat":
         adapter = dspy.ChatAdapter()
-    elif quality_conf.adapter.lower() == "json":
+    elif reliability_conf.adapter.lower() == "json":
         adapter = dspy.JSONAdapter()
     else:
-        raise ValueError(f"Unknown adapter specification '{adapter}' in quality_conf.yaml")
+        raise ValueError(f"Unknown adapter specification '{adapter}' in reliability_conf.yaml")
 
     model_name, should_ignore_failure = request.param
-    model_params = quality_conf.models.get(model_name)
+    model_params = reliability_conf.models.get(model_name)
     if model_params:
         lm = dspy.LM(**model_params)
         dspy.configure(lm=lm, adapter=adapter)
     else:
         pytest.skip(
-            f"Skipping test because no quality testing YAML configuration was found" f" for model {model_name}."
+            f"Skipping test because no reliability testing YAML configuration was found" f" for model {model_name}."
         )
 
     # Store `should_ignore_failure` flag on the request node for use in post-test handling

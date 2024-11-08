@@ -1,6 +1,6 @@
-# DSPy Quality Tests
+# DSPy Reliability Tests
 
-This directory contains quality tests for DSPy programs. The purpose of these tests is to verify that DSPy programs produce high-quality outputs across multiple large language models (LLMs), regardless of model size or capability. These tests are designed to ensure that DSPy programs maintain robustness and accuracy across diverse LLM configurations.
+This directory contains reliability tests for DSPy programs. The purpose of these tests is to verify that DSPy programs reliabily produce expected outputs across multiple large language models (LLMs), regardless of model size or capability. These tests are designed to ensure that DSPy programs maintain robustness and accuracy across diverse LLM configurations.
 
 ### Overview
 
@@ -14,17 +14,17 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
 
 ### Running the Tests
 
-- First, populate the configuration file `quality_tests_conf.yaml` (located in this directory) with the necessary LiteLLM model/provider names and access credentials for 1. each LLM you want to test and 2. the LLM judge that you want to use for assessing the correctness of outputs in certain test cases. These should be placed in the `litellm_params` section for each model in the defined `model_list`. You can also use `litellm_params` to specify values for LLM hyperparameters like `temperature`. Any model that lacks configured `litellm_params` in the configuration file will be ignored during testing.
+- First, populate the configuration file `reliability_tests_conf.yaml` (located in this directory) with the necessary LiteLLM model/provider names and access credentials for 1. each LLM you want to test and 2. the LLM judge that you want to use for assessing the correctness of outputs in certain test cases. These should be placed in the `litellm_params` section for each model in the defined `model_list`. You can also use `litellm_params` to specify values for LLM hyperparameters like `temperature`. Any model that lacks configured `litellm_params` in the configuration file will be ignored during testing.
 
   The configuration must also specify a DSPy adapter to use when testing, e.g. `"chat"` (for `dspy.ChatAdapter`) or `"json"` (for `dspy.JSONAdapter`).
 
-  An example of `quality_tests_conf.yaml`:
+  An example of `reliability_tests_conf.yaml`:
 
       ```yaml
       adapter: chat
       model_list:
         # The model to use for judging the correctness of program
-        # outputs throughout quality test suites. We recommend using
+        # outputs throughout reliability test suites. We recommend using
         # a high quality model as the judge, such as OpenAI GPT-4o
         - model_name: "judge"
           litellm_params:
@@ -45,7 +45,7 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
       pytest .
   ```
 
-  This will execute all tests for the configured models and display detailed results for each model configuration. Tests are set up to mark expected failures for known challenging cases where a specific model might struggle, while actual (unexpected) DSPy quality issues are flagged as failures (see below).
+  This will execute all tests for the configured models and display detailed results for each model configuration. Tests are set up to mark expected failures for known challenging cases where a specific model might struggle, while actual (unexpected) DSPy reliability issues are flagged as failures (see below).
 
 ### Known Failing Models
 
