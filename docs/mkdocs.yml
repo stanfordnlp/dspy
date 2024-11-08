@@ -1,4 +1,4 @@
-site_name: DSPy
+site_name: DSPy Documentation
 
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
@@ -17,7 +17,6 @@ nav:
     - Signatures:
       - Overview: building-blocks/2-signatures.md
       - Understanding Signatures: deep-dive/signature/understanding-signatures.md
-      - Executing Signatures: deep-dive/signature/executing-signatures.md
     - Data Handling:
       - Overview: building-blocks/4-data.md
       - Examples in DSPy: deep-dive/data-handling/examples.md
@@ -81,12 +80,27 @@ nav:
       - Summarization: tutorials/summarization.md
       - Additional Resources: tutorials/other_tutorial.md
       - Examples: tutorials/examples.md
-  - Community:
+  - '' : '' 
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - '' : ''
+  - "Community":
     - Community Resources: community/community-resources.md
     - Use Cases: community/use-cases.md
     - Roadmap: roadmap.md
     - Contributing: community/how-to-contribute.md
-  - FAQ:
+  - "FAQ":
     - FAQ: faqs.md
     - Cheatsheet: cheatsheet.md
 
@@ -126,6 +140,12 @@ theme:
     view: material/eye
   logo: static/img/dspy_logo.png
   favicon: static/img/logo.png
+
+
+extra_css:
+  - stylesheets/extra.css
+
+
 
 plugins:
   - social
@@ -183,7 +203,6 @@ plugins:
         
         # Signatures
         'docs/deep-dive/signature/understanding-signatures.md': 'deep-dive/signature/understanding-signatures.md'
-        'docs/deep-dive/signature/executing-signatures.md': 'deep-dive/signature/executing-signatures.md'
         
         # Modules
         'docs/deep-dive/modules/predict.md': 'deep-dive/modules/predict.md'
@@ -240,6 +259,9 @@ plugins:
         'docs/faqs.md': 'faqs.md'
         'docs/cheatsheet.md': 'cheatsheet.md'
         'docs/dspy-usecases.md': 'dspy-usecases.md'
+
+
+  
 
 
 extra:
