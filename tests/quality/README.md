@@ -16,36 +16,36 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
 
 - First, populate the configuration file `quality_tests_conf.yaml` (located in this directory) with the necessary LiteLLM model/provider names and access credentials for 1. each LLM you want to test and 2. the LLM judge that you want to use for assessing the correctness of outputs in certain test cases. These should be placed in the `litellm_params` section. You can also use `litellm_params` to specify values for LLM hyperparameters like `temperature`. Any model that lacks configured `litellm_params` in this file will be ignored during testing.
 
-The configuration must also specify a DSPy adapter to use when testing, e.g. `"chat"` (for `dspy.ChatAdapter`) or `"json"` (for `dspy.JSONAdapter`)
+  The configuration must also specify a DSPy adapter to use when testing, e.g. `"chat"` (for `dspy.ChatAdapter`) or `"json"` (for `dspy.JSONAdapter`)
 
-An example of `quality_tests_conf.yaml`:
+  An example of `quality_tests_conf.yaml`:
 
-    ```yaml
-    adapter: chat
-    model_list:
-      # The model to use for judging the correctness of program
-      # outputs throughout quality test suites. We recommend using
-      # a high quality model as the judge, such as OpenAI GPT-4o
-      - model_name: "judge"
-        litellm_params:
-          model: "openai/gpt-4o"
-          api_key: "my_openai_api_key"
-      - model_name: "gpt-4o"
-        litellm_params:
-          model: "openai/gpt-4o"
-          api_key: "my_openai_api_key"
-      - model_name: "gpt-4o"
-        litellm_params:
-          model: "openai/gpt-4o"
-          api_key: "my_openai_api_key"
+      ```yaml
+      adapter: chat
+      model_list:
+        # The model to use for judging the correctness of program
+        # outputs throughout quality test suites. We recommend using
+        # a high quality model as the judge, such as OpenAI GPT-4o
+        - model_name: "judge"
+          litellm_params:
+            model: "openai/gpt-4o"
+            api_key: "my_openai_api_key"
+        - model_name: "gpt-4o"
+          litellm_params:
+            model: "openai/gpt-4o"
+            api_key: "my_openai_api_key"
+        - model_name: "gpt-4o"
+          litellm_params:
+            model: "openai/gpt-4o"
+            api_key: "my_openai_api_key"
 
 - Second, to run the tests, run the following command from this directory:
 
-```bash
-    pytest .
-```
+  ```bash
+      pytest .
+  ```
 
-This will execute all tests for the configured models and display detailed results for each model configuration. Tests are set up to mark expected failures for known challenging cases where a specific model might struggle, while actual (unexpected) DSPy quality issues are flagged as failures (see below).
+  This will execute all tests for the configured models and display detailed results for each model configuration. Tests are set up to mark expected failures for known challenging cases where a specific model might struggle, while actual (unexpected) DSPy quality issues are flagged as failures (see below).
 
 ### Known Failing Models
 
