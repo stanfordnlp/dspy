@@ -6,7 +6,7 @@ import dspy
 from tests.conftest import clear_settings
 from tests.quality.utils import _parse_quality_conf_yaml
 
-# List of models for which to run quality tests
+# Standard list of models that should be used for periodic DSPy quality testing
 MODEL_LIST = [
     "gpt-4o",
     "gpt-4o-mini",
@@ -24,8 +24,11 @@ MODEL_LIST = [
 ]
 
 
-# Hook to parameterize tests with each model in the quality tests YAML configuration
 def pytest_generate_tests(metafunc):
+    """
+    Hook to parameterize quality test cases with each model defined in the
+    quality tests YAML configuration
+    """
     known_failing_models = getattr(metafunc.function, "_known_failing_models", [])
 
     if "configure_model" in metafunc.fixturenames:
@@ -36,6 +39,10 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture(autouse=True)
 def configure_model(request):
+    """
+    Fixture to configure the DSPy library with a particular configured model and adapter
+    before executing a test case.
+    """
     module_dir = os.path.dirname(os.path.abspath(__file__))
     conf_path = os.path.join(module_dir, "quality_conf.yaml")
     quality_conf = _parse_quality_conf_yaml(conf_path)
