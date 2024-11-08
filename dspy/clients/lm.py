@@ -87,7 +87,7 @@ class LM:
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
-        if self.model_type == "vision":
+        elif self.model_type == "vision":
             provider, model = get_model_provider(self.model)
             if not litellm.supports_vision(model):
                 raise Exception(f"The model '{model}' does not support vision.")
