@@ -14,14 +14,9 @@ nav:
     - Build your first pipeline: quick-start/getting-started-02.md
   - Components:
     - Overview: building-blocks/solving_your_task.md
-    - Signatures:
-      - Overview: building-blocks/2-signatures.md
-      - Understanding Signatures: deep-dive/signature/understanding-signatures.md
-    - Data Handling:
-      - Overview: building-blocks/4-data.md
-      - Examples in DSPy: deep-dive/data-handling/examples.md
-      - Utilizing Built-in Datasets: deep-dive/data-handling/built-in-datasets.md
-      - Creating Custom Dataset: deep-dive/data-handling/loading-custom-data.md
+    - Language Models: building-blocks/1-language_models.md
+    - Signatures: building-blocks/2-signatures.md
+    - Data Handling: building-blocks/4-data.md
     - Modules:
       - Overview: building-blocks/3-modules.md
       - Predict: deep-dive/modules/predict.md
@@ -35,9 +30,9 @@ nav:
       - Retrieve: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
     - Metrics and Assertions:
-      - Overview: building-blocks/7-assertions.md
       - Metrics: building-blocks/5-metrics.md
-      - Assertions: deep-dive/assertions.md
+      - Assertions: building-blocks/7-assertions.md
+      - Assertions II: deep-dive/assertions.md
     - Optimizers:
       - Overview: building-blocks/6-optimizers.md
       - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
@@ -47,16 +42,7 @@ nav:
       - BFRS: deep-dive/optimizers/bfrs.md
       - CoPro: deep-dive/optimizers/copro.md
       - MIProV2: deep-dive/optimizers/miprov2.md
-    - Language Model Clients:
-      - Overview: building-blocks/1-language_models.md
-      - Local Language Model Clients:
-        - HFClientTGI: deep-dive/language_model_clients/lm_local_models/HFClientTGI.md
-        - HFClientVLLM: deep-dive/language_model_clients/lm_local_models/HFClientVLLM.md
-        - MLC: deep-dive/language_model_clients/lm_local_models/MLC.md
-        - Ollama: deep-dive/language_model_clients/lm_local_models/Ollama.md
-        - LlamaCpp: deep-dive/language_model_clients/lm_local_models/LlamaCpp.md
-        - TensorRTLLM: deep-dive/language_model_clients/lm_local_models/TensorRTLLM.md
-    - Retrieval Model Clients:
+    - Retrieval Model Integrations:
       - Azure: deep-dive/retrieval_models_clients/Azure.md
       - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
       - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md

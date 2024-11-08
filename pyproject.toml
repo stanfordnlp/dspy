@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.5.27"
+version="2.5.30"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -85,7 +85,6 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
-# documentation = "https://dspy-ai.readthedocs.io"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
 # may be a bit much
 
