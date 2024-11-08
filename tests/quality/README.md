@@ -29,15 +29,15 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
         - model_name: "judge"
           litellm_params:
             model: "openai/gpt-4o"
-            api_key: "my_openai_api_key"
+            api_key: "<my_openai_api_key>"
         - model_name: "gpt-4o"
           litellm_params:
             model: "openai/gpt-4o"
-            api_key: "my_openai_api_key"
-        - model_name: "gpt-4o"
+            api_key: "<my_openai_api_key>"
+        - model_name: "claude-3.5-sonnet"
           litellm_params:
-            model: "openai/gpt-4o"
-            api_key: "my_openai_api_key"
+            model: "openai/claude-3.5"
+            api_key: "<my_anthropic_api_key>"
 
 - Second, to run the tests, run the following command from this directory:
 
