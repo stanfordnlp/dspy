@@ -855,30 +855,21 @@ def test_save_type_predictor(tmp_path):
     loaded.load(save_path)
     assert loaded.predictor.signature.instructions == "I am a malicious signature."
 
-def test_image_url_field():
+
+def test_vision():
+    # Given
     class ImageSignature(dspy.Signature):
-        image_url = dspy.InputField(is_image_url=True)
-        caption = dspy.OutputField()
+        image_url: str = dspy.InputField(is_image_url=True)
+        caption: str = dspy.OutputField()
 
-    class ImageModule(FunctionalModule):
-        def __init__(self):
-            self.describe_image = Predict(ImageSignature)
-
-        def forward(self, **kwargs):
-            return self.describe_image(**kwargs).caption
-
-    image_url = "http://example.com/image.jpg"
-    lm = DummyLM(
-        [
-            {"caption": "A beautiful sunset over the mountains."}
-        ]
-    )
+    lm = DummyLM([{"caption": "A beautiful sunset over the mountains."}])
     dspy.settings.configure(lm=lm)
 
-    image_module = ImageModule()
-    output = image_module(image_url=image_url)
+    # When
+    image_module = TypedPredictor(ImageSignature)
+    output = image_module(image_url="http://example.com/image.jpg")
 
-    # Verify that the message sent to the LM includes the image field in the correct format
+    # Then
     messages, _ = lm.get_convo(-1)
     last_message_content = messages[-1]['content']
 
@@ -888,4 +879,4 @@ def test_image_url_field():
     ]
 
     assert last_message_content == expected_content
-    assert output == "A beautiful sunset over the mountains."
+    assert output.caption == "A beautiful sunset over the mountains."
