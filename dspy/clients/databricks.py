@@ -88,9 +88,7 @@ class DatabricksProvider(Provider):
         )
 
         if get_endpoint_response.status_code == 200:
-            logger.info(
-                f"Serving endpoint {model_name} already exists, updating it instead of creating a new one."
-            )
+            logger.info(f"Serving endpoint {model_name} already exists, updating it instead of creating a new one.")
             # The serving endpoint already exists, we will update it instead of creating a new one.
             data = {
                 "served_entities": [
@@ -110,10 +108,8 @@ class DatabricksProvider(Provider):
                 headers=headers,
             )
         else:
-            logger.info(
-                f"Creating serving endpoint {model_name} on Databricks model serving!"
-            )
-            # Send the POST request to create the serving endpoint
+            logger.info(f"Creating serving endpoint {model_name} on Databricks model serving!")
+            # Send the POST request to create the serving endpoint.
             data = {
                 "name": model_name,
                 "config": {
@@ -174,7 +170,7 @@ class DatabricksProvider(Provider):
         model: str,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[Union[DataFormat, str]] = None,
+        data_format: Optional[Union[DataFormat, str]] = "chat",
     ) -> str:
         if isinstance(data_format, str):
             if data_format == "chat":
