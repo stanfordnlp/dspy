@@ -146,6 +146,7 @@ extra:
 
 extra_javascript:
   - "js/runllm-widget.js"
+  - "js/ga.js"
 
 markdown_extensions:
   - pymdownx.tabbed:
