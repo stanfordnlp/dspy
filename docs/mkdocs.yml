@@ -1,5 +1,5 @@
 site_name: DSPy Documentation
-site_description: DSPy is the open-source framework for building modular AI systems by programming—rather than prompting—language models.
+site_description: The framework for programming—rather than prompting—language models.
 site_url: https://dspy.ai
 
 repo_url: https://github.com/stanfordnlp/dspy
