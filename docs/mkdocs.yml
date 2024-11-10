@@ -20,7 +20,6 @@ nav:
     - Modules:
       - Overview: building-blocks/3-modules.md
       - Predict: deep-dive/modules/predict.md
-      - Typed Predictors: building-blocks/8-typed_predictors.md
       - ChainOfThought: deep-dive/modules/chain-of-thought.md
       - ChainOfThoughtwithHint: deep-dive/modules/chain-of-thought-with-hint.md
       - ReAct: deep-dive/modules/react.md
@@ -37,11 +36,11 @@ nav:
       - Overview: building-blocks/6-optimizers.md
       - LabeledFewShot: deep-dive/optimizers/LabeledFewShot.md
       - BootstrapFewShot: deep-dive/optimizers/bootstrap-fewshot.md
-      - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
+      - BootstrapRS: deep-dive/optimizers/bfrs.md
+      - COPRO: deep-dive/optimizers/copro.md
+      - MIPROv2: deep-dive/optimizers/miprov2.md
       - Ensemble: deep-dive/optimizers/Ensemble.md
-      - BFRS: deep-dive/optimizers/bfrs.md
-      - CoPro: deep-dive/optimizers/copro.md
-      - MIProV2: deep-dive/optimizers/miprov2.md
+      - BootstrapFinetune: deep-dive/optimizers/BootstrapFinetune.md
     - Retrieval Model Integrations:
       - Azure: deep-dive/retrieval_models_clients/Azure.md
       - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md

@@ -31,3 +31,13 @@
 [data-md-color-scheme="slate"] .md-logo img {
     filter: brightness(0.9);
 }
+
+.md-content {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+/* Justified text for main content */
+.md-content__inner p {
+    text-align: justify;
+}
