@@ -7,7 +7,6 @@ edit_uri: blob/main/docs/docs/
 docs_dir: 'docs/'
 nav:
   - Home: index.md
-  # - Build your first pipeline: quick-start/getting-started-02.md
   - Learn DSPy:
     - Overview: building-blocks/solving_your_task.md
     - Language Models: building-blocks/1-language_models.md
@@ -57,12 +56,6 @@ nav:
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
   - Tutorials:
     - Simple RAG: tutorials/rag/index.ipynb
-  # - Tutorials:
-  #     - Retrieval Augmented Generation: tutorials/rag.md
-  #     - Multi-Hop QA: tutorials/simplified-baleen.md
-  #     - Summarization: tutorials/summarization.md
-  #     - Additional Resources: tutorials/other_tutorial.md
-  #     - Examples: tutorials/examples.md
   - '' : '' 
   - '' : ''
   - '' : ''
