@@ -6,19 +6,19 @@
 
 ## DSPy: _Programming_—not prompting—Foundation Models
 
-**[Jun'24] [Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs](https://arxiv.org/abs/2406.11695)**       
-**[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
-[Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     
-[Jun'24] [Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)    
-[Feb'24] [Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models](https://arxiv.org/abs/2402.14207)         
-[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
-[Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
-[Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
-
-
 **Documentation:** [DSPy Docs](https://dspy.ai/)
 
 [![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
+
+
+----
+
+DSPy is the open-source framework for **building high-quality, modular AI systems** by _programming—rather than prompting—language models_. It provides abstractions and algorithms for **optimizing the prompts and weights** in LM programs, ranging from simple classifiers to sophisticated RAG pipelines and Agent loops.
+
+Instead of writing brittle LM-specific prompts, you write compositional code and use DSPy optimizers to teach different models like `GPT-4o` or `Llama-3.2` to **deliver higher quality outputs** or avoid specific failure patterns. In essence, DSPy optimizers then _compile your high-level code_ into low-level computations, prompts, or weight updates that **align your LM with your program’s structure and metrics**.
+
+
+DSPy stands for Declarative Self-improving Python. This [recent lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Our [Discord server](https://discord.gg/XCGy2WDCQB) is a great place to meet the community, seek help, or start contributing.
 
 
 
@@ -26,7 +26,6 @@
 
 
 **Please go to the [DSPy Docs at dspy.ai](https://dspy.ai)**
-
 
 
 ## Installation
@@ -47,6 +46,15 @@ pip install git+https://github.com/stanfordnlp/dspy.git
 
 ## 📜 Citation & Reading More
 
+**[Jun'24] [Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs](https://arxiv.org/abs/2406.11695)**       
+**[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+[Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     
+[Jun'24] [Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)    
+[Feb'24] [Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models](https://arxiv.org/abs/2402.14207)         
+[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
+[Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
+[Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
+
 To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
@@ -54,11 +62,11 @@ The **DSPy** logo is designed by **Chuyi Zhang**.
 If you use DSPy or DSP in a research paper, please cite our work as follows:
 
 ```
-@article{khattab2023dspy,
+@inproceedings{khattab2024dspy,
   title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},
   author={Khattab, Omar and Singhvi, Arnav and Maheshwari, Paridhi and Zhang, Zhiyuan and Santhanam, Keshav and Vardhamanan, Sri and Haq, Saiful and Sharma, Ashutosh and Joshi, Thomas T. and Moazam, Hanna and Miller, Heather and Zaharia, Matei and Potts, Christopher},
-  journal={arXiv preprint arXiv:2310.03714},
-  year={2023}
+  journal={The Twelfth International Conference on Learning Representations},
+  year={2024}
 }
 @article{khattab2022demonstrate,
   title={Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive {NLP}},
