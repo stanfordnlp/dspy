@@ -46,6 +46,10 @@ class Parallel:
                 result = module(**example.inputs())
             elif isinstance(example, dict):
                 result = module(**example)
+            elif isinstance(example, list) and module.__class__.__name__ == "Parallel":
+                result = module(example)
+            elif isinstance(example, tuple):
+                result = module(*example)
             return result
 
         # Execute the processing function over the execution pairs
