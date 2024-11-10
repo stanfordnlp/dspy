@@ -18,7 +18,7 @@
 
 **Getting Started:** &nbsp; [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)
 
-**Documentation:** [DSPy Docs](https://dspy-docs.vercel.app/)
+**Documentation:** [DSPy Docs](https://dspy.ai/)
 
 **Improvements in & Migration to DSPy 2.5:** [Migration to DSPy 2.5](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb)
 
@@ -116,19 +116,19 @@ The DSPy documentation is divided into **tutorials** (step-by-step illustration 
 If you're new to DSPy, it's probably best to go in sequential order. You will probably refer to these guides frequently after that, e.g. to copy/paste snippets that you can edit for your own DSPy programs.
 
 
-1. **[Language Models](https://dspy-docs.vercel.app/docs/building-blocks/language_models)**
+1. **[Language Models](https://dspy.ai/docs/building-blocks/language_models)**
 
-2. **[Signatures](https://dspy-docs.vercel.app/docs/building-blocks/signatures)**
+2. **[Signatures](https://dspy.ai/docs/building-blocks/signatures)**
 
-3. **[Modules](https://dspy-docs.vercel.app/docs/building-blocks/modules)**
+3. **[Modules](https://dspy.ai/docs/building-blocks/modules)**
 
-5. **[Data](https://dspy-docs.vercel.app/docs/building-blocks/data)**
+5. **[Data](https://dspy.ai/docs/building-blocks/data)**
 
-5. **[Metrics](https://dspy-docs.vercel.app/docs/building-blocks/metrics)**
+5. **[Metrics](https://dspy.ai/docs/building-blocks/metrics)**
 
-4. **[Optimizers (formerly Teleprompters)](https://dspy-docs.vercel.app/docs/building-blocks/optimizers)**
+4. **[Optimizers (formerly Teleprompters)](https://dspy.ai/docs/building-blocks/optimizers)**
 
-6. **[DSPy Assertions](https://dspy-docs.vercel.app/docs/building-blocks/assertions)**
+6. **[DSPy Assertions](https://dspy.ai/docs/building-blocks/assertions)**
 
 
 ### C) Examples
