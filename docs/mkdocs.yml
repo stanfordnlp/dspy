@@ -143,6 +143,9 @@ extra:
       link: https://github.com/stanfordnlp/dspy
     - icon: fontawesome/brands/discord
       link: https://discord.gg/XCGy2WDCQB
+  analytics:
+    - provider: google
+    - property: G-G728W2L8KQ
 
 extra_javascript:
   - "js/runllm-widget.js"
