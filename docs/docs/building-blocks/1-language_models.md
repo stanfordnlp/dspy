@@ -11,7 +11,7 @@ Let's first make sure you can set up your language model. DSPy supports clients 
 ## Using `dspy.LM`
 
 !!! warning
-    Earlier versions of DSPy involved tons of clients for different LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
+    Earlier versions of DSPy involved different clients across LM providers, e.g. `dspy.OpenAI`, `dspy.GoogleVertexAI`, and `dspy.HFClientTGI`, etc. These are now deprecated and will be removed in DSPy 2.6.
 
     Instead, use `dspy.LM` to access any LM endpoint for local and remote models. This relies on [LiteLLM](https://github.com/BerriAI/litellm) to translate the different client APIs into an OpenAI-compatible interface.
 
