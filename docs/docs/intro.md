@@ -115,7 +115,7 @@ DSPy shifts your focus from tinkering with prompts to programming modular AI sys
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
-    After you've configured your preferred LM above, you can try these examples. Feel free to adjust the field names to explore. Naturally, the ability of each model to correctly solve a given task varies.
+    After you've configured your preferred LM above, you can try the examples below. Adjust the field names or types to explore. Naturally, the ability of each LM to correctly solve a given task varies. Each example sets up a DSPy module, like `dspy.Predict`, `dspy.ChainOfThought`, or `dspy.ReAct`. The behavior of a module is defined by a _signature_. For example, `question -> answer: float` tells the module to take a question and to produce a `float` answer.
 
     === "Math"
 
@@ -223,7 +223,7 @@ DSPy shifts your focus from tinkering with prompts to programming modular AI sys
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
-    Although DSPy's _optimizers_ are often considered its most powerful feature, the ergonomic and portable nature of DSPy's _modules_ make them incredibly powerful for quick LM scripting, even when you don't have the data or metrics to optimize. We maintain large _signature test suites_, across many tasks and LMs, to assess the reliability of the built-in DSPy Adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find tasks where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
+    Although DSPy's _optimizers_ are often considered its most powerful feature, the ergonomic and portable nature of DSPy's _modules_ make them incredibly powerful for quick LM scripting, even when you don't have the data or metrics to optimize. We maintain large _signature test suites_, across many tasks and LMs, to assess the reliability of the built-in DSPy Adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your Modules.
@@ -232,6 +232,9 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
 
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
+    Be careful when running optimizers with very large LMs or very large datasets. A typical simple optimizer run costs
+    on the order of $2 USD and takes less than ten minutes, but optimizer runs can vary from as little as a few cents to
+    tens of dollars, depending on your LM, dataset, and configuration.
     
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
