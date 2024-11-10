@@ -346,24 +346,8 @@ def display_dataframe(df: pd.DataFrame):
 
 def configure_dataframe_for_ipython_notebook_display(df: pd.DataFrame) -> pd.DataFrame:
     """Set various pandas display options for DataFrame in an IPython notebook environment."""
-    pd.options.display.max_colwidth = None
-    pd.set_option("display.max_colwidth", 20)  # Adjust the number as needed
-    pd.set_option("display.width", 400)  # Adjust
-
-    # Return styled DataFrame
-    return df.style.set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "left")]},
-            {"selector": "td", "props": [("text-align", "left")]},
-        ],
-    ).set_properties(
-        **{
-            "text-align": "left",
-            "white-space": "pre-wrap",
-            "word-wrap": "break-word",
-            "max-width": "400px",
-        },
-    )
+    pd.options.display.max_colwidth = 70
+    return df
 
 
 def is_in_ipython_notebook_environment():

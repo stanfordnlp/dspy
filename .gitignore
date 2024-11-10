@@ -57,3 +57,4 @@ assertion.log
 
 .mypy_cache
 dummy.csv
+docs/docs/**/*.json*
