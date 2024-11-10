@@ -63,7 +63,7 @@ class PremAI(LM):
         api_key: Optional[str]
             Prem AI API key, to connect with the API. If not provided then it will check from env var by the name
                 PREMAI_API_KEY
-        kwargs: Optional[dict] For any additional paramters
+        kwargs: Optional[dict] For any additional parameters
         """
         self.model = "default" if model is None else model
         super().__init__(self.model)

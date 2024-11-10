@@ -1,6 +1,6 @@
 import threading
-from copy import deepcopy
 from contextlib import contextmanager
+from copy import deepcopy
 
 from dsp.utils.utils import dotdict
 

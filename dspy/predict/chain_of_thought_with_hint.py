@@ -1,36 +1,30 @@
-import dsp
 import dspy
 
-from .predict import Predict
+from .predict import Module
 
 # TODO: FIXME: Insert this right before the *first* output field. Also rewrite this to use the new signature system.
 
-class ChainOfThoughtWithHint(Predict):
-    def __init__(self, signature, rationale_type=None, activated=True, **config):
-        super().__init__(signature, **config)
-        self.activated = activated
-        signature = self.signature
-
-        *keys, last_key = signature.fields.keys()
-        rationale_type = rationale_type or dspy.OutputField(
-            prefix="Reasoning: Let's think step by step in order to",
-            desc="${produce the " + last_key + "}. We ...",
-        )
-        self.extended_signature1 = self.signature.insert(-2, "rationale", rationale_type, type_=str)
-
-        DEFAULT_HINT_TYPE = dspy.OutputField()
-        self.extended_signature2 = self.extended_signature1.insert(-2, "hint", DEFAULT_HINT_TYPE, type_=str)
+class ChainOfThoughtWithHint(Module):
+    def __init__(self, signature, rationale_type=None, **config):
+        self.signature = dspy.ensure_signature(signature)
+        self.module = dspy.ChainOfThought(signature, rationale_type=rationale_type, **config)
     
     def forward(self, **kwargs):
-        signature = self.signature
+        if 'hint' in kwargs and kwargs['hint']:
+            hint = f"\n\t\t(secret hint: {kwargs.pop('hint')})"
+            original_kwargs = kwargs.copy()
+            
+            # Convert the first field's value to string and append the hint
+            last_key = list(self.signature.input_fields.keys())[-1]
+            kwargs[last_key] = str(kwargs[last_key]) + hint
 
-        if self.activated is True or (self.activated is None and isinstance(dsp.settings.lm, dsp.GPT3)):
-            if 'hint' in kwargs and kwargs['hint']:
-                signature = self.extended_signature2
-            else:
-                signature = self.extended_signature1
+            # Run CoT then update the trace with original kwargs, i.e. without the hint.
+            pred = self.module(**kwargs)
+            this_trace = dspy.settings.trace[-1]
+            dspy.settings.trace[-1] = (this_trace[0], original_kwargs, this_trace[2])
+            return pred
         
-        return super().forward(signature=signature, **kwargs)
+        return self.module(**kwargs)
 
 
 """

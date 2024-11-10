@@ -51,7 +51,7 @@ Search the Milvus collection for the top `k` passages matching the given query o
 from dspy.retrieve.milvus_rm import MilvusRM
 import os
 
-os.envrion["OPENAI_API_KEY"] = "<YOUR_OPENAI_API_KEY>"
+os.environ["OPENAI_API_KEY"] = "<YOUR_OPENAI_API_KEY>"
 
 retriever_model = MilvusRM(
     collection_name="<YOUR_COLLECTION_NAME>",

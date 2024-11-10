@@ -18,6 +18,8 @@ def reset_settings():
 
 
 class MyCallback(BaseCallback):
+    """A simple callback that records the calls."""
+
     def __init__(self):
         self.calls = []
 
@@ -33,17 +35,17 @@ class MyCallback(BaseCallback):
     def on_lm_end(self, call_id, outputs, exception):
         self.calls.append({"handler": "on_lm_end", "outputs": outputs, "exception": exception})
 
-    def on_format_start(self, call_id, instance, inputs):
-        self.calls.append({"handler": "on_format_start", "instance": instance, "inputs": inputs})
+    def on_adapter_format_start(self, call_id, instance, inputs):
+        self.calls.append({"handler": "on_adapter_format_start", "instance": instance, "inputs": inputs})
 
-    def on_format_end(self, call_id, outputs, exception):
-        self.calls.append({"handler": "on_format_end", "outputs": outputs, "exception": exception})
+    def on_adapter_format_end(self, call_id, outputs, exception):
+        self.calls.append({"handler": "on_adapter_format_end", "outputs": outputs, "exception": exception})
 
-    def on_parse_start(self, call_id, instance, inputs):
-        self.calls.append({"handler": "on_parse_start", "instance": instance, "inputs": inputs})
+    def on_adapter_parse_start(self, call_id, instance, inputs):
+        self.calls.append({"handler": "on_adapter_parse_start", "instance": instance, "inputs": inputs})
 
-    def on_parse_end(self, call_id, outputs, exception):
-        self.calls.append({"handler": "on_parse_end", "outputs": outputs, "exception": exception})
+    def on_adapter_parse_end(self, call_id, outputs, exception):
+        self.calls.append({"handler": "on_adapter_parse_end", "outputs": outputs, "exception": exception})
 
 
 @pytest.mark.parametrize(
@@ -163,17 +165,17 @@ def test_callback_complex_module():
     assert [call["handler"] for call in callback.calls] == [
         "on_module_start",
         "on_module_start",
-        "on_format_start",
-        "on_format_end",
+        "on_adapter_format_start",
+        "on_adapter_format_end",
         "on_lm_start",
         "on_lm_end",
         # Parsing will run per output (n=3)
-        "on_parse_start",
-        "on_parse_end",
-        "on_parse_start",
-        "on_parse_end",
-        "on_parse_start",
-        "on_parse_end",
+        "on_adapter_parse_start",
+        "on_adapter_parse_end",
+        "on_adapter_parse_start",
+        "on_adapter_parse_end",
+        "on_adapter_parse_start",
+        "on_adapter_parse_end",
         "on_module_end",
         "on_module_end",
     ]

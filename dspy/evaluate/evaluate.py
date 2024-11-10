@@ -39,6 +39,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+logger = logging.getLogger(__name__)
+
 class Evaluate:
     def __init__(
         self,
@@ -63,6 +65,7 @@ class Evaluate:
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
+
 
     def __call__(
         self,
