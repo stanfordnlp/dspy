@@ -1,3 +1,4 @@
+import logging
 import sys
 import tqdm
 import dspy
@@ -8,6 +9,9 @@ import contextlib
 
 from tqdm.contrib.logging import logging_redirect_tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+logger = logging.getLogger(__name__)
 
 
 class ParallelExecutor:
@@ -63,11 +67,11 @@ class ParallelExecutor:
                     self.cancel_jobs.set()
                     raise e
                 if self.provide_traceback:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error processing item {item}: {e}\nStack trace:\n{traceback.format_exc()}"
                     )
                 else:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error processing item {item}: {e}. Set `provide_traceback=True` to see the stack trace."
                     )
                 return None
@@ -98,7 +102,7 @@ class ParallelExecutor:
                     self._update_progress(pbar, len(results), len(data))
         pbar.close()
         if self.cancel_jobs.is_set():
-            dspy.logger.warning("Execution was cancelled due to errors.")
+            logger.warning("Execution was cancelled due to errors.")
             raise Exception("Execution was cancelled due to errors.")
         return results
 
@@ -123,7 +127,7 @@ class ParallelExecutor:
 
                 def interrupt_handler(sig, frame):
                     self.cancel_jobs.set()
-                    dspy.logger.warning("Received SIGINT. Cancelling execution.")
+                    logger.warning("Received SIGINT. Cancelling execution.")
                     default_handler(sig, frame)
 
                 signal.signal(signal.SIGINT, interrupt_handler)
@@ -166,6 +170,6 @@ class ParallelExecutor:
                     self._update_progress(pbar, len([r for r in results if r is not None]), len(data))
             pbar.close()
         if self.cancel_jobs.is_set():
-            dspy.logger.warning("Execution was cancelled due to errors.")
+            logger.warning("Execution was cancelled due to errors.")
             raise Exception("Execution was cancelled due to errors.")
         return results

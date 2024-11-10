@@ -1,3 +1,4 @@
+import logging
 import tqdm
 import types
 from typing import Any
@@ -34,6 +35,9 @@ except ImportError:
 
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
+
+logger = logging.getLogger(__name__)
+
 
 class Evaluate:
     def __init__(
@@ -113,10 +117,10 @@ class Evaluate:
         ntotal = len(reordered_devset)
 
         if ntotal == 0:
-            dspy.logger.warning("No valid results to compute metrics.")
+            logger.warning("No valid results to compute metrics.")
             return 0.0
 
-        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 
