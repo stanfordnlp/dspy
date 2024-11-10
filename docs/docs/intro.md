@@ -6,7 +6,7 @@ hide:
 
 ---
 
-<!-- ![DSPy Logo](static/img/dspy_logo.png){ width="330", align=right } -->
+![DSPy Logo](static/img/dspy_logo.png){ width="350", align=right }
 
 # **DSPy**: _Programming_—not prompting—_Language Models_
 
@@ -109,9 +109,9 @@ DSPy stands for Declarative Self-improving Python. This [recent lecture](https:/
 
 ## 1) **Modules** express portable, natural-language-typed behavior.
 
-Building high-quality AI systems requires iterating fast—primarily on decomposing your problem into modular LM components. But it’s really hard to iterate on your system design when you have to tinker with each component's messy prompts or synthetic data every time you change the model, the metrics, or parts of the pipeline. Having built more than a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
+Building high-quality AI systems requires iterating fast, as you decompose your problem into modular LM components. But it’s really hard to iterate when you have to tinker with each component's messy prompts or synthetic data _every time you change the model, the metrics, or parts of the pipeline_. Having built more than a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
 
-DSPy shifts your focus from tinkering with prompts to programming modular AI systems. It does that by **raising the level of AI abstraction from brittle strings to structured, declarative, and natural-language-typed modules**. For every module, you define a _signature_, a spec of input/output types and behavior, and you select an inference-time strategy. DSPy handles expanding your signature into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
+DSPy shifts your focus from tinkering with prompts to programming modular AI systems. It does that by **raising the level of AI abstraction from brittle strings to structured, declarative, and natural-language-typed modules**. For every module, you define a _signature_, a spec of input/output types and behavior, and you select an inference-time strategy. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
@@ -221,7 +221,9 @@ DSPy shifts your focus from tinkering with prompts to programming modular AI sys
         5761.328
         ```
 
-While DSPy's _optimizers_ are often considered its more powerful feature, the ergonomic and portable nature of DSPy's _modules_ make them pretty ideal for scripting quick interactions with LMs, even when you don't have the data or metrics to optimize. We maintain large signature test suites across many tasks and LMs to assess the reliability of the built-in DSPy adapters, which are the components that map signatures to prompts prior to optimization. If you find cases where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
+??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
+
+    Although DSPy's _optimizers_ are often considered its most powerful feature, the ergonomic and portable nature of DSPy's _modules_ make them incredibly powerful for quick LM scripting, even when you don't have the data or metrics to optimize. We maintain large _signature test suites_, across many tasks and LMs, to assess the reliability of the built-in DSPy Adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find tasks where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your Modules.
@@ -329,11 +331,11 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         An informal run very similar to this on DSPy 2.5.29 raises GPT-4o-mini's score 66% to 87%.
 
 
-<!-- <details><summary>What's an example of a DSPy optimizer? How does it work?</summary> -->
-Take the `dspy.MIPROv2` optimizer as an example. First, MIPRO starts with the bootstrapping stage. It takes your initial program, which may be unoptimized, and running it many times across different inputs to collect traces of input/output behavior for each module in your program. These traces are filtered to keep only the traces that appear in trajectories that are scored highly by your metric. Second, MIPRO enters its grounded proposal stage. It previews your DSPy program's code, samples of your data, and traces from running your program, and uses them to draft many potential instructions for every prompt in your program. Third, MIPRO launches the search stage. It samples mini-batches from your training set, proposes a combination of instructions and traces to use for constructing every prompt in the pipeline, and evaluates the candidate program on the mini-batch. Using the resulting score, MIPRO updates a surrogate model that helps the proposals get better over time.
+??? "What's an example of a DSPy optimizer? How do different optimizers work?"
 
-One of the most powerful things about DSPy optimizers is that they can be composed. You can run `dspy.MIPROv2` and use the produced program as an input to `dspy.MIPROv2` again or, say, to `dspy.BootstrapFinetune` to get better results. Or you can run the optimizer and then extract the top-5 candidate programs and build a `dspy.Ensemble` of them. This allows you to scale _inference-time compute_ (e.g., ensembles) and DSPy's unique _pre-inference time compute_ (i.e., optimization budget) in highly systematic ways.
-<!-- </details> -->
+    Take the `dspy.MIPROv2` optimizer as an example. First, MIPRO starts with the bootstrapping stage. It takes your initial program, which may be unoptimized, and running it many times across different inputs to collect traces of input/output behavior for each module in your program. These traces are filtered to keep only the traces that appear in trajectories that are scored highly by your metric. Second, MIPRO enters its grounded proposal stage. It previews your DSPy program's code, samples of your data, and traces from running your program, and uses them to draft many potential instructions for every prompt in your program. Third, MIPRO launches the search stage. It samples mini-batches from your training set, proposes a combination of instructions and traces to use for constructing every prompt in the pipeline, and evaluates the candidate program on the mini-batch. Using the resulting score, MIPRO updates a surrogate model that helps the proposals get better over time.
+
+    One of the most powerful things about DSPy optimizers is that they can be composed. You can run `dspy.MIPROv2` and use the produced program as an input to `dspy.MIPROv2` again or, say, to `dspy.BootstrapFinetune` to get better results. This is partly the essence of `dspy.BetterTogether`. Alternatively, you can run the optimizer and then extract the top-5 candidate programs and build a `dspy.Ensemble` of them. This allows you to scale _inference-time compute_ (e.g., ensembles) and DSPy's unique _pre-inference time compute_ (i.e., optimization budget) in highly systematic ways.
 
 
 
@@ -345,8 +347,8 @@ BootstrapFS on MATH with a tiny LM like Llama-3.2 with Ollama (maybe with a big 
 
 ## 3) **DSPy's Ecosystem** advances open-source AI research.
 
-By replacing the emphasis on monolithic models and ad-hoc prompting with a small number of better-scoped composable abstractions, DSPy aims to enable a large, distributed community to independently improve program architectures, inference-time strategies, and LM program optimizers.
+By introducing structure into the space of LM programming, DSPy aims to enable a large, distributed community to independently improve program architectures, inference-time strategies, and LM program optimizers.
 
-The initial DSPy research started at Stanford NLP in Feb 2022, building on what we learned from developing early compound LM systems like ColBERT-QA, Baleen, and Hindsight. It was first released as [Demonstrate-Search-Predict](https://arxiv.org/abs/2212.14024) (DSP) in Dec 2022 and then evolved in Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714), or Declarative Self-improving Python. Thanks to [nearly 250 wonderful contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building modular LM programs and optimizing their prompts and weights automatically.
+The initial DSPy research started at Stanford NLP in Feb 2022, building on what we learned from developing early compound LM systems like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). This work was first released as [Demonstrate-Search-Predict](https://arxiv.org/abs/2212.14024) (DSP) in Dec 2022 and then evolved in Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714), or Declarative Self-improving Python. Thanks to [nearly 250 wonderful contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building modular LM programs and optimizing their prompts and weights automatically.
 
 Since then, the broad community around DSPy has produced a large body of research. This includes work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214). It also includes novel program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382). And it includes a large number of successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [UofT's WangLab at MEDIQA-CORR 2024 winning system](https://arxiv.org/abs/2404.14544), [UMD's Prompt Engineering Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming DSPy System](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects and numerous production applications. You can learn about a few of these in the [Use Cases](/dspy-usecases/) page.
