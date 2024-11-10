@@ -32,12 +32,76 @@
     filter: brightness(0.9);
 }
 
+/* Default max-width */
 .md-content {
     max-width: 1000px;
     margin: 0 auto;
 }
 
+
+/* Adjust width when a sidebar or TOC is present */
+@media (min-width: 1700px) {
+    /* Increase width when there's enough space (like on desktop or tablet landscape) */
+    .md-content {
+        min-width: 1000px;
+    }
+}
+
+/* Fully responsive on smaller screens */
+/* @media (max-width: 6px) {
+    .md-content {
+        max-width: 98%;
+    }
+} */
+
+
 /* Justified text for main content */
 .md-content__inner p {
     text-align: justify;
+}
+
+
+/* Base styling for the output area */
+.jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* Light mode specific styling */
+:root {
+    --output-bg-light: #fafafa;
+    --output-border-light: #ddd;
+    --output-text-light: #333;
+}
+
+body[data-md-color-scheme="default"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-light);
+    border: 1px solid var(--output-border-light);
+    color: var(--output-text-light);
+    box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode specific styling */
+:root {
+    --output-bg-dark: #2e2e2e;
+    --output-border-dark: #555;
+    --output-text-dark: #e0e0e0;
+}
+
+body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-dark);
+    border: 1px solid var(--output-border-dark);
+    color: var(--output-text-dark);
+    box-shadow: 0px 1px 4px rgba(255, 255, 255, 0.1);
+}
+
+
+
+/* Set a fixed width for the sidebar */
+.md-sidebar {
+    width: 210px;
 }
