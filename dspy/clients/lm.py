@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Literal, Optional
 import litellm
 import ujson
 
-import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
@@ -69,9 +68,6 @@ class LM(BaseLM):
         self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
-
-        #turned off by default to avoid LiteLLM logging during every LM call
-        litellm.suppress_debug_info = dspy.settings.suppress_debug_info
 
         # TODO(bug): Arbitrary model strings could include the substring "o1-".
         # We should find a more robust way to check for the "o1-" family models.

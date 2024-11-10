@@ -6,10 +6,10 @@ hide:
 
 ---
 
-
 <!-- ![DSPy Logo](static/img/dspy_logo.png){ width="330", align=right } -->
 
 # **DSPy**: _Programming_—not prompting—_Language Models_
+
 
 DSPy is the open-source framework for **building high-quality, modular AI systems** by _programming—rather than prompting—language models_. It provides abstractions and algorithms for **optimizing the prompts and weights** in LM programs, ranging from simple classifiers to sophisticated RAG pipelines and Agent loops.
 
