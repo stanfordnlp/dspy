@@ -57,7 +57,15 @@ nav:
       - YouRM: deep-dive/retrieval_models_clients/YouRM.md
   - Tutorials:
     - Simple RAG: tutorials/rag/index.ipynb
-
+  - Community:
+    - Community Resources: community/community-resources.md
+    - Use Cases: community/use-cases.md
+    - Roadmap: roadmap.md
+    - Contributing: community/how-to-contribute.md
+  - FAQ:
+    - FAQ: faqs.md
+    - Cheatsheet: cheatsheet.md
+  
 theme:
   name: material
   custom_dir: overrides
