@@ -34,7 +34,7 @@
 
 /* Default max-width */
 .md-content {
-    max-width: 1000px;
+    max-width: 980px;
     margin: 0 auto;
 }
 
@@ -43,7 +43,7 @@
 @media (min-width: 1700px) {
     /* Increase width when there's enough space (like on desktop or tablet landscape) */
     .md-content {
-        min-width: 1000px;
+        min-width: 980px;
     }
 }
 
@@ -103,5 +103,5 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 
 /* Set a fixed width for the sidebar */
 .md-sidebar {
-    width: 220px;
+    width: 250px;
 }
