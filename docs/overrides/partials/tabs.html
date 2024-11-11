@@ -49,7 +49,9 @@
 	<!-- Original tabbed sections -->
 	<ul class="md-tabs__list">
 	  {% for nav_item in nav %}
-		{{ item.render(nav_item) }}
+		{% if nav_item.title not in ["FAQ", "Community"] %}
+            {{ item.render(nav_item) }}
+		{% endif %}
 	  {% endfor %}
 	</ul>
   </div>
