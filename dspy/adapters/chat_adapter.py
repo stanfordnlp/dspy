@@ -388,7 +388,7 @@ def prepare_instructions(signature: SignatureMeta):
             desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
         else:
             desc = "must be pareseable according to the following JSON schema: "
-            desc += json.dumps(prepare_schema(type_))
+            desc += json.dumps(prepare_schema(type_), ensure_ascii=False)
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
         return f"{{{field_name}}}{desc}"
