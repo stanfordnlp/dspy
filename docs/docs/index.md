@@ -11,12 +11,9 @@ hide:
 # **DSPy**: _Programming_—not prompting—_Language Models_
 
 
-DSPy is the open-source framework for **building high-quality, modular AI systems** by _programming—rather than prompting—language models_. It provides abstractions and algorithms for **optimizing the prompts and weights** in LM programs, ranging from simple classifiers to sophisticated RAG pipelines and Agent loops.
+DSPy is the open-source framework for _programming—rather than prompting—language models_. It allows you to build modular AI systems and to explore different design decisions very quickly. To do this, DSPy provides abstractions and algorithms for **optimizing the prompts and weights** in the LM programs you build, whether they are simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-Instead of writing brittle LM-specific prompts, you write compositional code and use DSPy optimizers to teach different models like `GPT-4o` or `Llama-3.2` to **deliver higher quality outputs** or avoid specific failure patterns. In essence, DSPy optimizers then _compile your high-level code_ into low-level computations, prompts, or weight updates that **align your LM with your program’s structure and metrics**.
-
-
-DSPy stands for Declarative Self-improving Python. This [recent lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Our [Discord server](https://discord.gg/XCGy2WDCQB) is a great place to meet the community, seek help, or start contributing.
+Instead of writing brittle prompts for a specific LM, you write portable compositional code and use DSPy to **teach your LM to deliver higher-quality outputs** or avoid specific failure patterns. DSPy stands for Declarative Self-improving Python. This [recent lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Our [Discord server](https://discord.gg/XCGy2WDCQB) is a great place to meet the community, seek help, or start contributing.
 
 
 !!! info "Getting Started I: Install DSPy and set up your LM"
@@ -65,10 +62,10 @@ DSPy stands for Declarative Self-improving Python. This [recent lecture](https:/
           Then, connect to it from your DSPy code as an OpenAI-compatible endpoint.
 
           ```python linenums="1"
-          llama3 = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct",
+          lm = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct",
                            api_base="http://localhost:7501/v1",  # ensure this points to your port
                            api_key="", model_type='chat')
-          dspy.configure(lm=llama3)
+          dspy.configure(lm=lm)
           ```
 
     === "Local LMs on your laptop"
@@ -83,8 +80,8 @@ DSPy stands for Declarative Self-improving Python. This [recent lecture](https:/
 
         ```python linenums="1"
         import dspy
-        llama32 = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
-        dspy.configure(lm=llama32)
+        lm = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
+        dspy.configure(lm=lm)
         ```
 
     === "Other providers"
@@ -106,16 +103,25 @@ DSPy stands for Declarative Self-improving Python. This [recent lecture](https:/
         dspy.configure(lm=lm)
         ```
 
+??? "Calling the LM directly."
+
+     Idiomatic DSPy involves using modules, which we define below. But it's still easy to call your LM directly with a unified, clean API. Whatever `lm` you configured above, you can do the following. This helps you benefit from utilities like automatic caching.
+
+     ```python
+     lm("Say this is a test!", temperature=0.7)
+     lm(messages=[{"role": "user", "content": "Say this is a test!"}])
+     ``` 
+
 
 ## 1) **Modules** express portable, natural-language-typed behavior.
 
-Building high-quality AI systems requires iterating fast, as you decompose your problem into modular LM components. But it’s really hard to iterate when you have to tinker with each component's messy prompts or synthetic data _every time you change the model, the metrics, or parts of the pipeline_. Having built more than a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
+Building high-quality AI systems requires iterating fast, as you break your problem down into modular LM components. But maintaining long prompts makes it really hard to iterate: you typically have to tinker with each component's messy prompts or synthetic data _every time you change the model, the metrics, or parts of the pipeline_ or when you just want to try a new technique. Having built more than a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
 
-DSPy shifts your focus from tinkering with prompts to programming modular AI systems. It does that by **raising the level of AI abstraction from brittle strings to structured, declarative, and natural-language-typed modules**. For every module, you define a _signature_, a spec of input/output types and behavior, and you select an inference-time strategy. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
+DSPy shifts your focus from tinkering with prompts to programming modular systems. It does that by **raising the level of abstraction from brittle strings to structured, declarative, and natural-language-typed modules**. For every module, you define a _signature_, a spec of input/output types and behavior, and you select an inference-time strategy. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
-    After you've configured your preferred LM above, you can try the examples below. Adjust the field names or types to explore. Naturally, the ability of each LM to correctly solve a given task varies. Each example sets up a DSPy module, like `dspy.Predict`, `dspy.ChainOfThought`, or `dspy.ReAct`. The behavior of a module is defined by a _signature_. For example, `question -> answer: float` tells the module to take a question and to produce a `float` answer.
+    After you've configured your preferred LM above, you can try the examples below. Adjust the field names or types to explore what tasks your LM can do well out of the box! Each tab below sets up a DSPy module, like `dspy.Predict`, `dspy.ChainOfThought`, or `dspy.ReAct`. The behavior of a module is defined by a _signature_. For example, `question -> answer: float` tells the module to take a question and to produce a `float` answer.
 
     === "Math"
 
@@ -228,13 +234,14 @@ DSPy shifts your focus from tinkering with prompts to programming modular AI sys
 
 ## 2) **Optimizers** tune the prompts and weights of your Modules.
 
-Given a few tens or hundreds of representative _inputs_ of your task and a _metric_ that can measure the quality of your system's outputs, you can use DSPy Optimizers. Different optimizers in DSPy will tune your program's quality by **synthesizing good few-shot examples** for every module like `dspy.BootstrapRS`,<sup>[1](https://arxiv.org/abs/2310.03714)</sup> **proposing and intelligently exploring better natural-language instructions** for every prompt like `dspy.MIPROv2`,<sup>[2](https://arxiv.org/abs/2406.11695)</sup> and **finetuning the LM weights** in your system like `dspy.BootstrapFinetune`.<sup>[3](https://arxiv.org/abs/2407.10930)</sup>
+The goal of DSPy is to provide you with the tools to compile your high-level code into the low-level computations, prompts, or weight updates that **align your LM with your program’s structure and metrics**.
+
+Given a few tens or hundreds of representative _inputs_ of your task and a _metric_ that can measure the quality of your system's outputs, you can use a DSPy optimizer. Different optimizers in DSPy will tune your program's quality by **synthesizing good few-shot examples** for every module, like `dspy.BootstrapRS`,<sup>[1](https://arxiv.org/abs/2310.03714)</sup> **proposing and intelligently exploring better natural-language instructions** for every prompt, like `dspy.MIPROv2`,<sup>[2](https://arxiv.org/abs/2406.11695)</sup> and **finetuning the LM weights** in your system, like `dspy.BootstrapFinetune`.<sup>[3](https://arxiv.org/abs/2407.10930)</sup>
 
 
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
-    Be careful when running optimizers with very large LMs or very large datasets. A typical simple optimizer run costs
-    on the order of $2 USD and takes less than ten minutes, but optimizer runs can vary from as little as a few cents to
-    tens of dollars, depending on your LM, dataset, and configuration.
+    A typical simple optimization run costs on the order of $2 USD and takes around ten minutes, but be careful when running optimizers with very large LMs or very large datasets.
+    Optimizer runs can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
     
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
@@ -259,7 +266,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         optimized_react = tp.compile(react, trainset=trainset)
         ```
 
-        An informal run very similar to this on DSPy 2.5.29 raises ReAct's score from 24% to 51%.
+        An informal run similar to this on DSPy 2.5.29 raises ReAct's score from 24% to 51%.
 
     === "Optimizing prompts for RAG"
         Given a retrieval index to `search`, your favorite `dspy.LM`, and a small `trainset` of questions and ground-truth responses, the following code snippet can optimize your RAG system with long outputs against the built-in `dspy.SemanticF1` metric, which is implemented as a DSPy module.
@@ -331,7 +338,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         )
         ```
 
-        An informal run very similar to this on DSPy 2.5.29 raises GPT-4o-mini's score 66% to 87%.
+        An informal run similar to this on DSPy 2.5.29 raises GPT-4o-mini's score 66% to 87%.
 
 
 ??? "What's an example of a DSPy optimizer? How do different optimizers work?"
@@ -350,7 +357,7 @@ BootstrapFS on MATH with a tiny LM like Llama-3.2 with Ollama (maybe with a big 
 
 ## 3) **DSPy's Ecosystem** advances open-source AI research.
 
-By introducing structure into the space of LM programming, DSPy aims to enable a large, distributed community to independently improve program architectures, inference-time strategies, and LM program optimizers.
+By introducing structure into the space of LM programming, DSPy aims to enable a large, distributed, and open community to improve program architectures, inference-time strategies, and LM program optimizers. The idea is that doing so can outpace training isolated LMs in a closed fashion, can give developers and researchers much more control over their AI systems, allowing them to iterate much faster, and allows _your DSPy programs_ to get better over time by simply composing them with the latest optimizers or modules.
 
 The initial DSPy research started at Stanford NLP in Feb 2022, building on what we learned from developing early compound LM systems like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). This work was first released as [Demonstrate-Search-Predict](https://arxiv.org/abs/2212.14024) (DSP) in Dec 2022 and then evolved in Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714), or Declarative Self-improving Python. Thanks to [nearly 250 wonderful contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building modular LM programs and optimizing their prompts and weights automatically.
 
