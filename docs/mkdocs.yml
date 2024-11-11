@@ -18,11 +18,10 @@ nav:
       - Overview: building-blocks/3-modules.md
       - Predict: deep-dive/modules/predict.md
       - ChainOfThought: deep-dive/modules/chain-of-thought.md
-      - ChainOfThoughtwithHint: deep-dive/modules/chain-of-thought-with-hint.md
+      - ChainOfThoughtWithHint: deep-dive/modules/chain-of-thought-with-hint.md
       - ReAct: deep-dive/modules/react.md
       - MultiChainComparison: deep-dive/modules/multi-chain-comparison.md
       - ProgramOfThought: deep-dive/modules/program-of-thought.md
-      - Assertions: deep-dive/assertions.md
       - Retrieve: deep-dive/modules/retrieve.md
       - Modules Guide: deep-dive/modules/guide.md
     - Metrics:
