@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 # Creating a Custom Dataset
 
 We've seen how to work with with `Example` objects and use the `HotPotQA` class to load the HuggingFace HotPotQA dataset as a list of `Example` objects. But in production, such structured datasets are rare. Instead, you'll find yourself working on a custom dataset and might question: how do I create my own dataset or what format should it be?

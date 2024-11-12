@@ -4,19 +4,8 @@ sidebar_position: 5
 
 # Data
 
-DSPy is a machine learning framework, so working in it involves training sets, development sets, and test sets.
+DSPy is a machine learning framework, so working in it involves training sets, development sets, and test sets. For each example in your data, we distinguish typically between three types of values: the inputs, the intermediate labels, and the final label. You can use DSPy effectively without any intermediate or final labels, but you will need at least a few example inputs.
 
-For each example in your data, we distinguish typically between three types of values: the inputs, the intermediate labels, and the final label. You can use DSPy effectively without any intermediate or final labels, but you will need at least a few example inputs.
-
-## How much data do I need and how do I collect data for my task?
-
-Concretely, you can use DSPy optimizers usefully with as few as 10 example inputs, but having 50-100 examples (or even better, 300-500 examples) goes a long way.
-
-How can you get examples like these? If your task is extremely unusual, please invest in preparing ~10 examples by hand. Often times, depending on your metric below, you just need inputs and not labels, so it's not that hard.
-
-However, chances are that your task is not actually that unique. You can almost always find somewhat adjacent datasets on, say, HuggingFace datasets or other forms of data that you can leverage here.
-
-If there's data whose licenses are permissive enough, we suggest you use them. Otherwise, you can also start using/deploying/demoing your system and collect some initial data that way.
 
 ## DSPy `Example` objects
 
@@ -87,7 +76,7 @@ Example object with Input fields only: Example({'article': 'This is an article.'
 Example object with Non-Input fields only: Example({'summary': 'This is a summary.'}) (input_keys=None)
 ```
 
-## Loading Dataset from sources
+<!-- ## Loading Dataset from sources
 
 One of the most convenient way to import datasets in DSPy is by using `DataLoader`. The first step is to declare an object, this object can then be used to call utilities to load datasets in different formats:
 
@@ -148,4 +137,4 @@ testset = train_split[:75]
 trainset = train_split[75:]
 ```
 
-The way you load a HuggingFace dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets, you can refer to the [cheatsheet snippets](/cheatsheet/#dspy-dataloaders) for loading from HF.
+The way you load a HuggingFace dataset using `load_dataset` is exactly how you load data it via `from_huggingface` as well. This includes passing specific splits, subsplits, read instructions, etc. For code snippets, you can refer to the [cheatsheet snippets](/cheatsheet/#dspy-dataloaders) for loading from HF. -->

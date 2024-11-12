@@ -1,5 +1,7 @@
 # Retrieve
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 ## Background
 DSPy supports retrieval through the Retrieve module that serves to process user queries and output relevant passages from retrieval corpuses. This module ties in with the DSPy-supported Retrieval Model Clients which are retrieval servers that users can utilize to retrieve information for information retrieval tasks.
 

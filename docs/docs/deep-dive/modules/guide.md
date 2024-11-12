@@ -1,5 +1,8 @@
 # DSPy Modules
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/docs/guides/modules.ipynb)
 
 ## Quick Recap

@@ -93,25 +93,22 @@ class Assess(dspy.Signature):
 
     assessed_text = dspy.InputField()
     assessment_question = dspy.InputField()
-    assessment_answer = dspy.OutputField(desc="Yes or No")
+    assessment_answer: bool = dspy.OutputField()
 ```
 
-For example, below is a simple metric that uses GPT-4-turbo to check if a generated tweet (1) answers a given question correctly and (2) whether it's also engaging. We also check that (3) `len(tweet) <= 280` characters.
+For example, below is a simple metric that checks a generated tweet (1) answers a given question correctly and (2) whether it's also engaging. We also check that (3) `len(tweet) <= 280` characters.
 
 ```python
-gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=1000, model_type='chat')
-
 def metric(gold, pred, trace=None):
     question, answer, tweet = gold.question, gold.answer, pred.output
 
     engaging = "Does the assessed text make for a self-contained, engaging tweet?"
     correct = f"The text should answer `{question}` with `{answer}`. Does the assessed text contain this answer?"
     
-    with dspy.context(lm=gpt4T):
-        correct =  dspy.Predict(Assess)(assessed_text=tweet, assessment_question=correct)
-        engaging = dspy.Predict(Assess)(assessed_text=tweet, assessment_question=engaging)
+    correct =  dspy.Predict(Assess)(assessed_text=tweet, assessment_question=correct)
+    engaging = dspy.Predict(Assess)(assessed_text=tweet, assessment_question=engaging)
 
-    correct, engaging = [m.assessment_answer.lower() == 'yes' for m in [correct, engaging]]
+    correct, engaging = [m.assessment_answer for m in [correct, engaging]]
     score = (correct + engaging) if correct and (len(tweet) <= 280) else 0
 
     if trace is not None: return score >= 2

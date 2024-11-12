@@ -2,6 +2,9 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 # HFClientTGI
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Prerequisites
 
 Docker must be installed on your system. If you don't have Docker installed, you can get it from [here](https://docs.docker.com/get-docker/).
