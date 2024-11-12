@@ -4,9 +4,7 @@ sidebar_position: 1
 
 # Using DSPy in 8 Steps
 
-Using DSPy well for solving a new task is just doing good machine learning with LMs.
-
-What this means is that it's an iterative process. You make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
+Using DSPy well for solving a new task is just doing good machine learning with LMs. It's an iterative process: you make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
 
 As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](/building-blocks/3-modules) to use, giving each layer a [`signature` (input/output spec)](/building-blocks/2-signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`](/building-blocks/6-optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 
@@ -17,9 +15,7 @@ You cannot use DSPy well if you haven't defined the problem you're trying to sol
 
 **Expected Input/Output Behavior:** Are you trying to build a chatbot over your data? A code assistant? A system for extracting information from papers? Or perhaps a translation system? Or a system for highlighting snippets from search results? Or a system to summarize information on a topic, with citations?
 
-It's often useful to come up with just 3-4 examples of the inputs and outputs of your program (e.g., questions and their answers, or topics and their summaries).
-
-If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/XCGy2WDCQB) for the community.
+It's often useful to come up with just 3-4 examples of the inputs and outputs of your program (e.g., questions and their answers, or topics and their summaries). If you need help thinking about your task, we recently created a [Discord server](https://discord.gg/XCGy2WDCQB) for the community.
 
 **Quality and Cost Specs:** You probably don't have infinite budget. Your final system can't be too expensive to run, and it should probably respond to users quickly enough.
 

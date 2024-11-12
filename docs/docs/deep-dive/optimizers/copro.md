@@ -4,6 +4,9 @@ sidebar_position: 5
 
 # `COPRO`
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 `COPRO` which aims to improve the output prefixes and instruction of the signatures in a module in a zero/few shot setting. This teleprompter is especially beneficial for fine-tuning the prompt for language models and ensure they perform tasks more effectively, all from a vague and unrefined prompt.
 
 ## Setting up a Sample Pipeline

@@ -4,6 +4,9 @@ sidebar_position: 1
 
 # BootstrapFewShot
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 When compiling a DSPy program, we generally invoke an optimizer that takes the program, a training set, and a metric and returns a new optimized program. Different optimizers apply different strategies for optimization. This family of optimizers is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use this optimizer to optimize it.
 
 ## Setting up a Sample Pipeline

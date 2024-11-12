@@ -4,6 +4,9 @@ sidebar_position: 3
 
 # BootstrapFewShotWithRandomSearch
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 `BootstrapFewShotWithRandomSearch` is an teleprompter that extends `BootstrapFewShot` by incorporating a random search strategy to optimize the selection of few-shot examples. This teleprompter is useful when you want to explore a variety of example combinations to find the best examples for your model.
 
 ## Usage

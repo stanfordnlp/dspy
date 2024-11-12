@@ -1,5 +1,8 @@
 # LlamaCpp
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Prerequisites
 
 Install Llama Cpp Python by following the instructions provided in the [Llama Cpp Python repository](https://github.com/abetlen/llama-cpp-python).
