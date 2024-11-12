@@ -7,12 +7,21 @@ sidebar_position: 2
 The first step in any DSPy code is to set up your language model. For example, you can configure OpenAI's GPT-4o-mini as your default LM as follows.
 
 ```python
-# Authenticate via the `OPENAI_API_KEY` env variable or by passing an `api_key` argument below.
+# Authenticate via the `OPENAI_API_KEY` env variable.
 lm = dspy.LM('openai/gpt-4o-mini')
 dspy.configure(lm=lm)
 ```
 
-!!! info "Other LMs"
+!!! info "A few different LMs"
+
+    === "OpenAI"
+        You can authenticate by setting the `OPENAI_API_KEY` env variable or passing `api_key` below.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('openai/gpt-4o-mini', api_key='YOUR_OPENAI_API_KEY')
+        dspy.configure(lm=lm)
+        ```
 
     === "Anthropic"
         You can authenticate by setting the ANTHROPIC_API_KEY env variable or passing `api_key` below.
