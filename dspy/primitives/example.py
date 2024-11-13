@@ -46,7 +46,7 @@ class Example:
 
     def __repr__(self):
         # return f"Example({self._store})" + f" (input_keys={self._input_keys}, demos={self._demos})"
-        d = {k: str(v) for k, v in self._store.items() if not k.startswith("dspy_")}
+        d = {k: v for k, v in self._store.items() if not k.startswith("dspy_")}
         return f"Example({d})" + f" (input_keys={self._input_keys})"
 
     def __str__(self):
