@@ -11,9 +11,9 @@ hide:
 # _Programming_—not prompting—_LMs_
 
 
-DSPy is the open-source framework for _programming—rather than prompting—language models_. It allows you to build modular AI systems and to iterate fast on your AI system design. To do this, DSPy provides abstractions and algorithms for **optimizing the prompts and weights** in any LM program you're building, from simple classifiers to sophisticated RAG pipelines and Agent loops.
+DSPy is the open-source framework for _programming—rather than prompting—language models_. It allows you to build modular AI systems and to iterate fast. It provides abstractions and algorithms for **optimizing the prompts and weights** in any LM program you're building, from simple classifiers to sophisticated RAG pipelines and Agent loops.
 
-DSPy stands for Declarative Self-improving Python. Instead of writing brittle prompts for a specific LM, you write portable compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs** more reliably. This [recent lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB) are great places to meet the community, seek help, or start contributing.
+DSPy stands for Declarative Self-improving Python. Instead of writing brittle prompts for a specific LM, you write compositional _Python code_ and use DSPy's tools to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
 
 
 !!! info "Getting Started I: Install DSPy and set up your LM"
@@ -115,7 +115,7 @@ DSPy stands for Declarative Self-improving Python. Instead of writing brittle pr
 
 ## 1) **Modules** express portable, _natural-language-typed_ behavior.
 
-To build reliable AI systems, you need to iterate fast. Especially on how to break your problem down into modular LM components. But the typical way of using LMs makes it really hard to iterate fast: maintaining multiple long prompt strings often forces you to tinker with each component's messy prompts (or, worse, synthetic data) _every time you change the model, the metrics, or parts of the pipeline_ or when you just want to try a new technique. Having built over a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
+To build reliable AI systems, you need to iterate fast. Especially on how to break your problem down into modular LM components. But the typical way of using LMs makes it hard to iterate: maintaining long prompt strings forces you to tinker with each component's messy prompts (or, worse, synthetic data) _every time you change the model, the metrics, or parts of the pipeline_ or when you just want to try a new technique. Having built over a dozen state-of-the-art compound LM systems over the past five years, we learned this the hard way—and we built DSPy so you don't have to.
 
 DSPy shifts your focus from tinkering with prompt strings to **programming with structured, declarative, and natural-language-typed modules**. For every component in your AI system, you define a _signature_, which specifies input/output types and behavior, and a _module_, which specifies an inference-time strategy for using your LM well. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
