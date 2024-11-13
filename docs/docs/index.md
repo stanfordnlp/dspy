@@ -49,25 +49,6 @@ DSPy stands for Declarative Self-improving Python. Instead of writing brittle pr
         dspy.configure(lm=lm)
         ```
 
-    === "Local LMs on a GPU server"
-          First, install [SGLang](https://sgl-project.github.io/start/install.html) and launch its server with your LM.
-
-          ```bash
-          > pip install "sglang[all]"
-          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
-
-          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Meta-Llama-3-8B-Instruct
-          ```
-
-          Then, connect to it from your DSPy code as an OpenAI-compatible endpoint.
-
-          ```python linenums="1"
-          lm = dspy.LM("openai/meta-llama/Meta-Llama-3-8B-Instruct",
-                           api_base="http://localhost:7501/v1",  # ensure this points to your port
-                           api_key="", model_type='chat')
-          dspy.configure(lm=lm)
-          ```
-
     === "Local LMs on your laptop"
           First, install [Ollama](https://github.com/ollama/ollama) and launch its server with your LM.
 
@@ -83,6 +64,27 @@ DSPy stands for Declarative Self-improving Python. Instead of writing brittle pr
         lm = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
         dspy.configure(lm=lm)
         ```
+
+    === "Local LMs on a GPU server"
+          First, install [SGLang](https://sgl-project.github.io/start/install.html) and launch its server with your LM.
+
+          ```bash
+          > pip install "sglang[all]"
+          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
+
+          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Llama-3.1-8B-Instruct
+          ```
+        
+        If you don't have access from Meta to download `meta-llama/Llama-3.1-8B-Instruct`, use `Qwen/Qwen2.5-7B-Instruct` for example.
+
+        Next, connect to your local LM from your DSPy code as an `OpenAI`-compatible endpoint.
+
+          ```python linenums="1"
+          lm = dspy.LM("openai/meta-llama/Llama-3.1-8B-Instruct",
+                       api_base="http://localhost:7501/v1",  # ensure this points to your port
+                       api_key="local", model_type='chat')
+          dspy.configure(lm=lm)
+          ```
 
     === "Other providers"
         In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor.
