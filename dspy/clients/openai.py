@@ -250,7 +250,7 @@ class OpenAIProvider(Provider):
         poll_frequency: int = 20,
     ):
         # Get estimated time remaining
-        job = openai.fine_tuning.jobs.retrieve(job.job_id)
+        job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
         timestamp = job.estimated_finish
         estimated_finish_dt = datetime.fromtimestamp(timestamp)
         delta_dt = estimated_finish_dt - datetime.now()
@@ -261,7 +261,7 @@ class OpenAIProvider(Provider):
         cur_event_id = None
         while not done:
             # Get new events
-            page = openai.fine_tuning.jobs.list_events(fine_tuning_job_id=job.job_id, limit=1)
+            page = openai.fine_tuning.jobs.list_events(fine_tuning_job_id=job.provider_job_id, limit=1)
             new_event = page.data[0] if page.data else None
             if new_event and new_event.id != cur_event_id:
                 dt = datetime.fromtimestamp(new_event.created_at)
