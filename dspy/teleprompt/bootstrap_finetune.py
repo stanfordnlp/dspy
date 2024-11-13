@@ -79,7 +79,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             training_key = (pred.lm, data_pred_ind)
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind)
-                print(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
+                print(f"[BootstrapFinetune] Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_kwargs=self.train_kwargs[pred.lm], data_format=data_format)
                 key_to_data[training_key] = finetune_kwargs
         
@@ -245,7 +245,6 @@ def prepare_student(student: Program) -> Program:
 
 def prepare_teacher(student: Program, teacher: Program = None) -> Program:
     if teacher is None:
-        print("No teacher provided. Using a copy of the student program as the teacher.")
         return student.deepcopy()
     else:
         teacher = teacher.deepcopy()
