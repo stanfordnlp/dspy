@@ -80,7 +80,7 @@ class BetterTogether(Teleprompter):
 
         for ind, step_code in enumerate(parsed_strategy):
             current_strategy = self.STRAT_SEP.join(parsed_strategy[:ind + 1])
-            print(f"[BetterTogether] Step {ind + 1} of {len(parsed_strategy)} - Strategy `{current_strategy}`")
+            print(f"\n[BetterTogether] ########## Step {ind + 1} of {len(parsed_strategy)} - Strategy '{current_strategy}' ##########")
 
             print("[BetterTogether] Shuffling the trainset...")
             self.rng.shuffle(trainset)
