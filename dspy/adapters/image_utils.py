@@ -48,6 +48,10 @@ class Image(pydantic.BaseModel):
 
         return cls(url=encode_image(PIL.Image.open(pil_image)))
 
+    @pydantic.model_serializer()
+    def serialize_model(self):
+        return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
+
     def __repr__(self):
         len_base64 = len(self.url.split("base64,")[1])
         return f"Image(url = {self.url.split('base64,')[0]}base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
@@ -95,6 +99,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
                 return image
         else:
             # Unsupported string format
+            print(f"Unsupported image string: {image}")
             raise ValueError(f"Unsupported image string: {image}")
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
@@ -103,11 +108,12 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         # Raw bytes
         if not PIL_AVAILABLE:
             raise ImportError("Pillow is required to process image bytes.")
-        img = Image.open(io.BytesIO(image))
+        img = PILImage.open(io.BytesIO(image))
         return _encode_pil_image(img)
     elif isinstance(image, Image):
         return image.url
     else:
+        print(f"Unsupported image type: {type(image)}")
         raise ValueError(f"Unsupported image type: {type(image)}")
 
 
@@ -133,8 +139,7 @@ def _encode_image_from_url(image_url: str) -> str:
     encoded_image = base64.b64encode(response.content).decode("utf-8")
     return f"data:image/{file_extension};base64,{encoded_image}"
 
-
-def _encode_pil_image(image: "Image.Image") -> str:
+def _encode_pil_image(image: 'PILImage') -> str:
     """Encode a PIL Image object to a base64 data URI."""
     buffered = io.BytesIO()
     file_extension = (image.format or "PNG").lower()
@@ -151,7 +156,7 @@ def _get_file_extension(path_or_url: str) -> str:
 
 def is_image(obj) -> bool:
     """Check if the object is an image or a valid image reference."""
-    if PIL_AVAILABLE and isinstance(obj, Image.Image):
+    if PIL_AVAILABLE and isinstance(obj, PILImage.Image):
         return True
     if isinstance(obj, (bytes, bytearray)):
         return True
