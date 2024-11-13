@@ -23,7 +23,7 @@ To use a module, we first **declare** it by giving it a signature. Then we **cal
 sentence = "it's a charming and often affecting journey."  # example from the SST-2 dataset.
 
 # 1) Declare with a signature.
-classify = dspy.Predict('sentence -> sentiment')
+classify = dspy.Predict('sentence -> sentiment: bool')
 
 # 2) Call with input argument(s). 
 response = classify(sentence=sentence)
@@ -33,7 +33,7 @@ print(response.sentiment)
 ```
 **Output:**
 ```text
-Positive
+True
 ```
 
 When we declare a module, we can pass configuration keys to it.
@@ -54,7 +54,7 @@ response = classify(question=question)
 # 3) Access the outputs.
 response.completions.answer
 ```
-**Output:**
+**Possible Output:**
 ```text
 ['One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.',
  'Its ability to efficiently retrieve relevant information from large document collections.',
@@ -71,9 +71,9 @@ Let's inspect the (first) reasoning and answer!
 print(f"Reasoning: {response.reasoning}")
 print(f"Answer: {response.answer}")
 ```
-**Output:**
+**Possible Output:**
 ```text
-Rationale: produce the answer. We can consider the fact that ColBERT has shown to outperform other state-of-the-art retrieval models in terms of efficiency and effectiveness. It uses contextualized embeddings and performs document retrieval in a way that is both accurate and scalable.
+Reasoning: We can consider the fact that ColBERT has shown to outperform other state-of-the-art retrieval models in terms of efficiency and effectiveness. It uses contextualized embeddings and performs document retrieval in a way that is both accurate and scalable.
 Answer: One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.
 ```
 

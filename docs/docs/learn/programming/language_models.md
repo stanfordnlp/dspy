@@ -6,8 +6,8 @@ sidebar_position: 2
 
 The first step in any DSPy code is to set up your language model. For example, you can configure OpenAI's GPT-4o-mini as your default LM as follows.
 
-```python
-# Authenticate via the `OPENAI_API_KEY` env variable.
+```python linenums="1"
+# Authenticate via `OPENAI_API_KEY` env: import os; os.environ['OPENAI_API_KEY'] = 'here'
 lm = dspy.LM('openai/gpt-4o-mini')
 dspy.configure(lm=lm)
 ```
@@ -108,7 +108,7 @@ lm(messages=[{"role": "user", "content": "Say this is a test!"}])  # => ['This i
 
 Idiomatic DSPy involves using _modules_, which we discuss in the next guide.
 
-```python
+```python linenums="1" 
 # Define a module (ChainOfThought) and assign it a signature (return an answer, given a question).
 qa = dspy.ChainOfThought('question -> answer')
 
@@ -129,7 +129,7 @@ You can change the default LM globally with `dspy.configure` or change it inside
     Using `dspy.configure` and `dspy.context` is thread-safe!
 
 
-```python
+```python linenums="1" 
 dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 print('GPT-4o-mini:', response.answer)
@@ -148,7 +148,7 @@ GPT-3.5-turbo: The castle David Gregory inherited has 7 floors.
 
 For any LM, you can configure any of the following attributes at initialization or in each subsequent call.
 
-```python
+```python linenums="1" 
 gpt_4o_mini = dspy.LM('openai/gpt-4o-mini', temperature=0.9, max_tokens=3000, stop=None, cache=False)
 ```
 
@@ -159,7 +159,7 @@ By default LMs in DSPy are cached. If you repeat the same call, you will get the
 
 Every LM object maintains the history of its interactions, including inputs, outputs, token usage (and $$$ cost), and metadata.
 
-```python
+```python linenums="1" 
 len(lm.history)  # e.g., 3 calls to the LM
 
 lm.history[-1].keys()  # access the last call to the LM, with all metadata

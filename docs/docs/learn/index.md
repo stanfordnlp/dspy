@@ -4,13 +4,12 @@ sidebar_position: 1
 
 # Learning DSPy: An Overview
 
-As a framework, DSPy exposes a very small API that you can learn quickly. However, using it for novel tasks involves the more open-ended journey of composing its tools and design patterns to build _your_ modular AI systems quickly and to optimize them for _your_ objectives. This can be done along three different levels of system development, presented below.
+DSPy exposes a very small API that you can learn quickly, but building new AI systems is a more open-ended journey of composing the tools and design patterns in DSPy to optimize for _your_ objectives. The three stages of building AI systems in DSPy are:
 
+1) **DSPy Programming.** This is all about defining your task, its constraints, exploring a few examples, and using that to inform your initial pipeline design.
 
-1) **Programming in DSPy.** This is the stage in which your concern is to define your task, its constraints, explore a few examples of it, and use that to inform your initial pipeline design.
+2) **DSPy Evaluation.** Once your system works reasonably well, this is the stage where you collect an initial development set, define your DSPy metric, and use these to iterate on your system more systematically.
 
-2) **Evaluation in DSPy.** Once you have a system that works reasonably well, you collect an initial small development set, define your DSPy metric, and use these to iterate on your system more systematically.
+3) **DSPy Optimization.** Once you have a way to evaluate your system, you use DSPy optimizers to tune the prompts or weights in your program.
 
-3) **Optimization in DSPy.** Once you have a system and a way to evaluate it, you can start to use DSPy optimizers to tune the prompts or weights in your program.
-
-We typically suggest that you learn and apply DSPy in this order. For example, it's unproductive to launch optimization runs using a poorly-design program or a bad metric.
+We suggest learning and applying DSPy in this order. For example, it's unproductive to launch optimization runs using a poorly-design program or a bad metric.
