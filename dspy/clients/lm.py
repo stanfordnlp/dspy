@@ -36,6 +36,7 @@ class LM(BaseLM):
         num_retries: int = 3,
         provider=None,
         finetuning_model: Optional[str] = None,
+        launch_kwargs: Optional[dict[str, Any] = None,
         **kwargs,
     ):
         """
@@ -68,6 +69,7 @@ class LM(BaseLM):
         self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
+        self.launch_kwargs = launch_kwargs
 
         # TODO(bug): Arbitrary model strings could include the substring "o1-".
         # We should find a more robust way to check for the "o1-" family models.
@@ -113,10 +115,12 @@ class LM(BaseLM):
         return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
-        self.provider.launch(self.model, **launch_kwargs)
+        launch_kwargs = launch_kwargs or self.launch_kwargs
+        self.provider.launch(self.model, launch_kwargs)
 
-    def kill(self, kill_kwargs: Optional[Dict[str, Any]] = None):
-        self.provider.kill(self.model, **kill_kwargs)
+    def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
+        launch_kwargs = launch_kwargs or self.launch_kwargs
+        self.provider.kill(self.model, launch_kwargs)
 
     def finetune(
         self,
