@@ -248,11 +248,28 @@ class OpenAIProvider(Provider):
         job: TrainingJobOpenAI,
         poll_frequency: int = 20,
     ):
-        done = False
-        while not done:
-            done = OpenAIProvider.is_terminal_training_status(job.status())
-            time.sleep(poll_frequency)
+        # Get estimated time remaining
+        job = client.fine_tuning.jobs.retrieve(job.job_id)
+        timestamp = job.estimated_finish
+        estimated_finish_dt = datetime.fromtimestamp(timestamp)
+        delta_dt = estimated_finish_dt - datetime.now()
+        print(f"[OpenAI Provider] The OpenAI estimated time remaining is: {delta_dt}")
 
+        # Poll for the job until it is done
+        done = False
+        cur_event_id = None
+        while not done:
+            # Get new events
+            page = client.fine_tuning.jobs.list_events(fine_tuning_job_id=job.job_id, limit=1)
+            new_event = page.data[0] if page.data else None
+            if new_event and new_event.id != cur_event_id:
+                dt = datetime.fromtimestamp(new_event.created_at)
+                print(f"[OpenAI Provider] {dt} {new_event.message}")
+                cur_event_id = new_event.id
+
+            # Sleep and update the flag
+            time.sleep(poll_frequency)
+            done = OpenAIProvider.is_terminal_training_status(job.status())
 
     @staticmethod
     def get_trained_model(job):
