@@ -66,6 +66,9 @@ class BetterTogether(Teleprompter):
         student = prepare_student(student)
         set_missing_predictor_lms(student)
 
+        # Make a shallow copy of the trainset, so that we don't change the order
+        # of the examples in the original trainset
+        trainset = trainset[:]
         print("[BetterTogether] Compiling the student program...")
         student = self._run_strategies(parsed_strategy, student, trainset, valset_ratio)
         
@@ -104,6 +107,8 @@ class BetterTogether(Teleprompter):
         print("[BetterTogether] Preparing for prompt optimization...")
 
         # Sampling a validation set from the trainset for the prompt optimizer
+        # We drop the hints for prompt optimization
+        trainset = [x.with_inputs(*list(set(x.inputs().keys()) - {"hint"})) for x in trainset]
         num_val = int(valset_ratio * len(trainset))
         prompt_valset = trainset[:num_val]
         prompt_trainset = trainset[num_val:]
