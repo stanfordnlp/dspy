@@ -121,7 +121,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         for ind, (key, job) in enumerate(key_to_job.items()):
             key_to_lm[key] = job.result()
             job.thread.join()
-            print(f"Job {ind + 1}/{num_jobs} completed.")
+            print(f"[BootstrapFinetune] Job {ind + 1}/{num_jobs} is done")
 
         return key_to_lm
 
