@@ -72,7 +72,7 @@ class BetterTogether(Teleprompter):
         print("[BetterTogether] Compiling the student program...")
         student = self._run_strategies(parsed_strategy, student, trainset, valset_ratio)
         
-        print("[BetterTogether] BetterTogether has finished compiling the student program.")
+        print("[BetterTogether] BetterTogether has finished compiling the student program")
         return student
   
     def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
