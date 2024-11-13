@@ -250,8 +250,8 @@ class OpenAIProvider(Provider):
         poll_frequency: int = 20,
     ):
         # Get estimated time remaining
-        job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
-        timestamp = job.estimated_finish
+        remote_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
+        timestamp = remote_job.estimated_finish
         estimated_finish_dt = datetime.fromtimestamp(timestamp)
         delta_dt = estimated_finish_dt - datetime.now()
         print(f"[OpenAI Provider] The OpenAI estimated time remaining is: {delta_dt}")
