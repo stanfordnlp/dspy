@@ -234,7 +234,6 @@ def set_missing_predictor_lms(program: Program) -> Program:
 
 
 def prepare_student(student: Program) -> Program:
-    print("Ensuring that the student is not compiled")
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
 
