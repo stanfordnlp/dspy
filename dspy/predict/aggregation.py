@@ -1,7 +1,8 @@
 from dsp.utils import normalize_text
 from dspy.primitives.prediction import Completions, Prediction
 
-default_normalize = lambda s: normalize_text(s) or None
+def default_normalize(s):
+    return normalize_text(s) or None
 
 
 def majority(prediction_or_completions, normalize=default_normalize, field=None):
@@ -12,7 +13,7 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     """
 
     assert any(isinstance(prediction_or_completions, t) for t in [Prediction, Completions, list])
-    input_type = type(prediction_or_completions)
+    type(prediction_or_completions)
 
     # Get the completions
     if isinstance(prediction_or_completions, Prediction):
@@ -22,12 +23,12 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     
     try:
         signature = completions.signature
-    except:
+    except Exception:
         signature = None
     
     if not field:
         if signature:
-            field = signature.output_fields[-1]
+            field = list(signature.output_fields.keys())[-1]
         else:
             field = list(completions[0].keys())[-1]
 

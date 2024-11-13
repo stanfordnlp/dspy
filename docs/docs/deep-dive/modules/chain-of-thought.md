@@ -1,5 +1,8 @@
 # dspy.ChainOfThought
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ### Constructor
 
 The constructor initializes the `ChainOfThought` class and sets up its attributes. It inherits from the `Predict` class and adds specific functionality for chain of thought processing. 
@@ -13,15 +16,30 @@ class ChainOfThought(Predict):
 
         self.activated = activated
 
-        signature = ensure_signature(self.signature)
+        self.signature = signature = ensure_signature(signature)
         *_keys, last_key = signature.output_fields.keys()
 
-        rationale_type = rationale_type or dspy.OutputField(
-            prefix="Reasoning: Let's think step by step in order to",
-            desc="${produce the " + last_key + "}. We ...",
-        )
+        prefix = "Reasoning: Let's think step by step in order to"
 
-        self.extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        if isinstance(dspy.settings.lm, dspy.LM):
+            desc = "${reasoning}"
+        elif dspy.settings.experimental:
+            desc = "${produce the output fields}. We ..."
+        else:
+            # For dspy <2.5
+            desc = f"${{produce the {last_key}}}. We ..."
+
+        rationale_type = rationale_type or dspy.OutputField(prefix=prefix, desc=desc)
+
+        # Add "rationale" field to the output signature.
+        if isinstance(dspy.settings.lm, dspy.LM) or dspy.settings.experimental:
+            extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
+        else:
+            # For dspy <2.5
+            extended_signature = signature.prepend("rationale", rationale_type, type_=str)
+        
+        self._predict = dspy.Predict(extended_signature, **config)
+        self._predict.extended_signature = extended_signature
 ```
 
 **Parameters:**

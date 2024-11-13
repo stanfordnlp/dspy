@@ -10,6 +10,7 @@ from dsp.utils.utils import dotdict
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
 from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
+from dspy.utils.callback import with_callbacks
 
 
 class DSPDummyLM(DSPLM):
@@ -94,7 +95,7 @@ class DSPDummyLM(DSPLM):
         return [choice["text"] for choice in choices]
 
     def get_convo(self, index) -> str:
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
@@ -170,6 +171,7 @@ class DummyLM(LM):
             if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
                 return output["content"]
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
             return format_fields(
@@ -203,11 +205,12 @@ class DummyLM(LM):
             entry = dict(**entry, outputs=outputs, usage=0)
             entry = dict(**entry, cost=0)
             self.history.append(entry)
+            self.update_global_history(entry)
 
         return outputs
 
     def get_convo(self, index):
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["messages"], self.history[index]["outputs"]
 
 

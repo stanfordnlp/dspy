@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 # Creating a Custom Dataset
 
 We've seen how to work with with `Example` objects and use the `HotPotQA` class to load the HuggingFace HotPotQA dataset as a list of `Example` objects. But in production, such structured datasets are rare. Instead, you'll find yourself working on a custom dataset and might question: how do I create my own dataset or what format should it be?
@@ -86,7 +88,7 @@ Using the Dataset base class now makes loading custom datasets incredibly easy a
 
 !!! caution
 
-    We did not populate `_test` attribute in the above code, which is fine and won't cause any unneccesary error as such. However it'll give you an error if you try to access the test split.
+    We did not populate `_test` attribute in the above code, which is fine and won't cause any unnecessary error as such. However it'll give you an error if you try to access the test split.
 
     ```python
     dataset.test[:5]
@@ -110,6 +112,6 @@ Using the Dataset base class now makes loading custom datasets incredibly easy a
 
     To prevent that you'll just need to make sure `_test` is not `None` and populated with the appropriate data.
 
-You can overide the methods in `Dataset` class to customize your class even more. 
+You can override the methods in `Dataset` class to customize your class even more. 
 
 In summary, the Dataset base class provides a simplistic way to load and preprocess custom datasets with minimal code!

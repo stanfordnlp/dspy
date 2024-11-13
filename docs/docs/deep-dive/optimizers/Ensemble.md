@@ -4,6 +4,9 @@ sidebar_position: 4
 
 # teleprompt.Ensemble
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ### Constructor
 
 The constructor initializes the `Ensemble` class and sets up its attributes. This teleprompter is designed to create ensembled versions of multiple programs, reducing various outputs from different programs into a single output.

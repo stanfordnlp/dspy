@@ -4,6 +4,8 @@ sidebar_position: 2
 
 # ChainOfThoughtWithHint
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 This class builds upon the `ChainOfThought` class by introducing an additional input field to provide hints for reasoning. The inclusion of a hint allows for a more directed problem-solving process, which can be especially useful in complex scenarios.
 
 

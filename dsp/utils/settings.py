@@ -1,6 +1,6 @@
 import threading
-from copy import deepcopy
 from contextlib import contextmanager
+from copy import deepcopy
 
 from dsp.utils.utils import dotdict
 
@@ -23,6 +23,7 @@ DEFAULT_CONFIG = dotdict(
     langchain_history=[],
     experimental=False,
     backoff_time=10,
+    callbacks=[],
 )
 
 

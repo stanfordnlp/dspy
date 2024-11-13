@@ -4,6 +4,9 @@ sidebar_position: 2
 
 # ReAct
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Background
 
 DSPy supports ReAct, an LLM agent designed to tackle complex tasks in an interactive fashion. ReAct is composed of an iterative loop of interpretation, decision and action-based activities ("Thought, Action, and Observation") based on an evolving set of input and output fields. Through this real-time iterative approach, the ReAct agent can both analyze and adapt to its responses over time as new information becomes available.

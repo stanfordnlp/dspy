@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import signal
 import sys
 import threading
@@ -41,6 +42,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 
+
+logger = logging.getLogger(__name__)
 
 class Evaluate:
     def __init__(
@@ -102,7 +105,7 @@ class Evaluate:
 
             def interrupt_handler(sig, frame):
                 self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
+                logger.warning("Received SIGINT. Cancelling evaluation.")
                 default_handler(sig, frame)
 
             signal.signal(signal.SIGINT, interrupt_handler)
@@ -135,7 +138,7 @@ class Evaluate:
             pbar.close()
 
         if self.cancel_jobs.is_set():
-            dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
+            logger.warning("Evaluation was cancelled. The results may be incomplete.")
             raise KeyboardInterrupt
 
         return reordered_devset, ncorrect, ntotal
@@ -193,11 +196,11 @@ class Evaluate:
                     raise e
 
                 if self.provide_traceback:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}"
                     )
                 else:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
                     )
 
@@ -219,15 +222,27 @@ class Evaluate:
                 display_progress,
             )
 
-        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         predicted_devset = sorted(reordered_devset)
 
         if return_outputs:  # Handle the return_outputs logic
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
+        def prediction_is_dictlike(prediction):
+            try:
+                dict(prediction)
+                return True
+            except Exception:
+                return False
+
         data = [
-            merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
+            for _, example, prediction, score in predicted_devset
         ]
 
         result_df = pd.DataFrame(data)
@@ -331,24 +346,8 @@ def display_dataframe(df: pd.DataFrame):
 
 def configure_dataframe_for_ipython_notebook_display(df: pd.DataFrame) -> pd.DataFrame:
     """Set various pandas display options for DataFrame in an IPython notebook environment."""
-    pd.options.display.max_colwidth = None
-    pd.set_option("display.max_colwidth", 20)  # Adjust the number as needed
-    pd.set_option("display.width", 400)  # Adjust
-
-    # Return styled DataFrame
-    return df.style.set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "left")]},
-            {"selector": "td", "props": [("text-align", "left")]},
-        ],
-    ).set_properties(
-        **{
-            "text-align": "left",
-            "white-space": "pre-wrap",
-            "word-wrap": "break-word",
-            "max-width": "400px",
-        },
-    )
+    pd.options.display.max_colwidth = 70
+    return df
 
 
 def is_in_ipython_notebook_environment():

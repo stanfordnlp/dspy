@@ -4,6 +4,9 @@ sidebar_position: 4
 
 # teleprompt.BootstrapFinetune
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ### Constructor
 
 ### `__init__(self, metric=None, teacher_settings={}, multitask=True)`
