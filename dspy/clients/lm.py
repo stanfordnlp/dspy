@@ -36,7 +36,7 @@ class LM(BaseLM):
         num_retries: int = 3,
         provider=None,
         finetuning_model: Optional[str] = None,
-        launch_kwargs: Optional[dict[str, Any] = None,
+        launch_kwargs: Optional[dict[str, Any]] = None,
         **kwargs,
     ):
         """
