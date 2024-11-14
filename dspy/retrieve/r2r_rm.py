@@ -2,7 +2,8 @@ import os
 import dspy
 from dsp.utils import dotdict
 import warnings
-
+import inspect
+import asyncio
 from typing import List, Optional, Union, Dict
 from r2r import R2RClient
 from shared.abstractions import R2RException
@@ -52,7 +53,7 @@ class R2RRetrieve(dspy.Retrieve):
 
     Examples
     --------
-    >>> rm = R2RRetrieve(collection_name="My Collection")
+    >>> rm = R2RRetrieve(collection_names="My Collection")
     >>> dspy.configure(lm=lm, rm=rm) # lm previously defined
     >>> retriever = dspy.Retrieve(k=10)
     >>> query="What is machine learning?"
@@ -60,6 +61,7 @@ class R2RRetrieve(dspy.Retrieve):
 
     Notes
     -----
+    - If you are running on a Jupyter notebook, you need to pip install nest_asyncio.
     - The URI for the R2R server needs to be in the environment in R2R_URI. 
       Otherwise, it will default to "http://localhost:7272
     - Default search mode is "search" (returning k passages), with all methods enabled
@@ -80,9 +82,9 @@ class R2RRetrieve(dspy.Retrieve):
     Current build and testing
     -------------------------
     Python: 3.12.7
-    R2R Server: 3.2.17
-    R2R Python SDK: 3.2.17
-    DSPy: 2.5.15
+    R2R Server: 3.2.41
+    R2R Python SDK: 3.2.41
+    DSPy: 2.5.29
 
     Author
     ------
@@ -122,10 +124,44 @@ class R2RRetrieve(dspy.Retrieve):
         
         try:
             self.client = R2RClient(os.getenv("R2R_URI", "http://localhost:7272"))
-            if (health_response := self.client.health().get("results", {"response": "error"}).get("response")) != "ok": # type: ignore
+            health_response: Dict = self._safe_call(self.client.health)
+            if (health_response.get("results", {"response": "error"}).get("response")) != "ok": # type: ignore
                 raise ValueError(f"R2R failed returning an ok health response: {health_response}")
         except R2RException as e:
             raise ValueError(f"R2R System not ready: {e}")
+    
+
+    def _safe_call(self, func, *args, **kwargs):
+        """
+        Safely calls a function that may return either a dict, a coroutine, or a future.
+        Also handles cases where the function itself is a Future.
+        This is necessary due to the way R2R manages sync/async. This avoids issues in different
+        environments such as Jupyter.
+        
+        Args:
+            func: The function to call (or a Future)
+            *args: Positional arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
+            
+        Returns:
+            dict: The result of the function call
+        """
+    
+        if isinstance(func, asyncio.Future):
+            import nest_asyncio
+            nest_asyncio.apply()
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(func)
+        
+        response = func(*args, **kwargs)
+        
+        if inspect.iscoroutine(response) or isinstance(response, asyncio.Future):
+            import nest_asyncio
+            nest_asyncio.apply()
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(response)
+            
+        return response
     
 
     def _get_collections(
@@ -149,26 +185,23 @@ class R2RRetrieve(dspy.Retrieve):
         if collection_ids:
             for cid in collection_ids:
                 if cid:
-                    try:
-                        # Validate UUID format
-                        UUID(cid)
+                    try:     
+                        UUID(cid) # Validate UUID format. We're just being paranoid.
                         resolved_ids.add(cid)
                     except ValueError:
                         warnings.warn(f"Invalid collection ID format: {cid}")
 
         # Resolve collection names to IDs, handling duplicates
-        collections_list = self.client.list_collections()
+        collections_list = self._safe_call(self.client.list_collections())
         name_to_ids_map: Dict[str, List[str]] = {}
 
-        # Build a map of names to a list of their corresponding collection IDs
-        for col in collections_list.get('results', []):  # Handle missing 'results' safely
+        for col in collections_list.get('results', []):
             name = col['name']
             col_id = col['collection_id']
             if name not in name_to_ids_map:
                 name_to_ids_map[name] = []
             name_to_ids_map[name].append(col_id)
 
-        # Add all IDs matching the provided names
         for name in collection_names:
             if name in name_to_ids_map:
                 resolved_ids.update(name_to_ids_map[name])
@@ -197,11 +230,9 @@ class R2RRetrieve(dspy.Retrieve):
         collection_ids: Optional[Union[str, List[str]]] = None,
         **kwargs
     ) -> List[dotdict]:
-        """[previous docstring remains the same]"""
         if not query or not query.strip():
             raise ValueError("Query cannot be empty or contain only whitespace")
         
-        # Merge default parameters with any provided overrides
         params = self.default_params.copy()
         if mode is not None:
             params["mode"] = "rag" if mode == "rag" else "search"
@@ -220,7 +251,6 @@ class R2RRetrieve(dspy.Retrieve):
             
         k = k if k is not None and k > 0 else self.k
         
-        # Resolve collections
         try:
             collections = self._get_collections(params["collection_names"], params["collection_ids"])
         except ValueError as e:
@@ -279,9 +309,9 @@ class R2RRetrieve(dspy.Retrieve):
 
         # Perform actual search/rag API call to the R2R server URI
         if params["mode"] == "search":
-            result = self.client.search(**search_args)
+            result = self._safe_call(self.client.search,**search_args)
         elif params["mode"] == "rag":
-            result = self.client.rag(**search_args)
+            result = self._safe_call(self.client.rag,**search_args)
         else:
             raise ValueError(f"Query mode must be 'search' or 'rag' only. Value received: {params['mode']}")
 
