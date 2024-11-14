@@ -66,10 +66,13 @@ class BetterTogether(Teleprompter):
         student = prepare_student(student)
         set_missing_predictor_lms(student)
 
+        # Make a shallow copy of the trainset, so that we don't change the order
+        # of the examples in the original trainset
+        trainset = trainset[:]
         print("[BetterTogether] Compiling the student program...")
         student = self._run_strategies(parsed_strategy, student, trainset, valset_ratio)
         
-        print("[BetterTogether] BetterTogether has finished compiling the student program.")
+        print("[BetterTogether] BetterTogether has finished compiling the student program")
         return student
   
     def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
@@ -80,7 +83,7 @@ class BetterTogether(Teleprompter):
 
         for ind, step_code in enumerate(parsed_strategy):
             current_strategy = self.STRAT_SEP.join(parsed_strategy[:ind + 1])
-            print(f"[BetterTogether] Step {ind + 1} of {len(parsed_strategy)} - Strategy `{current_strategy}`")
+            print(f"\n[BetterTogether] ########## Step {ind + 1} of {len(parsed_strategy)} - Strategy '{current_strategy}' ##########")
 
             print("[BetterTogether] Shuffling the trainset...")
             self.rng.shuffle(trainset)
@@ -104,6 +107,8 @@ class BetterTogether(Teleprompter):
         print("[BetterTogether] Preparing for prompt optimization...")
 
         # Sampling a validation set from the trainset for the prompt optimizer
+        # We drop the hints for prompt optimization
+        trainset = [x.with_inputs(*list(set(x.inputs().keys()) - {"hint"})) for x in trainset]
         num_val = int(valset_ratio * len(trainset))
         prompt_valset = trainset[:num_val]
         prompt_trainset = trainset[num_val:]
