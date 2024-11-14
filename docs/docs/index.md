@@ -242,7 +242,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
 
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
-    A typical simple optimization run costs on the order of $2 USD and takes around ten minutes, but be careful when running optimizers with very large LMs or very large datasets.
+    A typical simple optimization run costs on the order of $2 USD and takes around 20 minutes, but be careful when running optimizers with very large LMs or very large datasets.
     Optimizer runs can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
     
     === "Optimizing prompts for a ReAct agent"
@@ -271,7 +271,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         An informal run similar to this on DSPy 2.5.29 raises ReAct's score from 24% to 51%.
 
     === "Optimizing prompts for RAG"
-        Given a retrieval index to `search`, your favorite `dspy.LM`, and a small `trainset` of questions and ground-truth responses, the following code snippet can optimize your RAG system with long outputs against the built-in `dspy.SemanticF1` metric, which is implemented as a DSPy module.
+        Given a retrieval index to `search`, your favorite `dspy.LM`, and a small `trainset` of questions and ground-truth responses, the following code snippet can optimize your RAG system with long outputs against the built-in `SemanticF1` metric, which is implemented as a DSPy module.
 
         ```python linenums="1"
         class RAG(dspy.Module):
@@ -283,7 +283,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
                 context = search(question, k=self.num_docs)   # not defined in this snippet, see link above
                 return self.respond(context=context, question=question)
 
-        tp = dspy.MIPROv2(metric=dspy.SemanticF1(), auto="medium", num_threads=24)
+        tp = dspy.MIPROv2(metric=dspy.evaluate.SemanticF1(), auto="medium", num_threads=24)
         optimized_rag = tp.compile(RAG(), trainset=trainset, max_bootstrapped_demos=2, max_labeled_demos=2)
         ```
 
