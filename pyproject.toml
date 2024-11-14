@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.5.15"
+version="2.5.30"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -38,7 +38,6 @@ dependencies = [
     "requests",
     "optuna",
     "pydantic~=2.0",
-    "structlog",
     "jinja2",
     "magicattr~=0.1.6",
     "litellm",
@@ -86,7 +85,6 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
-# documentation = "https://dspy-ai.readthedocs.io"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
 # may be a bit much
 
@@ -130,15 +128,20 @@ groq = { version = "^0.4.2", optional = true }
 rich = "^13.7.1"
 psycopg2 = { version = "^2.9.9", optional = true }
 pgvector = { version = "^0.2.5", optional = true }
-structlog = "^24.1.0"
 llama-index = {version = "^0.10.30", optional = true}
 snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
 jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
-litellm = "1.49.1"
+litellm = "1.51.0"
 diskcache = "^5.6.0"
+
+redis = "^5.1.1"
+falkordb = "^1.0.9"
+
+
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
+
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.5"
@@ -150,6 +153,8 @@ black = "^24.2.0"
 pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
+pillow = "^10.1.0"
+litellm = {version = "1.51.0", extras = ["proxy"]}
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]

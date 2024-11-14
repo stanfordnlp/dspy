@@ -244,17 +244,17 @@ class Synthesizer:
         return data
 
     def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
-        extention = mode or path.split(".")[-1]
+        extension = mode or path.split(".")[-1]
 
         dataset = Dataset.from_list(
             [example.toDict() for example in data],
         )
 
-        if extention == "csv":
+        if extension == "csv":
             dataset.to_csv(path_or_buf=path, **kwargs)
 
-        elif extention == "json":
+        elif extension == "json":
             dataset.to_json(path_or_buf=path, **kwargs)
 
-        elif extention == "arrow" or extention == "hf":
+        elif extension == "arrow" or extension == "hf":
             dataset.save_to_disk(path)

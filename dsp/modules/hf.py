@@ -49,7 +49,7 @@ class HFModel(LM):
             checkpoint (str, optional): load specific checkpoints of the model. Defaults to None.
             is_client (bool, optional): whether to access models via client. Defaults to False.
             hf_device_map (str, optional): HF config strategy to load the model.
-                Recommeded to use "auto", which will help loading large models using accelerate. Defaults to "auto".
+                Recommended to use "auto", which will help loading large models using accelerate. Defaults to "auto".
             model_kwargs (dict, optional): additional kwargs to pass to the model constructor. Defaults to empty dict.
         """
 

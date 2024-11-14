@@ -12,7 +12,6 @@ from dspy.evaluate import Evaluate # isort: skip
 from dspy.clients import * # isort: skip
 from dspy.adapters import * # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
-
 settings = dsp.settings
 
 configure_dspy_loggers(__name__)
@@ -68,12 +67,8 @@ LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
 BootstrapFewShotWithRandomSearch = dspy.teleprompt.BootstrapFewShotWithRandomSearch
 BootstrapRS = dspy.teleprompt.BootstrapFewShotWithRandomSearch
+BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
+BetterTogether = dspy.teleprompt.BetterTogether
 COPRO = dspy.teleprompt.COPRO
 MIPROv2 = dspy.teleprompt.MIPROv2
 Ensemble = dspy.teleprompt.Ensemble
-
-
-# TODO: Consider if this should access settings.lm *or* a list that's shared across all LMs in the program.
-def inspect_history(*args, **kwargs):
-    from dspy.clients.lm import GLOBAL_HISTORY, _inspect_history
-    return _inspect_history(GLOBAL_HISTORY, *args, **kwargs)

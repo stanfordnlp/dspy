@@ -4,6 +4,9 @@ sidebar_position: 2
 
 # LabeledFewShot
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ### Constructor
 
 The constructor initializes the `LabeledFewShot` class and sets up its attributes, particularly defining `k` number of samples to be used by the predictor.

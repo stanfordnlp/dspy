@@ -1,5 +1,7 @@
 # OllamaLocal
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 !!! note
     Adapted from documentation provided by https://github.com/insop
 

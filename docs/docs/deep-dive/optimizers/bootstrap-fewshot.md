@@ -4,11 +4,14 @@ sidebar_position: 1
 
 # BootstrapFewShot
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 When compiling a DSPy program, we generally invoke an optimizer that takes the program, a training set, and a metric and returns a new optimized program. Different optimizers apply different strategies for optimization. This family of optimizers is focused on optimizing the few shot examples. Let's take an example of a Sample pipeline and see how we can use this optimizer to optimize it.
 
 ## Setting up a Sample Pipeline
 
-We will be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](https://dspy-docs.vercel.app/docs/quick-start/minimal-example). We won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+We will be making a basic answer generation pipeline over the GSM8K dataset. We won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
 
 ```python
 import dspy

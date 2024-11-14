@@ -51,7 +51,7 @@ class Retry(Predict):
         return self.original_forward(**kwargs)
 
     def __call__(self, **kwargs):
-        cached_kwargs = copy.deepcopy(kwargs)
+        copy.deepcopy(kwargs)
         kwargs["_trace"] = False
         kwargs.setdefault("demos", self.demos if self.demos is not None else [])
 

@@ -1,7 +1,8 @@
+from abc import ABC, abstractmethod
+
 from dspy.utils.callback import with_callbacks
 
-
-class Adapter:
+class Adapter(ABC):
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
 
@@ -27,8 +28,18 @@ class Adapter:
             return values
 
         except Exception as e:
-            from .json_adapter import JsonAdapter
-            if _parse_values and not isinstance(self, JsonAdapter):
-                return JsonAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            from .json_adapter import JSONAdapter
+            if _parse_values and not isinstance(self, JSONAdapter):
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
             raise e
 
+    @abstractmethod
+    def format(self, signature, demos, inputs):
+       raise NotImplementedError
+
+    @abstractmethod
+    def parse(self, signature, completion, _parse_values):
+       raise NotImplementedError
+
+    def format_finetune_data(self, signature, demos, inputs, outputs):
+        raise NotImplementedError

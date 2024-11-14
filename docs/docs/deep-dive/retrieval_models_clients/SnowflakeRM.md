@@ -64,7 +64,7 @@ connection_parameters = {
 snowpark = Session.builder.configs(connection_parameters).create()
 
 snowflake_retriever = SnowflakeRM(snowflake_session=snowpark,
-    cortex_search_service="<YOUR_CORTEX_SERACH_SERVICE_NAME>",
+    cortex_search_service="<YOUR_CORTEX_SEARCH_SERVICE_NAME>",
     snowflake_database="<YOUR_SNOWFLAKE_DATABASE_NAME>",
     snowflake_schema="<YOUR_SNOWFLAKE_SCHEMA_NAME>",
     auto_filter=True,

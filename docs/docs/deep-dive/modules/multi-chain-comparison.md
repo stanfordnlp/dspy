@@ -1,5 +1,8 @@
 # dspy.MultiChainComparison
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Constructor
 
 The constructor initializes the `MultiChainComparison` class and sets up its attributes. It inherits from the `Predict` class and adds specific functionality for multiple chain comparisons.

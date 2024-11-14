@@ -6,3 +6,5 @@ pytest-mock==3.12.0
 ruff==0.3.0
 torch==2.2.1
 transformers==4.38.2
+pillow==10.4.0
+litellm[proxy]==1.51.0

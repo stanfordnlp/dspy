@@ -1,33 +1,26 @@
 import functools
 import logging
 import os
+import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import ujson
-from litellm.caching import Cache
 
-from dspy.clients.finetune import FinetuneJob, TrainingMethod
-from dspy.clients.lm_finetune_utils import execute_finetune_job, get_provider_finetune_job_class
+from dspy.adapters.base import Adapter
+from dspy.clients.openai import OpenAIProvider
+from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
 from dspy.utils.callback import BaseCallback, with_callbacks
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
-litellm.telemetry = False
-
-if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-
-GLOBAL_HISTORY = []
+from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
 
 
-class LM:
+class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
@@ -39,9 +32,10 @@ class LM:
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
-        launch_kwargs: Optional[Dict[str, Any]] = None,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
+        provider=None,
+        finetuning_model: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -59,19 +53,24 @@ class LM:
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
                          backoff.
+            provider: The provider to use. If not specified, the provider will be inferred from the model.
+            finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
+                from the models available for inference.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.launch_kwargs = launch_kwargs or {}
+        self.provider = provider or self.infer_provider()
+        self.callbacks = callbacks or []
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
         self.callbacks = callbacks or []
         self.num_retries = num_retries
+        self.finetuning_model = finetuning_model
 
-        # TODO: Arbitrary model strings could include the substring "o1-". We
-        # should find a more robust way to check for the "o1-" family models.
+        # TODO(bug): Arbitrary model strings could include the substring "o1-".
+        # We should find a more robust way to check for the "o1-" family models.
         if "o1-" in model:
             assert (
                 max_tokens >= 5000 and temperature == 1.0
@@ -109,54 +108,88 @@ class LM:
             model_type=self.model_type,
         )
         self.history.append(entry)
-        GLOBAL_HISTORY.append(entry)
+        self.update_global_history(entry)
 
         return outputs
 
-    def inspect_history(self, n: int = 1):
-        _inspect_history(self.history, n)
+    def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
+        self.provider.launch(self.model, **launch_kwargs)
 
-    def launch(self):
-        """Send a request to the provider to launch the model, if needed."""
-        msg = f"`launch()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
-
-    def kill(self):
-        """Send a request to the provider to kill the model, if needed."""
-        msg = f"`kill()` is called for the auto-launched model {self.model}"
-        msg += " -- no action is taken!"
-        logger.info(msg)
+    def kill(self, kill_kwargs: Optional[Dict[str, Any]] = None):
+        self.provider.kill(self.model, **kill_kwargs)
 
     def finetune(
         self,
         train_data: List[Dict[str, Any]],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        train_method: TrainingMethod = TrainingMethod.SFT,
-        provider: str = "openai",
-        cache_finetune: bool = True,
-    ) -> FinetuneJob:
-        """Start model fine-tuning, if supported."""
+        data_format: Optional[DataFormat] = None,
+    ) -> TrainingJob:
         from dspy import settings as settings
 
         err = "Fine-tuning is an experimental feature."
         err += " Set `dspy.settings.experimental` to `True` to use it."
         assert settings.experimental, err
 
-        FinetuneJobClass = get_provider_finetune_job_class(provider=provider)
-        finetune_job = FinetuneJobClass(
-            model=self.model,
-            train_data=train_data,
-            train_kwargs=train_kwargs,
-            train_method=train_method,
-            provider=provider,
+        err = f"Provider {self.provider} does not support fine-tuning."
+        assert self.provider.finetunable, err
+
+        # Perform data validation before starting the thread to fail early
+        train_kwargs = train_kwargs or {}
+        if not data_format:
+            adapter = self.infer_adapter()
+            data_format = infer_data_format(adapter)
+        validate_data_format(data=train_data, data_format=data_format)
+
+        # TODO(PR): We can quickly add caching, but doing so requires
+        # adding functions that just call other functions as we had in the last
+        # iteration, unless people have other ideas.
+        def thread_function_wrapper():
+            return self._run_finetune_job(job)
+
+        thread = threading.Thread(target=thread_function_wrapper)
+        model_to_finetune = self.finetuning_model or self.model
+        job = self.provider.TrainingJob(
+            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
         )
+        thread.start()
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(execute_finetune_job, finetune_job, lm=self, cache_finetune=cache_finetune)
-        executor.shutdown(wait=False)
+        return job
 
-        return finetune_job
+    def _run_finetune_job(self, job: TrainingJob):
+        # TODO(enhance): We should listen for keyboard interrupts somewhere.
+        # Requires TrainingJob.cancel() to be implemented for each provider.
+        try:
+            model = self.provider.finetune(
+                job=job,
+                model=job.model,
+                train_data=job.train_data,
+                train_kwargs=job.train_kwargs,
+                data_format=job.data_format,
+            )
+            lm = self.copy(model=model)
+            job.set_result(lm)
+        except Exception as err:
+            logger.error(err)
+            job.set_result(err)
+
+    def infer_provider(self) -> Provider:
+        if OpenAIProvider.is_provider_model(self.model):
+            return OpenAIProvider()
+        # TODO(PR): Keeping this function here will require us to import all
+        # providers in this file. Is this okay?
+        return Provider()
+
+    def infer_adapter(self) -> Adapter:
+        import dspy
+
+        if dspy.settings.adapter:
+            return dspy.settings.adapter
+
+        model_type_to_adapter = {
+            "chat": dspy.ChatAdapter(),
+        }
+        model_type = self.model_type
+        return model_type_to_adapter[model_type]
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
@@ -226,37 +259,3 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         num_retries=num_retries,
         **kwargs,
     )
-
-
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-
-def _inspect_history(history, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
-        outputs = item["outputs"]
-        timestamp = item.get("timestamp", "Unknown time")
-
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
-
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            print(msg["content"].strip())
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
-
-    print("\n\n\n")
