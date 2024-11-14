@@ -50,6 +50,7 @@ class Image(pydantic.BaseModel):
 
     @pydantic.model_serializer()
     def serialize_model(self):
+        print("serializing")
         return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
 
     def __repr__(self):
@@ -158,8 +159,8 @@ def is_image(obj) -> bool:
     """Check if the object is an image or a valid image reference."""
     if PIL_AVAILABLE and isinstance(obj, PILImage.Image):
         return True
-    if isinstance(obj, (bytes, bytearray)):
-        return True
+    # if isinstance(obj, (bytes, bytearray)):
+    #     return True
     if isinstance(obj, str):
         if obj.startswith("data:image/"):
             return True

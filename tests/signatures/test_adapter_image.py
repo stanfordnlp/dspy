@@ -223,18 +223,40 @@ def test_invalid_image_input(sample_url):
 def test_predictor_save_load(sample_url, sample_pil_image):
     signature = "image: dspy.Image -> caption: str"
     examples = [
-        dspy.Example(image=dspy.Image.from_url(sample_url)),
-        dspy.Example(image=sample_pil_image)
+        dspy.Example(image=dspy.Image.from_url(sample_url), caption="Example 1"),
+        dspy.Example(image=sample_pil_image, caption="Example 2"),
     ]
+    active_example = dspy.Example(image=dspy.Image.from_url("https://example.com/dog.jpg"))
+
     lm = DummyLM([{"caption": "A golden retriever"}])
     dspy.settings.configure(lm=lm)
+
     predictor = dspy.Predict(signature)
-    optimizer = dspy.teleprompt.LabeledFewShot()
-    compiled_predictor = optimizer.compile(student=predictor, trainset=examples[:1])
+    optimizer = dspy.teleprompt.LabeledFewShot(k=1)
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
+    print(compiled_predictor.demos)
     # Test dump state with save verbose = True and False
     with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
         compiled_predictor.save(temp_file.name)
         loaded_predictor = dspy.Predict(signature)
         loaded_predictor.load(temp_file.name)
+    print(loaded_predictor.demos)
     
-    assert isinstance(loaded_predictor.demos[0]["image"], dspy.Image)
+    result = loaded_predictor(image=active_example["image"])
+    print(result)
+    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+    print(lm.history[-1]["messages"])
+    assert False
+
+def test_save_load_complex_types():
+    pass
+    # class ComplexTypeSignature(dspy.Signature):
+    #     image_list: List[dspy.Image] = dspy.InputField(desc="A list of images")
+    #     caption: str = dspy.OutputField(desc="A caption for the image list")
+
+    # lm = DummyLM([{"caption": "A list of images"}])
+    # dspy.settings.configure(lm=lm)
+
+    # predictor = dspy.Predict(ComplexTypeSignature)
+    # result = predictor(image_list=[dspy.Image.from_url("https://example.com/dog.jpg")])
+    # assert isinstance(result.caption, str)

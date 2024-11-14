@@ -51,7 +51,6 @@ class ChatAdapter(Adapter):
 
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
-
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
@@ -162,16 +161,19 @@ def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> 
       The formatted value of the field, represented as a string.
     """
     string_value = None
-    if isinstance(value, list) and field_info.annotation is str:
-        # If the field has no special type requirements, format it as a nice numbered list for the LM.
-        string_value = format_input_list_field_value(value)
-    # elif field_info.annotation == Image:
+
+    if field_info.annotation == Image and is_image(value):
+        print("value: ", value)
+        value = Image(url=encode_image(value))
     #     print("field info: ", field_info)
     #     if not isinstance(value, Image):
     #         print(f"Coerced image: {value}")
     #         coerced_image = Image(url=encode_image(value))
     #     print("post coerce: ", coerced_image)
     #     string_value = json.dumps(_serialize_for_json(coerced_image), ensure_ascii=False)
+    if isinstance(value, list) and field_info.annotation is str:
+        # If the field has no special type requirements, format it as a nice numbered list for the LM.
+        string_value = format_input_list_field_value(value)
     elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
         string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
     else:
@@ -332,8 +334,9 @@ def format_turn(signature, values, role, incomplete=False):
     final_list = []
     while flattened_list:
         item = flattened_list.pop(0)
-        if re.search(r'"<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"', item.get("text")):
-            image_tag = re.search(r'"<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"', item.get("text")).group(1)
+        image_tag_regex = r'"?<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"?'
+        if re.search(image_tag_regex, item.get("text")):
+            image_tag = re.search(image_tag_regex, item.get("text")).group(1)
             # get the prefix and suffix
             prefix, suffix = item.get("text").split('"<DSPY_IMAGE_START>', 1)[0], "".join(item.get("text").split('<DSPY_IMAGE_END>"', 1)[1:])
             final_list.append({"type": "text", "text": prefix})

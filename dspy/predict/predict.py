@@ -89,13 +89,13 @@ class Predict(Module, Parameter):
                 setattr(self, name, value)
         
         # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
-        for demo in self.demos:
-            for field in demo:
-                if isinstance(demo[field], dict) and "url" in demo[field]:
-                    url = demo[field]["url"]
-                    if not isinstance(url, str):
-                        raise ValueError(f"Image URL must be a string, got {type(url)}")
-                    demo[field] = Image(url=url)
+        # for demo in self.demos:
+        #     for field in demo:
+        #         if isinstance(demo[field], dict) and "url" in demo[field]:
+        #             url = demo[field]["url"]
+        #             if not isinstance(url, str):
+        #                 raise ValueError(f"Image URL must be a string, got {type(url)}")
+        #             demo[field] = Image(url=url)
                     
         self.signature = self.signature.load_state(state["signature"])
 
