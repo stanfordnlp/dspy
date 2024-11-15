@@ -1,6 +1,6 @@
 black==24.2.0
 pre-commit==3.7.0
-pytest==8.2.1
+pytest==8.3.3
 pytest-env==1.1.3
 pytest-mock==3.12.0
 ruff==0.3.0

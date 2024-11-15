@@ -24,6 +24,7 @@ DEFAULT_CONFIG = dotdict(
     experimental=False,
     backoff_time=10,
     callbacks=[],
+    async_max_workers=8,
 )
 
 
