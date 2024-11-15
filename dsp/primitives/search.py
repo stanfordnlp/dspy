@@ -7,7 +7,6 @@ import dsp
 
 logger = logging.getLogger(__name__)
 
-#TODO remove references now that Retrieve interface is supported
 def retrieve(query: str, k: int, **kwargs) -> list[str]:
     """Retrieves passages from the RM for the query and returns the top k passages."""
     if not dsp.settings.rm:

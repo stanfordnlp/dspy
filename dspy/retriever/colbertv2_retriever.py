@@ -1,11 +1,26 @@
-from typing import Any, Union, Optional, List
-from dspy.primitives.prediction import Prediction
+from typing import Any, Union, Optional
 import dspy
 from dsp.utils import dotdict
 import requests
 import functools
 
-class ColBERTv2(dspy.Retrieve):
+class ColBERTv2(dspy.Retriever):
+    """
+    ColBERTv2 Retriever for retrieval of top-k most relevant text passages for given query.
+
+    Args:
+        post_requests (bool): Determines if POST requests should be used 
+                              instead of GET requests for querying the server.
+        url (str): URL endpoint for ColBERTv2 server
+
+    Returns:
+        An object containing the retrieved passages.
+
+    Example:
+        from dspy.retriever.colbertv2_retriever import ColBERTv2
+        results = ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=5).passages
+        print(results)
+    """
     def __init__(self, url: str = "http://0.0.0.0", port: Optional[Union[str, int]] = None, post_requests: bool = False):
         super().__init__(embedder=None)
         self.post_requests = post_requests
@@ -20,7 +35,6 @@ class ColBERTv2(dspy.Retrieve):
     
 
 from dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
-from dsp.utils import dotdict
 @CacheMemory.cache
 def colbertv2_get_request_v2(url: str, query: str, k: int):
     assert (
