@@ -42,7 +42,7 @@ dependencies = [
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
-    "anyio==4.6.2.post1",
+    "anyio",
     "asyncer==0.0.8",
 ]
 
