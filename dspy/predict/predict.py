@@ -47,11 +47,7 @@ class Predict(Module, Parameter):
 
             for field in demo:
                 # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
-                # It does matter for images
-                if isinstance(demo[field], Image):
-                    demo[field] = demo[field].model_dump()
-                elif isinstance(demo[field], BaseModel):
-                    demo[field] = demo[field].model_dump_json()
+                demo[field] = serialize_object(demo[field])
 
             state["demos"].append(demo)
 
@@ -295,6 +291,26 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     return adapter(
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
+
+def serialize_object(obj):
+    """
+    Recursively serialize a given object into a JSON-compatible format.
+    Supports Pydantic models, lists, dicts, and primitive types.
+    """
+    if isinstance(obj, BaseModel):
+        # Use model_dump to convert the model into a JSON-serializable dict
+        return obj.model_dump_json()
+    elif isinstance(obj, list):
+        # Recursively process each item in the list
+        return [serialize_object(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_object(item) for item in obj)
+    elif isinstance(obj, dict):
+        # Recursively process each key-value pair in the dict
+        return {key: serialize_object(value) for key, value in obj.items()}
+    else:
+        # Assume the object is already JSON-compatible (e.g., int, str, float)
+        return obj
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

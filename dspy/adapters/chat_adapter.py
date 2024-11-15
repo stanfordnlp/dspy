@@ -273,105 +273,77 @@ def format_turn(signature, values, role, incomplete=False):
         A chat message that can be appended to a chat thread. The message contains two string fields:
         ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
-    fields_to_collapse = []
-    content = []
-
     if role == "user":
         fields = signature.input_fields
-        if incomplete:
-            fields_to_collapse.append(
-                {
-                    "type": "text",
-                    "text": "This is an example of the task, though some input or output fields are not supplied.",
-                }
-            )
+        message_prefix = "This is an example of the task, though some input or output fields are not supplied." if incomplete else ""
     else:
-        fields = signature.output_fields
-        # Add the built-in field indicating that the chat turn has been completed
-        fields[BuiltInCompletedOutputFieldInfo.name] = BuiltInCompletedOutputFieldInfo.info
+        # Add the completed field for the assistant turn
+        fields = {**signature.output_fields, BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info}
         values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
-    field_names = fields.keys()
-    if not incomplete:
-        if not set(values).issuperset(set(field_names)):
-            raise ValueError(f"Expected {field_names} but got {values.keys()}")
+        message_prefix = ""
 
-    fields_to_collapse.extend(
-        format_fields(
-            fields_with_values={
-                FieldInfoWithName(name=field_name, info=field_info): values.get(
-                    field_name, "Not supplied for this particular example."
-                )
-                for field_name, field_info in fields.items()
-            },
-            assume_text=False,
-        )
+    if not incomplete and not set(values).issuperset(fields.keys()):
+        raise ValueError(f"Expected {fields.keys()} but got {values.keys()}")
+
+    messages = []
+    if message_prefix:
+        messages.append({"type": "text", "text": message_prefix})
+
+    field_messages = format_fields(
+        {FieldInfoWithName(name=k, info=v): values.get(k, "Not supplied for this particular example.")
+         for k, v in fields.items()},
+        assume_text=False
     )
+    messages.extend(field_messages)
 
-    if role == "user":
-        output_fields = list(signature.output_fields.keys())
+    # Add output field instructions for user messages
+    if role == "user" and signature.output_fields:
+        type_info = lambda v: f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" if v.annotation is not str else ""
+        field_instructions = "Respond with the corresponding output fields, starting with the field " + \
+            ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items()) + \
+            ", and then ending with the marker for `[[ ## completed ## ]]`."
+        messages.append({"type": "text", "text": field_instructions})
 
-        def type_info(v):
-            return (
-                f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
-                if v.annotation is not str
-                else ""
-            )
+    # Process messages to handle image tags and collapse text
+    processed_messages = process_messages(messages)
+    
+    if all(msg.get("type") == "text" for msg in processed_messages):
+        return {"role": role, "content": "\n\n".join(msg["text"] for msg in processed_messages)}
+    return {"role": role, "content": processed_messages}
 
-        if output_fields:
-            fields_to_collapse.append(
-                {
-                    "type": "text",
-                    "text": "Respond with the corresponding output fields, starting with the field "
-                    + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
-                    + ", and then ending with the marker for `[[ ## completed ## ]]`.",
-                }
-            )
+def process_messages(messages):
+    """Process messages to handle image tags and collapse consecutive text messages."""
+    processed = []
+    current_text = []
+    
+    for msg in flatten_messages(messages):
+        if msg["type"] == "text":
+            # Handle image tags in text
+            parts = re.split(r'(<DSPY_IMAGE_START>.*?<DSPY_IMAGE_END>)', msg["text"])
+            for part in parts:
+                if match := re.match(r'<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>', part):
+                    if current_text:
+                        processed.append({"type": "text", "text": "\n\n".join(current_text)})
+                        current_text = []
+                    processed.append({"type": "image_url", "image_url": {"url": match.group(1)}})
+                elif part.strip():
+                    current_text.append(part)
+        else:
+            if current_text:
+                processed.append({"type": "text", "text": "\n\n".join(current_text)})
+                current_text = []
+            processed.append(msg)
+    
+    if current_text:
+        processed.append({"type": "text", "text": "\n\n".join(current_text)})
+    
+    return processed
 
-    # flatmap the list if any items are lists otherwise keep the item
-    flattened_list = list(chain.from_iterable(
-        item if isinstance(item, list) else [item] for item in fields_to_collapse
+def flatten_messages(messages):
+    """Flatten nested message lists."""
+    return list(chain.from_iterable(
+        item if isinstance(item, list) else [item] for item in messages
     ))
-    final_list = []
-    while flattened_list:
-        item = flattened_list.pop(0)
-        image_tag_regex = r'"?<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"?'
-        if re.search(image_tag_regex, item.get("text")):
-            image_tag = re.search(image_tag_regex, item.get("text")).group(1)
-            # get the prefix and suffix
-            prefix, suffix = item.get("text").split('"<DSPY_IMAGE_START>', 1)[0], "".join(item.get("text").split('<DSPY_IMAGE_END>"', 1)[1:])
-            final_list.append({"type": "text", "text": prefix})
-            final_list.append({"type": "image_url", "image_url": {"url": image_tag}})
-            flattened_list.insert(0, {"type": "text", "text": suffix})
-        else:
-            final_list.append({"type": "text", "text": item.get("text")})
-
-    if all(message.get("type", None) == "text" for message in final_list):
-        content = "\n\n".join(message.get("text") for message in final_list)
-        return {"role": role, "content": content}
-
-    # Collapse all consecutive text messages into a single message.
-    collapsed_messages = []
-    for item in final_list:
-        # First item is always added
-        if not collapsed_messages:
-            collapsed_messages.append(item)
-            continue
-
-        # If the current item is image, add to collapsed_messages
-        if item.get("type") == "image_url":
-            if collapsed_messages[-1].get("type") == "text":
-                collapsed_messages[-1]["text"] += "\n"
-            collapsed_messages.append(item)
-        # If the previous item is text and current item is text, append to the previous item
-        elif collapsed_messages[-1].get("type") == "text":
-            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
-        # If the previous item is not text(aka image), add the current item as a new item
-        else:
-            item["text"] = "\n\n" + item["text"]
-            collapsed_messages.append(item)
-
-    return {"role": role, "content": collapsed_messages}
-
 
 def get_annotation_name(annotation):
     origin = get_origin(annotation)

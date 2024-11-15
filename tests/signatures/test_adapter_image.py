@@ -246,17 +246,38 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     print(result)
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
     print(lm.history[-1]["messages"])
-    assert False
+    assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 def test_save_load_complex_types():
-    pass
-    # class ComplexTypeSignature(dspy.Signature):
-    #     image_list: List[dspy.Image] = dspy.InputField(desc="A list of images")
-    #     caption: str = dspy.OutputField(desc="A caption for the image list")
+    examples = [
+        dspy.Example(image_list=[dspy.Image.from_url("https://example.com/dog.jpg"), dspy.Image.from_url("https://example.com/cat.jpg")], caption="Example 1").with_inputs("image_list"),
+    ]
 
-    # lm = DummyLM([{"caption": "A list of images"}])
-    # dspy.settings.configure(lm=lm)
+    class ComplexTypeSignature(dspy.Signature):
+        image_list: List[dspy.Image] = dspy.InputField(desc="A list of images")
+        caption: str = dspy.OutputField(desc="A caption for the image list")
 
-    # predictor = dspy.Predict(ComplexTypeSignature)
-    # result = predictor(image_list=[dspy.Image.from_url("https://example.com/dog.jpg")])
-    # assert isinstance(result.caption, str)
+    lm = DummyLM([{"caption": "A list of images"}, {"caption": "A list of images"}])
+    dspy.settings.configure(lm=lm)
+
+    predictor = dspy.Predict(ComplexTypeSignature)
+    result = predictor(**examples[0].inputs())
+    
+    print(lm.history[-1]["messages"])
+    assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
+    assert str(lm.history[-1]["messages"]).count("'url'") == 2
+
+    optimizer = dspy.teleprompt.LabeledFewShot(k=1)
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
+    print(compiled_predictor.demos)
+
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+        print("compiled_predictor state: ", compiled_predictor.dump_state())
+        compiled_predictor.save(temp_file.name)
+        loaded_predictor = dspy.Predict(ComplexTypeSignature)
+        loaded_predictor.load(temp_file.name)
+    
+    print("loaded_predictor state: ", loaded_predictor.dump_state())
+    result = loaded_predictor(**examples[0].inputs())
+    assert result.caption == "A list of images"
+    assert str(lm.history[-1]["messages"]).count("'url'") == 4
