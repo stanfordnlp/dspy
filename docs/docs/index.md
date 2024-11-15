@@ -117,7 +117,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
 ## 1) **Modules** express portable, _natural-language-typed_ behavior.
 
-To build reliable AI systems, you must iterate fast. But maintaining prompts for your system's components makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems over the past five years, we learned this the hard way—and built DSPy so you don't have to.
+To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and built DSPy so you don't have to.
 
 DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every component in your AI system, you define a _signature_, specifying input/output behavior, and a _module_, specifying a strategy for invoking your LM. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
@@ -243,7 +243,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
     A typical simple optimization run costs on the order of $2 USD and takes around 20 minutes, but be careful when running optimizers with very large LMs or very large datasets.
-    Optimizer runs can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
+    Optimization can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
     
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
