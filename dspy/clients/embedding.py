@@ -1,8 +1,8 @@
 import litellm
 import numpy as np
+from typing import Callable, List, Union, Optional
 
-
-class Embedding:
+class Embedder:
     """DSPy embedding class.
 
     The class for computing embeddings for text inputs. This class provides a unified interface for both:
@@ -13,7 +13,7 @@ class Embedding:
     For hosted models, simply pass the model name as a string (e.g. "openai/text-embedding-3-small"). The class will use
     litellm to handle the API calls and caching.
 
-    For custom embedding models, pass a callable function that:
+    For custom embedding models, pass a callable function to `embedding_function` that:
     - Takes a list of strings as input.
     - Returns embeddings as either:
         - A 2D numpy array of float32 values
@@ -21,9 +21,10 @@ class Embedding:
     - Each row should represent one embedding vector
 
     Args:
-        model: The embedding model to use. This can be either a string (representing the name of the hosted embedding
-            model, must be an embedding model supported by litellm) or a callable that represents a custom embedding
-            model.
+        embedding_model: The embedding model to use, either a string (for hosted models supported by litellm) or 
+            a callable function that returns custom embeddings.
+        embedding_function: An optional custom embedding function. If not provided, defaults to litellm
+            for hosted models when `embedding_model` is a string.
 
     Examples:
         Example 1: Using a hosted model.
@@ -31,7 +32,7 @@ class Embedding:
         ```python
         import dspy
 
-        embedder = dspy.Embedding("openai/text-embedding-3-small")
+        embedder = dspy.Embedding(embedding_model="openai/text-embedding-3-small")
         embeddings = embedder(["hello", "world"])
 
         assert embeddings.shape == (2, 1536)
@@ -41,21 +42,27 @@ class Embedding:
 
         ```python
         import dspy
+        import numpy as np
 
         def my_embedder(texts):
             return np.random.rand(len(texts), 10)
 
-        embedder = dspy.Embedding(my_embedder)
+        embedder = dspy.Embedding(embedding_function=my_embedder)
         embeddings = embedder(["hello", "world"])
 
         assert embeddings.shape == (2, 10)
         ```
     """
 
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, embedding_model: Union[str, Callable[[List[str]], List[List[float]]]] = 'text-embedding-ada-002', embedding_function: Optional[Callable[[List[str]], List[List[float]]]] = None):
+        self.embedding_model = embedding_model
+        self.embedding_function = embedding_function or self.default_embedding_function
 
-    def __call__(self, inputs, caching=True, **kwargs):
+    def default_embedding_function(self, texts: List[str], caching: bool = True, **kwargs) -> List[List[float]]:
+        embeddings_response = litellm.embedding(model=self.embedding_model, input=texts, caching=caching, **kwargs)
+        return [data['embedding'] for data in embeddings_response.data]
+
+    def __call__(self, inputs: Union[str, List[str]], caching: bool = True, **kwargs) -> np.ndarray:
         """Compute embeddings for the given inputs.
 
         Args:
@@ -68,10 +75,12 @@ class Embedding:
         """
         if isinstance(inputs, str):
             inputs = [inputs]
-        if isinstance(self.model, str):
-            embedding_response = litellm.embedding(model=self.model, input=inputs, caching=caching, **kwargs)
-            return np.array([data["embedding"] for data in embedding_response.data], dtype=np.float32)
-        elif callable(self.model):
-            return np.array(self.model(inputs, **kwargs), dtype=np.float32)
+        if callable(self.embedding_function):
+            embeddings = self.embedding_function(inputs, **kwargs)
+        elif isinstance(self.embedding_model, str):
+            embeddings = self.default_embedding_function(inputs, caching=caching, **kwargs)
         else:
-            raise ValueError(f"`model` in `dspy.Embedding` must be a string or a callable, but got {type(self.model)}.")
+            raise ValueError(
+                f"`embedding_model` must be a string or `embedding_function` must be a callable, but got types: `embedding_model`={type(self.embedding_model)}, `embedding_function`={type(self.embedding_function)}."
+            )
+        return np.array(embeddings, dtype=np.float32)

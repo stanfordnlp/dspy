@@ -8,7 +8,7 @@ from dsp.utils import dotdict
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 
-
+#TODO remove references of ColBERTv2 from here now that it is supported in retrieve/
 class ColBERTv2:
     """Wrapper for the ColBERTv2 Retrieval."""
 

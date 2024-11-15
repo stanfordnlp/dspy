@@ -1,10 +1,12 @@
 import random
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import dsp
 from dspy.predict.parameter import Parameter
+from abc import ABC, abstractmethod
 from dspy.primitives.prediction import Prediction
-from dspy.clients import RM
+from dspy.clients.embedding import Embedder
+from dspy.utils.callback import with_callbacks
 
 
 def single_query_passage(passages):
@@ -17,20 +19,33 @@ def single_query_passage(passages):
     return Prediction(**passages_dict)
 
 
-class Retrieve(Parameter):
-    name = "Search"
-    input_variable = "query"
-    desc = "takes a search query and returns one or more potentially relevant passages from a corpus"
-
-    def __init__(self, rm: RM, k=3):
-        self.rm = rm
+class Retrieve(ABC):
+    def __init__(self, embedder: Optional[Embedder] = None, k: int = 5, callbacks: Optional[List[Any]] = None):
+        self.embedder = embedder
         self.k = k
+        self.callbacks = callbacks or []
 
-    #TODO - add back saving/loading for retrievers
+    @abstractmethod
+    def forward(self, query: str, k: Optional[int] = None) -> Any:
+        """
+        Retrievers implement this method with their custom retrieval logic.
+        Must return an object that has a 'passages' attribute (ideally `dspy.Prediction`).
+        """
+        pass
 
-    def __call__(self, query_or_queries, k=None):
+    def __call__(self, query: str, k: Optional[int] = None) -> Any:
+        """
+        Calls the forward method and checks if the result has a 'passages' attribute.
+        """
         k = k if k is not None else self.k
-        return self.rm(query_or_queries, k=k)
+        result = self.forward(query, k)
+        if not hasattr(result, 'passages'):
+            raise ValueError("The 'forward' method must return an object with a 'passages' attribute (ideally `dspy.Prediction`).")
+        for callback in self.callbacks:
+            callback(result)
+        return result
+
+# TODO: Consider doing Prediction.from_completions with the individual sets of passages (per query) too.
 
 
 class RetrieveThenRerank(Parameter):
