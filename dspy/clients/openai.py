@@ -1,5 +1,6 @@
 import re
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import openai
@@ -248,11 +249,32 @@ class OpenAIProvider(Provider):
         job: TrainingJobOpenAI,
         poll_frequency: int = 20,
     ):
+        # Poll for the job until it is done
         done = False
+        cur_event_id = None
+        reported_estimated_time = False
         while not done:
-            done = OpenAIProvider.is_terminal_training_status(job.status())
-            time.sleep(poll_frequency)
+            # Report estimated time if not already reported
+            if not reported_estimated_time:
+                remote_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
+                timestamp = remote_job.estimated_finish
+                if timestamp:
+                    estimated_finish_dt = datetime.fromtimestamp(timestamp)
+                    delta_dt = estimated_finish_dt - datetime.now()
+                    print(f"[OpenAI Provider] The OpenAI estimated time remaining is: {delta_dt}")
+                    reported_estimated_time = True
 
+            # Get new events
+            page = openai.fine_tuning.jobs.list_events(fine_tuning_job_id=job.provider_job_id, limit=1)
+            new_event = page.data[0] if page.data else None
+            if new_event and new_event.id != cur_event_id:
+                dt = datetime.fromtimestamp(new_event.created_at)
+                print(f"[OpenAI Provider] {dt} {new_event.message}")
+                cur_event_id = new_event.id
+
+            # Sleep and update the flag
+            time.sleep(poll_frequency)
+            done = OpenAIProvider.is_terminal_training_status(job.status())
 
     @staticmethod
     def get_trained_model(job):

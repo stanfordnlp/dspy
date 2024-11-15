@@ -45,15 +45,11 @@ class Provider:
 
     @staticmethod
     def launch(model: str, launch_kwargs: Optional[Dict[str, Any]] = None):
-        msg = f"`launch()` is called for the auto-launched model `{model}`"
-        msg += " -- no action is taken!"
-        print(msg)
+        pass
 
     @staticmethod
     def kill(model: str, kill_kwargs: Optional[Dict[str, Any]] = None):
-        msg = f"`kill()` is called for the auto-launched model `{model}`"
-        msg += " -- no action is taken!"
-        print(msg)
+        pass
 
     @staticmethod
     def finetune(
