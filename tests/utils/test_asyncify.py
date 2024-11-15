@@ -4,19 +4,19 @@ import asyncio
 import pytest
 
 import dspy
-from dspy.utils.asyncify import AsyncLimiter
+from dspy.utils.asyncify import get_limiter
 
 
 @pytest.mark.anyio
 async def test_async_limiter():
-    limiter = AsyncLimiter.get()
+    limiter = get_limiter()
     assert limiter.total_tokens == 8, "Default async capacity should be 8"
-    assert AsyncLimiter.get() == limiter, "AsyncLimiter should be a singleton"
+    assert get_limiter() == limiter, "AsyncLimiter should be a singleton"
 
     dspy.settings.configure(async_max_workers=16)
-    assert AsyncLimiter.get() == limiter, "AsyncLimiter should be a singleton"
-    assert AsyncLimiter.get().total_tokens == 16, "Async capacity should be 16"
-    assert AsyncLimiter.get() == AsyncLimiter.get(), "AsyncLimiter should be a singleton"
+    assert get_limiter() == limiter, "AsyncLimiter should be a singleton"
+    assert get_limiter().total_tokens == 16, "Async capacity should be 16"
+    assert get_limiter() == get_limiter(), "AsyncLimiter should be a singleton"
 
 
 @pytest.mark.anyio

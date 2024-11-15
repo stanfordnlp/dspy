@@ -1,23 +1,27 @@
-from typing import Optional
-
 from anyio import CapacityLimiter
 import asyncer
 
 
-class AsyncLimiter:
-    _limiter: Optional[CapacityLimiter] = None
+_limiter = None
 
-    @classmethod
-    def get(cls):
-        import dspy
 
-        if cls._limiter is None:
-            cls._limiter = CapacityLimiter(dspy.settings.async_max_workers)
-        elif cls._limiter.total_tokens != dspy.settings.async_max_workers:
-            cls._limiter.total_tokens = dspy.settings.async_max_workers
+def get_async_max_workers():
+    import dspy
 
-        return cls._limiter
+    return dspy.settings.async_max_workers
+
+
+def get_limiter():
+    async_max_workers = get_async_max_workers()
+
+    global _limiter
+    if _limiter is None:
+        _limiter = CapacityLimiter(async_max_workers)
+    elif _limiter.total_tokens != async_max_workers:
+        _limiter.total_tokens = async_max_workers
+
+    return _limiter
 
 
 def asyncify(program):
-    return asyncer.asyncify(program, abandon_on_cancel=True, limiter=AsyncLimiter.get())
+    return asyncer.asyncify(program, abandon_on_cancel=True, limiter=get_limiter())
