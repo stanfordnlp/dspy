@@ -38,7 +38,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 import dspy
-import asyncio
 
 app = FastAPI(
     title="DSPy Model API",
@@ -52,13 +51,13 @@ class Question(BaseModel):
 
 # Configure your language model and Chain of Thought
 lm = dspy.LM("openai/gpt-4o-mini")
-dspy.settings.configure(lm=lm)
-dspy_model = dspy.ChainOfThought("question -> answer")
+dspy.settings.configure(lm=lm, async_max_workers=4) # default is 8
+dspy_model = dspy.asyncify(dspy.ChainOfThought("question -> answer"))
 
 @app.post("/predict")
 async def predict(question: Question):
     try:
-        result = await asyncio.to_thread(lambda: dspy_model(question=question.text))
+        result = await dspy_model(question=question.text)
         return {
             "status": "success",
             "data": result.toDict()
@@ -66,9 +65,6 @@ async def predict(question: Question):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 ```
-
-> ℹ️ **Note:** DSPy currently doesn't support async operations, so we use `asyncio.to_thread` to run the
-> model inference in an async fashion. We are actively working on adding async support to DSPy, please stay tuned!
 
 Save your code in a file, e.g., `fastapi_dspy.py`. Then you can run the app with:
 
