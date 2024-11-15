@@ -1,5 +1,5 @@
 import sys
-from typing import Awaitable, Optional, TypeVar, Callable
+from typing import Optional, TypeVar
 
 from anyio import CapacityLimiter
 import asyncer
@@ -27,7 +27,5 @@ class AsyncLimiter:
         return cls._limiter
 
 
-def asyncify(
-    program: Callable[T_ParamSpec, T_Retval],
-) -> Callable[T_ParamSpec, Awaitable[T_Retval]]:
+def asyncify(program):
     return asyncer.asyncify(program, abandon_on_cancel=True, limiter=AsyncLimiter.get())
