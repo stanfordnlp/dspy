@@ -21,8 +21,8 @@ class AsyncLimiter:
     def get(cls):
         import dspy
 
-        if cls._limiter is None or cls._limiter.total_tokens != dspy.settings.max_async_workers:
-            cls._limiter = CapacityLimiter(dspy.settings.max_async_workers)
+        if cls._limiter is None or cls._limiter.total_tokens != dspy.settings.async_max_workers:
+            cls._limiter = CapacityLimiter(dspy.settings.async_max_workers)
 
         return cls._limiter
 
