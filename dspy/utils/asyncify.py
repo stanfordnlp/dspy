@@ -1,17 +1,7 @@
-import sys
-from typing import Optional, TypeVar
+from typing import Optional
 
 from anyio import CapacityLimiter
 import asyncer
-
-if sys.version_info >= (3, 10):
-    from typing import ParamSpec
-else:
-    from typing_extensions import ParamSpec
-
-T_Retval = TypeVar("T_Retval")
-T_ParamSpec = ParamSpec("T_ParamSpec")
-T = TypeVar("T")
 
 
 class AsyncLimiter:
