@@ -1,5 +1,3 @@
-import pytest
-
 import dspy
 from dspy import ProgramOfThought, Signature
 from dspy.utils import DummyLM

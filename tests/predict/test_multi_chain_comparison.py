@@ -1,4 +1,3 @@
-import pytest
 import dspy
 from dspy.utils.dummies import DummyLM
 

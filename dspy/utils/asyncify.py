@@ -2,7 +2,7 @@ import sys
 from typing import Awaitable, Optional, TypeVar, Callable
 
 from anyio import CapacityLimiter
-from asyncer import asyncify as __asyncify
+import asyncer
 
 if sys.version_info >= (3, 10):
     from typing import ParamSpec
@@ -30,4 +30,4 @@ class AsyncLimiter:
 def asyncify(
     program: Callable[T_ParamSpec, T_Retval],
 ) -> Callable[T_ParamSpec, Awaitable[T_Retval]]:
-    return __asyncify(program, abandon_on_cancel=True, limiter=AsyncLimiter.get())
+    return asyncer.asyncify(program, abandon_on_cancel=True, limiter=AsyncLimiter.get())
