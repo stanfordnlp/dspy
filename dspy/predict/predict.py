@@ -10,7 +10,6 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
-from dspy.adapters.image_utils import Image
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
