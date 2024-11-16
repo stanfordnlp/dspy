@@ -1,0 +1,126 @@
+{
+  "description": "This AI program is designed to process complex datasets with multiple nested input fields and produce structured output fields. It can handle cases where nested fields have the same name but different types, ensuring that the data is accurately processed and transformed. The program is particularly useful for applications that require detailed data analysis, integration of multiple data sources, and handling of heterogeneous data types.",
+  "properties": {
+    "customer": {
+      "properties": {
+        "customer_id": {
+          "description": "Unique identifier for the customer",
+          "type": "string"
+        },
+        "customer_type": {
+          "description": "Indicates if the customer is a premium member",
+          "type": "boolean"
+        },
+        "details": {
+          "properties": {
+            "age": {
+              "description": "Customer's age",
+              "type": "integer"
+            },
+            "value": {
+              "description": "Customer's value category",
+              "type": "string"
+            }
+          },
+          "required": ["value", "age"],
+          "type": "object"
+        }
+      },
+      "required": ["customer_id", "customer_type", "details"],
+      "type": "object"
+    },
+    "customer_summary": {
+      "properties": {
+        "customer_id": {
+          "description": "Unique identifier for the customer",
+          "type": "string"
+        },
+        "customer_type": {
+          "properties": {
+            "category": {
+              "description": "Customer's membership category",
+              "type": "string"
+            },
+            "is_premium": {
+              "description": "Indicates if the customer is a premium member",
+              "type": "boolean"
+            }
+          },
+          "required": ["is_premium", "category"],
+          "type": "object"
+        },
+        "value": {
+          "description": "Customer's value category",
+          "type": "string"
+        }
+      },
+      "required": ["customer_id", "customer_type", "value"],
+      "type": "object"
+    },
+    "transaction": {
+      "properties": {
+        "amount": {
+          "description": "Transaction amount",
+          "type": "number"
+        },
+        "details": {
+          "properties": {
+            "timestamp": {
+              "description": "Timestamp of the transaction",
+              "format": "date-time",
+              "type": "string"
+            },
+            "value": {
+              "description": "Monetary value of the transaction",
+              "type": "number"
+            }
+          },
+          "required": ["value", "timestamp"],
+          "type": "object"
+        },
+        "transaction_id": {
+          "description": "Unique identifier for the transaction",
+          "type": "string"
+        }
+      },
+      "required": ["transaction_id", "amount", "details"],
+      "type": "object"
+    },
+    "transaction_summary": {
+      "properties": {
+        "details": {
+          "properties": {
+            "timestamp": {
+              "description": "Timestamp of the transaction",
+              "format": "date-time",
+              "type": "string"
+            },
+            "value": {
+              "description": "Monetary value of the transaction",
+              "type": "number"
+            }
+          },
+          "required": ["value", "timestamp"],
+          "type": "object"
+        },
+        "total_amount": {
+          "description": "Total transaction amount",
+          "type": "number"
+        },
+        "transaction_id": {
+          "description": "Unique identifier for the transaction",
+          "type": "string"
+        }
+      },
+      "required": ["transaction_id", "total_amount", "details"],
+      "type": "object"
+    }
+  },
+  "required": [
+    "customer",
+    "transaction",
+    "customer_summary",
+    "transaction_summary"
+  ],
+  "type": "object"
+}

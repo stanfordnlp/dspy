@@ -1,0 +1,27 @@
+{
+  "assertions": [
+    "The top-level output should contain the key 'resultLevel1'.",
+    "'resultLevel1' should contain the key 'resultLevel2'.",
+    "'resultLevel2' should contain the key 'resultLevel3'.",
+    "'resultLevel3' should contain the key 'resultLevel4'.",
+    "'resultLevel4' should contain the key 'resultLevel5'.",
+    "'resultLevel5' should contain the key 'outputField1' which should be of type boolean.",
+    "'resultLevel5' should contain the key 'outputField2' which should be an array of strings.",
+    "'outputField1' should indicate success or failure with a boolean value.",
+    "'outputField2' should contain messages represented as strings."
+  ],
+  "input": {
+    "level1": {
+      "level2": {
+        "level3": {
+          "level4": {
+            "level5": {
+              "field1": "test_string",
+              "field2": 42
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "assertions": [
+    "The output must contain a top-level field named 'resultLevel1'.",
+    "Within 'resultLevel1', there must be a field named 'resultLevel2'.",
+    "Within 'resultLevel2', there must be a field named 'resultLevel3'.",
+    "Within 'resultLevel3', there must be a field named 'resultLevel4'.",
+    "Within 'resultLevel4', there must be a field named 'resultLevel5'.",
+    "Within 'resultLevel5', the field 'outputField1' must be present and of type boolean.",
+    "Within 'resultLevel5', the field 'outputField2' must be present and of type array containing strings."
+  ],
+  "input": {
+    "level1": {
+      "level2": {
+        "level3": {
+          "level4": {
+            "level5": {
+              "field1": "edge case string",
+              "field2": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

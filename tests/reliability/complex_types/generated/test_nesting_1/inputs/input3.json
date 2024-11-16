@@ -1,0 +1,25 @@
+{
+  "assertions": [
+    "The output must contain a top-level field named 'resultLevel1'.",
+    "The 'resultLevel1' field must contain a nested field named 'resultLevel2'.",
+    "The 'resultLevel2' field must contain a nested field named 'resultLevel3'.",
+    "The 'resultLevel3' field must contain a nested field named 'resultLevel4'.",
+    "The 'resultLevel4' field must contain a nested field named 'resultLevel5'.",
+    "The 'resultLevel5' field must contain a field named 'outputField1' of type boolean.",
+    "The 'resultLevel5' field must contain a field named 'outputField2' which is an array of strings."
+  ],
+  "input": {
+    "level1": {
+      "level2": {
+        "level3": {
+          "level4": {
+            "level5": {
+              "field1": "another test",
+              "field2": -987.65
+            }
+          }
+        }
+      }
+    }
+  }
+}
