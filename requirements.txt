@@ -15,3 +15,5 @@ requests
 tenacity>=8.2.3
 tqdm
 ujson
+anyio
+asyncer==0.0.8
