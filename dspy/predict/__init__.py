@@ -7,3 +7,4 @@ from .predict import Predict
 from .program_of_thought import ProgramOfThought
 from .react import ReAct
 from .retry import Retry
+from .parallel import Parallel
