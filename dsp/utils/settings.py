@@ -1,7 +1,7 @@
+import copy
 import threading
-from contextlib import contextmanager
-from copy import deepcopy
 
+from contextlib import contextmanager
 from dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -49,17 +49,16 @@ class Settings:
             #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
             #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
             #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
-
-            # make a deepcopy of the default config to avoid modifying the default config
-            cls._instance.__append(deepcopy(DEFAULT_CONFIG))
+            config = copy.deepcopy(DEFAULT_CONFIG)
+            cls._instance.__append(config)
 
         return cls._instance
 
     @property
     def config(self):
         thread_id = threading.get_ident()
-        if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
+        # if thread_id not in self.stack_by_thread:
+        #     self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
         return self.stack_by_thread[thread_id][-1]
 
     def __getattr__(self, name):
@@ -73,14 +72,14 @@ class Settings:
 
     def __append(self, config):
         thread_id = threading.get_ident()
-        if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
+        # if thread_id not in self.stack_by_thread:
+        #     self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
         self.stack_by_thread[thread_id].append(config)
 
     def __pop(self):
         thread_id = threading.get_ident()
-        if thread_id in self.stack_by_thread:
-            self.stack_by_thread[thread_id].pop()
+        # if thread_id in self.stack_by_thread:
+        self.stack_by_thread[thread_id].pop()
 
     def configure(self, inherit_config: bool = True, **kwargs):
         """Set configuration settings.
