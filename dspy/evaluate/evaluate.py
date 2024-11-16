@@ -51,6 +51,7 @@ class Evaluate:
         *,
         devset,
         metric=None,
+        batched_metric=None,
         num_threads=1,
         display_progress=False,
         display_table=False,
@@ -62,6 +63,10 @@ class Evaluate:
     ):
         self.devset = devset
         self.metric = metric
+        self.batched_metric = batched_metric
+        self.predictions = [] # used to store predictions for a batched_metric call
+        self.examples = [] # used to store examples for a batched_metric call
+        self.example_idxs = [] 
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -73,7 +78,7 @@ class Evaluate:
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
 
-    def _execute_single_thread(self, wrapped_program, devset, display_progress):
+    def _execute_single_thread(self, wrapped_program, devset, display_progress, is_batch):
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -82,16 +87,20 @@ class Evaluate:
         for idx, arg in devset:
             with logging_redirect_tqdm():
                 example_idx, example, prediction, score = wrapped_program(idx, arg)
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
-
+                if not is_batch:
+                    reordered_devset.append((example_idx, example, prediction, score))
+                    ncorrect += score
+                    ntotal += 1
+                    self._update_progress(pbar, ncorrect, ntotal)
         pbar.close()
 
+        if is_batch:
+            reordered_devset = example_idx
+            ncorrect = sum(score for _,_,_, score in example_idx)
+            ntotal = len(reordered_devset)
         return reordered_devset, ncorrect, ntotal
 
-    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress):
+    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress, is_batch):
         ncorrect = 0
         ntotal = 0
         reordered_devset = []
@@ -131,16 +140,21 @@ class Evaluate:
                 if prediction is job_cancelled:
                     continue
 
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
+                if not is_batch:
+                    reordered_devset.append((example_idx, example, prediction, score))
+                    ncorrect += score
+                    ntotal += 1
+                    self._update_progress(pbar, ncorrect, ntotal)
             pbar.close()
 
         if self.cancel_jobs.is_set():
             logger.warning("Evaluation was cancelled. The results may be incomplete.")
             raise KeyboardInterrupt
 
+        if is_batch:
+            reordered_devset = example_idx
+            ncorrect = sum(score for _,_,_, score in example_idx)
+            ntotal = len(reordered_devset)
         return reordered_devset, ncorrect, ntotal
 
     def _update_progress(self, pbar, ncorrect, ntotal):
@@ -151,6 +165,7 @@ class Evaluate:
         self,
         program,
         metric=None,
+        batched_metric=None,
         devset=None,
         num_threads=None,
         display_progress=None,
@@ -159,6 +174,8 @@ class Evaluate:
         return_outputs=None,
     ):
         metric = metric if metric is not None else self.metric
+        batched_metric = batched_metric if batched_metric is not None else self.batched_metric
+        is_batch = True if batched_metric is not None else False
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -176,18 +193,42 @@ class Evaluate:
 
             try:
                 prediction = program(**example.inputs())
-                score = metric(
-                    example,
-                    prediction,
-                )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
 
-                # increment assert and suggest failures to program's attributes
-                if hasattr(program, "_assert_failures"):
-                    program._assert_failures += dspy.settings.get("assert_failures")
-                if hasattr(program, "_suggest_failures"):
-                    program._suggest_failures += dspy.settings.get("suggest_failures")
+                if batched_metric is not None:
+                    # store the predictions in each call
+                    self.predictions.append(prediction)
+                    self.examples.append(example)
+                    self.example_idxs.append(example_idx)
+                    # call batched_metric after all predictions generated
+                    if example_idx == len(devset) - 1:
+                        df = pd.DataFrame({ 
+                            # TODO: should the example ids be part of the dataframe?
+                            "example_idx": self.example_idxs,
+                            "example": self.examples, 
+                            "prediction": self.predictions
+                            })
+                        batched_scores = batched_metric(df)
+                        for i, score in enumerate(batched_scores):  
+                            reordered_devset.append((self.example_idxs[i], self.examples[i], self.predictions[i], score))
+                        return reordered_devset, None, None, None
+                    
+                    else:
+                        # placeholders which aren't used when using batched_metric
+                        return example_idx, example, "batch", None
 
-                return example_idx, example, prediction, score
+                else:
+                    score = metric(
+                        example,
+                        prediction,
+                    )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
+
+                    # increment assert and suggest failures to program's attributes
+                    if hasattr(program, "_assert_failures"):
+                        program._assert_failures += dspy.settings.get("assert_failures")
+                    if hasattr(program, "_suggest_failures"):
+                        program._suggest_failures += dspy.settings.get("suggest_failures")
+
+                    return example_idx, example, prediction, score
             except Exception as e:
                 with self.error_lock:
                     self.error_count += 1
@@ -209,17 +250,19 @@ class Evaluate:
                 if creating_new_thread:
                     del thread_stacks[threading.get_ident()]
 
+
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
 
         if num_threads == 1:
-            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
+            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress, is_batch)
         else:
             reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
                 wrapped_program,
                 devset,
                 num_threads,
                 display_progress,
+                is_batch
             )
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
