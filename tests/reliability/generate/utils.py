@@ -49,8 +49,6 @@ def _retry(retries):
 def generate_test_program(dst_path: str, additional_instructions: Optional[str] = None) -> dspy.Module:
     """
     Generate a DSPy program for a reliability test case and save it to a destination path.
-    It's very important to be sure that the additional instructions, if specified, are obeyed
-    precisely in absolutely all cases.
 
     Args:
         dst_path: The directory path to which to save the generated program.
@@ -161,8 +159,6 @@ def generate_test_inputs(
 ):
     """
     Generate test inputs for a reliability test case and save them to a destination path.
-    It's very important to be sure that the additional instructions, if specified, are obeyed
-    precisely in absolutely all cases.
 
     Args:
         dst_path: The directory path to which to save the generated test inputs.
@@ -388,6 +384,9 @@ def _get_test_program_generation_program() -> dspy.Module:
 
         The input fields and the output fields must be represented in JSON Schema format, including field names, types, and descriptions.
         The JSON schema definitions themselves MUST be valid JSON without any extra text (no backticks, no explanatory text, etc.).
+
+        It's very important to be sure that the additional instructions, if specified, are obeyed
+        precisely in absolutely all cases.
         """
 
         additional_instructions: str = dspy.InputField(
@@ -423,6 +422,9 @@ def _get_test_inputs_generation_program() -> dspy.Module:
 
         When generating an input, do not think about how the program will respond. Instead, focus on creating
         valid and interesting inputs that are likely to test the program's capabilities.
+
+        It's very important to be sure that the additional instructions, if specified, are obeyed
+        precisely in absolutely all cases.
         """
 
         program_description: str = dspy.InputField(
