@@ -70,6 +70,8 @@ python \
 
 The test program will be written to `tests/reliability/classification/generated/test_example/program.py`, and the test inputs will be written as JSON files to the `tests/reliability/classification/generated/test_exaple/inputs/` directory.
 
+All generated tests should be located in directories with the structure `tests/reliability/<test_type>/generated/<test_name>`, where `<test_type>` is the type of test (e.g., `classification`, `complex_types`, `chat`, etc.), and `<test_name>` is a descriptive name for the test.
+
 ### Known Failing Models
 
 Some tests may be expected to fail with certain models, especially in challenging cases. These known failures are logged but do not affect the overall test result. This setup allows us to keep track of model-specific limitations without obstructing general test outcomes. Models that are known to fail a particular test case are specified using the `@known_failing_models` decorator. For example:
