@@ -330,7 +330,7 @@ def run_generated_case(generated_case: GeneratedTestCase):
         )
 
 
-def _get_test_program_signature_and_module_definition(program_description) -> str:
+def _get_test_program_signature_and_module_definition(program_description: str) -> str:
     """
     Generate the signature and model definition for a test DSPy program.
 
@@ -638,7 +638,7 @@ def _temporarily_prepend_to_system_path(path):
         sys.path = original_sys_path
 
 
-def _import_program_module_from_path(module_name, file_path):
+def _import_program_module_from_path(module_name: str, file_path: str):
     """
     Import a Python module containing a DSPy program from a specified file path.
 
@@ -655,7 +655,7 @@ def _import_program_module_from_path(module_name, file_path):
         return module
 
 
-def _remove_line_from_file(file_path, line_to_remove):
+def _remove_line_from_file(file_path: str, line_to_remove: str):
     """
     Remove all instances of a specific line from a file.
 
