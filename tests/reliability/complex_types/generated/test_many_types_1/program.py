@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 
 
 class EnumField(Enum):
-    option1 = 'option1'
-    option2 = 'option2'
-    option3 = 'option3'
+    option1 = "option1"
+    option2 = "option2"
+    option3 = "option3"
 
 
 class LiteralField(Enum):
-    literalValue = 'literalValue'
+    literalValue = "literalValue"
 
 
 class ObjectField(BaseModel):
@@ -38,24 +38,25 @@ class ProgramInputs(BaseModel):
     objectField: ObjectField
     nestedObjectField: NestedObjectField
 
+
 ### Output models ###
 
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Union, Tuple
+from typing import List, Tuple, Union
 
 from pydantic import BaseModel, Field
 
 
 class ProcessedEnumField(Enum):
-    option1 = 'option1'
-    option2 = 'option2'
-    option3 = 'option3'
+    option1 = "option1"
+    option2 = "option2"
+    option3 = "option3"
 
 
 class ProcessedLiteralField(Enum):
-    literalValue = 'literalValue'
+    literalValue = "literalValue"
 
 
 class ProcessedObjectField(BaseModel):
@@ -65,13 +66,13 @@ class ProcessedObjectField(BaseModel):
 
 
 class EnumField(Enum):
-    option1 = 'option1'
-    option2 = 'option2'
-    option3 = 'option3'
+    option1 = "option1"
+    option2 = "option2"
+    option3 = "option3"
 
 
 class LiteralField(Enum):
-    literalValue = 'literalValue'
+    literalValue = "literalValue"
 
 
 class ProcessedNestedObjectField(BaseModel):
@@ -90,14 +91,17 @@ class ProgramOutputs(BaseModel):
     processedObjectField: ProcessedObjectField
     processedNestedObjectField: ProcessedNestedObjectField
 
+
 ### Program definition ###
 
 import dspy
+
 
 class BaseSignature(dspy.Signature):
     """
     The program is designed to process various data types including tuples, enums, datetime values, literals, objects, and nested objects containing these types. The program will accept inputs of these types, perform specified operations on them, and return the results. The operations could include validation, transformation, and extraction of information from these inputs.
     """
+
 
 program_signature = BaseSignature
 for input_field_name, input_field in ProgramInputs.model_fields.items():

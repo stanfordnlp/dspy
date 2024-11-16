@@ -1,0 +1,184 @@
+{
+  "description": "The program is designed to process various data types including tuples, enums, datetime values, literals, objects, and nested objects containing these types. The program will accept inputs of these types, perform specified operations on them, and return the results. The operations could include validation, transformation, and extraction of information from these inputs.",
+  "properties": {
+    "datetimeField": {
+      "desc": null,
+      "format": "date-time",
+      "prefix": "Datetime Field:",
+      "type": "string"
+    },
+    "enumField": {
+      "enum": ["option1", "option2", "option3"],
+      "type": "string"
+    },
+    "literalField": {
+      "const": "literalValue",
+      "enum": ["literalValue"],
+      "type": "string"
+    },
+    "nestedObjectField": {
+      "properties": {
+        "datetimeField": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "enumField": {
+          "enum": ["option1", "option2", "option3"],
+          "type": "string"
+        },
+        "literalField": {
+          "const": "literalValue",
+          "enum": ["literalValue"],
+          "type": "string"
+        },
+        "tupleField": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": ["tupleField", "enumField", "datetimeField", "literalField"],
+      "type": "object"
+    },
+    "objectField": {
+      "properties": {
+        "subField1": {
+          "type": "string"
+        },
+        "subField2": {
+          "type": "number"
+        }
+      },
+      "required": ["subField1", "subField2"],
+      "type": "object"
+    },
+    "processedDatetimeField": {
+      "desc": null,
+      "format": "date-time",
+      "prefix": "Processed Datetime Field:",
+      "type": "string"
+    },
+    "processedEnumField": {
+      "enum": ["option1", "option2", "option3"],
+      "type": "string"
+    },
+    "processedLiteralField": {
+      "const": "literalValue",
+      "enum": ["literalValue"],
+      "type": "string"
+    },
+    "processedNestedObjectField": {
+      "properties": {
+        "additionalField": {
+          "type": "boolean"
+        },
+        "datetimeField": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "enumField": {
+          "enum": ["option1", "option2", "option3"],
+          "type": "string"
+        },
+        "literalField": {
+          "const": "literalValue",
+          "enum": ["literalValue"],
+          "type": "string"
+        },
+        "tupleField": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "tupleField",
+        "enumField",
+        "datetimeField",
+        "literalField",
+        "additionalField"
+      ],
+      "type": "object"
+    },
+    "processedObjectField": {
+      "properties": {
+        "additionalField": {
+          "type": "boolean"
+        },
+        "subField1": {
+          "type": "string"
+        },
+        "subField2": {
+          "type": "number"
+        }
+      },
+      "required": ["subField1", "subField2", "additionalField"],
+      "type": "object"
+    },
+    "processedTupleField": {
+      "desc": null,
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "prefix": "Processed Tuple Field:",
+      "type": "array"
+    },
+    "tupleField": {
+      "desc": null,
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "prefix": "Tuple Field:",
+      "type": "array"
+    }
+  },
+  "required": [
+    "tupleField",
+    "enumField",
+    "datetimeField",
+    "literalField",
+    "objectField",
+    "nestedObjectField",
+    "processedTupleField",
+    "processedEnumField",
+    "processedDatetimeField",
+    "processedLiteralField",
+    "processedObjectField",
+    "processedNestedObjectField"
+  ],
+  "type": "object"
+}
