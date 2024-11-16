@@ -1,0 +1,30 @@
+{
+  "assertions": [
+    "The output should contain a 'customer_summary' object with the required properties: 'customer_id', 'customer_type', and 'value'.",
+    "'customer_summary.customer_id' should be a string and match the 'customer_id' from the input.",
+    "'customer_summary.customer_type' should be an object containing 'is_premium' (a boolean) and 'category' (a string).",
+    "'customer_summary.value' should be a string and reflect the 'value' from the input's customer details.",
+    "The output should contain a 'transaction_summary' object with the required properties: 'transaction_id', 'total_amount', and 'details'.",
+    "'transaction_summary.transaction_id' should be a string and match the 'transaction_id' from the input.",
+    "'transaction_summary.total_amount' should be a number and match the 'amount' from the input.",
+    "'transaction_summary.details' should be an object containing 'value' (a number) and 'timestamp' (a date-time value)."
+  ],
+  "input": {
+    "customer": {
+      "customer_id": "C12345",
+      "customer_type": true,
+      "details": {
+        "age": 30,
+        "value": "Gold"
+      }
+    },
+    "transaction": {
+      "amount": 150.75,
+      "details": {
+        "timestamp": "2023-10-01T10:00:00Z",
+        "value": 150.75
+      },
+      "transaction_id": "T98765"
+    }
+  }
+}

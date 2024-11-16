@@ -1,0 +1,11 @@
+{
+  "assertions": [
+    "Each top-level heading (indicated by `#`) should appear as a top-level entry in the TOC.",
+    "Each second-level heading (indicated by `##`) should be nested under the appropriate top-level heading in the TOC.",
+    "Each third-level heading (indicated by `###`) should be nested under the appropriate second-level heading in the TOC.",
+    "Each entry in the TOC should be linked to the corresponding section in the document, using markdown link syntax."
+  ],
+  "input": {
+    "markdown_content": "# The American Space Program\n\nThe American space program has a rich history of exploration and discovery.\n\n## Early Beginnings\n\nThe journey began in the late 1950s with the launch of the first artificial satellite.\n\n### The Space Race\n\nThe competition between the United States and the Soviet Union led to rapid advancements in space technology.\n\n## Moon Landing\n\nIn 1969, NASA successfully landed the first humans on the moon.\n\n### Apollo Missions\n\nThe Apollo missions were a series of spaceflights that landed humans on the moon and brought them back safely.\n\n## Space Shuttle Era\n\nThe development of the Space Shuttle program marked a new era in space exploration.\n\n### Reusable Spacecraft\n\nThe Space Shuttle was the first reusable spacecraft, capable of multiple missions.\n\n## International Space Station\n\nThe International Space Station (ISS) is a collaborative effort between multiple countries.\n\n### Living in Space\n\nAstronauts live and work on the ISS for extended periods, conducting scientific research.\n\n## Future Missions\n\nNASA continues to plan for future missions to Mars and beyond.\n\n### Mars Exploration\n\nExploration of Mars is a key objective for NASA's future missions.\n\n### Beyond Mars\n\nThe ultimate goal is to explore beyond Mars and into the outer reaches of the solar system.\n\n## Conclusion\n\nThe American space program has achieved many milestones and continues to push the boundaries of space exploration."
+  }
+}

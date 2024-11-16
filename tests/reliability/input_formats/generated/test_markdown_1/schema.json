@@ -1,0 +1,19 @@
+{
+  "description": "The program is designed to generate a table of contents (TOC) from a given markdown document. It will parse the markdown content, identify headings, and create a hierarchical TOC based on the heading levels. The TOC will be presented in markdown format, with each entry linked to the corresponding section in the document.",
+  "properties": {
+    "markdown_content": {
+      "desc": "The content of the markdown document from which the table of contents will be generated.",
+      "description": "The content of the markdown document from which the table of contents will be generated.",
+      "prefix": "Markdown Content:",
+      "type": "string"
+    },
+    "table_of_contents": {
+      "desc": "The content of the markdown document from which the table of contents will be generated.",
+      "description": "The content of the markdown document from which the table of contents will be generated.",
+      "prefix": "Table Of Contents:",
+      "type": "string"
+    }
+  },
+  "required": ["markdown_content", "table_of_contents"],
+  "type": "object"
+}
