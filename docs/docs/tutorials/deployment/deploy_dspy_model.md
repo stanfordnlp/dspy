@@ -66,6 +66,22 @@ async def predict(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
+In the above code, we call `dspy.asyncify(dspy.ChainOfThought("question -> answer"))` to convert the dspy program to run
+in async mode, which is required by high-throughput FastAPI deployments. This under the hood runs the dspy program in a
+separate thread and await its result. By default, the limit of spawned threads is 8. Think of this like a worker pool
+(like ThreadPoolExecutor). If you have 8 in-flight programs and call it once more, the 9th call will wait until one of the
+8 returns.
+
+You can configure the async capacity using the new `async_max_workers` setting, e.g. to set it to 16, which will be shared
+by all async calls:
+
+```python
+dspy.settings.configure(async_max_workers=16)
+```
+
+> ℹ️ **Note:** Recommended practice is to set async_max_workers once at the entry point of your program. If you configure it multiple
+> times, then the last value will be used as the global async max workers value for all async calls.
+
 Save your code in a file, e.g., `fastapi_dspy.py`. Then you can run the app with:
 
 ```bash
