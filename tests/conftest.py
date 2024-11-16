@@ -11,3 +11,8 @@ def clear_settings():
     yield
 
     dspy.settings.configure(**DEFAULT_CONFIG, inherit_config=False)
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

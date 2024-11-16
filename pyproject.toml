@@ -20,12 +20,10 @@ classifiers = [
     "Programming Language :: Python :: 3",    # removed 3.8
     "Programming Language :: Python :: 3.9",
 ]
-
 # We have both project and tool.poetry.dependencies. Should we remove one?
 # tool.poetry.dependencies is a convenience thing for poetry users.
 # project dependencies function similarly to requirements.txt,
 # `pip install .` will pull from pyproject.toml dependencies
-
 dependencies = [
     "backoff~=2.2",
     "joblib~=1.3",
@@ -44,6 +42,8 @@ dependencies = [
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
+    "anyio",
+    "asyncer==0.0.8",
 ]
 
 [project.optional-dependencies]
@@ -86,9 +86,8 @@ readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
+
 # may be a bit much
-
-
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 pydantic = "^2.0"
@@ -134,17 +133,14 @@ jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
 litellm = "1.51.0"
 diskcache = "^5.6.0"
-
 redis = "^5.1.1"
 falkordb = "^1.0.9"
-
-
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
-
+asyncer = "0.0.8"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^6.2.5"
+pytest = "^8.3.3"
 transformers = "^4.38.2"
 torch = "^2.2.1"
 pytest-mock = "^3.12.0"
@@ -233,11 +229,9 @@ select = [
     "F",  # Pyflakes
     "E",  # Pycodestyle
 ]
-
 ignore = [
     "E501",  # Line too long
 ]
-
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
