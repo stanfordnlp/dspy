@@ -47,15 +47,19 @@ class ParallelExecutor:
         def wrapped(item, parent_id=None):
             thread_stacks = dspy.settings.stack_by_thread
             current_thread_id = threading.get_ident()
-            
             creating_new_thread = current_thread_id not in thread_stacks
 
+            assert creating_new_thread or threading.get_ident() == dspy.settings.main_tid
+
             if creating_new_thread:
-                # If we have a parent thread ID, copy its stack
+                # If we have a parent thread ID, copy its stack. TODO: Should the caller just pass a copy of the stack?
                 if parent_id and parent_id in thread_stacks:
                     thread_stacks[current_thread_id] = list(thread_stacks[parent_id])
                 else:
                     thread_stacks[current_thread_id] = list(dspy.settings.main_stack)
+
+                # TODO: Consider the behavior below.
+                # import copy; thread_stacks[current_thread_id].append(copy.deepcopy(thread_stacks[current_thread_id][-1]))
 
             try:
                 return function(item)
