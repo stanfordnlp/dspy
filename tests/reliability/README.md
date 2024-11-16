@@ -14,30 +14,30 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
 
 ### Running the Tests
 
-First, populate the configuration file `reliability_tests_conf.yaml` (located in this directory) with the necessary LiteLLM model/provider names and access credentials for 1. each LLM you want to test and 2. the LLM judge that you want to use for assessing the correctness of outputs in certain test cases. These should be placed in the `litellm_params` section for each model in the defined `model_list`. You can also use `litellm_params` to specify values for LLM hyperparameters like `temperature`. Any model that lacks configured `litellm_params` in the configuration file will be ignored during testing.
+- First, populate the configuration file `reliability_tests_conf.yaml` (located in this directory) with the necessary LiteLLM model/provider names and access credentials for 1. each LLM you want to test and 2. the LLM judge that you want to use for assessing the correctness of outputs in certain test cases. These should be placed in the `litellm_params` section for each model in the defined `model_list`. You can also use `litellm_params` to specify values for LLM hyperparameters like `temperature`. Any model that lacks configured `litellm_params` in the configuration file will be ignored during testing.
 
-The configuration must also specify a DSPy adapter to use when testing, e.g. `"chat"` (for `dspy.ChatAdapter`) or `"json"` (for `dspy.JSONAdapter`).
+  The configuration must also specify a DSPy adapter to use when testing, e.g. `"chat"` (for `dspy.ChatAdapter`) or `"json"` (for `dspy.JSONAdapter`).
 
-An example of `reliability_tests_conf.yaml`:
+  An example of `reliability_tests_conf.yaml`:
 
-    ```yaml
-    adapter: chat
-    model_list:
-      # The model to use for judging the correctness of program
-      # outputs throughout reliability test suites. We recommend using
-      # a high quality model as the judge, such as OpenAI GPT-4o
-      - model_name: "judge"
-        litellm_params:
-          model: "openai/gpt-4o"
-          api_key: "<my_openai_api_key>"
-      - model_name: "gpt-4o"
-        litellm_params:
-          model: "openai/gpt-4o"
-          api_key: "<my_openai_api_key>"
-      - model_name: "claude-3.5-sonnet"
-        litellm_params:
-          model: "anthropic/claude-3.5"
-          api_key: "<my_anthropic_api_key>"
+      ```yaml
+      adapter: chat
+      model_list:
+        # The model to use for judging the correctness of program
+        # outputs throughout reliability test suites. We recommend using
+        # a high quality model as the judge, such as OpenAI GPT-4o
+        - model_name: "judge"
+          litellm_params:
+            model: "openai/gpt-4o"
+            api_key: "<my_openai_api_key>"
+        - model_name: "gpt-4o"
+          litellm_params:
+            model: "openai/gpt-4o"
+            api_key: "<my_openai_api_key>"
+        - model_name: "claude-3.5-sonnet"
+          litellm_params:
+            model: "anthropic/claude-3.5"
+            api_key: "<my_anthropic_api_key>"
 
 - Second, to run the tests, run the following command from this directory:
 
