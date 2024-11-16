@@ -47,6 +47,31 @@ Each test in this directory executes a DSPy program using various LLMs. By runni
 
   This will execute all tests for the configured models and display detailed results for each model configuration. Tests are set up to mark expected failures for known challenging cases where a specific model might struggle, while actual (unexpected) DSPy reliability issues are flagged as failures (see below).
 
+#### Running specific generated tests
+
+You can run specific generated tests by using the `-k` flag with `pytest`. For example, to test the generated program located at `tests/reliability/complex_types/generated/test_nesting_1` against generated test input `input1.json`, you can run the following command from this directory:
+
+```bash
+pytest test_generated.py -k "test_nesting_1-input1"
+```
+
+### Test generation
+
+You can generate test DSPy programs and test inputs from text descriptions using the `tests.reliability.generate` CLI, or the `tests.reliability.generate.generate_test_cases` API. For example, to generate a test classification program and 3 challenging test inputs in the `tests/reliability/classification/generated` directory, you can run the following command from the DSPy repository root directory:
+
+```bash
+python \
+    -m tests.reliability.generate \
+    -d tests/reliability/classification/generated/test_example \
+    -p "Generate a program that performs a classification task involving objects with multiple properties. The task should be realistic" \
+    -i "Based on the program description, generate a challenging example" \
+    -n 3
+```
+
+The test program will be written to `tests/reliability/classification/generated/test_example/program.py`, and the test inputs will be written as JSON files to the `tests/reliability/classification/generated/test_exaple/inputs/` directory.
+
+All generated tests should be located in directories with the structure `tests/reliability/<test_type>/generated/<test_name>`, where `<test_type>` is the type of test (e.g., `classification`, `complex_types`, `chat`, etc.), and `<test_name>` is a descriptive name for the test.
+
 ### Known Failing Models
 
 Some tests may be expected to fail with certain models, especially in challenging cases. These known failures are logged but do not affect the overall test result. This setup allows us to keep track of model-specific limitations without obstructing general test outcomes. Models that are known to fail a particular test case are specified using the `@known_failing_models` decorator. For example:

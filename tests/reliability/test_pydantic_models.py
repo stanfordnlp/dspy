@@ -22,14 +22,18 @@ def test_qa_with_pydantic_answer_model():
         answer: Answer = dspy.OutputField()
 
     program = dspy.Predict(QA)
-    answer = program(question="What is the capital of France?").answer
+    question = "What is the capital of France?"
+    answer = program(question=question).answer
 
     assert_program_output_correct(
+        program_input=question,
         program_output=answer.value,
         grading_guidelines="The answer should be Paris. Answer should not contain extraneous information.",
     )
     assert_program_output_correct(
-        program_output=answer.comments, grading_guidelines="The comments should be relevant to the answer"
+        program_input=question,
+        program_output=answer.comments,
+        grading_guidelines="The comments should be relevant to the answer",
     )
     assert answer.certainty >= 0
     assert answer.certainty <= 1
@@ -70,17 +74,21 @@ def test_entity_extraction_with_multiple_primitive_outputs():
         )
 
     program = dspy.ChainOfThought(ExtractEntityFromDescription)
+    description = "A kávé egy növényi eredetű ital, amelyet a kávébabból készítenek."
 
-    extracted_entity = program(description="A kávé egy növényi eredetű ital, amelyet a kávébabból készítenek.").entity
+    extracted_entity = program(description=description).entity
     assert_program_output_correct(
+        program_input=description,
         program_output=extracted_entity.entity_hu,
         grading_guidelines="The translation of the text into English should be equivalent to 'coffee'",
     )
     assert_program_output_correct(
+        program_input=description,
         program_output=extracted_entity.entity_hu,
         grading_guidelines="The text should be equivalent to 'coffee'",
     )
     assert_program_output_correct(
+        program_input=description,
         program_output=extracted_entity.categories,
         grading_guidelines=(
             "The text should contain English language categories that apply to the word 'coffee'."
