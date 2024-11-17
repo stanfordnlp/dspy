@@ -102,7 +102,7 @@ plugins:
   - social
   - search
   - mkdocstrings
-  - blog
+  # - blog
   - mkdocs-jupyter:
       ignore_h1_titles: True
   - redirects:
