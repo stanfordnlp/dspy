@@ -3,6 +3,7 @@ import threading
 
 from contextlib import contextmanager
 from dsp.utils.utils import dotdict
+from functools import lru_cache
 
 DEFAULT_CONFIG = dotdict(
     lm=None,
@@ -26,6 +27,12 @@ DEFAULT_CONFIG = dotdict(
     callbacks=[],
     async_max_workers=8,
 )
+
+@lru_cache(maxsize=None)
+def warn_once(msg: str):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(msg)
 
 
 class Settings:
@@ -59,7 +66,11 @@ class Settings:
         thread_id = threading.get_ident()
         # if thread_id not in self.stack_by_thread:
         #     self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
-        return self.stack_by_thread[thread_id][-1]
+        try:
+            return self.stack_by_thread[thread_id][-1]
+        except Exception:
+            warn_once("Warning: You seem to be creating DSPy threads in an unsupported way.")
+            return self.main_stack[-1]
 
     def __getattr__(self, name):
         if hasattr(self.config, name):
@@ -74,6 +85,8 @@ class Settings:
         thread_id = threading.get_ident()
         # if thread_id not in self.stack_by_thread:
         #     self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
+
+        assert thread_id in self.stack_by_thread, "Error: You seem to be creating DSPy threads in an unsupported way."
         self.stack_by_thread[thread_id].append(config)
 
     def __pop(self):

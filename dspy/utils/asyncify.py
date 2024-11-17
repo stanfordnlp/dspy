@@ -24,4 +24,22 @@ def get_limiter():
 
 
 def asyncify(program):
-    return asyncer.asyncify(program, abandon_on_cancel=True, limiter=get_limiter())
+    import dspy
+    import threading
+
+    assert threading.get_ident() == dspy.settings.main_tid, "asyncify can only be called from the main thread"
+
+    def wrapped(*args, **kwargs):
+        thread_stacks = dspy.settings.stack_by_thread
+        current_thread_id = threading.get_ident()
+        creating_new_thread = current_thread_id not in thread_stacks
+
+        assert creating_new_thread
+        thread_stacks[current_thread_id] = list(dspy.settings.main_stack)
+
+        try:
+            return program(*args, **kwargs)
+        finally:
+            del thread_stacks[threading.get_ident()]
+
+    return asyncer.asyncify(wrapped, abandon_on_cancel=True, limiter=get_limiter())
