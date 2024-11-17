@@ -43,7 +43,9 @@ nav:
         - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
         - YouRM: deep-dive/retrieval_models_clients/YouRM.md
   - Tutorials:
-    - Simple RAG: tutorials/rag/index.ipynb
+    - Tutorials Overview: tutorials/index.md
+    - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
+    - Deployment: tutorials/deployment/index.md
   - Community:
     - Community Resources: community/community-resources.md
     - Use Cases: community/use-cases.md
@@ -101,7 +103,8 @@ plugins:
   - search
   - mkdocstrings
   - blog
-  - mkdocs-jupyter
+  - mkdocs-jupyter:
+      ignore_h1_titles: True
   - redirects:
       redirect_maps:
         # Redirect /intro/ to the main page
