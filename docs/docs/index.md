@@ -239,7 +239,9 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
-    The ergonomic and portable nature of DSPy's _modules_ make them incredibly powerful for quick LM scripting, even when you don't have the data or metrics to use DSPy's powerful _optimizers_. We maintain large _signature test suites_, across many tasks and LMs, to assess the reliability of the built-in DSPy Adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
+    Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer latter or learn it from data — in the context of a bigger program.
+    
+    Even before you start using optimizers, DSPy's modules allow you to script effective LM systems in ergonomic, portable ways. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your AI modules.
