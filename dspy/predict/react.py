@@ -97,3 +97,39 @@ class ReAct(Module):
         
         extract = self.extract(**input_args, trajectory=format(trajectory, last_iteration=False))
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+
+"""
+Thoughts and Planned Improvements for dspy.ReAct.
+
+TOPIC 01: How Trajectories are Formatted, or rather when they are formatted.
+
+Right now, both sub-modules are invoked with a `trajectory` argument, which is a string formatted in `forward`. Though
+the formatter uses a general adapter.format_fields, the tracing of DSPy only sees the string, not the formatting logic.
+
+What this means is that, in demonstrations, even if the user adjusts the adapter for a fixed program, the demos' format
+will not update accordingly, but the inference-time trajectories will.
+
+One way to fix this is to support `format=fn` in the dspy.InputField() for "trajectory" in the signatures. But this
+means that care must be taken that the adapter is accessed at `forward` runtime, not signature definition time.
+
+Another potential fix is to more natively support a "variadic" input field, where the input is a list of dictionaries,
+or a big dictionary, and have each adatper format it accordingly.
+
+
+TOPIC 02: Handling default arguments in the Tool class.
+
+
+TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class.
+    * Handling descriptions and casting.
+    * Handling exceptions and error messages.
+    * More cleanly defining the "finish" tool, perhaps as a runtime-defined function?
+
+
+TOPIC 04: Default behavior when the trajectory gets too long.
+
+
+TOPIC 05: Adding more structure around how the instruction is formatted.
+    * Concretely, it's now a string, so an optimizer can and does rewrite it freely.
+    * An alternative would be to add more structure, such that a certain template is fixed but values are variable?
+"""
