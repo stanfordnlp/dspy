@@ -115,11 +115,11 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
      ``` 
 
 
-## 1) **Modules** express portable, _natural-language-typed_ behavior.
+## 1) **Modules** express AI behavior in a portable, declarative way.
 
 To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and built DSPy so you don't have to.
 
-DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every component in your AI system, you define a _signature_, specifying input/output behavior, and a _module_, specifying a strategy for invoking your LM. DSPy handles expanding your signatures into prompts and parsing your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
+DSPy shifts your focus from tinkering with prompt strings to **programming with structured natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
@@ -234,7 +234,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
     The ergonomic and portable nature of DSPy's _modules_ make them incredibly powerful for quick LM scripting, even when you don't have the data or metrics to use DSPy's powerful _optimizers_. We maintain large _signature test suites_, across many tasks and LMs, to assess the reliability of the built-in DSPy Adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
-## 2) **Optimizers** tune the prompts and weights of your Modules.
+## 2) **Optimizers** tune the prompts and weights of your AI modules.
 
 DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program’s structure and metrics.
 
@@ -359,8 +359,8 @@ BootstrapFS on MATH with a tiny LM like Llama-3.2 with Ollama (maybe with a big 
 
 ## 3) **DSPy's Ecosystem** advances open-source AI research.
 
-DSPy aims to enable a large community to improve the compositional architectures, inference-time strategies, and optimizers for LM programs in an open, distributed way. Compared to prompting monolithic LMs, this paradigm gives you more control, helps you iterate much faster, and allows your programs to get better over time by applying the latest optimizers or modules.
+Compared to working on or with monolithic LMs, DSPy's modular paradigm aims to enable a large community to improve the compositional architectures, inference-time strategies, and optimizers for LM programs in an open, distributed way. It gives you more control, helps you iterate much faster, and allows your programs to get better over time by applying the latest optimizers or modules.
 
-The DSPy research project started at Stanford NLP in Feb 2022, building on what we learned from developing early compound LM systems like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [Demonstrate-Search-Predict](https://arxiv.org/abs/2212.14024) (DSP) in Dec 2022 and then evolved in Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [nearly 250 wonderful contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
+The DSPy research effort started at Stanford NLP in Feb 2022, building on what we learned from developing early [compound LM systems](https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/) like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [DSP](https://arxiv.org/abs/2212.14024) in Dec 2022 and evolved by Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [250 contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
 
-Since then, DSPy's community has produced a large body of research and applications. This includes work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214), and on program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382). It also includes successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [WangLab@MEDIQA](https://arxiv.org/abs/2404.14544), [UMD's Prompting Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming Program](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects and numerous production applications. Learn more in the [Use Cases](/dspy-usecases/) page.
+Since then, DSPy's community has produced a large body of work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214), on program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382), and on successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [WangLab@MEDIQA](https://arxiv.org/abs/2404.14544), [UMD's Prompting Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming Program](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects, production applications, and other [use cases](/dspy-usecases/).
