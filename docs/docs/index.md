@@ -143,15 +143,14 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
     === "Retrieval-Augmented Generation"
 
         ```python linenums="1"       
-        def search(query: str) -> list[str]:
-            """Retrieves abstracts from Wikipedia."""
+        def search_wikipedia(query: str) -> list[str]:
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
             return [x['text'] for x in results]
         
         rag = dspy.ChainOfThought('context, question -> response')
 
         question = "What's the name of the castle that David Gregory inherited?"
-        rag(context=search(question), question=question)
+        rag(context=search_wikipedia(question), question=question)
         ```
         
         **Possible Output:**
@@ -190,21 +189,30 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
     === "Information Extraction"
 
         ```python linenums="1"        
-        text = "Apple Inc. announced its latest iPhone 14 today. The CEO, Tim Cook, highlighted its new features in a press release."
+        class ExtractInfo(dspy.Signature):
+            """Extract structured information from text."""
+            
+            text: str = dspy.InputField()
+            title: str = dspy.OutputField()
+            headings: list[str] = dspy.OutputField()
+            entities: list[dict[str, str]] = dspy.OutputField(desc="a list of entities and their metadata")
+        
+        module = dspy.Predict(ExtractInfo)
 
-        module = dspy.Predict("text -> title, headings: list[str], entities_and_metadata: list[dict[str, str]]")
+        text = "Apple Inc. announced its latest iPhone 14 today." \
+            "The CEO, Tim Cook, highlighted its new features in a press release."
         response = module(text=text)
 
         print(response.title)
         print(response.headings)
-        print(response.entities_and_metadata)
+        print(response.entities)
         ```
         
         **Possible Output:**
         ```text
-        Apple Unveils iPhone 14
-        ['Introduction', 'Key Features', "CEO's Statement"]
-        [{'entity': 'Apple Inc.', 'type': 'Organization'}, {'entity': 'iPhone 14', 'type': 'Product'}, {'entity': 'Tim Cook', 'type': 'Person'}]
+        Apple Inc. Announces iPhone 14
+        ['Introduction', "CEO's Statement", 'New Features']
+        [{'name': 'Apple Inc.', 'type': 'Organization'}, {'name': 'iPhone 14', 'type': 'Product'}, {'name': 'Tim Cook', 'type': 'Person'}]
         ```
 
     === "Agents"
@@ -256,13 +264,12 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
 
-        def search(query: str) -> list[str]:
-            """Retrieves abstracts from Wikipedia."""
+        def search_wikipedia(query: str) -> list[str]:
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
             return [x['text'] for x in results]
 
         trainset = [x.with_inputs('question') for x in HotPotQA(train_seed=2024, train_size=500).train]
-        react = dspy.ReAct("question -> answer", tools=[search])
+        react = dspy.ReAct("question -> answer", tools=[search_wikipedia])
 
         tp = dspy.MIPROv2(metric=dspy.evaluate.answer_exact_match, auto="light", num_threads=24)
         optimized_react = tp.compile(react, trainset=trainset)
@@ -280,7 +287,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
                 self.respond = dspy.ChainOfThought('context, question -> response')
 
             def forward(self, question):
-                context = search(question, k=self.num_docs)   # not defined in this snippet, see link above
+                context = search(question, k=self.num_docs)   # defined in tutorial linked below
                 return self.respond(context=context, question=question)
 
         tp = dspy.MIPROv2(metric=dspy.evaluate.SemanticF1(), auto="medium", num_threads=24)
