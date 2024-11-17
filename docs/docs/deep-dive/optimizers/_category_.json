@@ -1,8 +1,0 @@
-{
-    "label": "Optimizers",
-    "position": 7,
-    "link": {
-      "type": "generated-index",
-      "description": "Optimizers are powerful constructs (included in DSPy) that can learn to bootstrap and select effective prompts for the modules of any program."
-    }
-}
