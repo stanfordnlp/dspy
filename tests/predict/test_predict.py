@@ -1,5 +1,4 @@
 import copy
-import textwrap
 
 import pydantic
 import ujson
@@ -126,9 +125,11 @@ def test_typed_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
+
 def test_signature_fields_after_dump_and_load_state(tmp_path):
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
+
         sentence = dspy.InputField(desc="I am an innocent input!")
         sentiment = dspy.OutputField()
 
@@ -138,6 +139,7 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
 
     class CustomSignature2(dspy.Signature):
         """I am not a pure instruction."""
+
         sentence = dspy.InputField(desc="I am a malicious input!")
         sentiment = dspy.OutputField(desc="I am a malicious output!", prefix="I am a prefix!")
 
@@ -218,3 +220,41 @@ def test_output_only():
     lm = DummyLM([{"output": "short answer"}])
     dspy.settings.configure(lm=lm)
     assert predictor().output == "short answer"
+
+
+def test_chainable_load(tmp_path):
+    """Test both traditional and chainable load methods."""
+
+    file_path = tmp_path / "test_chainable.json"
+
+    original = Predict("question -> answer")
+    original.demos = [{"question": "test", "answer": "response"}]
+    original.save(file_path)
+
+    traditional = Predict("question -> answer")
+    traditional.load(file_path)
+    assert traditional.demos == original.demos
+
+    chainable = Predict("question -> answer").load(file_path, return_self=True)
+    assert chainable is not None
+    assert chainable.demos == original.demos
+
+    assert chainable.signature.dump_state() == original.signature.dump_state()
+
+    result = Predict("question -> answer").load(file_path)
+    assert result is None
+
+
+def test_load_state_chaining():
+    """Test that load_state returns self for chaining."""
+    original = Predict("question -> answer")
+    original.demos = [{"question": "test", "answer": "response"}]
+    state = original.dump_state()
+
+    new_instance = Predict("question -> answer").load_state(state)
+    assert new_instance is not None
+    assert new_instance.demos == original.demos
+
+    legacy_instance = Predict("question -> answer").load_state(state, use_legacy_loading=True)
+    assert legacy_instance is not None
+    assert legacy_instance.demos == original.demos

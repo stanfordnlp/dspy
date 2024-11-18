@@ -4,6 +4,9 @@ sidebar_position: 2
 
 # Program of Thought
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Background
 
 DSPy supports the Program of Thought (PoT) prompting technique, integrating an advanced module capable of problem-solving with program execution capabilities. PoT builds upon Chain of Thought by translating reasoning steps into executable programming language statements through iterative refinement. This enhances the accuracy of the output and self-corrects errors within the generated code. Upon completing these iterations, PoT delegates execution to a program interpreter. Currently, this class supports the generation and execution of Python code.

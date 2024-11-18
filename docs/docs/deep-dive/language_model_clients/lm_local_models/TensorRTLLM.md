@@ -1,5 +1,7 @@
 # TensorRTModel
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
 TensorRT LLM by Nvidia happens to be one of the most optimized inference engines to run open-source Large Language Models locally or in production.
 
 ### Prerequisites

@@ -2,6 +2,7 @@
 sidebar_position: 1
 ---
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
 
 # Examples in DSPy
 

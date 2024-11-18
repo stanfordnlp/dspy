@@ -155,7 +155,7 @@ def knn(
 
     Args:
         train: a bunch of questions to put in index & search later
-        cast: function that contructs text before vectorization. By default,
+        cast: function that constructs text before vectorization. By default,
             it uses only question. Check `cast_naive_get_question_and_answer` for more details.
         n_probe: number of closest IVF-clusters to check for neighbours.
             Doesn't affect bruteforce-based search.

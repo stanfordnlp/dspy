@@ -72,7 +72,7 @@ def test_retry_forward_with_typed_predictor():
     dspy.settings.configure(lm=lm, trace=[])
 
     class AnswerQuestion(dspy.Signature):
-        """Answer questions with succint responses."""
+        """Answer questions with succinct responses."""
 
         class Input(pydantic.BaseModel):
             question: str

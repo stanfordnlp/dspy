@@ -1,5 +1,8 @@
 # dspy.Predict
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Constructor
 
 The constructor initializes the `Predict` class and sets up its attributes, taking in the `signature` and additional config options. If the `signature` is a string, it processes the input and output fields, generates instructions, and creates a template for the specified `signature` type.
@@ -46,7 +49,7 @@ class Predict(Parameter):
 
 This method serves as a wrapper for the `forward` method. It allows making predictions using the `Predict` class by providing keyword arguments.
 
-**Paramters:**
+**Parameters:**
 - `**kwargs`: Keyword arguments required for prediction.
 
 **Returns:**

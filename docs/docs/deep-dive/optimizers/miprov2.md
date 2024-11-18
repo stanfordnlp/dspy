@@ -4,6 +4,9 @@ sidebar_position: 6
 
 # `MIPROv2` Optimizer
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Overview
 
 `MIPROv2` (<u>M</u>ultiprompt <u>I</u>nstruction <u>PR</u>oposal <u>O</u>ptimizer Version 2) is an prompt optimizer capable of optimizing both instructions and few-shot examples jointly. It does this by bootstrapping few-shot example candidates, proposing instructions grounded in different dynamics of the task, and finding an optimized combination of these options using Bayesian Optimization. It can be used for optimizing few-shot examples & instructions jointly, or just instructions for 0-shot optimization.
@@ -12,7 +15,7 @@ sidebar_position: 6
 
 ### Setting up a Sample Pipeline
 
-We'll be making a basic answer generation pipeline over GSM8K dataset that we saw in the [Minimal Example](/quick-start/minimal-example), we won't be changing anything in it! So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
+We'll be making a basic answer generation pipeline over the GSM8K dataset. So let's start by configuring the LM which will be OpenAI LM client with `gpt-3.5-turbo` as the LLM in use.
 
 ```python
 import dspy
@@ -88,7 +91,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -119,7 +122,7 @@ zeroshot_optimized_program = teleprompter.compile(
 zeroshot_optimized_program.save(f"mipro_zeroshot_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(zeroshot_optimized_program, devset=devset[:])
 ```
 
@@ -156,7 +159,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -170,7 +173,7 @@ evaluate(optimized_program, devset=devset[:])
 | `prompt_model`     | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for prompt generation.                                                                                            |
 | `task_model`       | `dspy.LM`       | LM specified in `dspy.settings`                        | Model used for task execution.                                                                                               |
 | `auto`       | `Optional[str]`       | None                        | If set to `light`, `medium`, or `heavy`, this will automatically configure the following hyperparameters: `num_candidates`, `num_trials`, `minibatch`, and will also cap the size of `valset` up to 100, 300, and 1000 for `light`, `medium`, and `heavy` runs respectively.                                                            |
-| `num_candidates`   | `int`      | `10`                                                   | Number of candidate instructions & few-shot examples to generate and evaluate for each predictor. If `num_candidates=10`, this means for a 2 module LM program we'll be optimizing over 10 candidates x 2 modules x 2 variables (few-shot ex. and instructions for each module)= 40 total variables. Therfore, if we increase `num_candidates`, we will probably want to increase `num_trials` as well (see Compile parameters).                                                                          |
+| `num_candidates`   | `int`      | `10`                                                   | Number of candidate instructions & few-shot examples to generate and evaluate for each predictor. If `num_candidates=10`, this means for a 2 module LM program we'll be optimizing over 10 candidates x 2 modules x 2 variables (few-shot ex. and instructions for each module)= 40 total variables. Therefore, if we increase `num_candidates`, we will probably want to increase `num_trials` as well (see Compile parameters).                                                                          |
 | `num_threads`      | `int`      |  `6`                                       | Threads to use for evaluation.                                                                                               |
 | `max_errors`       | `int`      | `10`                                                 | Maximum errors during an evaluation run that can be made before throwing an Exception.                                       |
 | `teacher_settings` | `dict`       | `{}`                                                 | Settings to use for the teacher model that bootstraps few-shot examples. An example dict would be `{lm=<dspy.LM object>}`. If your LM program with your default model is struggling to bootstrap any examples, it could be worth using a more powerful teacher model for bootstrapping.                                                     |

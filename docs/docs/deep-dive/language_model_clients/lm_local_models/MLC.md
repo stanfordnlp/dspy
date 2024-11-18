@@ -1,5 +1,8 @@
 # ChatModuleClient
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 ## Prerequisites
 
 1. Install the required packages using the following commands:
