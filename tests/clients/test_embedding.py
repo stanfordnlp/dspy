@@ -51,14 +51,14 @@ def test_callable_embedding():
         return expected_embeddings
 
     # Create embedding instance with callable
-    embedding = Embedder(mock_embedding_fn)
+    embedding = Embedder(embedding_function=mock_embedding_fn)
     result = embedding(inputs)
 
     np.testing.assert_allclose(result, expected_embeddings)
 
 
 def test_invalid_model_type():
-    # Test that invalid model type raises ValueError
-    with pytest.raises(ValueError):
-        embedding = Embedder(123)  # Invalid model type
+    # Test that invalid model type raises ExceptionError from LiteLLM (default embedding_function)
+    with pytest.raises(Exception) as exc_info:
+        embedding = Embedder(embedding_model=123)
         embedding(["test"])
