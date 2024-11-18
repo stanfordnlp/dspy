@@ -48,7 +48,6 @@ class Image(pydantic.BaseModel):
 
     @pydantic.model_serializer()
     def serialize_model(self):
-        print("serializing")
         return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
 
     def __repr__(self):
