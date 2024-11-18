@@ -1,10 +1,9 @@
 import logging
-import tqdm
 import types
-from typing import Any, Union
+from typing import Any
 
 import pandas as pd
-
+import tqdm
 
 import dspy
 from dspy.utils.parallelizer import ParallelExecutor
@@ -14,7 +13,7 @@ try:
     from IPython.display import display as display
 
 except ImportError:
-    
+
     def display(obj: Any):
         """
         Display the specified Python object in the console.
@@ -41,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
+
 class Evaluate:
     def __init__(
         self,
@@ -65,7 +65,6 @@ class Evaluate:
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-
 
     def __call__(
         self,
@@ -131,6 +130,8 @@ class Evaluate:
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
         def prediction_is_dictlike(prediction):
+            # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
+            # having a method called `items()` for iterating through key/value pairs
             return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
 
         data = [
@@ -185,62 +186,6 @@ class Evaluate:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
-
-
-def display_results(metric, predicted_devset, row_limit: Optional[int]):
-    def prediction_is_dictlike(prediction):
-        return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
-
-    data = [
-        (
-            merge_dicts(example, prediction) | {"correct": score}
-            if prediction_is_dictlike(prediction)
-            else dict(example) | {"prediction": prediction, "correct": score}
-        )
-        for _, example, prediction, score in predicted_devset
-    ]
-
-    result_df = pd.DataFrame(data)
-
-    # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
-    result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
-
-    # Rename the 'correct' column to the name of the metric object
-    metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-    result_df = result_df.rename(columns={"correct": metric_name})
-
-    #
-    # if isinstance(display_table, bool):
-    #     df_to_display = result_df.copy()
-    #     truncated_rows = 0
-    # else:
-    #     df_to_display = result_df.head(display_table).copy()
-    #     truncated_rows = len(result_df) - display_table
-
-    if row_limit is not None:
-        df_to_display = result_df.head(row_limit).copy()
-        truncated_rows = len(result_df) - row_limit
-    else:
-        df_to_display = result_df.copy()
-        truncated_rows = 0
-
-    df_to_display = stylize_metric_name(df_to_display, metric_name)
-
-    display_dataframe(df_to_display)
-
-    if truncated_rows > 0:
-        # Simplified message about the truncated rows
-        message = f"""
-        <div style='
-            text-align: center;
-            font-size: 16px;
-            font-weight: bold;
-            color: #555;
-            margin: 10px 0;'>
-            ... {truncated_rows} more rows not displayed ...
-        </div>
-        """
-        display(HTML(message))
 
 
 def merge_dicts(d1, d2) -> dict:
