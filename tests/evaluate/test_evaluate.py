@@ -124,7 +124,7 @@ def test_evaluate_call_bad():
     "program_with_example",
     [
         (Predict("question -> answer"), new_example("What is 1+1?", "2")),
-        # Create programs that extracts entities from text and return them as a list,
+        # Create programs that extract entities from text and return them as a list,
         # rather than returning a Predictor() wrapper. This is done intentionally to test
         # cases where the program does not output a dictionary-like object because
         # Evaluate() has failed for such cases in the past
