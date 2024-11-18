@@ -8,7 +8,6 @@ import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
-from dspy.functional import TypedPredictor
 from dspy.predict import Predict
 from dspy.utils.dummies import DummyLM
 
@@ -125,13 +124,21 @@ def test_evaluate_call_bad():
     "program_with_example",
     [
         (Predict("question -> answer"), new_example("What is 1+1?", "2")),
+        # Create programs that do not return dictionary-like objects because Evaluate()
+        # has failed for such cases in the past
         (
-            # Create a program that extracts entities from text and returns them as a list,
-            # rather than returning a Predictor() wrapper. This is done intentionally to test
-            # the case where the program does not output a dictionary-like object because
-            # Evaluate() has failed for this case in the past
-            lambda text: TypedPredictor("text: str -> entities: List[str]")(text=text).entities,
+            lambda text: Predict("text: str -> entities: List[str]")(text=text).entities,
             dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
+        ),
+        (
+            lambda text: Predict("text: str -> entities: List[Dict[str, str]]")(text=text).entities,
+            dspy.Example(text="United States", entities=[{"name": "United States", "type": "location"}]).with_inputs(
+                "text"
+            ),
+        ),
+        (
+            lambda text: Predict("text: str -> first_word: Tuple[str, int]")(text=text).words,
+            dspy.Example(text="United States", first_word=("United", 6)).with_inputs("text"),
         ),
     ],
 )

@@ -1,10 +1,9 @@
 import logging
-import tqdm
 import types
 from typing import Any
 
 import pandas as pd
-
+import tqdm
 
 import dspy
 from dspy.utils.parallelizer import ParallelExecutor
@@ -14,7 +13,7 @@ try:
     from IPython.display import display as display
 
 except ImportError:
-    
+
     def display(obj: Any):
         """
         Display the specified Python object in the console.
@@ -41,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
+
 class Evaluate:
     def __init__(
         self,
@@ -65,7 +65,6 @@ class Evaluate:
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-
 
     def __call__(
         self,
@@ -131,11 +130,9 @@ class Evaluate:
             results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
 
         def prediction_is_dictlike(prediction):
-            try:
-                dict(prediction)
-                return True
-            except Exception:
-                return False
+            # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
+            # having a method called `items()` for iterating through key/value pairs
+            return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
 
         data = [
             (
