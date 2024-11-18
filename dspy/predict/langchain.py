@@ -93,7 +93,7 @@ class LangChainPredict(Predict, Runnable, metaclass=LangChainPredictMetaClass):
     def forward(self, **kwargs):
         # Extract the three privileged keyword arguments.
         signature = kwargs.pop("signature", self.signature)
-        demos = kwargs.pop("demos", self.demos)
+        demos = kwargs.pop("demos", None) or self.load_demos(**kwargs)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         prompt = signature(dsp.Example(demos=demos, **kwargs))

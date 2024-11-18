@@ -53,7 +53,6 @@ class Retry(Predict):
     def __call__(self, **kwargs):
         copy.deepcopy(kwargs)
         kwargs["_trace"] = False
-        kwargs.setdefault("demos", self.demos if self.demos is not None else [])
 
         # perform backtracking
         if dspy.settings.backtrack_to == self:
