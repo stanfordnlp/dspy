@@ -1,5 +1,5 @@
 import types
-from typing import List, Optional
+from typing import List
 
 import dsp
 from dspy.predict.knn import KNN
@@ -9,7 +9,7 @@ from .teleprompt import Teleprompter
 
 
 class KNNFewShot(Teleprompter):
-    def __init__(self, k: int, trainset: List[dsp.Example], vectorizer: Optional[dsp.BaseSentenceVectorizer] = None, **few_shot_bootstrap_args):
+    def __init__(self, k: int, trainset: List[dsp.Example], vectorizer=None, **few_shot_bootstrap_args):
         self.KNN = KNN(k, trainset, vectorizer=vectorizer)
         self.few_shot_bootstrap_args = few_shot_bootstrap_args
 
