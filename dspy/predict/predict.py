@@ -1,7 +1,6 @@
 import logging
 import random
 from functools import lru_cache
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -191,7 +190,7 @@ class Predict(Module, Parameter):
         import dspy
 
         if hasattr(self, "knn"):
-            demos = self.knn(**inputs)
+            demos += self.knn(**inputs)
 
         if isinstance(lm, dspy.LM):
             completions = v2_5_generate(lm, config, signature, demos, inputs, _parse_values=self._parse_values)
