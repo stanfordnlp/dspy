@@ -1,28 +1,32 @@
-from typing import Any, Union, Optional
-import dspy
+from typing import Any, Union, Optional, List
+from dspy.retriever import Retriever
 from dsp.utils import dotdict
 import requests
 import functools
 
-class ColBERTv2(dspy.Retriever):
+class ColBERTv2(Retriever):
     """
     ColBERTv2 Retriever for retrieval of top-k most relevant text passages for given query.
 
     Args:
-        post_requests (bool): Determines if POST requests should be used 
-                              instead of GET requests for querying the server.
-        url (str): URL endpoint for ColBERTv2 server
+        url (str): Base URL endpoint for the ColBERTv2 server.
+        port (Union[str, int], optional): Port number for server. Appended to URL if provided.
+        post_requests (bool, optional): Determines if POST requests should be used instead of GET requests for querying the server. Defaults to False.
+        k (int, optional): Number of top passages to retrieve. Defaults to 10.
+        callbacks (Optional[List[Any]]): List of callback functions to be called during retrieval.
+        cache (bool, optional): Enable retrieval caching. Disabled by default.
+        
 
     Returns:
         An object containing the retrieved passages.
 
     Example:
-        from dspy.retriever.colbertv2_retriever import ColBERTv2
-        results = ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=5).passages
+        import dspy
+        results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=10).passages
         print(results)
     """
-    def __init__(self, url: str = "http://0.0.0.0", port: Optional[Union[str, int]] = None, post_requests: bool = False):
-        super().__init__(embedder=None)
+    def __init__(self, url: str = "http://0.0.0.0", port: Optional[Union[str, int]] = None, post_requests: bool = False, k: int = 10, callbacks: Optional[List[Any]] = None, cache: bool = False):
+        super().__init__(embedder=None, k=k, callbacks=callbacks, cache=cache)
         self.post_requests = post_requests
         self.url = f"{url}:{port}" if port else url
 

@@ -5,21 +5,21 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-import dspy
+from dspy.retriever import Retriever
 from dspy.primitives.prediction import Prediction
-from dspy.clients.embedding import Embedder
+from dspy.clients.embedding import Embedding
 
 _databricks_sdk_installed = find_spec("databricks.sdk") is not None
 
 
-class DatabricksRetriever(dspy.Retriever):
+class Databricks(Retriever):
     """
     A retriever module that uses a Databricks Mosaic AI Vector Search Index to return the top-k
     embeddings for a given query.
 
     Examples:
         Below is a code snippet that shows how to set up a Databricks Vector Search Index
-        and configure a DatabricksRetriever module to query the index.
+        and configure a Databricks retriever module to query the index.
 
         (example adapted from "Databricks: How to create and query a Vector Search Index:
         https://docs.databricks.com/en/generative-ai/create-query-vector-search.html#create-a-vector-search-index)
@@ -49,11 +49,11 @@ class DatabricksRetriever(dspy.Retriever):
             }
         )
 
-        # Create a DatabricksRetriever module to query the Databricks Direct Access Vector
+        # Create a Databricks retriever module to query the Databricks Direct Access Vector
         # Search Index
-        from dspy.retriever.databricks_retriever import DatabricksRetriever
+        from dspy.retriever.databricks import Databricks
         
-        retriever = DatabricksRetriever(
+        retriever = Databricks(
             databricks_index_name = "your_index_name",
             docs_id_column_name="id",
             text_column_name="field2",
@@ -62,7 +62,7 @@ class DatabricksRetriever(dspy.Retriever):
         ```
 
         Below is a code snippet that shows how to query the Databricks Direct Access Vector
-        Search Index using the DatabricksRetriever module:
+        Search Index using the Databricks retriever module:
 
         ```python
         retrieved_results = retriever(query="Example query text")
@@ -80,8 +80,9 @@ class DatabricksRetriever(dspy.Retriever):
         k: int = 3,
         docs_id_column_name: str = "id",
         text_column_name: str = "text",
-        embedder: Optional[Embedder] = None,
+        embedder: Optional[Embedding] = None,
         callbacks: Optional[List[Any]] = None,
+        cache: bool = False,
     ):
         """
         Args:
@@ -102,16 +103,16 @@ class DatabricksRetriever(dspy.Retriever):
                 less than 5, and ``{"id >=": 5, "id <": 10}`` selects records that have an ``id``
                 column value greater than or equal to 5 and less than 10.
             query_type (str): The type of search query to perform. Must be 'ANN', 'HYBRID', or 'VECTOR'.
-            k (int): The number of documents to retrieve.
+            k (int): The number of documents to retrieve. Defaults to 3
             docs_id_column_name (str): The name of the column in the Databricks Vector Search Index
                 containing document IDs.
             text_column_name (str): The name of the column in the Databricks Vector Search Index
                 containing document text to retrieve.
-            embedder (Optional[Embedder]): An embedder to convert query text to vectors when
-                using 'VECTOR' query_type.
-            callbacks (Optional[List[Any]]): A list of callback functions.
+            embedder (Optional[Embedding]): An embedder to convert query text to vectors when using 'VECTOR' query_type.
+            callbacks (Optional[List[Any]]): List of callback functions.
+            cache (bool, optional): Enable retrieval caching. Disabled by default.
         """
-        super().__init__(embedder=embedder, k=k, callbacks=callbacks)
+        super().__init__(embedder=embedder, k=k, callbacks=callbacks, cache=cache)
         self.databricks_token = databricks_token if databricks_token is not None else os.environ.get("DATABRICKS_TOKEN")
         self.databricks_endpoint = (
             databricks_endpoint if databricks_endpoint is not None else os.environ.get("DATABRICKS_HOST")
@@ -161,7 +162,7 @@ class DatabricksRetriever(dspy.Retriever):
             }
         return extra_columns
 
-    def forward(self, query: str, k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query: str, k: Optional[int] = None) -> Prediction:
         """
         Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
         specified query.

@@ -6,8 +6,8 @@ Author: Dhar Rawal (@drawal1)
 
 from typing import List, Optional, Any, Union
 
-import dspy
-from dspy import Embedder
+from dspy.retriever import Retriever
+from dspy.clients.embedding import Embedding
 from dspy.primitives.prediction import Prediction
 from dsp.utils import dotdict
 
@@ -18,11 +18,11 @@ except ImportError:
 
 if pinecone is None:
     raise ImportError(
-        "The pinecone library is required to use PineconeRetriever. Install it with `pip install dspy-ai[pinecone]`",
+        "The pinecone library is required to use Pinecone. Install it with `pip install dspy-ai[pinecone]`",
     )
 
 
-class PineconeRetriever(dspy.Retriever):
+class Pinecone(Retriever):
     """
     A retrieval module that uses Pinecone to return the top passages for a given query or list of queries.
 
@@ -33,23 +33,24 @@ class PineconeRetriever(dspy.Retriever):
         pinecone_index_name (str): The name of the Pinecone index to query against.
         pinecone_api_key (str, optional): The Pinecone API key. Defaults to None.
         pinecone_env (str, optional): The Pinecone environment. Defaults to None.
-        embedder (dspy.Embedder): An instance of `dspy.Embedder` to compute embeddings.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
-        callbacks (Optional[List[Any]]): A list of callback functions.
+        embedder (dspy.Embedding): An instance of `dspy.Embedding` to compute embeddings.
+        k (int, optional): Number of top passages to retrieve. Defaults to 5.
+        callbacks (Optional[List[Any]]): List of callback functions.
+        cache (bool, optional): Enable retrieval caching. Disabled by default.
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
 
     Examples:
-        Below is a code snippet that shows how to use this as the default retriever:
+        Below is a code snippet that shows how to use this retriever:
         ```python
         import dspy
-        from dspy.retriever.pinecone_retriever import PineconeRetriever
+        from dspy.retriever.pinecone import Pinecone
 
-        # Create an Embedder instance
-        embedder = dspy.Embedder(embedding_model="text-embedding-ada-002")
+        # Create an Embedding instance
+        embedder = dspy.Embedding(embedding_model="openai/text-embedding-3-small")
 
-        retriever = PineconeRetriever(
+        retriever = Pinecone(
             pinecone_index_name="<YOUR_INDEX_NAME>",
             pinecone_api_key="<YOUR_PINECONE_API_KEY>",
             pinecone_env="<YOUR_PINECONE_ENV>",
@@ -69,14 +70,15 @@ class PineconeRetriever(dspy.Retriever):
         pinecone_env: Optional[str] = None,
         dimension: Optional[int] = None,
         distance_metric: Optional[str] = None,
-        embedder: Embedder = None,
-        k: int = 3,
+        embedder: Embedding = None,
+        k: int = 5,
         callbacks: Optional[List[Any]] = None,
+        cache: bool = False,
     ):
-        if embedder is None or not isinstance(embedder, dspy.Embedder):
-            raise ValueError("An embedder of type `dspy.Embedder` must be provided.")
+        if embedder is None or not isinstance(embedder, Embedding):
+            raise ValueError("An embedder of type `dspy.Embedding` must be provided.")
         self.embedder = embedder
-        super().__init__(embedder=self.embedder, k=k, callbacks=callbacks)
+        super().__init__(embedder=self.embedder, k=k, callbacks=callbacks, cache=cache)
 
         self._pinecone_index = self._init_pinecone(
             index_name=pinecone_index_name,
@@ -131,7 +133,7 @@ class PineconeRetriever(dspy.Retriever):
 
         return pinecone.Index(index_name)
 
-    def forward(self, query: Union[str, List[str]], k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query: Union[str, List[str]], k: Optional[int] = None) -> Prediction:
         """Search with Pinecone for top k passages for the query or queries.
 
         Args:
@@ -176,3 +178,4 @@ class PineconeRetriever(dspy.Retriever):
             passage_scores.items(), key=lambda x: x[1], reverse=True,
         )[: self.k]
         return Prediction(passages=[dotdict({"long_text": passage}) for passage, _ in sorted_passages])
+    

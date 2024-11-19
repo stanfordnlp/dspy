@@ -18,9 +18,11 @@ def single_query_passage(passages):
         passages_dict["passages"] = passages_dict.pop("long_text")
     return Prediction(**passages_dict)
 
+logger = logging.getLogger(__name__)
+
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
-    logging.warning(msg)
+    logger.warning(msg)
 
 class Retrieve(Parameter):
     name = "Search"
@@ -29,7 +31,7 @@ class Retrieve(Parameter):
 
     def __init__(self, k=3, callbacks=None):
         warn_once(
-            "Existing retriever integrations under dspy/retrieve inheriting `dspy.Retrieve` are deprecated and will be removed in DSPy 2.6+. \n"
+            "Existing retriever integrations under dspy/retrieve inheriting `dspy.Retrieve` are deprecated and will be removed in the DSPy 2.7 release. \n"
             "For future retriever integrations, please use the `dspy.Retriever` interface under dspy/retriever/retriever.py and reference any of the custom integrations supported in dspy/retriever/"
         )
         self.stage = random.randbytes(8).hex()
@@ -113,7 +115,7 @@ class Retrieve(Parameter):
 # TODO: Consider doing Prediction.from_completions with the individual sets of passages (per query) too.
 
 
-#TODO potentially add for deprecation/removal in 2.6+
+#TODO potentially add for deprecation/removal in 2.7
 class RetrieveThenRerank(Parameter):
     name = "Search"
     input_variable = "query"

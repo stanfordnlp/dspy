@@ -8,8 +8,9 @@ from typing import List, Any, Optional
 
 import numpy as np
 
-import dspy
-from dspy import Embedder
+from dspy.retriever import Retriever
+from dspy.clients.embedding import Embedding
+from dspy.primitives.prediction import Prediction
 
 try:
     import faiss
@@ -25,12 +26,12 @@ if faiss is None:
 
 logger = logging.getLogger(__name__)
 
-class FaissRetriever(dspy.Retriever):
+class Faiss(Retriever):
     """A retrieval module that uses an in-memory Faiss index to return the top passages for a given query.
 
     Args:
         document_chunks: The input text chunks.
-        embedder: An instance of `dspy.Embedder` to compute embeddings.
+        embedder: An instance of `dspy.Embedding` to compute embeddings.
         k (int, optional): The number of top passages to retrieve. Defaults to 3.
 
     Returns:
@@ -41,16 +42,16 @@ class FaissRetriever(dspy.Retriever):
 
         ```python
         import dspy
-        from dspy.retriever.faiss_retriever import FaissRetriever
+        from dspy.retriever.faiss import Faiss
 
-        # Custom embedding function using SentenceTransformers and dspy.Embedder
+        # Custom embedding function using SentenceTransformers and dspy.Embedding
         def sentence_transformers_embedder(texts):
             #(pip install sentence-transformers)
             from sentence_transformers import SentenceTransformer
             model = SentenceTransformer('all-MiniLM-L6-v2')
             embeddings = model.encode(texts, batch_size=256, normalize_embeddings=True)
             return embeddings.tolist()
-        embedder = dspy.Embedder(embedding_function=sentence_transformers_embedder)
+        embedder = dspy.Embedding(embedding_model=sentence_transformers_embedder)
 
         document_chunks = [
             "The superbowl this year was played between the San Francisco 49ers and the Kansas City Chiefs",
@@ -65,7 +66,7 @@ class FaissRetriever(dspy.Retriever):
             "The interest rates for mortgages are considered to be very high in 2024",
         ]
 
-        retriever = FaissRetriever(document_chunks, embedder=embedder)
+        retriever = Faiss(document_chunks, embedder=embedder)
         results = retriever("I am in the mood for Chinese food").passages
         print(results)
         ```
@@ -74,24 +75,28 @@ class FaissRetriever(dspy.Retriever):
     def __init__(
         self,
         document_chunks: List[str],
-        embedder: Optional[Embedder] = None,
-        k: int = 3,
+        embedder: Embedding,
+        k: int = 5,
         callbacks: Optional[List[Any]] = None,
+        cache: bool = False,
     ):
         """Inits the faiss retriever.
 
         Args:
-            document_chunks: A list of input strings.
-            embedder: An instance of `dspy.Embedder` to compute embeddings.
-            k: Number of matches to return.
+            document_chunks (List[str]): A list of input strings.
+            embedder (dspy.Embedding): An instance of `dspy.Embedding` to compute embeddings.
+            k (int, optional): Number of passages to retrieve. Defaults to 5.
+            callbacks (Optional[List[Any]]): List of callback functions.
+            cache (bool, optional): Enable retrieval caching. Disabled by default.
         """
-        if embedder is not None and not isinstance(embedder, dspy.Embedder):
-            raise ValueError("If provided, the embedder must be of type `dspy.Embedder`.")
+        if embedder is not None and not isinstance(embedder, Embedding):
+            raise ValueError("If provided, the embedder must be of type `dspy.Embedding`.")
         self.embedder = embedder
+        super().__init__(embedder=self.embedder, k=k, callbacks=callbacks, cache=cache)
         embeddings = self.embedder(document_chunks)
         xb = np.array(embeddings)
         d = xb.shape[1]
-        logger.info(f"FaissRetriever: embedding size={d}")
+        logger.info(f"Faiss: embedding size={d}")
         if len(xb) < 100:
             self._faiss_index = faiss.IndexFlatL2(d)
             self._faiss_index.add(xb)
@@ -106,8 +111,6 @@ class FaissRetriever(dspy.Retriever):
         logger.info(f"{self._faiss_index.ntotal} vectors in faiss index")
         self._document_chunks = document_chunks  # Save the input document chunks
 
-        super().__init__(embedder=self.embedder, k=k, callbacks=callbacks)
-
     def _dump_raw_results(self, queries, index_list, distance_list) -> None:
         for i in range(len(queries)):
             indices = index_list[i]
@@ -119,7 +122,7 @@ class FaissRetriever(dspy.Retriever):
                 )
         return
 
-    def forward(self, query: str, k: Optional[int] = None, **kwargs) -> dspy.Prediction:
+    def forward(self, query: str, k: Optional[int] = None, **kwargs) -> Prediction:
         """Search the faiss index for k or self.k top passages for query.
 
         Args:
@@ -135,4 +138,4 @@ class FaissRetriever(dspy.Retriever):
         # self._dump_raw_results([query], index_list, distance_list)
         passages = [self._document_chunks[ind] for ind in index_list[0]]
         doc_ids = [ind for ind in index_list[0]]
-        return dspy.Prediction(passages=passages, doc_ids=doc_ids)
+        return Prediction(passages=passages, doc_ids=doc_ids)

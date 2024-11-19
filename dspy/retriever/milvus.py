@@ -4,17 +4,18 @@ Retriever model for Milvus or Zilliz Cloud
 
 from typing import List, Optional, Any
 
-import dspy
-from dspy import Embedder
+from dspy.retriever import Retriever
+from dspy.clients.embedding import Embedding
+from dspy.primitives.prediction import Prediction
 
 try:
     from pymilvus import MilvusClient
 except ImportError:
     raise ImportError(
-        "The pymilvus library is required to use MilvusRetriever. Install it with `pip install dspy-ai[milvus]`",
+        "The pymilvus library is required to use Milvus. Install it with `pip install dspy-ai[milvus]`",
     )
 
-class MilvusRetriever(dspy.Retriever):
+class Milvus(Retriever):
     """
     A retrieval module that uses Milvus to return passages for a given query.
 
@@ -26,9 +27,10 @@ class MilvusRetriever(dspy.Retriever):
         uri (str, optional): The Milvus connection URI. Defaults to "http://localhost:19530".
         token (str, optional): The Milvus connection token. Defaults to None.
         db_name (str, optional): The Milvus database name. Defaults to "default".
-        embedder (dspy.Embedder): An instance of `dspy.Embedder` to compute embeddings.
-        k (int, optional): The number of top passages to retrieve. Defaults to 3.
-        callbacks (Optional[List[Any]]): A list of callback functions.
+        embedder (dspy.Embedding): An instance of `dspy.Embedding` to compute embeddings.
+        k (int, optional): Number of top passages to retrieve. Defaults to 5.
+        callbacks (Optional[List[Any]]): List of callback functions.
+        cache (bool, optional): Enable retrieval caching. Disabled by default.
 
     Returns:
         dspy.Prediction: An object containing the retrieved passages.
@@ -37,12 +39,12 @@ class MilvusRetriever(dspy.Retriever):
         Below is a code snippet that shows how to use this as the default retriever:
         ```python
         import dspy
-        from dspy.retriever.milvus_retriever import MilvusRetriever
+        from dspy.retriever.milvus import Milvus
 
-        # Create an Embedder instance
-        embedder = dspy.Embedder(embedding_model="text-embedding-ada-002")
+        # Create an Embedding instance
+        embedder = dspy.Embedding(embedding_model="openai/text-embedding-3-small")
 
-        retriever = MilvusRetriever(
+        retriever = Milvus(
             collection_name="<YOUR_COLLECTION_NAME>",
             uri="<YOUR_MILVUS_URI>",
             token="<YOUR_MILVUS_TOKEN>",
@@ -57,16 +59,17 @@ class MilvusRetriever(dspy.Retriever):
     def __init__(
         self,
         collection_name: str,
-        uri: Optional[str] = "http://localhost:19530",
+        uri: str = "http://localhost:19530",
         token: Optional[str] = None,
-        db_name: Optional[str] = "default",
-        embedder: Embedder = None,
-        k: int = 3,
+        db_name: str = "default",
+        embedder: Embedding = None,
+        k: int = 5,
         callbacks: Optional[List[Any]] = None,
+        cache: bool = False,
     ):
-        if embedder is not None and not isinstance(embedder, dspy.Embedder):
-            raise ValueError("If provided, the embedder must be of type `dspy.Embedder`.")
-        super().__init__(embedder=embedder, k=k, callbacks=callbacks)
+        if embedder is not None and not isinstance(embedder, Embedding):
+            raise ValueError("If provided, the embedder must be of type `dspy.Embedding`.")
+        super().__init__(embedder=embedder, k=k, callbacks=callbacks, cache=cache)
 
         self.milvus_client = MilvusClient(uri=uri, token=token, db_name=db_name)
 
@@ -75,7 +78,7 @@ class MilvusRetriever(dspy.Retriever):
             raise AttributeError(f"Milvus collection not found: {collection_name}")
         self.collection_name = collection_name
 
-    def forward(self, query: str, k: Optional[int] = None) -> dspy.Prediction:
+    def forward(self, query: str, k: Optional[int] = None) -> Prediction:
         """
         Retrieve passages from Milvus that are relevant to the specified query.
 
@@ -112,4 +115,5 @@ class MilvusRetriever(dspy.Retriever):
         doc_ids = [x[1] for x in sorted_results]
         distances = [x[2] for x in sorted_results]
 
-        return dspy.Prediction(passages=passages, doc_ids=doc_ids, scores=distances)
+        return Prediction(passages=passages, doc_ids=doc_ids, scores=distances)
+    
