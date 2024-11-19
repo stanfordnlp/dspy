@@ -1,8 +1,9 @@
 import logging
 import random
 import threading
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
+import numpy as np
 import tqdm
 
 import dspy
@@ -33,12 +34,13 @@ from .vanilla import LabeledFewShot
 
 logger = logging.getLogger(__name__)
 
+
 class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict]=None,
+        teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -51,7 +53,7 @@ class BootstrapFewShot(Teleprompter):
         Parameters
         ----------
         metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison. 
+            A function that compares an expected value and predicted value, outputting the result of that comparison.
         metric_threshold: optional float, default `None`
             If the metric yields a numerical value, then check it against this threshold when
             deciding whether or not to accept a bootstrap example.
@@ -118,9 +120,10 @@ class BootstrapFewShot(Teleprompter):
             if hasattr(predictor1.signature, "equals"):
                 assert predictor1.signature.equals(
                     predictor2.signature,
-                ), (f"Student and teacher must have the same signatures. "
+                ), (
+                    f"Student and teacher must have the same signatures. "
                     f"{type(predictor1.signature)} != {type(predictor2.signature)}"
-                    )
+                )
             else:
                 # fallback in case if .equals is not implemented (e.g. dsp.Prompt)
                 assert predictor1.signature == predictor2.signature, (
@@ -150,7 +153,8 @@ class BootstrapFewShot(Teleprompter):
         self.name2traces = {name: [] for name in self.name2predictor}
 
         for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-            if len(bootstrapped) >= max_bootstraps: break
+            if len(bootstrapped) >= max_bootstraps:
+                break
 
             for round_idx in range(self.max_rounds):
                 bootstrap_attempts += 1
@@ -176,7 +180,7 @@ class BootstrapFewShot(Teleprompter):
         # score = evaluate(self.metric, display_table=False, display_progress=True)
 
     def _bootstrap_one_example(self, example, round_idx=0):
-        name2traces = {} #self.name2traces
+        name2traces = {}  # self.name2traces
         teacher = self.teacher  # .deepcopy()
         predictor_cache = {}
 
@@ -217,7 +221,7 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = dspy.Example(augmented=True, **inputs, **outputs)
+                demo = dspy.Example(augmented=True, **inputs, **outputs).with_inputs(*list(inputs.keys()))
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
@@ -236,10 +240,11 @@ class BootstrapFewShot(Teleprompter):
 
                 name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
-        
+
             # Update the traces
             for name, demos in name2traces.items():
                 from datasets.fingerprint import Hasher
+
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
@@ -265,5 +270,43 @@ class BootstrapFewShot(Teleprompter):
                 predictor.demos = raw_demos + augmented_demos
             else:
                 predictor.demos = augmented_demos + raw_demos
+
+        return self.student
+
+
+class BootstrapKNN(BootstrapFewShot):
+    def __init__(
+        self,
+        embedding: Optional[Callable[[list[str]], np.ndarray]] = None,  # dspy.Embedding
+        k: int = 16,
+        metric=None,
+        metric_threshold=None,
+        teacher_settings: Optional[Dict] = None,
+        max_bootstrapped_demos=10_000,  # fill the predictor .demos
+        teacher_labeled_demos=16,  # for the teacher model only
+        max_rounds=1,
+        max_errors=2000,
+    ):
+        super().__init__(
+            metric=metric,
+            metric_threshold=metric_threshold,
+            teacher_settings=teacher_settings,
+            max_bootstrapped_demos=max_bootstrapped_demos,
+            max_labeled_demos=teacher_labeled_demos,
+            max_rounds=max_rounds,
+            max_errors=max_errors,
+        )
+        self.k = k
+        self.embedding = embedding
+
+    def _train(self):
+        for name, predictor in self.student.named_predictors():
+            predictor.demos = self.name2traces[name][: self.max_bootstrapped_demos]
+            # TODO: Make this dump/load-able
+            predictor.knn = dspy.KNN(
+                k=self.k,
+                trainset=predictor.demos,
+                vectorizer=self.embedding,
+            )
 
         return self.student
