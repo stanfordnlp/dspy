@@ -3,6 +3,8 @@ from typing import List, Optional
 
 import numpy as np
 import openai
+import math
+import requests
 
 
 class BaseSentenceVectorizer(abc.ABC):
@@ -209,7 +211,7 @@ class OpenAIVectorizer(BaseSentenceVectorizer):
 
 
 class FastEmbedVectorizer(BaseSentenceVectorizer):
-    """Sentence vectorizer implementaion using FastEmbed - https://qdrant.github.io/fastembed."""
+    """Sentence vectorizer implementation using FastEmbed - https://qdrant.github.io/fastembed."""
 
     def __init__(
         self,
@@ -305,4 +307,55 @@ class PremAIVectorizer(BaseSentenceVectorizer):
             embedding_list.extend(current_batch_embeddings)
 
         embeddings = np.array(embedding_list, dtype=np.float32)
+        return embeddings
+
+
+class TEIVectorizer(BaseSentenceVectorizer):
+    """The TEIVectorizer class utilizes the TEI(Text Embeddings Inference) Embeddings API to
+    convert text into embeddings.
+
+    For detailed information on the supported models, visit: https://github.com/huggingface/text-embeddings-inference.
+
+    `model` is embedding model name.
+    `embed_batch_size` is the maximum batch size for a single request.
+    `api_key` request authorization.
+    `api_url` custom inference endpoint url.
+
+    To learn more about getting started with TEI, visit: https://github.com/huggingface/text-embeddings-inference.
+    """
+
+    def __init__(
+        self,
+        model: Optional[str] = "bge-base-en-v1.5",
+        embed_batch_size: int = 256,
+        api_key: Optional[str] = None,
+        api_url: str = "",
+    ):
+        self.model = model
+        self.embed_batch_size = embed_batch_size
+        self.api_key = api_key
+        self.api_url = api_url
+
+    @property
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def __call__(self, inp_examples: List["Example"]) -> np.ndarray:
+        text_to_vectorize = self._extract_text_from_examples(inp_examples)
+        embeddings_list = []
+
+        n = math.ceil(len(text_to_vectorize) / self.embed_batch_size)
+        for i in range(n):
+            response = requests.post(
+                self.api_url,
+                headers=self._headers,
+                json={
+                    "inputs": text_to_vectorize[i * self.embed_batch_size:(i + 1) * self.embed_batch_size],
+                    "normalize": True,
+                    "truncate": True
+                },
+            )
+            embeddings_list.extend(response.json())
+
+        embeddings = np.array(embeddings_list, dtype=np.float32)
         return embeddings

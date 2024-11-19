@@ -1,0 +1,147 @@
+site_name: DSPy Documentation
+site_description: The framework for programming—rather than prompting—language models.
+site_url: https://dspy.ai
+
+repo_url: https://github.com/stanfordnlp/dspy
+repo_name: stanfordnlp/dspy
+
+edit_uri: blob/main/docs/docs/
+docs_dir: "docs/"
+nav:
+  - Home: index.md
+  - Learn DSPy:
+      - Learning DSPy: learn/index.md
+      - DSPy Programming:
+          - Programming Overview: learn/programming/overview.md
+          - Language Models: learn/programming/language_models.md
+          - Signatures: learn/programming/signatures.md
+          - Modules: learn/programming/modules.md
+      - DSPy Evaluation:
+          - Evaluation Overview: learn/evaluation/overview.md
+          - Data Handling: learn/evaluation/data.md
+          - Metrics: learn/evaluation/metrics.md
+      - DSPy Optimization:
+          - Optimization Overview: learn/optimization/overview.md
+          - Optimizers: learn/optimization/optimizers.md
+      - Other References:
+          - Retrieval Clients:
+              - Azure: deep-dive/retrieval_models_clients/Azure.md
+              - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+              - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
+              - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
+              - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
+              - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
+              - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
+              - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
+              - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
+              - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
+              - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
+              - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
+              - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
+              - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
+              - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
+              - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
+              - YouRM: deep-dive/retrieval_models_clients/YouRM.md
+  - Tutorials:
+      - Tutorials Overview: tutorials/index.md
+      - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
+      - Entity Extraction: tutorials/entity_extraction/index.ipynb
+      - Deployment: tutorials/deployment/index.md
+  - Community:
+      - Community Resources: community/community-resources.md
+      - Use Cases: community/use-cases.md
+      - Roadmap: roadmap.md
+      - Contributing: community/how-to-contribute.md
+  - FAQ:
+      - FAQ: faqs.md
+      - Cheatsheet: cheatsheet.md
+
+theme:
+  name: material
+  custom_dir: overrides
+  features:
+    - navigation.tabs
+    - navigation.path
+    - navigation.indexes
+    - toc.follow
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+    - navigation.footer
+    - content.action.edit
+  language: en
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+      primary: white
+      accent: black
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+      primary: black
+      accent: lime
+  icon:
+    repo: fontawesome/brands/git-alt
+    edit: material/pencil
+    view: material/eye
+  logo: static/img/dspy_logo.png
+  favicon: static/img/logo.png
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - social
+  - search
+  - mkdocstrings
+  # - blog
+  - mkdocs-jupyter:
+      ignore_h1_titles: True
+  - redirects:
+      redirect_maps:
+        # Redirect /intro/ to the main page
+        "intro/index.md": "index.md"
+        "intro.md": "index.md"
+
+        "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+        "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+        "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+        "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/stanfordnlp/dspy
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/XCGy2WDCQB
+
+extra_javascript:
+  - "js/runllm-widget.js"
+
+markdown_extensions:
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.mark
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+
+copyright: |
+  &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>

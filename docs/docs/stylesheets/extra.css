@@ -1,0 +1,107 @@
+/* Custom styles for logo */
+.md-logo {
+    width: auto !important;
+    height: 1.5rem !important; /* Reduced from 1.8rem */
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.md-logo img {
+    width: auto !important;
+    height: 1.5rem !important; /* Reduced from 1.8rem */
+    object-fit: contain !important;
+}
+
+/* Adjust header to accommodate logo */
+.md-header__inner {
+    padding: 0.5rem !important;
+}
+
+/* Responsive adjustments */
+@media screen and (min-width: 76.25em) {
+    .md-logo {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+    .md-logo img {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+}
+
+/* Dark mode specific adjustments */
+[data-md-color-scheme="slate"] .md-logo img {
+    filter: brightness(0.9);
+}
+
+/* Default max-width */
+.md-content {
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+
+/* Adjust width when a sidebar or TOC is present */
+@media (min-width: 1700px) {
+    /* Increase width when there's enough space (like on desktop or tablet landscape) */
+    .md-content {
+        min-width: 980px;
+    }
+}
+
+/* Fully responsive on smaller screens */
+/* @media (max-width: 6px) {
+    .md-content {
+        max-width: 98%;
+    }
+} */
+
+
+/* Justified text for main content */
+.md-content__inner p {
+    text-align: justify;
+}
+
+
+/* Base styling for the output area */
+.jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* Light mode specific styling */
+:root {
+    --output-bg-light: #fafafa;
+    --output-border-light: #ddd;
+    --output-text-light: #333;
+}
+
+body[data-md-color-scheme="default"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-light);
+    border: 1px solid var(--output-border-light);
+    color: var(--output-text-light);
+    box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode specific styling */
+:root {
+    --output-bg-dark: #2e2e2e;
+    --output-border-dark: #555;
+    --output-text-dark: #e0e0e0;
+}
+
+body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-dark);
+    border: 1px solid var(--output-border-dark);
+    color: var(--output-text-dark);
+    box-shadow: 0px 1px 4px rgba(255, 255, 255, 0.1);
+}
+
+
+
+/* Set a fixed width for the sidebar */
+.md-sidebar {
+    width: 235px;
+}

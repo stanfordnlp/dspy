@@ -12,7 +12,7 @@ from optimizer_tester import OptimizerTester
 tester = OptimizerTester()
 ```
 
-The default verison (no parameters) expects a llama model hosted on ports [7140, 7141, 7142, 7143] and OpenAI keys stored in a .env file (OPENAI_API_KEY and OPENAI_API_BASE).
+The default version (no parameters) expects a llama model hosted on ports [7140, 7141, 7142, 7143] and OpenAI keys stored in a .env file (OPENAI_API_KEY and OPENAI_API_BASE).
 
 If you prefer to specify your own model parameters then you can pass models into the OptimizerTester
 

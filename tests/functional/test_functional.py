@@ -1,4 +1,5 @@
 import datetime
+import json
 import textwrap
 from typing import Annotated, Any, Generic, List, Literal, Optional, TypeVar
 
@@ -452,6 +453,17 @@ def test_multiple_outputs_int():
     assert output == [0, 1, 2]
 
 
+def test_list_inputs_and_outputs():
+    lm = DummyLM([{"output": '["0", "1", "2"]'}])
+    dspy.settings.configure(lm=lm)
+
+    test = TypedPredictor("input:list[str] -> output:list[str]")
+    output = test(input=["3", "4", "5"]).completions.output[0]
+
+    # Verify that the format of the output list from the LM was not changed
+    assert output == ["0", "1", "2"]
+
+
 def test_multiple_outputs_int_cot():
     # Note: Multiple outputs only work when the language model "speculatively" generates all the outputs in one go.
     lm = DummyLM(
@@ -490,7 +502,7 @@ def test_literal():
     assert f() == "2"
 
 
-def test_literal_missmatch():
+def test_literal_mismatch():
     lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
@@ -515,7 +527,7 @@ def test_literal_int():
     assert f() == 2
 
 
-def test_literal_int_missmatch():
+def test_literal_int_mismatch():
     lm = DummyLM([{"f": f"{i}"} for i in range(5, 100)])
     dspy.settings.configure(lm=lm)
 
@@ -811,7 +823,7 @@ def test_model_validator():
         category: str = dspy.OutputField()
 
         @model_validator(mode="after")
-        def check_cateogry(self):
+        def check_category(self):
             if self.category not in self.allowed_categories:
                 raise ValueError(f"category not in {self.allowed_categories}")
             return self
@@ -822,3 +834,23 @@ def test_model_validator():
 
     pred = predictor(input_data="What is the best animal?", allowed_categories=["cat", "dog"])
     assert pred.category == "dog"
+
+def test_save_type_predictor(tmp_path):
+    class MySignature(dspy.Signature):
+        """I am a benigh signature."""
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    class CustomModel(dspy.Module):
+        def __init__(self):
+            self.predictor = dspy.TypedPredictor(MySignature)
+
+    save_path = tmp_path / "state.json"
+    model = CustomModel()
+    model.predictor.signature = MySignature.with_instructions("I am a malicious signature.")
+    model.save(save_path)
+
+    loaded = CustomModel()
+    assert loaded.predictor.signature.instructions == "I am a benigh signature."
+    loaded.load(save_path)
+    assert loaded.predictor.signature.instructions == "I am a malicious signature."

@@ -1,14 +1,16 @@
 import random
 import re
 from collections import defaultdict
-from typing import Union
+from typing import Any, Dict, Union
 
 import numpy as np
 
 from dsp.modules import LM as DSPLM
 from dsp.utils.utils import dotdict
-from dspy.adapters.chat_adapter import field_header_pattern, format_fields
+from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
 from dspy.clients.lm import LM
+from dspy.signatures.field import OutputField
+from dspy.utils.callback import with_callbacks
 
 
 class DSPDummyLM(DSPLM):
@@ -93,7 +95,7 @@ class DSPDummyLM(DSPLM):
         return [choice["text"] for choice in choices]
 
     def get_convo(self, index) -> str:
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["prompt"] + " " + self.history[index]["response"]["choices"][0]["text"]
 
 
@@ -169,7 +171,16 @@ class DummyLM(LM):
             if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
                 return output["content"]
 
+    @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
+        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+            return format_fields(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=OutputField()): value
+                    for field_name, value in field_names_and_values.items()
+                }
+            )
+
         # Build the request.
         outputs = []
         for _ in range(kwargs.get("n", 1)):
@@ -181,12 +192,12 @@ class DummyLM(LM):
             elif isinstance(self.answers, dict):
                 outputs.append(
                     next(
-                        (format_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                        (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
                         "No more responses",
                     )
                 )
             else:
-                outputs.append(format_fields(next(self.answers, {"answer": "No more responses"})))
+                outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
@@ -194,11 +205,12 @@ class DummyLM(LM):
             entry = dict(**entry, outputs=outputs, usage=0)
             entry = dict(**entry, cost=0)
             self.history.append(entry)
+            self.update_global_history(entry)
 
         return outputs
 
     def get_convo(self, index):
-        """Get the prompt + anwer from the ith message."""
+        """Get the prompt + answer from the ith message."""
         return self.history[index]["messages"], self.history[index]["outputs"]
 
 

@@ -1,5 +1,3 @@
-import textwrap
-
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM

@@ -132,7 +132,7 @@ def test_complex_module_traversal():
         "self.sub_module.nested_list[0]",
         "self.sub_module.nested_list[1][key]",  # NOTE: named_sub_modules allows recursive structures
         "self.sub_module.nested_tuple[0]",
-        "self.sub_module.nested_tuple[1][0]",  # NEW: named_sub_modules allows recursive structures, but named_prameters does not
+        "self.sub_module.nested_tuple[1][0]",  # NEW: named_sub_modules allows recursive structures, but named_parameters does not
         # "self.sub_module.nested_tuple[1][1]", This should not be included, as it's the same module as the previous one
     }
     found_names = {name for name, _ in root.named_sub_modules()}

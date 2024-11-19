@@ -1,4 +1,5 @@
 import pytest
+import dspy
 from dspy import Example
 
 
@@ -47,6 +48,20 @@ def test_example_deletion():
 def test_example_len():
     example = Example(a=1, b=2, dspy_hidden=3)
     assert len(example) == 2
+
+
+def test_example_repr_str_img():
+    example = Example(
+        img=dspy.Image(url="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    )
+    assert (
+        repr(example)
+        == "Example({'img': Image(url = data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
+    )
+    assert (
+        str(example)
+        == "Example({'img': Image(url = data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
+    )
 
 
 def test_example_repr_str():

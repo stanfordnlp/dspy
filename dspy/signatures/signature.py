@@ -12,7 +12,7 @@ from pydantic.fields import FieldInfo
 
 import dsp
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
-
+from dspy.adapters.image_utils import Image
 
 def signature_to_template(signature, adapter=None) -> dsp.Template:
     """Convert from new to legacy format."""
@@ -141,7 +141,7 @@ class SignatureMeta(type(BaseModel)):
         return cls.insert(-1, name, field, type_)
 
     def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
-        # It's posisble to set the type as annotation=type in pydantic.Field(...)
+        # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
             type_ = field.annotation
@@ -383,6 +383,7 @@ def _parse_type_node(node, names=None) -> Any:
 
     without using structural pattern matching introduced in Python 3.10.
     """
+    
     if names is None:
         names = typing.__dict__
 
@@ -400,7 +401,8 @@ def _parse_type_node(node, names=None) -> Any:
         id_ = node.id
         if id_ in names:
             return names[id_]
-        for type_ in [int, str, float, bool, list, tuple, dict]:
+        
+        for type_ in [int, str, float, bool, list, tuple, dict, Image]:
             if type_.__name__ == id_:
                 return type_
         raise ValueError(f"Unknown name: {id_}")
@@ -418,6 +420,9 @@ def _parse_type_node(node, names=None) -> Any:
         keys = [kw.arg for kw in node.keywords]
         values = [kw.value.value for kw in node.keywords]
         return Field(**dict(zip(keys, values)))
+    
+    if isinstance(node, ast.Attribute) and node.attr == "Image":
+        return Image
 
     raise ValueError(f"Code is not syntactically valid: {node}")
 

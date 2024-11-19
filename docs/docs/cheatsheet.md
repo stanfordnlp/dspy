@@ -230,7 +230,7 @@ def gsm8k_metric(gold, pred, trace=None) -> int:
 class FactJudge(dspy.Signature):
     """Judge if the answer is factually correct based on the context."""
 
-    context = dspy.InputField(desc="Context for the prediciton")
+    context = dspy.InputField(desc="Context for the prediction")
     question = dspy.InputField(desc="Question to be answered")
     answer = dspy.InputField(desc="Answer for the question")
     factually_correct = dspy.OutputField(desc="Is the answer factually correct based on the context?", prefix="Factual[Yes/No]:")
@@ -304,7 +304,7 @@ loaded_program.load(path=save_path)
 
 ### BootstrapFewShotWithRandomSearch
 
-Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](/docs/deep-dive/optimizers/bootstrap-fewshot.mdx).
+Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](deep-dive/optimizers/bootstrap-fewshot.md).
 
 
 ```python
@@ -361,7 +361,7 @@ for p in finetune_program.predictors():
 
 ### COPRO
 
-Detailed documentation on COPRO can be found [here](/docs/deep-dive/optimizers/copro.mdx).
+Detailed documentation on COPRO can be found [here](deep-dive/optimizers/copro.md).
 
 
 ```python
@@ -389,10 +389,10 @@ compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_p
 
 ### MIPROv2
 
-Note: detailed documentation can be found [here](/docs/deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
+Note: detailed documentation can be found [here](deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
 
 #### Optimizing with MIPROv2
-This shows how to perform an easy out-of-the box run with `auto=light`, which configures many hyperparameters for you and performs a light optimization run. You can alternatively set `auto=medium` or `auto=heavy` to perform longer optimization runs. The more detailed `MIPROv2` documentation [here](/docs/deep-dive/optimizers/miprov2.md) also provides more information about how to set hyperparameters by hand.
+This shows how to perform an easy out-of-the box run with `auto=light`, which configures many hyperparameters for you and performs a light optimization run. You can alternatively set `auto=medium` or `auto=heavy` to perform longer optimization runs. The more detailed `MIPROv2` documentation [here](deep-dive/optimizers/miprov2.md) also provides more information about how to set hyperparameters by hand.
 ```python
 # Import the optimizer
 from dspy.teleprompt import MIPROv2
@@ -417,7 +417,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 
@@ -446,7 +446,7 @@ optimized_program = teleprompter.compile(
 optimized_program.save(f"mipro_optimized")
 
 # Evaluate optimized program
-print(f"Evluate optimized program...")
+print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
 ### Signature Optimizer with Types

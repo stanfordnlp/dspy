@@ -1,6 +1,7 @@
 import pytest
-
 import dspy
+import copy
+
 from dsp.utils.settings import DEFAULT_CONFIG
 
 
@@ -10,4 +11,9 @@ def clear_settings():
 
     yield
 
-    dspy.settings.configure(**DEFAULT_CONFIG, inherit_config=False)
+    dspy.settings.configure(**copy.deepcopy(DEFAULT_CONFIG), inherit_config=False)
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

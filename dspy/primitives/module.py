@@ -8,6 +8,7 @@ import ujson
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
 # named_sub_modules for the time being.
 
+
 class BaseModule:
     def __init__(self):
         pass
@@ -29,7 +30,7 @@ class BaseModule:
                     visited.add(id(param_value))
                     param_name = postprocess_parameter_name(param_name, param_value)
                     named_parameters.append((param_name, param_value))
-            
+
             elif isinstance(param_value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
                 if not getattr(param_value, "_compiled", False):
@@ -42,7 +43,7 @@ class BaseModule:
         for name, value in self.__dict__.items():
             if isinstance(value, Parameter):
                 add_parameter(name, value)
-            
+
             elif isinstance(value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
                 if not getattr(value, "_compiled", False):
@@ -149,12 +150,15 @@ class BaseModule:
         return new_instance
 
     def dump_state(self, save_verbose):
-        print(self.named_parameters())
         return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
 
     def load_state(self, state, use_legacy_loading=False):
         for name, param in self.named_parameters():
-            param.load_state(state[name], use_legacy_loading=use_legacy_loading)
+            if isinstance(param, BaseModule):
+                param.load_state(state[name], use_legacy_loading=use_legacy_loading)
+            else:
+                # `use_legacy_loading` is only applicable for BaseModule instances.
+                param.load_state(state[name])
 
     def save(self, path, save_field_meta=False):
         with open(path, "w") as f:
@@ -169,11 +173,11 @@ def postprocess_parameter_name(name, value):
     # For ChainOfThought backward compatibility, remove ending ._predict if it's there
     if name.endswith("._predict"):
         name = name[:-9]
-    
+
     if name.endswith(".self"):
         name = name[:-5]
-    
+
     if name == "_predict":
         return "self"
-    
+
     return name
