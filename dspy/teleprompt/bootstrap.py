@@ -1,7 +1,7 @@
 import logging
 import random
 import threading
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Sequence
 
 import numpy as np
 import tqdm
@@ -278,15 +278,18 @@ class BootstrapKNN(BootstrapFewShot):
     def __init__(
         self,
         embedding: Optional[Callable[[list[str]], np.ndarray]] = None,  # dspy.Embedding
-        k: int = 16,
         metric=None,
         metric_threshold=None,
         teacher_settings: Optional[Dict] = None,
-        max_bootstrapped_demos=10_000,  # fill the predictor .demos
-        max_labeled_demos=16,  # for the teacher model only
+        max_bootstrapped_demos=10_000,
+        num_static_demos=0,
+        max_labeled_demos=16,
         max_rounds=1,
         max_errors=2000,
+        random_seed=0,
     ):
+        assert num_static_demos < max_labeled_demos, "static demos must be less than max labeled demos."
+
         super().__init__(
             metric=metric,
             metric_threshold=metric_threshold,
@@ -296,17 +299,23 @@ class BootstrapKNN(BootstrapFewShot):
             max_rounds=max_rounds,
             max_errors=max_errors,
         )
-        self.k = k
+        self.num_static_demos = num_static_demos
         self.embedding = embedding
+        self.random_seed = random_seed
 
     def _train(self):
+        rng = random.Random(self.random_seed)
+
         for name, predictor in self.student.named_predictors():
-            predictor.demos = self.name2traces[name][: self.max_labeled_demos]
+            augmented_demos = self.name2traces[name]
+
+            static_demos = rng.sample(augmented_demos, self.num_static_demos)
+            dynamic_demos = list(set(augmented_demos) - set(static_demos))
+
+            predictor.demos = static_demos
+
             # TODO: Make this dump/load-able
-            predictor.knn = dspy.KNN(
-                k=self.k,
-                trainset=predictor.demos,
-                vectorizer=self.embedding,
-            )
+            k = self.max_labeled_demos - self.num_static_demos
+            predictor.knn = dspy.KNN(k, trainset=dynamic_demos, vectorizer=self.embedding)
 
         return self.student
