@@ -6,55 +6,56 @@ repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
 
 edit_uri: blob/main/docs/docs/
-docs_dir: 'docs/'
+docs_dir: "docs/"
 nav:
   - Home: index.md
   - Learn DSPy:
-    - Learning DSPy: learn/index.md
-    - DSPy Programming:
-      - Programming Overview: learn/programming/overview.md
-      - Language Models: learn/programming/language_models.md
-      - Signatures: learn/programming/signatures.md
-      - Modules: learn/programming/modules.md
-    - DSPy Evaluation:
-      - Evaluation Overview: learn/evaluation/overview.md
-      - Data Handling: learn/evaluation/data.md
-      - Metrics: learn/evaluation/metrics.md
-    - DSPy Optimization:
-      - Optimization Overview: learn/optimization/overview.md
-      - Optimizers: learn/optimization/optimizers.md
-    - Other References:
-      - Retrieval Clients:
-        - Azure: deep-dive/retrieval_models_clients/Azure.md
-        - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
-        - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
-        - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
-        - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
-        - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
-        - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
-        - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
-        - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
-        - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
-        - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
-        - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
-        - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
-        - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
-        - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
-        - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
-        - YouRM: deep-dive/retrieval_models_clients/YouRM.md
+      - Learning DSPy: learn/index.md
+      - DSPy Programming:
+          - Programming Overview: learn/programming/overview.md
+          - Language Models: learn/programming/language_models.md
+          - Signatures: learn/programming/signatures.md
+          - Modules: learn/programming/modules.md
+      - DSPy Evaluation:
+          - Evaluation Overview: learn/evaluation/overview.md
+          - Data Handling: learn/evaluation/data.md
+          - Metrics: learn/evaluation/metrics.md
+      - DSPy Optimization:
+          - Optimization Overview: learn/optimization/overview.md
+          - Optimizers: learn/optimization/optimizers.md
+      - Other References:
+          - Retrieval Clients:
+              - Azure: deep-dive/retrieval_models_clients/Azure.md
+              - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+              - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
+              - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
+              - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
+              - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
+              - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
+              - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
+              - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
+              - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
+              - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
+              - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
+              - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
+              - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
+              - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
+              - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
+              - YouRM: deep-dive/retrieval_models_clients/YouRM.md
   - Tutorials:
-    - Tutorials Overview: tutorials/index.md
-    - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
-    - Deployment: tutorials/deployment/index.md
+      - Tutorials Overview: tutorials/index.md
+      - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
+      - Entity Extraction: tutorials/entity_extraction/index.ipynb
+      - Deployment: tutorials/deployment/index.md
   - Community:
-    - Community Resources: community/community-resources.md
-    - Use Cases: community/use-cases.md
-    - Roadmap: roadmap.md
-    - Contributing: community/how-to-contribute.md
+      - Community Resources: community/community-resources.md
+      - Use Cases: community/use-cases.md
+      - Roadmap: roadmap.md
+      - Contributing: community/how-to-contribute.md
   - FAQ:
-    - FAQ: faqs.md
-    - Cheatsheet: cheatsheet.md
-  
+      - FAQ: faqs.md
+      - Cheatsheet: cheatsheet.md
+
 theme:
   name: material
   custom_dir: overrides
@@ -78,25 +79,22 @@ theme:
         icon: material/weather-night
         name: Switch to dark mode
       primary: white
-      accent: black 
-    - scheme: slate 
+      accent: black
+    - scheme: slate
       toggle:
         icon: material/weather-sunny
-        name: Switch to light mode    
+        name: Switch to light mode
       primary: black
       accent: lime
   icon:
     repo: fontawesome/brands/git-alt
-    edit: material/pencil 
+    edit: material/pencil
     view: material/eye
   logo: static/img/dspy_logo.png
   favicon: static/img/logo.png
 
-
 extra_css:
   - stylesheets/extra.css
-
-
 
 plugins:
   - social
@@ -108,14 +106,13 @@ plugins:
   - redirects:
       redirect_maps:
         # Redirect /intro/ to the main page
-        'intro/index.md': 'index.md'
-        'intro.md': 'index.md'
+        "intro/index.md": "index.md"
+        "intro.md": "index.md"
 
-        'docs/quick-start/getting-started-01.md': 'tutorials/rag/index.ipynb'
-        'docs/quick-start/getting-started-02.md': 'tutorials/rag/index.ipynb'
-        'quick-start/getting-started-01.md': 'tutorials/rag/index.ipynb'
-        'quick-start/getting-started-02.md': 'tutorials/rag/index.ipynb'
-
+        "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+        "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+        "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+        "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
 
 extra:
   social:

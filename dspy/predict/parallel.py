@@ -40,6 +40,7 @@ class Parallel:
         )
 
         def process_pair(pair):
+            result = None
             module, example = pair
 
             if isinstance(example, Example):
@@ -50,6 +51,8 @@ class Parallel:
                 result = module(example)
             elif isinstance(example, tuple):
                 result = module(*example)
+            else:
+                raise ValueError(f"Invalid example type: {type(example)}, only supported types are Example, dict, list and tuple")
             return result
 
         # Execute the processing function over the execution pairs
