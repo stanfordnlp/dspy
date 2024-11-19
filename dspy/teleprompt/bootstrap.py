@@ -283,7 +283,7 @@ class BootstrapKNN(BootstrapFewShot):
         metric_threshold=None,
         teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=10_000,  # fill the predictor .demos
-        teacher_labeled_demos=16,  # for the teacher model only
+        max_labeled_demos=16,  # for the teacher model only
         max_rounds=1,
         max_errors=2000,
     ):
@@ -292,7 +292,7 @@ class BootstrapKNN(BootstrapFewShot):
             metric_threshold=metric_threshold,
             teacher_settings=teacher_settings,
             max_bootstrapped_demos=max_bootstrapped_demos,
-            max_labeled_demos=teacher_labeled_demos,
+            max_labeled_demos=max_labeled_demos,
             max_rounds=max_rounds,
             max_errors=max_errors,
         )
@@ -301,7 +301,7 @@ class BootstrapKNN(BootstrapFewShot):
 
     def _train(self):
         for name, predictor in self.student.named_predictors():
-            predictor.demos = self.name2traces[name][: self.max_bootstrapped_demos]
+            predictor.demos = self.name2traces[name][: self.max_labeled_demos]
             # TODO: Make this dump/load-able
             predictor.knn = dspy.KNN(
                 k=self.k,
