@@ -40,6 +40,7 @@ class Parallel:
         )
 
         def process_pair(pair):
+            result = None
             module, example = pair
 
             if isinstance(example, Example):
