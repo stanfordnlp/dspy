@@ -95,6 +95,7 @@ class MIPROv2(Teleprompter):
         student: Any,
         *,
         trainset: List,
+        teacher: Any = None,
         valset: Optional[List] = None,
         num_trials: int = 30,
         max_bootstrapped_demos: Optional[int] = None,
@@ -165,7 +166,7 @@ class MIPROv2(Teleprompter):
         )
 
         # Step 1: Bootstrap few-shot examples
-        demo_candidates = self._bootstrap_fewshot_examples(program, trainset, seed)
+        demo_candidates = self._bootstrap_fewshot_examples(program, trainset, seed, teacher)
 
         # Step 2: Propose instruction candidates
         instruction_candidates = self._propose_instructions(
@@ -368,7 +369,7 @@ class MIPROv2(Teleprompter):
         return user_input == "y"
 
     def _bootstrap_fewshot_examples(
-        self, program: Any, trainset: List, seed: int
+        self, program: Any, trainset: List, seed: int, teacher: Any
     ) -> Optional[List]:
         logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
         if self.max_bootstrapped_demos > 0:
@@ -399,6 +400,7 @@ class MIPROv2(Teleprompter):
                 ),
                 metric=self.metric,
                 max_errors=self.max_errors,
+                teacher=teacher,
                 teacher_settings=self.teacher_settings,
                 seed=seed,
                 metric_threshold=self.metric_threshold,
