@@ -317,5 +317,6 @@ class BootstrapKNN(BootstrapFewShot):
             # TODO: Make this dump/load-able
             k = self.max_labeled_demos - self.num_static_demos
             predictor.knn = dspy.KNN(k, trainset=dynamic_demos, vectorizer=self.embedding)
+            predictor.random_seed = self.random_seed
 
         return self.student
