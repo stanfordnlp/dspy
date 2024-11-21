@@ -32,9 +32,9 @@ def source_code(f):
     return "\n".join(f"{i:>5} | {line}".rstrip() for i, line in enumerate(lines, 1))
 
 
-def snoopy(f=None, depth=3):
+def snoopy(f=None, **snoop_kwargs):
     if not f:
-        return partial(snoopy, depth=depth)
+        return partial(snoopy, **snoop_kwargs)
 
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -42,7 +42,7 @@ def snoopy(f=None, depth=3):
         snoopy = SnoopConfig(out=trace, color=False, columns=[])
         wrapper.snoopy = snoopy
         wrapper.trace = trace
-        return snoopy.snoop(f)(*args, **kwargs)
+        return snoopy.snoop(f, **snoop_kwargs)(*args, **kwargs)
 
     wrapper.source = source_code(f)
 
