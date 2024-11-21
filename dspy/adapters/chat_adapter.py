@@ -369,6 +369,7 @@ def prepare_schema(type_):
 
 def prepare_instructions(signature: SignatureMeta):
     parts = []
+    parts.append(signature.instructions)
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
     parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
