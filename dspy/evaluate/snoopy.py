@@ -7,6 +7,34 @@
    /  \-'~;    /~~~(O)
   /  __/~|   /       |
 =(  _____| (_________|
+
+A decorator for debugging DSPy programs.
+
+This module provides the `snoopy` decorator which wraps functions to trace their execution
+and capture detailed debugging information. It builds on Python's `snoop` package to provide
+rich debugging output specifically tailored for DSPy programs.
+
+The traced output includes:
+- Line-by-line execution
+- Variable values at each step
+- Function calls and returns
+- Exceptions and stack traces
+
+Example:
+    @snoopy
+    def my_dspy_function():
+        # Function code here
+        pass
+
+    # The function will now output detailed trace information when called
+    # Access the trace via my_dspy_function.trace
+    # Access the source code via my_dspy_function.source
+
+The decorator can also take arguments to customize the tracing behavior:
+
+    @snoopy(depth=2)  # Trace nested function calls up to depth 2
+    def my_function():
+        pass
 """
 
 from dataclasses import dataclass, field
