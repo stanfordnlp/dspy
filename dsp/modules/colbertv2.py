@@ -8,7 +8,6 @@ from dsp.utils import dotdict
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 
-
 class ColBERTv2:
     """Wrapper for the ColBERTv2 Retrieval."""
 

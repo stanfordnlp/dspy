@@ -4,6 +4,7 @@ from dsp.modules.hf_client import ChatModuleClient, HFClientSGLang, HFClientVLLM
 from .predict import *
 from .primitives import *
 from .retrieve import *
+from .retriever import *
 from .signatures import *
 
 # Functional must be imported after primitives, predict and signatures
@@ -26,7 +27,7 @@ MultiOpenAI = dsp.MultiOpenAI
 Mistral = dsp.Mistral
 Databricks = dsp.Databricks
 Cohere = dsp.Cohere
-ColBERTv2 = dsp.ColBERTv2
+ColBERTv2 = ColBERTv2
 ColBERTv2RerankerLocal = dsp.ColBERTv2RerankerLocal
 ColBERTv2RetrieverLocal = dsp.ColBERTv2RetrieverLocal
 Pyserini = dsp.PyseriniRetriever
