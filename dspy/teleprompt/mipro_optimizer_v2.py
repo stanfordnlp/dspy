@@ -540,7 +540,7 @@ class MIPROv2(Teleprompter):
                 logger.info(f"{GREEN}Best full score so far!{ENDC} Score: {score}")
 
             # Log evaluation results
-            score_data.append((score, program, batch_size >= len(valset))) # score, prog, full_eval
+            score_data.append((score, candidate_program, batch_size >= len(valset))) # score, prog, full_eval
             if minibatch:
                 self._log_minibatch_eval(
                     score,
@@ -601,10 +601,11 @@ class MIPROv2(Teleprompter):
             best_program.score = best_score
             best_program.prompt_model_total_calls = self.prompt_model_total_calls
             best_program.total_calls = self.total_calls
-            # Attach all evaluated candidate programs (full + minibatch eval if applicable, with full first and minibatch to follow)
-            best_program.candidate_programs = sorted(score_data, key=lambda x: x[0], reverse=True)
+            sorted_candidate_programs = sorted(score_data, key=lambda x: x[0], reverse=True)
+            # Attach all minibatch programs
+            best_program.mb_candidate_programs = [score_data for score_data in sorted_candidate_programs if not score_data[2]]
             # Attach all programs that were evaluated on the full trainset, in descending order of score
-            best_program.full_eval_candidate_programs = [score_data for score_data in best_program.candidate_programs if score_data[2]]
+            best_program.candidate_programs = [score_data for score_data in sorted_candidate_programs if score_data[2]]
 
         logger.info(f"Returning best identified program with score {best_score}!")
 
