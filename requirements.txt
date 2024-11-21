@@ -17,3 +17,4 @@ tqdm
 ujson
 anyio
 asyncer==0.0.8
+snoop==0.6.0
