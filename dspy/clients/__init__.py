@@ -1,7 +1,7 @@
 from .lm import LM
 from .provider import Provider, TrainingJob
 from .base_lm import BaseLM, inspect_history
-from .embedding import Embedding
+from .embedding import Embedder
 import litellm
 import os
 from pathlib import Path
