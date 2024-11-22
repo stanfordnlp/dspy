@@ -287,7 +287,6 @@ class BootstrapKNN(BootstrapFewShot):
         max_rounds=1,
         max_errors=1_000,
         random_seed=0,
-        random_seed=0,
     ):
         assert num_static_demos < max_labeled_demos, "static demos must be less than max labeled demos."
 
