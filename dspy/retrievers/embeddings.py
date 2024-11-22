@@ -1,5 +1,4 @@
 import numpy as np
-import faiss
 from typing import Any, List, Optional
 from dspy.utils.unbatchify import Unbatchify
 
@@ -50,6 +49,11 @@ class Embeddings:
         nbytes = 32
         partitions = int(2 * np.sqrt(len(self.corpus)))
         dim = self.corpus_embeddings.shape[1]
+
+        try:
+            import faiss
+        except ImportError:
+            raise ImportError("Please `pip install faiss-cpu` or increase `brute_force_threshold` to avoid FAISS.")
 
         quantizer = faiss.IndexFlatL2(dim)
         index = faiss.IndexIVFPQ(quantizer, dim, partitions, nbytes, 8)
