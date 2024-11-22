@@ -1,7 +1,7 @@
 import logging
 import random
 import threading
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Sequence
 
 import numpy as np
 import tqdm
@@ -286,6 +286,7 @@ class BootstrapKNN(BootstrapFewShot):
         max_labeled_demos=16,
         max_rounds=1,
         max_errors=1_000,
+        random_seed=0,
         random_seed=0,
     ):
         assert num_static_demos < max_labeled_demos, "static demos must be less than max labeled demos."
