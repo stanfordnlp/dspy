@@ -285,7 +285,8 @@ class BootstrapKNN(BootstrapFewShot):
         num_static_demos=0,
         max_labeled_demos=16,
         max_rounds=1,
-        max_errors=2000,
+        max_errors=1_000,
+        random_seed=0,
         random_seed=0,
     ):
         assert num_static_demos < max_labeled_demos, "static demos must be less than max labeled demos."
@@ -317,5 +318,6 @@ class BootstrapKNN(BootstrapFewShot):
             # TODO: Make this dump/load-able
             k = self.max_labeled_demos - self.num_static_demos
             predictor.knn = dspy.KNN(k, trainset=dynamic_demos, vectorizer=self.embedding)
+            predictor.random_seed = self.random_seed
 
         return self.student

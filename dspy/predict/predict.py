@@ -191,6 +191,7 @@ class Predict(Module, Parameter):
 
         if hasattr(self, "knn"):
             demos += self.knn(**inputs)
+            random.Random(self.random_seed).shuffle(demos)
 
         if isinstance(lm, dspy.LM):
             completions = v2_5_generate(lm, config, signature, demos, inputs, _parse_values=self._parse_values)

@@ -161,7 +161,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         max_rounds=1,
         num_candidate_programs=16,
         num_threads=6,
-        max_errors=10,
+        max_errors=1_000,
         stop_at_score=None,
         metric_threshold=None,
     ):
