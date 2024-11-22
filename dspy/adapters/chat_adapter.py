@@ -1,26 +1,26 @@
-import re
-from typing import Any, Union
-from dsp.adapters.base_template import Field
-from dspy.signatures.signature import Signature
-from .base import Adapter
-from .image_utils import encode_image, Image
-
 import ast
-import json
 import enum
 import inspect
-import pydantic
+import json
+import re
 import textwrap
-from itertools import chain
-from pydantic import TypeAdapter
 from collections.abc import Mapping
-from pydantic.fields import FieldInfo
-from typing import Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
+from itertools import chain
+from typing import Any, Dict, KeysView, List, Literal, NamedTuple, Union, get_args, get_origin
 
+import pydantic
+from pydantic import TypeAdapter
+from pydantic.fields import FieldInfo
+
+from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
+from dspy.signatures.signature import Signature
+
 from ..signatures.field import OutputField
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
+from .base import Adapter
+from .image_utils import Image, encode_image
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -116,6 +116,8 @@ class ChatAdapter(Adapter):
         
 
 def format_blob(blob):
+    if not isinstance(blob, str):
+        blob = str(blob)
     if "\n" not in blob and "«" not in blob and "»" not in blob:
         return f"«{blob}»"
 
