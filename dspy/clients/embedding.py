@@ -52,8 +52,9 @@ class Embedding:
         ```
     """
 
-    def __init__(self, model):
+    def __init__(self, model, api_key=None):
         self.model = model
+        self.api_key = api_key
 
     def __call__(self, inputs, caching=True, **kwargs):
         """Compute embeddings for the given inputs.
@@ -69,7 +70,7 @@ class Embedding:
         if isinstance(inputs, str):
             inputs = [inputs]
         if isinstance(self.model, str):
-            embedding_response = litellm.embedding(model=self.model, input=inputs, caching=caching, **kwargs)
+            embedding_response = litellm.embedding(model=self.model, input=inputs, caching=caching, api_key=self.api_key, **kwargs)
             return np.array([data["embedding"] for data in embedding_response.data], dtype=np.float32)
         elif callable(self.model):
             return np.array(self.model(inputs, **kwargs), dtype=np.float32)

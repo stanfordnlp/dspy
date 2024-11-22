@@ -310,7 +310,7 @@ class BootstrapKNN(BootstrapFewShot):
             augmented_demos = self.name2traces[name]
 
             static_demos = rng.sample(augmented_demos, self.num_static_demos)
-            dynamic_demos = list(set(augmented_demos) - set(static_demos))
+            dynamic_demos = [x for x in augmented_demos if x not in static_demos]
 
             predictor.demos = static_demos
 
