@@ -64,7 +64,7 @@ class ReAct(Module):
         )
 
         fallback_signature = (
-            dspy.Signature({**signature.input_fields, **signature.output_fields})
+            dspy.Signature({**signature.input_fields, **signature.output_fields}, signature.instructions)
             .append("trajectory", dspy.InputField(), type_=str)
         )
 
