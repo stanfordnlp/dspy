@@ -5,23 +5,28 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 import dsp
+from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
-from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.signatures.signature import InputField, ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
-from dspy.adapters.image_utils import Image
+
+logger = logging.getLogger(__name__)
+
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
 
+
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
+    def __init__(self, signature, _parse_values=True, callbacks=None, constraints=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
         self.callbacks = callbacks or []
+        self.constraints = constraints or []
         self._parse_values = _parse_values
         self.reset()
 
@@ -74,7 +79,7 @@ class Predict(Module, Parameter):
         if use_legacy_loading:
             self._load_state_legacy(state)
             return self
-            
+
         if "signature" not in state:
             # Check if the state is from a version of DSPy prior to v2.5.3.
             raise ValueError(
@@ -87,7 +92,7 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-        
+
         # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
         for demo in self.demos:
             for field in demo:
@@ -96,7 +101,7 @@ class Predict(Module, Parameter):
                     if not isinstance(url, str):
                         raise ValueError(f"Image URL must be a string, got {type(url)}")
                     demo[field] = Image(url=url)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
@@ -138,11 +143,11 @@ class Predict(Module, Parameter):
 
     def load(self, path, return_self=False):
         """Load a saved state from a file.
-        
+
         Args:
             path (str): Path to the saved state file
             return_self (bool): If True, returns self to allow method chaining. Default is False for backwards compatibility.
-        
+
         Returns:
             Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
         """
@@ -150,8 +155,64 @@ class Predict(Module, Parameter):
         return self if return_self else None
 
     @with_callbacks
-    def __call__(self, **kwargs):
-        return self.forward(**kwargs)
+    def __call__(self, max_retries=1, soft_fail=False, **kwargs):
+        from dspy import settings as dspy_settings
+
+        if not self.constraints:
+            return self.forward(**kwargs)
+
+        original_signature = self.signature
+        # Include constraints and failed traces in the signature for retry mode.
+        retry_signature = (
+            self.signature.prepend("constraints", InputField(desc="Constraints to satisfy"))
+            .prepend(
+                "failed_trace", InputField(desc="Failed traces in previous attempts, empty if it's the first attempt")
+            )
+            .prepend(
+                "violated_constraints_indices",
+                InputField(desc="Indices (0-indexed) of violated constraints in previous attempts", type=list[int]),
+            )
+        )
+        self.signature = retry_signature
+
+        constraints_desc = [constraint.desc for constraint in self.constraints]
+        violated_constraints_indices = []
+        failed_trace = None
+        for retry_idx in range(max_retries):
+            outputs = self.forward(
+                constraints=constraints_desc,
+                failed_trace=failed_trace,
+                violated_constraints_indices=violated_constraints_indices,
+                **kwargs,
+            )
+            violated_constraints_indices = []
+            for i, constraint in enumerate(self.constraints):
+                if not constraint(inputs=kwargs, outputs=outputs):
+                    logger.warning(
+                        f"Constraint {i} is violated at retry {retry_idx}. Constraint description: {constraint.desc}. "
+                        "A retry will be triggered."
+                    )
+                    violated_constraints_indices.append(i)
+            if len(violated_constraints_indices) > 0:
+                trace_info = dspy_settings.trace[-1]
+                failed_trace = {
+                    "inputs": trace_info[1],
+                    "outputs": trace_info[2].toDict(),
+                }
+
+        self.signature = original_signature
+        for violated_constraint_index in violated_constraints_indices:
+            if not soft_fail and not self.constraints[violated_constraint_index].soft_constraint:
+                raise ValueError(
+                    f"Constraint {violated_constraints_indices} violated, terminating the program because this is a "
+                    "hard-required constraint and you set `soft_fail=False`."
+                )
+        if len(violated_constraints_indices) > 0:
+            logger.warning(
+                f"Constraints {violated_constraints_indices} are violated, but since you set `soft_fail=True` or all the "
+                "violated constraints are soft constraints, the program will continue."
+            )
+        return outputs
 
     def forward(self, **kwargs):
         assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
@@ -185,7 +246,7 @@ class Predict(Module, Parameter):
         import dspy
 
         if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+            completions = v2_5_generate(lm, config, signature, demos, inputs=kwargs, _parse_values=self._parse_values)
         else:
             warn_once(
                 "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
@@ -295,6 +356,7 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     return adapter(
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
+
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
