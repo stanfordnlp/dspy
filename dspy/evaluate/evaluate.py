@@ -54,6 +54,7 @@ class Evaluate:
         return_all_scores=False,
         return_outputs=False,
         provide_traceback=False,
+        failure_score=0.0,
         **_kwargs,
     ):
         self.devset = devset
@@ -65,6 +66,7 @@ class Evaluate:
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
+        self.failure_score = failure_score
 
     def __call__(
         self,
@@ -85,7 +87,6 @@ class Evaluate:
         return_all_scores = return_all_scores if return_all_scores is not None else self.return_all_scores
         return_outputs = return_outputs if return_outputs is not None else self.return_outputs
 
-        devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
 
         executor = ParallelExecutor(
@@ -96,39 +97,27 @@ class Evaluate:
             compare_results=True,
         )
 
-        def process_item(item):
-            try:
-                example_idx, example = item
-                prediction = program(**example.inputs())
-                score = metric(example, prediction)
+        def process_item(example):
+            prediction = program(**example.inputs())
+            score = metric(example, prediction)
 
-                # Increment assert and suggest failures to program's attributes
-                if hasattr(program, "_assert_failures"):
-                    program._assert_failures += dspy.settings.get("assert_failures")
-                if hasattr(program, "_suggest_failures"):
-                    program._suggest_failures += dspy.settings.get("suggest_failures")
+            # Increment assert and suggest failures to program's attributes
+            if hasattr(program, "_assert_failures"):
+                program._assert_failures += dspy.settings.get("assert_failures")
+            if hasattr(program, "_suggest_failures"):
+                program._suggest_failures += dspy.settings.get("suggest_failures")
 
-                return example_idx, example, prediction, score
-            except Exception:
-                return example_idx, example, {}, 0.0
+            return prediction, score
 
         results = executor.execute(process_item, devset)
-        reordered_devset = [r for r in results if r is not None]
+        assert len(devset) == len(results)
 
-        ncorrect = sum(score for _, _, _, score in reordered_devset)
-        ntotal = len(reordered_devset)
-
-        if ntotal == 0:
-            logger.warning("No valid results to compute metrics.")
-            return 0.0
+        results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
+        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results)]
+        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
-
-        predicted_devset = sorted(reordered_devset)
-
-        if return_outputs:  # Handle the return_outputs logic
-            results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
-
+            
         def prediction_is_dictlike(prediction):
             # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
             # having a method called `items()` for iterating through key/value pairs
@@ -140,12 +129,12 @@ class Evaluate:
                 if prediction_is_dictlike(prediction)
                 else dict(example) | {"prediction": prediction, "correct": score}
             )
-            for _, example, prediction, score in predicted_devset
+            for example, prediction, score in results
         ]
 
-        result_df = pd.DataFrame(data)
 
         # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
+        result_df = pd.DataFrame(data)
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
@@ -179,9 +168,9 @@ class Evaluate:
                 display(HTML(message))
 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in predicted_devset]
+            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in results]
         if return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
+            return round(100 * ncorrect / ntotal, 2), [score for *_, score in results]
         if return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
 
