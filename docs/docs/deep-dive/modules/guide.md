@@ -7,7 +7,7 @@
 
 ## Quick Recap
 
-This guide assumes you followed the [intro tutorial](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb) to build your first few DSPy programs.
+This guide assumes you followed the [intro tutorial](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/examples/intro.ipynb) to build your first few DSPy programs.
 
 Remember that **DSPy program** is just Python code that calls one or more **DSPy modules**, like `dspy.Predict` or `dspy.ChainOfThought`, to use LMs.
 
