@@ -65,7 +65,6 @@ The 21-year-old Lee made seven appearances and scored one goal for West Ham last
 Many DSPy modules (except `dspy.Predict`) return auxiliary information by expanding your signature under the hood.
 
 For example, `dspy.ChainOfThought` also adds a `reasoning` field that includes the LM's reasoning before it generates the output `summary`.
-For example, `dspy.ChainOfThought` also adds a `reasoning` field that includes the LM's reasoning before it generates the output `summary`.
 
 ```python
 print("Reasoning:", response.reasoning)
