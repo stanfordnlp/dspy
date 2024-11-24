@@ -49,7 +49,7 @@ class Settings:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.lock = threading.Lock()  # maintained here for assertions
+            # No need for a lock since we're only updating main_thread_config in the main thread
         return cls._instance
 
     def __getattr__(self, name):
@@ -112,6 +112,10 @@ class Settings:
             yield
         finally:
             dspy_ctx_overrides.reset(token)
+
+            if threading.current_thread() is threading.main_thread():
+                global main_thread_config
+                main_thread_config = dspy_ctx_overrides.get()
 
     def __repr__(self):
         overrides = dspy_ctx_overrides.get()
