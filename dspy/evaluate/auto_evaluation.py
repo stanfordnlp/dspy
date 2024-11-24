@@ -55,7 +55,7 @@ class SemanticF1(dspy.Module):
 ###########
 
 
-class DecompositionalSemanticRecall(dspy.Signature):
+class AnswerCompleteness(dspy.Signature):
     """
     Estimate the completeness of a system's responses, against the ground truth.
     You will first enumerate key ideas in each response, discuss their overlap, and then report completeness.
@@ -71,7 +71,7 @@ class DecompositionalSemanticRecall(dspy.Signature):
 
 
 
-class DecompositionalGroundedness(dspy.Signature):
+class AnswerGroundedness(dspy.Signature):
     """
     Estimate the groundedness of a system's responses, against real retrieved documents written by people.
     You will first enumerate whatever non-trivial or check-worthy claims are made in the system response, and then
@@ -89,8 +89,8 @@ class DecompositionalGroundedness(dspy.Signature):
 class CompleteAndGrounded(dspy.Module):
     def __init__(self, threshold=0.66):
         self.threshold = threshold
-        self.completeness_module = dspy.ChainOfThought(DecompositionalSemanticRecall)
-        self.groundedness_module = dspy.ChainOfThought(DecompositionalGroundedness)
+        self.completeness_module = dspy.ChainOfThought(AnswerCompleteness)
+        self.groundedness_module = dspy.ChainOfThought(AnswerGroundedness)
 
     def forward(self, example, pred, trace=None):
         completeness = self.completeness_module(question=example.question, ground_truth=example.response, system_response=pred.response)
