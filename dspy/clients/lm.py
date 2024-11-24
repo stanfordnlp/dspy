@@ -1,13 +1,11 @@
-import functools
-import logging
 import os
-import threading
 import uuid
+import litellm
+import logging
+import threading
+
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
-
-import litellm
-import ujson
 
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
@@ -48,8 +46,7 @@ class LM(BaseLM):
             model_type: The type of the model, either ``"chat"`` or ``"text"``.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
-            cache: Whether to cache the model responses for reuse to improve performance
-                   and reduce costs.
+            cache: Whether to cache the model responses for reuse to improve speed and reduce cost.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -86,13 +83,10 @@ class LM(BaseLM):
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
         response = completion(
-            request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
+            kwargs=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
         )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
@@ -153,7 +147,11 @@ class LM(BaseLM):
         thread = threading.Thread(target=thread_function_wrapper)
         model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
-            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
+            thread=thread,
+            model=model_to_finetune,
+            train_data=train_data,
+            train_kwargs=train_kwargs,
+            data_format=data_format,
         )
         thread.start()
 
@@ -212,36 +210,22 @@ class LM(BaseLM):
         return new_instance
 
 
-@functools.lru_cache(maxsize=None)
-def cached_litellm_completion(request, num_retries: int):
-    return litellm_completion(
-        request,
-        cache={"no-cache": False, "no-store": False},
-        num_retries=num_retries,
-    )
+def litellm_completion(kwargs, num_retries: int, cache={"no-cache": True, "no-store": True}):
+    from . import LM_CACHE, LITELLM_GET_CACHE_KEY
+
+    cache_key = LITELLM_GET_CACHE_KEY(kwargs)
+    if cached_output := LM_CACHE.get(cache_key):
+        return cached_output
+
+    output = litellm.completion(num_retries=num_retries, cache=cache, **kwargs)
+    LM_CACHE.add(cache_key, output)
+
+    return output
 
 
-def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
-        **kwargs,
-    )
-
-
-@functools.lru_cache(maxsize=None)
-def cached_litellm_text_completion(request, num_retries: int):
-    return litellm_text_completion(
-        request,
-        num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
-    )
-
-
-def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-
+def litellm_text_completion(kwargs, num_retries: int, cache={"no-cache": True, "no-store": True}):
+    from . import LM_CACHE, LITELLM_GET_CACHE_KEY
+    
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = kwargs.pop("model").split("/", 1)
@@ -254,12 +238,19 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(
+    kwargs = dict(model=f"text-completion-openai/{model}", prompt=prompt, **kwargs)
+
+    cache_key = LITELLM_GET_CACHE_KEY(kwargs)
+    if cached_output := LM_CACHE.get(cache_key):
+        return cached_output
+
+    output = litellm.text_completion(
         cache=cache,
-        model=f"text-completion-openai/{model}",
         api_key=api_key,
         api_base=api_base,
-        prompt=prompt,
         num_retries=num_retries,
         **kwargs,
     )
+
+    LM_CACHE.add(cache_key, output)
+    return output
