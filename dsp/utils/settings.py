@@ -100,7 +100,7 @@ class Settings:
     def configure(self, return_token=False, **kwargs):
         global main_thread_config
         overrides = dspy_ctx_overrides.get()
-        new_overrides = dotdict({**main_thread_config, **overrides, **kwargs})
+        new_overrides = dotdict({**copy.deepcopy(DEFAULT_CONFIG), **main_thread_config, **overrides, **kwargs})
         token = dspy_ctx_overrides.set(new_overrides)
 
         # Update main_thread_config, in the main thread only
@@ -121,7 +121,7 @@ class Settings:
 
             if threading.current_thread() is threading.main_thread():
                 global main_thread_config
-                main_thread_config = dspy_ctx_overrides.get()
+                main_thread_config = dotdict({**copy.deepcopy(DEFAULT_CONFIG), **dspy_ctx_overrides.get()})
 
     def __repr__(self):
         overrides = dspy_ctx_overrides.get()
