@@ -49,7 +49,7 @@ class Settings:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            # No need for a lock since we're only updating main_thread_config in the main thread
+            cls._instance.lock = threading.Lock()  # maintained here for DSPy assertions.py
         return cls._instance
 
     def __getattr__(self, name):
