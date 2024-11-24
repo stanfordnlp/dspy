@@ -89,6 +89,12 @@ class Settings:
         overrides = dspy_ctx_overrides.get()
         return dotdict({**main_thread_config, **overrides})
 
+    @property
+    def config(self):
+        config = self.copy()
+        del config['lock']
+        return config
+
     # Configuration methods
 
     def configure(self, return_token=False, **kwargs):
