@@ -49,6 +49,7 @@ class Settings:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance.lock = threading.Lock()  # maintained here for assertions
         return cls._instance
 
     def __getattr__(self, name):
@@ -83,6 +84,10 @@ class Settings:
             return self[key]
         except AttributeError:
             return default
+
+    def copy(self):
+        overrides = dspy_ctx_overrides.get()
+        return dotdict({**main_thread_config, **overrides})
 
     # Configuration methods
 
