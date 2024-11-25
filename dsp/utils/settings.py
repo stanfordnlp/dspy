@@ -1,7 +1,8 @@
+import copy
 import threading
-from contextlib import contextmanager
-from copy import deepcopy
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -27,85 +28,105 @@ DEFAULT_CONFIG = dotdict(
     async_max_workers=8,
 )
 
+# Global base configuration
+main_thread_config = copy.deepcopy(DEFAULT_CONFIG)
+
+# Initialize the context variable with an empty dict as default
+dspy_ctx_overrides = ContextVar('dspy_ctx_overrides', default=dotdict())
+
 
 class Settings:
-    """DSP configuration settings."""
+    """
+    A singleton class for DSPy configuration settings.
+
+    This is thread-safe. User threads are supported both through ParallelExecutor and native threading.
+        - If native threading is used, the thread inherits the initial config from the main thread.
+        - If ParallelExecutor is used, the thread inherits the initial config from its parent thread.
+    """
 
     _instance = None
 
     def __new__(cls):
-        """
-        Singleton Pattern. See https://python-patterns.guide/gang-of-four/singleton/
-        """
-
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.lock = threading.Lock()
-            cls._instance.main_tid = threading.get_ident()
-            cls._instance.main_stack = []
-            cls._instance.stack_by_thread = {}
-            cls._instance.stack_by_thread[threading.get_ident()] = cls._instance.main_stack
-
-            #  TODO: remove first-class support for re-ranker and potentially combine with RM to form a pipeline of sorts
-            #  eg: RetrieveThenRerankPipeline(RetrievalModel, Reranker)
-            #  downstream operations like dsp.retrieve would use configs from the defined pipeline.
-
-            # make a deepcopy of the default config to avoid modifying the default config
-            cls._instance.__append(deepcopy(DEFAULT_CONFIG))
-
+            cls._instance.lock = threading.Lock()  # maintained here for DSPy assertions.py
         return cls._instance
+
+    def __getattr__(self, name):
+        overrides = dspy_ctx_overrides.get()
+        if name in overrides:
+            return overrides[name]
+        elif name in main_thread_config:
+            return main_thread_config[name]
+        else:
+            raise AttributeError(f"'Settings' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name in ('_instance',):
+            super().__setattr__(name, value)
+        else:
+            self.configure(**{name: value})
+
+    # Dictionary-like access
+
+    def __getitem__(self, key):
+        return self.__getattr__(key)
+
+    def __setitem__(self, key, value):
+        self.__setattr__(key, value)
+
+    def __contains__(self, key):
+        overrides = dspy_ctx_overrides.get()
+        return key in overrides or key in main_thread_config
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except AttributeError:
+            return default
+
+    def copy(self):
+        overrides = dspy_ctx_overrides.get()
+        return dotdict({**main_thread_config, **overrides})
 
     @property
     def config(self):
-        thread_id = threading.get_ident()
-        if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
-        return self.stack_by_thread[thread_id][-1]
+        config = self.copy()
+        del config['lock']
+        return config
 
-    def __getattr__(self, name):
-        if hasattr(self.config, name):
-            return getattr(self.config, name)
+    # Configuration methods
 
-        if name in self.config:
-            return self.config[name]
+    def configure(self, return_token=False, **kwargs):
+        global main_thread_config
+        overrides = dspy_ctx_overrides.get()
+        new_overrides = dotdict({**copy.deepcopy(DEFAULT_CONFIG), **main_thread_config, **overrides, **kwargs})
+        token = dspy_ctx_overrides.set(new_overrides)
 
-        super().__getattr__(name)
+        # Update main_thread_config, in the main thread only
+        if threading.current_thread() is threading.main_thread():
+            main_thread_config = new_overrides
 
-    def __append(self, config):
-        thread_id = threading.get_ident()
-        if thread_id not in self.stack_by_thread:
-            self.stack_by_thread[thread_id] = [self.main_stack[-1].copy()]
-        self.stack_by_thread[thread_id].append(config)
-
-    def __pop(self):
-        thread_id = threading.get_ident()
-        if thread_id in self.stack_by_thread:
-            self.stack_by_thread[thread_id].pop()
-
-    def configure(self, inherit_config: bool = True, **kwargs):
-        """Set configuration settings.
-
-        Args:
-            inherit_config (bool, optional): Set configurations for the given, and use existing configurations for the rest. Defaults to True.
-        """
-        if inherit_config:
-            config = {**self.config, **kwargs}
-        else:
-            config = {**kwargs}
-
-        self.__append(config)
+        if return_token:
+            return token
 
     @contextmanager
-    def context(self, inherit_config=True, **kwargs):
-        self.configure(inherit_config=inherit_config, **kwargs)
-
+    def context(self, **kwargs):
+        """Context manager for temporary configuration changes."""
+        token = self.configure(return_token=True, **kwargs)
         try:
             yield
         finally:
-            self.__pop()
+            dspy_ctx_overrides.reset(token)
 
-    def __repr__(self) -> str:
-        return repr(self.config)
+            if threading.current_thread() is threading.main_thread():
+                global main_thread_config
+                main_thread_config = dotdict({**copy.deepcopy(DEFAULT_CONFIG), **dspy_ctx_overrides.get()})
+
+    def __repr__(self):
+        overrides = dspy_ctx_overrides.get()
+        combined_config = {**main_thread_config, **overrides}
+        return repr(combined_config)
 
 
 settings = Settings()
