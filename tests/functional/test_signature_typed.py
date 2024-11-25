@@ -4,7 +4,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.adapters.chat_adapter import _format_field_value
+from dspy.adapters.utils import format_field_value
 from dspy.functional import TypedPredictor
 from dspy.signatures.signature import signature_to_template
 
@@ -116,7 +116,7 @@ def test_pydantic():
     instance = build_model_instance()
     parsed_instance = parser(instance.model_dump_json())
 
-    formatted_instance = _format_field_value(
+    formatted_instance = format_field_value(
         field_info=dspy.OutputField(),
         value=instance.model_dump_json(),
     )
@@ -136,7 +136,7 @@ def test_optional_pydantic():
     parsed_instance = parser(instance.model_dump_json())
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
-    formatted_instance = _format_field_value(
+    formatted_instance = format_field_value(
         field_info=dspy.OutputField(),
         value=instance.model_dump_json(),
     )
@@ -160,7 +160,7 @@ def test_nested_pydantic():
     instance = NestedModel(model=build_model_instance())
     parsed_instance = parser(instance.model_dump_json())
 
-    formatted_instance = _format_field_value(
+    formatted_instance = format_field_value(
         field_info=dspy.OutputField(),
         value=instance.model_dump_json(),
     )
@@ -191,7 +191,7 @@ def test_dataclass():
     parsed_instance = parser('{"string": "foobar", "number": 42, "floating": 3.14, "boolean": true}')
     assert parsed_instance == instance, f"{instance} != {parsed_instance}"
 
-    formatted_instance = _format_field_value(
+    formatted_instance = format_field_value(
         field_info=dspy.OutputField(),
         value=ujson.dumps(asdict(instance)),
     )
