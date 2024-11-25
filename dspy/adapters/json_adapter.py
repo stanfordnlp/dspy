@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import format_field_value, serialize_for_json
+from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
 
 from ..adapters.image_utils import Image
 from ..signatures.signature import SignatureMeta
@@ -113,7 +113,7 @@ def parse_value(value, annotation):
     parsed_value = value
 
     if isinstance(annotation, enum.EnumMeta):
-        parsed_value = annotation(value)
+        parsed_value = find_enum_member(annotation, value)
     elif isinstance(value, str):
         try:
             parsed_value = json.loads(value)

@@ -234,7 +234,7 @@ def test_datetime_inputs_and_outputs():
     assert output.next_event_time == datetime(2024, 11, 27, 14, 0, 0)
 
 
-def test_enum_input_and_output():
+def test_explicitly_valued_enum_inputs_and_outputs():
     class Status(enum.Enum):
         PENDING = "pending"
         IN_PROGRESS = "in_progress"
@@ -251,6 +251,56 @@ def test_enum_input_and_output():
             {
                 "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "in_progress",
+            }
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    output = program(current_status=Status.PENDING)
+    assert output.next_status == Status.IN_PROGRESS
+
+
+def test_enum_inputs_and_outputs_with_shared_names_and_values():
+    class TicketStatus(enum.Enum):
+        OPEN = "CLOSED"
+        CLOSED = "RESOLVED"
+        RESOLVED = "OPEN"
+
+    class TicketStatusSignature(dspy.Signature):
+        current_status: TicketStatus = dspy.InputField()
+        next_status: TicketStatus = dspy.OutputField()
+
+    program = Predict(TicketStatusSignature)
+
+    # Mock reasoning and output
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "The ticket is currently 'OPEN', transitioning to 'CLOSED'.",
+                "next_status": "RESOLVED",  # Refers to TicketStatus.CLOSED by value
+            }
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    output = program(current_status=TicketStatus.OPEN)
+    assert output.next_status == TicketStatus.CLOSED  # By value
+
+
+def test_auto_valued_enum_inputs_and_outputs():
+    Status = enum.Enum("Status", ["PENDING", "IN_PROGRESS", "COMPLETED"])
+
+    class StatusSignature(dspy.Signature):
+        current_status: Status = dspy.InputField()
+        next_status: Status = dspy.OutputField()
+
+    program = Predict(StatusSignature)
+
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
+                "next_status": "IN_PROGRESS",  # Use the auto-assigned value for IN_PROGRESS
             }
         ]
     )

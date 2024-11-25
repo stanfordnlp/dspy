@@ -75,6 +75,33 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
         return {"type": "text", "text": string_value}
 
 
+def find_enum_member(enum, identifier):
+    """
+    Finds the enum member corresponding to the specified identifier, which may be the
+    enum member's name or value.
+
+    Args:
+        enum: The enum to search for the member.
+        identifier: The name or value of the enum member to find.
+    Returns:
+        The enum member corresponding to the specified identifier.
+    """
+    # Check if the identifier is a valid enum member value *before* checking if it's a valid enum
+    # member name, since the identifier will be a value for explicitly-valued enums. This handles
+    # the (rare) case where an enum member value is the same as another enum member's name in
+    # an explicitly-valued enum
+    for member in enum:
+        if member.value == identifier:
+            return member
+
+    # If the identifier is not a valid enum member value, check if it's a valid enum member name,
+    # since the identifier will be a member name for auto-valued enums
+    if identifier in enum.__members__:
+        return enum[identifier]
+
+    raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
+
+
 def _format_input_list_field_value(value: List[Any]) -> str:
     """
     Formats the value of an input field of type List[Any].

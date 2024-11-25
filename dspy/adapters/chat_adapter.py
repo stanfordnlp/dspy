@@ -14,7 +14,7 @@ from pydantic.fields import FieldInfo
 
 from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import format_field_value
+from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -151,7 +151,7 @@ def parse_value(value, annotation):
     parsed_value = value
 
     if isinstance(annotation, enum.EnumMeta):
-        parsed_value = annotation(value)
+        return find_enum_member(annotation, value)
     elif isinstance(value, str):
         try:
             parsed_value = json.loads(value)
