@@ -245,7 +245,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @contextmanager
     def replace(
         cls,
-        new_signature: "Signature",
+        new_signature: "Type[Signature]",
         validate_new_signature: bool = True,
     ) -> typing.Generator[None, None, None]:
         """Replace the signature with an updated version.
@@ -267,25 +267,32 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         class OldSignature(cls):
             pass
 
-        replace_attrs = ["__doc__", "__pydantic_fields__", "model_fields", "model_extra", "model_config"]
-        for attr in replace_attrs:
-            try:
-                setattr(cls, attr, getattr(new_signature, attr))
-            except AttributeError as exc:
-                if attr == "model_fields":
-                    logging.debug("Model attribute model_fields not replaced, expected with pydantic > 2.10")
-                else:
-                    raise exc
+        def swap_attributes(source: Type[Signature]):
+            unhandled = {}
+
+            for attr in ["__doc__", "__pydantic_fields__", "model_fields", "model_extra", "model_config"]:
+                try:
+                    setattr(cls, attr, getattr(source, attr))
+                except AttributeError as exc:
+                    if attr in ("__pydantic_fields__", "model_fields"):
+                        version = "< 2.10" if attr == "__pydantic_fields__" else ">= 2.10"
+                        logging.debug(f"Model attribute {attr} not replaced, expected with pydantic {version}")
+                        unhandled[attr] = exc
+                    else:
+                        raise exc
+
+            # if neither of the attributes were replaced, raise an error to prevent silent failures
+            if set(unhandled.keys()) >= {"model_fields", "__pydantic_fields__"}:
+                raise ValueError("Failed to replace either model_fields or __pydantic_fields__") from (
+                    unhandled.get("model_fields") or unhandled.get("__pydantic_fields__")
+                )
+
+        swap_attributes(new_signature)
         cls.model_rebuild(force=True)
+
         yield
-        for attr in replace_attrs:
-            try:
-                setattr(cls, attr, getattr(OldSignature, attr))
-            except AttributeError as exc:
-                if attr == "model_fields":
-                    logging.debug("Model attribute model_fields not replaced, expected with pydantic > 2.10")
-                else:
-                    raise exc
+
+        swap_attributes(OldSignature)
         cls.model_rebuild(force=True)
 
 
