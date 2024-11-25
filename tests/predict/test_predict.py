@@ -1,6 +1,9 @@
 import copy
+import enum
+from datetime import datetime
 
 import pydantic
+import pytest
 import ujson
 
 import dspy
@@ -195,6 +198,66 @@ def test_multi_output2():
     assert results.completions.answer1[1] == "my 1 answer"
     assert results.completions.answer2[0] == "my 2 answer"
     assert results.completions.answer2[1] == "my 3 answer"
+
+
+def test_datetime_inputs_and_outputs():
+    # Define a model for datetime inputs and outputs
+    class TimedEvent(pydantic.BaseModel):
+        event_name: str
+        event_time: datetime
+
+    class TimedSignature(dspy.Signature):
+        events: list[TimedEvent] = dspy.InputField()
+        summary: str = dspy.OutputField()
+        next_event_time: datetime = dspy.OutputField()
+
+    program = Predict(TimedSignature)
+
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Processed datetime inputs",
+                "summary": "All events are processed",
+                "next_event_time": "2024-11-27T14:00:00",
+            }
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    output = program(
+        events=[
+            TimedEvent(event_name="Event 1", event_time=datetime(2024, 11, 25, 10, 0, 0)),
+            TimedEvent(event_name="Event 2", event_time=datetime(2024, 11, 25, 15, 30, 0)),
+        ]
+    )
+    assert output.summary == "All events are processed"
+    assert output.next_event_time == datetime(2024, 11, 27, 14, 0, 0)
+
+
+def test_enum_input_and_output():
+    class Status(enum.Enum):
+        PENDING = "pending"
+        IN_PROGRESS = "in_progress"
+        COMPLETED = "completed"
+
+    class StatusSignature(dspy.Signature):
+        current_status: Status = dspy.InputField()
+        next_status: Status = dspy.OutputField()
+
+    program = Predict(StatusSignature)
+
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
+                "next_status": "in_progress",
+            }
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    output = program(current_status=Status.PENDING)
+    assert output.next_status == Status.IN_PROGRESS
 
 
 def test_named_predictors():

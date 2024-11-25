@@ -1,25 +1,28 @@
 import ast
-import json
 import enum
 import inspect
+import json
+import textwrap
+from typing import Any, Dict, KeysView, Literal, NamedTuple, get_args, get_origin
+
+import json_repair
 import litellm
 import pydantic
-import textwrap
-import json_repair
-
-
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
-from typing import Any, Dict, KeysView, List, Literal, NamedTuple, get_args, get_origin
 
 from dspy.adapters.base import Adapter
+from dspy.adapters.utils import format_field_value, serialize_for_json
+
 from ..adapters.image_utils import Image
 from ..signatures.signature import SignatureMeta
 from ..signatures.utils import get_dspy_field_type
 
+
 class FieldInfoWithName(NamedTuple):
     name: str
     info: FieldInfo
+
 
 class JSONAdapter(Adapter):
     def __init__(self):
@@ -28,12 +31,11 @@ class JSONAdapter(Adapter):
     def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
-        
-        
+
         try:
-            provider = lm.model.split('/', 1)[0] or "openai"
-            if 'response_format' in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
-                outputs = lm(**inputs, **lm_kwargs, response_format={ "type": "json_object" })
+            provider = lm.model.split("/", 1)[0] or "openai"
+            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+                outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
             else:
                 outputs = lm(**inputs, **lm_kwargs)
 
@@ -44,11 +46,12 @@ class JSONAdapter(Adapter):
 
         for output in outputs:
             value = self.parse(signature, output, _parse_values=_parse_values)
-            assert set(value.keys()) == set(signature.output_fields.keys()), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
+            assert set(value.keys()) == set(
+                signature.output_fields.keys()
+            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
             values.append(value)
-        
-        return values
 
+        return values
 
     def format(self, signature, demos, inputs):
         messages = []
@@ -71,7 +74,7 @@ class JSONAdapter(Adapter):
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         messages.append(format_turn(signature, inputs, role="user"))
-        
+
         return messages
 
     def parse(self, signature, completion, _parse_values=True):
@@ -90,7 +93,7 @@ class JSONAdapter(Adapter):
 
     def format_turn(self, signature, values, role, incomplete=False):
         return format_turn(signature, values, role, incomplete)
-    
+
     def format_fields(self, signature, values, role):
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
@@ -101,16 +104,16 @@ class JSONAdapter(Adapter):
         }
 
         return format_fields(role=role, fields_with_values=fields_with_values)
-        
+
 
 def parse_value(value, annotation):
     if annotation is str:
         return str(value)
-    
+
     parsed_value = value
 
     if isinstance(annotation, enum.EnumMeta):
-        parsed_value = annotation[value]
+        parsed_value = annotation(value)
     elif isinstance(value, str):
         try:
             parsed_value = json.loads(value)
@@ -119,44 +122,9 @@ def parse_value(value, annotation):
                 parsed_value = ast.literal_eval(value)
             except (ValueError, SyntaxError):
                 parsed_value = value
-    
+
     return TypeAdapter(annotation).validate_python(parsed_value)
 
-
-def format_blob(blob):
-    if "\n" not in blob and "«" not in blob and "»" not in blob:
-        return f"«{blob}»"
-
-    modified_blob = blob.replace("\n", "\n    ")
-    return f"«««\n    {modified_blob}\n»»»"
-
-
-def format_input_list_field_value(value: List[Any]) -> str:
-    """
-    Formats the value of an input field of type List[Any].
-
-    Args:
-      value: The value of the list-type input field.
-    Returns:
-      A string representation of the input field's list value.
-    """
-    if len(value) == 0:
-        return "N/A"
-    if len(value) == 1:
-        return format_blob(value[0])
-
-    return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
-
-
-def _serialize_for_json(value):
-    if isinstance(value, pydantic.BaseModel):
-        return value.model_dump()
-    elif isinstance(value, list):
-        return [_serialize_for_json(item) for item in value]
-    elif isinstance(value, dict):
-        return {key: _serialize_for_json(val) for key, val in value.items()}
-    else:
-        return value
 
 def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     """
@@ -169,17 +137,10 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Returns:
       The formatted value of the field, represented as a string.
     """
-
-    if isinstance(value, list) and field_info.annotation is str:
-        # If the field has no special type requirements, format it as a nice numbere list for the LM.
-        return format_input_list_field_value(value)
     if field_info.annotation is Image:
         raise NotImplementedError("Images are not yet supported in JSON mode.")
-    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
-        return json.dumps(_serialize_for_json(value))
-    else:
-        return str(value)
 
+    return format_field_value(field_info=field_info, value=value, assume_text=True)
 
 
 def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
@@ -197,9 +158,8 @@ def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -
 
     if role == "assistant":
         d = fields_with_values.items()
-        d = {k.name: _serialize_for_json(v) for k, v in d}
-
-        return json.dumps(_serialize_for_json(d), indent=2)
+        d = {k.name: v for k, v in d}
+        return json.dumps(serialize_for_json(d), indent=2)
 
     output = []
     for field, field_value in fields_with_values.items():
@@ -246,15 +206,19 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
                 field_name, "Not supplied for this particular example."
             )
             for field_name, field_info in fields.items()
-        }
+        },
     )
     content.append(formatted_fields)
 
     if role == "user":
+
         def type_info(v):
-            return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" \
-                if v.annotation is not str else ""
-        
+            return (
+                f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
+                if v.annotation is not str
+                else ""
+            )
+
         # TODO: Consider if not incomplete:
         content.append(
             "Respond with a JSON object in the following order of fields: "
@@ -297,15 +261,15 @@ def prepare_instructions(signature: SignatureMeta):
     def field_metadata(field_name, field_info):
         type_ = field_info.annotation
 
-        if get_dspy_field_type(field_info) == 'input' or type_ is str:
+        if get_dspy_field_type(field_info) == "input" or type_ is str:
             desc = ""
         elif type_ is bool:
             desc = "must be True or False"
         elif type_ in (int, float):
             desc = f"must be a single {type_.__name__} value"
         elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
-            desc= f"must be one of: {'; '.join(type_.__members__)}"
-        elif hasattr(type_, '__origin__') and type_.__origin__ is Literal:
+            desc = f"must be one of: {'; '.join(type_.__members__)}"
+        elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
             desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
         else:
             desc = "must be pareseable according to the following JSON schema: "
@@ -320,13 +284,13 @@ def prepare_instructions(signature: SignatureMeta):
             fields_with_values={
                 FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
                 for field_name, field_info in fields.items()
-            }
+            },
         )
-    
+
     parts.append("Inputs will have the following structure:")
-    parts.append(format_signature_fields_for_instructions('user', signature.input_fields))
+    parts.append(format_signature_fields_for_instructions("user", signature.input_fields))
     parts.append("Outputs will be a JSON object with the following fields.")
-    parts.append(format_signature_fields_for_instructions('assistant', signature.output_fields))
+    parts.append(format_signature_fields_for_instructions("assistant", signature.output_fields))
     # parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
 
     instructions = textwrap.dedent(signature.instructions)
