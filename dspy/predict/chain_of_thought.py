@@ -33,15 +33,14 @@ class ChainOfThought(Module):
             extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
         else:
             extended_signature = signature.prepend("rationale", rationale_type, type_=str)
-        
+
         self._predict = dspy.Predict(extended_signature, **config)
         self._predict.extended_signature = extended_signature
 
     def forward(self, **kwargs):
         assert self.activated in [True, False]
 
-        signature = kwargs.pop("new_signature", self._predict.extended_signature if self.activated else self.signature)
-        return self._predict(signature=signature, **kwargs)
+        return self._predict(**kwargs)
 
     @property
     def demos(self):

@@ -174,7 +174,6 @@ class Predict(Module, Parameter):
             )
         )
         self.signature = retry_signature
-
         constraints_desc = [constraint.desc for constraint in self.constraints]
         violated_constraints_indices = []
         failed_trace = None
