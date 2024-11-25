@@ -3,7 +3,7 @@ import random
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from .bootstrap import BootstrapFewShot, BootstrapKMN, BootstrapKNN
+from .bootstrap import BootstrapFewShot, BootstrapKNN
 from .vanilla import LabeledFewShot
 
 # TODO: Don't forget dealing with the raw demos.
