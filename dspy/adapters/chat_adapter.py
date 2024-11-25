@@ -6,7 +6,7 @@ import re
 import textwrap
 from collections.abc import Mapping
 from itertools import chain
-from typing import Any, Dict, KeysView, List, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Any, Dict, List, Literal, NamedTuple, Union, get_args, get_origin
 
 import pydantic
 from pydantic import TypeAdapter
@@ -15,11 +15,9 @@ from pydantic.fields import FieldInfo
 from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import format_field_value
-from dspy.signatures.signature import Signature
-
-from ..signatures.field import OutputField
-from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
+from dspy.signatures.field import OutputField
+from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.signatures.utils import get_dspy_field_type
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -167,26 +165,27 @@ def parse_value(value, annotation):
 
 
 def format_turn(signature, values, role, incomplete=False):
-    fields_to_collapse = []
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
 
     Args:
-      signature: The DSPy signature to which future LLM responses should conform.
-      values: A dictionary mapping field names (from the DSPy signature) to corresponding values
-              that should be included in the message.
-      role: The role of the message, which can be either "user" or "assistant".
-      incomplete: If True, indicates that output field values are present in the set of specified
-                  ``values``. If False, indicates that ``values`` only contains input field values.
+        signature: The DSPy signature to which future LLM responses should conform.
+        values: A dictionary mapping field names (from the DSPy signature) to corresponding values
+            that should be included in the message.
+        role: The role of the message, which can be either "user" or "assistant".
+        incomplete: If True, indicates that output field values are present in the set of specified
+            ``values``. If False, indicates that ``values`` only contains input field values.
+
     Returns:
-      A chat message that can be appended to a chat thread. The message contains two string fields:
-      ``role`` ("user" or "assistant") and ``content`` (the message text).
+        A chat message that can be appended to a chat thread. The message contains two string fields:
+        ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
+    fields_to_collapse = []
     content = []
 
     if role == "user":
-        fields: Dict[str, FieldInfo] = signature.input_fields
+        fields = signature.input_fields
         if incomplete:
             fields_to_collapse.append(
                 {
@@ -195,11 +194,11 @@ def format_turn(signature, values, role, incomplete=False):
                 }
             )
     else:
-        fields: Dict[str, FieldInfo] = signature.output_fields
+        fields = signature.output_fields
         # Add the built-in field indicating that the chat turn has been completed
         fields[BuiltInCompletedOutputFieldInfo.name] = BuiltInCompletedOutputFieldInfo.info
         values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
-    field_names: KeysView = fields.keys()
+    field_names = fields.keys()
     if not incomplete:
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
@@ -253,15 +252,15 @@ def format_turn(signature, values, role, incomplete=False):
             collapsed_messages.append(item)
             continue
 
-        # If current item is image, add to collapsed_messages
+        # If the current item is image, add to collapsed_messages
         if item.get("type") == "image_url":
             if collapsed_messages[-1].get("type") == "text":
                 collapsed_messages[-1]["text"] += "\n"
             collapsed_messages.append(item)
-        # If previous item is text and current item is text, append to previous item
+        # If the previous item is text and current item is text, append to the previous item
         elif collapsed_messages[-1].get("type") == "text":
             collapsed_messages[-1]["text"] += "\n\n" + item["text"]
-        # If previous item is not text(aka image), add current item as a new item
+        # If the previous item is not text(aka image), add the current item as a new item
         else:
             item["text"] = "\n\n" + item["text"]
             collapsed_messages.append(item)
@@ -314,21 +313,21 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
     def field_metadata(field_name, field_info):
-        type_ = field_info.annotation
+        field_type = field_info.annotation
 
-        if get_dspy_field_type(field_info) == "input" or type_ is str:
+        if get_dspy_field_type(field_info) == "input" or field_type is str:
             desc = ""
-        elif type_ is bool:
+        elif field_type is bool:
             desc = "must be True or False"
-        elif type_ in (int, float):
-            desc = f"must be a single {type_.__name__} value"
-        elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
-            desc = f"must be one of: {'; '.join(type_.__members__)}"
-        elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
-            desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
+        elif field_type in (int, float):
+            desc = f"must be a single {field_type.__name__} value"
+        elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
+            desc = f"must be one of: {'; '.join(field_type.__members__)}"
+        elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
+            desc = f"must be one of: {'; '.join([str(x) for x in field_type.__args__])}"
         else:
             desc = "must be pareseable according to the following JSON schema: "
-            desc += json.dumps(prepare_schema(type_), ensure_ascii=False)
+            desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
         return f"{{{field_name}}}{desc}"
