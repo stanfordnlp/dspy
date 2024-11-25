@@ -86,6 +86,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -103,6 +104,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
@@ -154,7 +156,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        embedding,
+        embedder,
         teacher_settings=None,
         max_bootstrapped_demos=64,
         max_labeled_demos=16,
@@ -166,7 +168,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         metric_threshold=None,
     ):
         self.metric = metric
-        self.embedding = embedding
+        self.embedder = embedder
         self.teacher_settings = teacher_settings or {}
         self.max_rounds = max_rounds
 
@@ -209,7 +211,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                 print("BootstrapKNN with 0 static demos")
                 optimizer = BootstrapKNN(
                     metric=self.metric,
-                    embedding=self.embedding,
+                    embedder=self.embedder,
                     metric_threshold=self.metric_threshold,
                     max_bootstrapped_demos=self.max_bootstrapped_demos,
                     max_labeled_demos=self.max_labeled_demos,
@@ -217,6 +219,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -233,6 +236,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
                     num_static_demos=num_static_demos,
+                    num_threads=self.num_threads,
                     random_seed=seed,
                 )
 
