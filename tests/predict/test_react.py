@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import dspy
 from dspy.utils.dummies import DummyLM, dummy_rm
+from dspy.predict import react
 
 
 # def test_example_no_tools():
@@ -122,3 +123,27 @@ from dspy.utils.dummies import DummyLM, dummy_rm
 
 #     assert react.react[0].signature.instructions is not None
 #     assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")
+
+def test_tool_from_function():
+    def foo(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+    
+    tool = react.Tool(foo)
+    assert tool.name == "foo"
+    assert tool.desc == "Add two numbers."
+    assert tool.args == {"a": "int", "b": "int"}
+
+def test_tool_from_class():
+    class Foo:
+        def __init__(self, user_id: str):
+            self.user_id = user_id
+
+        def foo(self, a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+    tool = react.Tool(Foo("123").foo)
+    assert tool.name == "foo"
+    assert tool.desc == "Add two numbers."
+    assert tool.args == {"a": "int", "b": "int"}

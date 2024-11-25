@@ -1,15 +1,24 @@
 from .lm import LM
 from .provider import Provider, TrainingJob
 from .base_lm import BaseLM, inspect_history
-from .embedding import Embedding
+from .embedding import Embedder
 import litellm
 import os
 from pathlib import Path
 from litellm.caching import Cache
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
+
+# TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
+# the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
 litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+
+if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
+    litellm.cache.cache.disk_cache.reset('size_limit', DISK_CACHE_LIMIT)
+
 litellm.telemetry = False
+
 # Turn off by default to avoid LiteLLM logging during every LM call.
 litellm.suppress_debug_info = True
 

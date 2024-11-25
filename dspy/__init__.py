@@ -6,6 +6,8 @@ from .primitives import *
 from .retrieve import *
 from .signatures import *
 
+import dspy.retrievers
+
 # Functional must be imported after primitives, predict and signatures
 from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate  # isort: skip

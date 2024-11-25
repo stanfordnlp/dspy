@@ -16,7 +16,7 @@ class KNN:
         Args:
             k: Number of nearest neighbors to retrieve
             trainset: List of training examples to search through
-            vectorizer: Optional dspy.Embedding for computing embeddings. If None, uses sentence-transformers.
+            vectorizer: Optional dspy.Embedder for computing embeddings. If None, uses sentence-transformers.
 
         Example:
             >>> trainset = [dsp.Example(input="hello", output="world"), ...]
@@ -27,7 +27,7 @@ class KNN:
 
         self.k = k
         self.trainset = trainset
-        self.embedding = vectorizer or dspy.Embedding(dsp.SentenceTransformersVectorizer())
+        self.embedding = vectorizer or dspy.Embedder(dsp.SentenceTransformersVectorizer())
         trainset_casted_to_vectorize = [
             " | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys])
             for example in self.trainset

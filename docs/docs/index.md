@@ -368,7 +368,7 @@ BootstrapFS on MATH with a tiny LM like Llama-3.2 with Ollama (maybe with a big 
 
 ## 3) **DSPy's Ecosystem** advances open-source AI research.
 
-Compared to working on or with monolithic LMs, DSPy's modular paradigm aims to enable a large community to improve the compositional architectures, inference-time strategies, and optimizers for LM programs in an open, distributed way. It gives you more control, helps you iterate much faster, and allows your programs to get better over time by applying the latest optimizers or modules.
+Compared to monolithic LMs, DSPy's modular paradigm enables a large community to improve the compositional architectures, inference-time strategies, and optimizers for LM programs in an open, distributed way. This gives DSPy users more control, helps them iterate much faster, and allows their programs to get better over time by applying the latest optimizers or modules.
 
 The DSPy research effort started at Stanford NLP in Feb 2022, building on what we learned from developing early [compound LM systems](https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/) like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [DSP](https://arxiv.org/abs/2212.14024) in Dec 2022 and evolved by Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [250 contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
 
