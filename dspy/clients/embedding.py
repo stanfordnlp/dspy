@@ -69,8 +69,15 @@ class Embedding:
         """
         if isinstance(inputs, str):
             inputs = [inputs]
+
         if isinstance(self.model, str):
-            embedding_response = litellm.embedding(model=self.model, input=inputs, caching=caching, api_key=self.api_key, **kwargs)
+            if any(key in kwargs for key in ["model", "input", "api_key"]):
+                raise ValueError("`model`, `input`, and `api_key` cannot be provided as keyword arguments.")
+
+            kwargs["model"] = self.model
+            kwargs["input"] = inputs
+            kwargs["api_key"] = self.api_key
+            embedding_response = litellm.embedding(**kwargs, caching=caching)
             return np.array([data["embedding"] for data in embedding_response.data], dtype=np.float32)
         elif callable(self.model):
             return np.array(self.model(inputs, **kwargs), dtype=np.float32)
