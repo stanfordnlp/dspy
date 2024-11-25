@@ -276,7 +276,7 @@ class BootstrapFewShot(Teleprompter):
 class BootstrapKNN(BootstrapFewShot):
     def __init__(
         self,
-        embedding,  # dspy.Embedding
+        embedder,  # dspy.Embedding
         metric=None,
         metric_threshold=None,
         teacher_settings: Optional[Dict] = None,
@@ -299,7 +299,7 @@ class BootstrapKNN(BootstrapFewShot):
             max_errors=max_errors,
         )
         self.num_static_demos = num_static_demos
-        self.embedding = embedding
+        self.embedder = embedder
         self.random_seed = random_seed
 
     def _train(self):
@@ -315,6 +315,6 @@ class BootstrapKNN(BootstrapFewShot):
             predictor.demos = static_demos
 
             dynamic_demos = [x for x in augmented_demos if x not in static_demos]
-            predictor.retrieve_demos = dspy.KNN(k=k, trainset=dynamic_demos, vectorizer=self.embedding)
+            predictor.retrieve_demos = dspy.KNN(k=k, trainset=dynamic_demos, vectorizer=self.embedder)
 
         return self.student
