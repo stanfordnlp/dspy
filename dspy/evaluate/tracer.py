@@ -41,11 +41,11 @@ from dataclasses import dataclass, field
 from functools import wraps, partial
 from inspect import getsourcelines
 
-from snoop import Config as SnoopConfig
+from snoop import Config
 
 
 @dataclass
-class SnoopFile:
+class Trace:
     lines: list[str] = field(default_factory=list)
 
     def write(self, line: str):
@@ -60,17 +60,17 @@ def source_code(f):
     return "\n".join(f"{i:>5} | {line}".rstrip() for i, line in enumerate(lines, 1))
 
 
-def snoopy(f=None, **snoop_kwargs):
+def tracer(f=None, **snoop_kwargs):
     if not f:
-        return partial(snoopy, **snoop_kwargs)
+        return partial(tracer, **snoop_kwargs)
 
     @wraps(f)
     def wrapper(*args, **kwargs):
-        trace = SnoopFile()
-        snoopy = SnoopConfig(out=trace, color=False, columns=[])
-        wrapper.snoopy = snoopy
+        trace = Trace()
+        snoop = Config(out=trace, color=False, columns=[])
+        wrapper.snoop = snoop
         wrapper.trace = trace
-        return snoopy.snoop(f, **snoop_kwargs)(*args, **kwargs)
+        return snoop.snoop(f, **snoop_kwargs)(*args, **kwargs)
 
     wrapper.source = source_code(f)
 
