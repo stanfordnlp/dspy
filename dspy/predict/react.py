@@ -9,7 +9,7 @@ from typing import Callable, Any, get_type_hints, get_origin, Literal
 
 class Tool:
     def __init__(self, func: Callable, name: str = None, desc: str = None, args: dict[str, Any] = None):
-        annotations_func = func if inspect.isfunction(func) else func.__call__
+        annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, '__name__', type(func).__name__)
         self.desc = desc or getattr(func, '__doc__', None) or getattr(annotations_func, '__doc__', "")
