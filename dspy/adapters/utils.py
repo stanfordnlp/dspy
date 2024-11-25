@@ -82,7 +82,8 @@ def find_enum_member(enum, identifier):
 
     Args:
         enum: The enum to search for the member.
-        identifier: The name or value of the enum member to find.
+        identifier: If the enum is explicitly-valued, this is the value of the enum member to find.
+                    If the enum is auto-valued, this is the name of the enum member to find.
     Returns:
         The enum member corresponding to the specified identifier.
     """
