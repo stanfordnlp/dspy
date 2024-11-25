@@ -40,6 +40,3 @@ class KNN:
         nearest_samples_idxs = scores.argsort()[-self.k :][::-1]
         train_sampled = [self.trainset[cur_idx] for cur_idx in nearest_samples_idxs]
         return train_sampled
-
-    def demo_selector(self, predict: "dspy.Predict", inputs):
-        return self(**inputs)

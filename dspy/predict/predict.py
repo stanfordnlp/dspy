@@ -189,8 +189,8 @@ class Predict(Module, Parameter):
 
         import dspy
 
-        if hasattr(self, "knn"):
-            demos += self.knn(**inputs)
+        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
+            demos = demos[:] + self.retrieve_demos(**inputs)
             random.Random(self.random_seed).shuffle(demos)
 
         if isinstance(lm, dspy.LM):

@@ -3,7 +3,7 @@ import random
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from .bootstrap import BootstrapFewShot, BootstrapKNN
+from .bootstrap import BootstrapFewShot, BootstrapKMN, BootstrapKNN
 from .vanilla import LabeledFewShot
 
 # TODO: Don't forget dealing with the raw demos.
@@ -61,7 +61,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         all_subscores = []
         score_data = []
 
-        for seed in range(-3, self.num_candidate_sets):
+        for seed in range(-1, self.num_candidate_sets):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
@@ -156,12 +156,12 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         metric,
         embedding,
         teacher_settings=None,
-        max_bootstrapped_demos=10_000,
+        max_bootstrapped_demos=64,
         max_labeled_demos=16,
         max_rounds=1,
         num_candidate_programs=16,
         num_threads=6,
-        max_errors=1_000,
+        max_errors=10,
         stop_at_score=None,
         metric_threshold=None,
     ):
@@ -173,16 +173,13 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         self.num_threads = num_threads
         self.stop_at_score = stop_at_score
         self.metric_threshold = metric_threshold
-        self.min_static_demos = 1
         self.max_static_demos = max_labeled_demos - 1
         self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
         self.max_bootstrapped_demos = max_bootstrapped_demos
 
-        print(
-            f"Going to sample between {self.min_static_demos} and {self.max_static_demos} static demos per predictor."
-        )
+        print(f"Going to sample between 1 and {self.max_static_demos} static demos per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
@@ -193,7 +190,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         all_subscores = []
         score_data = []
 
-        for seed in range(-3, self.num_candidate_sets):
+        for seed in range(-1, self.num_candidate_sets):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
@@ -224,10 +221,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
             else:
-                num_static_demos = random.Random(seed).randint(
-                    self.min_static_demos,
-                    self.max_static_demos,
-                )
+                num_static_demos = random.Random(seed).randint(1, self.max_static_demos)
                 print(f"BootstrapKNN with {num_static_demos} static demos")
 
                 optimizer = BootstrapKNN(
