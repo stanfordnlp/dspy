@@ -84,7 +84,8 @@ class LM(BaseLM):
         cache = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
-
+        callable_kwargs = {k: v for k, v in kwargs.items() if isinstance(v, Callable)}
+        kwargs = {k: v for k, v in kwargs.items() if not isinstance(v, Callable)}
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
@@ -94,6 +95,7 @@ class LM(BaseLM):
         response = completion(
             request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
             num_retries=self.num_retries,
+            **callable_kwargs,
         )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
