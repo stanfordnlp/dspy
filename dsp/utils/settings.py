@@ -53,6 +53,7 @@ class Settings:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance.main_tid = threading.get_ident()
             cls._instance.lock = threading.Lock()  # maintained here for DSPy assertions.py
         return cls._instance
 
@@ -112,7 +113,8 @@ class Settings:
         )
 
         # Update main_thread_config, in the main thread only
-        if threading.current_thread() is threading.main_thread():
+        if threading.current_thread() is threading.main_thread() or \
+                threading.current_thread().ident == self.main_tid:
             main_thread_config = thread_local_overrides.overrides
 
     @contextmanager
@@ -128,7 +130,8 @@ class Settings:
         finally:
             thread_local_overrides.overrides = original_overrides
 
-            if threading.current_thread() is threading.main_thread():
+            if threading.current_thread() is threading.main_thread() or \
+                    threading.current_thread().ident == self.main_tid:
                 main_thread_config = original_main_thread_config
 
     def __repr__(self):

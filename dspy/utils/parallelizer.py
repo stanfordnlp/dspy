@@ -122,7 +122,9 @@ class ParallelExecutor:
         @contextlib.contextmanager
         def interrupt_handler_manager():
             """Sets the cancel_jobs event when a SIGINT is received, only in the main thread."""
-            if threading.current_thread() is threading.main_thread():
+            import dspy
+            if threading.current_thread() is threading.main_thread() or \
+                    threading.current_thread().ident == dspy.settings.main_tid:
                 default_handler = signal.getsignal(signal.SIGINT)
 
                 def interrupt_handler(sig, frame):

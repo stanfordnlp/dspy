@@ -24,7 +24,11 @@ def get_limiter():
 
 
 def asyncify(program):
+    import dspy
     import threading
-    assert threading.current_thread() is threading.main_thread(), "asyncify can only be called from the main thread"
+    assert threading.current_thread() is threading.main_thread() or \
+                threading.current_thread().ident == dspy.settings.main_tid, \
+                     "asyncify can only be called from the main thread"
+                     
     # NOTE: To allow this to be nested, we'd need behavior with contextvars like parallelizer.py
     return asyncer.asyncify(program, abandon_on_cancel=True, limiter=get_limiter())
