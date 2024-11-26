@@ -4,7 +4,7 @@ import os
 import threading
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Callable
 
 import litellm
 import ujson
@@ -84,8 +84,11 @@ class LM(BaseLM):
         cache = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
-        callable_kwargs = {k: v for k, v in kwargs.items() if isinstance(v, Callable)}
-        kwargs = {k: v for k, v in kwargs.items() if not isinstance(v, Callable)}
+        callable_kwargs = {}
+        for k, v in kwargs.items():
+            if isinstance(v, Callable):
+                callable_kwargs[k] = kwargs.pop(k)
+
         # Make the request and handle LRU & disk caching.
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
@@ -215,16 +218,18 @@ class LM(BaseLM):
 
 
 @functools.lru_cache(maxsize=None)
-def cached_litellm_completion(request, num_retries: int):
+def cached_litellm_completion(request, num_retries: int, **kwargs):
     return litellm_completion(
         request,
         cache={"no-cache": False, "no-store": False},
         num_retries=num_retries,
+        **kwargs,
     )
 
 
-def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
+def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}, **kwargs):
+    req_kwargs = ujson.loads(request)
+    kwargs = {**req_kwargs, **kwargs}
     return litellm.completion(
         num_retries=num_retries,
         cache=cache,
@@ -233,17 +238,19 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
 
 
 @functools.lru_cache(maxsize=None)
-def cached_litellm_text_completion(request, num_retries: int):
+def cached_litellm_text_completion(request, num_retries: int,**kwargs):
     return litellm_text_completion(
         request,
         num_retries=num_retries,
         cache={"no-cache": False, "no-store": False},
+        **kwargs,
     )
 
 
-def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-
+def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True},**kwargs):
+    req_kwargs = ujson.loads(request)
+    kwargs = {**req_kwargs, **kwargs}
+    
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = kwargs.pop("model").split("/", 1)
