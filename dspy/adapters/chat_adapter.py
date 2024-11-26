@@ -14,7 +14,7 @@ from pydantic.fields import FieldInfo
 
 from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
-from dspy.adapters.image_utils import Image, encode_image
+from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -115,86 +115,6 @@ class ChatAdapter(Adapter):
         return format_fields(fields_with_values)
 
 
-def format_blob(blob):
-    if "\n" not in blob and "«" not in blob and "»" not in blob:
-        return f"«{blob}»"
-
-    modified_blob = blob.replace("\n", "\n    ")
-    return f"«««\n    {modified_blob}\n»»»"
-
-
-def format_input_list_field_value(value: List[Any]) -> str:
-    """
-    Formats the value of an input field of type List[Any].
-
-    Args:
-      value: The value of the list-type input field.
-    Returns:
-      A string representation of the input field's list value.
-    """
-    if len(value) == 0:
-        return "N/A"
-    if len(value) == 1:
-        return format_blob(value[0])
-
-    return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
-
-
-def _serialize_for_json(value):
-    if isinstance(value, pydantic.BaseModel):
-        return value.model_dump()
-    elif isinstance(value, list):
-        return [_serialize_for_json(item) for item in value]
-    elif isinstance(value, dict):
-        return {key: _serialize_for_json(val) for key, val in value.items()}
-    else:
-        return value
-
-
-def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> Union[str, dict]:
-    """
-    Formats the value of the specified field according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself.
-
-    Args:
-      field_info: Information about the field, including its DSPy field type and annotation.
-      value: The value of the field.
-    Returns:
-      The formatted value of the field, represented as a string.
-    """
-    string_value = None
-    if isinstance(value, list) and field_info.annotation is str:
-        # If the field has no special type requirements, format it as a nice numbered list for the LM.
-        string_value = format_input_list_field_value(value)
-    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
-        string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
-    else:
-        string_value = str(value)
-
-    if assume_text:
-        return string_value
-    elif isinstance(value, Image) or field_info.annotation == Image:
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
-    else:
-        return {"type": "text", "text": string_value}
-
-
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> Union[str, List[dict]]:
     """
     Formats the values of the specified fields according to the field's DSPy type (input or output),
@@ -209,7 +129,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=
     """
     output = []
     for field, field_value in fields_with_values.items():
-        formatted_field_value = _format_field_value(field_info=field.info, value=field_value, assume_text=assume_text)
+        formatted_field_value = format_field_value(field_info=field.info, value=field_value, assume_text=assume_text)
         if assume_text:
             output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
         else:
@@ -231,7 +151,7 @@ def parse_value(value, annotation):
     parsed_value = value
 
     if isinstance(annotation, enum.EnumMeta):
-        parsed_value = annotation[value]
+        return find_enum_member(annotation, value)
     elif isinstance(value, str):
         try:
             parsed_value = json.loads(value)
