@@ -229,7 +229,6 @@ def cached_litellm_completion(request, num_retries: int):
 def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
     kwargs = ujson.loads(request)
     return litellm.completion(
-        num_retries=num_retries,
         cache=cache,
         retry_policy=_get_litellm_retry_policy(num_retries),
         **kwargs,
@@ -266,7 +265,6 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        num_retries=num_retries,
         retry_policy=_get_litellm_retry_policy(num_retries),
         **kwargs,
     )
@@ -287,9 +285,9 @@ def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
         TimeoutErrorRetries=num_retries,
         RateLimitErrorRetries=num_retries,
         InternalServerErrorRetries=num_retries,
+        ContentPolicyViolationErrorRetries=num_retries,
         # We don't retry on errors that are unlikely to be transient
         # (e.g. bad request, invalid auth credentials)
         BadRequestErrorRetries=0,
         AuthenticationErrorRetries=0,
-        ContentPolicyViolationErrorRetries=0,
     )
