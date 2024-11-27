@@ -32,13 +32,13 @@ def _throw_exception_based_on_content_if_applicable(request_kwargs):
     """
     model = request_kwargs["model"]
     content = request_kwargs["messages"][0]["content"]
-    if content == "429":
+    if "429" in content:
         raise litellm.RateLimitError(message="Rate limit exceeded", llm_provider=None, model=model)
-    elif content == "504":
+    elif "504" in content:
         raise litellm.Timeout("Request timed out!")
-    elif content == "400":
+    elif "400" in content:
         raise litellm.BadRequestError(message="Bad request", llm_provider=None, model=model)
-    elif content == "401":
+    elif "401" in content:
         raise litellm.AuthenticationError(message="Authentication error", llm_provider=None, model=model)
 
 
