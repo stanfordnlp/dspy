@@ -85,7 +85,7 @@ def test_lm_text_calls_are_retried_for_expected_failures(
     api_base, server_log_file_path = litellm_test_server
 
     openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
+        model="openai/dspy-test-text-model",
         api_base=api_base,
         api_key="fakekey",
         num_retries=2,

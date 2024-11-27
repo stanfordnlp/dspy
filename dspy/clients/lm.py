@@ -34,7 +34,7 @@ class LM(BaseLM):
         max_tokens: int = 1000,
         cache: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 6,
+        num_retries: int = 8,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
