@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import ujson
+from litellm import RetryPolicy
 
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
@@ -33,7 +34,7 @@ class LM(BaseLM):
         max_tokens: int = 1000,
         cache: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 3,
+        num_retries: int = 6,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
@@ -153,7 +154,11 @@ class LM(BaseLM):
         thread = threading.Thread(target=thread_function_wrapper)
         model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
-            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
+            thread=thread,
+            model=model_to_finetune,
+            train_data=train_data,
+            train_kwargs=train_kwargs,
+            data_format=data_format,
         )
         thread.start()
 
@@ -226,6 +231,7 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
     return litellm.completion(
         num_retries=num_retries,
         cache=cache,
+        retry_policy=_get_litellm_retry_policy(num_retries),
         **kwargs,
     )
 
@@ -261,5 +267,29 @@ def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, 
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
+        retry_policy=_get_litellm_retry_policy(num_retries),
         **kwargs,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
+    """
+    Get a LiteLLM retry policy for retrying requests when transient API errors occur.
+    Args:
+        num_retries: The number of times to retry a request if it fails transiently due to
+                     network error, rate limiting, etc. Requests are retried with exponential
+                     backoff.
+    Returns:
+        A LiteLLM RetryPolicy instance.
+    """
+    return RetryPolicy(
+        TimeoutErrorRetries=num_retries,
+        RateLimitErrorRetries=num_retries,
+        InternalServerErrorRetries=num_retries,
+        # We don't retry on errors that are unlikely to be transient
+        # (e.g. bad request, invalid auth credentials)
+        BadRequestErrorRetries=0,
+        AuthenticationErrorRetries=0,
+        ContentPolicyViolationErrorRetries=0,
     )
