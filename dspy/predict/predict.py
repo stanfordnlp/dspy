@@ -201,7 +201,7 @@ class Predict(Module, Parameter):
 
         self.signature = original_signature
         for violated_constraint_index in violated_constraints_indices:
-            if not soft_fail and not self.constraints[violated_constraint_index].soft_constraint:
+            if not soft_fail and not self.constraints[violated_constraint_index].soft:
                 raise ValueError(
                     f"Constraint {violated_constraints_indices} violated, terminating the program because this is a "
                     "hard-required constraint and you set `soft_fail=False`."
