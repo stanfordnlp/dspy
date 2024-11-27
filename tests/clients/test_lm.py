@@ -7,7 +7,6 @@ import dspy
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
 
 
-# TODO: ADD A TEXT COMPLETIONS QUERY TEST!
 def test_lms_can_be_queried(litellm_test_server):
     api_base, _ = litellm_test_server
 
