@@ -59,24 +59,29 @@ async def predict(question: Question):
 
 # Define an endpoint (streaming)
 from fastapi.responses import StreamingResponse
+
+@app.post("/predict/stream")
+async def stream(question: Question):
+    async def generate():
+        async for value in streaming_dspy_program(question=question.text):
+            if isinstance(value, dspy.Prediction):
+                data = {"prediction": value.labels().toDict()}
+            elif isinstance(value, litellm.ModelResponse):
+                data = {"chunk": value.json()}
+            yield f"data: {ujson.dumps(data)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+# Since you're often going to want to stream the result of a DSPy program as server-sent events,
+# we've included a helper function for that, which is equivalent to the code above.
+
 from dspy.utils.streaming import sse
 
 @app.post("/predict/stream")
 async def stream(question: Question):
-    """
-    Streams the result of the DSPy program as a server-sent event stream.
-
-    Chunks are OpenAI-compatible JSON objects in the form of:
-    `data: {"chunk": openai_chunk}`
-
-    Once the final prediction is ready, it is sent as:
-    `data: {"prediction": {...}}`
-
-    And then the stream is closed with `data: [DONE]`
-    """
     stream = streaming_dspy_program(question=question.text)
     return StreamingResponse(sse(stream), media_type="text/event-stream")
-
 ```
 
 In the code above, we call `dspy.asyncify` to convert the dspy program to run in async mode for high-throughput FastAPI
