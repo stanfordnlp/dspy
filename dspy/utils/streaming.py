@@ -1,7 +1,7 @@
 from asyncio import iscoroutinefunction
 from typing import AsyncGenerator
 
-from anyio import create_task_group, create_memory_object_stream, sleep
+from anyio import create_task_group, create_memory_object_stream
 from anyio.streams.memory import MemoryObjectSendStream
 import ujson
 
