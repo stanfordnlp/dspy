@@ -76,7 +76,7 @@ class LiteralField(Enum):
 
 
 class ProcessedNestedObjectField(BaseModel):
-    tupleField: List[Union[str, float]] = Field(..., max_items=2, min_items=2)
+    tupleField: Tuple[str, float]
     enumField: EnumField
     datetimeField: datetime
     literalField: LiteralField

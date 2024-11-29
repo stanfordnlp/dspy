@@ -45,6 +45,7 @@ nav:
   - Tutorials:
       - Tutorials Overview: tutorials/index.md
       - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
+      - Math Reasoning: tutorials/math/index.ipynb
       - Entity Extraction: tutorials/entity_extraction/index.ipynb
       - Deployment: tutorials/deployment/index.md
   - Community:

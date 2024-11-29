@@ -1,11 +1,11 @@
 {
   "assertions": [
-    "The 'processedTupleField' should be an tuple with exactly two elements: the first element being a string and the second element being a number. Note that 'processedNestedObjectField.tupleField' should NOT actually be a tuple",
+    "The 'processedTupleField' should be an tuple with exactly two elements: the first element being a string and the second element being a number.",
     "The 'processedEnumField' should be one of the predefined options: 'option1', 'option2', or 'option3'.",
     "The 'processedDatetimeField' should be a date-time",
     "The 'processedLiteralField' should be the enum 'literalValue'.",
     "The 'processedObjectField' should be an object containing 'subField1' as a string, 'subField2' as a number, and an 'additionalField' as a boolean.",
-    "The 'processedNestedObjectField' should be an object containing 'tupleField' as a list (NOT a tuple) with exactly two elements (a string and a number), 'enumField' as one of the predefined options (option1, option2, or option3), 'datetimeField' as a 'date-time' object, 'literalField' as the string 'literalValue', and an 'additionalField' as a boolean."
+    "The 'processedNestedObjectField' should be an object containing 'tupleField' as a tuple with a string and float, 'enumField' as one of the predefined options (option1, option2, or option3), 'datetimeField' as a 'date-time' object, 'literalField' as the string 'literalValue', and an 'additionalField' as a boolean."
   ],
   "input": {
     "datetimeField": "2023-10-01T12:00:00Z",
