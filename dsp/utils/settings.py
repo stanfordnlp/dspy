@@ -26,13 +26,15 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
+    request_cache=None,
+    send_stream=None,
 )
 
 # Global base configuration
 main_thread_config = copy.deepcopy(DEFAULT_CONFIG)
 
 # Initialize the context variable with an empty dict as default
-dspy_ctx_overrides = ContextVar('dspy_ctx_overrides', default=dotdict())
+dspy_ctx_overrides = ContextVar("dspy_ctx_overrides", default=dotdict())
 
 
 class Settings:
@@ -62,7 +64,7 @@ class Settings:
             raise AttributeError(f"'Settings' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ('_instance',):
+        if name in ("_instance",):
             super().__setattr__(name, value)
         else:
             self.configure(**{name: value})
@@ -92,7 +94,7 @@ class Settings:
     @property
     def config(self):
         config = self.copy()
-        del config['lock']
+        del config["lock"]
         return config
 
     # Configuration methods
