@@ -24,6 +24,7 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
+    send_stream=None,
 )
 
 # Global base configuration
@@ -57,7 +58,7 @@ class Settings:
         return cls._instance
 
     def __getattr__(self, name):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         if name in overrides:
             return overrides[name]
         elif name in main_thread_config:
@@ -66,7 +67,7 @@ class Settings:
             raise AttributeError(f"'Settings' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ('_instance',):
+        if name in ("_instance",):
             super().__setattr__(name, value)
         else:
             self.configure(**{name: value})
@@ -80,7 +81,7 @@ class Settings:
         self.__setattr__(key, value)
 
     def __contains__(self, key):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         return key in overrides or key in main_thread_config
 
     def get(self, key, default=None):
@@ -90,14 +91,14 @@ class Settings:
             return default
 
     def copy(self):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         return dotdict({**main_thread_config, **overrides})
 
     @property
     def config(self):
         config = self.copy()
-        if 'lock' in config:
-            del config['lock']
+        if "lock" in config:
+            del config["lock"]
         return config
 
     # Configuration methods
@@ -106,7 +107,7 @@ class Settings:
         global main_thread_config
 
         # Get or initialize thread-local overrides
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         thread_local_overrides.overrides = dotdict(
             {**copy.deepcopy(DEFAULT_CONFIG), **main_thread_config, **overrides, **kwargs}
         )
@@ -119,7 +120,7 @@ class Settings:
     def context(self, **kwargs):
         """Context manager for temporary configuration changes."""
         global main_thread_config
-        original_overrides = getattr(thread_local_overrides, 'overrides', dotdict()).copy()
+        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
         original_main_thread_config = main_thread_config.copy()
 
         self.configure(**kwargs)
@@ -132,7 +133,7 @@ class Settings:
                 main_thread_config = original_main_thread_config
 
     def __repr__(self):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
