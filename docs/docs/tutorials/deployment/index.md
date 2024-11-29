@@ -76,12 +76,12 @@ async def stream(question: Question):
 # Since you're often going to want to stream the result of a DSPy program as server-sent events,
 # we've included a helper function for that, which is equivalent to the code above.
 
-from dspy.utils.streaming import sse
+from dspy.utils.streaming import streaming_response
 
 @app.post("/predict/stream")
 async def stream(question: Question):
     stream = streaming_dspy_program(question=question.text)
-    return StreamingResponse(sse(stream), media_type="text/event-stream")
+    return StreamingResponse(streaming_response(stream), media_type="text/event-stream")
 ```
 
 In the code above, we call `dspy.asyncify` to convert the dspy program to run in async mode for high-throughput FastAPI

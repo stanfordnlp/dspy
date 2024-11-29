@@ -31,7 +31,7 @@ def streamify(program):
     return streamer
 
 
-async def sse(streamer: AsyncGenerator):
+async def streaming_response(streamer: AsyncGenerator):
     import dspy
     import litellm
 
