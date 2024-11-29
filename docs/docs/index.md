@@ -11,7 +11,7 @@ hide:
 # _Programming_—not prompting—_LMs_
 
 
-DSPy is the open-source framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and provides algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and provides algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
 DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy's tools to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
 
@@ -115,11 +115,11 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
      ``` 
 
 
-## 1) **Modules** express AI behavior in a portable, declarative way.
+## 1) **Modules** help you describe AI behavior as _code_, not strings.
 
-To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and built DSPy so you don't have to.
+To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and built DSPy to decouple the core definition of an LM system from messy incidental choices about specific LMs or prompting strategies.
 
-DSPy shifts your focus from tinkering with prompt strings to **programming with structured natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
+DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
@@ -246,7 +246,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
 ## 2) **Optimizers** tune the prompts and weights of your AI modules.
 
-DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program’s structure and metrics.
+DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program’s structure and metrics. If you change your code or your metrics, you can simply re-compile accordingly.
 
 Given a few tens or hundreds of representative _inputs_ of your task and a _metric_ that can measure the quality of your system's outputs, you can use a DSPy optimizer. Different optimizers in DSPy work by **synthesizing good few-shot examples** for every module, like `dspy.BootstrapRS`,<sup>[1](https://arxiv.org/abs/2310.03714)</sup> **proposing and intelligently exploring better natural-language instructions** for every prompt, like `dspy.MIPROv2`,<sup>[2](https://arxiv.org/abs/2406.11695)</sup> and **building datasets for your modules and using them to finetune the LM weights** in your system, like `dspy.BootstrapFinetune`.<sup>[3](https://arxiv.org/abs/2407.10930)</sup>
 
