@@ -11,9 +11,9 @@ hide:
 # _Programming_—not prompting—_LMs_
 
 
-DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and provides algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy's tools to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
 
 
 !!! info "Getting Started I: Install DSPy and set up your LM"
@@ -117,7 +117,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
 ## 1) **Modules** help you describe AI behavior as _code_, not strings.
 
-To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and built DSPy to decouple the core definition of an LM system from messy incidental choices about specific LMs or prompting strategies.
+To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and so built DSPy to decouple defining LM systems from messy incidental choices about specific LMs or prompting strategies.
 
 DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
 
@@ -218,10 +218,10 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
     === "Agents"
 
         ```python linenums="1"       
-        def evaluate_math(expression: str) -> float:
+        def evaluate_math(expression: str):
             return dspy.PythonInterpreter({}).execute(expression)
 
-        def search_wikipedia(query: str) -> str:
+        def search_wikipedia(query: str):
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
             return [x['text'] for x in results]
 
@@ -239,9 +239,9 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
-    Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer latter or learn it from data — in the context of a bigger program.
+    Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
     
-    Even before you start using optimizers, DSPy's modules allow you to script effective LM systems in ergonomic, portable ways. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
+    Even before you start using optimizers, DSPy's modules allow you to script effective LM systems as ergonomic, portable _code_. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your AI modules.
