@@ -1,6 +1,7 @@
 import logging
 import random
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -161,7 +162,6 @@ class Predict(Module, Parameter):
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -188,10 +188,7 @@ class Predict(Module, Parameter):
         inputs = kwargs
 
         import dspy
-
-        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
-            demos = demos[:] + self.retrieve_demos(**inputs)
-            random.Random(self.random_seed).shuffle(demos)
+        demos = self.demos_for(inputs, None)
 
         if isinstance(lm, dspy.LM):
             completions = v2_5_generate(lm, config, signature, demos, inputs, _parse_values=self._parse_values)
@@ -226,6 +223,13 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+    
+    def demos_for(self, inputs, static: Optional[list] = None):
+        demos = static or self.demos
+        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
+            demos = demos[:] + self.retrieve_demos(**inputs)
+            random.Random(self.random_seed).shuffle(demos)
+        return demos
 
 
 def old_generate(demos, signature, kwargs, config, lm, stage):

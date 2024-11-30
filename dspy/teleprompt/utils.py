@@ -287,6 +287,7 @@ def create_n_fewshot_demo_sets(
     teacher=None,
     include_non_bootstrapped=True,
     seed=0,
+    num_threads=6,
     rng=None
 ):
     """
@@ -299,8 +300,8 @@ def create_n_fewshot_demo_sets(
     num_candidate_sets -= 3
 
     # Initialize demo_candidates dictionary
-    for i, _ in enumerate(student.predictors()):
-        demo_candidates[i] = []
+    for name, _ in enumerate(student.predictors()):
+        demo_candidates[name] = []
 
     rng = rng or random.Random(seed)
 
@@ -335,6 +336,7 @@ def create_n_fewshot_demo_sets(
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
+                num_threads=num_threads,
             )
             program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -351,14 +353,15 @@ def create_n_fewshot_demo_sets(
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
+                num_threads=num_threads,
             )
 
             program2 = teleprompter.compile(
                 student, teacher=teacher, trainset=trainset_copy,
             )
 
-        for i, _ in enumerate(student.predictors()):
-            demo_candidates[i].append(program2.predictors()[i].demos)
+        for name, _ in enumerate(student.predictors()):
+            demo_candidates[name].append(program2.predictors()[name].demos)
 
     return demo_candidates
 
