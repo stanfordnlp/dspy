@@ -85,7 +85,7 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
         callable_kwargs = {}
-        for k, v in kwargs.items():
+        for k, v in list(kwargs.items()):
             if isinstance(v, Callable):
                 callable_kwargs[k] = kwargs.pop(k)
 
