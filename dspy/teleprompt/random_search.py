@@ -229,6 +229,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
 
                 optimizer = BootstrapKNN(
                     metric=self.metric,
+                    embedder=self.embedder,
                     metric_threshold=self.metric_threshold,
                     max_bootstrapped_demos=self.max_bootstrapped_demos,
                     max_labeled_demos=self.max_labeled_demos,
