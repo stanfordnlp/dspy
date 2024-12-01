@@ -5,6 +5,6 @@ from .knn import KNN
 from .multi_chain_comparison import MultiChainComparison
 from .predict import Predict
 from .program_of_thought import ProgramOfThought
-from .react import ReAct
+from .react import ReAct, Tool
 from .retry import Retry
 from .parallel import Parallel
