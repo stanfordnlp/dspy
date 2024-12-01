@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.adapters.json_adapter import get_annotation_name
+from dspy.utils.callback import with_callbacks
 from typing import Callable, Any, get_type_hints, get_origin, Literal
 
 class Tool:
@@ -19,6 +20,7 @@ class Tool:
             for k, v in (args or get_type_hints(annotations_func)).items() if k != 'return'
         }
 
+    @with_callbacks
     def __call__(self, *args, **kwargs):
         return self.func(*args, **kwargs)
 
