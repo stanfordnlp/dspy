@@ -147,7 +147,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         optimized_rag = tp.compile(RAG(), trainset=trainset, max_bootstrapped_demos=2, max_labeled_demos=2)
         ```
 
-        For a complete RAG example that you can run, start this [tutorial](http://127.0.0.1:8000/quick-start/getting-started-01/). It improves the quality of a RAG system over a subset of StackExchange communities from 53% to 61%.
+        For a complete RAG example that you can run, start this [tutorial](/quick-start/getting-started-01/). It improves the quality of a RAG system over a subset of StackExchange communities from 53% to 61%.
 
     === "Optimizing weights for Classification"
         This is a minimal but fully runnable example of setting up a `dspy.ChainOfThought` module that classifies
