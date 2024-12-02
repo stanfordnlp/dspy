@@ -15,6 +15,7 @@ from dspy.clients import *  # isort: skip
 from dspy.adapters import *  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
+from dspy.utils.streaming import streamify
 
 settings = dsp.settings
 

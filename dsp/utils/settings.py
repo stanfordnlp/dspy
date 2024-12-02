@@ -24,6 +24,8 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
+    request_cache=None,
+    send_stream=None,
 )
 
 # Global base configuration
