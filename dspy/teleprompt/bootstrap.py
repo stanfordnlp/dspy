@@ -305,7 +305,7 @@ class BootstrapKNN(BootstrapFewShot):
         max_errors=10,
         random_seed=0,
     ):
-        assert num_static_demos < max_labeled_demos, "static demos must be less than max labeled demos."
+        assert num_static_demos < max_labeled_demos, "static demos must be < max labeled demos."
 
         super().__init__(
             metric=metric,

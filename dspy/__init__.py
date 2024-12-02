@@ -66,6 +66,7 @@ context = settings.context
 
 
 import dspy.teleprompt
+import dspy.evaluate
 
 LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
@@ -77,4 +78,5 @@ BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
 BetterTogether = dspy.teleprompt.BetterTogether
 COPRO = dspy.teleprompt.COPRO
 MIPROv2 = dspy.teleprompt.MIPROv2
+MIPROv2KNN = dspy.teleprompt.MIPROv2KNN
 Ensemble = dspy.teleprompt.Ensemble
