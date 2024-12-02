@@ -1,21 +1,20 @@
-import hashlib
 import logging
 import os
 import threading
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, OrderedDict, cast
+from typing import Any, Dict, List, Literal, Optional, cast
 
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 import litellm
-import ujson
 
 import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
+from dspy.utils.caching import LRUCache
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -221,49 +220,7 @@ class LM(BaseLM):
         return new_instance
 
 
-class LMRequestLRUCache(OrderedDict):
-    def __init__(self, maxsize: int):
-        self.maxsize = maxsize
-        super().__init__()
-
-    def __setitem__(self, request: dict, value):
-        key = self.cache_key(request)
-
-        if key in self:
-            self.move_to_end(key)
-            return
-
-        if len(self) == self.maxsize:
-            self.popitem(last=False)
-
-        super().__setitem__(key, value)
-
-    def __getitem__(self, request: dict):
-        key = self.cache_key(request)
-        return super().__getitem__(key)
-
-    def __contains__(self, request: dict):
-        key = self.cache_key(request)
-        return super().__contains__(key)
-
-    def get(self, request: dict, default=None):
-        key = self.cache_key(request)
-        return super().get(key, default)
-
-    def __delitem__(self, request: dict):
-        key = self.cache_key(request)
-        super().__delitem__(key)
-
-    def pop(self, request: dict, default=None):
-        key = self.cache_key(request)
-        return super().pop(key, default)
-
-    @staticmethod
-    def cache_key(request: dict) -> str:
-        return hashlib.sha256(ujson.dumps(request, sort_keys=True).encode()).hexdigest()
-
-
-def request_cache(default_cache=LMRequestLRUCache(maxsize=10_000_000)) -> LMRequestLRUCache:
+def request_cache(default_cache=LRUCache([], maxsize=10_000_000)) -> LRUCache:
     return dspy.settings.request_cache or default_cache
 
 
