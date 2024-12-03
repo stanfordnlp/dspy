@@ -3,6 +3,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Union
 import os
+import pickle
 
 import ujson
 
@@ -28,10 +29,11 @@ class LRUCache(OrderedDict):
 
     @classmethod
     def load(cls, file, maxsize: int) -> "LRUCache":
-        return cls(ujson.load(file), maxsize)
+        return cls(pickle.load(file), maxsize)
 
-    def dump(self, file) -> None:
-        ujson.dump([[k, v] for k, v in self.items()], file)
+    @staticmethod
+    def dump(obj, file) -> None:
+        pickle.dump([[k, v] for k, v in obj.items()], file)
 
     def __setitem__(self, request: dict, value):
         key = self.cache_key(request)
