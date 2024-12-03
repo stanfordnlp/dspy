@@ -42,24 +42,22 @@ def create_minibatch(trainset, batch_size=50, rng=None):
     return minibatch
 
 
-def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None):
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, **kwargs):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
 
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            score = evaluate(candidate_program, devset=trainset)
+            return evaluate(candidate_program, devset=trainset)
         # Or evaluate on a minibatch
         else:
-            score = evaluate(
+            return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
             )
     except Exception as e:
         print(f"Exception occurred: {e}")
-        score = 0.0  # TODO: Handle this better, as -ve scores are possible
-
-    return score
+        return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 
 def eval_candidate_program_with_pruning(

@@ -9,27 +9,9 @@ import dspy
 from dspy.teleprompt.bootstrap import BootstrapKNN
 from dspy.teleprompt.utils import get_signature, set_signature
 
-from .mipro_optimizer_v2 import MIPROv2
+from .mipro_optimizer_v2 import MIPROv2, BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT, LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT
 
 logger = logging.getLogger(__name__)
-
-# Constants
-BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT = 3
-LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT = 0
-MIN_MINIBATCH_SIZE = 50
-
-AUTO_RUN_SETTINGS = {
-    "light": {"num_trials": 7, "val_size": 100},
-    "medium": {"num_trials": 25, "val_size": 300},
-    "heavy": {"num_trials": 50, "val_size": 1000},
-}
-
-# ANSI escape codes for colors
-YELLOW = "\033[93m"
-GREEN = "\033[92m"
-BLUE = "\033[94m"
-BOLD = "\033[1m"
-ENDC = "\033[0m"  # Resets the color to default
 
 DemoCandidate = namedtuple("DemoCandidate", ["demos", "random_seed", "retrieve_demos", "instruction_demos"])
 
@@ -80,15 +62,15 @@ class MIPROv2KNN(MIPROv2):
     def _bootstrap_fewshot_examples(
         self, program: Any, trainset: List, seed: int, teacher: Any
     ) -> dict[int, DemoCandidate]:
-        logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
+        self.logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
         if self.max_bootstrapped_demos > 0:
-            logger.info(
+            self.logger.info(
                 "These will be used as few-shot example candidates for our program and for creating instructions.\n"
             )
         else:
-            logger.info("These will be used for informing instruction proposal.\n")
+            self.logger.info("These will be used for informing instruction proposal.\n")
 
-        logger.info(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
+        self.logger.info(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
 
         zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
 
@@ -109,10 +91,11 @@ class MIPROv2KNN(MIPROv2):
                 seed=seed,
                 metric_threshold=self.metric_threshold,
                 rng=self.rng,
+                logger=self.logger,
             )
         except Exception as e:
-            logger.info(f"Error generating few-shot examples: {e}")
-            logger.info("Running without few-shot examples.")
+            self.logger.info(f"Error generating few-shot examples: {e}")
+            self.logger.info("Running without few-shot examples.")
             demo_candidates = None
 
         return demo_candidates
@@ -195,6 +178,7 @@ def bootstrap_knn_demos(
     seed=0,
     num_threads=6,
     rng=None,
+    logger=logger,
 ) -> dict[int, list[DemoCandidate]]:
     rng = rng or random.Random(seed)
 
@@ -202,7 +186,7 @@ def bootstrap_knn_demos(
 
     # Go through and create each candidate set
     for seed in range(num_candidate_sets):
-        print(f"Bootstrapping set {seed+1}/{num_candidate_sets}")
+        logger.info(f"Bootstrapping set {seed+1}/{num_candidate_sets}")
 
         num_static_demos = rng.randint(1, max_labeled_demos - 1)
 
@@ -221,6 +205,8 @@ def bootstrap_knn_demos(
         )
 
         trainset_copy = list(trainset)
+        rng.shuffle(trainset_copy)
+
         optimized_student = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
         for i, predictor in enumerate(optimized_student.predictors()):
