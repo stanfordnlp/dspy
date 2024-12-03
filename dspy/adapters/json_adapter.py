@@ -320,8 +320,8 @@ def prepare_instructions(signature: SignatureMeta):
 
 def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydantic.BaseModel:
     """
-    Obtains the LiteLLM / OpenAI `response_format` parameter for obtaining structured outputs from
-    an LM request, based on the output fields of the specified DSPy signature.
+    Constructs the LiteLLM / OpenAI `response_format` parameter for obtaining structured outputs
+    from an LM request, based on the output fields of the specified DSPy signature.
 
     Args:
         signature: The DSPy signature for which to obtain the `response_format` request parameter.
