@@ -151,6 +151,8 @@ ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
 litellm = { version = "^1.51.0", extras = ["proxy"] }
+sentencepiece = "^0.2.0"
+sacrebleu = "^2.4.3"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
