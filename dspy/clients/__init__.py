@@ -10,12 +10,15 @@ from litellm.caching import Cache
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
-# TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
-# the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
-litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+def set_litellm_cache(cache_dir: str = DISK_CACHE_DIR):    
+    # TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
+    # the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
+    litellm.cache = Cache(disk_cache_dir=cache_dir, type="disk")
 
-if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
-    litellm.cache.cache.disk_cache.reset('size_limit', DISK_CACHE_LIMIT)
+    if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
+        litellm.cache.cache.disk_cache.reset('size_limit', DISK_CACHE_LIMIT)
+
+set_litellm_cache()
 
 litellm.telemetry = False
 
