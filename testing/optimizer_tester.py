@@ -60,20 +60,14 @@ class OptimizerTester:
         openai.api_base = os.environ.get("OPENAI_API_BASE")
 
         # Prompt gen model
-        if not prompt_model:
-            self.prompt_model = dspy.OpenAI(model=self.PROMPT_MODEL_NAME, max_tokens=700)
-        else:
-            self.prompt_model = prompt_model
+        self.prompt_model = prompt_model or dspy.OpenAI(model=self.PROMPT_MODEL_NAME, max_tokens=700)
 
         # Task model
-        if not task_model:
-            self.task_model = dspy.HFClientTGI(
-                model=self.TASK_MODEL_NAME,
-                port=[7140, 7141, 7142, 7143],
-                max_tokens=150,
-            )
-        else:
-            self.task_model = task_model
+        self.task_model = task_model or dspy.HFClientTGI(
+            model=self.TASK_MODEL_NAME,
+            port=[7140, 7141, 7142, 7143],
+            max_tokens=150,
+        )
         self.colbertv2 = dspy.ColBERTv2(url=colbert_v2_endpoint)
 
         dspy.settings.configure(rm=self.colbertv2, lm=self.task_model)
