@@ -47,6 +47,12 @@ class MyCallback(BaseCallback):
     def on_adapter_parse_end(self, call_id, outputs, exception):
         self.calls.append({"handler": "on_adapter_parse_end", "outputs": outputs, "exception": exception})
 
+    def on_tool_start(self, call_id, instance, inputs):
+        self.calls.append({"handler": "on_tool_start", "instance": instance, "inputs": inputs})
+
+    def on_tool_end(self, call_id, outputs, exception):
+        self.calls.append({"handler": "on_tool_end", "outputs": outputs, "exception": exception})
+
 
 @pytest.mark.parametrize(
     ("args", "kwargs"),
@@ -177,6 +183,41 @@ def test_callback_complex_module():
         "on_adapter_parse_start",
         "on_adapter_parse_end",
         "on_module_end",
+        "on_module_end",
+    ]
+
+
+def test_tool_calls():
+    callback = MyCallback()
+    dspy.settings.configure(callbacks=[callback])
+
+    def tool_1(query: str) -> str:
+        """A dummy tool function."""
+        return "result 1"
+
+    def tool_2(query: str) -> str:
+        """Another dummy tool function."""
+        return "result 2"
+
+    class MyModule(dspy.Module):
+        def __init__(self):
+            self.tools = [dspy.Tool(tool_1), dspy.Tool(tool_2)]
+
+        def forward(self, query: str) -> str:
+            query = self.tools[0](query)
+            return self.tools[1](query)
+
+    module = MyModule()
+    result = module("query")
+
+    assert result == "result 2"
+    assert len(callback.calls) == 6
+    assert [call["handler"] for call in callback.calls] == [
+        "on_module_start",
+        "on_tool_start",
+        "on_tool_end",
+        "on_tool_start",
+        "on_tool_end",
         "on_module_end",
     ]
 

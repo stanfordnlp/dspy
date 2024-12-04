@@ -277,7 +277,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         optimized_react = tp.compile(react, trainset=trainset)
         ```
 
-        An informal run similar to this on DSPy 2.5.29 raises ReAct's score from 24% to 51%.
+        An informal run like this raises ReAct's score from 24% to 51%, by teaching `gpt-4o-mini` more about the specifics of the task.
 
     === "Optimizing prompts for RAG"
         Given a retrieval index to `search`, your favorite `dspy.LM`, and a small `trainset` of questions and ground-truth responses, the following code snippet can optimize your RAG system with long outputs against the built-in `SemanticF1` metric, which is implemented as a DSPy module.
@@ -292,11 +292,11 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
                 context = search(question, k=self.num_docs)   # defined in tutorial linked below
                 return self.respond(context=context, question=question)
 
-        tp = dspy.MIPROv2(metric=dspy.evaluate.SemanticF1(), auto="medium", num_threads=24)
+        tp = dspy.MIPROv2(metric=dspy.evaluate.SemanticF1(decompositional=True), auto="medium", num_threads=24)
         optimized_rag = tp.compile(RAG(), trainset=trainset, max_bootstrapped_demos=2, max_labeled_demos=2)
         ```
 
-        For a complete RAG example that you can run, start this [tutorial](http://127.0.0.1:8000/quick-start/getting-started-01/). It improves the quality of a RAG system over a subset of StackExchange communities from 53% to 61%.
+        For a complete RAG example that you can run, start this [tutorial](/tutorials/rag/). It improves the quality of a RAG system over a subset of StackExchange communities by 10% relative gain.
 
     === "Optimizing weights for Classification"
         This is a minimal but fully runnable example of setting up a `dspy.ChainOfThought` module that classifies
