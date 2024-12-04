@@ -1,6 +1,7 @@
 import random
 
 from dspy.evaluate.evaluate import Evaluate
+from dspy.predict.knn import load_knn_embeddings
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .bootstrap import BootstrapFewShot, BootstrapKNN
@@ -109,6 +110,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
+            load_knn_embeddings(program, self.num_threads)
             evaluate = Evaluate(
                 devset=self.valset,
                 metric=self.metric,
