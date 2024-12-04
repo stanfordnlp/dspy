@@ -356,20 +356,18 @@ class GroundedProposer(Proposer):
         for pred_i, predictor in enumerate(program.predictors()):
             executor = ParallelExecutor(
                 num_threads=self.num_threads,
-                disable_progress_bar=not self.verbose,
+                disable_progress_bar=False,
                 max_errors=num_predictors * num_demos // 5,
                 compare_results=False,
             )
 
-            def generate_instructions_for_predictor(demo_set_i):
+            def generate_instructions_for_predictor(item):
+                demo_set_i, selected_tip = item
                 if self.set_tip_randomly:
                     if self.verbose:
                         print("Using a randomly generated configuration for our grounded proposer.")
-                    # Randomly select the tip
-                    selected_tip_key = self.rng.choice(list(TIPS.keys()))
-                    selected_tip = TIPS[selected_tip_key]
                     if self.verbose:
-                        print(f"Selected tip: {selected_tip_key}")
+                        print(f"Selected tip: {selected_tip}")
 
                 return self.propose_instruction_for_predictor(
                     program=program,
@@ -384,9 +382,9 @@ class GroundedProposer(Proposer):
                 )
 
             logging.info(f"Generating instructions for predictor {pred_i} of {num_predictors}.")
-            proposed_instructions[pred_i] = list(
-                executor.execute(generate_instructions_for_predictor, list(range(num_demos)))
-            )
+            tips = [TIPS[self.rng.choice(list(TIPS.keys()))] for _ in range(num_demos)]
+            items = list(zip(range(num_demos), tips))
+            proposed_instructions[pred_i] = list(executor.execute(generate_instructions_for_predictor, items))
 
         return proposed_instructions
 
