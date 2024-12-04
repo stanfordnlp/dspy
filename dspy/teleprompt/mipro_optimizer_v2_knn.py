@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 import optuna
 
 import dspy
+from dspy.predict.knn import load_knn_embeddings
 from dspy.teleprompt.bootstrap import BootstrapKNN
 from dspy.teleprompt.utils import get_signature, set_signature
 
@@ -13,7 +14,7 @@ from .mipro_optimizer_v2 import MIPROv2, BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEX
 
 logger = logging.getLogger(__name__)
 
-DemoCandidate = namedtuple("DemoCandidate", ["demos", "random_seed", "retrieve_demos", "instruction_demos"])
+DemoCandidate = namedtuple("DemoCandidate", ["demos", "random_seed", "retrieve_demos", "augmented_demos"])
 
 
 class MIPROv2KNN(MIPROv2):
@@ -24,8 +25,8 @@ class MIPROv2KNN(MIPROv2):
         prompt_model: Optional[Any] = None,
         task_model: Optional[Any] = None,
         teacher_settings: Dict = {},
-        max_bootstrapped_demos: int = 64,
-        max_labeled_demos: int = 16,
+        max_bootstrapped_demos: int = 16,
+        max_labeled_demos: int = 4,
         auto: Optional[str] = None,
         num_candidates: int = 10,
         num_threads: int = 6,
@@ -94,8 +95,7 @@ class MIPROv2KNN(MIPROv2):
                 logger=self.logger,
             )
         except Exception as e:
-            self.logger.info(f"Error generating few-shot examples: {e}")
-            self.logger.info("Running without few-shot examples.")
+            self.logger.error(f"Error generating few-shot examples: {e}\nRunning without few-shot examples.")
             demo_candidates = None
 
         return demo_candidates
@@ -134,6 +134,8 @@ class MIPROv2KNN(MIPROv2):
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
 
+        self.logger.info("Generating KNN embeddings for all predictors...")
+        load_knn_embeddings(candidate_program, self.num_threads)
         return chosen_params
 
     def _propose_instructions(
@@ -148,7 +150,7 @@ class MIPROv2KNN(MIPROv2):
         fewshot_aware_proposer: bool,
     ):
         if demo_candidates:
-            demo_candidates = {i: [c.instruction_demos for c in cs] for i, cs in demo_candidates.items()}
+            demo_candidates = {i: [demos for _, _, _, demos in candidates] for i, candidates in demo_candidates.items()}
 
         return super()._propose_instructions(
             program,
@@ -188,8 +190,10 @@ def bootstrap_knn_demos(
     for seed in range(num_candidate_sets):
         logger.info(f"Bootstrapping set {seed+1}/{num_candidate_sets}")
 
-        num_static_demos = rng.randint(1, max_labeled_demos - 1)
+        trainset_copy = list(trainset)
+        rng.shuffle(trainset_copy)
 
+        num_static_demos = 0 if seed == 0 else rng.randint(1, max_labeled_demos - 1)
         optimizer = BootstrapKNN(
             metric=metric,
             embedder=embedder,
@@ -204,25 +208,15 @@ def bootstrap_knn_demos(
             num_static_demos=num_static_demos,
         )
 
-        trainset_copy = list(trainset)
-        rng.shuffle(trainset_copy)
-
         optimized_student = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
         for i, predictor in enumerate(optimized_student.predictors()):
-            demos = predictor.demos
-            retrieve_demos = predictor.retrieve_demos
-            random_seed = predictor.random_seed
-
-            k = min(max_labeled_demos - len(demos), len(retrieve_demos.trainset))
-            instruction_demos = demos + rng.sample(retrieve_demos.trainset, k=k)
-
             demo_candidates[i].append(
                 DemoCandidate(
-                    demos=demos,
-                    random_seed=random_seed,
-                    retrieve_demos=retrieve_demos,
-                    instruction_demos=instruction_demos,
+                    demos=predictor.demos,
+                    random_seed=predictor.random_seed,
+                    retrieve_demos=predictor.retrieve_demos,
+                    augmented_demos=rng.sample(predictor.augmented_demos, k=max_labeled_demos),
                 )
             )
 
