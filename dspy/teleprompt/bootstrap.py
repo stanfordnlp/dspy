@@ -163,6 +163,8 @@ class BootstrapFewShot(Teleprompter):
                     futures[f] = example_idx
 
                 for f in as_completed(futures.keys()):
+                    progress_bar.update(1)
+
                     if f.cancelled():
                         continue
 
@@ -170,7 +172,6 @@ class BootstrapFewShot(Teleprompter):
                     if not success:
                         continue
 
-                    progress_bar.update(1)
                     bootstrapped.add(futures[f])
                     for name, traces in name2traces.items():
                         self.name2traces[name].extend(traces)
@@ -181,15 +182,13 @@ class BootstrapFewShot(Teleprompter):
                                 f.cancel()
                         break
 
-            if len(bootstrapped) >= max_bootstraps:
-                break
-
             progress_bar.close()
 
-        print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
-            f"for up to {self.max_rounds} rounds, amounting to {rounds_attempted} attempts."
-        )
+            if len(bootstrapped) >= max_bootstraps:
+                print(
+                    f"Bootstrapped {len(bootstrapped)} full traces after {progress_bar.n} examples after {rounds_attempted} rounds."
+                )
+                break
 
         # Unbootstrapped training examples
 
@@ -326,12 +325,13 @@ class BootstrapKNN(BootstrapFewShot):
         k = self.max_labeled_demos - self.num_static_demos
 
         for name, predictor in self.student.named_predictors():
-            augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
-            static_demos = rng.sample(augmented_demos, k=self.num_static_demos)
-            dynamic_demos = [x for x in augmented_demos if x not in static_demos]
-
             predictor.random_seed = self.random_seed
+            predictor.augmented_demos = self.name2traces[name][: self.max_bootstrapped_demos]
+
+            static_demos = rng.sample(predictor.augmented_demos, k=self.num_static_demos)
             predictor.demos = static_demos
+
+            dynamic_demos = [demo for demo in predictor.augmented_demos if demo not in static_demos]
             predictor.retrieve_demos = dspy.KNN(
                 k=k,
                 trainset=dynamic_demos,
