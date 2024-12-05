@@ -167,7 +167,7 @@ class BaseModule:
                 # `use_legacy_loading` is only applicable for BaseModule instances.
                 param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False, state_only=False, metadata=None, use_json=True):
+    def save(self, path, save_field_meta=False, state_only=True, metadata=None, use_json=True):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
@@ -190,7 +190,7 @@ class BaseModule:
         """
         metadata = metadata or {}
         metadata["dependency_versions"] = get_dependency_versions()
-
+        path = Path(path)
         if state_only:
             state = self.dump_state(save_field_meta)
             state["metadata"] = metadata
