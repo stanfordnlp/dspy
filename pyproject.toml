@@ -45,6 +45,7 @@ dependencies = [
     "anyio",
     "asyncer==0.0.8",
     "cachetools",
+    "cloudpickle",
 ]
 
 [project.optional-dependencies]
@@ -140,6 +141,7 @@ json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
 asyncer = "0.0.8"
 cachetools = "^5.5.0"
+cloudpickle = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
