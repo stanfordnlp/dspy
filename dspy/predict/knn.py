@@ -10,6 +10,11 @@ if TYPE_CHECKING:
 
 
 class KNN:
+    k: int
+    trainset: List["dspy.Example"]
+    trainset_vectors: np.ndarray
+    embedding: "dspy.Embedder"
+
     def __init__(self, k: int, trainset: List["dspy.Example"], vectorizer=None, lazy=True):
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
@@ -32,12 +37,18 @@ class KNN:
         if not lazy:
             self.embed()
 
+    def _prepare_example(self, example: "dspy.Example"):
+        return " | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys])
+
     def embed(self):
-        trainset_casted_to_vectorize = [
-            " | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys])
-            for example in self.trainset
-        ]
-        self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
+        if not hasattr(self, "trainset_vectors"):
+            self.trainset_vectors = self.embedding(list(map(self._prepare_example, self.trainset))).astype(np.float32)
+
+    def add(self, *examples: "dspy.Example"):
+        self.trainset.extend(examples)
+        self.trainset_vectors = np.concatenate(
+            [self.trainset_vectors, self.embedding(list(map(self._prepare_example, examples))).astype(np.float32)]
+        )
 
     def __call__(self, **kwargs) -> List["dspy.Example"]:
         if not hasattr(self, "trainset_vectors"):
