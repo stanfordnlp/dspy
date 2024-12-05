@@ -2,11 +2,18 @@ import copy
 import logging
 from collections import deque
 from collections.abc import Generator
+from pathlib import Path
 
+import cloudpickle
 import ujson
+
+from dspy.utils.saving import get_dependency_versions
 
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
 # named_sub_modules for the time being.
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseModule:
@@ -160,13 +167,105 @@ class BaseModule:
                 # `use_legacy_loading` is only applicable for BaseModule instances.
                 param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False):
-        with open(path, "w") as f:
-            f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2))
+    def save(self, path, save_field_meta=False, state_only=False, metadata=None, use_json=True):
+        """Save the module.
 
-    def load(self, path, use_legacy_loading=False):
-        with open(path) as f:
-            self.load_state(ujson.loads(f.read()), use_legacy_loading=use_legacy_loading)
+        Save the module to a directory or a file. There are two modes:
+        - `state_only=True`: Save only the state of the module to a json or pickle file, based on the value of
+            `use_json`.
+        - `state_only=False`: Save the whole module to a directory via cloudpickle, which contains both the state and
+            architecture of the model.
+
+        We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
+        critical dependencies or DSPy version.
+
+        Args:
+            path (str): Path to the saved state file, which should be a .json or .pkl file when `state_only=True`, and a
+                directory when `state_only=False`.
+            save_field_meta (bool): Whether to save the field metadata. Only applicable when `state_only=False`.
+            state_only (bool): Whether to save only the state of the module.
+            metadata (dict): Extra metadata to save.
+            use_json (bool): Whether to save the state to a json file. If False, the state is saved to a pickle file.
+                Only applicable when `state_only=True`.
+        """
+        metadata = metadata or {}
+        metadata["dependency_versions"] = get_dependency_versions()
+
+        if state_only:
+            state = self.dump_state(save_field_meta)
+            state["metadata"] = metadata
+            if use_json:
+                if path.suffix != ".json":
+                    raise ValueError(
+                        f"`path` must be a json file when `state_only=True` and `use_json=True`, but received: {path}"
+                    )
+                with open(path, "w") as f:
+                    f.write(ujson.dumps(state, indent=2))
+            else:
+                if path.suffix != ".pkl":
+                    raise ValueError(
+                        f"`path` must be a pkl file when `state_only=True` and `use_json=False`, but received: {path}"
+                    )
+                with open(path, "wb") as f:
+                    cloudpickle.dump(state, f)
+        else:
+            if path.suffix:
+                raise ValueError(
+                    f"`path` must point to a directory without a suffix when `state_only=False`, but received: {path}"
+                )
+            if path.exists() and not path.is_dir():
+                raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
+
+            if not path.exists():
+                # Create the directory (and any parent directories)
+                path.mkdir(parents=True)
+
+            try:
+                with open(path / "model.pkl", "wb") as f:
+                    cloudpickle.dump(self, f)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy model, "
+                    "or consider using state-only saving by setting `state_only=True`."
+                )
+
+            with open(path / "metadata.json", "w") as f:
+                ujson.dump(metadata, f, indent=2)
+
+    def load(self, path, use_legacy_loading=False, use_json=True):
+        """Load the saved module.
+
+        Args:
+            path (str): Path to the saved state file, which should be a .json file when `use_json=True`, and a .pkl file
+                when `use_json=False`.
+            use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
+                saved state from a version of DSPy prior to v2.5.3.
+            use_json (bool): Whether to load the state from a json file. If False, the state is loaded from a pickle
+                file.
+        """
+        path = Path(path)
+        if use_json and path.suffix != ".json":
+            raise ValueError(f"`path` must be a json file when `use_json=True`, but received: {path}")
+        if not use_json and path.suffix != ".pkl":
+            raise ValueError(f"`path` must be a pkl file when `use_json=False`, but received: {path}")
+        with open(path, "rb") as f:
+            if use_json:
+                state = ujson.loads(f.read())
+            else:
+                state = cloudpickle.load(f)
+
+        dependency_versions = get_dependency_versions()
+        saved_dependency_versions = state["metadata"]["dependency_versions"]
+        for key, saved_version in saved_dependency_versions.items():
+            if dependency_versions[key] != saved_version:
+                logger.warning(
+                    f"There is a mismatch of {key} version between saved model and current environment. "
+                    f"You saved with `{key}=={saved_version}`, but now you have "
+                    f"`{key}=={dependency_versions[key]}`. This might cause errors or performance downgrade "
+                    "on the loaded model, please consider loading the model in the same environment as the "
+                    "saving environment."
+                )
+        self.load_state(state, use_legacy_loading=use_legacy_loading)
 
 
 def postprocess_parameter_name(name, value):
