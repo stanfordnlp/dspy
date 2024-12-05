@@ -62,7 +62,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         all_subscores = []
         score_data = []
 
-        for seed in range(-1, self.num_candidate_sets):
+        for seed in range(-1, self.num_candidate_sets - 1):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
@@ -194,7 +194,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         all_subscores = []
         score_data = []
 
-        for seed in range(-1, self.num_candidate_sets):
+        for seed in range(-1, self.num_candidate_sets - 1):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
