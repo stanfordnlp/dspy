@@ -1,7 +1,7 @@
 import functools
 import os
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import requests
 import torch.nn.functional as F
@@ -13,12 +13,16 @@ from dspy.primitives.prediction import Prediction
 
 
 class BingSearch(dspy.Retrieve):
-    EMBEDDING_MODEL = "avsolatorio/GIST-small-Embedding-v0"
-    MAX_EMB_SEQ_LEN = 512
-    DEFAULT_SEARCH_COUNT = 10
 
     def __init__(
-        self, api_key: Optional[str] = None, endpoint: Optional[str] = None,
+        self,
+        api_key: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        search_market: str = "en-US",
+        embedding_model: str = "avsolatorio/GIST-small-Embedding-v0",
+        max_emb_seq_len: int = 512,
+        default_search_count: int = 10,
+        sort_by: Union[Literal["default", "word_count", "similarity"], str] = "default",
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("BING_SEARCH_V7_SUBSCRIPTION_KEY")
@@ -31,46 +35,87 @@ class BingSearch(dspy.Retrieve):
 
         self.api_key = api_key
         self.endpoint = endpoint
-        self.cache_path = "bing_cache.db"
-        self.model = SentenceTransformer(self.EMBEDDING_MODEL)
+        self.max_emb_seq_len = max_emb_seq_len
+        self.default_search_count = default_search_count
+        self.search_market = search_market
+        if sort_by == "similarity":
+            self.model = SentenceTransformer(
+                embedding_model, device=self._get_default_device()
+            )
 
-    def forward(self, query: str, count: int = 10) -> Optional[Dict[str, Any]]:
+    def _get_default_device(self):
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda:0"
+        elif torch.backends.mps.is_available():
+            return "mps"
+        else:
+            return "cpu"
+
+    def forward(
+        self, query: str, count: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        if count is None:
+            count = self.default_search_count
+
         headers = {"Ocp-Apim-Subscription-Key": self.api_key}
-        params = {"q": query, "count": self.DEFAULT_SEARCH_COUNT, "mkt": "en-us"}
+        params = {
+            "q": query,
+            "count": self.default_search_count,
+            "mkt": self.search_market,
+        }
 
         endpoint = self.endpoint + "/v7.0/search"
 
         try:
-            response = requests.get(endpoint, headers=headers, params=params)
+            response = cached_bing_search_request_wrapped(endpoint, headers, params)
+            response_json = response.json()
         except Exception as e:
-            print(e)
+            dspy.logger.error(f"Error in getting Bing search results: {e}")
             raise e
 
-        response_json = response.json()
         if "webPages" not in response_json:
-            # no search results came back
+            dspy.logger.info("No search results came back")
             raise ValueError("No search results came back")
-        num_results = len(response_json["webPages"]["value"])
+
         snippets = [
-            response_json["webPages"]["value"][i]["snippet"]
-            for i in range(num_results)
+            search_result["snippet"]
+            for search_result in response_json["webPages"]["value"]
         ]
 
-        word_counts = self._get_word_count(query, snippets)
-        similarities = self._get_similarity_scores(query, snippets)
         # Trim the response to only include the first count results
         # since we default to searching for DEFAULT_SEARCH_COUNT
         trimmed_response = response_json
         trimmed_response["webPages"]["value"] = response_json["webPages"]["value"][
             0:count
         ]
+
+        if self.sort_by == "word_count":
+            word_counts = self._get_word_count(query, snippets)
+            sorted_indices = sorted(
+                range(len(word_counts)), key=word_counts.__getitem__
+            )
+        elif self.sort_by == "similarity":
+            similarity_scores = self._get_similarity_scores(query, snippets)
+            sorted_indices = sorted(
+                range(len(similarity_scores)), key=similarity_scores.__getitem__
+            )
+        else:
+            sorted_indices = range(count)
+
         passages = [
-            trimmed_response["webPages"]["value"][i]["snippet"]
-            for i in range(len(trimmed_response["webPages"]["value"]))
+            {
+                "title": trimmed_response["webPages"]["value"][i]["name"],
+                "url": trimmed_response["webPages"]["value"][i]["url"],
+                "snippet": trimmed_response["webPages"]["value"][i]["snippet"],
+            }
+            for i in sorted_indices
         ]
+
         return dspy.Prediction(passages=passages)
 
-    def entity(self, query: str) -> dict:
+    def entity(self, query: str) -> Dict[str, Any]:
 
         headers = {"Ocp-Apim-Subscription-Key": self.api_key}
         params = {"q": query, "mkt": "en-us"}
@@ -78,10 +123,10 @@ class BingSearch(dspy.Retrieve):
         endpoint = self.endpoint + "/v7.0/entities"
 
         try:
-            response = requests.get(endpoint, headers=headers, params=params)
+            response = cached_bing_search_request_wrapped(endpoint, headers, params)
             return response.json()
         except Exception as e:
-            print(e)
+            dspy.logger.error(f"Error in getting Bing entity results: {e}")
             raise e
 
     def _get_similarity_scores(self, query: str, snippets: List[str]) -> List[float]:
@@ -90,10 +135,14 @@ class BingSearch(dspy.Retrieve):
         snips = snippets.copy()
 
         query_embeddings = self.model.encode(
-            queries, convert_to_tensor=True, show_progress_bar=False,
+            queries,
+            convert_to_tensor=True,
+            show_progress_bar=False,
         )
         snip_embeddings = self.model.encode(
-            snips, convert_to_tensor=True, show_progress_bar=False,
+            snips,
+            convert_to_tensor=True,
+            show_progress_bar=False,
         )
 
         cos_sims = F.cosine_similarity(query_embeddings, snip_embeddings, dim=1)
@@ -129,11 +178,35 @@ class BingSearch(dspy.Retrieve):
         return word_counts
 
 
+@CacheMemory.cache
+def cached_bing_search_request(endpoint, headers, params):
+    for _ in range(3):
+        response = requests.get(endpoint, headers=headers, params=params)
+        if not response.ok and (
+            response.status_code >= 400 and response.status_code < 500
+        ):
+            dspy.logger.error(
+                f"Bing Search HTTP error: {response.status_code}, {response.text}"
+            )
+            headers["Cache-Control"] = "no-cache"
+            dspy.logger.error(f"req.url: {endpoint}")
+        else:
+            break
+
+    return response
+
+
+@functools.lru_cache(maxsize=None if cache_turn_on else 0)
+def cached_bing_search_request_wrapped(endpoint, headers, params):
+    return cached_bing_search_request(endpoint, headers, params)
+
+
 class BraveSearch(dspy.Retrieve):
     """Set API key in BRAVE_SEARCH_API_KEY
-    
-    Return result: Prediction(list[dict["title", "link", "snippet"]]) 
+
+    Return result: Prediction(list[dict["title", "link", "snippet"]])
     """
+
     api_key: str
     base_url: str = "https://api.search.brave.com/res/v1/web/search"
 
@@ -155,7 +228,6 @@ class BraveSearch(dspy.Retrieve):
         ]
         return Prediction(passages=final_results)
 
-
     # Credit to LangChain
     def _search_request(self, query: str, **kwargs) -> List[dict]:
         headers = {
@@ -167,18 +239,21 @@ class BraveSearch(dspy.Retrieve):
         req.prepare_url(self.base_url, params)
         if req.url is None:
             raise ValueError("prepared url is None, this should not happen")
-        
 
         # Retry 3 times
         for _ in range(3):
             response = cached_brave_search_request_wrapped(req.url, **headers)
-            if not response.ok:
-                dspy.logger.error(f"HTTP error: {response.status_code}, {response.text}")
+            if not response.ok and (
+                response.status_code >= 400 and response.status_code < 500
+            ):
+                dspy.logger.error(
+                    f"Brave Search HTTP error: {response.status_code}, {response.text}"
+                )
                 headers["Cache-Control"] = "no-cache"
                 dspy.logger.error(f"req.url: {req.url}")
             else:
                 break
-        
+
         try:
             return response.json().get("web", {}).get("results", [])
         except Exception as e:
