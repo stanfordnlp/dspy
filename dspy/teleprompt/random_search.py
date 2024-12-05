@@ -51,10 +51,10 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
 
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         print(f"Going to sample between {self.min_num_samples} and {self.max_num_samples} traces per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
-    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
@@ -183,10 +183,10 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
         self.max_labeled_demos = max_labeled_demos
         self.max_bootstrapped_demos = max_bootstrapped_demos
 
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         print(f"Going to sample between 1 and {self.max_static_demos} static demos per predictor.")
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
-    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
