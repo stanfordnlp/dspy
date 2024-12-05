@@ -134,7 +134,7 @@ class MIPROv2KNN(MIPROv2):
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
 
-        self.logger.info("Generating KNN embeddings for all predictors...")
+        self.logger.info("Generating KNN embeddings as required...")
         load_knn_embeddings(candidate_program, self.num_threads)
         return chosen_params
 
