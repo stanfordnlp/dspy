@@ -5,12 +5,13 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 import dsp
+from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
-from dspy.adapters.image_utils import Image
+
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
@@ -136,17 +137,22 @@ class Predict(Module, Parameter):
 
         return self
 
-    def load(self, path, return_self=False):
+    def load(self, path, use_legacy_loading=False, use_json=True, return_self=False):
         """Load a saved state from a file.
-        
+
         Args:
             path (str): Path to the saved state file
-            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards compatibility.
-        
+            use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
+                saved state from a version of DSPy prior to v2.5.3.
+            use_json (bool): Whether to load the state from a json file. If False, the state is loaded from a pickle
+                file.
+            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards
+                compatibility.
+
         Returns:
             Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
         """
-        super().load(path)
+        super().load(path, use_legacy_loading=use_legacy_loading, use_json=use_json)
         return self if return_self else None
 
     @with_callbacks
