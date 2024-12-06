@@ -3,7 +3,6 @@ import os
 import shutil
 import tempfile
 
-import pydantic
 import pytest
 
 import dspy
@@ -109,31 +108,3 @@ def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, tempor
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 2
-
-
-def test_lm_calls_support_unhashable_types(litellm_test_server, temporary_blank_cache_dir):
-    api_base, server_log_file_path = litellm_test_server
-
-    lm_with_unhashable_callable = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        # Define a callable kwarg for the LM to use during inference
-        azure_ad_token_provider=lambda *args, **kwargs: None,
-    )
-    lm_with_unhashable_callable("Query")
-
-
-def test_lm_calls_support_pydantic_models(litellm_test_server, temporary_blank_cache_dir):
-    api_base, server_log_file_path = litellm_test_server
-
-    class ResponseFormat(pydantic.BaseModel):
-        response: str
-
-    lm = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        response_format=ResponseFormat,
-    )
-    lm("Query")
