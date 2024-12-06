@@ -44,7 +44,7 @@ from dspy.retrieve.weaviate_rm import WeaviateRM
 weaviate_client = weaviate.connect_to_embedded() # you can also use local or WCD
 
 retriever_model = WeaviateRM(
-    collection_name="<WEAVIATE_COLLECTION>",
+    weaviate_collection_name="<WEAVIATE_COLLECTION>",
     weaviate_client=weaviate_client 
 )
 
