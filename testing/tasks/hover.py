@@ -30,34 +30,46 @@ def discrete_retrieval_eval(example, pred, trace=None):
     return gold_titles.issubset(found_titles)
 
 
-class RetrieveMultiHop(dspy.Module):
+class RetrieveMultiHop2(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.k = 7
+        self.retrieve = dspy.Retrieve(k=16)
+        self.create_query = dspy.ChainOfThought("claim,summary->query")
+        self.summarize = dspy.ChainOfThought("claim,context,passages->summary")
+
+    def forward(self, claim):
+        passages = self.retrieve(claim).passages
+        summary = ""
+
+        for _ in range(2):
+            summary = self.summarize(claim=claim, context=summary, passages=passages).summary
+            query = self.create_query(claim=claim, summary=summary).query
+            passages.extend(self.retrieve(query).passages)
+
+        return dspy.Prediction(retrieved_docs=passages)
+
+
+class RetrieveMultiHop4(dspy.Module):
+    def __init__(self):
+        super().__init__()
         self.create_query_hop2 = dspy.ChainOfThought("claim,summary_1->query")
         self.create_query_hop3 = dspy.ChainOfThought("claim,summary_1,summary_2->query")
-        self.retrieve_k = dspy.Retrieve(k=self.k)
+        self.retrieve_k = dspy.Retrieve(k=7)
         self.summarize1 = dspy.ChainOfThought("claim,passages->summary")
         self.summarize2 = dspy.ChainOfThought("claim,context,passages->summary")
 
     def forward(self, claim):
         # HOP 1
         hop1_docs = self.retrieve_k(claim).passages
-        summary_1 = self.summarize1(
-            claim=claim, passages=hop1_docs
-        ).summary  # Summarize top k docs
+        summary_1 = self.summarize1(claim=claim, passages=hop1_docs).summary  # Summarize top k docs
 
         # HOP 2
         hop2_query = self.create_query_hop2(claim=claim, summary_1=summary_1).query
         hop2_docs = self.retrieve_k(hop2_query).passages
-        summary_2 = self.summarize2(
-            claim=claim, context=summary_1, passages=hop2_docs
-        ).summary
+        summary_2 = self.summarize2(claim=claim, context=summary_1, passages=hop2_docs).summary
 
         # HOP 3
-        hop3_query = self.create_query_hop3(
-            claim=claim, summary_1=summary_1, summary_2=summary_2
-        ).query
+        hop3_query = self.create_query_hop3(claim=claim, summary_1=summary_1, summary_2=summary_2).query
         hop3_docs = self.retrieve_k(hop3_query).passages
 
         return dspy.Prediction(retrieved_docs=hop1_docs + hop2_docs + hop3_docs)
@@ -79,9 +91,7 @@ class HoverRetrieveDiscrete(BaseTask):
             label = example["label"]
 
             if count_unique_docs(example) == 3:  # Limit to 3 hop examples
-                reformatted_hf_trainset.append(
-                    dict(claim=claim, supporting_facts=supporting_facts, label=label)
-                )
+                reformatted_hf_trainset.append(dict(claim=claim, supporting_facts=supporting_facts, label=label))
 
         for example in tqdm.tqdm(hf_testset):
             claim = example["claim"]
@@ -89,13 +99,11 @@ class HoverRetrieveDiscrete(BaseTask):
             label = example["label"]
 
             if count_unique_docs(example) == 3:
-                reformatted_hf_testset.append(
-                    dict(claim=claim, supporting_facts=supporting_facts, label=label)
-                )
+                reformatted_hf_testset.append(dict(claim=claim, supporting_facts=supporting_facts, label=label))
 
-        rng = random.Random(0)
-        rng.shuffle(reformatted_hf_trainset)
         rng = random.Random(1)
+        rng.shuffle(reformatted_hf_trainset)
+        rng = random.Random(2)
         rng.shuffle(reformatted_hf_testset)
 
         trainset = reformatted_hf_trainset
@@ -115,7 +123,7 @@ class HoverRetrieveDiscrete(BaseTask):
         self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
-        return RetrieveMultiHop()
+        return RetrieveMultiHop2()
 
     def get_metric(self):
         return self.metric
