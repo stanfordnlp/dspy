@@ -92,7 +92,7 @@ class LM(BaseLM):
             completion = cached_litellm_text_completion if cache else litellm_text_completion
 
         response = completion(
-            request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
+            request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
         )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
@@ -153,7 +153,11 @@ class LM(BaseLM):
         thread = threading.Thread(target=thread_function_wrapper)
         model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
-            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
+            thread=thread,
+            model=model_to_finetune,
+            train_data=train_data,
+            train_kwargs=train_kwargs,
+            data_format=data_format,
         )
         thread.start()
 
@@ -212,7 +216,7 @@ class LM(BaseLM):
         return new_instance
 
 
-@functools.lru_cache(maxsize=None)
+# @functools.lru_cache(maxsize=None)
 def cached_litellm_completion(request, num_retries: int):
     return litellm_completion(
         request,
@@ -222,12 +226,12 @@ def cached_litellm_completion(request, num_retries: int):
 
 
 def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-    return litellm.completion(
+    result = litellm.completion(
         num_retries=num_retries,
         cache=cache,
-        **kwargs,
+        **request,
     )
+    return result
 
 
 @functools.lru_cache(maxsize=None)
