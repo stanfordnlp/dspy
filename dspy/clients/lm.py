@@ -226,7 +226,7 @@ def request_cache(maxsize: Optional[int] = None):
     good performance when optimizing and evaluating DSPy LMs (disk caching alone is too slow).
 
     Args:
-        maxsize: The maximum size of the cache.
+        maxsize: The maximum size of the cache. If unspecified, no max size is enforced (cache is unbounded).
 
     Returns:
         A decorator that wraps the target function with caching.
