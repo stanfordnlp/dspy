@@ -22,7 +22,12 @@ class Adapter(ABC):
 
         try:
             for output in outputs:
-                output_text, output_logprobs = output["text"], output["logprobs"]
+                if type(output) is str:
+                    output_text, output_logprobs = output, None
+                elif type(output) is dict:
+                    output_text, output_logprobs = output["text"], output["logprobs"]
+                else:
+                    raise ValueError(f"Expected str or dict but got {type(output)}")
                 value = self.parse(signature, output_text, _parse_values=_parse_values)
                 assert set(value.keys()) == set(signature.output_fields.keys()), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
                 value["logprobs"] = output_logprobs
