@@ -234,9 +234,8 @@ def request_cache(maxsize: Optional[int] = None):
 
     def cache_key(request: Dict[str, Any]) -> str:
         # Transform Pydantic models into JSON-convertible format and exclude unhashable objects
-        params = {
-            k: (v.dict() if isinstance(v, pydantic.BaseModel) else v) for k, v in request.items() if not callable(v)
-        }
+        params = {k: (v.dict() if isinstance(v, pydantic.BaseModel) else v) for k, v in request.items()}
+        params = {k: v for k, v in params.items() if not callable(v)}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
     def decorator(func):
