@@ -231,9 +231,6 @@ def request_cache(maxsize: Optional[int] = None):
     Returns:
         A decorator that wraps the target function with caching.
     """
-    # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
-    cache = LRUCache(maxsize=maxsize or float("inf"))
-    cache_lock = threading.Lock()
 
     def cache_key(request: Dict[str, Any]) -> str:
         # Transform Pydantic models into JSON-convertible format and exclude unhashable objects
@@ -244,11 +241,12 @@ def request_cache(maxsize: Optional[int] = None):
 
     def decorator(func):
         @cached(
-            cache=cache,
+            # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
+            cache=LRUCache(maxsize=maxsize or float("inf")),
             key=lambda request, *args, **kwargs: cache_key(request),
             # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
             # concurrently, e.g. during optimization and evaluation
-            lock=cache_lock,
+            lock=threading.Lock(),
         )
         @functools.wraps(func)
         def wrapper(request: dict, *args, **kwargs):
