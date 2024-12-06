@@ -22,8 +22,10 @@ class Adapter(ABC):
 
         try:
             for output in outputs:
-                value = self.parse(signature, output, _parse_values=_parse_values)
+                output_text, output_logprobs = output["text"], output["logprobs"]
+                value = self.parse(signature, output_text, _parse_values=_parse_values)
                 assert set(value.keys()) == set(signature.output_fields.keys()), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
+                value["logprobs"] = output_logprobs
                 values.append(value)
             return values
 
