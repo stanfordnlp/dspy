@@ -7,6 +7,7 @@ from .ensemble import *
 from .knn_fewshot import *
 from .mipro_optimizer import MIPRO
 from .mipro_optimizer_v2 import MIPROv2
+from .mipro_optimizer_v2_knn import MIPROv2KNN
 from .random_search import *
 from .signature_opt import SignatureOptimizer
 from .signature_opt_bayesian import BayesianSignatureOptimizer

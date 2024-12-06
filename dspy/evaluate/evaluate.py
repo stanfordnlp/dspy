@@ -38,9 +38,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger(__name__)
-
-
 class Evaluate:
     def __init__(
         self,

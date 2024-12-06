@@ -1,18 +1,20 @@
-import functools
 import logging
 import os
 import threading
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, cast
 
+from anyio.streams.memory import MemoryObjectSendStream
+from asyncer import syncify
 import litellm
-import ujson
 
+import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
+from dspy.utils.caching import LRUCache
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -85,30 +87,32 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
         response = completion(
-            request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
-            num_retries=self.num_retries,
+            request=dict(
+                model=self.model,
+                messages=messages,
+                num_retries=self.num_retries,
+                **kwargs,
+            ),
+            cache=cache,
         )
         outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
-        # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            model_type=self.model_type,
-        )
+        entry = {
+            "prompt": prompt,
+            "messages": messages,
+            "kwargs": {k: v for k, v in kwargs.items() if not k.startswith("api_")},
+            "response": response,
+            "outputs": outputs,
+            "usage": dict(response["usage"]),
+            "cost": response.get("_hidden_params", {}).get("response_cost"),
+            "timestamp": datetime.now().isoformat(),
+            "uuid": str(uuid.uuid4()),
+            "model": self.model,
+            "model_type": self.model_type,
+        }
         self.history.append(entry)
         self.update_global_history(entry)
 
@@ -153,7 +157,11 @@ class LM(BaseLM):
         thread = threading.Thread(target=thread_function_wrapper)
         model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
-            thread=thread, model=model_to_finetune, train_data=train_data, train_kwargs=train_kwargs, data_format=data_format
+            thread=thread,
+            model=model_to_finetune,
+            train_data=train_data,
+            train_kwargs=train_kwargs,
+            data_format=data_format,
         )
         thread.start()
 
@@ -212,54 +220,79 @@ class LM(BaseLM):
         return new_instance
 
 
-@functools.lru_cache(maxsize=None)
-def cached_litellm_completion(request, num_retries: int):
-    return litellm_completion(
-        request,
+def request_cache(default_cache=LRUCache([], maxsize=10_000_000)) -> LRUCache:
+    return dspy.settings.request_cache or default_cache
+
+
+def _litellm_completion(request: dict, **kwargs):
+    stream = dspy.settings.send_stream
+    if stream is None:
+        return litellm.completion(**request, **kwargs)
+
+    # The stream is already opened, and will be closed by the caller.
+    stream = cast(MemoryObjectSendStream, stream)
+
+    @syncify
+    async def stream_completion():
+        response = await litellm.acompletion(**request, **kwargs, stream=True)
+        chunks = []
+        async for chunk in response:
+            chunks.append(chunk)
+            await stream.send(chunk)
+        return litellm.stream_chunk_builder(chunks)
+
+    return stream_completion()
+
+
+def litellm_completion(request: dict, cache=False):
+    if not cache:
+        return _litellm_completion(request, cache={"no-cache": True, "no-store": True})
+
+    response = request_cache().get(request, None)
+    if response:
+        return response
+
+    response = _litellm_completion(request, cache={"no-cache": False, "no-store": False})
+    request_cache()[request] = response
+
+    return response
+
+
+def litellm_text_completion(request: dict, cache=False):
+    params = _prepare_litellm_text_completion_params(request)
+    if not cache:
+        return litellm.text_completion(**params, cache={"no-cache": True, "no-store": True})
+
+    response = request_cache().get(request, None)
+    if response:
+        return response
+
+    response = litellm.text_completion(
+        **params,
         cache={"no-cache": False, "no-store": False},
-        num_retries=num_retries,
     )
+    request_cache()[request] = response
+
+    return response
 
 
-def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
-        **kwargs,
-    )
-
-
-@functools.lru_cache(maxsize=None)
-def cached_litellm_text_completion(request, num_retries: int):
-    return litellm_text_completion(
-        request,
-        num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
-    )
-
-
-def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
-    kwargs = ujson.loads(request)
-
+def _prepare_litellm_text_completion_params(request: dict):
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
-    model = kwargs.pop("model").split("/", 1)
+    model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
     # Use the API key and base from the kwargs, or from the environment.
-    api_key = kwargs.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
+    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
+    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
+    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(
-        cache=cache,
-        model=f"text-completion-openai/{model}",
-        api_key=api_key,
-        api_base=api_base,
-        prompt=prompt,
-        num_retries=num_retries,
-        **kwargs,
-    )
+    return {
+        "model": f"text-completion-openai/{model}",
+        "api_key": api_key,
+        "api_base": api_base,
+        "prompt": prompt,
+        **request,
+    }

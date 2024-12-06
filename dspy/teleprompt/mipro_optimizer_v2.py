@@ -62,13 +62,12 @@ class MIPROv2(Teleprompter):
         track_stats: bool = True,
         log_dir: Optional[str] = None,
         metric_threshold: Optional[float] = None,
+        logger: logging.Logger = logger,
     ):
         # Validate 'auto' parameter
         allowed_modes = {None, "light", "medium", "heavy"}
         if auto not in allowed_modes:
-            raise ValueError(
-                f"Invalid value for auto: {auto}. Must be one of {allowed_modes}."
-            )
+            raise ValueError(f"Invalid value for auto: {auto}. Must be one of {allowed_modes}.")
         self.auto = auto
 
         self.num_candidates = num_candidates
@@ -89,6 +88,7 @@ class MIPROv2(Teleprompter):
         self.metric_threshold = metric_threshold
         self.seed = seed
         self.rng = None
+        self.logger = logger
 
     def compile(
         self,
@@ -125,9 +125,7 @@ class MIPROv2(Teleprompter):
         trainset, valset = self._set_and_validate_datasets(trainset, valset)
 
         # Set hyperparameters based on run mode (if set)
-        zeroshot_opt = (self.max_bootstrapped_demos == 0) and (
-            self.max_labeled_demos == 0
-        )
+        zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
         num_trials, valset, minibatch = self._set_hyperparams_from_run_mode(
             student, num_trials, minibatch, zeroshot_opt, valset
         )
@@ -136,9 +134,7 @@ class MIPROv2(Teleprompter):
             self._print_auto_run_settings(num_trials, minibatch, valset)
 
         if minibatch and minibatch_size > len(valset):
-            raise ValueError(
-                f"Minibatch size cannot exceed the size of the valset. Valset size: {len(valset)}."
-            )
+            raise ValueError(f"Minibatch size cannot exceed the size of the valset. Valset size: {len(valset)}.")
 
         # Estimate LM calls and get user confirmation
         if requires_permission_to_run:
@@ -151,7 +147,7 @@ class MIPROv2(Teleprompter):
                 valset,
                 program_aware_proposer,
             ):
-                logger.info("Compilation aborted by the user.")
+                self.logger.info("Compilation aborted by the user.")
                 return student  # Return the original student program
 
         # Initialize program and evaluator
@@ -199,10 +195,8 @@ class MIPROv2(Teleprompter):
         )
 
         return best_program
-    
-    def _set_random_seeds(self,
-        seed
-    ):
+
+    def _set_random_seeds(self, seed):
         self.rng = random.Random(seed)
         np.random.seed(seed)
 
@@ -225,9 +219,7 @@ class MIPROv2(Teleprompter):
         num_trials = auto_settings["num_trials"]
         valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
-        self.num_candidates = int(
-            np.round(np.min([num_trials * num_vars, (1.5 * num_trials) / num_vars]))
-        )
+        self.num_candidates = int(round(min(num_trials * num_vars, 1.5 * num_trials / num_vars)))
 
         return num_trials, valset, minibatch
 
@@ -237,9 +229,7 @@ class MIPROv2(Teleprompter):
 
         if valset is None:
             if len(trainset) < 2:
-                raise ValueError(
-                    "Trainset must have at least 2 examples if no valset specified."
-                )
+                raise ValueError("Trainset must have at least 2 examples if no valset specified.")
             valset_size = min(1000, max(1, int(len(trainset) * 0.80)))
             cutoff = len(trainset) - valset_size
             valset = trainset[cutoff:]
@@ -251,7 +241,7 @@ class MIPROv2(Teleprompter):
         return trainset, valset
 
     def _print_auto_run_settings(self, num_trials: int, minibatch: bool, valset: List):
-        logger.info(
+        self.logger.info(
             f"\nRUNNING WITH THE FOLLOWING {self.auto.upper()} AUTO RUN SETTINGS:"
             f"\nnum_trials: {num_trials}"
             f"\nminibatch: {minibatch}"
@@ -275,9 +265,7 @@ class MIPROv2(Teleprompter):
         estimated_prompt_model_calls = (
             10  # Data summarizer calls
             + self.num_candidates * num_predictors  # Candidate generation
-            + (
-                num_predictors + 1 if program_aware_proposer else 0
-            )  # Program-aware proposer
+            + (num_predictors + 1 if program_aware_proposer else 0)  # Program-aware proposer
         )
         prompt_model_line = (
             f"{YELLOW}- Prompt Generation: {BLUE}{BOLD}10{ENDC}{YELLOW} data summarizer calls + "
@@ -297,9 +285,7 @@ class MIPROv2(Teleprompter):
             )
         else:
             full_eval_steps = num_trials // minibatch_full_eval_steps + 1
-            estimated_task_model_calls = (
-                minibatch_size * num_trials + len(valset) * full_eval_steps
-            )
+            estimated_task_model_calls = minibatch_size * num_trials + len(valset) * full_eval_steps
             task_model_line = (
                 f"{YELLOW}- Program Evaluation: {BLUE}{BOLD}{minibatch_size}{ENDC}{YELLOW} examples in minibatch * "
                 f"{BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches + "
@@ -341,7 +327,7 @@ class MIPROv2(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of program calls * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
@@ -362,24 +348,21 @@ class MIPROv2(Teleprompter):
         """
         )
 
-        user_input = input(
-            f"{user_message}\n{user_confirmation_message}\n"
-            "Do you wish to continue? (y/n): "
-        ).strip().lower()
+        user_input = (
+            input(f"{user_message}\n{user_confirmation_message}\n" "Do you wish to continue? (y/n): ").strip().lower()
+        )
         return user_input == "y"
 
-    def _bootstrap_fewshot_examples(
-        self, program: Any, trainset: List, seed: int, teacher: Any
-    ) -> Optional[List]:
-        logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
+    def _bootstrap_fewshot_examples(self, program: Any, trainset: List, seed: int, teacher: Any) -> Optional[List]:
+        self.logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
         if self.max_bootstrapped_demos > 0:
-            logger.info(
+            self.logger.info(
                 "These will be used as few-shot example candidates for our program and for creating instructions.\n"
             )
         else:
-            logger.info("These will be used for informing instruction proposal.\n")
+            self.logger.info("These will be used for informing instruction proposal.\n")
 
-        logger.info(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
+        self.logger.info(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
 
         zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
 
@@ -388,15 +371,9 @@ class MIPROv2(Teleprompter):
                 student=program,
                 num_candidate_sets=self.num_candidates,
                 trainset=trainset,
-                max_labeled_demos=(
-                    LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT
-                    if zeroshot
-                    else self.max_labeled_demos
-                ),
+                max_labeled_demos=(LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_labeled_demos),
                 max_bootstrapped_demos=(
-                    BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT
-                    if zeroshot
-                    else self.max_bootstrapped_demos
+                    BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_bootstrapped_demos
                 ),
                 metric=self.metric,
                 max_errors=self.max_errors,
@@ -405,10 +382,11 @@ class MIPROv2(Teleprompter):
                 seed=seed,
                 metric_threshold=self.metric_threshold,
                 rng=self.rng,
+                num_threads=self.num_threads,
             )
         except Exception as e:
-            logger.info(f"Error generating few-shot examples: {e}")
-            logger.info("Running without few-shot examples.")
+            self.logger.info(f"Error generating few-shot examples: {e}")
+            self.logger.info("Running without few-shot examples.")
             demo_candidates = None
 
         return demo_candidates
@@ -424,8 +402,8 @@ class MIPROv2(Teleprompter):
         tip_aware_proposer: bool,
         fewshot_aware_proposer: bool,
     ) -> Dict[int, List[str]]:
-        logger.info("\n==> STEP 2: PROPOSE INSTRUCTION CANDIDATES <==")
-        logger.info(
+        self.logger.info("\n==> STEP 2: PROPOSE INSTRUCTION CANDIDATES <==")
+        self.logger.info(
             "We will use the few-shot examples from the previous step, a generated dataset summary, a summary of the program code, and a randomly selected prompting tip to propose instructions."
         )
 
@@ -442,10 +420,11 @@ class MIPROv2(Teleprompter):
             use_instruct_history=False,
             set_history_randomly=False,
             verbose=self.verbose,
-            rng=self.rng
+            rng=self.rng,
+            num_threads=self.num_threads,
         )
 
-        logger.info("\nProposing instructions...\n")
+        self.logger.info("\nProposing instructions...\n")
         instruction_candidates = proposer.propose_instructions_for_program(
             trainset=trainset,
             program=program,
@@ -456,11 +435,11 @@ class MIPROv2(Teleprompter):
         )
 
         for i, pred in enumerate(program.predictors()):
-            logger.info(f"Proposed Instructions for Predictor {i}:\n")
+            self.logger.info(f"Proposed Instructions for Predictor {i}:\n")
             instruction_candidates[i][0] = get_signature(pred).instructions
             for j, instruction in enumerate(instruction_candidates[i]):
-                logger.info(f"{j}: {instruction}\n")
-            logger.info("\n")
+                self.logger.info(f"{j}: {instruction}\n")
+            self.logger.info("\n")
 
         return instruction_candidates
 
@@ -477,15 +456,13 @@ class MIPROv2(Teleprompter):
         minibatch_full_eval_steps: int,
         seed: int,
     ) -> Optional[Any]:
-        logger.info("Evaluating the default program...\n")
+        self.logger.info("Evaluating the default program...\n")
         default_score = eval_candidate_program(len(valset), valset, program, evaluate, self.rng)
-        logger.info(f"Default program score: {default_score}\n")
+        self.logger.info(f"Default program score: {default_score}\n")
 
         trial_logs = {}
         trial_logs[-1] = {}
-        trial_logs[-1]["full_eval_program_path"] = save_candidate_program(
-            program, self.log_dir, -1
-        )
+        trial_logs[-1]["full_eval_program_path"] = save_candidate_program(program, self.log_dir, -1)
         trial_logs[-1]["full_eval_score"] = default_score
         trial_logs[-1]["total_eval_calls_so_far"] = len(valset)
         trial_logs[-1]["full_eval_program"] = program.deepcopy()
@@ -494,7 +471,7 @@ class MIPROv2(Teleprompter):
         best_score = default_score
         best_program = program.deepcopy()
         total_eval_calls = len(valset)
-        score_data= [(best_score, program.deepcopy(), True)]
+        score_data = [(best_score, program.deepcopy(), True)]
         param_score_dict = defaultdict(list)
         fully_evaled_param_combos = {}
 
@@ -504,9 +481,9 @@ class MIPROv2(Teleprompter):
 
             trial_num = trial.number + 1
             if minibatch:
-                logger.info(f"== Minibatch Trial {trial_num} / {num_trials} ==")
+                self.logger.info(f"== Minibatch Trial {trial_num} / {num_trials} ==")
             else:
-                logger.info(f"===== Trial {trial_num} / {num_trials} =====")
+                self.logger.info(f"===== Trial {trial_num} / {num_trials} =====")
 
             trial_logs[trial_num] = {}
 
@@ -525,24 +502,22 @@ class MIPROv2(Teleprompter):
 
             # Log assembled program
             if self.verbose:
-                logger.info("Evaluating the following candidate program...\n")
+                self.logger.info("Evaluating the following candidate program...\n")
                 print_full_program(candidate_program)
 
             # Evaluate the candidate program (on minibatch if minibatch=True)
             batch_size = minibatch_size if minibatch else len(valset)
-            score = eval_candidate_program(
-                batch_size, valset, candidate_program, evaluate, self.rng
-            )
+            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng)
             total_eval_calls += batch_size
 
             # Update best score and program
             if not minibatch and score > best_score:
                 best_score = score
                 best_program = candidate_program.deepcopy()
-                logger.info(f"{GREEN}Best full score so far!{ENDC} Score: {score}")
+                self.logger.info(f"{GREEN}Best full score so far!{ENDC} Score: {score}")
 
             # Log evaluation results
-            score_data.append((score, candidate_program, batch_size >= len(valset))) # score, prog, full_eval
+            score_data.append((score, candidate_program, batch_size >= len(valset)))  # score, prog, full_eval
             if minibatch:
                 self._log_minibatch_eval(
                     score,
@@ -559,7 +534,18 @@ class MIPROv2(Teleprompter):
                 )
             else:
                 self._log_normal_eval(
-                    score, best_score, chosen_params, score_data, trial, num_trials, trial_logs, trial_num, valset, batch_size, candidate_program, total_eval_calls
+                    score,
+                    best_score,
+                    chosen_params,
+                    score_data,
+                    trial,
+                    num_trials,
+                    trial_logs,
+                    trial_num,
+                    valset,
+                    batch_size,
+                    candidate_program,
+                    total_eval_calls,
                 )
             categorical_key = ",".join(map(str, chosen_params))
             param_score_dict[categorical_key].append(
@@ -567,10 +553,7 @@ class MIPROv2(Teleprompter):
             )
 
             # If minibatch, perform full evaluation at intervals
-            if minibatch and (
-                (trial_num % minibatch_full_eval_steps == 0)
-                or (trial_num == num_trials)
-            ):
+            if minibatch and ((trial_num % minibatch_full_eval_steps == 0) or (trial_num == num_trials)):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
                     param_score_dict,
@@ -588,8 +571,8 @@ class MIPROv2(Teleprompter):
 
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
-        logger.info(
+        self.logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
+        self.logger.info(
             "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
         )
 
@@ -605,11 +588,13 @@ class MIPROv2(Teleprompter):
             best_program.total_calls = self.total_calls
             sorted_candidate_programs = sorted(score_data, key=lambda x: x[0], reverse=True)
             # Attach all minibatch programs
-            best_program.mb_candidate_programs = [score_data for score_data in sorted_candidate_programs if not score_data[2]]
+            best_program.mb_candidate_programs = [
+                score_data for score_data in sorted_candidate_programs if not score_data[2]
+            ]
             # Attach all programs that were evaluated on the full trainset, in descending order of score
             best_program.candidate_programs = [score_data for score_data in sorted_candidate_programs if score_data[2]]
 
-        logger.info(f"Returning best identified program with score {best_score}!")
+        self.logger.info(f"Returning best identified program with score {best_score}!")
 
         return best_program
 
@@ -627,26 +612,32 @@ class MIPROv2(Teleprompter):
         candidate_program,
         total_eval_calls,
     ):
-        trial_logs[trial_num]["mb_program_path"] = save_candidate_program(
-            candidate_program, self.log_dir, trial_num
-        )
+        trial_logs[trial_num]["mb_program_path"] = save_candidate_program(candidate_program, self.log_dir, trial_num)
         trial_logs[trial_num]["mb_score"] = score
         trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
         trial_logs[trial_num]["mb_program"] = candidate_program.deepcopy()
 
-        logger.info(
-            f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}."
-        )
-        logger.info(f"Minibatch scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if not s[2]]) +']'}")
+        self.logger.info(f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}.")
+        self.logger.info(f"Minibatch scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if not s[2]]) +']'}")
         trajectory = "[" + ", ".join([f"{s[0]}" for s in score_data if s[2]]) + "]"
-        logger.info(f"Full eval scores so far: {trajectory}")
-        logger.info(f"Best full score so far: {best_score}")
-        logger.info(
-            f'{"="*len(f"== Minibatch Trial {trial.number+1} / {num_trials} ==")}\n\n'
-        )
+        self.logger.info(f"Full eval scores so far: {trajectory}")
+        self.logger.info(f"Best full score so far: {best_score}")
+        self.logger.info(f'{"="*len(f"== Minibatch Trial {trial.number+1} / {num_trials} ==")}\n\n')
 
     def _log_normal_eval(
-        self, score, best_score, chosen_params, score_data, trial, num_trials, trial_logs, trial_num, valset, batch_size, candidate_program, total_eval_calls
+        self,
+        score,
+        best_score,
+        chosen_params,
+        score_data,
+        trial,
+        num_trials,
+        trial_logs,
+        trial_num,
+        valset,
+        batch_size,
+        candidate_program,
+        total_eval_calls,
     ):
         trial_logs[trial_num]["full_eval_program_path"] = save_candidate_program(
             candidate_program, self.log_dir, trial_num
@@ -655,10 +646,10 @@ class MIPROv2(Teleprompter):
         trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
         trial_logs[trial_num]["full_eval_program"] = candidate_program.deepcopy()
 
-        logger.info(f"Score: {score} with parameters {chosen_params}.")
-        logger.info(f"Scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if s[2]])+']'}")
-        logger.info(f"Best score so far: {best_score}")
-        logger.info(f'{"="*len(f"===== Trial {trial.number+1} / {num_trials} =====")}\n\n')
+        self.logger.info(f"Score: {score} with parameters {chosen_params}.")
+        self.logger.info(f"Scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if s[2]])+']'}")
+        self.logger.info(f"Best score so far: {best_score}")
+        self.logger.info(f'{"="*len(f"===== Trial {trial.number+1} / {num_trials} =====")}\n\n')
 
     def _select_and_insert_instructions_and_demos(
         self,
@@ -677,18 +668,14 @@ class MIPROv2(Teleprompter):
                 f"{i}_predictor_instruction", range(len(instruction_candidates[i]))
             )
             selected_instruction = instruction_candidates[i][instruction_idx]
-            updated_signature = get_signature(predictor).with_instructions(
-                selected_instruction
-            )
+            updated_signature = get_signature(predictor).with_instructions(selected_instruction)
             set_signature(predictor, updated_signature)
             trial_logs[trial_num][f"{i}_predictor_instruction"] = instruction_idx
             chosen_params.append(f"Predictor {i}: Instruction {instruction_idx}")
 
             # Select demos if available
             if demo_candidates:
-                demos_idx = trial.suggest_categorical(
-                    f"{i}_predictor_demos", range(len(demo_candidates[i]))
-                )
+                demos_idx = trial.suggest_categorical(f"{i}_predictor_demos", range(len(demo_candidates[i])))
                 predictor.demos = demo_candidates[i][demos_idx]
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
@@ -708,20 +695,16 @@ class MIPROv2(Teleprompter):
         best_score: float,
         best_program: Any,
     ):
-        logger.info(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====")
+        self.logger.info(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====")
 
         # Identify best program to evaluate fully
-        highest_mean_program, mean_score, combo_key = (
-            get_program_with_highest_avg_score(
-                param_score_dict, fully_evaled_param_combos
-            )
+        highest_mean_program, mean_score, combo_key = get_program_with_highest_avg_score(
+            param_score_dict, fully_evaled_param_combos
         )
-        logger.info(
+        self.logger.info(
             f"Doing full eval on next top averaging program (Avg Score: {mean_score}) from minibatch trials..."
         )
-        full_eval_score = eval_candidate_program(
-            len(valset), valset, highest_mean_program, evaluate, self.rng
-        )
+        full_eval_score = eval_candidate_program(len(valset), valset, highest_mean_program, evaluate, self.rng)
         score_data.append((full_eval_score, highest_mean_program, True))
 
         # Log full evaluation results
@@ -742,13 +725,13 @@ class MIPROv2(Teleprompter):
 
         # Update best score and program if necessary
         if full_eval_score > best_score:
-            logger.info(f"{GREEN}New best full eval score!{ENDC} Score: {full_eval_score}")
+            self.logger.info(f"{GREEN}New best full eval score!{ENDC} Score: {full_eval_score}")
             best_score = full_eval_score
             best_program = highest_mean_program.deepcopy()
         trajectory = "[" + ", ".join([f"{s[0]}" for s in score_data if s[2]]) + "]"
-        logger.info(f"Full eval scores so far: {trajectory}")
-        logger.info(f"Best full score so far: {best_score}")
-        logger.info(len(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====") * "=")
-        logger.info("\n")
+        self.logger.info(f"Full eval scores so far: {trajectory}")
+        self.logger.info(f"Best full score so far: {best_score}")
+        self.logger.info(len(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====") * "=")
+        self.logger.info("\n")
 
         return best_score, best_program, total_eval_calls

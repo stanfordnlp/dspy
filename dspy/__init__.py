@@ -15,6 +15,7 @@ from dspy.clients import *  # isort: skip
 from dspy.adapters import *  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
+from dspy.utils.streaming import streamify
 
 settings = dsp.settings
 
@@ -66,6 +67,7 @@ context = settings.context
 
 
 import dspy.teleprompt
+import dspy.evaluate
 
 LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
@@ -77,4 +79,5 @@ BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
 BetterTogether = dspy.teleprompt.BetterTogether
 COPRO = dspy.teleprompt.COPRO
 MIPROv2 = dspy.teleprompt.MIPROv2
+MIPROv2KNN = dspy.teleprompt.MIPROv2KNN
 Ensemble = dspy.teleprompt.Ensemble
