@@ -13,7 +13,7 @@ An example of the WeaviateRM constructor:
 
 ```python
 WeaviateRM(
-    collection_name: str
+    weaviate_collection_name: str
     weaviate_client: str,
     k: int = 5
 )
