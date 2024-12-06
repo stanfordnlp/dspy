@@ -579,7 +579,7 @@ virtualenv = ["virtualenv (>=20.0.35)"]
 name = "cachetools"
 version = "5.5.0"
 description = "Extensible memoizing collections and decorators"
-optional = true
+optional = false
 python-versions = ">=3.7"
 files = [
     {file = "cachetools-5.5.0-py3-none-any.whl", hash = "sha256:02134e8439cdc2ffb62023ce1debca2944c3f289d66bb17ead3ab3dede74b292"},
@@ -8523,4 +8523,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "d7c6fe24c44afc0e694de8270035ac4cd9831f9bf9d6253f1cd1dbfe03ec2835"
+content-hash = "f54a12cf2b3bc3d2811e8875561b1262c8b7a546d0fb333f075a1127bc2ffcb0"
