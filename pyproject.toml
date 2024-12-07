@@ -44,6 +44,7 @@ dependencies = [
     "tenacity>=8.2.3",
     "anyio",
     "asyncer==0.0.8",
+    "snoop==0.6.0",
 ]
 
 [project.optional-dependencies]
@@ -138,6 +139,7 @@ falkordb = "^1.0.9"
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
 asyncer = "0.0.8"
+snoop = "^0.6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
