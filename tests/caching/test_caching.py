@@ -88,3 +88,23 @@ def test_lm_calls_are_cached_across_interpreter_sessions(litellm_test_server, te
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 0
+
+
+def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, temporary_blank_cache_dir):
+    api_base, server_log_file_path = litellm_test_server
+
+    lm1 = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+    )
+    lm1("Example query")
+    # Remove the disk cache, after which the LM must rely on in-memory caching
+    shutil.rmtree(temporary_blank_cache_dir)
+    lm1("Example query2")
+    lm1("Example query2")
+    lm1("Example query2")
+    lm1("Example query2")
+
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
+    assert len(request_logs) == 2
