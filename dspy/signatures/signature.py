@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 import dsp
-from dspy.adapters.image_utils import Image
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
 
@@ -404,7 +403,6 @@ def _parse_type_node(node, names=None) -> Any:
     """Recursively parse an AST node representing a type annotation."""
 
     if names is None:
-        from typing import Any, Union, Optional
         names = dict(typing.__dict__)
         from types import NoneType
         names['NoneType'] = NoneType
