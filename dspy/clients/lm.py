@@ -238,11 +238,11 @@ def request_cache(maxsize: Optional[int] = None):
         representation. For request fields having types that are known to be JSON-incompatible,
         convert them to a JSON-serializable format before hashing.
 
-        Note: Unhashable values should *not* be ignored / discarded, since that would
-        potentially lead to cache collisions. For example, consider request A containing only
-        hashable values and request B containing the same hashable values in addition to one
-        unhashable value. Discarding the unhashable value would lead to a cache collision between
-        requests A and B, even though they are semantically different.
+        Note: Values that cannot be converted to JSON should *not* be ignored / discarded, since
+        that would potentially lead to cache collisions. For example, consider request A
+        containing only hashable values and request B containing the same hashable values in
+        addition to one unhashable value. Discarding the unhashable value would lead to a cache
+        collision between requests A and B, even though they are semantically different.
         """
 
         def transform_value(value):

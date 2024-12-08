@@ -2,6 +2,7 @@ import importlib
 import os
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
@@ -108,3 +109,19 @@ def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, tempor
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == 2
+
+
+def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
+    with patch("litellm.completion") as mock_litellm_completion:
+
+        class NonJsonSerializable:
+            pass
+
+        lm = dspy.LM(
+            model="fakemodel/fakemodel",
+            non_json_serializable=NonJsonSerializable(),
+        )
+        lm("Example query")
+        lm("Example query")
+
+        assert mock_litellm_completion.call_count == 2
