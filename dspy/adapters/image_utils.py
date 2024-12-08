@@ -49,8 +49,11 @@ class Image(pydantic.BaseModel):
         return cls(url=encode_image(PIL.Image.open(pil_image)))
 
     def __repr__(self):
-        len_base64 = len(self.url.split("base64,")[1])
-        return f"Image(url = {self.url.split('base64,')[0]}base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+        if "base64" in self.url:
+            len_base64 = len(self.url.split("base64,")[1])
+            return f"Image(url = {self.url.split('base64,')[0]}base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+        else:
+            return f"Image(url = {self.url})"
 
 
 def is_url(string: str) -> bool:
