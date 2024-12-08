@@ -45,6 +45,7 @@ dependencies = [
     "anyio",
     "asyncer==0.0.8",
     "cachetools",
+    "transformers>=4.47.0",
 ]
 
 [project.optional-dependencies]
@@ -71,7 +72,12 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-dev = ["pytest>=6.2.5"]
+dev = [
+    "pytest>=6.2.5",
+    "pillow",
+    "pytest-mock",
+    "datamodel-code-generator"
+]
 fastembed = ["fastembed>=0.2.0"]
 
 [project.urls]
