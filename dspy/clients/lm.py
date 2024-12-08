@@ -272,6 +272,7 @@ def request_cache(maxsize: Optional[int] = None):
             lock=threading.RLock(),
         )
         def func_cached(key: str, request: Dict[str, Any], *args, **kwargs):
+            print("RUNNING CACHED", request, key)
             return func(request, *args, **kwargs)
 
         @functools.wraps(func)
