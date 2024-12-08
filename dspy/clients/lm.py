@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import threading
@@ -19,6 +18,8 @@ from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
+
+from .cache import dspy_cache_decorator
 
 logger = logging.getLogger(__name__)
 
@@ -219,81 +220,10 @@ class LM(BaseLM):
         return new_instance
 
 
-def request_cache(maxsize: Optional[int] = None):
-    """
-    A threadsafe decorator to create an in-memory LRU cache for LM inference functions that accept
-    a dictionary-like LM request. An in-memory cache for LM calls is critical for ensuring
-    good performance when optimizing and evaluating DSPy LMs (disk caching alone is too slow).
-
-    Args:
-        maxsize: The maximum size of the cache. If unspecified, no max size is enforced (cache is unbounded).
-
-    Returns:
-        A decorator that wraps the target function with caching.
-    """
-
-    def cache_key(request: Dict[str, Any]) -> str:
-        """
-        Obtain a unique cache key for the given request dictionary by hashing its JSON
-        representation. For request fields having types that are known to be JSON-incompatible,
-        convert them to a JSON-serializable format before hashing.
-
-        Note: Values that cannot be converted to JSON should *not* be ignored / discarded, since
-        that would potentially lead to cache collisions. For example, consider request A
-        containing only JSON-convertible values and request B containing the same JSON-convertible
-        values in addition to one unconvertible value. Discarding the unconvertible value would
-        lead to a cache collision between requests A and B, even though they are semantically
-        different.
-        """
-
-        def transform_value(value):
-            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.schema()
-            elif isinstance(value, pydantic.BaseModel):
-                return value.dict()
-            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
-                return value.__code__.co_code.decode("utf-8")
-            else:
-                # Note: We don't attempt to compute a hash of the value, since the default
-                # implementation of hash() is id(), which may collide if the same memory address
-                # is reused for different objects at different times
-                return value
-
-        params = {k: transform_value(v) for k, v in request.items()}
-        return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
-
-    def decorator(func):
-        @cached(
-            # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
-            cache=LRUCache(maxsize=maxsize or float("inf")),
-            key=lambda key, request, *args, **kwargs: key,
-            # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
-            # concurrently, e.g. during optimization and evaluation
-            lock=threading.RLock(),
-        )
-        def func_cached(key: str, request: Dict[str, Any], *args, **kwargs):
-            return func(request, *args, **kwargs)
-
-        @functools.wraps(func)
-        def wrapper(request: dict, *args, **kwargs):
-            try:
-                key = cache_key(request)
-                return func_cached(key, request, *args, **kwargs)
-            except Exception:
-                # If the cache key cannot be computed (e.g. because it contains a value that cannot
-                # be converted to JSON), bypass the cache and call the target function directly
-                return func(request, *args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-@request_cache(maxsize=None)
+@dspy_cache_decorator()
 def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
     return litellm_completion(
         request,
-        cache={"no-cache": False, "no-store": False},
         num_retries=num_retries,
     )
 
@@ -306,12 +236,11 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     )
 
 
-@request_cache(maxsize=None)
+@dspy_cache_decorator()
 def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
     return litellm_text_completion(
         request,
         num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
     )
 
 
@@ -329,7 +258,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
-        cache=cache,
+        # cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
         api_base=api_base,
