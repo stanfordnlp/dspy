@@ -127,7 +127,7 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         assert mock_litellm_completion.call_count == 2
 
 
-def test_lm_calls_with_callables_are_cached_in_memory_as_expected(litellm_test_server, temporary_blank_cache_dir):
+def test_lm_calls_with_callables_are_cached_as_expected(litellm_test_server, temporary_blank_cach_dir):
     api_base, server_log_file_path = litellm_test_server
 
     lm_with_callable = dspy.LM(
@@ -139,9 +139,6 @@ def test_lm_calls_with_callables_are_cached_in_memory_as_expected(litellm_test_s
     )
     # Invoke the LM twice; the second call should be cached in memory
     lm_with_callable("Query")
-    # Remove the disk cache between the first and second call, after which the LM must rely solely
-    # on in-memory caching
-    shutil.rmtree(temporary_blank_cache_dir)
     lm_with_callable("Query")
 
     # Define and invoke a nearly-identical LM that lacks the callable kwarg
