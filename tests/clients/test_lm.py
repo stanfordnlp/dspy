@@ -60,6 +60,7 @@ def test_lm_calls_support_callables(litellm_test_server):
         azure_ad_token_provider=lambda *args, **kwargs: None,
     )
     lm_with_callable("Query")
+    lm_with_callable("Query")
 
     # Define and invoke a nearly-identical LM that lacks the callable kwarg
     lm_without_callable = dspy.LM(
