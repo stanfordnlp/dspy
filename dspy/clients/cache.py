@@ -12,15 +12,9 @@ from functools import wraps
 from pathlib import Path
 
 
-
-
 CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-print(CACHE_DIR)
 CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 1e10))  # 10 GB default
 MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf"))) # unlimited by default
-# # litellm cache only used for embeddings
-# LITELLM_CACHE_DIR = os.environ.get("DSPY_LITELLM_CACHEDIR") or os.path.join(Path.home(), ".litellm_cache")
-
 
 class DspyCache:
     """
