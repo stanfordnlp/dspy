@@ -283,6 +283,7 @@ def request_cache(maxsize: Optional[int] = None):
             except Exception:
                 # If the cache key cannot be computed (e.g. because it contains a value that cannot
                 # be converted to JSON), bypass the cache and call the target function directly
+                print("RUNNING NOT CACHED", request)
                 return func(request, *args, **kwargs)
 
         return wrapper
