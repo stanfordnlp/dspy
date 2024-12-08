@@ -139,6 +139,9 @@ def test_lm_calls_with_callables_are_cached_as_expected(litellm_test_server, tem
     )
     # Invoke the LM twice; the second call should be cached in memory
     lm_with_callable("Query")
+    # Remove the disk cache between the first and second call, after which the LM must rely solely
+    # on in-memory caching
+    shutil.rmtree(temporary_blank_cache_dir)
     lm_with_callable("Query")
 
     # Define and invoke a nearly-identical LM that lacks the callable kwarg
