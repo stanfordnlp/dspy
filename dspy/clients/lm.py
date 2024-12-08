@@ -263,14 +263,23 @@ def request_cache(maxsize: Optional[int] = None):
         @cached(
             # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
             cache=LRUCache(maxsize=maxsize or float("inf")),
-            key=lambda request, *args, **kwargs: cache_key(request),
+            key=lambda key, request, *args, **kwargs: key,
             # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
             # concurrently, e.g. during optimization and evaluation
             lock=threading.RLock(),
         )
+        def func_cached(key: str, request: Dict[str, Any], *args, **kwargs):
+            return func(request, *args, **kwargs)
+
         @functools.wraps(func)
         def wrapper(request: dict, *args, **kwargs):
-            return func(request, *args, **kwargs)
+            try:
+                key = cache_key(request)
+                return func_cached(key, request, *args, **kwargs)
+            except Exception:
+                # If the cache key cannot be computed (e.g. because it contains an unhahsable
+                # value), fall back to the uncached version of the function
+                return func(request, *args, **kwargs)
 
         return wrapper
 
