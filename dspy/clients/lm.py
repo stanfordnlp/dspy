@@ -280,8 +280,8 @@ def request_cache(maxsize: Optional[int] = None):
                 key = cache_key(request)
                 return func_cached(key, request, *args, **kwargs)
             except Exception:
-                # If the cache key cannot be computed (e.g. because it contains an unhahsable
-                # value), fall back to the uncached version of the function
+                # If the cache key cannot be computed (e.g. because it contains a value that cannot
+                # be converted to JSON), fall back to the uncached version of the function
                 return func(request, *args, **kwargs)
 
         return wrapper
