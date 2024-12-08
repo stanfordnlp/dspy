@@ -250,10 +250,11 @@ def request_cache(maxsize: Optional[int] = None):
                 return value.schema()
             elif isinstance(value, pydantic.BaseModel):
                 return value.dict()
-            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
-                return value.__code__.co_code.decode("utf-8")
             else:
-                return value
+                try:
+                    return hash(value)
+                except Exception:
+                    return value
 
         params = {k: transform_value(v) for k, v in request.items()}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
