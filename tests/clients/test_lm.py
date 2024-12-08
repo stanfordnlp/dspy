@@ -59,6 +59,7 @@ def test_lm_calls_support_callables(litellm_test_server):
         # Define a callable kwarg for the LM to use during inference
         azure_ad_token_provider=lambda *args, **kwargs: None,
     )
+    # Invoke the LM twice
     lm_with_callable("Query")
     lm_with_callable("Query")
 
