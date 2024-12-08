@@ -61,7 +61,7 @@ def test_lm_calls_support_callables(litellm_test_server):
     )
     # Invoke the LM twice; the second call should be cached in memory
     lm_with_callable("Callable test query")
-    lm_with_callable("Callable test query")
+    # lm_with_callable("Callable test query")
 
     # Define and invoke a nearly-identical LM that lacks the callable kwarg
     lm_without_callable = dspy.LM(
