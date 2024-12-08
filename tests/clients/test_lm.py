@@ -68,10 +68,10 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     class ResponseFormat(pydantic.BaseModel):
         response: str
 
-    lm1 = dspy.LM(
+    lm = dspy.LM(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         response_format=ResponseFormat,
     )
-    lm1("Query")
+    lm("Query")
