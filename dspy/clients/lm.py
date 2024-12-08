@@ -240,9 +240,10 @@ def request_cache(maxsize: Optional[int] = None):
 
         Note: Values that cannot be converted to JSON should *not* be ignored / discarded, since
         that would potentially lead to cache collisions. For example, consider request A
-        containing only hashable values and request B containing the same hashable values in
-        addition to one unhashable value. Discarding the unhashable value would lead to a cache
-        collision between requests A and B, even though they are semantically different.
+        containing only JSON-convertible values and request B containing the same JSON-convertible
+        values in addition to one unconvertible value. Discarding the unconvertible value would
+        lead to a cache collision between requests A and B, even though they are semantically
+        different.
         """
 
         def transform_value(value):
