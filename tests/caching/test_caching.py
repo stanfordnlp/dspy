@@ -127,30 +127,26 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         assert mock_litellm_completion.call_count == 2
 
 
-def test_lm_calls_with_callables_are_cached_as_expected(litellm_test_server, temporary_blank_cache_dir):
-    api_base, server_log_file_path = litellm_test_server
+def test_lm_calls_with_callables_are_cached_as_expected():
+    with patch("litellm.completion") as mock_completion:
+        lm_with_callable = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base="fakebase",
+            api_key="fakekey",
+            # Define a callable kwarg for the LM to use during inference
+            azure_ad_token_provider=lambda *args, **kwargs: None,
+        )
+        # Invoke the LM twice; the second call should be cached in memory
+        lm_with_callable("Query")
+        lm_with_callable("Query")
 
-    lm_with_callable = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        # Define a callable kwarg for the LM to use during inference
-        azure_ad_token_provider=lambda *args, **kwargs: None,
-    )
-    # Invoke the LM twice; the second call should be cached in memory
-    lm_with_callable("Query")
-    lm_with_callable("Query")
+        # Define and invoke a nearly-identical LM that lacks the callable kwarg,
+        # which should not hit the in-memory cache
+        lm_without_callable = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base="fakebase",
+            api_key="fakekey",
+        )
+        lm_without_callable("Query")
 
-    # Define and invoke a nearly-identical LM that lacks the callable kwarg
-    lm_without_callable = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-    )
-    lm_without_callable("Query")
-
-    # Verify that 2 requests were made to the LiteLLM server - one for each LM.
-    # This verifies that there wasn't a cache collision between the LMs due to
-    # the callable
-    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == 2
+        assert mock_completion.call_count == 2

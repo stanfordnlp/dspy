@@ -299,7 +299,6 @@ def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    print("RUNNING NOT CACHED", request)
     return litellm.completion(
         num_retries=num_retries,
         cache=cache,

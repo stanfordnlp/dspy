@@ -7,7 +7,6 @@ model_list:
       model: "dspy-test-provider/dspy-test-model"
 
 litellm_settings:
-  cache: False
   custom_provider_map:
     - {
         "provider": "dspy-test-provider",
