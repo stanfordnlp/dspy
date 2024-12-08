@@ -60,8 +60,8 @@ def test_lm_calls_support_callables(litellm_test_server):
         azure_ad_token_provider=lambda *args, **kwargs: None,
     )
     # Invoke the LM twice; the second call should be cached in memory
-    lm_with_callable("Query")
-    lm_with_callable("Query")
+    lm_with_callable("Callable test query")
+    lm_with_callable("Callable test query")
 
     # Define and invoke a nearly-identical LM that lacks the callable kwarg
     lm_without_callable = dspy.LM(
@@ -69,7 +69,7 @@ def test_lm_calls_support_callables(litellm_test_server):
         api_base=api_base,
         api_key="fakekey",
     )
-    lm_without_callable("Query")
+    lm_without_callable("Callable test query")
 
     # Verify that 2 requests were made to the LiteLLM server - one for each LM.
     # This verifies that there wasn't a cache collision between the LMs due to
