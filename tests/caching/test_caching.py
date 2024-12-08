@@ -127,7 +127,7 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         assert mock_litellm_completion.call_count == 2
 
 
-def test_lm_calls_with_callables_are_cached_as_expected(litellm_test_server, temporary_blank_cache_dir):
+def test_lm_calls_with_callables_are_cached_in_memory_as_expected(litellm_test_server, temporary_blank_cache_dir):
     api_base, server_log_file_path = litellm_test_server
 
     lm_with_callable = dspy.LM(
