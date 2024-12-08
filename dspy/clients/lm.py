@@ -233,9 +233,27 @@ def request_cache(maxsize: Optional[int] = None):
     """
 
     def cache_key(request: Dict[str, Any]) -> str:
-        # Transform Pydantic models into JSON-convertible format and exclude unhashable objects
-        params = {k: (v.dict() if isinstance(v, pydantic.BaseModel) else v) for k, v in request.items()}
-        params = {k: v for k, v in params.items() if not callable(v)}
+        """
+        Obtain a unique cache key for the given request dictionary by hashing its JSON
+        representation. For request fields having types that are known to be JSON-incompatible,
+        convert them to a JSON-serializable format before hashing.
+
+        Note: Unhashable values should *not* be ignored / discarded, since that would
+        potentially lead to cache collisions. For example, consider request A containing only
+        hashable values and request B containing the same hashable values in addition to one
+        unhashable value. Discarding the unhashable value would lead to a cache collision between
+        requests A and B, even though they are semantically different.
+        """
+
+        def transform_value(value):
+            if isinstance(value, pydantic.BaseModel):
+                return value.dict()
+            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
+                return value.__code__.co_code
+            else:
+                return value
+
+        params = {k: transform_value(v) for k, v in request.items()}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
     def decorator(func):
@@ -245,7 +263,7 @@ def request_cache(maxsize: Optional[int] = None):
             key=lambda request, *args, **kwargs: cache_key(request),
             # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
             # concurrently, e.g. during optimization and evaluation
-            lock=threading.Lock(),
+            lock=threading.RLock(),
         )
         @functools.wraps(func)
         def wrapper(request: dict, *args, **kwargs):
