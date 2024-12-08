@@ -49,7 +49,7 @@ def test_text_lms_can_be_queried(litellm_test_server):
     assert azure_openai_lm("azure openai query") == expected_response
 
 
-def test_lm_calls_support_unhashable_types(litellm_test_server):
+def test_lm_calls_support_callables(litellm_test_server):
     api_base, server_log_file_path = litellm_test_server
 
     lm_with_unhashable_callable = dspy.LM(
@@ -68,10 +68,10 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     class ResponseFormat(pydantic.BaseModel):
         response: str
 
-    lm = dspy.LM(
+    lm1 = dspy.LM(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         response_format=ResponseFormat,
     )
-    lm("Query")
+    lm1("Query")
