@@ -8,7 +8,7 @@
 
 **Documentation:** [DSPy Docs](https://dspy.ai/)
 
-[![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
+[![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/project/dspy)
 
 
 ----
