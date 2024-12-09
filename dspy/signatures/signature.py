@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 import dsp
+from dspy.adapters.image_utils import Image
 from dspy.signatures.field import InputField, OutputField, new_to_old_field
 
 
