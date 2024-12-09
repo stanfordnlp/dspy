@@ -48,23 +48,29 @@ def test_deepcopy_with_nested_modules():
     assert id(model.parameters()[0]) != id(model_copy.parameters()[0])
     assert model.parameters()[0].__dict__ == model_copy.parameters()[0].__dict__
 
+
 def test_save_and_load_with_json(tmp_path):
     model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     model._predict.signature = model._predict.signature.with_instructions("You are a helpful assistant.")
-    model._predict.demos = [dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")]
+    model._predict.demos = [
+        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
+    ]
     save_path = tmp_path / "model.json"
-    model.save(save_path, state_only=True, use_json=True)
+    model.save(save_path, state_only=True)
     new_model = dspy.ChainOfThought(dspy.Signature("q -> a"))
-    new_model.load(save_path, use_json=True)
+    new_model.load(save_path)
 
     assert str(new_model.signature) == str(model.signature)
     assert new_model.demos[0] == model.demos[0].toDict()
 
+
 def test_save_and_load_with_pkl(tmp_path):
     import datetime
+
     # `datetime.date` is not json serializable, so we need to save with pickle.
     class MySignature(dspy.Signature):
         """Just a custom signature."""
+
         current_date: datetime.date = dspy.InputField()
         target_date: datetime.date = dspy.InputField()
         date_diff: int = dspy.OutputField(desc="The difference in days between the current_date and the target_date")
@@ -78,7 +84,9 @@ def test_save_and_load_with_pkl(tmp_path):
     ]
     trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
 
-    dspy.settings.configure(lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10))
+    dspy.settings.configure(
+        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
+    )
 
     cot = dspy.ChainOfThought(MySignature)
     cot(current_date=datetime.date(2024, 1, 1), target_date=datetime.date(2024, 1, 2))
@@ -91,10 +99,10 @@ def test_save_and_load_with_pkl(tmp_path):
     compiled_cot._predict.signature = compiled_cot._predict.signature.with_instructions("You are a helpful assistant.")
 
     save_path = tmp_path / "model.pkl"
-    compiled_cot.save(save_path, state_only=True, use_json=False)
+    compiled_cot.save(save_path, state_only=True)
 
     new_cot = dspy.ChainOfThought(MySignature)
-    new_cot.load(save_path, use_json=False)
+    new_cot.load(save_path)
 
     assert str(new_cot.signature) == str(compiled_cot.signature)
     assert new_cot.demos == compiled_cot.demos

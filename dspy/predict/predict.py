@@ -17,6 +17,7 @@ from dspy.utils.callback import with_callbacks
 def warn_once(msg: str):
     logging.warning(msg)
 
+
 class Predict(Module, Parameter):
     def __init__(self, signature, _parse_values=True, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
@@ -75,7 +76,7 @@ class Predict(Module, Parameter):
         if use_legacy_loading:
             self._load_state_legacy(state)
             return self
-            
+
         if "signature" not in state:
             # Check if the state is from a version of DSPy prior to v2.5.3.
             raise ValueError(
@@ -88,7 +89,7 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-        
+
         # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
         for demo in self.demos:
             for field in demo:
@@ -97,7 +98,7 @@ class Predict(Module, Parameter):
                     if not isinstance(url, str):
                         raise ValueError(f"Image URL must be a string, got {type(url)}")
                     demo[field] = Image(url=url)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
@@ -137,22 +138,20 @@ class Predict(Module, Parameter):
 
         return self
 
-    def load(self, path, use_legacy_loading=False, use_json=True, return_self=False):
+    def load(self, path, use_legacy_loading=False, return_self=False):
         """Load a saved state from a file.
 
         Args:
             path (str): Path to the saved state file
             use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
                 saved state from a version of DSPy prior to v2.5.3.
-            use_json (bool): Whether to load the state from a json file. If False, the state is loaded from a pickle
-                file.
             return_self (bool): If True, returns self to allow method chaining. Default is False for backwards
                 compatibility.
 
         Returns:
             Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
         """
-        super().load(path, use_legacy_loading=use_legacy_loading, use_json=use_json)
+        super().load(path, use_legacy_loading=use_legacy_loading)
         return self if return_self else None
 
     @with_callbacks
@@ -301,6 +300,7 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     return adapter(
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
+
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

@@ -167,12 +167,12 @@ class BaseModule:
                 # `use_legacy_loading` is only applicable for BaseModule instances.
                 param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False, state_only=True, metadata=None, use_json=True):
+    def save(self, path, save_field_meta=False, state_only=True):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
         - `state_only=True`: Save only the state of the module to a json or pickle file, based on the value of
-            `use_json`.
+            the file extension.
         - `state_only=False`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
 
@@ -184,30 +184,21 @@ class BaseModule:
                 directory when `state_only=False`.
             save_field_meta (bool): Whether to save the field metadata. Only applicable when `state_only=False`.
             state_only (bool): Whether to save only the state of the module.
-            metadata (dict): Extra metadata to save.
-            use_json (bool): Whether to save the state to a json file. If False, the state is saved to a pickle file.
-                Only applicable when `state_only=True`.
         """
-        metadata = metadata or {}
+        metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
         path = Path(path)
         if state_only:
             state = self.dump_state(save_field_meta)
             state["metadata"] = metadata
-            if use_json:
-                if path.suffix != ".json":
-                    raise ValueError(
-                        f"`path` must be a json file when `state_only=True` and `use_json=True`, but received: {path}"
-                    )
+            if path.suffix == ".json":
                 with open(path, "w") as f:
                     f.write(ujson.dumps(state, indent=2))
-            else:
-                if path.suffix != ".pkl":
-                    raise ValueError(
-                        f"`path` must be a pkl file when `state_only=True` and `use_json=False`, but received: {path}"
-                    )
+            elif path.suffix == ".pkl":
                 with open(path, "wb") as f:
                     cloudpickle.dump(state, f)
+            else:
+                raise ValueError(f"`path` must end with `.json` or `.pkl` when `state_only=True`, but received: {path}")
         else:
             if path.suffix:
                 raise ValueError(
@@ -232,7 +223,7 @@ class BaseModule:
             with open(path / "metadata.json", "w") as f:
                 ujson.dump(metadata, f, indent=2)
 
-    def load(self, path, use_legacy_loading=False, use_json=True):
+    def load(self, path, use_legacy_loading=False):
         """Load the saved module.
 
         Args:
@@ -240,19 +231,17 @@ class BaseModule:
                 when `use_json=False`.
             use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
                 saved state from a version of DSPy prior to v2.5.3.
-            use_json (bool): Whether to load the state from a json file. If False, the state is loaded from a pickle
-                file.
         """
         path = Path(path)
-        if use_json and path.suffix != ".json":
-            raise ValueError(f"`path` must be a json file when `use_json=True`, but received: {path}")
-        if not use_json and path.suffix != ".pkl":
-            raise ValueError(f"`path` must be a pkl file when `use_json=False`, but received: {path}")
-        with open(path, "rb") as f:
-            if use_json:
+
+        if path.suffix == ".json":
+            with open(path, "r") as f:
                 state = ujson.loads(f.read())
-            else:
+        elif path.suffix == ".pkl":
+            with open(path, "rb") as f:
                 state = cloudpickle.load(f)
+        else:
+            raise ValueError(f"`path` must end with `.json` or `.pkl`, but received: {path}")
 
         dependency_versions = get_dependency_versions()
         saved_dependency_versions = state["metadata"]["dependency_versions"]
