@@ -1,15 +1,12 @@
 import random
-from typing import List, Dict, Optional
-import numpy as np
+from typing import List
 import pandas as pd
 import dsp
-import dspy
 from dspy.predict.knn import KNN
 from dspy.teleprompt import BootstrapFewShot
 from .teleprompt import Teleprompter
 import types  # Add missing import
 from dspy.predict.parallel import Parallel
-from typing import Dict, Any
 import warnings  # Add at the top with other imports
 from tqdm import tqdm  # Add this import at the top with other imports
 
@@ -135,7 +132,7 @@ class MetaKNNFewShot(Teleprompter):
                         score = self.metric(example, prediction) if self.metric else 1.0
                         row[f'program_{prog_idx}'] = score
                         result_idx += 1
-                    except Exception as e:
+                    except Exception:
                         row[f'program_{prog_idx}'] = 0.0
                     
             performance_data.append(row)
