@@ -30,6 +30,7 @@ tester = BootstrapMaxScoreTester(
     n_programs=64,
     max_labeled_demos=16,
     early_stopping_threshold=0.95,
+    num_threads=16,
 )
 
 # Load dataset

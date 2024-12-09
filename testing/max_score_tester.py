@@ -15,7 +15,7 @@ class BaseMaxScoreTester(ABC):
         self,
         num_threads: int = 32,
         early_stopping_threshold: float = 0.95,
-        max_errors: int = 100,
+        max_errors: int = 10,
         prompt_model_name: str = "gpt-3.5-turbo-1106",
         task_model_name: str = "meta-llama/Llama-2-13b-chat-hf",
         prompt_model=None,
@@ -122,7 +122,8 @@ class BaseMaxScoreTester(ABC):
         parallel = dspy.Parallel(
             num_threads=self.num_threads,
             max_errors=self.max_errors,
-            disable_progress_bar=False
+            disable_progress_bar=False,
+            provide_traceback=True,
         )
         
         class ItemProcessor:
@@ -134,7 +135,11 @@ class BaseMaxScoreTester(ABC):
                 """Process a single dataset item with all programs until success."""
                 item_results = {
                     'item_idx': item_idx,
-                    'split': split_name
+                    'split': split_name,
+                    'input': str(item.inputs()),
+                    'expected': str(item),
+                    'successful_prediction': None,  # Will store the first successful prediction
+                    'successful_program_idx': -1    # Will store index of first successful program
                 }
                 
                 # Try each program until success
@@ -148,16 +153,19 @@ class BaseMaxScoreTester(ABC):
                         score = raw_score[0] if isinstance(raw_score, tuple) else raw_score
                         score = float(score)
                         
-                        # Record result
+                        # Record result with prediction
                         item_results[f'program_{prog_idx}'] = score
+                        item_results[f'prediction_{prog_idx}'] = str(prediction)
                         
-                        # Check if this program passed
-                        if score > 0:
+                        # Check if this program passed and it's our first success
+                        if score > 0 and item_results['successful_prediction'] is None:
+                            item_results['successful_prediction'] = str(prediction)
+                            item_results['successful_program_idx'] = prog_idx
                             break
                             
                     except Exception as e:
-                        print(f"Error evaluating item {item_idx} with program {prog_idx}: {str(e)}")
                         item_results[f'program_{prog_idx}'] = 0.0
+                        item_results[f'prediction_{prog_idx}'] = str(e)
                 
                 return item_results
         
