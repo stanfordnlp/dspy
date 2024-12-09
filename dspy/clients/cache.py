@@ -90,16 +90,24 @@ class DspyCache:
         except Exception:
             return None
 
-    @classmethod
-    def load(cls, file, maxsize: int) -> "LRUCache":
-        pass
-        # return cls(pickle.load(file), maxsize)
+    def load(self, file_path, maxsize: int) -> "LRUCache":
+        with open(file_path, "rb") as f:
+            cache_items = pickle.load(f)
+        
+        with self.lock:
+            self.memory_cache.clear()
+            for k,v in cache_items:
+                self.memory_cache[k] = v
 
-    @staticmethod
-    def dump(obj, file) -> None:
-        pass
-        # pickle.dump([[k, v] for k, v in obj.items()], file)
+    def save(self, file_path: str) -> None:
+        with self.lock: 
+            with open(file_path, "wb") as f:
+                cache_items = list(self.memory_cache.items())
+                pickle.dump(cache_items, f)
 
+    def reset_memory_cache(self) -> None:
+        with self.lock:
+            self.memory_cache.clear()
 
 # Initialize the cache
 dspy_cache = DspyCache(directory=CACHE_DIR, disk_size_limit=CACHE_LIMIT, mem_size_limit=MEM_CACHE_LIMIT)

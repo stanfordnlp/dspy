@@ -244,7 +244,7 @@ def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
     )
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int):
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -258,7 +258,6 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
-        # cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
         api_base=api_base,
