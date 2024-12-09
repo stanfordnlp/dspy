@@ -13,3 +13,4 @@ from .signature_opt_bayesian import BayesianSignatureOptimizer
 from .teleprompt import *
 from .teleprompt_optuna import *
 from .vanilla import *
+from .human import *
