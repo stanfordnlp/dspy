@@ -104,12 +104,7 @@ class LM(BaseLM):
                 for c in response["choices"]
             ]
         else:
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": None
-                } for c in response["choices"]
-            ]
+            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
             
         # Logging, with removed api key & where `cost` is None on cache hit.
