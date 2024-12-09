@@ -355,7 +355,7 @@ def make_signature(
         if type_ is None:
             type_ = str
         # if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias)):
+        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
             raise ValueError(f"Field types must be types, not {type(type_)}")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, not {type(field)}")
@@ -404,8 +404,7 @@ def _parse_type_node(node, names=None) -> Any:
 
     if names is None:
         names = dict(typing.__dict__)
-        from types import NoneType
-        names['NoneType'] = NoneType
+        names['NoneType'] = type(None)
 
     def resolve_name(id_: str):
         # Check if it's a built-in known type or in the provided names
