@@ -61,6 +61,8 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
         except ImportError:
             raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
         image_value = value
+        if not image_value:
+            return {"type": "text", "text": "None"}
         if not isinstance(image_value, Image):
             if isinstance(image_value, dict) and "url" in image_value:
                 image_value = image_value["url"]
