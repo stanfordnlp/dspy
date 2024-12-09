@@ -220,7 +220,7 @@ def test_invalid_image_input(sample_url):
     assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
 
-def test_predictor_save_load(tmp_path,sample_url, sample_pil_image):
+def test_predictor_save_load(tmp_path, sample_url, sample_pil_image):
     signature = "image: dspy.Image -> caption: str"
     examples = [
         dspy.Example(image=dspy.Image.from_url(sample_url)),
