@@ -320,8 +320,8 @@ def prepare_instructions(signature: SignatureMeta):
 
 def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydantic.BaseModel:
     """
-    Constructs the LiteLLM / OpenAI `response_format` parameter for obtaining structured outputs
-    from an LM request, based on the output fields of the specified DSPy signature.
+    Obtains the LiteLLM / OpenAI `response_format` parameter for obtaining structured outputs from
+    an LM request, based on the output fields of the specified DSPy signature.
 
     Args:
         signature: The DSPy signature for which to obtain the `response_format` request parameter.
@@ -338,7 +338,11 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
 
         # Update `json_schema_extra` for the current field
         if field_copy.json_schema_extra:
-            field_copy.json_schema_extra = {}
+            field_copy.json_schema_extra = {
+                key: value
+                for key, value in field_info.json_schema_extra.items()
+                if key not in ("desc", "__dspy_field_type")
+            }
             field_desc = field_info.json_schema_extra.get("desc")
             if field_desc is not None and field_desc != f"${{{field_name}}}":
                 field_copy.json_schema_extra["desc"] = field_desc
