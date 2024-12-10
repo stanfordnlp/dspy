@@ -220,7 +220,7 @@ def test_invalid_image_input(sample_url):
     assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
 
-def test_predictor_save_load(sample_url, sample_pil_image):
+def test_predictor_save_load(tmp_path, sample_url, sample_pil_image):
     signature = "image: dspy.Image -> caption: str"
     examples = [
         dspy.Example(image=dspy.Image.from_url(sample_url)),
@@ -231,10 +231,11 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     predictor = dspy.Predict(signature)
     optimizer = dspy.teleprompt.LabeledFewShot()
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples[:1])
-    # Test dump state with save verbose = True and False
-    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
-        compiled_predictor.save(temp_file.name)
-        loaded_predictor = dspy.Predict(signature)
-        loaded_predictor.load(temp_file.name)
-    
+
+    path = tmp_path / "model.json"
+
+    compiled_predictor.save(path)
+    loaded_predictor = dspy.Predict(signature)
+    loaded_predictor.load(path)
+
     assert isinstance(loaded_predictor.demos[0]["image"], dspy.Image)
