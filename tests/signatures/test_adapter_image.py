@@ -197,6 +197,7 @@ def test_image_input_formats(sample_pil_image, sample_dspy_image_download, sampl
     )
     assert result.probabilities == expected
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+    assert repr(sample_dspy_image_no_download) == "Image(url = https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg)"
     # Test dspy.Image without download
     result = predictor(
         image=sample_dspy_image_no_download,
@@ -204,6 +205,7 @@ def test_image_input_formats(sample_pil_image, sample_dspy_image_download, sampl
     )
     assert result.probabilities == expected
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+    assert repr(sample_dspy_image_no_download) == "Image(url = https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg)"
 
 
 def test_invalid_image_input(sample_url):
