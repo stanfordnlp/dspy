@@ -19,7 +19,7 @@ from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
 
-from .cache import dspy_cache_decorator
+from dspy.utils.cache import dspy_cache_decorator
 
 logger = logging.getLogger(__name__)
 
@@ -219,13 +219,16 @@ class LM(BaseLM):
 
         return new_instance
 
-
-@dspy_cache_decorator()
 def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_completion(
-        request,
-        num_retries=num_retries,
-    )
+    from dspy import settings
+    @dspy_cache_decorator(settings.cache)
+    def cached_litellm_completion_inner(request: Dict[str, Any], num_retries: int):
+        return litellm_completion(
+            request,
+            cache={"no-cache": False, "no-store": False},
+            num_retries=num_retries,
+        )
+    return cached_litellm_completion_inner(request, num_retries)
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
@@ -235,13 +238,15 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         **request,
     )
 
-
-@dspy_cache_decorator()
 def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_text_completion(
-        request,
-        num_retries=num_retries,
-    )
+    @dspy_cache_decorator()
+    def cached_litellm_text_completion_inner(request: Dict[str, Any], num_retries: int):
+        return litellm_text_completion(
+            request,
+            cache={"no-cache": False, "no-store": False},
+            num_retries=num_retries,
+        )
+    return cached_litellm_text_completion_inner(request, num_retries)
 
 
 def litellm_text_completion(request: Dict[str, Any], num_retries: int):

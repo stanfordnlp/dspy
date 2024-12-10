@@ -1,7 +1,8 @@
 import os
 import pickle
 import threading
-
+import litellm
+from litellm.caching import Cache as litellm_cache
 from diskcache import FanoutCache
 from cachetools import LRUCache
 import ujson
@@ -11,12 +12,7 @@ from typing import Any, Dict, List, Literal, Optional
 from functools import wraps
 from pathlib import Path
 
-
-CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 1e10))  # 10 GB default
-MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf"))) # unlimited by default
-
-class DspyCache:
+class Cache:
     """
     dspy's caching interface. It provides 2 levels of caching (in the given order): 
     1. An in memory cache - cachetools' lrucache 
@@ -68,27 +64,27 @@ class DspyCache:
         try:
             # try/except in case can't compute key
             key = self.cache_key(request)
-            with self.lock:  
-                if key in self.memory_cache:  
-                    return self.memory_cache[key]  
-                elif key in self.fanout_cache:
-                    # found on disk but not in memory, add to memory cache
-                    value = self.fanout_cache[key]
-                    self.memory_cache[key] = value
-                    return value 
-                return None
         except Exception:
+            return None
+        with self.lock:  
+            if key in self.memory_cache:  
+                return self.memory_cache[key]  
+            elif key in self.fanout_cache:
+                # found on disk but not in memory, add to memory cache
+                value = self.fanout_cache[key]
+                self.memory_cache[key] = value
+                return value
             return None
 
     def set(self, request: Dict[str, Any], value: Any) -> None:
         try: 
             # try/except in case can't compute key
             key = self.cache_key(request)
-            with self.lock:
-                self.memory_cache[key] = value
-                self.fanout_cache[key] = value
         except Exception:
             return None
+        with self.lock:
+                self.memory_cache[key] = value
+                self.fanout_cache[key] = value
 
     def load(self, file_path, maxsize: int) -> "LRUCache":
         with open(file_path, "rb") as f:
@@ -109,11 +105,8 @@ class DspyCache:
         with self.lock:
             self.memory_cache.clear()
 
-# Initialize the cache
-dspy_cache = DspyCache(directory=CACHE_DIR, disk_size_limit=CACHE_LIMIT, mem_size_limit=MEM_CACHE_LIMIT)
 
-
-def dspy_cache_decorator(cache=dspy_cache):
+def dspy_cache_decorator(cache):
     def decorator(func):
         @wraps(func)
         def wrapper(request: dict, *args, **kwargs):
