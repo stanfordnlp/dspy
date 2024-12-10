@@ -26,10 +26,10 @@ def test_lms_can_be_queried(litellm_test_server):
 
 
 @pytest.mark.parametrize(
-    ("error_code", "expected_exception", "expected_num_requests"),
+    ("error_code", "expected_exception", "expected_num_retries"),
     [
-        ("429", litellm.RateLimitError, 2),
-        ("504", litellm.Timeout, 2),
+        ("429", litellm.RateLimitError, 1),
+        ("504", litellm.Timeout, 1),
         # Don't retry on user errors
         ("400", litellm.BadRequestError, 0),
         ("401", litellm.AuthenticationError, 0),
@@ -43,7 +43,7 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
     litellm_test_server,
     error_code,
     expected_exception,
-    expected_num_requests,
+    expected_num_retries,
 ):
     api_base, server_log_file_path = litellm_test_server
 
@@ -58,11 +58,11 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
         openai_lm(error_code)
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == expected_num_requests
+    assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
 
 
 @pytest.mark.parametrize(
-    ("error_code", "expected_exception", "expected_num_requests"),
+    ("error_code", "expected_exception", "expected_num_retries"),
     [
         ("429", litellm.RateLimitError, 2),
         ("504", litellm.Timeout, 2),
@@ -79,7 +79,7 @@ def test_lm_text_calls_are_retried_for_expected_failures(
     litellm_test_server,
     error_code,
     expected_exception,
-    expected_num_requests,
+    expected_num_retries,
 ):
     api_base, server_log_file_path = litellm_test_server
 
@@ -94,4 +94,4 @@ def test_lm_text_calls_are_retried_for_expected_failures(
         openai_lm(error_code)
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == expected_num_requests  # 1 initial request + 2 retries
+    assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
