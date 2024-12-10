@@ -47,8 +47,12 @@ To load your saved state, you need to **recreate the same program**, then load t
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
 loaded_dspy_program.load("./dspy_program/model.json")
-assert loaded_dspy_program.demos == compiled_dspy_program.demos
-assert loaded_dspy_program.signature == compiled_dspy_program.signature
+
+assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
+for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
+    # Loaded demo is a dict, while the original demo is a dspy.Example.
+    assert original_demo.toDict() == loaded_demo
+assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature)
 ```
 
 Or load the state from a pickle file:
@@ -56,8 +60,12 @@ Or load the state from a pickle file:
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
 loaded_dspy_program.load("./dspy_program/model.pkl")
-assert loaded_dspy_program.demos == compiled_dspy_program.demos
-assert loaded_dspy_program.signature == compiled_dspy_program.signature
+
+assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
+for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
+    # Loaded demo is a dict, while the original demo is a dspy.Example.
+    assert original_demo.toDict() == loaded_demo
+assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature)
 ```
 
 ## Whole Program Saving
@@ -77,8 +85,12 @@ To load the saved program, directly use `dspy.load` method:
 
 ```python
 loaded_dspy_program = dspy.load("./dspy_program/")
-assert loaded_dspy_program.demos == compiled_dspy_program.demos
-assert loaded_dspy_program.signature == compiled_dspy_program.signature
+
+assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
+for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
+    # Loaded demo is a dict, while the original demo is a dspy.Example.
+    assert original_demo.toDict() == loaded_demo
+assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature)
 ```
 
 With whole program saving, you don't need to recreate the program, but can directly load the architecture along with the state.
