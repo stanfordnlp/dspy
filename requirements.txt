@@ -1,4 +1,7 @@
+anyio
+asyncer==0.0.8
 backoff
+cachetools
 datasets
 diskcache
 httpx
@@ -15,5 +18,3 @@ requests
 tenacity>=8.2.3
 tqdm
 ujson
-anyio
-asyncer==0.0.8

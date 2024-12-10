@@ -103,6 +103,7 @@ TODO: This list in particular is highly incomplete. There are a couple dozen oth
 | **LlamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 | **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |
 | **Langfuse** | [Link](https://langfuse.com/docs/integrations/dspy) |
+| **OpenLIT** | [Link](https://docs.openlit.io/latest/integrations/dspy) |
 
 ## A Few Blogs & Videos on using DSPy
 

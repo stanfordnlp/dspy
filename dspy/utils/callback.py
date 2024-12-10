@@ -190,6 +190,38 @@ class BaseCallback:
         """
         pass
 
+    def on_tool_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        """A handler triggered when a tool is called.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            instance: The Tool instance.
+            inputs: The inputs to the Tool's __call__ method. Each arguments is stored as
+                a key-value pair in a dictionary.
+        """
+        pass
+
+    def on_tool_end(
+        self,
+        call_id: str,
+        outputs: Optional[Dict[str, Any]],
+        exception: Optional[Exception] = None,
+    ):
+        """A handler triggered after a tool is executed.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            outputs: The outputs of the Tool's __call__ method. If the method is interrupted by
+                an exception, this will be None.
+            exception: If an exception is raised during the execution, it will be stored here.
+        """
+        pass
+
 
 def with_callbacks(fn):
     @functools.wraps(fn)
@@ -256,6 +288,9 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
         else:
             raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
 
+    if isinstance(instance, dspy.Tool):
+        return callback.on_tool_start
+
     # We treat everything else as a module.
     return callback.on_module_start
 
@@ -272,5 +307,9 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
             return callback.on_adapter_parse_end
         else:
             raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
+
+    if isinstance(instance, dspy.Tool):
+        return callback.on_tool_end
+
     # We treat everything else as a module.
     return callback.on_module_end
