@@ -160,9 +160,9 @@ class BaseModule:
                 # `use_legacy_loading` is only applicable for BaseModule instances.
                 param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False):
+    def save(self, path, save_field_meta=False, ensure_ascii=True):
         with open(path, "w") as f:
-            f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2))
+            f.write(ujson.dumps(self.dump_state(save_field_meta), indent=2, ensure_ascii=ensure_ascii))
 
     def load(self, path, use_legacy_loading=False):
         with open(path) as f:
