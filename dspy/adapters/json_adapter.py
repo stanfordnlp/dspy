@@ -331,7 +331,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
 
     def filter_json_schema_extra(field_name: str, field_info: FieldInfo) -> FieldInfo:
         """
-        Recursively filter the `json_schema_extra` of a FieldInfo exclude DSPy internal fields
+        Recursively filter the `json_schema_extra` of a FieldInfo to exclude DSPy internal fields
         (e.g. `__dspy_field_type`) and remove descriptions that are placeholders for the field name.
         Handles nested structures in FieldInfo objects while preserving original model names.
         """
