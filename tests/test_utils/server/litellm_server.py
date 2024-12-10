@@ -35,7 +35,7 @@ def _throw_exception_based_on_content_if_applicable(request_kwargs):
     if "429" in content:
         raise litellm.RateLimitError(message="Rate limit exceeded", llm_provider=None, model=model)
     elif "504" in content:
-        raise litellm.Timeout("Request timed out!")
+        raise litellm.Timeout("Request timed out!", llm_provider=None, model=model)
     elif "400" in content:
         raise litellm.BadRequestError(message="Bad request", llm_provider=None, model=model)
     elif "401" in content:

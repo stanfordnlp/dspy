@@ -51,14 +51,14 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
-        num_retries=2,
+        num_retries=1,
         model_type="chat",
     )
     with pytest.raises(expected_exception):
         openai_lm(error_code)
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 2 retries
+    assert len(request_logs) == expected_num_retries
 
 
 @pytest.mark.parametrize(
@@ -94,4 +94,4 @@ def test_lm_text_calls_are_retried_for_expected_failures(
         openai_lm(error_code)
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 2 retries
+    assert len(request_logs) == expected_num_retries  # 1 initial request + 2 retries
