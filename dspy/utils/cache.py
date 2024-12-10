@@ -83,10 +83,10 @@ class Cache:
         except Exception:
             return None
         with self.lock:
-                self.memory_cache[key] = value
-                self.fanout_cache[key] = value
+            self.memory_cache[key] = value
+            self.fanout_cache[key] = value
 
-    def load(self, file_path, maxsize: int) -> "LRUCache":
+    def load(self, file_path, maxsize:float=float("inf")) -> "LRUCache":
         with open(file_path, "rb") as f:
             cache_items = pickle.load(f)
         
@@ -104,7 +104,6 @@ class Cache:
     def reset_memory_cache(self) -> None:
         with self.lock:
             self.memory_cache.clear()
-
 
 def dspy_cache_decorator(cache):
     def decorator(func):
