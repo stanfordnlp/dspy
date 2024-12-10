@@ -95,7 +95,7 @@ class LM(BaseLM):
             request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
             num_retries=self.num_retries,
         )
-        if self.kwargs.get("logprobs"):
+        if kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
