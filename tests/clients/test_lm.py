@@ -35,8 +35,8 @@ def test_lms_can_be_queried(litellm_test_server):
         ("401", litellm.AuthenticationError, 0),
         # TODO: LiteLLM retry logic isn't implemented properly for internal server errors
         # and content policy violations, both of which may be transient and should be retried
-        # ("content-policy-violation, litellm.BadRequestError, 2),
-        # ("500", litellm.InternalServerError, 0, 2),
+        # ("content-policy-violation, litellm.BadRequestError, 1),
+        # ("500", litellm.InternalServerError, 0, 1),
     ],
 )
 def test_lm_chat_calls_are_retried_for_expected_failures(
