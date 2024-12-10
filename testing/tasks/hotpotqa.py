@@ -34,7 +34,8 @@ class HotPotQATask(BaseTask):
         # Set up metrics
         NUM_THREADS = 16
 
-        metric_EM = dspy.evaluate.answer_exact_match
+        metric_EM = dspy.evaluate.answer_similar_match
+
         self.metric = metric_EM
 
         def gold_passages_retrieved(example, pred, trace=None):
