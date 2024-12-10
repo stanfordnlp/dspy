@@ -21,6 +21,7 @@ class BaseMaxScoreTester(ABC):
         prompt_model=None,
         task_model=None,
         colbert_v2_endpoint: str = "http://20.102.90.50:2017/wiki17_abstracts",
+        dataset_name: str = "default",
     ):
         """
         Base class for testing maximum achievable scores on datasets.
@@ -34,6 +35,7 @@ class BaseMaxScoreTester(ABC):
             prompt_model: Optional custom prompt model
             task_model: Optional custom task model
             colbert_v2_endpoint: Endpoint for ColBERTv2 service
+            dataset_name: Name of the dataset being tested
         """
         self.num_threads = num_threads
         self.max_errors = max_errors
@@ -41,6 +43,7 @@ class BaseMaxScoreTester(ABC):
         self.PROMPT_MODEL_NAME = prompt_model_name
         self.TASK_MODEL_NAME = task_model_name
         self.COLBERT_V2_ENDPOINT = colbert_v2_endpoint
+        self.dataset_name = dataset_name
         
         # Initialize models
         self._setup_models(prompt_model, task_model)
@@ -79,7 +82,7 @@ class BaseMaxScoreTester(ABC):
         # Configure DSPy settings
         dspy.settings.configure(rm=self.colbertv2, lm=self.task_model)
 
-    def test_dataset(self, task: Any, **kwargs) -> Dict:
+    def test_dataset(self, task: Any, save_excel: bool = True, **kwargs) -> Dict:
         """
         Test a dataset to find maximum achievable score.
         
@@ -97,7 +100,18 @@ class BaseMaxScoreTester(ABC):
         train_results = self._evaluate_split(task.get_trainset(), task.get_metric(), "train")
         dev_results = self._evaluate_split(task.get_devset(), task.get_metric(), "dev")
         test_results = self._evaluate_split(task.get_testset(), task.get_metric(), "test")
-
+        
+        if save_excel:
+            # Create dictionary of dataframes
+            dfs = {
+            'train': train_results['performance_df'],
+            'dev': dev_results['performance_df'],
+            'test': test_results['performance_df']
+            }
+        
+            # Save to Excel
+            pd.concat(dfs.values(), keys=dfs.keys()).to_excel(f'performance_{self.dataset_name}.xlsx')
+        
         return {
             "train_results": train_results,
             "dev_results": dev_results,
@@ -127,10 +141,26 @@ class BaseMaxScoreTester(ABC):
         )
         
         class ItemProcessor:
-            def __init__(self, programs, metric):
+            def __init__(self, programs, metric, dataset_name):
                 self.programs = programs
                 self.metric = metric
-                
+                self.dataset_name = dataset_name
+            
+            def discrete_retrieval_eval(self, example, pred, trace=None):
+                gold_titles = set(
+                    map(
+                        dspy.evaluate.normalize_text,
+                        [doc["key"] for doc in example["supporting_facts"]],
+                    )
+                )
+                found_titles = set(
+                    map(
+                        dspy.evaluate.normalize_text,
+                        [c.split(" | ")[0] for c in pred.retrieved_docs],
+                    )
+                )
+                return gold_titles, found_titles
+            
             def __call__(self, item_idx, item):
                 """Process a single dataset item with all programs until success."""
                 item_results = {
@@ -157,6 +187,20 @@ class BaseMaxScoreTester(ABC):
                         item_results[f'program_{prog_idx}'] = score
                         item_results[f'prediction_{prog_idx}'] = str(prediction)
                         
+                        if self.dataset_name == "hover_retrieve_discrete":
+                            gold_titles, found_titles = self.discrete_retrieval_eval(item, prediction)
+                            item_results[f'gold_titles_{prog_idx}'] = gold_titles
+                            item_results[f'gold_titles_len_{prog_idx}'] = len(gold_titles)
+                            item_results[f'found_titles_{prog_idx}'] = found_titles
+                            item_results[f'found_titles_len_{prog_idx}'] = len(found_titles)
+                            item_results[f'gold_titles_issubset_found_titles_{prog_idx}'] = gold_titles.issubset(found_titles)
+                            item_results[f'gold_titles_intersection_found_titles_{prog_idx}'] = gold_titles.intersection(found_titles)
+                            item_results[f'gold_titles_intersection_found_titles_len_{prog_idx}'] = len(gold_titles.intersection(found_titles))
+                            item_results[f'gold_titles_diff_found_titles_{prog_idx}'] = gold_titles.difference(found_titles)
+                            item_results[f'gold_titles_diff_found_titles_len_{prog_idx}'] = len(gold_titles.difference(found_titles))
+                            item_results[f'found_titles_diff_gold_titles_{prog_idx}'] = found_titles.difference(gold_titles)
+                            item_results[f'found_titles_diff_gold_titles_len_{prog_idx}'] = len(found_titles.difference(gold_titles))
+                        
                         # Check if this program passed and it's our first success
                         if score > 0 and item_results['successful_prediction'] is None:
                             item_results['successful_prediction'] = str(prediction)
@@ -170,7 +214,7 @@ class BaseMaxScoreTester(ABC):
                 return item_results
         
         # Create processor instance
-        processor = ItemProcessor(self.programs, metric)
+        processor = ItemProcessor(self.programs, metric, dataset_name=self.dataset_name)
         
         # Create list of (idx, item) pairs
         items_with_idx = list(enumerate(dataset))
@@ -181,6 +225,17 @@ class BaseMaxScoreTester(ABC):
         
         # Convert results to DataFrame
         performance_df = pd.DataFrame(results)
+        
+        # Add intersection of gold_titles_diff_found_titles if they exist
+        if 'gold_titles_diff_found_titles_1' in performance_df.columns:
+            # Get all columns containing gold_titles_diff_found_titles
+            diff_columns = [col for col in performance_df.columns if 'gold_titles_diff_found_titles' in col]
+            
+            # Calculate intersection of differences across all programs for each row
+            performance_df['common_missed_titles'] = performance_df[diff_columns].apply(
+                lambda row: set.intersection(*[s for s in row if isinstance(s, set)]) if any(isinstance(s, set) for s in row) else set(),
+                axis=1
+            )
         
         # Add to performance cache
         self.performance_cache = pd.concat([
@@ -218,6 +273,7 @@ class BootstrapMaxScoreTester(BaseMaxScoreTester):
         prompt_model=None,
         task_model=None,
         colbert_v2_endpoint: str = "http://20.102.90.50:2017/wiki17_abstracts",
+        dataset_name: str = "default",
     ):
         super().__init__(
             num_threads=num_threads,
@@ -228,6 +284,7 @@ class BootstrapMaxScoreTester(BaseMaxScoreTester):
             prompt_model=prompt_model,
             task_model=task_model,
             colbert_v2_endpoint=colbert_v2_endpoint,
+            dataset_name=dataset_name,
         )
         
         self.n_programs = n_programs
