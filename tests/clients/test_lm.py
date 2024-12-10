@@ -87,7 +87,7 @@ def test_lm_text_calls_are_retried_for_expected_failures(
         model="openai/dspy-test-text-model",
         api_base=api_base,
         api_key="fakekey",
-        num_retries=1,
+        num_retries=2,
         model_type="text",
     )
     with pytest.raises(expected_exception):
