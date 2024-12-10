@@ -363,5 +363,4 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
     output_pydantic_fields = {
         key: (value.annotation, filter_json_schema_extra(key, value)) for key, value in signature.output_fields.items()
     }
-    DSPyProgramOutputs = create_model("DSPyProgramOutputs", **output_pydantic_fields)
-    return DSPyProgramOutputs
+    return create_model("DSPyProgramOutputs", **output_pydantic_fields)
