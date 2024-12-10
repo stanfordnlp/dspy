@@ -20,7 +20,7 @@ def get_dependency_versions():
 def load(path):
     """Load saved DSPy model.
 
-    This method is used to load a saved DSPy model with `state_only=False`, i.e., the model is saved with cloudpickle.
+    This method is used to load a saved DSPy model with `save_program=True`, i.e., the model is saved with cloudpickle.
 
     Args:
         path (str): Path to the saved model.

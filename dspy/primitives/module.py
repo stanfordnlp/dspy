@@ -167,42 +167,32 @@ class BaseModule:
                 # `use_legacy_loading` is only applicable for BaseModule instances.
                 param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False, state_only=True):
+    def save(self, path, save_field_meta=False, save_program=False):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
-        - `state_only=True`: Save only the state of the module to a json or pickle file, based on the value of
+        - `save_program=False`: Save only the state of the module to a json or pickle file, based on the value of
             the file extension.
-        - `state_only=False`: Save the whole module to a directory via cloudpickle, which contains both the state and
+        - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
 
         Args:
-            path (str): Path to the saved state file, which should be a .json or .pkl file when `state_only=True`, and a
-                directory when `state_only=False`.
-            save_field_meta (bool): Whether to save the field metadata. Only applicable when `state_only=False`.
-            state_only (bool): Whether to save only the state of the module.
+            path (str): Path to the saved state file, which should be a .json or .pkl file when `save_program=False`,
+                and a directory when `save_program=True`.
+            save_field_meta (bool): Whether to save the field metadata. Only applicable when `save_program=False`.
+            save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
+                the state.
         """
         metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
         path = Path(path)
-        if state_only:
-            state = self.dump_state(save_field_meta)
-            state["metadata"] = metadata
-            if path.suffix == ".json":
-                with open(path, "w") as f:
-                    f.write(ujson.dumps(state, indent=2))
-            elif path.suffix == ".pkl":
-                with open(path, "wb") as f:
-                    cloudpickle.dump(state, f)
-            else:
-                raise ValueError(f"`path` must end with `.json` or `.pkl` when `state_only=True`, but received: {path}")
-        else:
+        if save_program:
             if path.suffix:
                 raise ValueError(
-                    f"`path` must point to a directory without a suffix when `state_only=False`, but received: {path}"
+                    f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}"
                 )
             if path.exists() and not path.is_dir():
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
@@ -217,11 +207,23 @@ class BaseModule:
             except Exception as e:
                 raise RuntimeError(
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy model, "
-                    "or consider using state-only saving by setting `state_only=True`."
+                    "or consider using state-only saving by setting `save_program=False`."
                 )
-
             with open(path / "metadata.json", "w") as f:
                 ujson.dump(metadata, f, indent=2)
+        else:
+            state = self.dump_state(save_field_meta)
+            state["metadata"] = metadata
+            if path.suffix == ".json":
+                with open(path, "w") as f:
+                    f.write(ujson.dumps(state, indent=2))
+            elif path.suffix == ".pkl":
+                with open(path, "wb") as f:
+                    cloudpickle.dump(state, f)
+            else:
+                raise ValueError(
+                    f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}"
+                )
 
     def load(self, path, use_legacy_loading=False):
         """Load the saved module.

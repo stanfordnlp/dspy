@@ -56,7 +56,7 @@ def test_save_and_load_with_json(tmp_path):
         dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
     ]
     save_path = tmp_path / "model.json"
-    model.save(save_path, state_only=True)
+    model.save(save_path)
     new_model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     new_model.load(save_path)
 
@@ -99,7 +99,7 @@ def test_save_and_load_with_pkl(tmp_path):
     compiled_cot._predict.signature = compiled_cot._predict.signature.with_instructions("You are a helpful assistant.")
 
     save_path = tmp_path / "model.pkl"
-    compiled_cot.save(save_path, state_only=True)
+    compiled_cot.save(save_path)
 
     new_cot = dspy.ChainOfThought(MySignature)
     new_cot.load(save_path)
