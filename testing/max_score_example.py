@@ -1,13 +1,10 @@
-from max_score_tester import BootstrapMaxScoreTester, SimpleMaxScoreTester
-from optimizer_tester import OptimizerTester
-
-import dspy
-from optimizer_tester import OptimizerTester
-from dspy.teleprompt import MetaKNNFewShot
-from dotenv import load_dotenv
 import os
 
-from tests.dsp_LM.teleprompt.test_bootstrap import trainset
+from dotenv import load_dotenv
+
+import dspy
+from max_score_tester import BootstrapMaxScoreTester
+from optimizer_tester import OptimizerTester
 
 # Load environment variables from .env file
 load_dotenv()
@@ -31,6 +28,7 @@ tester = BootstrapMaxScoreTester(
     max_labeled_demos=16,
     early_stopping_threshold=0.95,
     num_threads=16,
+    dataset_name="hotpotqa",
 )
 
 # Load dataset
