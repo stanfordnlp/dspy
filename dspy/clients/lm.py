@@ -278,11 +278,11 @@ def request_cache(maxsize: Optional[int] = None):
         def wrapper(request: dict, *args, **kwargs):
             try:
                 key = cache_key(request)
-                return func_cached(key, request, *args, **kwargs)
             except Exception:
                 # If the cache key cannot be computed (e.g. because it contains a value that cannot
                 # be converted to JSON), bypass the cache and call the target function directly
                 return func(request, *args, **kwargs)
+            return func_cached(key, request, *args, **kwargs)
 
         return wrapper
 
