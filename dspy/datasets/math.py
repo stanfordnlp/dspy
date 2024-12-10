@@ -1,11 +1,12 @@
-import re
 import random
+import re
 
 
 class MATH:
     def __init__(self, subset):
-        import dspy
         from datasets import load_dataset
+
+        import dspy
 
         ds = load_dataset("lighteval/MATH", subset)
 
@@ -21,7 +22,7 @@ class MATH:
 
         size = min(350, len(dataset) // 3)
         random.Random(0).shuffle(dataset)
-        self.train, self.dev, self.test = dataset[:size], dataset[size:2*size], dataset[2*size:]
+        self.train, self.dev, self.test = dataset[:size], dataset[size : 2 * size], dataset[2 * size :]
 
     def metric(self, example, pred, trace=None):
         try:
@@ -36,7 +37,7 @@ def extract_answer(s):
     start = s.find("\\boxed{")
     if start == -1:
         return None
-    
+
     idx = start + len("\\boxed{")
     brace_level = 1
 
