@@ -159,13 +159,9 @@ class BaseModule:
     def dump_state(self, save_verbose):
         return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
 
-    def load_state(self, state, use_legacy_loading=False):
+    def load_state(self, state):
         for name, param in self.named_parameters():
-            if isinstance(param, BaseModule):
-                param.load_state(state[name], use_legacy_loading=use_legacy_loading)
-            else:
-                # `use_legacy_loading` is only applicable for BaseModule instances.
-                param.load_state(state[name])
+            param.load_state(state[name])
 
     def save(self, path, save_field_meta=False, save_program=False):
         """Save the module.
@@ -225,14 +221,12 @@ class BaseModule:
                     f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}"
                 )
 
-    def load(self, path, use_legacy_loading=False):
+    def load(self, path):
         """Load the saved module.
 
         Args:
             path (str): Path to the saved state file, which should be a .json file when `use_json=True`, and a .pkl file
                 when `use_json=False`.
-            use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
-                saved state from a version of DSPy prior to v2.5.3.
         """
         path = Path(path)
 
@@ -256,7 +250,7 @@ class BaseModule:
                     "on the loaded model, please consider loading the model in the same environment as the "
                     "saving environment."
                 )
-        self.load_state(state, use_legacy_loading=use_legacy_loading)
+        self.load_state(state)
 
 
 def postprocess_parameter_name(name, value):

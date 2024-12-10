@@ -367,7 +367,3 @@ def test_load_state_chaining():
     new_instance = Predict("question -> answer").load_state(state)
     assert new_instance is not None
     assert new_instance.demos == original.demos
-
-    legacy_instance = Predict("question -> answer").load_state(state, use_legacy_loading=True)
-    assert legacy_instance is not None
-    assert legacy_instance.demos == original.demos
