@@ -111,6 +111,7 @@ def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, tempor
     assert len(request_logs) == 2
 
 
+@pytest.mark.usefixtures("temporary_blank_cache_dir")
 def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
     with patch("litellm.completion") as mock_litellm_completion:
 
@@ -127,6 +128,7 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         assert mock_litellm_completion.call_count == 2
 
 
+@pytest.mark.usefixtures("temporary_blank_cache_dir")
 def test_lm_calls_with_callables_are_cached_as_expected():
     with patch("litellm.completion") as mock_completion:
         lm_with_callable = dspy.LM(
@@ -152,6 +154,7 @@ def test_lm_calls_with_callables_are_cached_as_expected():
         assert mock_completion.call_count == 2
 
 
+@pytest.mark.usefixtures("temporary_blank_cache_dir")
 def test_lms_called_expected_number_of_times_for_cache_key_generation_failures():
     with pytest.raises(Exception), patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = Exception("Mocked exception")
