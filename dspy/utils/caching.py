@@ -1,5 +1,5 @@
-import os
 from pathlib import Path
+import os
 
 
 _DEFAULT_CACHE_DIR = os.path.join(Path.home(), ".dspy_cache")

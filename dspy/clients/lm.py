@@ -5,11 +5,13 @@ import threading
 import uuid
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, cast
 
+from asyncer import syncify
 import litellm
 import pydantic
 import ujson
+from anyio.streams.memory import MemoryObjectSendStream
 from cachetools import LRUCache, cached
 
 from dspy.adapters.base import Adapter
@@ -88,35 +90,32 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
-
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
         response = completion(
             request=dict(model=self.model, messages=messages, **kwargs),
+            cache=cache,
             num_retries=self.num_retries,
         )
         if kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
                 }
                 for c in response["choices"]
             ]
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
-            
         # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
         entry = dict(
-            **entry,
+            prompt=prompt,
+            messages=messages,
+            kwargs={k: v for k, v in kwargs.items() if not k.startswith("api_")},
+            response=response,
+            outputs=outputs,
+            usage=dict(response["usage"]),
+            cost=response.get("_hidden_params", {}).get("response_cost"),
             timestamp=datetime.now().isoformat(),
             uuid=str(uuid.uuid4()),
             model=self.model,
@@ -229,7 +228,7 @@ class LM(BaseLM):
         return new_instance
 
 
-def request_cache(maxsize: Optional[int] = None):
+def request_cache(cache: Optional[LRUCache] = None):
     """
     A threadsafe decorator to create an in-memory LRU cache for LM inference functions that accept
     a dictionary-like LM request. An in-memory cache for LM calls is critical for ensuring
@@ -241,6 +240,8 @@ def request_cache(maxsize: Optional[int] = None):
     Returns:
         A decorator that wraps the target function with caching.
     """
+
+    import dspy
 
     def cache_key(request: Dict[str, Any]) -> str:
         """
@@ -258,9 +259,9 @@ def request_cache(maxsize: Optional[int] = None):
 
         def transform_value(value):
             if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.schema()
+                return value.model_json_schema()
             elif isinstance(value, pydantic.BaseModel):
-                return value.dict()
+                return value.model_dump()
             elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
                 return value.__code__.co_code.decode("utf-8")
             else:
@@ -274,8 +275,7 @@ def request_cache(maxsize: Optional[int] = None):
 
     def decorator(func):
         @cached(
-            # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
-            cache=LRUCache(maxsize=maxsize or float("inf")),
+            cache=cache or dspy.settings.request_cache,
             key=lambda key, request, *args, **kwargs: key,
             # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
             # concurrently, e.g. during optimization and evaluation
@@ -299,33 +299,36 @@ def request_cache(maxsize: Optional[int] = None):
     return decorator
 
 
-@request_cache(maxsize=None)
-def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_completion(
-        request,
-        cache={"no-cache": False, "no-store": False},
-        num_retries=num_retries,
-    )
+@request_cache
+@syncify
+async def litellm_completion(request: Dict[str, Any], num_retries: int, cache: bool):
+    import dspy
 
+    no_cache = not cache
+    stream = dspy.settings.send_stream
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
+    if not cache or stream is None:
+        return await litellm.acompletion(
+            **request,
+            cache={"no-cache": no_cache, "no-store": no_cache},
+            num_retries=num_retries,
+        )
+
+    stream = cast(MemoryObjectSendStream, stream)
+    response = await litellm.acompletion(
         **request,
-    )
-
-
-@request_cache(maxsize=None)
-def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_text_completion(
-        request,
         num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
+        cache={"no-cache": no_cache, "no-store": no_cache},
+        stream=True,
     )
+    chunks = []
+    async for chunk in response:
+        chunks.append(chunk)
+        await stream.send(chunk)
+    return litellm.stream_chunk_builder(chunks)
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: bool):
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -337,9 +340,10 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
 
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
+    no_cache = not cache
 
     return litellm.text_completion(
-        cache=cache,
+        cache={"no-cache": no_cache, "no-store": no_cache},
         model=f"text-completion-openai/{model}",
         api_key=api_key,
         api_base=api_base,

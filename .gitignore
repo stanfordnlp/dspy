@@ -14,6 +14,8 @@
 /examples/nli/scone/compiled_program.dspy
 /examples/qa/hotpot/compiled_program.dspy
 /ScoNe/
+testing/playbook.ipynb
+testing/outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
