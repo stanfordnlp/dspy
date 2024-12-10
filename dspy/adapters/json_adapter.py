@@ -43,7 +43,7 @@ class JSONAdapter(Adapter):
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
                 except Exception:
-                    _logger.warning(
+                    _logger.debug(
                         "Failed to obtain response using signature-based structured outputs"
                         " response format: Falling back to default 'json_object' response format."
                         " Exception: {e}"
