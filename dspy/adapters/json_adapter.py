@@ -337,7 +337,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
         """
         field_copy = deepcopy(field_info)  # Make a copy to avoid mutating the original
 
-        # Update `json_schema_extra` for the current field
+        # Update `json_schema_extra` for the copied field
         if field_copy.json_schema_extra:
             field_copy.json_schema_extra = {
                 key: value
@@ -348,7 +348,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
             if field_desc is not None and field_desc != f"${{{field_name}}}":
                 field_copy.json_schema_extra["desc"] = field_desc
 
-        # Handle nested models
+        # Handle nested fields
         if hasattr(field_copy.annotation, "__pydantic_model__"):
             # Recursively update fields of the nested model
             nested_model = field_copy.annotation.__pydantic_model__
