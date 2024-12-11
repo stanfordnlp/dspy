@@ -116,7 +116,7 @@ def retrieveEnsemblewithMetadata(
 
     if not dsp.settings.rm:
         raise AssertionError("No RM is loaded.")
-    if not dsp.settings.reranker:
+    if dsp.settings.reranker:
         return retrieveRerankEnsemblewithMetadata(queries=queries,k=k)
 
     queries = [q for q in queries if q]
