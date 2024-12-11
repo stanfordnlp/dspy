@@ -94,20 +94,6 @@ class Predict(Module, Parameter):
 
         return self
 
-    def load(self, path, return_self=False):
-        """Load a saved state from a file.
-
-        Args:
-            path (str): Path to the saved state file
-            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards
-                compatibility.
-
-        Returns:
-            Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
-        """
-        super().load(path)
-        return self if return_self else None
-
     @with_callbacks
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
