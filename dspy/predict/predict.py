@@ -5,16 +5,18 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 import dsp
+from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature, signature_to_template
 from dspy.utils.callback import with_callbacks
-from dspy.adapters.image_utils import Image
+
 
 @lru_cache(maxsize=None)
 def warn_once(msg: str):
     logging.warning(msg)
+
 
 class Predict(Module, Parameter):
     def __init__(self, signature, _parse_values=True, callbacks=None, **config):
@@ -31,13 +33,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self, save_verbose=None):
-        if save_verbose:
-            logging.warning(
-                "`save_verbose` is deprecated and will be removed in DSPy 2.6.0 release. Currently `save_verbose` "
-                "does nothing."
-            )
-
+    def dump_state(self):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -61,33 +57,21 @@ class Predict(Module, Parameter):
             state["extended_signature"] = self.extended_signature.dump_state()
         return state
 
-    def load_state(self, state, use_legacy_loading=False):
+    def load_state(self, state):
         """Load the saved state of a `Predict` object.
 
         Args:
             state (dict): The saved state of a `Predict` object.
-            use_legacy_loading (bool): Whether to use the legacy loading method. Only use it when you are loading a
-                saved state from a version of DSPy prior to v2.5.3.
+
         Returns:
             self: Returns self to allow method chaining
         """
-        if use_legacy_loading:
-            self._load_state_legacy(state)
-            return self
-            
-        if "signature" not in state:
-            # Check if the state is from a version of DSPy prior to v2.5.3.
-            raise ValueError(
-                "The saved state is from a version of DSPy prior to v2.5.3. Please use `use_legacy_loading=True` to "
-                "load the state."
-            )
-
         excluded_keys = ["signature", "extended_signature"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-        
+
         # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
         for demo in self.demos:
             for field in demo:
@@ -96,58 +80,13 @@ class Predict(Module, Parameter):
                     if not isinstance(url, str):
                         raise ValueError(f"Image URL must be a string, got {type(url)}")
                     demo[field] = Image(url=url)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state:
             self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
 
         return self
-
-    def _load_state_legacy(self, state):
-        """Legacy state loading for backwards compatibility.
-
-        This method is used to load the saved state of a `Predict` object from a version of DSPy prior to v2.5.3.
-        Returns:
-            self: Returns self to allow method chaining
-        """
-        for name, value in state.items():
-            setattr(self, name, value)
-
-        # Reconstruct the signature.
-        if "signature_instructions" in state:
-            instructions = state["signature_instructions"]
-            self.signature = self.signature.with_instructions(instructions)
-
-        if "signature_prefix" in state:
-            prefix = state["signature_prefix"]
-            *_, last_key = self.signature.fields.keys()
-            self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
-
-        # Some special stuff for CoT.
-        if "extended_signature_instructions" in state:
-            instructions = state["extended_signature_instructions"]
-            self.extended_signature = self.extended_signature.with_instructions(instructions)
-
-        if "extended_signature_prefix" in state:
-            prefix = state["extended_signature_prefix"]
-            *_, last_key = self.extended_signature.fields.keys()
-            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
-
-        return self
-
-    def load(self, path, return_self=False):
-        """Load a saved state from a file.
-        
-        Args:
-            path (str): Path to the saved state file
-            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards compatibility.
-        
-        Returns:
-            Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
-        """
-        super().load(path)
-        return self if return_self else None
 
     @with_callbacks
     def __call__(self, **kwargs):
@@ -295,6 +234,7 @@ def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
     return adapter(
         lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
     )
+
 
 # TODO: get some defaults during init from the context window?
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can

@@ -99,8 +99,18 @@ class LM(BaseLM):
             request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
         )
-        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        if kwargs.get("logprobs"):
+            outputs = [
+                {
+                    "text": c.message.content if hasattr(c, "message") else c["text"],
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+                }
+                for c in response["choices"]
+            ]
+        else:
+            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
+            
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)

@@ -150,3 +150,16 @@ def test_lm_calls_with_callables_are_cached_as_expected():
         lm_without_callable("Query")
 
         assert mock_completion.call_count == 2
+
+
+def test_lms_called_expected_number_of_times_for_cache_key_generation_failures():
+    with pytest.raises(Exception), patch("litellm.completion") as mock_completion:
+        mock_completion.side_effect = Exception("Mocked exception")
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base="fakebase",
+            api_key="fakekey",
+        )
+        lm("Do not retry")
+
+    assert mock_completion.call_count == 1

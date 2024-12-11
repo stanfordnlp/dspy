@@ -18,3 +18,4 @@ requests
 tenacity>=8.2.3
 tqdm
 ujson
+cloudpickle

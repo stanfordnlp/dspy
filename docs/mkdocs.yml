@@ -31,6 +31,7 @@ nav:
               - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
               - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
               - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
+              - FalkordbRM: deep-dive/retrieval_models_clients/FalkordbRM.md
               - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
               - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
               - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
