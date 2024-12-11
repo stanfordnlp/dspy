@@ -7,7 +7,7 @@ def test_save_predict(tmp_path):
     predict.save(tmp_path, save_program=True)
 
     assert (tmp_path / "metadata.json").exists()
-    assert (tmp_path / "model.pkl").exists()
+    assert (tmp_path / "program.pkl").exists()
 
     loaded_predict = dspy.load(tmp_path)
     assert isinstance(loaded_predict, dspy.Predict)

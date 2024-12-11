@@ -98,7 +98,7 @@ def test_save_and_load_with_pkl(tmp_path):
     compiled_cot = optimizer.compile(cot, trainset=trainset)
     compiled_cot._predict.signature = compiled_cot._predict.signature.with_instructions("You are a helpful assistant.")
 
-    save_path = tmp_path / "model.pkl"
+    save_path = tmp_path / "program.pkl"
     compiled_cot.save(save_path)
 
     new_cot = dspy.ChainOfThought(MySignature)

@@ -46,5 +46,5 @@ def load(path):
                 "environment as the saving environment."
             )
 
-    with open(path / "model.pkl", "rb") as f:
+    with open(path / "program.pkl", "rb") as f:
         return cloudpickle.load(f)
