@@ -1,16 +1,12 @@
-import os
 import pickle
 import threading
-import litellm
-from litellm.caching import Cache as litellm_cache
 from diskcache import FanoutCache
 from cachetools import LRUCache
 import ujson
 import pydantic
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict
 from functools import wraps
-from pathlib import Path
 
 class Cache:
     """
@@ -62,26 +58,26 @@ class Cache:
     
     def get(self, request: Dict[str, Any]) -> Any:
         try:
-            # try/except in case can't compute key
             key = self.cache_key(request)
         except Exception:
             return None
-        with self.lock:  
+        
+        with self.lock: # TODO: Do we need this lock for reads? LRUCache is ambiguous!
             if key in self.memory_cache:  
-                return self.memory_cache[key]  
-            elif key in self.fanout_cache:
+                return self.memory_cache[key]
+            
+            if key in self.fanout_cache:
                 # found on disk but not in memory, add to memory cache
                 value = self.fanout_cache[key]
                 self.memory_cache[key] = value
                 return value
-            return None
 
     def set(self, request: Dict[str, Any], value: Any) -> None:
         try: 
-            # try/except in case can't compute key
             key = self.cache_key(request)
         except Exception:
             return None
+        
         with self.lock:
             self.memory_cache[key] = value
             self.fanout_cache[key] = value
@@ -91,21 +87,27 @@ class Cache:
             cache_items = pickle.load(f)
         
         with self.lock:
-            self.memory_cache.clear()
+            # self.memory_cache.clear()
             for k,v in cache_items:
                 self.memory_cache[k] = v
 
     def save(self, file_path: str) -> None:
         with self.lock: 
-            with open(file_path, "wb") as f:
-                cache_items = list(self.memory_cache.items())
-                pickle.dump(cache_items, f)
+            cache_items = list(self.memory_cache.items())
+
+        with open(file_path, "wb") as f:
+            pickle.dump(cache_items, f)
 
     def reset_memory_cache(self) -> None:
         with self.lock:
             self.memory_cache.clear()
 
-def dspy_cache_decorator(cache):
+def cache_decorator():
+    import dspy
+    cache = dspy.settings.cache
+
+    # TODO: FIXME: The name of the decorated function should be part of the cache key
+
     def decorator(func):
         @wraps(func)
         def wrapper(request: dict, *args, **kwargs):

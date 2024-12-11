@@ -9,10 +9,10 @@ from .signatures import *
 import dspy.retrievers
 
 # Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
-from dspy.evaluate import Evaluate # isort: skip
-from dspy.clients import * # isort: skip
-from dspy.adapters import * # isort: skip
+from .functional import *  # isort: skip
+from dspy.evaluate import Evaluate  # isort: skip
+from dspy.clients import *  # isort: skip
+from dspy.adapters import *  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.cache import Cache
@@ -67,12 +67,15 @@ You = dsp.You
 configure = settings.configure
 context = settings.context
 
-CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
-CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 1e10))  # 10 GB default
-MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf"))) # unlimited by default
+from dspy.clients import DISK_CACHE_DIR, DISK_CACHE_LIMIT
+MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf")))  # unlimited by default
 
 # Initialize the cache
-dspy_cache = Cache(directory=CACHE_DIR, disk_size_limit=CACHE_LIMIT, mem_size_limit=MEM_CACHE_LIMIT)
+dspy_cache = Cache(
+    directory=os.path.join(DISK_CACHE_DIR, ".cache_v2_6"),
+    disk_size_limit=DISK_CACHE_LIMIT,
+    mem_size_limit=MEM_CACHE_LIMIT
+)
 settings.configure(cache=dspy_cache)
 
 import dspy.teleprompt

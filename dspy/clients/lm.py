@@ -3,13 +3,9 @@ import os
 import threading
 import uuid
 from datetime import datetime
-from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional
 
 import litellm
-import pydantic
-import ujson
-from cachetools import LRUCache, cached
 
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
@@ -19,7 +15,7 @@ from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
 
-from dspy.utils.cache import dspy_cache_decorator
+from dspy.utils.cache import cache_decorator
 
 logger = logging.getLogger(__name__)
 
@@ -229,16 +225,13 @@ class LM(BaseLM):
 
         return new_instance
 
+@cache_decorator()
 def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
-    from dspy import settings
-    @dspy_cache_decorator(settings.cache)
-    def cached_litellm_completion_inner(request: Dict[str, Any], num_retries: int):
-        return litellm_completion(
-            request,
-            cache={"no-cache": False, "no-store": False},
-            num_retries=num_retries,
-        )
-    return cached_litellm_completion_inner(request, num_retries)
+    return litellm_completion(
+        request,
+        cache={"no-cache": False, "no-store": False},
+        num_retries=num_retries,
+    )
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
@@ -248,18 +241,16 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         **request,
     )
 
+@cache_decorator()
 def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
-    @dspy_cache_decorator()
-    def cached_litellm_text_completion_inner(request: Dict[str, Any], num_retries: int):
-        return litellm_text_completion(
-            request,
-            cache={"no-cache": False, "no-store": False},
-            num_retries=num_retries,
-        )
-    return cached_litellm_text_completion_inner(request, num_retries)
+    return litellm_text_completion(
+        request,
+        num_retries=num_retries,
+        cache={"no-cache": False, "no-store": False},
+    )
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -273,6 +264,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int):
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
+        cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
         api_base=api_base,
