@@ -156,14 +156,14 @@ class BaseModule:
 
         return new_instance
 
-    def dump_state(self, save_verbose):
-        return {name: param.dump_state(save_verbose) for name, param in self.named_parameters()}
+    def dump_state(self):
+        return {name: param.dump_state() for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
             param.load_state(state[name])
 
-    def save(self, path, save_field_meta=False, save_program=False):
+    def save(self, path, save_program=False):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
@@ -178,13 +178,13 @@ class BaseModule:
         Args:
             path (str): Path to the saved state file, which should be a .json or .pkl file when `save_program=False`,
                 and a directory when `save_program=True`.
-            save_field_meta (bool): Whether to save the field metadata. Only applicable when `save_program=False`.
             save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
                 the state.
         """
         metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
         path = Path(path)
+
         if save_program:
             if path.suffix:
                 raise ValueError(
@@ -198,35 +198,37 @@ class BaseModule:
                 path.mkdir(parents=True)
 
             try:
-                with open(path / "model.pkl", "wb") as f:
+                with open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
             except Exception as e:
                 raise RuntimeError(
-                    f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy model, "
+                    f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
                     "or consider using state-only saving by setting `save_program=False`."
                 )
             with open(path / "metadata.json", "w") as f:
                 ujson.dump(metadata, f, indent=2)
+
+            return
+
+        state = self.dump_state()
+        state["metadata"] = metadata
+        if path.suffix == ".json":
+            with open(path, "w") as f:
+                f.write(ujson.dumps(state, indent=2))
+        elif path.suffix == ".pkl":
+            with open(path, "wb") as f:
+                cloudpickle.dump(state, f)
         else:
-            state = self.dump_state(save_field_meta)
-            state["metadata"] = metadata
-            if path.suffix == ".json":
-                with open(path, "w") as f:
-                    f.write(ujson.dumps(state, indent=2))
-            elif path.suffix == ".pkl":
-                with open(path, "wb") as f:
-                    cloudpickle.dump(state, f)
-            else:
-                raise ValueError(
-                    f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}"
-                )
+            raise ValueError(
+                f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}"
+            )
 
     def load(self, path):
-        """Load the saved module.
+        """Load the saved module. You may also want to check out dspy.load, if you want to
+        load an entire program, not just the state for an existing program.
 
         Args:
-            path (str): Path to the saved state file, which should be a .json file when `use_json=True`, and a .pkl file
-                when `use_json=False`.
+            path (str): Path to the saved state file, which should be a .json or a .pkl file
         """
         path = Path(path)
 

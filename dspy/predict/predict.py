@@ -33,13 +33,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self, save_verbose=None):
-        if save_verbose:
-            logging.warning(
-                "`save_verbose` is deprecated and will be removed in DSPy 2.6.0 release. Currently `save_verbose` "
-                "does nothing."
-            )
-
+    def dump_state(self):
         state_keys = ["lm", "traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
