@@ -122,7 +122,7 @@ def retrieveEnsemblewithMetadata(
     queries = [q for q in queries if q]
 
     if len(queries) == 1:
-        return retrieve(queries[0], k)
+        return retrievewithMetadata(queries[0], k, **kwargs)
     all_queries_passages = []
     for q in queries:
         passages = {}
