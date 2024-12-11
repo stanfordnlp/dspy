@@ -33,20 +33,20 @@ compiled_dspy_program = optimizer.compile(dspy_program, trainset=gsm8k_trainset)
 To save the state of your program to json file:
 
 ```python
-compiled_dspy_program.save("./dspy_program/model.json", save_program=False)
+compiled_dspy_program.save("./dspy_program/program.json", save_program=False)
 ```
 
 To save the state of your program to a pickle file:
 
 ```python
-compiled_dspy_program.save("./dspy_program/model.pkl", save_program=False)
+compiled_dspy_program.save("./dspy_program/program.pkl", save_program=False)
 ```
 
 To load your saved state, you need to **recreate the same program**, then load the state using the `load` method.
 
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
-loaded_dspy_program.load("./dspy_program/model.json")
+loaded_dspy_program.load("./dspy_program/program.json")
 
 assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
 for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
@@ -59,7 +59,7 @@ Or load the state from a pickle file:
 
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
-loaded_dspy_program.load("./dspy_program/model.pkl")
+loaded_dspy_program.load("./dspy_program/program.pkl")
 
 assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
 for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
