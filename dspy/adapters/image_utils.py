@@ -17,13 +17,20 @@ except ImportError:
 
 class Image(pydantic.BaseModel):
     url: str
-
+    
+    model_config = {
+        'frozen': True,
+        'str_strip_whitespace': True,
+        'validate_assignment': True,
+        'extra': 'forbid',
+    }
+        
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values):
         # Allow the model to accept either a URL string or a dictionary with a single 'url' key
         if isinstance(values, str):
-            # if a string, assume it’s the URL directly and wrap it in a dict
+            # if a string, assume it's the URL directly and wrap it in a dict
             return {"url": values}
         elif isinstance(values, dict) and set(values.keys()) == {"url"}:
             # if it's a dict, ensure it has only the 'url' key
@@ -44,14 +51,20 @@ class Image(pydantic.BaseModel):
 
     @classmethod
     def from_PIL(cls, pil_image):
-        import PIL
+        return cls(url=encode_image(PILImage.open(pil_image)))
 
-        return cls(url=encode_image(PIL.Image.open(pil_image)))
+    @pydantic.model_serializer()
+    def serialize_model(self):
+        return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
+
+    def __str__(self):
+        return self.serialize_model()
 
     def __repr__(self):
-        len_base64 = len(self.url.split("base64,")[1])
-        return f"Image(url = {self.url.split('base64,')[0]}base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
-
+        if "base64" in self.url:
+            len_base64 = len(self.url.split("base64,")[1])
+            return f"Image(url=data:image/...base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+        return f"Image(url='{self.url}')"
 
 def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
@@ -95,6 +108,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
                 return image
         else:
             # Unsupported string format
+            print(f"Unsupported image string: {image}")
             raise ValueError(f"Unsupported image string: {image}")
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
@@ -103,11 +117,12 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         # Raw bytes
         if not PIL_AVAILABLE:
             raise ImportError("Pillow is required to process image bytes.")
-        img = Image.open(io.BytesIO(image))
+        img = PILImage.open(io.BytesIO(image))
         return _encode_pil_image(img)
     elif isinstance(image, Image):
         return image.url
     else:
+        print(f"Unsupported image type: {type(image)}")
         raise ValueError(f"Unsupported image type: {type(image)}")
 
 
@@ -133,8 +148,7 @@ def _encode_image_from_url(image_url: str) -> str:
     encoded_image = base64.b64encode(response.content).decode("utf-8")
     return f"data:image/{file_extension};base64,{encoded_image}"
 
-
-def _encode_pil_image(image: "Image.Image") -> str:
+def _encode_pil_image(image: 'PILImage') -> str:
     """Encode a PIL Image object to a base64 data URI."""
     buffered = io.BytesIO()
     file_extension = (image.format or "PNG").lower()
@@ -151,10 +165,10 @@ def _get_file_extension(path_or_url: str) -> str:
 
 def is_image(obj) -> bool:
     """Check if the object is an image or a valid image reference."""
-    if PIL_AVAILABLE and isinstance(obj, Image.Image):
+    if PIL_AVAILABLE and isinstance(obj, PILImage.Image):
         return True
-    if isinstance(obj, (bytes, bytearray)):
-        return True
+    # if isinstance(obj, (bytes, bytearray)):
+    #     return True
     if isinstance(obj, str):
         if obj.startswith("data:image/"):
             return True

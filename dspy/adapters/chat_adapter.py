@@ -51,7 +51,6 @@ class ChatAdapter(Adapter):
 
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
-
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
@@ -113,6 +112,99 @@ class ChatAdapter(Adapter):
         }
 
         return format_fields(fields_with_values)
+        
+        
+
+def format_blob(blob):
+    if "\n" not in blob and "«" not in blob and "»" not in blob:
+        return f"«{blob}»"
+
+    modified_blob = blob.replace("\n", "\n    ")
+    return f"«««\n    {modified_blob}\n»»»"
+
+
+def format_input_list_field_value(value: List[Any]) -> str:
+    """
+    Formats the value of an input field of type List[Any].
+
+    Args:
+      value: The value of the list-type input field.
+    Returns:
+      A string representation of the input field's list value.
+    """
+    if len(value) == 0:
+        return "N/A"
+    if len(value) == 1:
+        return format_blob(value[0])
+
+    return "\n".join([f"[{idx+1}] {format_blob(txt)}" for idx, txt in enumerate(value)])
+
+def _serialize_for_json(value):
+    if isinstance(value, pydantic.BaseModel):
+        return value.model_dump()
+    elif isinstance(value, list):
+        return [_serialize_for_json(item) for item in value]
+    elif isinstance(value, dict):
+        return {key: _serialize_for_json(val) for key, val in value.items()}
+    else:
+        return value
+
+def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> Union[str, dict]:
+    """
+    Formats the value of the specified field according to the field's DSPy type (input or output),
+    annotation (e.g. str, int, etc.), and the type of the value itself.
+
+    Args:
+      field_info: Information about the field, including its DSPy field type and annotation.
+      value: The value of the field.
+    Returns:
+      The formatted value of the field, represented as a string.
+    """
+    string_value = None
+
+    if field_info.annotation == Image and is_image(value):
+        print("value: ", value)
+        value = Image(url=encode_image(value))
+    #     print("field info: ", field_info)
+    #     if not isinstance(value, Image):
+    #         print(f"Coerced image: {value}")
+    #         coerced_image = Image(url=encode_image(value))
+    #     print("post coerce: ", coerced_image)
+    #     string_value = json.dumps(_serialize_for_json(coerced_image), ensure_ascii=False)
+    if isinstance(value, list) and field_info.annotation is str:
+        # If the field has no special type requirements, format it as a nice numbered list for the LM.
+        string_value = format_input_list_field_value(value)
+    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
+        string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
+    else:
+        string_value = str(value)
+
+    if assume_text:
+        return string_value
+
+    # What we actually want is that for any image inside of any arbitrary normal python or pudantic object, when we see it 
+    # it will trigger some sort of escape sequence that we then combine at the end in order to make it a cohesive request to send to OAI
+    # Hooking too deep into the serialization process is a bad idea, but we need an escape hatch somewhere
+
+    # elif (isinstance(value, Image) or field_info.annotation == Image):
+    #     # This validation should happen somewhere else
+    #     # Safe to import PIL here because it's only imported when an image is actually being formatted
+    #     try:
+    #         import PIL
+    #     except ImportError:
+    #         raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
+    #     image_value = value
+    #     if not isinstance(image_value, Image):
+    #         if isinstance(image_value, dict) and "url" in image_value:
+    #             image_value = image_value["url"]
+    #         elif isinstance(image_value, str) or isinstance(image_value, PIL.Image.Image):
+    #             image_value = encode_image(image_value)
+    #         assert isinstance(image_value, str)
+    #         image_value = Image(url=image_value)
+    #     return {"type": "image_url", "image_url": image_value.model_dump()}
+    else:
+        return {"type": "text", "text": string_value}
+
 
 
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> Union[str, List[dict]]:
@@ -181,92 +273,77 @@ def format_turn(signature, values, role, incomplete=False):
         A chat message that can be appended to a chat thread. The message contains two string fields:
         ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
-    fields_to_collapse = []
-    content = []
-
     if role == "user":
         fields = signature.input_fields
-        if incomplete:
-            fields_to_collapse.append(
-                {
-                    "type": "text",
-                    "text": "This is an example of the task, though some input or output fields are not supplied.",
-                }
-            )
+        message_prefix = "This is an example of the task, though some input or output fields are not supplied." if incomplete else ""
     else:
-        fields = signature.output_fields
-        # Add the built-in field indicating that the chat turn has been completed
-        fields[BuiltInCompletedOutputFieldInfo.name] = BuiltInCompletedOutputFieldInfo.info
+        # Add the completed field for the assistant turn
+        fields = {**signature.output_fields, BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info}
         values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
-    field_names = fields.keys()
-    if not incomplete:
-        if not set(values).issuperset(set(field_names)):
-            raise ValueError(f"Expected {field_names} but got {values.keys()}")
+        message_prefix = ""
 
-    fields_to_collapse.extend(
-        format_fields(
-            fields_with_values={
-                FieldInfoWithName(name=field_name, info=field_info): values.get(
-                    field_name, "Not supplied for this particular example."
-                )
-                for field_name, field_info in fields.items()
-            },
-            assume_text=False,
-        )
+    if not incomplete and not set(values).issuperset(fields.keys()):
+        raise ValueError(f"Expected {fields.keys()} but got {values.keys()}")
+
+    messages = []
+    if message_prefix:
+        messages.append({"type": "text", "text": message_prefix})
+
+    field_messages = format_fields(
+        {FieldInfoWithName(name=k, info=v): values.get(k, "Not supplied for this particular example.")
+         for k, v in fields.items()},
+        assume_text=False
     )
+    messages.extend(field_messages)
 
-    if role == "user":
-        output_fields = list(signature.output_fields.keys())
+    # Add output field instructions for user messages
+    if role == "user" and signature.output_fields:
+        type_info = lambda v: f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" if v.annotation is not str else ""
+        field_instructions = "Respond with the corresponding output fields, starting with the field " + \
+            ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items()) + \
+            ", and then ending with the marker for `[[ ## completed ## ]]`."
+        messages.append({"type": "text", "text": field_instructions})
 
-        def type_info(v):
-            return (
-                f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
-                if v.annotation is not str
-                else ""
-            )
+    # Process messages to handle image tags and collapse text
+    processed_messages = process_messages(messages)
+    
+    if all(msg.get("type") == "text" for msg in processed_messages):
+        return {"role": role, "content": "\n\n".join(msg["text"] for msg in processed_messages)}
+    return {"role": role, "content": processed_messages}
 
-        if output_fields:
-            fields_to_collapse.append(
-                {
-                    "type": "text",
-                    "text": "Respond with the corresponding output fields, starting with the field "
-                    + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
-                    + ", and then ending with the marker for `[[ ## completed ## ]]`.",
-                }
-            )
-
-    # flatmap the list if any items are lists otherwise keep the item
-    flattened_list = list(
-        chain.from_iterable(item if isinstance(item, list) else [item] for item in fields_to_collapse)
-    )
-
-    if all(message.get("type", None) == "text" for message in flattened_list):
-        content = "\n\n".join(message.get("text") for message in flattened_list)
-        return {"role": role, "content": content}
-
-    # Collapse all consecutive text messages into a single message.
-    collapsed_messages = []
-    for item in flattened_list:
-        # First item is always added
-        if not collapsed_messages:
-            collapsed_messages.append(item)
-            continue
-
-        # If the current item is image, add to collapsed_messages
-        if item.get("type") == "image_url":
-            if collapsed_messages[-1].get("type") == "text":
-                collapsed_messages[-1]["text"] += "\n"
-            collapsed_messages.append(item)
-        # If the previous item is text and current item is text, append to the previous item
-        elif collapsed_messages[-1].get("type") == "text":
-            collapsed_messages[-1]["text"] += "\n\n" + item["text"]
-        # If the previous item is not text(aka image), add the current item as a new item
+def process_messages(messages):
+    """Process messages to handle image tags and collapse consecutive text messages."""
+    processed = []
+    current_text = []
+    
+    for msg in flatten_messages(messages):
+        if msg["type"] == "text":
+            # Handle image tags in text
+            parts = re.split(r'(<DSPY_IMAGE_START>.*?<DSPY_IMAGE_END>)', msg["text"])
+            for part in parts:
+                if match := re.match(r'<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>', part):
+                    if current_text:
+                        processed.append({"type": "text", "text": "\n\n".join(current_text)})
+                        current_text = []
+                    processed.append({"type": "image_url", "image_url": {"url": match.group(1)}})
+                elif part.strip():
+                    current_text.append(part)
         else:
-            item["text"] = "\n\n" + item["text"]
-            collapsed_messages.append(item)
+            if current_text:
+                processed.append({"type": "text", "text": "\n\n".join(current_text)})
+                current_text = []
+            processed.append(msg)
+    
+    if current_text:
+        processed.append({"type": "text", "text": "\n\n".join(current_text)})
+    
+    return processed
 
-    return {"role": role, "content": collapsed_messages}
-
+def flatten_messages(messages):
+    """Flatten nested message lists."""
+    return list(chain.from_iterable(
+        item if isinstance(item, list) else [item] for item in messages
+    ))
 
 def get_annotation_name(annotation):
     origin = get_origin(annotation)

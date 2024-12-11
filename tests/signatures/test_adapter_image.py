@@ -1,8 +1,8 @@
 import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pytest
-from PIL import Image
+from PIL import Image as PILImage
 import requests
 from io import BytesIO
 
@@ -10,6 +10,7 @@ import dspy
 from dspy import Predict
 from dspy.utils.dummies import DummyLM
 import tempfile
+import pydantic
 
 @pytest.fixture
 def sample_pil_image():
@@ -17,7 +18,7 @@ def sample_pil_image():
     url = 'https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg'
     response = requests.get(url)
     response.raise_for_status()
-    return Image.open(BytesIO(response.content))
+    return PILImage.open(BytesIO(response.content))
 
 @pytest.fixture
 def sample_dspy_image_download():
@@ -33,7 +34,7 @@ def sample_dspy_image_no_download():
 
 
 
-def messages_contain_image_url_pattern(messages):
+def messages_contain_image_url_pattern(messages, n=1):
     pattern = {
         'type': 'image_url',
         'image_url': {
@@ -55,18 +56,19 @@ def messages_contain_image_url_pattern(messages):
                 return pattern(obj)
             return obj == pattern
             
-        # Look for pattern in any nested dict
-        def find_pattern(obj, pattern):
+        # Look for pattern in any nested dict and count occurrences
+        def count_patterns(obj, pattern):
+            count = 0
             if check_pattern(obj, pattern):
-                return True
+                count += 1
             if isinstance(obj, dict):
-                return any(find_pattern(v, pattern) for v in obj.values())
+                count += sum(count_patterns(v, pattern) for v in obj.values())
             if isinstance(obj, (list, tuple)):
-                return any(find_pattern(v, pattern) for v in obj)
-            return False
+                count += sum(count_patterns(v, pattern) for v in obj)
+            return count
             
-        return find_pattern(messages, pattern)
-    except:
+        return count_patterns(messages, pattern) == n
+    except Exception:
         return False
     
 def test_probabilistic_classification():
@@ -223,18 +225,152 @@ def test_invalid_image_input(sample_url):
 def test_predictor_save_load(sample_url, sample_pil_image):
     signature = "image: dspy.Image -> caption: str"
     examples = [
-        dspy.Example(image=dspy.Image.from_url(sample_url)),
-        dspy.Example(image=sample_pil_image)
+        dspy.Example(image=dspy.Image.from_url(sample_url), caption="Example 1"),
+        dspy.Example(image=sample_pil_image, caption="Example 2"),
     ]
+    active_example = dspy.Example(image=dspy.Image.from_url("https://example.com/dog.jpg"))
+
     lm = DummyLM([{"caption": "A golden retriever"}])
     dspy.settings.configure(lm=lm)
+
     predictor = dspy.Predict(signature)
-    optimizer = dspy.teleprompt.LabeledFewShot()
-    compiled_predictor = optimizer.compile(student=predictor, trainset=examples[:1])
+    optimizer = dspy.teleprompt.LabeledFewShot(k=1)
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
+    print(compiled_predictor.demos)
     # Test dump state with save verbose = True and False
     with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
         compiled_predictor.save(temp_file.name)
         loaded_predictor = dspy.Predict(signature)
         loaded_predictor.load(temp_file.name)
+    print(loaded_predictor.demos)
     
-    assert isinstance(loaded_predictor.demos[0]["image"], dspy.Image)
+    result = loaded_predictor(image=active_example["image"])
+    print(result)
+    assert messages_contain_image_url_pattern(lm.history[-1]["messages"], n=2)
+    print(lm.history[-1]["messages"])
+    assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
+
+def test_save_load_complex_default_types():
+    examples = [
+        dspy.Example(image_list=[dspy.Image.from_url("https://example.com/dog.jpg"), dspy.Image.from_url("https://example.com/cat.jpg")], caption="Example 1").with_inputs("image_list"),
+    ]
+
+    class ComplexTypeSignature(dspy.Signature):
+        image_list: List[dspy.Image] = dspy.InputField(desc="A list of images")
+        caption: str = dspy.OutputField(desc="A caption for the image list")
+
+    lm = DummyLM([{"caption": "A list of images"}, {"caption": "A list of images"}])
+    dspy.settings.configure(lm=lm)
+
+    predictor = dspy.Predict(ComplexTypeSignature)
+    result = predictor(**examples[0].inputs())
+    
+    print(lm.history[-1]["messages"])
+    assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
+    assert str(lm.history[-1]["messages"]).count("'url'") == 2
+
+    optimizer = dspy.teleprompt.LabeledFewShot(k=1)
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
+    print(compiled_predictor.demos)
+
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+        print("compiled_predictor state: ", compiled_predictor.dump_state())
+        compiled_predictor.save(temp_file.name)
+        loaded_predictor = dspy.Predict(ComplexTypeSignature)
+        loaded_predictor.load(temp_file.name)
+    
+    print("loaded_predictor state: ", loaded_predictor.dump_state())
+    result = loaded_predictor(**examples[0].inputs())
+    assert result.caption == "A list of images"
+    assert str(lm.history[-1]["messages"]).count("'url'") == 4
+
+def test_save_load_complex_pydantic_types():
+    """Test saving and loading predictors with pydantic models containing image fields"""
+    class ImageModel(pydantic.BaseModel):
+        image: dspy.Image
+        label: str
+
+    class ComplexPydanticSignature(dspy.Signature):
+        model_input: ImageModel = dspy.InputField(desc="A pydantic model containing an image")
+        caption: str = dspy.OutputField(desc="A caption for the image")
+
+    example_model = ImageModel(
+        image=dspy.Image.from_url("https://example.com/dog.jpg"),
+        label="dog"
+    )
+    examples = [
+        dspy.Example(model_input=example_model, caption="A dog").with_inputs("model_input")
+    ]
+
+    lm = DummyLM([{"caption": "A dog photo"}, {"caption": "A dog photo"}])
+    dspy.settings.configure(lm=lm)
+
+    predictor = dspy.Predict(ComplexPydanticSignature)
+    result = predictor(model_input=example_model)
+    assert result.caption == "A dog photo"
+    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+
+    optimizer = dspy.teleprompt.LabeledFewShot(k=1)
+    compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
+
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+        compiled_predictor.save(temp_file.name)
+        loaded_predictor = dspy.Predict(ComplexPydanticSignature)
+        loaded_predictor.load(temp_file.name)
+
+    result = loaded_predictor(model_input=example_model)
+    lm.inspect_history()
+    assert result.caption == "A dog photo"
+    assert messages_contain_image_url_pattern(lm.history[-1]["messages"], n=2)
+
+def test_image_repr():
+    """Test string representation of Image objects with both URLs and PIL images"""
+    # Test URL-based image repr and str
+    url_image = dspy.Image.from_url("https://example.com/dog.jpg", download=False)
+    assert str(url_image) == "<DSPY_IMAGE_START>https://example.com/dog.jpg<DSPY_IMAGE_END>"
+    assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
+    
+    # Test PIL image repr and str
+    sample_pil = PILImage.new('RGB', (60, 30), color='red')
+    pil_image = dspy.Image.from_PIL(sample_pil)
+    # Test str() behavior
+    assert str(pil_image).startswith("<DSPY_IMAGE_START>data:image/png;base64,")
+    assert str(pil_image).endswith("<DSPY_IMAGE_END>")
+    # Test repr() behavior
+    repr_str = repr(pil_image)
+    assert repr_str.startswith("Image(url=data:image/...base64,<IMAGE_BASE_64_ENCODED(")
+    assert repr_str.endswith(")>)")
+    assert "base64" in str(pil_image)
+
+def test_image_optional_input():
+    """Test behavior when optional image inputs are missing"""
+    class OptionalImageSignature(dspy.Signature):
+        image: Optional[dspy.Image] = dspy.InputField(desc="An optional image input")
+        text: str = dspy.InputField(desc="A text input")
+        output: str = dspy.OutputField(desc="The output text")
+
+    lm = DummyLM([{"output": "Text only: hello"}, {"output": "Image and text: hello with image"}])
+    dspy.settings.configure(lm=lm)
+
+    predictor = dspy.Predict(OptionalImageSignature)
+    
+    # Test with missing image
+    result = predictor(image=None, text="hello")
+    assert result.output == "Text only: hello"
+    assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
+
+    lm.inspect_history()
+    print(lm.history[-1]["messages"])
+    assert False
+    # Test with image present
+    result = predictor(
+        image=dspy.Image.from_url("https://example.com/image.jpg"),
+        text="hello"
+    )
+    assert result.output == "Image and text: hello with image"
+    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+
+# Tests to write:
+# complex image types
+# Return "None" when dspy.Image is missing for the input, similarly to str input fields
+# JSON adapter
