@@ -17,13 +17,20 @@ except ImportError:
 
 class Image(pydantic.BaseModel):
     url: str
-
+    
+    model_config = {
+        'frozen': True,
+        'str_strip_whitespace': True,
+        'validate_assignment': True,
+        'extra': 'forbid',
+    }
+        
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values):
         # Allow the model to accept either a URL string or a dictionary with a single 'url' key
         if isinstance(values, str):
-            # if a string, assume it’s the URL directly and wrap it in a dict
+            # if a string, assume it's the URL directly and wrap it in a dict
             return {"url": values}
         elif isinstance(values, dict) and set(values.keys()) == {"url"}:
             # if it's a dict, ensure it has only the 'url' key
@@ -50,10 +57,14 @@ class Image(pydantic.BaseModel):
     def serialize_model(self):
         return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
 
-    def __repr__(self):
-        len_base64 = len(self.url.split("base64,")[1])
-        return f"Image(url = {self.url.split('base64,')[0]}base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+    def __str__(self):
+        return self.serialize_model()
 
+    def __repr__(self):
+        if "base64" in self.url:
+            len_base64 = len(self.url.split("base64,")[1])
+            return f"Image(url=data:image/...base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+        return f"Image(url='{self.url}')"
 
 def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
