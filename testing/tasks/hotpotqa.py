@@ -34,7 +34,7 @@ class HotPotQATask(BaseTask):
         # Set up metrics
         NUM_THREADS = 16
 
-        metric_EM = dspy.evaluate.answer_similar_match
+        metric_EM = dspy.evaluate.answer_exact_match_and_semantic
 
         self.metric = metric_EM
 
