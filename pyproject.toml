@@ -45,7 +45,6 @@ dependencies = [
     "anyio",
     "asyncer==0.0.8",
     "cachetools",
-    "transformers>=4.47.0",
 ]
 
 [project.optional-dependencies]
@@ -76,7 +75,9 @@ dev = [
     "pytest>=6.2.5",
     "pillow",
     "pytest-mock",
-    "datamodel-code-generator"
+    "datamodel-code-generator",
+    "transformers>=4.47.0",
+
 ]
 fastembed = ["fastembed>=0.2.0"]
 
