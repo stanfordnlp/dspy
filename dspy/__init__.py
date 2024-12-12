@@ -15,7 +15,6 @@ from dspy.clients import *  # isort: skip
 from dspy.adapters import *  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
-from dspy.utils.cache import Cache
 from dspy.utils.saving import load
 
 settings = dsp.settings
@@ -67,6 +66,7 @@ You = dsp.You
 configure = settings.configure
 context = settings.context
 
+from dspy.utils.cache import Cache
 from dspy.clients import DISK_CACHE_DIR, DISK_CACHE_LIMIT
 MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf")))  # unlimited by default
 
