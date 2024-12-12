@@ -5,6 +5,7 @@ DSPy currently supports integrations with: (sorted alphabetically):
 - ChromadbRM
 - LancedbRM
 - ClarifaiRM
+- FalkordbRM
 - MarqoRM
 - MongoDBAtlasRM
 - PineconeRM

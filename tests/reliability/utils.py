@@ -31,7 +31,6 @@ def assert_program_output_correct(
         grading_guidelines = [grading_guidelines]
 
     with judge_dspy_configuration():
-        print("GUIDELINES", grading_guidelines)
         for guideline_entry in grading_guidelines:
             judge_response = _get_judge_program()(
                 program_input=str(program_input),

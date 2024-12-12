@@ -98,8 +98,18 @@ class LM(BaseLM):
             request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
         )
-        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        if kwargs.get("logprobs"):
+            outputs = [
+                {
+                    "text": c.message.content if hasattr(c, "message") else c["text"],
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+                }
+                for c in response["choices"]
+            ]
+        else:
+            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
+            
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
@@ -233,23 +243,56 @@ def request_cache(maxsize: Optional[int] = None):
     """
 
     def cache_key(request: Dict[str, Any]) -> str:
-        # Transform Pydantic models into JSON-convertible format and exclude unhashable objects
-        params = {k: (v.dict() if isinstance(v, pydantic.BaseModel) else v) for k, v in request.items()}
-        params = {k: v for k, v in params.items() if not callable(v)}
+        """
+        Obtain a unique cache key for the given request dictionary by hashing its JSON
+        representation. For request fields having types that are known to be JSON-incompatible,
+        convert them to a JSON-serializable format before hashing.
+
+        Note: Values that cannot be converted to JSON should *not* be ignored / discarded, since
+        that would potentially lead to cache collisions. For example, consider request A
+        containing only JSON-convertible values and request B containing the same JSON-convertible
+        values in addition to one unconvertible value. Discarding the unconvertible value would
+        lead to a cache collision between requests A and B, even though they are semantically
+        different.
+        """
+
+        def transform_value(value):
+            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
+                return value.schema()
+            elif isinstance(value, pydantic.BaseModel):
+                return value.dict()
+            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
+                return value.__code__.co_code.decode("utf-8")
+            else:
+                # Note: We don't attempt to compute a hash of the value, since the default
+                # implementation of hash() is id(), which may collide if the same memory address
+                # is reused for different objects at different times
+                return value
+
+        params = {k: transform_value(v) for k, v in request.items()}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
     def decorator(func):
         @cached(
             # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
             cache=LRUCache(maxsize=maxsize or float("inf")),
-            key=lambda request, *args, **kwargs: cache_key(request),
+            key=lambda key, request, *args, **kwargs: key,
             # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
             # concurrently, e.g. during optimization and evaluation
-            lock=threading.Lock(),
+            lock=threading.RLock(),
         )
+        def func_cached(key: str, request: Dict[str, Any], *args, **kwargs):
+            return func(request, *args, **kwargs)
+
         @functools.wraps(func)
         def wrapper(request: dict, *args, **kwargs):
-            return func(request, *args, **kwargs)
+            try:
+                key = cache_key(request)
+            except Exception:
+                # If the cache key cannot be computed (e.g. because it contains a value that cannot
+                # be converted to JSON), bypass the cache and call the target function directly
+                return func(request, *args, **kwargs)
+            return func_cached(key, request, *args, **kwargs)
 
         return wrapper
 
