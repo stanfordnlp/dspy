@@ -86,15 +86,18 @@ class LM(BaseLM):
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+        wrapped_completion = completion
 
-        response = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-        )
+        if cache:
+            @cache_decorator(keep=litellm.Cache()._get_relevant_args_to_use_for_cache_key())
+            def cached_completion(**kwargs):
+                return completion(**kwargs, cache={"no-cache": False, "no-store": False})
+            
+            wrapped_completion = cached_completion
+
+        response = wrapped_completion(model=self.model, messages=messages, num_retries=self.num_retries, **kwargs)
+        
         if kwargs.get("logprobs"):
             outputs = [
                 {
@@ -106,7 +109,7 @@ class LM(BaseLM):
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
-            
+
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
@@ -225,43 +228,23 @@ class LM(BaseLM):
 
         return new_instance
 
-@cache_decorator()
-def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_completion(
-        request,
-        cache={"no-cache": False, "no-store": False},
-        num_retries=num_retries,
-    )
+
+def litellm_completion(cache={"no-cache": True, "no-store": True}, **kwargs):
+    return litellm.completion(cache=cache, **kwargs)
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
-        **request,
-    )
-
-@cache_decorator()
-def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
-    return litellm_text_completion(
-        request,
-        num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
-    )
-
-
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(cache={"no-cache": True, "no-store": True}, **kwargs):
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
-    model = request.pop("model").split("/", 1)
+    model = kwargs.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
     # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
+    api_key = kwargs.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
+    api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
+    prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
         cache=cache,
@@ -269,6 +252,5 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        num_retries=num_retries,
-        **request,
+        **kwargs,
     )

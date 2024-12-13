@@ -96,10 +96,10 @@ class Cache:
             self.memory_cache.clear()
 
 
-def cache_decorator():
+def cache_decorator(ignore=None, keep=None):
     def decorator(func):
         @wraps(func)
-        def wrapper(request: dict, *args, **kwargs):
+        def wrapper(**kwargs):
             import dspy
             cache = dspy.settings.cache
 
@@ -108,8 +108,14 @@ def cache_decorator():
 
             # Create a modified request that includes the function identifier
             # so that it's incorporated into the cache key.
-            modified_request = dict(request)
+            modified_request = dict(kwargs)
             modified_request["_func_identifier"] = func_identifier
+
+            for key in list(modified_request.keys()):
+                if ignore and key in ignore:
+                    del modified_request[key]
+                if keep and key not in keep:
+                    del modified_request[key]
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request)
@@ -117,7 +123,7 @@ def cache_decorator():
                 return cached_result
 
             # Otherwise, compute and store the result
-            result = func(request, *args, **kwargs)
+            result = func(**kwargs)
             cache.set(modified_request, result)
             return result
 
