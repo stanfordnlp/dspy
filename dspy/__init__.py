@@ -18,8 +18,8 @@ from dspy.dsp.utils.settings import settings
 
 configure_dspy_loggers(__name__)
 
-from dspy.dsp.modules.colbertv2 import ColBERTv2
-# from dspy.dsp.modules.you import You
+from dspy.dsp.colbertv2 import ColBERTv2
+# from dspy.dsp.you import You
 
 configure = settings.configure
 context = settings.context

@@ -3,7 +3,7 @@ from typing import Any, List, Optional, Union
 
 import requests
 
-from dspy.dsp.modules.cache_utils import CacheMemory, NotebookCacheMemory
+from dspy.dsp.cache_utils import CacheMemory, NotebookCacheMemory
 from dspy.dsp.utils import dotdict
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
