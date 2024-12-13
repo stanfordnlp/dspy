@@ -18,6 +18,7 @@ from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
+from dspy.adapters.image_utils import try_expand_image_tags
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -56,6 +57,7 @@ class ChatAdapter(Adapter):
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         messages.append(format_turn(signature, inputs, role="user"))
+        messages = try_expand_image_tags(messages)
         return messages
 
     def parse(self, signature, completion, _parse_values=True):
@@ -148,64 +150,6 @@ def _serialize_for_json(value):
         return {key: _serialize_for_json(val) for key, val in value.items()}
     else:
         return value
-
-def _format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> Union[str, dict]:
-    """
-    Formats the value of the specified field according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself.
-
-    Args:
-      field_info: Information about the field, including its DSPy field type and annotation.
-      value: The value of the field.
-    Returns:
-      The formatted value of the field, represented as a string.
-    """
-    string_value = None
-
-    if field_info.annotation == Image and is_image(value):
-        print("value: ", value)
-        value = Image(url=encode_image(value))
-    #     print("field info: ", field_info)
-    #     if not isinstance(value, Image):
-    #         print(f"Coerced image: {value}")
-    #         coerced_image = Image(url=encode_image(value))
-    #     print("post coerce: ", coerced_image)
-    #     string_value = json.dumps(_serialize_for_json(coerced_image), ensure_ascii=False)
-    if isinstance(value, list) and field_info.annotation is str:
-        # If the field has no special type requirements, format it as a nice numbered list for the LM.
-        string_value = format_input_list_field_value(value)
-    elif isinstance(value, pydantic.BaseModel) or isinstance(value, dict) or isinstance(value, list):
-        string_value = json.dumps(_serialize_for_json(value), ensure_ascii=False)
-    else:
-        string_value = str(value)
-
-    if assume_text:
-        return string_value
-
-    # What we actually want is that for any image inside of any arbitrary normal python or pudantic object, when we see it 
-    # it will trigger some sort of escape sequence that we then combine at the end in order to make it a cohesive request to send to OAI
-    # Hooking too deep into the serialization process is a bad idea, but we need an escape hatch somewhere
-
-    # elif (isinstance(value, Image) or field_info.annotation == Image):
-    #     # This validation should happen somewhere else
-    #     # Safe to import PIL here because it's only imported when an image is actually being formatted
-    #     try:
-    #         import PIL
-    #     except ImportError:
-    #         raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-    #     image_value = value
-    #     if not isinstance(image_value, Image):
-    #         if isinstance(image_value, dict) and "url" in image_value:
-    #             image_value = image_value["url"]
-    #         elif isinstance(image_value, str) or isinstance(image_value, PIL.Image.Image):
-    #             image_value = encode_image(image_value)
-    #         assert isinstance(image_value, str)
-    #         image_value = Image(url=image_value)
-    #     return {"type": "image_url", "image_url": image_value.model_dump()}
-    else:
-        return {"type": "text", "text": string_value}
-
-
 
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text=True) -> Union[str, List[dict]]:
     """
@@ -305,39 +249,11 @@ def format_turn(signature, values, role, incomplete=False):
         messages.append({"type": "text", "text": field_instructions})
 
     # Process messages to handle image tags and collapse text
-    processed_messages = process_messages(messages)
+    processed_messages = messages
     
     if all(msg.get("type") == "text" for msg in processed_messages):
         return {"role": role, "content": "\n\n".join(msg["text"] for msg in processed_messages)}
     return {"role": role, "content": processed_messages}
-
-def process_messages(messages):
-    """Process messages to handle image tags and collapse consecutive text messages."""
-    processed = []
-    current_text = []
-    
-    for msg in flatten_messages(messages):
-        if msg["type"] == "text":
-            # Handle image tags in text
-            parts = re.split(r'(<DSPY_IMAGE_START>.*?<DSPY_IMAGE_END>)', msg["text"])
-            for part in parts:
-                if match := re.match(r'<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>', part):
-                    if current_text:
-                        processed.append({"type": "text", "text": "\n\n".join(current_text)})
-                        current_text = []
-                    processed.append({"type": "image_url", "image_url": {"url": match.group(1)}})
-                elif part.strip():
-                    current_text.append(part)
-        else:
-            if current_text:
-                processed.append({"type": "text", "text": "\n\n".join(current_text)})
-                current_text = []
-            processed.append(msg)
-    
-    if current_text:
-        processed.append({"type": "text", "text": "\n\n".join(current_text)})
-    
-    return processed
 
 def flatten_messages(messages):
     """Flatten nested message lists."""

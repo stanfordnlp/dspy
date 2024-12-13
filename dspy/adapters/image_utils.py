@@ -1,8 +1,9 @@
 import base64
 import io
 import os
-from typing import Union
+from typing import Any, Dict, List, Union
 from urllib.parse import urlparse
+import re
 
 import pydantic
 import requests
@@ -51,7 +52,7 @@ class Image(pydantic.BaseModel):
 
     @classmethod
     def from_PIL(cls, pil_image):
-        return cls(url=encode_image(PILImage.open(pil_image)))
+        return cls(url=encode_image(pil_image))
 
     @pydantic.model_serializer()
     def serialize_model(self):
@@ -177,3 +178,54 @@ def is_image(obj) -> bool:
         elif is_url(obj):
             return True
     return False
+
+def try_expand_image_tags(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Try to expand image tags in the messages."""
+    for message in messages:
+        # NOTE: Assumption that content is a string
+        print(message, "content" in message, "<DSPY_IMAGE_START>" in message["content"])
+        if "content" in message and "<DSPY_IMAGE_START>" in message["content"]:
+            print("Expanding image tags")
+            message["content"] = expand_image_tags(message["content"])
+    return messages
+
+def expand_image_tags(text: str) -> Union[str, List[Dict[str, Any]]]:
+    """Expand image tags in the text. If there are any image tags, 
+    turn it from a content string into a content list of texts and image urls.
+    
+    Args:
+        text: The text content that may contain image tags
+        
+    Returns:
+        Either the original string if no image tags, or a list of content dicts
+        with text and image_url entries
+    """
+    image_tag_regex = r'"?<DSPY_IMAGE_START>(.*?)<DSPY_IMAGE_END>"?'
+    
+    # If no image tags, return original text
+    if not re.search(image_tag_regex, text):
+        return text
+        
+    final_list = []
+    remaining_text = text
+    
+    while remaining_text:
+        match = re.search(image_tag_regex, remaining_text)
+        if not match:
+            if remaining_text.strip():
+                final_list.append({"type": "text", "text": remaining_text.strip()})
+            break
+            
+        # Get text before the image tag
+        prefix = remaining_text[:match.start()].strip()
+        if prefix:
+            final_list.append({"type": "text", "text": prefix})
+            
+        # Add the image
+        image_url = match.group(1)
+        final_list.append({"type": "image_url", "image_url": {"url": image_url}})
+        
+        # Update remaining text
+        remaining_text = remaining_text[match.end():].strip()
+    
+    return final_list

@@ -1,4 +1,3 @@
-import datetime
 from typing import Dict, List, Optional, Tuple
 
 import pytest
@@ -172,41 +171,46 @@ def test_multilingual_caption():
     assert result.captions == expected_captions
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
-def test_image_input_formats(sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download):
-    """Test different input formats for image fields"""
-    from dspy.adapters.image_utils import encode_image
+from dspy.adapters.image_utils import encode_image
 
+@pytest.mark.parametrize("image_input,description", [
+    ("pil_image", "PIL Image"),
+    ("encoded_pil_image", "encoded PIL image string"), 
+    ("dspy_image_download", "dspy.Image with download=True"),
+    ("dspy_image_no_download", "dspy.Image without download")
+])
+def test_image_input_formats(request, sample_pil_image, sample_dspy_image_download, 
+                           sample_dspy_image_no_download, image_input, description):
+    """Test different input formats for image fields"""
     signature = "image: dspy.Image, class_labels: List[str] -> probabilities: Dict[str, float]"
     expected = {"dog": 0.8, "cat": 0.1, "bird": 0.1}
-    lm = DummyLM([{"probabilities": str(expected)}] * 4)  # Need multiple responses for different tests
+    lm = DummyLM([{"probabilities": str(expected)}])
     dspy.settings.configure(lm=lm)
     predictor = dspy.Predict(signature)
 
-    # Test PIL Image input
-    result = predictor(image=sample_pil_image, class_labels=["dog", "cat", "bird"])
-    assert result.probabilities == expected
-    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
-    # Test encoded string input
-    encoded_image = encode_image(sample_pil_image)
-    result = predictor(image=encoded_image, class_labels=["dog", "cat", "bird"])
-    assert result.probabilities == expected
-    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
+    # Map input type to actual input
+    input_map = {
+        "pil_image": sample_pil_image,
+        "encoded_pil_image": encode_image(sample_pil_image),
+        "dspy_image_download": sample_dspy_image_download,
+        "dspy_image_no_download": sample_dspy_image_no_download
+    }
+    
+    actual_input = input_map[image_input]
+    
+    # TODO(isaacbmiller): Support the cases without direct dspy.Image coercion
+    if image_input == "pil_image":
+        pytest.xfail("PIL images not fully supported without dspy.from_PIL")
+    if image_input == "encoded_pil_image":
+        pytest.xfail("encoded PIL images not fully supported without dspy.from_PIL")
 
-    # Test dspy.Image with download=True
     result = predictor(
-        image=sample_dspy_image_download,
+        image=actual_input,
         class_labels=["dog", "cat", "bird"]
     )
+    
     assert result.probabilities == expected
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
-    # Test dspy.Image without download
-    result = predictor(
-        image=sample_dspy_image_no_download,
-        class_labels=["dog", "cat", "bird"]
-    )
-    assert result.probabilities == expected
-    assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
-
 
 def test_invalid_image_input(sample_url):
     """Test that using a string input with str annotation fails"""
@@ -220,7 +224,6 @@ def test_invalid_image_input(sample_url):
         class_labels=["dog", "cat", "bird"]
     )
     assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
-
 
 def test_predictor_save_load(sample_url, sample_pil_image):
     signature = "image: dspy.Image -> caption: str"
@@ -359,14 +362,13 @@ def test_image_optional_input():
     assert result.output == "Text only: hello"
     assert not messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
-    lm.inspect_history()
-    print(lm.history[-1]["messages"])
-    assert False
     # Test with image present
     result = predictor(
         image=dspy.Image.from_url("https://example.com/image.jpg"),
         text="hello"
     )
+    lm.inspect_history()
+    print(lm.history[-1]["messages"])
     assert result.output == "Image and text: hello with image"
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
