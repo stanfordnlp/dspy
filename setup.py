@@ -16,11 +16,11 @@ setup(
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	
-    url="https://github.com/stanfordnlp/dsp",	
+    url="https://github.com/stanfordnlp/dspy",	
     author="Omar Khattab",	
     author_email="okhattab@stanford.edu",	
     license="MIT License",	
-    packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),	
+    packages=find_packages(include=["dspy.*", "dspy"]),	
     python_requires=">=3.9",	
     install_requires=requirements,	
 
