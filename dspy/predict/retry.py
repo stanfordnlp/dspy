@@ -1,6 +1,5 @@
 import copy
 
-import dsp
 import dspy
 
 from .predict import Predict
@@ -69,7 +68,7 @@ class Retry(Predict):
         for key in ["_trace", "demos", "signature", "new_signature", "config", "lm", "past_outputs"]:
             kwargs.pop(key, None)
 
-        if dsp.settings.trace is not None:
-            trace = dsp.settings.trace
+        if dspy.settings.trace is not None:
+            trace = dspy.settings.trace
             trace.append((self, {**kwargs}, pred))
         return pred

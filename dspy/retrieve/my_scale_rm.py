@@ -5,8 +5,8 @@ from typing import List, Optional
 import openai
 
 import dspy
-from dsp.modules.cache_utils import NotebookCacheMemory, cache_turn_on
-from dsp.utils import dotdict
+from dspy.dsp.modules.cache_utils import NotebookCacheMemory, cache_turn_on
+from dspy.dsp.utils import dotdict
 
 # Check for necessary libraries and suggest installation if not found.
 try:
