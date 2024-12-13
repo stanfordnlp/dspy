@@ -140,7 +140,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         )
         ```
 
-    === "Retrieval-Augmented Generation"
+    === "RAG"
 
         ```python linenums="1"       
         def search_wikipedia(query: str) -> list[str]:
@@ -236,6 +236,61 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         ```text
         5761.328
         ```
+    
+    === "Multi-Stage Pipelines"
+
+        ```python linenums="1"       
+        class Outline(dspy.Signature):
+            """Outline a thorough overview of a topic."""
+            
+            topic: str = dspy.InputField()
+            title: str = dspy.OutputField()
+            sections: list[str] = dspy.OutputField()
+            section_subheadings: dict[str, list[str]] = dspy.OutputField(desc="mapping from section headings to subheadings")
+
+        class DraftSection(dspy.Signature):
+            """Draft a top-level section of an article."""
+            
+            topic: str = dspy.InputField()
+            section_heading: str = dspy.InputField()
+            section_subheadings: list[str] = dspy.InputField()
+            content: str = dspy.OutputField(desc="markdown-formatted section")
+
+        class DraftArticle(dspy.Module):
+            def __init__(self):
+                self.build_outline = dspy.ChainOfThought(Outline)
+                self.draft_section = dspy.ChainOfThought(DraftSection)
+
+            def forward(self, topic):
+                outline = self.build_outline(topic=topic)
+                sections = []
+                for heading, subheadings in outline.section_subheadings.items():
+                    section, subheadings = f"## {heading}", [f"### {subheading}" for subheading in subheadings]
+                    section = self.draft_section(topic=outline.title, section_heading=section, section_subheadings=subheadings)
+                    sections.append(section.content)
+                return dspy.Prediction(title=outline.title, sections=sections)
+
+        draft_article = DraftArticle()
+        article = draft_article(topic="World Cup 2002")
+        ```
+        
+        **Possible Output:**
+
+        A 1500-word article on the topic, e.g.
+
+        ```text
+        ## Qualification Process
+
+        The qualification process for the 2002 FIFA World Cup involved a series of..... [shortened here for presentation].
+
+        ### UEFA Qualifiers
+
+        The UEFA qualifiers involved 50 teams competing for 13..... [shortened here for presentation].
+
+        .... [rest of the article]
+        ```
+
+        Note that DSPy makes it straightforward to optimize multi-stage modules like this. As long as you can evaluate the _final_ output of the system, every DSPy optimizer can tune all of the intermediate modules.
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
