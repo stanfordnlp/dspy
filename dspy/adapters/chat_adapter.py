@@ -16,7 +16,7 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
-from dspy.signatures.utils import get_dspy_field_type
+from dspy.signatures import get_dspy_field_type
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 

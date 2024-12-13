@@ -9,6 +9,7 @@ from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
 import importlib
 
+from typing import Literal
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
@@ -518,3 +519,11 @@ def infer_prefix(attribute_name: str) -> str:
             title_cased_words.append(word.capitalize())
 
     return " ".join(title_cased_words)
+
+
+
+def get_dspy_field_type(field: FieldInfo) -> Literal["input", "output"]:
+    field_type = field.json_schema_extra.get("__dspy_field_type")
+    if field_type is None:
+        raise ValueError(f"Field {field} does not have a __dspy_field_type")
+    return field_type

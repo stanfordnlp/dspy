@@ -24,6 +24,7 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
+    cache=None
 )
 
 # Global base configuration
@@ -54,6 +55,7 @@ class Settings:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.lock = threading.Lock()  # maintained here for DSPy assertions.py
+
         return cls._instance
 
     def __getattr__(self, name):
