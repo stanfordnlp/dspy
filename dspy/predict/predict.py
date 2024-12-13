@@ -4,12 +4,11 @@ from functools import lru_cache
 
 from pydantic import BaseModel
 
-import dsp
 from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
-from dspy.signatures.signature import ensure_signature, signature_to_template
+from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
 
 
@@ -93,7 +92,8 @@ class Predict(Module, Parameter):
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
-        assert not dsp.settings.compiling, "It's no longer ever the case that .compiling is True"
+        import dspy
+        assert not dspy.settings.compiling, "It's no longer ever the case that .compiling is True"
 
         # Extract the three privileged keyword arguments.
         new_signature = ensure_signature(kwargs.pop("new_signature", None))
@@ -102,7 +102,7 @@ class Predict(Module, Parameter):
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dsp.settings.lm
+        lm = kwargs.pop("lm", self.lm) or dspy.settings.lm
         assert lm is not None, "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
@@ -121,30 +121,13 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        import dspy
-
-        if isinstance(lm, dspy.LM):
-            completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
-        else:
-            warn_once(
-                "\t*** In DSPy 2.5, all LM clients except `dspy.LM` are deprecated, "
-                "underperform, and are about to be deleted. ***\n"
-                f" \t\tYou are using the client {lm.__class__.__name__}, which will be removed in DSPy 2.6.\n"
-                " \t\tChanging the client is straightforward and will let you use new features (Adapters) that"
-                " improve the consistency of LM outputs, especially when using chat LMs. \n\n"
-                " \t\tLearn more about the changes and how to migrate at\n"
-                " \t\thttps://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb"
-            )
-
-            if dsp.settings.experimental:
-                completions = new_generate(lm, signature, dsp.Example(demos=demos, **kwargs), **config)
-            else:
-                completions = old_generate(demos, signature, kwargs, config, self.lm, self.stage)
+        assert isinstance(lm, dspy.LM)
+        completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
-        if kwargs.pop("_trace", True) and dsp.settings.trace is not None:
-            trace = dsp.settings.trace
+        if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
+            trace = dspy.settings.trace
             trace.append((self, {**kwargs}, pred))
 
         return pred
@@ -157,73 +140,6 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
-
-
-def old_generate(demos, signature, kwargs, config, lm, stage):
-    # Switch to legacy format for dsp.generate
-    x = dsp.Example(demos=demos, **kwargs)
-    template = signature_to_template(signature)
-
-    if lm is None:
-        x, C = dsp.generate(template, **config)(x, stage=stage)
-    else:
-        # Note: query_only=True means the instructions and examples are not included.
-        with dsp.settings.context(lm=lm, query_only=True):
-            x, C = dsp.generate(template, **config)(x, stage=stage)
-
-    completions = []
-
-    for c in C:
-        completions.append({})
-        for field in template.fields:
-            if field.output_variable not in kwargs.keys():
-                completions[-1][field.output_variable] = getattr(c, field.output_variable)
-
-    return completions
-
-
-def new_generate(lm, signature, example, max_depth=6, **kwargs):
-    kwargs["stop"] = tuple(kwargs.get("stop", [])) or ("\n---",)
-
-    # Generate and extract the fields.
-    template = signature_to_template(signature, adapter=dsp.ExperimentalAdapter)
-    prompt = template(example)
-    completions = lm(prompt, **kwargs)
-    completions = [template.extract(example, p) for p in completions]
-
-    assert all(set(signature.input_fields).issubset(set(c.keys())) for c in completions), "Missing input keys."
-
-    # Find the completions that are most complete.
-    field_names = [field.input_variable for field in template.fields]
-    for field_idx, key in enumerate(field_names):
-        completions_ = [c for c in completions if key in c.keys() and c[key] is not None]
-        completions = completions_ or completions
-        if len(completions_) == 0:
-            break
-
-    # If none of the completions is completed (i.e., none has the final field set).
-    if len(completions_) == 0:
-        # Pick the first completion that has gone farthest.
-        completion = completions[0]
-
-        for field_idx_ in range(field_idx + 1, len(field_names)):
-            if field_names[field_idx_] in completion:
-                del completion[field_names[field_idx_]]
-
-        # Recurse with greedy decoding.
-        new_kwargs = {
-            **kwargs,
-            "n": 1,
-            "temperature": 0.0,
-        }
-
-        assert max_depth > 0
-        return new_generate(lm, signature, completion, max_depth=max_depth - 1, **new_kwargs)
-
-    # Keep only output fields.
-    completions = [{k: v for k, v in c.items() if k in signature.output_fields} for c in completions]
-
-    return completions
 
 
 def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):

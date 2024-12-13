@@ -1,6 +1,6 @@
 from dspy.predict.aggregation import majority
 from dspy.primitives.prediction import Prediction, Completions
-from dsp.utils import normalize_text
+from dspy.dsp.utils import normalize_text
 
 
 def test_majority_with_prediction():

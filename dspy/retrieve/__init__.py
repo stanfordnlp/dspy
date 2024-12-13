@@ -1,1 +1,1 @@
-from .retrieve import Retrieve, RetrieveThenRerank
+from .retrieve import Retrieve

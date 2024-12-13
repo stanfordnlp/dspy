@@ -12,20 +12,8 @@ import importlib
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-import dsp
 from dspy.adapters.image_utils import Image  # noqa: F401
-from dspy.signatures.field import InputField, OutputField, new_to_old_field
-
-
-def signature_to_template(signature, adapter=None) -> dsp.Template:
-    """Convert from new to legacy format."""
-
-    adapter = adapter or dsp.Template
-
-    return adapter(
-        signature.instructions,
-        **{name: new_to_old_field(field) for name, field in signature.fields.items()},
-    )
+from dspy.signatures.field import InputField, OutputField
 
 
 def _default_instructions(cls) -> str:

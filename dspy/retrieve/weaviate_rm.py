@@ -1,7 +1,7 @@
 from typing import List, Optional, Union
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 from dspy.primitives.prediction import Prediction
 
 try:
