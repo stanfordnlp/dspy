@@ -4,6 +4,8 @@
 
 * [Entity Extraction](/tutorials/entity_extraction/)
 
+* [Privacy-Conscious Delegation](/tutorials/papillon/)
+
 * [Deployment](/tutorials/deployment/)
 
 * [Debugging & Observability](/tutorials/observability/)
