@@ -38,10 +38,20 @@ class JSONAdapter(Adapter):
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+
+            format_param = None
+
+            if provider == 'ollama':
+                format_param = 'format'
+            else:
+                if 'response_format' in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+                    format_param = 'response_format'
+
+            if format_param is not None:
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
-                    outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
+                    lm_kwargs[format_param] = response_format.model_json_schema() if provider == 'ollama' else response_format
+                    outputs = lm(**inputs, **lm_kwargs )
                 except Exception:
                     _logger.debug(
                         "Failed to obtain response using signature-based structured outputs"
