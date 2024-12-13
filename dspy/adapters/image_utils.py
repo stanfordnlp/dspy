@@ -168,8 +168,6 @@ def is_image(obj) -> bool:
     """Check if the object is an image or a valid image reference."""
     if PIL_AVAILABLE and isinstance(obj, PILImage.Image):
         return True
-    # if isinstance(obj, (bytes, bytearray)):
-    #     return True
     if isinstance(obj, str):
         if obj.startswith("data:image/"):
             return True

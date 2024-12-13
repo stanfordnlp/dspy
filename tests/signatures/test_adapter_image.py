@@ -368,7 +368,7 @@ def test_image_optional_input():
         text="hello"
     )
     lm.inspect_history()
-    print(lm.history[-1]["messages"])
+    
     assert result.output == "Image and text: hello with image"
     assert messages_contain_image_url_pattern(lm.history[-1]["messages"])
 
