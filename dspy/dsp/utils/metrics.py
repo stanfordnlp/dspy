@@ -3,31 +3,25 @@ import string
 import unicodedata
 from collections import Counter
 
-from dsp.utils.utils import print_message
+from dspy.dsp.utils.utils import print_message
 
 
 def EM(prediction, answers_list):
-    assert type(answers_list) == list
+    assert isinstance(answers_list, list)
 
     return max(em_score(prediction, ans) for ans in answers_list)
 
 
 def F1(prediction, answers_list):
-    assert type(answers_list) == list
+    assert isinstance(answers_list, list)
 
     return max(f1_score(prediction, ans) for ans in answers_list)
 
 
 def HotPotF1(prediction, answers_list):
-    assert type(answers_list) == list
+    assert isinstance(answers_list, list)
 
     return max(hotpot_f1_score(prediction, ans) for ans in answers_list)
-
-
-def nF1(history, prediction, answers_list, return_recall=False):
-    assert type(answers_list) == list
-
-    return max(novel_f1_score(history, prediction, ans, return_recall=return_recall) for ans in answers_list)
 
 
 def normalize_text(s):
@@ -118,43 +112,3 @@ def precision_score(prediction, ground_truth):
     precision = 1.0 * num_same / len(prediction_tokens)
 
     return precision
-
-
-# Source: https://gist.github.com/sebleier/554280
-stopwords = ["i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself",
-             "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself",
-             "they", "them", "their", "theirs", "themselves", "what", "which", "who", "whom", "this", "that", "these",
-             "those", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having", "do",
-             "does", "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until", "while",
-             "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before",
-             "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again",
-             "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each",
-             "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than",
-             "too", "very", "s", "t", "can", "will", "just", "don", "should", "now"]
-
-
-def novel_f1_score(history, prediction, ground_truth, return_recall=False):
-    history_tokens = normalize_text(history).split()
-    prediction_tokens = normalize_text(prediction).split()
-    ground_truth_tokens = normalize_text(ground_truth).split()
-
-    history_tokens = set(history_tokens + stopwords)
-
-    prediction_tokens = [
-        t for t in prediction_tokens if t not in history_tokens]
-    ground_truth_tokens = [
-        t for t in ground_truth_tokens if t not in history_tokens]
-
-    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
-    num_same = sum(common.values())
-    if num_same == 0:
-        return 0
-
-    precision = 1.0 * num_same / len(prediction_tokens)
-    recall = 1.0 * num_same / len(ground_truth_tokens)
-    f1 = (2 * precision * recall) / (precision + recall)
-
-    if return_recall:
-        return recall
-
-    return f1

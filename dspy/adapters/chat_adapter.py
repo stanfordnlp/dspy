@@ -12,7 +12,6 @@ import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
@@ -281,7 +280,7 @@ def get_annotation_name(annotation):
         return f"{get_annotation_name(origin)}[{args_str}]"
 
 
-def enumerate_fields(fields: dict[str, Field]) -> str:
+def enumerate_fields(fields: dict) -> str:
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
