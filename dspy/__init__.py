@@ -9,7 +9,7 @@ import dspy.retrievers
 from .functional import *  # isort: skip
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
-from dspy.adapters import *  # isort: skip
+from dspy.adapters import Adapter, ChatAdapter, JSONAdapter  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load
@@ -24,17 +24,10 @@ from dspy.dsp.modules.colbertv2 import ColBERTv2
 configure = settings.configure
 context = settings.context
 
-from dspy.utils.cache import Cache
-from dspy.clients import DISK_CACHE_DIR, DISK_CACHE_LIMIT
-MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf")))  # unlimited by default
+from dspy.utils.cache import DSPY_CACHE
 
-# Initialize the cache
-dspy_cache = Cache(
-    directory=os.path.join(DISK_CACHE_DIR, ".cache_v2_6"),
-    disk_size_limit=DISK_CACHE_LIMIT,
-    mem_size_limit=MEM_CACHE_LIMIT
-)
-settings.configure(cache=dspy_cache)
+cache = DSPY_CACHE
+
 
 import dspy.teleprompt
 

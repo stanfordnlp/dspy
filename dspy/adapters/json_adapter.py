@@ -18,7 +18,7 @@ from dspy.adapters.utils import find_enum_member, format_field_value, serialize_
 
 from ..adapters.image_utils import Image
 from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
+from ..signatures import get_dspy_field_type
 
 _logger = logging.getLogger(__name__)
 

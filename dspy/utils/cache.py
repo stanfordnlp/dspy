@@ -1,14 +1,29 @@
+import os
 import ujson
 import pickle
+import litellm
 import pydantic
 import threading
 
-from diskcache import FanoutCache
-from cachetools import LRUCache
+from pathlib import Path
 from hashlib import sha256
-from typing import Any, Dict
 from functools import wraps
+from typing import Any, Dict
+from cachetools import LRUCache
+from diskcache import FanoutCache
+from litellm.caching import Cache as litellm_cache
 
+
+DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
+MEM_CACHE_LIMIT = float(os.environ.get("DSPY_CACHE_LIMIT", float("inf")))  # unlimited by default
+
+# TODO: There's probably value in separating the limit for
+# the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
+litellm.cache = litellm_cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+
+if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
+    litellm.cache.cache.disk_cache.reset('size_limit', DISK_CACHE_LIMIT)
 
 class Cache:
     """
@@ -74,6 +89,8 @@ class Cache:
         
         with self.lock:
             self.memory_cache[key] = value
+            print(f"Setting cache key: {key}")
+            print(f"Setting cache value: {value}")
             self.fanout_cache[key] = value
 
     def load(self, file_path: str):
@@ -101,7 +118,7 @@ def cache_decorator(ignore=None, keep=None):
         @wraps(func)
         def wrapper(**kwargs):
             import dspy
-            cache = dspy.settings.cache
+            cache = dspy.cache
 
             # Use fully qualified function name for uniqueness
             func_identifier = f"{func.__module__}.{func.__qualname__}"
@@ -129,3 +146,11 @@ def cache_decorator(ignore=None, keep=None):
 
         return wrapper
     return decorator
+
+
+# Initialize the cache
+DSPY_CACHE = Cache(
+    directory=os.path.join(DISK_CACHE_DIR, ".cache_v2_6"),
+    disk_size_limit=DISK_CACHE_LIMIT,
+    mem_size_limit=MEM_CACHE_LIMIT
+)
