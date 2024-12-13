@@ -8,8 +8,8 @@ from typing import Optional, Union
 import numpy as np
 
 import dspy
-from dsp.modules.sentence_vectorizer import SentenceTransformersVectorizer
-from dsp.utils import dotdict
+from dspy.dsp.modules.sentence_vectorizer import SentenceTransformersVectorizer
+from dspy.dsp.utils import dotdict
 
 try:
     import faiss

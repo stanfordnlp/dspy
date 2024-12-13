@@ -4,7 +4,7 @@ from pathlib import Path
 
 from joblib import Memory
 
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 cache_turn_on = os.environ.get('DSP_CACHEBOOL', 'True').lower() != 'false'
 

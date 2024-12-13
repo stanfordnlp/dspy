@@ -3,7 +3,7 @@ import logging
 import uuid
 from typing import Any
 
-import dsp
+# import dspy.dsp as dsp
 import dspy
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ class Assert(Constraint):
                     id=self.id,
                     msg=self.msg,
                     target_module=self.target_module,
-                    state=dsp.settings.trace,
+                    state=dspy.settings.trace,
                     is_metric=self.is_metric,
                 )
         else:
@@ -115,7 +115,7 @@ class Suggest(Constraint):
                     id=self.id,
                     msg=self.msg,
                     target_module=self.target_module,
-                    state=dsp.settings.trace,
+                    state=dspy.settings.trace,
                     is_metric=self.is_metric,
                 )
         else:
@@ -213,12 +213,12 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                 if i == max_backtracks:
                     if isinstance(current_error, DSPyAssertionError):
                         raise current_error
-                    dsp.settings.trace.clear()
+                    dspy.settings.trace.clear()
                     result = bypass_suggest_handler(func)(*args, **kwargs) if bypass_suggest else None
                     break
                 else:
                     try:
-                        dsp.settings.trace.clear()
+                        dspy.settings.trace.clear()
                         result = func(*args, **kwargs)
                         break
                     except (DSPySuggestionError, DSPyAssertionError) as e:
@@ -237,17 +237,17 @@ def backtrack_handler(func, bypass_suggest=True, max_backtracks=2):
                         elif isinstance(e, DSPyAssertionError) and e.is_metric:
                             dspy.settings.assert_failures += 1
 
-                        if dsp.settings.trace:
+                        if dspy.settings.trace:
                             if error_target_module:
-                                for i in range(len(dsp.settings.trace) - 1, -1, -1):
-                                    trace_element = dsp.settings.trace[i]
+                                for i in range(len(dspy.settings.trace) - 1, -1, -1):
+                                    trace_element = dspy.settings.trace[i]
                                     mod = trace_element[0]
                                     if mod == error_target_module:
                                         error_state = e.state[i]
                                         dspy.settings.backtrack_to = mod
                                         break
                             else:
-                                dspy.settings.backtrack_to = dsp.settings.trace[-1][0]
+                                dspy.settings.backtrack_to = dspy.settings.trace[-1][0]
 
                             if dspy.settings.backtrack_to is None:
                                 logger.error("Module not found in trace. If passing a DSPy Signature, please specify the intended module for the assertion (e.g., use `target_module = self.my_module(my_signature)` instead of `target_module =  my_signature`).")

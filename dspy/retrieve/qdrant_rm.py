@@ -2,8 +2,8 @@ from collections import defaultdict
 from typing import Optional, Union
 
 import dspy
-from dsp.modules.sentence_vectorizer import BaseSentenceVectorizer, FastEmbedVectorizer
-from dsp.utils import dotdict
+from dspy.dsp.modules.sentence_vectorizer import BaseSentenceVectorizer, FastEmbedVectorizer
+from dspy.dsp.utils import dotdict
 
 try:
     from qdrant_client import QdrantClient, models

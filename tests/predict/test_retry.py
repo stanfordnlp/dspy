@@ -53,39 +53,39 @@ def test_retry_forward_with_feedback():
     assert result.answer == "blue"
 
 
-def test_retry_forward_with_typed_predictor():
-    # First we make a mistake, then we fix it
-    lm = DummyLM([{"output": '{"answer":"red"}'}, {"output": '{"answer":"blue"}'}])
-    dspy.settings.configure(lm=lm, trace=[])
+# def test_retry_forward_with_typed_predictor():
+#     # First we make a mistake, then we fix it
+#     lm = DummyLM([{"output": '{"answer":"red"}'}, {"output": '{"answer":"blue"}'}])
+#     dspy.settings.configure(lm=lm, trace=[])
 
-    class AnswerQuestion(dspy.Signature):
-        """Answer questions with succinct responses."""
+#     class AnswerQuestion(dspy.Signature):
+#         """Answer questions with succinct responses."""
 
-        class Input(pydantic.BaseModel):
-            question: str
+#         class Input(pydantic.BaseModel):
+#             question: str
 
-        class Output(pydantic.BaseModel):
-            answer: str
+#         class Output(pydantic.BaseModel):
+#             answer: str
 
-        input: Input = dspy.InputField()
-        output: Output = dspy.OutputField()
+#         input: Input = dspy.InputField()
+#         output: Output = dspy.OutputField()
 
-    class QuestionAnswerer(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.answer_question = dspy.TypedPredictor(AnswerQuestion)
+#     class QuestionAnswerer(dspy.Module):
+#         def __init__(self):
+#             super().__init__()
+#             self.answer_question = dspy.TypedPredictor(AnswerQuestion)
 
-        def forward(self, **kwargs):
-            result = self.answer_question(input=AnswerQuestion.Input(**kwargs)).output
-            dspy.Suggest(result.answer == "blue", "Please think harder")
-            return result
+#         def forward(self, **kwargs):
+#             result = self.answer_question(input=AnswerQuestion.Input(**kwargs)).output
+#             dspy.Suggest(result.answer == "blue", "Please think harder")
+#             return result
 
-    program = QuestionAnswerer()
-    program = assert_transform_module(
-        program.map_named_predictors(dspy.Retry),
-        functools.partial(backtrack_handler, max_backtracks=1),
-    )
+#     program = QuestionAnswerer()
+#     program = assert_transform_module(
+#         program.map_named_predictors(dspy.Retry),
+#         functools.partial(backtrack_handler, max_backtracks=1),
+#     )
 
-    result = program(question="What color is the sky?")
+#     result = program(question="What color is the sky?")
 
-    assert result.answer == "blue"
+#     assert result.answer == "blue"

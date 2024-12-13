@@ -78,7 +78,7 @@ class ParallelExecutor:
                     break
 
                 # Create an isolated context for each task using thread-local overrides
-                from dsp.utils.settings import thread_local_overrides
+                from dspy.dsp.utils.settings import thread_local_overrides
                 original_overrides = thread_local_overrides.overrides
                 thread_local_overrides.overrides = thread_local_overrides.overrides.copy()
 
@@ -146,7 +146,7 @@ class ParallelExecutor:
                 return index, job_cancelled
 
             # Create an isolated context for each task using thread-local overrides
-            from dsp.utils.settings import thread_local_overrides
+            from dspy.dsp.utils.settings import thread_local_overrides
             original_overrides = thread_local_overrides.overrides
             thread_local_overrides.overrides = parent_overrides.copy()
 
@@ -157,7 +157,7 @@ class ParallelExecutor:
 
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor, interrupt_handler_manager():
             # Capture the parent thread's overrides
-            from dsp.utils.settings import thread_local_overrides
+            from dspy.dsp.utils.settings import thread_local_overrides
             parent_overrides = thread_local_overrides.overrides.copy()
 
             futures = {}

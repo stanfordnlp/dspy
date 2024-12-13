@@ -1,7 +1,7 @@
 import copy
 import threading
 from contextlib import contextmanager
-from dsp.utils.utils import dotdict
+from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
     lm=None,
