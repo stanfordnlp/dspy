@@ -19,9 +19,9 @@ def meta_knn_optimizer_caller(default_program, trainset, devset, test_name, data
     """
     # Initialize the teleprompter with our MetaKNNFewShot optimizer
     teleprompter = MetaKNNFewShot(
-        k=20,  # Number of nearest neighbors
+        k=10,  # Number of nearest neighbors
         trainset=trainset,
-        n_programs=16,  # Number of different programs to generate
+        n_programs=64,  # Number of different programs to generate
         metric=kwargs["metric"],
         max_labeled_demos=8,
         max_rounds=1
@@ -69,7 +69,7 @@ def main():
         print("\nRunning MetaKNNFewShot optimizer tests...")
         tester.test_optimizer_default(
             meta_knn_optimizer_caller,
-            datasets=["hotpotqa", "gsm8k"],
+            datasets=["hotpotqa"],
             test_name="meta_knn_v1"
         )
 

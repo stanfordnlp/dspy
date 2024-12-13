@@ -24,16 +24,16 @@ dspy.settings.configure(lm=lm, embedder=embedder)
 
 # Initialize the tester
 tester = BootstrapMaxScoreTester(
-    n_programs=64,
-    max_labeled_demos=16,
+    n_programs=10,
+    max_labeled_demos=8,
     early_stopping_threshold=0.95,
-    num_threads=16,
-    dataset_name="hotpotqa",
+    num_threads=32,
+    dataset_name="hover_retrieve_discrete",
 )
 
 # Load dataset
 optimizer_tester = OptimizerTester(task_model=lm, prompt_model=lm)
-task = optimizer_tester.load_dataset("hotpotqa")
+task = optimizer_tester.load_dataset("hover_retrieve_discrete")
 
 # Run the test
 results = tester.test_dataset(task)

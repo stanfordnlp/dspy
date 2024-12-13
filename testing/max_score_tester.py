@@ -7,7 +7,7 @@ import openai
 from dotenv import load_dotenv
 import dspy
 from dspy.teleprompt import BootstrapFewShot
-from dspy.evaluate import Evaluate
+from dspy.evaluate import Evaluate, answer_exact_match, SemanticF1
 from abc import ABC, abstractmethod
 
 class BaseMaxScoreTester(ABC):
@@ -201,10 +201,17 @@ class BaseMaxScoreTester(ABC):
                             item_results[f'found_titles_diff_gold_titles_{prog_idx}'] = found_titles.difference(gold_titles)
                             item_results[f'found_titles_diff_gold_titles_len_{prog_idx}'] = len(found_titles.difference(gold_titles))
                         
+                        if self.dataset_name == "hotpotqa":
+                            item_results[f'exact_match_{prog_idx}'] = answer_exact_match(item, prediction)
+                            item_results[f'semantic_f1_95_{prog_idx}'] = SemanticF1(threshold=0.95)(item, prediction)
+
                         # Check if this program passed and it's our first success
-                        if score > 0 and item_results['successful_prediction'] is None:
+                        if score == 1.0 and item_results['successful_prediction'] is None:
                             item_results['successful_prediction'] = str(prediction)
                             item_results['successful_program_idx'] = prog_idx
+                            if self.dataset_name == "hotpotqa":
+                                item_results[f'successful_exact_match'] = answer_exact_match(item, prediction)
+                                item_results[f'successful_semantic_f1_95'] = SemanticF1(threshold=0.95)(item, prediction)
                             break
                             
                     except Exception as e:
@@ -248,7 +255,7 @@ class BaseMaxScoreTester(ABC):
 
         # Calculate overall statistics
         solved_items = performance_df[program_columns].apply(
-            lambda x: (x > 0).any(), axis=1
+            lambda x: (x == 1).any(), axis=1
         ).mean()
         
         print(f"\n{split_name} Items Solved: {solved_items:.2%}")
@@ -290,7 +297,7 @@ class BootstrapMaxScoreTester(BaseMaxScoreTester):
         self.n_programs = n_programs
         # Store bootstrap args
         self.bootstrap_args = {
-            "max_bootstrapped_demos": 1,
+            "max_bootstrapped_demos": max_labeled_demos,
             "max_labeled_demos": max_labeled_demos,
             "max_rounds": max_rounds,
         }
