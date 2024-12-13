@@ -86,6 +86,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -103,6 +104,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
@@ -217,6 +219,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                    num_threads=self.num_threads,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -234,6 +237,7 @@ class BootstrapKNNWithRandomSearch(Teleprompter):
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
                     num_static_demos=num_static_demos,
+                    num_threads=self.num_threads,
                     random_seed=seed,
                 )
 
