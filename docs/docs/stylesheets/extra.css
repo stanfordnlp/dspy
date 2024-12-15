@@ -201,14 +201,14 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 
 /* Add indentation and visual cues for nested navigation items */
 .md-nav__item .md-nav__item {
-    padding-left: 1rem;
-    border-left: 2px solid var(--md-primary-fg-color--light);
-    margin-left: 0.5rem;
+    padding-left: 0.3rem;
+    border-left: 1px solid var(--md-primary-fg-color--light);
+    margin-left: 0.2rem;
 }
 
 /* Add some spacing between items */
 .md-nav__item {
-    margin: 0.4em 0;
+    margin: 0.3em 0;  /* Reduced from 0.4em */
 }
 
 /* Optional: add hover effect */

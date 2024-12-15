@@ -28,6 +28,26 @@ def construct_undefined(loader, suffix, node):
 CustomLoader.add_multi_constructor("tag:yaml.org,2002:python/name:", construct_undefined)
 CustomLoader.add_multi_constructor("!", construct_undefined)
 
+
+def build_nav_structure(directory: Path, base_path: Path) -> dict:
+    """Recursively build navigation structure for a directory."""
+    nav = {}
+
+    # First handle all MD files in current directory
+    for path in sorted(directory.glob("*.md")):
+        name = path.stem
+        nav[name] = str(path.relative_to(base_path))
+
+    # Then handle all subdirectories
+    for path in sorted(directory.iterdir()):
+        if path.is_dir():
+            sub_nav = build_nav_structure(path, base_path)
+            if sub_nav:  # Only add non-empty directories
+                nav[path.name] = sub_nav
+
+    return nav
+
+
 # First read the existing mkdocs.yml
 with open("mkdocs.yml", "r") as f:
     lines = f.readlines()
@@ -65,18 +85,11 @@ with open("mkdocs.yml", "r") as f:
 api_nav = {}
 api_path = Path("docs/api")
 
-# First, find all top-level directories
-top_level_dirs = [d for d in api_path.iterdir() if d.is_dir()]
-
-# Then process files in each directory
-for dir_path in sorted(top_level_dirs):
-    category = dir_path.name
-    api_nav[category] = {}
-
-    for path in sorted(dir_path.rglob("*.md")):
-        doc_path = path.relative_to("docs")
-        module_name = path.stem
-        api_nav[category][module_name] = doc_path.as_posix()
+# Process each top-level module directory
+for dir_path in sorted(api_path.iterdir()):
+    if dir_path.is_dir():
+        category = dir_path.name
+        api_nav[category] = build_nav_structure(dir_path, Path("docs"))
 
 
 def format_nav_section(nav_dict, indent_level=2):

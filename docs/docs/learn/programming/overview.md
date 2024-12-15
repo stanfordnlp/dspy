@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Programming in DSPy
+# Build your DSPy program
 
 DSPy is a bet on _writing code instead of strings_. In other words, building the right control flow is crucial. Start by **defining your task**. What are the inputs to your system and what should your system produce as output? Is it a chatbot over your data or perhaps a code assistant? Or maybe a system for translation, for highlighting snippets from search results, or for generating reports with citations?
 
