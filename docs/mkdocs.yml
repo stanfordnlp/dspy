@@ -8,144 +8,214 @@ repo_name: stanfordnlp/dspy
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 nav:
-  - Home: index.md
-  - Learn DSPy:
-      - Learning DSPy: learn/index.md
-      - DSPy Programming:
-          - Programming Overview: learn/programming/overview.md
-          - Language Models: learn/programming/language_models.md
-          - Signatures: learn/programming/signatures.md
-          - Modules: learn/programming/modules.md
-      - DSPy Evaluation:
-          - Evaluation Overview: learn/evaluation/overview.md
-          - Data Handling: learn/evaluation/data.md
-          - Metrics: learn/evaluation/metrics.md
-      - DSPy Optimization:
-          - Optimization Overview: learn/optimization/overview.md
-          - Optimizers: learn/optimization/optimizers.md
-      - Other References:
-          - Retrieval Clients:
-              - Azure: deep-dive/retrieval_models_clients/Azure.md
-              - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
-              - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
-              - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
-              - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
-              - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
-              - FalkordbRM: deep-dive/retrieval_models_clients/FalkordbRM.md
-              - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
-              - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
-              - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
-              - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
-              - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
-              - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
-              - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
-              - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
-              - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
-              - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
-              - YouRM: deep-dive/retrieval_models_clients/YouRM.md
-  - Tutorials:
-      - Tutorials Overview: tutorials/index.md
-      - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
-      - Math Reasoning: tutorials/math/index.ipynb
-      - Entity Extraction: tutorials/entity_extraction/index.ipynb
-      - Privacy-Conscious Delegation: tutorials/papillon/index.md
-      - Deployment: tutorials/deployment/index.md
-      - Debugging & Observability: tutorials/observability/index.md
-  - Community:
-      - Community Resources: community/community-resources.md
-      - Use Cases: community/use-cases.md
-      - Roadmap: roadmap.md
-      - Contributing: community/how-to-contribute.md
-  - FAQ:
-      - FAQ: faqs.md
-      - Cheatsheet: cheatsheet.md
+    - Home: index.md
+    - Learn DSPy:
+        - Learning DSPy: learn/index.md
+        - DSPy Programming:
+            - Programming Overview: learn/programming/overview.md
+            - Language Models: learn/programming/language_models.md
+            - Signatures: learn/programming/signatures.md
+            - Modules: learn/programming/modules.md
+        - DSPy Evaluation:
+            - Evaluation Overview: learn/evaluation/overview.md
+            - Data Handling: learn/evaluation/data.md
+            - Metrics: learn/evaluation/metrics.md
+        - DSPy Optimization:
+            - Optimization Overview: learn/optimization/overview.md
+            - Optimizers: learn/optimization/optimizers.md
+        - Other References:
+            - Retrieval Clients:
+                - Azure: deep-dive/retrieval_models_clients/Azure.md
+                - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
+                - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
+                - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
+                - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
+                - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
+                - FalkordbRM: deep-dive/retrieval_models_clients/FalkordbRM.md
+                - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
+                - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
+                - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
+                - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
+                - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
+                - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
+                - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
+                - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
+                - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
+                - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
+                - YouRM: deep-dive/retrieval_models_clients/YouRM.md
+    - Tutorials:
+        - Tutorials Overview: tutorials/index.md
+        - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
+        - Math Reasoning: tutorials/math/index.ipynb
+        - Entity Extraction: tutorials/entity_extraction/index.ipynb
+        - Privacy-Conscious Delegation: tutorials/papillon/index.md
+        - Deployment: tutorials/deployment/index.md
+        - Debugging & Observability: tutorials/observability/index.md
+    - Community:
+        - Community Resources: community/community-resources.md
+        - Use Cases: community/use-cases.md
+        - Roadmap: roadmap.md
+        - Contributing: community/how-to-contribute.md
+    - FAQ:
+        - FAQ: faqs.md
+        - Cheatsheet: cheatsheet.md
+
+    - API Reference:
+        - datasets:
+            - colors: api/datasets/colors/colors.md
+            - dataloader: api/datasets/dataloader/dataloader.md
+            - dataset: api/datasets/dataset/dataset.md
+            - datasets: api/datasets/datasets.md
+            - gsm8k: api/datasets/gsm8k/gsm8k.md
+            - hotpotqa: api/datasets/hotpotqa/hotpotqa.md
+            - math: api/datasets/math/math.md
+        - evaluate:
+            - auto_evaluation: api/evaluate/auto_evaluation/auto_evaluation.md
+            - evaluate: api/evaluate/evaluate.md
+            - metrics: api/evaluate/metrics/metrics.md
+        - predict:
+            - aggregation: api/predict/aggregation/aggregation.md
+            - avatar: api/predict/avatar/avatar.md
+            - chain_of_thought: api/predict/chain_of_thought/chain_of_thought.md
+            - chain_of_thought_with_hint: api/predict/chain_of_thought_with_hint/chain_of_thought_with_hint.md
+            - knn: api/predict/knn/knn.md
+            - langchain: api/predict/langchain/langchain.md
+            - llamaindex: api/predict/llamaindex/llamaindex.md
+            - models: api/predict/avatar/models/models.md
+            - multi_chain_comparison: api/predict/multi_chain_comparison/multi_chain_comparison.md
+            - parallel: api/predict/parallel/parallel.md
+            - parameter: api/predict/parameter/parameter.md
+            - predict: api/predict/predict.md
+            - program_of_thought: api/predict/program_of_thought/program_of_thought.md
+            - react: api/predict/react/react.md
+            - react_tmp: api/predict/react_tmp/react_tmp.md
+            - retry: api/predict/retry/retry.md
+            - save_tmp: api/predict/save_tmp/save_tmp.md
+            - signatures: api/predict/avatar/signatures/signatures.md
+            - tmp: api/predict/tmp/tmp.md
+        - primitives:
+            - assertions: api/primitives/assertions/assertions.md
+            - box: api/primitives/box/box.md
+            - example: api/primitives/example/example.md
+            - module: api/primitives/module/module.md
+            - prediction: api/primitives/prediction/prediction.md
+            - primitives: api/primitives/primitives.md
+            - program: api/primitives/program/program.md
+            - python_interpreter: api/primitives/python_interpreter/python_interpreter.md
+        - signatures:
+            - field: api/signatures/field/field.md
+            - signature: api/signatures/signature/signature.md
+            - signatures: api/signatures/signatures.md
+            - utils: api/signatures/utils/utils.md
+        - teleprompt:
+            - avatar_optimizer: api/teleprompt/avatar_optimizer/avatar_optimizer.md
+            - bettertogether: api/teleprompt/bettertogether/bettertogether.md
+            - bootstrap: api/teleprompt/bootstrap/bootstrap.md
+            - bootstrap_finetune: api/teleprompt/bootstrap_finetune/bootstrap_finetune.md
+            - copro_optimizer: api/teleprompt/copro_optimizer/copro_optimizer.md
+            - ensemble: api/teleprompt/ensemble/ensemble.md
+            - knn_fewshot: api/teleprompt/knn_fewshot/knn_fewshot.md
+            - mipro_optimizer: api/teleprompt/mipro_optimizer/mipro_optimizer.md
+            - mipro_optimizer_v2: api/teleprompt/mipro_optimizer_v2/mipro_optimizer_v2.md
+            - print_tmp: api/teleprompt/print_tmp/print_tmp.md
+            - random_search: api/teleprompt/random_search/random_search.md
+            - signature_opt: api/teleprompt/signature_opt/signature_opt.md
+            - signature_opt_bayesian: api/teleprompt/signature_opt_bayesian/signature_opt_bayesian.md
+            - teleprompt: api/teleprompt/teleprompt.md
+            - teleprompt_optuna: api/teleprompt/teleprompt_optuna/teleprompt_optuna.md
+            - utils: api/teleprompt/utils/utils.md
+            - vanilla: api/teleprompt/vanilla/vanilla.md
 
 theme:
-  name: material
-  custom_dir: overrides
-  features:
-    - navigation.tabs
-    - navigation.path
-    - navigation.indexes
-    - toc.follow
-    - navigation.top
-    - search.suggest
-    - search.highlight
-    - content.tabs.link
-    - content.code.annotation
-    - content.code.copy
-    - navigation.footer
-    - content.action.edit
-  language: en
-  palette:
-    - scheme: default
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-      primary: white
-      accent: black
-    - scheme: slate
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
-      primary: black
-      accent: lime
-  icon:
-    repo: fontawesome/brands/git-alt
-    edit: material/pencil
-    view: material/eye
-  logo: static/img/dspy_logo.png
-  favicon: static/img/logo.png
+    name: material
+    custom_dir: overrides
+    features:
+        - navigation.tabs
+        - navigation.path
+        - navigation.indexes
+        - toc.follow
+        - navigation.top
+        - search.suggest
+        - search.highlight
+        - content.tabs.link
+        - content.code.annotation
+        - content.code.copy
+        - navigation.footer
+        - content.action.edit
+    language: en
+    palette:
+        - scheme: default
+          toggle:
+              icon: material/weather-night
+              name: Switch to dark mode
+          primary: white
+          accent: black
+        - scheme: slate
+          toggle:
+              icon: material/weather-sunny
+              name: Switch to light mode
+          primary: black
+          accent: lime
+    icon:
+        repo: fontawesome/brands/git-alt
+        edit: material/pencil
+        view: material/eye
+    logo: static/img/dspy_logo.png
+    favicon: static/img/logo.png
 
 extra_css:
-  - stylesheets/extra.css
+    - stylesheets/extra.css
 
 plugins:
-  - social
-  - search
-  - mkdocstrings
-  # - blog
-  - mkdocs-jupyter:
-      ignore_h1_titles: True
-  - redirects:
-      redirect_maps:
-        # Redirect /intro/ to the main page
-        "intro/index.md": "index.md"
-        "intro.md": "index.md"
+    - social
+    - search
+    - mkdocs-jupyter:
+        ignore_h1_titles: True
+    - mkdocstrings:
+          handlers:
+              python:
+                  options:
+                      docstring_style: google
+                      show_source: true
+    - redirects:
+          redirect_maps:
+              # Redirect /intro/ to the main page
+              "intro/index.md": "index.md"
+              "intro.md": "index.md"
 
-        "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-        "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
-        "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-        "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+              "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+              "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+              "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
+              "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
 
 extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/stanfordnlp/dspy
-    - icon: fontawesome/brands/discord
-      link: https://discord.gg/XCGy2WDCQB
+    social:
+        - icon: fontawesome/brands/github
+          link: https://github.com/stanfordnlp/dspy
+        - icon: fontawesome/brands/discord
+          link: https://discord.gg/XCGy2WDCQB
 
 extra_javascript:
-  - "js/runllm-widget.js"
+    - "js/runllm-widget.js"
 
 markdown_extensions:
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
-  - admonition
-  - pymdownx.arithmatex:
-      generic: true
-  - footnotes
-  - pymdownx.details
-  - pymdownx.superfences
-  - pymdownx.mark
-  - attr_list
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+    - pymdownx.tabbed:
+          alternate_style: true
+    - pymdownx.highlight:
+          anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.snippets
+    - admonition
+    - pymdownx.arithmatex:
+          generic: true
+    - footnotes
+    - pymdownx.details
+    - pymdownx.superfences
+    - pymdownx.mark
+    - attr_list
+    - pymdownx.emoji:
+          emoji_index: !!python/name:material.extensions.emoji.twemoji
+          emoji_generator: !!python/name:materialx.emoji.to_svg
 
 copyright: |
-  &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>
+    &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>
