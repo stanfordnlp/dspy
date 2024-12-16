@@ -32,7 +32,7 @@ class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
@@ -58,7 +58,7 @@ class JSONAdapter(Adapter):
         values = []
 
         for output in outputs:
-            value = self.parse(signature, output, _parse_values=_parse_values)
+            value = self.parse(signature, output)
             assert set(value.keys()) == set(
                 signature.output_fields.keys()
             ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
@@ -90,7 +90,7 @@ class JSONAdapter(Adapter):
 
         return messages
 
-    def parse(self, signature, completion, _parse_values=True):
+    def parse(self, signature, completion):
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 

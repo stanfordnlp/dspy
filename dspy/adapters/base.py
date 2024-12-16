@@ -13,7 +13,7 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
@@ -27,7 +27,7 @@ class Adapter(ABC):
                 if isinstance(output, dict):
                     output, output_logprobs = output["text"], output["logprobs"]
 
-                value = self.parse(signature, output, _parse_values=_parse_values)
+                value = self.parse(signature, output)
 
                 assert set(value.keys()) == set(signature.output_fields.keys()), \
                     f"Expected {signature.output_fields.keys()} but got {value.keys()}"
@@ -41,8 +41,8 @@ class Adapter(ABC):
 
         except Exception as e:
             from .json_adapter import JSONAdapter
-            if _parse_values and not isinstance(self, JSONAdapter):
-                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs, _parse_values=_parse_values)
+            if not isinstance(self, JSONAdapter):
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
             raise e
 
     @abstractmethod
@@ -50,7 +50,7 @@ class Adapter(ABC):
        raise NotImplementedError
 
     @abstractmethod
-    def parse(self, signature, completion, _parse_values):
+    def parse(self, signature, completion):
        raise NotImplementedError
 
     def format_finetune_data(self, signature, demos, inputs, outputs):
