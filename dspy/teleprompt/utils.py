@@ -257,18 +257,13 @@ def get_prompt_model(prompt_model):
         return dspy.settings.lm
 
 def get_signature(predictor):
-    if hasattr(predictor, "extended_signature"):
-        return predictor.extended_signature
-    elif hasattr(predictor, "signature"):
-        return predictor.signature
-    return None
+    assert hasattr(predictor, "signature")
+    return predictor.signature
 
 
 def set_signature(predictor, updated_signature):
-    if hasattr(predictor, "extended_signature"):
-        predictor.extended_signature = updated_signature
-    elif hasattr(predictor, "signature"):
-        predictor.signature = updated_signature
+    assert hasattr(predictor, "signature")
+    predictor.signature = updated_signature
 
 
 def create_n_fewshot_demo_sets(
