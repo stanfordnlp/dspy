@@ -58,7 +58,7 @@ class ChatAdapter(Adapter):
         messages.append(format_turn(signature, inputs, role="user"))
         return messages
 
-    def parse(self, signature, completion, _parse_values=True):
+    def parse(self, signature, completion):
         sections = [(None, [])]
 
         for line in completion.splitlines():
@@ -74,7 +74,7 @@ class ChatAdapter(Adapter):
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation) if _parse_values else v
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except Exception as e:
                     raise ValueError(
                         f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
