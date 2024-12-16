@@ -229,7 +229,7 @@ target-version = "py39"
 select = [
     "F", # Pyflakes
     "E", # Pycodestyle
-
+    "TID252",  # Absolute imports
 ]
 ignore = [
     "E501", # Line too long

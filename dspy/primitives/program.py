@@ -1,10 +1,9 @@
-from dspy.utils.callback import with_callbacks
 import magicattr
 
 from dspy.predict.parallel import Parallel
+from dspy.primitives.assertions import assert_transform_module, backtrack_handler
 from dspy.primitives.module import BaseModule
-# import dspy
-# from dspy.primitives.assertions import *
+from dspy.utils.callback import with_callbacks
 
 
 class ProgramMeta(type):
