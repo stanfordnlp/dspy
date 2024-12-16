@@ -256,14 +256,15 @@ class BaseModule:
 
 
 def postprocess_parameter_name(name, value):
-    # For ChainOfThought backward compatibility, remove ending ._predict if it's there
-    if name.endswith("._predict"):
-        name = name[:-9]
-
-    if name.endswith(".self"):
-        name = name[:-5]
-
-    if name == "_predict":
-        return "self"
-
     return name
+    # # For ChainOfThought backward compatibility, remove ending ._predict if it's there
+    # if name.endswith("._predict"):
+    #     name = name[:-9]
+
+    # if name.endswith(".self"):
+    #     name = name[:-5]
+
+    # if name == "_predict":
+    #     return "self"
+
+    # return name
