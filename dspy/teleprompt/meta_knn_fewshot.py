@@ -1,27 +1,28 @@
 import random
 from typing import List
 import pandas as pd
-import dsp
+import warnings
+from tqdm import tqdm
+import dspy
 from dspy.predict.knn import KNN
 from dspy.teleprompt import BootstrapFewShot
 from .teleprompt import Teleprompter
-import types  # Add missing import
+import types
 from dspy.predict.parallel import Parallel
-import warnings  # Add at the top with other imports
-from tqdm import tqdm  # Add this import at the top with other imports
+
 
 class MetaKNNFewShot(Teleprompter):
     def __init__(
         self, 
         k: int,
-        trainset: List[dsp.Example],
+        trainset,
         n_programs: int = 5,
         vectorizer=None,
         metric=None,
         metric_threshold=None,
         max_labeled_demos=16,
         max_rounds=1,
-        max_bootstrap_demos=8,
+        max_bootstrapped_demos=8,
     ):
         """
         A Teleprompter that uses meta-learning with KNN to select the best few-shot prompts.
@@ -30,12 +31,12 @@ class MetaKNNFewShot(Teleprompter):
             k: Number of nearest neighbors to consider
             trainset: List of training examples
             n_programs: Number of different random programs to generate
-            vectorizer: Optional embedder for computing similarities
+            vectorizer: Optional dspy.Embedder for computing similarities
             metric: Evaluation metric for comparing predictions
             metric_threshold: Optional threshold for the metric
-            teacher_settings: Settings for the teacher model
             max_labeled_demos: Maximum number of labeled demonstrations
             max_rounds: Maximum rounds for bootstrapping
+            max_bootstrapped_demos: Maximum number of bootstrapped demonstrations
         """
         self.KNN = KNN(k, trainset, vectorizer=vectorizer)
         self.n_programs = n_programs
@@ -46,7 +47,7 @@ class MetaKNNFewShot(Teleprompter):
         self.bootstrap_args = {
             "metric": metric,
             "metric_threshold": metric_threshold,
-            "max_bootstrapped_demos": max_bootstrap_demos,
+            "max_bootstrapped_demos": max_bootstrapped_demos,
             "max_labeled_demos": max_labeled_demos,
             "max_rounds": max_rounds,
         }

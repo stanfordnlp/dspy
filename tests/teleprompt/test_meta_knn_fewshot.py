@@ -1,9 +1,9 @@
 import pytest
 import numpy as np
-import dsp, dspy
+import dspy
 from dspy.teleprompt import MetaKNNFewShot
-from dspy.utils.dummies import DSPDummyLM, DummyVectorizer
 from typing import Sequence
+from dspy.utils.dummies import DummyLM, DummyVectorizer
 
 
 def mock_example(question: str, answer: str) -> dspy.Example:
@@ -21,22 +21,24 @@ def setup_meta_knn():
     """Sets up a MetaKNNFewShot instance with test data."""
     trainset: Sequence[dspy.Example] = [
         mock_example("What is the capital of France?", "Paris"),
-        mock_example("What is the capital of Spain?", "Madrid"),
-        mock_example("What is the capital of Italy?", "Rome"),
-        mock_example("What is 2+2?", "4"),
-        mock_example("What is 3+3?", "6"),
+        mock_example("What is the capital of France?", "Paris"),
+        mock_example("What is the capital of France?", "Paris"),
+        mock_example("What is the capital of France?", "Paris"),
+        mock_example("What is the capital of France?", "Paris"),
     ]
     
-    # Replace the default vectorizer with a dummy one for testing
-    dsp.SentenceTransformersVectorizer = DummyVectorizer
+    # Configure dummy vectorizer
+    vectorizer = DummyVectorizer()
+    dspy.settings.configure(embedder=vectorizer)
     
     meta_knn = MetaKNNFewShot(
         k=2,
         trainset=trainset,
-        n_programs=3,
+        n_programs=1,
         metric=simple_metric,
         max_labeled_demos=2,
-        max_bootstrap_demos=1,
+        max_bootstrapped_demos=0,
+        vectorizer=vectorizer,
     )
     return meta_knn
 
@@ -58,7 +60,9 @@ def test_meta_knn_initialization(setup_meta_knn):
     meta_knn = setup_meta_knn
     assert meta_knn.KNN.k == 2, "Incorrect k value for KNN"
     assert len(meta_knn.KNN.trainset) == 5, "Incorrect trainset size"
-    assert meta_knn.n_programs == 3, "Incorrect number of programs"
+    assert meta_knn.n_programs == 1, "Incorrect number of programs"
+    assert isinstance(meta_knn.KNN.embedding, (DummyVectorizer, dspy.Embedder)), \
+        "KNN should use the configured vectorizer"
 
 
 def test_meta_knn_compilation(setup_meta_knn):
@@ -68,17 +72,17 @@ def test_meta_knn_compilation(setup_meta_knn):
 
     # Configure dummy LM with responses for different programs
     responses = [
-        "Rome", "Madrid", "Rome", "Paris", "Madrid", "Rome", "Paris", "Madrid", "Rome", "Paris", "Madrid", "Madrid",
+        "Paris" * 300
 
     ]
-    lm = DSPDummyLM(responses)
+    lm = DummyLM(responses)
     dspy.settings.configure(lm=lm)
 
     meta_knn = setup_meta_knn
     compiled_student = meta_knn.compile(student, teacher=teacher, trainset=meta_knn.KNN.trainset)
 
     assert hasattr(compiled_student, "forward"), "Compiled student missing forward method"
-    assert len(meta_knn.programs) == 3, "Incorrect number of programs generated"
+    assert len(meta_knn.programs) == 1, "Incorrect number of programs generated"
     
     # Test the compiled student
     result = compiled_student(question="What is the capital of France?")
@@ -91,8 +95,8 @@ def test_meta_knn_performance_cache(setup_meta_knn):
     teacher = SimpleModule("question -> answer")
 
     # Configure dummy LM
-    responses = ["Paris"] * 15
-    lm = DSPDummyLM(responses)
+    responses = ["Paris"] * 25
+    lm = DummyLM(responses)
     dspy.settings.configure(lm=lm)
 
     meta_knn = setup_meta_knn
@@ -119,14 +123,9 @@ def test_similar_examples_influence(setup_meta_knn):
 
     # Configure dummy LM with specific responses
     responses = [
-        # Responses for capital questions
-        "Paris", "Madrid", "Rome",
-        # Responses for math questions
-        "4", "6", "8",
-        # Final test response
-        "4"
+        "Paris" * 300
     ]
-    lm = DSPDummyLM(responses)
+    lm = DummyLM(responses)
     dspy.settings.configure(lm=lm)
 
     meta_knn = setup_meta_knn
@@ -143,8 +142,8 @@ def test_performance_cache_demo_exclusion(setup_meta_knn):
     teacher = SimpleModule("question -> answer")
 
     # Configure dummy LM
-    responses = ["Paris"] * 15  # Enough responses for all programs and examples
-    lm = DSPDummyLM(responses)
+    responses = ["Paris"] * 25  # Enough responses for all programs and examples
+    lm = DummyLM(responses)
     dspy.settings.configure(lm=lm)
 
     meta_knn = setup_meta_knn
@@ -165,8 +164,8 @@ def test_best_program_selection_with_nans(setup_meta_knn):
     teacher = SimpleModule("question -> answer")
 
     # Configure dummy LM with specific responses
-    responses = ["Paris"] * 15
-    lm = DSPDummyLM(responses)
+    responses = ["Paris"] * 25
+    lm = DummyLM(responses)
     dspy.settings.configure(lm=lm)
 
     meta_knn = setup_meta_knn

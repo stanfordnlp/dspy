@@ -13,4 +13,4 @@ from .random_search import *
 from .teleprompt import *
 from .teleprompt_optuna import *
 from .vanilla import *
-from .meta_knn_fewshot import MetaKNNFewShot
+from .meta_knn_fewshot import *

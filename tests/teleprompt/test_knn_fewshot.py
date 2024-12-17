@@ -9,41 +9,31 @@ def mock_example(question: str, answer: str) -> dspy.Example:
     return dspy.Example(question=question, answer=answer).with_inputs("question")
 
 
-# @pytest.fixture
-# def setup_knn_few_shot():
-#     """Sets up a KNNFewShot instance for testing."""
-#     trainset = [
-#         mock_example("What is the capital of France?", "Paris"),
-#         mock_example("What is the largest ocean?", "Pacific"),
-#         mock_example("What is 2+2?", "4"),
-#     ]
-#     dsp.SentenceTransformersVectorizer = DummyVectorizer
-#     knn_few_shot = KNNFewShot(k=2, trainset=trainset)
-#     return knn_few_shot
+@pytest.fixture
+def setup_knn_few_shot():
+    """Sets up a KNNFewShot instance for testing."""
+    trainset = [
+        mock_example("What is the capital of France?", "Paris"),
+        mock_example("What is the largest ocean?", "Pacific"),
+        mock_example("What is 2+2?", "4"),
+    ]
+    
+    # Configure dummy vectorizer
+    vectorizer = DummyVectorizer()
+    dspy.settings.configure(embedder=vectorizer)
+    
+    knn_few_shot = KNNFewShot(k=2, trainset=trainset, vectorizer=vectorizer)
+    return knn_few_shot
 
 
-# def test_knn_few_shot_initialization(setup_knn_few_shot):
-#     """Tests the KNNFewShot initialization."""
-#     knn_few_shot = setup_knn_few_shot
-#     assert knn_few_shot.KNN.k == 2, "Incorrect k value for KNN"
-#     assert len(knn_few_shot.KNN.trainset) == 3, "Incorrect trainset size for KNN"
+def test_knn_few_shot_initialization(setup_knn_few_shot):
+    """Tests the KNNFewShot initialization."""
+    knn_few_shot = setup_knn_few_shot
+    assert knn_few_shot.KNN.k == 2, "Incorrect k value for KNN"
+    assert len(knn_few_shot.KNN.trainset) == 3, "Incorrect trainset size for KNN"
 
 
-# class SimpleModule(dspy.Module):
-#     def __init__(self, signature):
-#         super().__init__()
-#         self.predictor = dspy.Predict(signature)
-
-#     def forward(self, *args, **kwargs):
-#         return self.predictor(**kwargs)
-
-#     def reset_copy(self):
-#         # Creates a new instance of SimpleModule with the same predictor
-#         return SimpleModule(self.predictor.signature)
-
-
-# # TODO: Test not working yet
-# def _test_knn_few_shot_compile(setup_knn_few_shot):
+# def test_knn_few_shot_compile(setup_knn_few_shot):
 #     """Tests the compile method of KNNFewShot with SimpleModule as student."""
 #     student = SimpleModule("input -> output")
 #     teacher = SimpleModule("input -> output")  # Assuming teacher uses the same module type
