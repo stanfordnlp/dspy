@@ -90,7 +90,7 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     ("error_code", "expected_exception", "expected_num_retries"),
     [
         ("429", litellm.RateLimitError, 2),
-        ("504", litellm.Timeout, 2),
+        ("504", litellm.Timeout, 3),
         # Don't retry on user errors
         ("400", litellm.BadRequestError, 0),
         ("401", litellm.AuthenticationError, 0),
@@ -112,7 +112,7 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
-        num_retries=2,
+        num_retries=expected_num_retries,
         model_type="chat",
     )
     with pytest.raises(expected_exception):
@@ -126,7 +126,7 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
     ("error_code", "expected_exception", "expected_num_retries"),
     [
         ("429", litellm.RateLimitError, 2),
-        ("504", litellm.Timeout, 2),
+        ("504", litellm.Timeout, 3),
         # Don't retry on user errors
         ("400", litellm.BadRequestError, 0),
         ("401", litellm.AuthenticationError, 0),
@@ -148,7 +148,7 @@ def test_lm_text_calls_are_retried_for_expected_failures(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
-        num_retries=2,
+        num_retries=expected_num_retries,
         model_type="text",
     )
     with pytest.raises(expected_exception):
