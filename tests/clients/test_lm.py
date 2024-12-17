@@ -28,8 +28,8 @@ def test_lms_can_be_queried(litellm_test_server):
 @pytest.mark.parametrize(
     ("error_code", "expected_exception", "expected_num_retries"),
     [
-        ("429", litellm.RateLimitError, 1),
-        ("504", litellm.Timeout, 1),
+        ("429", litellm.RateLimitError, 2),
+        ("504", litellm.Timeout, 2),
         # Don't retry on user errors
         ("400", litellm.BadRequestError, 0),
         ("401", litellm.AuthenticationError, 0),
@@ -51,7 +51,7 @@ def test_lm_chat_calls_are_retried_for_expected_failures(
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
-        num_retries=1,
+        num_retries=2,
         model_type="chat",
     )
     with pytest.raises(expected_exception):

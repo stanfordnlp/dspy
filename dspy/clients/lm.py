@@ -231,6 +231,10 @@ def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-s
     return litellm.completion(
         cache=cache,
         retry_policy=_get_litellm_retry_policy(num_retries),
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
         **kwargs,
     )
 
