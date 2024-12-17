@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import threading
@@ -104,7 +105,7 @@ class LM(BaseLM):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
                 }
                 for c in response["choices"]
             ]
@@ -343,44 +344,23 @@ def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
     return litellm_text_completion(
         request,
         num_retries=num_retries,
->>>>>>> origin/main
         cache={"no-cache": False, "no-store": False},
     )
-    request_cache()[request] = response
-
-    return response
 
 
-<<<<<<< HEAD
-def _prepare_litellm_text_completion_params(request: dict):
-=======
 def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
->>>>>>> origin/main
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
-<<<<<<< HEAD
-    # Use the API key and base from the kwargs, or from the environment.
-=======
     # Use the API key and base from the request, or from the environment.
->>>>>>> origin/main
     api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
     api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-<<<<<<< HEAD
-    return {
-        "model": f"text-completion-openai/{model}",
-        "api_key": api_key,
-        "api_base": api_base,
-        "prompt": prompt,
-        **request,
-    }
-=======
     return litellm.text_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
@@ -390,4 +370,3 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         num_retries=num_retries,
         **request,
     )
->>>>>>> origin/main
