@@ -2,7 +2,7 @@ from collections import defaultdict  # noqa: F401
 from typing import Dict, List, Union  # noqa: UP035
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     from pyepsilla import vectordb

@@ -10,7 +10,7 @@ from openai import (
     UnprocessableEntityError,
 )
 
-from dsp.utils.settings import settings
+from dspy.dsp.utils.settings import settings
 from dspy import Retrieve, Prediction
 
 try:

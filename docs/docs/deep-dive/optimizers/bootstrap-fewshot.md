@@ -100,7 +100,7 @@ This optimizer augments any necessary field even if you data doesn't have it, fo
 In the next section, we'll seen this process step by step but for now let's start optimizing our `CoT` module by calling the `compile` method in the optimizer:
 
 ```python
-cot_compiled = optimizer.compile(CoT(), trainset=trainset, valset=devset)
+cot_compiled = optimizer.compile(CoT(), trainset=trainset)
 ```
 
 Once the training is done you'll have a more optimized module that you can save or load again for use anytime:
