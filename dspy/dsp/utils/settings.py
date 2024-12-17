@@ -1,6 +1,7 @@
 import copy
 import threading
 from contextlib import contextmanager
+
 from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -17,6 +18,7 @@ DEFAULT_CONFIG = dotdict(
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
+    send_stream=None,
 )
 
 # Global base configuration and owner tracking
@@ -26,9 +28,11 @@ config_owner_thread_id = None
 # Global lock for settings configuration
 global_lock = threading.Lock()
 
+
 class ThreadLocalOverrides(threading.local):
     def __init__(self):
         self.overrides = dotdict()
+
 
 thread_local_overrides = ThreadLocalOverrides()
 
@@ -36,10 +40,10 @@ thread_local_overrides = ThreadLocalOverrides()
 class Settings:
     """
     A singleton class for DSPy configuration settings.
-    Thread-safe global configuration. 
+    Thread-safe global configuration.
     - 'configure' can be called by only one 'owner' thread (the first thread that calls it).
     - Other threads see the configured global values from 'main_thread_config'.
-    - 'context' sets thread-local overrides. These overrides propagate to threads spawned 
+    - 'context' sets thread-local overrides. These overrides propagate to threads spawned
       inside that context block, when (and only when!) using a ParallelExecutor that copies overrides.
 
       1. Only one unique thread (which can be any thread!) can call dspy.configure.
@@ -61,7 +65,7 @@ class Settings:
         return global_lock
 
     def __getattr__(self, name):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         if name in overrides:
             return overrides[name]
         elif name in main_thread_config:
@@ -70,7 +74,7 @@ class Settings:
             raise AttributeError(f"'Settings' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ('_instance',):
+        if name in ("_instance",):
             super().__setattr__(name, value)
         else:
             self.configure(**{name: value})
@@ -82,7 +86,7 @@ class Settings:
         self.__setattr__(key, value)
 
     def __contains__(self, key):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         return key in overrides or key in main_thread_config
 
     def get(self, key, default=None):
@@ -92,7 +96,7 @@ class Settings:
             return default
 
     def copy(self):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         return dotdict({**main_thread_config, **overrides})
 
     @property
@@ -122,7 +126,7 @@ class Settings:
         If threads are spawned inside this block using ParallelExecutor, they will inherit these overrides.
         """
 
-        original_overrides = getattr(thread_local_overrides, 'overrides', dotdict()).copy()
+        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
         new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
         thread_local_overrides.overrides = new_overrides
 
@@ -132,7 +136,7 @@ class Settings:
             thread_local_overrides.overrides = original_overrides
 
     def __repr__(self):
-        overrides = getattr(thread_local_overrides, 'overrides', dotdict())
+        overrides = getattr(thread_local_overrides, "overrides", dotdict())
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
