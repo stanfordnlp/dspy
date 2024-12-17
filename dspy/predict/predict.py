@@ -1,6 +1,4 @@
-import logging
 import random
-from functools import lru_cache
 
 from pydantic import BaseModel
 
@@ -12,18 +10,12 @@ from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
 
 
-@lru_cache(maxsize=None)
-def warn_once(msg: str):
-    logging.warning(msg)
-
-
 class Predict(Module, Parameter):
-    def __init__(self, signature, _parse_values=True, callbacks=None, **config):
+    def __init__(self, signature, callbacks=None, **config):
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
         self.callbacks = callbacks or []
-        self._parse_values = _parse_values
         self.reset()
 
     def reset(self):
@@ -51,9 +43,6 @@ class Predict(Module, Parameter):
             state["demos"].append(demo)
 
         state["signature"] = self.signature.dump_state()
-        # `extended_signature` is a special field for `Predict`s like CoT.
-        if hasattr(self, "extended_signature"):
-            state["extended_signature"] = self.extended_signature.dump_state()
         return state
 
     def load_state(self, state):
@@ -82,8 +71,8 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state:
-            self.extended_signature = self.extended_signature.load_state(state["extended_signature"])
+        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+            raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
 
@@ -93,17 +82,16 @@ class Predict(Module, Parameter):
 
     def forward(self, **kwargs):
         import dspy
-        assert not dspy.settings.compiling, "It's no longer ever the case that .compiling is True"
 
         # Extract the three privileged keyword arguments.
-        new_signature = ensure_signature(kwargs.pop("new_signature", None))
+        assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or dspy.settings.lm
-        assert lm is not None, "No LM is loaded."
+        assert isinstance(lm, dspy.LM), "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
@@ -113,16 +101,14 @@ class Predict(Module, Parameter):
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
 
-        if new_signature is not None:
-            signature = new_signature
-
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        assert isinstance(lm, dspy.LM)
-        completions = v2_5_generate(lm, config, signature, demos, kwargs, _parse_values=self._parse_values)
+        import dspy
+        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -140,16 +126,6 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
-
-
-def v2_5_generate(lm, lm_kwargs, signature, demos, inputs, _parse_values=True):
-    import dspy
-
-    adapter = dspy.settings.adapter or dspy.ChatAdapter()
-
-    return adapter(
-        lm, lm_kwargs=lm_kwargs, signature=signature, demos=demos, inputs=inputs, _parse_values=_parse_values
-    )
 
 
 # TODO: get some defaults during init from the context window?

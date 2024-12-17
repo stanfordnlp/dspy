@@ -260,10 +260,6 @@ class BootstrapFewShot(Teleprompter):
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)
-
-            if dspy.settings.release >= 20230928:
-                predictor.demos = raw_demos + augmented_demos
-            else:
-                predictor.demos = augmented_demos + raw_demos
+            predictor.demos = augmented_demos + raw_demos
 
         return self.student

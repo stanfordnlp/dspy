@@ -1,15 +1,14 @@
-from .predict import *
-from .primitives import *
-from .retrieve import *
-from .signatures import *
+from dspy.predict import *
+from dspy.primitives import *
+from dspy.retrieve import *
+from dspy.signatures import *
+from dspy.teleprompt import *
 
 import dspy.retrievers
 
-# Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
-from dspy.evaluate import Evaluate # isort: skip
-from dspy.clients import * # isort: skip
-from dspy.adapters import * # isort: skip
+from dspy.evaluate import Evaluate  # isort: skip
+from dspy.clients import *  # isort: skip
+from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load

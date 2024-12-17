@@ -51,8 +51,8 @@ def test_deepcopy_with_nested_modules():
 
 def test_save_and_load_with_json(tmp_path):
     model = dspy.ChainOfThought(dspy.Signature("q -> a"))
-    model._predict.signature = model._predict.signature.with_instructions("You are a helpful assistant.")
-    model._predict.demos = [
+    model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
+    model.predict.demos = [
         dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
     ]
     save_path = tmp_path / "model.json"
@@ -60,8 +60,8 @@ def test_save_and_load_with_json(tmp_path):
     new_model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     new_model.load(save_path)
 
-    assert str(new_model.signature) == str(model.signature)
-    assert new_model.demos[0] == model.demos[0].toDict()
+    assert str(new_model.predict.signature) == str(model.predict.signature)
+    assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
 
 
 def test_save_and_load_with_pkl(tmp_path):
@@ -96,7 +96,7 @@ def test_save_and_load_with_pkl(tmp_path):
 
     optimizer = dspy.BootstrapFewShot(max_bootstrapped_demos=4, max_labeled_demos=4, max_rounds=5, metric=dummy_metric)
     compiled_cot = optimizer.compile(cot, trainset=trainset)
-    compiled_cot._predict.signature = compiled_cot._predict.signature.with_instructions("You are a helpful assistant.")
+    compiled_cot.predict.signature = compiled_cot.predict.signature.with_instructions("You are a helpful assistant.")
 
     save_path = tmp_path / "program.pkl"
     compiled_cot.save(save_path)
@@ -104,5 +104,5 @@ def test_save_and_load_with_pkl(tmp_path):
     new_cot = dspy.ChainOfThought(MySignature)
     new_cot.load(save_path)
 
-    assert str(new_cot.signature) == str(compiled_cot.signature)
-    assert new_cot.demos == compiled_cot.demos
+    assert str(new_cot.predict.signature) == str(compiled_cot.predict.signature)
+    assert new_cot.predict.demos == compiled_cot.predict.demos

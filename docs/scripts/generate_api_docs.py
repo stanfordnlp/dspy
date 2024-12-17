@@ -1,73 +1,95 @@
 from pathlib import Path
 import importlib
 import inspect
+import pkgutil
 import shutil
-import ast
+import sys
+from typing import Any
 
 
 def get_module_contents(module):
     """Get all public classes and functions from a module."""
-    contents = []
+    contents_in_all = getattr(module, "__all__", None)
+
+    contents = {}
     for name, obj in inspect.getmembers(module):
-        if (inspect.isclass(obj) or inspect.isfunction(obj)) and not name.startswith("_"):
-            module_name = inspect.getmodule(obj).__name__
-            if module_name.startswith("dspy."):
-                contents.append((name, obj))
+        if contents_in_all and name not in contents_in_all:
+            continue
+        if inspect.ismodule(obj) and obj.__name__.startswith(module.__name__) and not name.startswith("_"):
+            contents[name] = obj
+        elif (
+            (inspect.isclass(obj) or inspect.isfunction(obj))
+            and obj.__module__.startswith(module.__name__)
+            and not name.startswith("_")
+        ):
+            contents[name] = obj
     return contents
 
 
-def get_imported_submodules(module_path):
-    """Get submodules that are imported in __init__.py."""
+def get_object_source_path(obj):
+    """Get the source file path for an object."""
     try:
-        module_init = Path(importlib.util.find_spec(module_path).origin)
-        if not module_init.name == "__init__.py":
-            return []
-
-        with open(module_init, "r") as f:
-            tree = ast.parse(f.read())
-
-        submodules = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    if name.name.startswith(f"{module_path}."):
-                        submodule = name.name
-                        if submodule != module_path and not any(
-                            submodule.startswith(existing + ".") for existing in submodules
-                        ):
-                            submodules.add(submodule)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module and node.module.startswith(module_path):
-                    submodule = node.module
-                    if submodule != module_path and not any(
-                        submodule.startswith(existing + ".") for existing in submodules
-                    ):
-                        submodules.add(submodule)
-                elif node.level > 0:  # relative imports
-                    base = module_path.split(".")
-                    if node.level > len(base):
-                        continue
-                    parent = ".".join(base[: -node.level])
-                    if node.module:
-                        submodule = f"{parent}.{node.module}"
-                        if submodule != module_path and not any(
-                            submodule.startswith(existing + ".") for existing in submodules
-                        ):
-                            submodules.add(submodule)
-
-        return [m for m in submodules if m.startswith(module_path)]
-    except Exception as e:
-        print(f"Warning: Error processing {module_path}: {e}")
-        return []
+        return inspect.getfile(obj)
+    except TypeError:
+        return None
 
 
-def generate_object_doc(name: str, obj, output_dir: Path):
-    """Generate documentation for a single object (class or function)."""
-    original_module = inspect.getmodule(obj).__name__
+def get_original_name(obj):
+    """Get the original name of an object if it's an alias."""
+    if hasattr(obj, "__name__"):
+        return obj.__name__
+    return None
 
-    page_content = f"""# {name}
 
-::: {original_module}.{name}
+def generate_alias_section(name, obj, is_root=False):
+    """Generate the alias section for a documentation file."""
+    source_path = get_object_source_path(obj)
+    if not source_path:
+        return ""
+
+    try:
+        path_parts = Path(source_path).parts
+        if "dspy" in path_parts:
+            dspy_index = path_parts.index("dspy")
+            rel_parts = path_parts[dspy_index + 1 :]
+
+            module_parts = []
+            for part in rel_parts:
+                if part.endswith(".py"):
+                    break
+                if not part.startswith("_"):
+                    module_parts.append(part)
+
+            module_path = ".".join(module_parts)
+
+            if module_path == "__init__" or not module_path:
+                return ""
+
+            if is_root:
+                original_name = get_original_name(obj)
+                if original_name and original_name != name:
+                    return f"""## Alias
+
+This object can also be accessed as `dspy.{original_name}`
+"""
+                return f"""## Alias
+
+This object can also be accessed as `{module_path}.{name}`
+"""
+            else:
+                return f"""## Alias
+
+This object can also be accessed as `{module_path}.{name}`
+"""
+    except (ValueError, IndexError):
+        return ""
+
+
+def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = False) -> str:
+    """Generate documentation page content for an object."""
+    return f"""# {module_path}.{name}
+
+::: {module_path}.{name}
     handler: python
     options:
         show_source: true
@@ -77,31 +99,77 @@ def generate_object_doc(name: str, obj, output_dir: Path):
         show_root_full_path: false
         show_object_full_path: false
         separate_signature: false
+
+{generate_alias_section(name, obj, is_root=is_root)}
 """
-    with open(output_dir / f"{name}.md", "w") as f:
-        f.write(page_content)
 
 
-def generate_module_docs(module_path: str, output_dir: Path):
-    """Generate API documentation for a module and its submodules."""
-    # Import the module
-    module = importlib.import_module(module_path)
+def generate_md_docs(output_dir: Path):
+    import dspy
 
-    # Create output directory
+    module = importlib.import_module("dspy")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get all public classes and functions
-    contents = get_module_contents(module)
+    init_contents = get_module_contents(module)
+    root_objects = {}
 
-    # Generate individual pages for each class and function
-    for name, obj in contents:
-        generate_object_doc(name, obj, output_dir)
+    # Generate docs for root-level objects, e.g. dspy.Predict, dspy.Example, etc.
+    for name, obj in init_contents.items():
+        if inspect.ismodule(obj):
+            continue
 
-    # Handle submodules that are imported in __init__.py
-    for submodule_path in get_imported_submodules(module_path):
-        submodule_name = submodule_path.split(".")[-1]
-        submodule_dir = output_dir / submodule_name
-        generate_module_docs(submodule_path, submodule_dir)
+        page_content = generate_doc_page(name, "dspy", obj, is_root=True)
+        with open(output_dir / f"{name}.md", "w") as f:
+            f.write(page_content)
+
+        root_objects[f"{obj.__module__}.{name}"] = obj
+
+    for submodule in pkgutil.iter_modules(module.__path__, prefix=f"{module.__name__}."):
+        submodule_name = submodule.name.split(".")[-1]
+
+        # Skip if this is a private module or not in __init__.py
+        if submodule_name.startswith("_") or submodule_name not in init_contents:
+            continue
+
+        generate_md_docs_submodule(submodule.name, output_dir / submodule_name, root_objects)
+
+
+def generate_md_docs_submodule(module_path: str, output_dir: Path, root_objects=None):
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError:
+        print(f"Skipping {module_path} due to import error")
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    init_contents = get_module_contents(module)
+
+    for name, obj in init_contents.items():
+        if inspect.ismodule(obj):
+            continue
+
+        full_name = f"{obj.__module__}.{name}"
+        if full_name not in root_objects:
+            # Only generate docs for objects that are not root-level objects.
+            page_content = generate_doc_page(name, module_path, obj, is_root=False)
+            with open(output_dir / f"{name}.md", "w") as f:
+                f.write(page_content)
+
+            root_objects[full_name] = obj
+
+    for name, obj in init_contents.items():
+        if inspect.ismodule(obj):
+            generate_md_docs_submodule(f"{module_path}.{name}", output_dir / name, root_objects)
+
+
+def remove_empty_dirs(path: Path):
+    """Recursively remove empty directories."""
+    for child in path.glob("*"):
+        if child.is_dir():
+            remove_empty_dirs(child)
+
+    if path.is_dir() and not any(path.iterdir()):
+        path.rmdir()
 
 
 if __name__ == "__main__":
@@ -109,9 +177,6 @@ if __name__ == "__main__":
     if api_dir.exists():
         shutil.rmtree(api_dir)
 
-    generate_module_docs("dspy.datasets", Path("docs/api/datasets"))
-    generate_module_docs("dspy.evaluate", Path("docs/api/evaluate"))
-    generate_module_docs("dspy.predict", Path("docs/api/predict"))
-    generate_module_docs("dspy.primitives", Path("docs/api/primitives"))
-    generate_module_docs("dspy.signatures", Path("docs/api/signatures"))
-    generate_module_docs("dspy.teleprompt", Path("docs/api/teleprompt"))
+    generate_md_docs(api_dir)
+    # Add final cleanup of empty directories
+    remove_empty_dirs(api_dir)
