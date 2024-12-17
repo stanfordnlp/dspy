@@ -18,13 +18,18 @@ def meta_knn_optimizer_caller(default_program, trainset, devset, test_name, data
     Caller function for MetaKNNFewShot optimizer that follows OptimizerTester's requirements.
     """
     # Initialize the teleprompter with our MetaKNNFewShot optimizer
+    embedder = dspy.Embedder(
+        model="openai/text-embedding-3-small",
+        api_key=api_key_openai
+    )
     teleprompter = MetaKNNFewShot(
         k=10,  # Number of nearest neighbors
         trainset=trainset,
         n_programs=64,  # Number of different programs to generate
         metric=kwargs["metric"],
         max_labeled_demos=8,
-        max_rounds=1
+        max_rounds=1,
+        vectorizer=embedder
     )
 
     # Compile the program using our optimizer
@@ -64,7 +69,7 @@ def main():
         tester = OptimizerTester(
             task_model=lm,
             prompt_model=lm,
-            default_train_num=1000
+            default_train_num=1000,
         )
 
         # Then test MetaKNNFewShot optimizer
@@ -78,8 +83,6 @@ def main():
     except ConnectionError as e:
         print(f"Connection error occurred: {e}")
         print("Please check your language model server configuration")
-    except Exception as e:
-        print(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
