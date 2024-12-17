@@ -90,7 +90,11 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+        # Make the request and handle LRU & disk caching.
+        if self.model_type == "chat":
+            completion = cached_litellm_completion if cache else litellm_completion
+        else:
+            completion = cached_litellm_text_completion if cache else litellm_text_completion
 
         response = completion(
             request=dict(model=self.model, messages=messages, **kwargs),
