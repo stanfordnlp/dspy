@@ -1,9 +1,7 @@
 import random
-from typing import List
 import pandas as pd
 import warnings
 from tqdm import tqdm
-import dspy
 from dspy.predict.knn import KNN
 from dspy.teleprompt import BootstrapFewShot
 from .teleprompt import Teleprompter

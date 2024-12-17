@@ -11,7 +11,6 @@ class KNN:
             trainset: List of training examples to search through
             vectorizer: Optional dspy.Embedder for computing embeddings. If None, uses default Embedder
         """
-        import dspy
         
         self.k = k
         self.trainset = trainset
