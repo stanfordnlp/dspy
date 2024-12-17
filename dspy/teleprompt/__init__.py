@@ -13,3 +13,4 @@ from .random_search import *
 from .teleprompt import *
 from .teleprompt_optuna import *
 from .vanilla import *
+from .human import *
