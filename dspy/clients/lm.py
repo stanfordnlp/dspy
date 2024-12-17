@@ -357,7 +357,6 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     )
 
 
-@functools.lru_cache(maxsize=None)
 def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
     """
     Get a LiteLLM retry policy for retrying requests when transient API errors occur.
