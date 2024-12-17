@@ -6,11 +6,11 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional, cast
 
-from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
 import litellm
 import pydantic
 import ujson
+from anyio.streams.memory import MemoryObjectSendStream
+from asyncer import syncify
 from cachetools import LRUCache, cached
 
 import dspy
@@ -93,18 +93,8 @@ class LM(BaseLM):
         completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
         response = completion(
-<<<<<<< HEAD
-            request=dict(
-                model=self.model,
-                messages=messages,
-                num_retries=self.num_retries,
-                **kwargs,
-            ),
-            cache=cache,
-=======
             request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
->>>>>>> origin/main
         )
         if kwargs.get("logprobs"):
             outputs = [
@@ -117,22 +107,6 @@ class LM(BaseLM):
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
-<<<<<<< HEAD
-        entry = {
-            "prompt": prompt,
-            "messages": messages,
-            "kwargs": {k: v for k, v in kwargs.items() if not k.startswith("api_")},
-            "response": response,
-            "outputs": outputs,
-            "usage": dict(response["usage"]),
-            "cost": response.get("_hidden_params", {}).get("response_cost"),
-            "timestamp": datetime.now().isoformat(),
-            "uuid": str(uuid.uuid4()),
-            "model": self.model,
-            "model_type": self.model_type,
-        }
-=======
-            
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
@@ -145,7 +119,6 @@ class LM(BaseLM):
             model=self.model,
             model_type=self.model_type,
         )
->>>>>>> origin/main
         self.history.append(entry)
         self.update_global_history(entry)
 
@@ -253,57 +226,6 @@ class LM(BaseLM):
         return new_instance
 
 
-<<<<<<< HEAD
-def request_cache(default_cache=LRUCache([], maxsize=10_000_000)) -> LRUCache:
-    return dspy.settings.request_cache or default_cache
-
-
-def _litellm_completion(request: dict, **kwargs):
-    stream = dspy.settings.send_stream
-    if stream is None:
-        return litellm.completion(**request, **kwargs)
-
-    # The stream is already opened, and will be closed by the caller.
-    stream = cast(MemoryObjectSendStream, stream)
-
-    @syncify
-    async def stream_completion():
-        response = await litellm.acompletion(**request, **kwargs, stream=True)
-        chunks = []
-        async for chunk in response:
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
-
-    return stream_completion()
-
-
-def litellm_completion(request: dict, cache=False):
-    if not cache:
-        return _litellm_completion(request, cache={"no-cache": True, "no-store": True})
-
-    response = request_cache().get(request, None)
-    if response:
-        return response
-
-    response = _litellm_completion(request, cache={"no-cache": False, "no-store": False})
-    request_cache()[request] = response
-
-    return response
-
-
-def litellm_text_completion(request: dict, cache=False):
-    params = _prepare_litellm_text_completion_params(request)
-    if not cache:
-        return litellm.text_completion(**params, cache={"no-cache": True, "no-store": True})
-
-    response = request_cache().get(request, None)
-    if response:
-        return response
-
-    response = litellm.text_completion(
-        **params,
-=======
 def request_cache(maxsize: Optional[int] = None):
     """
     A threadsafe decorator to create an in-memory LRU cache for LM inference functions that accept
@@ -384,11 +306,32 @@ def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    return litellm.completion(
-        num_retries=num_retries,
-        cache=cache,
-        **request,
-    )
+    stream = dspy.settings.send_stream
+    if stream is None:
+        return litellm.completion(
+            num_retries=num_retries,
+            cache=cache,
+            **request,
+        )
+
+    # The stream is already opened, and will be closed by the caller.
+    stream = cast(MemoryObjectSendStream, stream)
+
+    @syncify
+    async def stream_completion():
+        response = await litellm.acompletion(
+            num_retries=num_retries,
+            cache=cache,
+            stream=True,
+            **request,
+        )
+        chunks = []
+        async for chunk in response:
+            chunks.append(chunk)
+            await stream.send(chunk)
+        return litellm.stream_chunk_builder(chunks)
+
+    return stream_completion()
 
 
 @request_cache(maxsize=None)

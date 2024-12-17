@@ -1,8 +1,7 @@
-import dspy
-from dspy.utils.streaming import streaming_response
-
 import pytest
 
+import dspy
+from dspy.utils.streaming import streaming_response
 from tests.test_utils.server import litellm_test_server
 
 
@@ -15,6 +14,7 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         api_key="fakekey",
     )
     with dspy.context(lm=lm):
+
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()
             output_text: str = dspy.OutputField()
@@ -36,6 +36,7 @@ async def test_streaming_response_yields_expected_response_chunks(litellm_test_s
         api_key="fakekey",
     )
     with dspy.context(lm=lm):
+
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()
             output_text: str = dspy.OutputField()
