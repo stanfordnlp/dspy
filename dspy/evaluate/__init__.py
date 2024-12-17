@@ -1,13 +1,5 @@
 from dspy.dsp.utils import EM, normalize_text
 
-from dspy.evaluate import auto_evaluation
+from dspy.evaluate.metrics import answer_exact_match, answer_passage_match
 from dspy.evaluate.evaluate import Evaluate
-from dspy.evaluate import metrics
-
-__all__ = [
-    "auto_evaluation",
-    "Evaluate",
-    "metrics",
-    "EM",
-    "normalize_text",
-]
+from dspy.evaluate.auto_evaluation import SemanticF1, CompleteAndGrounded
