@@ -20,11 +20,21 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
             output_text: str = dspy.OutputField()
 
         program = dspy.streamify(dspy.Predict(TestSignature))
-        output_stream = program(input_text="Test")
-        output_chunks = [chunk async for chunk in output_stream]
-        last_chunk = output_chunks[-1]
-        assert isinstance(last_chunk, dspy.Prediction)
-        assert last_chunk.output_text == "Hello!"
+        output_stream1 = program(input_text="Test")
+        output_chunks1 = [chunk async for chunk in output_stream1]
+        assert len(output_chunks1) > 1
+        last_chunk1 = output_chunks1[-1]
+        assert isinstance(last_chunk1, dspy.Prediction)
+        assert last_chunk1.output_text == "Hello!"
+
+        output_stream2 = program(input_text="Test")
+        output_chunks2 = [chunk async for chunk in output_stream2]
+        # Since the input is cached, only one chunk should be
+        # yielded containing the prediction
+        assert len(output_chunks2) == 1
+        last_chunk2 = output_chunks2[-1]
+        assert isinstance(last_chunk2, dspy.Prediction)
+        assert last_chunk2.output_text == "Hello!"
 
 
 @pytest.mark.asyncio
