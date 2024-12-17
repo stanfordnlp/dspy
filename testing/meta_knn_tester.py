@@ -62,7 +62,9 @@ def main():
 
         # Initialize the tester
         tester = OptimizerTester(
-            task_model = lm, prompt_model = lm,
+            task_model=lm,
+            prompt_model=lm,
+            default_train_num=1000
         )
 
         # Then test MetaKNNFewShot optimizer
