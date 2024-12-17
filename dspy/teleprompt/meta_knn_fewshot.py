@@ -21,6 +21,7 @@ class MetaKNNFewShot(Teleprompter):
         metric_threshold=None,
         max_labeled_demos=16,
         max_rounds=1,
+        max_bootstrap_demos=8,
     ):
         """
         A Teleprompter that uses meta-learning with KNN to select the best few-shot prompts.
@@ -45,7 +46,7 @@ class MetaKNNFewShot(Teleprompter):
         self.bootstrap_args = {
             "metric": metric,
             "metric_threshold": metric_threshold,
-            "max_bootstrapped_demos": 1,  # Set to 1 to ensure diversity between programs
+            "max_bootstrapped_demos": max_bootstrap_demos,
             "max_labeled_demos": max_labeled_demos,
             "max_rounds": max_rounds,
         }
