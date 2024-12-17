@@ -41,6 +41,12 @@ class Settings:
     - Other threads see the configured global values from 'main_thread_config'.
     - 'context' sets thread-local overrides. These overrides propagate to threads spawned 
       inside that context block, when (and only when!) using a ParallelExecutor that copies overrides.
+
+      1. Only one unique thread (which can be any thread!) can call dspy.configure.
+      2. It affects a global state, visible to all. As a result, user threads work, but they shouldn't be
+         mixed with concurrent changes to dspy.configure from the "main" thread.
+         (TODO: In the future, add warnings: if there are near-in-time user-thread reads followed by .configure calls.)
+      3. Any thread can use dspy.context. It propagates to child threads created with DSPy primitives: Parallel, asyncify, etc.
     """
 
     _instance = None
