@@ -4,7 +4,7 @@ import tqdm
 from datasets import load_dataset
 import pandas as pd
 import dspy
-from dsp.utils.utils import deduplicate
+from dspy.dsp.utils import deduplicate
 from dspy.evaluate import Evaluate
 
 from .base_task import BaseTask
