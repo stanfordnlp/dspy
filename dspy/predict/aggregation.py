@@ -1,4 +1,4 @@
-from dsp.utils import normalize_text
+from dspy.dsp.utils import normalize_text
 from dspy.primitives.prediction import Completions, Prediction
 
 def default_normalize(s):

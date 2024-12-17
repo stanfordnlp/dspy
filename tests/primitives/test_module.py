@@ -1,5 +1,6 @@
 import dspy
 import threading
+from dspy.utils.dummies import DummyLM
 
 
 def test_deepcopy_basic():
@@ -46,3 +47,62 @@ def test_deepcopy_with_nested_modules():
     # Parameters should be different objects with the same values.
     assert id(model.parameters()[0]) != id(model_copy.parameters()[0])
     assert model.parameters()[0].__dict__ == model_copy.parameters()[0].__dict__
+
+
+def test_save_and_load_with_json(tmp_path):
+    model = dspy.ChainOfThought(dspy.Signature("q -> a"))
+    model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
+    model.predict.demos = [
+        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
+    ]
+    save_path = tmp_path / "model.json"
+    model.save(save_path)
+    new_model = dspy.ChainOfThought(dspy.Signature("q -> a"))
+    new_model.load(save_path)
+
+    assert str(new_model.predict.signature) == str(model.predict.signature)
+    assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
+
+
+def test_save_and_load_with_pkl(tmp_path):
+    import datetime
+
+    # `datetime.date` is not json serializable, so we need to save with pickle.
+    class MySignature(dspy.Signature):
+        """Just a custom signature."""
+
+        current_date: datetime.date = dspy.InputField()
+        target_date: datetime.date = dspy.InputField()
+        date_diff: int = dspy.OutputField(desc="The difference in days between the current_date and the target_date")
+
+    trainset = [
+        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 2), "date_diff": 1},
+        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 3), "date_diff": 2},
+        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 4), "date_diff": 3},
+        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 5), "date_diff": 4},
+        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 6), "date_diff": 5},
+    ]
+    trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
+
+    dspy.settings.configure(
+        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
+    )
+
+    cot = dspy.ChainOfThought(MySignature)
+    cot(current_date=datetime.date(2024, 1, 1), target_date=datetime.date(2024, 1, 2))
+
+    def dummy_metric(example, pred, trace=None):
+        return True
+
+    optimizer = dspy.BootstrapFewShot(max_bootstrapped_demos=4, max_labeled_demos=4, max_rounds=5, metric=dummy_metric)
+    compiled_cot = optimizer.compile(cot, trainset=trainset)
+    compiled_cot.predict.signature = compiled_cot.predict.signature.with_instructions("You are a helpful assistant.")
+
+    save_path = tmp_path / "program.pkl"
+    compiled_cot.save(save_path)
+
+    new_cot = dspy.ChainOfThought(MySignature)
+    new_cot.load(save_path)
+
+    assert str(new_cot.predict.signature) == str(compiled_cot.predict.signature)
+    assert new_cot.predict.demos == compiled_cot.predict.demos
