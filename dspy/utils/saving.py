@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_dependency_versions():
+    cloudpickle_version = '.'.join(cloudpickle.__version__.split('.')[:2])
     return {
-        "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
         "dspy": importlib_metadata.version("dspy"),
-        "cloudpickle": cloudpickle.__version__,
+        "cloudpickle": cloudpickle_version,
     }
 
 
