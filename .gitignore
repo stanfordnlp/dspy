@@ -62,5 +62,3 @@ dummy.csv
 docs/docs/**/*.json*
 *.index
 *.pkl
-
-**/tutorials/agents/
