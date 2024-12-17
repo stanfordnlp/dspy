@@ -7,7 +7,7 @@ import warnings
 from typing import Any, Callable, List, Optional, Union
 
 import dspy
-from dsp.utils.utils import dotdict
+from dspy.dsp.utils.utils import dotdict
 
 try:
     from azure.core.credentials import AzureKeyCredential

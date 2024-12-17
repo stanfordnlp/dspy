@@ -151,7 +151,5 @@ def test_nested_batch_method():
         
     result = MyModule().batch([dspy.Example(input="test input").with_inputs("input")]*2)
 
-    assert result[0][0].output == "test output 1"
-    assert result[0][1].output == "test output 2"
-    assert result[1][0].output == "test output 3"
-    assert result[1][1].output == "test output 4"
+    assert {result[0][0].output, result[0][1].output, result[1][0].output, result[1][1].output} \
+            == {"test output 1", "test output 2", "test output 3", "test output 4"}

@@ -1,10 +1,13 @@
+anyio
+asyncer==0.0.8
 backoff
+cachetools
 datasets
 diskcache
 httpx
 joblib~=1.3
 json-repair
-litellm==1.51.0
+litellm[proxy]==1.53.7
 magicattr~=0.1.6
 openai
 optuna
@@ -15,5 +18,5 @@ requests
 tenacity>=8.2.3
 tqdm
 ujson
-anyio
-asyncer==0.0.8
+cloudpickle
+jinja2

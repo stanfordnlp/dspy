@@ -1,4 +1,4 @@
-from dsp.utils import EM, normalize_text
+from dspy.dsp.utils import EM, normalize_text
 
 from .auto_evaluation import *
 from .evaluate import Evaluate
