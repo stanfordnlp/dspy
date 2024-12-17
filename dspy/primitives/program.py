@@ -1,7 +1,6 @@
 import magicattr
 
 from dspy.predict.parallel import Parallel
-from dspy.primitives.assertions import assert_transform_module, backtrack_handler
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
 
