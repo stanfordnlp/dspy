@@ -1,25 +1,24 @@
-from .predict import *
-from .primitives import *
-from .retrieve import *
-from .signatures import *
-
 import dspy.retrievers
-
-# Functional must be imported after primitives, predict and signatures
-from .functional import * # isort: skip
-from dspy.evaluate import Evaluate # isort: skip
-from dspy.clients import * # isort: skip
-from dspy.adapters import * # isort: skip
-from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
+from dspy.dsp.utils.settings import settings
+from dspy.predict import *
+from dspy.primitives import *
+from dspy.retrieve import *
+from dspy.signatures import *
+from dspy.teleprompt import *
 from dspy.utils.asyncify import asyncify
+from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.saving import load
 from dspy.utils.streaming import streamify
 
-from dspy.dsp.utils.settings import settings
+from dspy.evaluate import Evaluate  # isort: skip
+from dspy.clients import *  # isort: skip
+from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image  # isort: skip
+
 
 configure_dspy_loggers(__name__)
 
 from dspy.dsp.colbertv2 import ColBERTv2
+
 # from dspy.dsp.you import You
 
 configure = settings.configure

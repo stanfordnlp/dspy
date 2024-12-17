@@ -21,26 +21,36 @@ DEFAULT_CONFIG = dotdict(
     send_stream=None,
 )
 
-# Global base configuration
+# Global base configuration and owner tracking
 main_thread_config = copy.deepcopy(DEFAULT_CONFIG)
+config_owner_thread_id = None
+
+# Global lock for settings configuration
+global_lock = threading.Lock()
 
 
 class ThreadLocalOverrides(threading.local):
     def __init__(self):
-        self.overrides = dotdict()  # Initialize thread-local overrides
+        self.overrides = dotdict()
 
 
-# Create the thread-local storage
 thread_local_overrides = ThreadLocalOverrides()
 
 
 class Settings:
     """
     A singleton class for DSPy configuration settings.
+    Thread-safe global configuration.
+    - 'configure' can be called by only one 'owner' thread (the first thread that calls it).
+    - Other threads see the configured global values from 'main_thread_config'.
+    - 'context' sets thread-local overrides. These overrides propagate to threads spawned
+      inside that context block, when (and only when!) using a ParallelExecutor that copies overrides.
 
-    This is thread-safe. User threads are supported both through ParallelExecutor and native threading.
-        - If native threading is used, the thread inherits the initial config from the main thread.
-        - If ParallelExecutor is used, the thread inherits the initial config from its parent thread.
+      1. Only one unique thread (which can be any thread!) can call dspy.configure.
+      2. It affects a global state, visible to all. As a result, user threads work, but they shouldn't be
+         mixed with concurrent changes to dspy.configure from the "main" thread.
+         (TODO: In the future, add warnings: if there are near-in-time user-thread reads followed by .configure calls.)
+      3. Any thread can use dspy.context. It propagates to child threads created with DSPy primitives: Parallel, asyncify, etc.
     """
 
     _instance = None
@@ -48,8 +58,11 @@ class Settings:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.lock = threading.Lock()  # maintained here for DSPy assertions.py
         return cls._instance
+
+    @property
+    def lock(self):
+        return global_lock
 
     def __getattr__(self, name):
         overrides = getattr(thread_local_overrides, "overrides", dotdict())
@@ -65,8 +78,6 @@ class Settings:
             super().__setattr__(name, value)
         else:
             self.configure(**{name: value})
-
-    # Dictionary-like access
 
     def __getitem__(self, key):
         return self.__getattr__(key)
@@ -90,41 +101,39 @@ class Settings:
 
     @property
     def config(self):
-        config = self.copy()
-        if "lock" in config:
-            del config["lock"]
-        return config
-
-    # Configuration methods
+        return self.copy()
 
     def configure(self, **kwargs):
-        global main_thread_config
+        global main_thread_config, config_owner_thread_id
+        current_thread_id = threading.get_ident()
 
-        # Get or initialize thread-local overrides
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
-        thread_local_overrides.overrides = dotdict(
-            {**copy.deepcopy(DEFAULT_CONFIG), **main_thread_config, **overrides, **kwargs}
-        )
+        with self.lock:
+            # First configuration: establish ownership. If ownership established, only that thread can configure.
+            if config_owner_thread_id in [None, current_thread_id]:
+                config_owner_thread_id = current_thread_id
+            else:
+                raise RuntimeError("dspy.settings can only be changed by the thread that initially configured it.")
 
-        # Update main_thread_config, in the main thread only
-        if threading.current_thread() is threading.main_thread():
-            main_thread_config = thread_local_overrides.overrides
+        # Update global config
+        for k, v in kwargs.items():
+            main_thread_config[k] = v
 
     @contextmanager
     def context(self, **kwargs):
-        """Context manager for temporary configuration changes."""
-        global main_thread_config
-        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
-        original_main_thread_config = main_thread_config.copy()
+        """
+        Context manager for temporary configuration changes at the thread level.
+        Does not affect global configuration. Changes only apply to the current thread.
+        If threads are spawned inside this block using ParallelExecutor, they will inherit these overrides.
+        """
 
-        self.configure(**kwargs)
+        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
+        new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
+        thread_local_overrides.overrides = new_overrides
+
         try:
             yield
         finally:
             thread_local_overrides.overrides = original_overrides
-
-            if threading.current_thread() is threading.main_thread():
-                main_thread_config = original_main_thread_config
 
     def __repr__(self):
         overrides = getattr(thread_local_overrides, "overrides", dotdict())

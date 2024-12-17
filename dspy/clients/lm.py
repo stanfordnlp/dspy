@@ -13,6 +13,7 @@ import ujson
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 from cachetools import LRUCache, cached
+from litellm import RetryPolicy
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -39,7 +40,7 @@ class LM(BaseLM):
         max_tokens: int = 1000,
         cache: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 3,
+        num_retries: int = 8,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
@@ -311,11 +312,19 @@ def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+    retry_kwargs = dict(
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+    )
+
     stream = dspy.settings.send_stream
     if stream is None:
         return litellm.completion(
-            num_retries=num_retries,
             cache=cache,
+            **retry_kwargs,
             **request,
         )
 
@@ -325,9 +334,9 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     @syncify
     async def stream_completion():
         response = await litellm.acompletion(
-            num_retries=num_retries,
             cache=cache,
             stream=True,
+            **retry_kwargs,
             **request,
         )
         chunks = []
@@ -367,6 +376,32 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        num_retries=num_retries,
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
         **request,
+    )
+
+
+def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
+    """
+    Get a LiteLLM retry policy for retrying requests when transient API errors occur.
+    Args:
+        num_retries: The number of times to retry a request if it fails transiently due to
+                     network error, rate limiting, etc. Requests are retried with exponential
+                     backoff.
+    Returns:
+        A LiteLLM RetryPolicy instance.
+    """
+    return RetryPolicy(
+        TimeoutErrorRetries=num_retries,
+        RateLimitErrorRetries=num_retries,
+        InternalServerErrorRetries=num_retries,
+        ContentPolicyViolationErrorRetries=num_retries,
+        # We don't retry on errors that are unlikely to be transient
+        # (e.g. bad request, invalid auth credentials)
+        BadRequestErrorRetries=0,
+        AuthenticationErrorRetries=0,
     )

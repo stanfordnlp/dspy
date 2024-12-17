@@ -38,7 +38,7 @@ dependencies = [
     "pydantic~=2.0",
     "jinja2",
     "magicattr~=0.1.6",
-    "litellm",
+    "litellm==1.55.3",
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
@@ -132,7 +132,7 @@ pgvector = { version = "^0.2.5", optional = true }
 llama-index = { version = "^0.10.30", optional = true }
 jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
-litellm = { version = "==1.53.7", extras = ["proxy"] }
+litellm = { version = "==1.55.3", extras = ["proxy"] }
 diskcache = "^5.6.0"
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
@@ -229,7 +229,7 @@ target-version = "py39"
 select = [
     "F", # Pyflakes
     "E", # Pycodestyle
-
+    "TID252",  # Absolute imports
 ]
 ignore = [
     "E501", # Line too long
