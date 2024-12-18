@@ -189,7 +189,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
         optimized = optimizer.compile(classify, trainset=trainset)
 
-        optimized_classifier(text="What does a pending cash withdrawal mean?")
+        optimized(text="What does a pending cash withdrawal mean?")
         ```
 
         **Possible Output (from the last line):**
