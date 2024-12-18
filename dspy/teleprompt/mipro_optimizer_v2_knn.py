@@ -1,7 +1,7 @@
 import logging
 import random
-from collections import defaultdict, namedtuple
-from typing import Any, Callable, Dict, List, Optional
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, NamedTuple
 
 import optuna
 
@@ -14,7 +14,12 @@ from .mipro_optimizer_v2 import MIPROv2, BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEX
 
 logger = logging.getLogger(__name__)
 
-DemoCandidate = namedtuple("DemoCandidate", ["demos", "random_seed", "retrieve_demos", "augmented_demos"])
+
+class DemoCandidate(NamedTuple):
+    demos: list[dspy.Example]
+    random_seed: int
+    retrieve_demos: Callable[[str], list[dspy.Example]]
+    augmented_demos: list[dspy.Example]
 
 
 class MIPROv2KNN(MIPROv2):
