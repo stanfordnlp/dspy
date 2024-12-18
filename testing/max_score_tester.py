@@ -301,7 +301,6 @@ class BootstrapMaxScoreTester(BaseMaxScoreTester):
             bootstrap = BootstrapFewShot(
                 **self.bootstrap_args,
                 metric=task.get_metric(),
-                teacher_settings={"temperature": 0.7 + 0.1 * prog_idx}
             )
             
             program = bootstrap.compile(
