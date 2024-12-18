@@ -1,1 +1,1 @@
-from .synthesizer import *
+from dspy.experimental.synthesizer import *

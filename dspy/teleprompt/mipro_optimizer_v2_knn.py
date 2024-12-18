@@ -21,7 +21,7 @@ class MIPROv2KNN(MIPROv2):
     def __init__(
         self,
         metric: Callable,
-        embedder: dspy.Embedder,
+        embedder: "dspy.Embedder",
         prompt_model: Optional[Any] = None,
         task_model: Optional[Any] = None,
         teacher_settings: Dict = {},
@@ -166,7 +166,7 @@ class MIPROv2KNN(MIPROv2):
 
 def bootstrap_knn_demos(
     student,
-    embedder: dspy.Embedder,
+    embedder: "dspy.Embedder",
     num_candidate_sets,
     trainset,
     max_labeled_demos,

@@ -18,14 +18,7 @@ import importlib
 import re
 import typing
 from collections.abc import Mapping
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-)
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 class InterpreterError(ValueError):

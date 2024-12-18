@@ -9,8 +9,8 @@ import backoff
 import lancedb.table
 
 from dspy import Retrieve, Prediction
-from dsp.utils.settings import settings
-from dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
+from dspy.dsp.utils import dotdict
 
 try:
     import lancedb

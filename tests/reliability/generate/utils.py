@@ -16,7 +16,7 @@ import pydantic
 from datamodel_code_generator import InputFileType, generate
 
 import dspy
-from tests.reliability.utils import assert_program_output_correct, judge_dspy_configuration
+from ..utils import assert_program_output_correct, judge_dspy_configuration
 
 
 def _retry(retries):

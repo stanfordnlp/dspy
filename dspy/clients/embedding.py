@@ -59,20 +59,19 @@ class Embedder:
         ```
     """
 
-    def __init__(self, model: Union[str, Callable], batch_size=200, cache=True, **kwargs):
+    def __init__(self, model: Union[str, Callable], batch_size=200, **kwargs):
         if not isinstance(model, str) and not callable(model):
             raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
 
         self.model = model
         self.batch_size = batch_size
-        self.cache = cache
         self.default_kwargs = kwargs
 
     def _embed(self, inputs: List[str], cache: bool, **kwargs):
         if callable(self.model):
             return self.model(inputs, **kwargs)
 
-        response = litellm_embedding({"model": self.model, "input": inputs, **kwargs}, cache=cache).data
+        response = litellm_embedding({"model": self.model, "input": inputs, **kwargs}).data
         return [data["embedding"] for data in response]
 
     def __call__(
@@ -102,7 +101,6 @@ class Embedder:
         assert all(isinstance(inp, str) for inp in inputs), "All inputs must be strings."
 
         batch_size = batch_size or self.batch_size
-        cache = cache or self.cache
         kwargs = {**self.default_kwargs, **kwargs}
 
         embeddings = flatten([self._embed(c, cache, **kwargs) for c in chunk(inputs, batch_size)])
@@ -119,15 +117,6 @@ def flatten(list_of_lists):
     return [item for sublist in list_of_lists for item in sublist]
 
 
-def litellm_embedding(request, cache=True):
-    if not cache:
-        return litellm.embedding(**request, cache={"no-cache": True, "no-store": True})
-
-    response = request_cache().get(request, None)
-    if response:
-        return response
-
-    response = litellm.embedding(**request, cache={"no-cache": False, "no-store": False})
-    request_cache()[request] = response
-
-    return response
+@request_cache(maxsize=None)
+def litellm_embedding(request):
+    return litellm.embedding(**request, cache={"no-cache": False, "no-store": False})

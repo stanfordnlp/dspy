@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match

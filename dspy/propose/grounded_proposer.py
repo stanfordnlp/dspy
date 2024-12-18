@@ -12,7 +12,7 @@ from dspy.propose.utils import (
 from dspy.teleprompt.utils import get_signature, get_prompt_model
 from dspy.utils.parallelizer import ParallelExecutor
 
-from .propose_base import Proposer
+from dspy.propose.propose_base import Proposer
 
 logger = logging.getLogger(__name__)
 

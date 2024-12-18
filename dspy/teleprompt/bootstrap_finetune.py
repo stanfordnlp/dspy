@@ -2,8 +2,8 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
-from dspy import LM  # TODO: Remove after the old LM class is removed
 from dspy.adapters.base import Adapter
+from dspy.clients.lm import LM  # TODO: Remove after the old LM class is removed
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
