@@ -50,6 +50,7 @@ nav:
       - Reasoning: tutorials/math/index.ipynb
       - Entity Extraction: tutorials/entity_extraction/index.ipynb
       - Privacy-Conscious Delegation: tutorials/papillon/index.md
+      - Saving and Loading: tutorials/saving/index.md
       - Deployment: tutorials/deployment/index.md
       - Debugging & Observability: tutorials/observability/index.md
   - Community:
