@@ -1,8 +1,11 @@
-# dspy.evaluate.answer_exact_match
+# dspy.PythonInterpreter
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.PythonInterpreter
     handler: python
     options:
+        members:
+            - clear_state
+            - execute
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +18,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.primitives.PythonInterpreter`
 

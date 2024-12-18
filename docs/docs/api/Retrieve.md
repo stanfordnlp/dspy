@@ -1,26 +1,14 @@
-# dspy.evaluate.SemanticF1
+# dspy.Retrieve
 
-::: dspy.evaluate.SemanticF1
+::: dspy.Retrieve
     handler: python
     options:
         members:
             - __call__
-            - batch
-            - deepcopy
             - dump_state
             - forward
-            - get_lm
-            - load
             - load_state
-            - map_named_predictors
-            - named_parameters
-            - named_predictors
-            - named_sub_modules
-            - parameters
-            - predictors
-            - reset_copy
-            - save
-            - set_lm
+            - reset
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -33,5 +21,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.SemanticF1`
+This object can also be accessed as `dspy.retrieve.Retrieve`
 

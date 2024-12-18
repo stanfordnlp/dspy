@@ -1,8 +1,12 @@
-# dspy.evaluate.answer_exact_match
+# dspy.AvatarOptimizer
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.AvatarOptimizer
     handler: python
     options:
+        members:
+            - compile
+            - process_example
+            - thread_safe_evaluator
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +19,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.teleprompt.AvatarOptimizer`
 

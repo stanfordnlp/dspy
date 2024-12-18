@@ -1,6 +1,6 @@
-# dspy.evaluate.SemanticF1
+# dspy.ChainOfThought
 
-::: dspy.evaluate.SemanticF1
+::: dspy.ChainOfThought
     handler: python
     options:
         members:
@@ -33,5 +33,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.SemanticF1`
+This object can also be accessed as `dspy.predict.ChainOfThought`
 

@@ -1,6 +1,6 @@
-# dspy.evaluate.answer_exact_match
+# dspy.configure_dspy_loggers
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.configure_dspy_loggers
     handler: python
     options:
         show_source: true
@@ -15,5 +15,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.utils.configure_dspy_loggers`
 

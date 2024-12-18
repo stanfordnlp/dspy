@@ -1,8 +1,11 @@
-# dspy.evaluate.answer_exact_match
+# dspy.propose.GroundedProposer
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.propose.GroundedProposer
     handler: python
     options:
+        members:
+            - propose_instruction_for_predictor
+            - propose_instructions_for_program
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +18,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.propose.GroundedProposer`
 

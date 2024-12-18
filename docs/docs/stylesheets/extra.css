@@ -145,8 +145,7 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 
 /* Add more spacing between API sections */
 .doc-heading {
-    margin-top: 3em !important;
-    padding-top: 1em !important;
+    margin-top: 1em;
     border-top: 1px solid var(--md-default-fg-color--lightest);
 }
 
@@ -214,4 +213,41 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 /* Optional: add hover effect */
 .md-nav__item .md-nav__item:hover {
     border-left-color: var(--md-primary-fg-color);
+}
+
+
+/* Enhance code examples in documentation */
+.highlight {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    margin: 1.5em 0;
+    padding: 1em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .highlight {
+    background-color: #2b2b2b;
+    border-color: #404040;
+}
+
+/* Add subtle left border for visual interest */
+.highlight pre {
+    margin: 0;
+}
+
+/* Ensure code is readable */
+.highlight code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+}
+
+/* Copy button styling */
+.highlight .md-clipboard {
+    color: var(--md-default-fg-color--lighter);
+}
+
+.highlight .md-clipboard:hover {
+    color: var(--md-accent-fg-color);
 }

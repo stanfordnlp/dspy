@@ -1,8 +1,13 @@
-# dspy.evaluate.answer_exact_match
+# dspy.Provider
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.Provider
     handler: python
     options:
+        members:
+            - finetune
+            - is_provider_model
+            - kill
+            - launch
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +20,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.clients.Provider`
 

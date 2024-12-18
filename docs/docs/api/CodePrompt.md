@@ -1,8 +1,12 @@
-# dspy.evaluate.answer_exact_match
+# dspy.CodePrompt
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.CodePrompt
     handler: python
     options:
+        members:
+            - execute
+            - format
+            - set_code_type
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +19,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.primitives.CodePrompt`
 

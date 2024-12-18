@@ -63,183 +63,84 @@ nav:
         - Cheatsheet: cheatsheet.md
 
     - API Reference:
-        - datasets:
-            - Colors: api/datasets/Colors.md
-            - DataLoader: api/datasets/DataLoader.md
-            - Dataset: api/datasets/Dataset.md
-            - HotPotQA: api/datasets/HotPotQA.md
-            - MATH: api/datasets/MATH.md
         - evaluate:
-            - AnswerCompleteness: api/evaluate/AnswerCompleteness.md
-            - AnswerGroundedness: api/evaluate/AnswerGroundedness.md
             - CompleteAndGrounded: api/evaluate/CompleteAndGrounded.md
-            - DecompositionalSemanticRecallPrecision: api/evaluate/DecompositionalSemanticRecallPrecision.md
-            - EM: api/evaluate/EM.md
-            - Evaluate: api/evaluate/Evaluate.md
             - SemanticF1: api/evaluate/SemanticF1.md
-            - SemanticRecallPrecision: api/evaluate/SemanticRecallPrecision.md
             - answer_exact_match: api/evaluate/answer_exact_match.md
             - answer_passage_match: api/evaluate/answer_passage_match.md
-            - f1_score: api/evaluate/f1_score.md
-            - normalize_text: api/evaluate/normalize_text.md
-        - predict:
-            - ChainOfThought: api/predict/ChainOfThought.md
-            - ChainOfThoughtWithHint: api/predict/ChainOfThoughtWithHint.md
-            - KNN: api/predict/KNN.md
-            - MultiChainComparison: api/predict/MultiChainComparison.md
-            - Parallel: api/predict/Parallel.md
-            - Predict: api/predict/Predict.md
-            - ProgramOfThought: api/predict/ProgramOfThought.md
-            - ReAct: api/predict/ReAct.md
-            - Retry: api/predict/Retry.md
-            - Tool: api/predict/Tool.md
-            - majority: api/predict/majority.md
-        - primitives:
-            - Assert: api/primitives/Assert.md
-            - BaseModule: api/primitives/BaseModule.md
-            - CodePrompt: api/primitives/CodePrompt.md
-            - Completions: api/primitives/Completions.md
-            - Constraint: api/primitives/Constraint.md
-            - DSPyAssertionError: api/primitives/DSPyAssertionError.md
-            - DSPySuggestionError: api/primitives/DSPySuggestionError.md
-            - Example: api/primitives/Example.md
-            - InterpreterError: api/primitives/InterpreterError.md
-            - Module: api/primitives/Module.md
-            - Parallel: api/primitives/Parallel.md
-            - Prediction: api/primitives/Prediction.md
-            - Program: api/primitives/Program.md
-            - ProgramMeta: api/primitives/ProgramMeta.md
-            - PythonInterpreter: api/primitives/PythonInterpreter.md
-            - Suggest: api/primitives/Suggest.md
-            - TextPrompt: api/primitives/TextPrompt.md
-            - assert_no_except_handler: api/primitives/assert_no_except_handler.md
-            - assert_transform_module: api/primitives/assert_transform_module.md
-            - backtrack_handler: api/primitives/backtrack_handler.md
-            - bypass_assert_handler: api/primitives/bypass_assert_handler.md
-            - bypass_suggest_handler: api/primitives/bypass_suggest_handler.md
-            - default_assertion_handler: api/primitives/default_assertion_handler.md
-            - handle_assert_forward: api/primitives/handle_assert_forward.md
-            - noop_handler: api/primitives/noop_handler.md
-            - set_attribute_by_name: api/primitives/set_attribute_by_name.md
-            - with_callbacks: api/primitives/with_callbacks.md
-        - signatures:
-            - Image: api/signatures/Image.md
-            - InputField: api/signatures/InputField.md
-            - OldField: api/signatures/OldField.md
-            - OldInputField: api/signatures/OldInputField.md
-            - OldOutputField: api/signatures/OldOutputField.md
-            - OutputField: api/signatures/OutputField.md
-            - Signature: api/signatures/Signature.md
-            - SignatureMeta: api/signatures/SignatureMeta.md
-            - ensure_signature: api/signatures/ensure_signature.md
-            - infer_prefix: api/signatures/infer_prefix.md
-            - make_signature: api/signatures/make_signature.md
-            - move_kwargs: api/signatures/move_kwargs.md
-            - new_to_old_field: api/signatures/new_to_old_field.md
-            - update_signatures: api/signatures/update_signatures.md
-        - teleprompt:
-            - ActionOutput: api/teleprompt/ActionOutput.md
-            - AvatarOptimizer: api/teleprompt/AvatarOptimizer.md
-            - BetterTogether: api/teleprompt/BetterTogether.md
-            - BootstrapFewShot: api/teleprompt/BootstrapFewShot.md
-            - BootstrapFewShotWithOptuna: api/teleprompt/BootstrapFewShotWithOptuna.md
-            - BootstrapFewShotWithRandomSearch: api/teleprompt/BootstrapFewShotWithRandomSearch.md
-            - BootstrapFinetune: api/teleprompt/BootstrapFinetune.md
-            - COPRO: api/teleprompt/COPRO.md
-            - Comparator: api/teleprompt/Comparator.md
-            - Ensemble: api/teleprompt/Ensemble.md
-            - EvalResult: api/teleprompt/EvalResult.md
-            - Evaluate: api/teleprompt/Evaluate.md
-            - FeedbackBasedInstruction: api/teleprompt/FeedbackBasedInstruction.md
-            - KNN: api/teleprompt/KNN.md
-            - KNNFewShot: api/teleprompt/KNNFewShot.md
-            - LabeledFewShot: api/teleprompt/LabeledFewShot.md
-            - MIPROv2: api/teleprompt/MIPROv2.md
-            - Teleprompter: api/teleprompt/Teleprompter.md
-            - avatar_optimizer:
-                - ActionOutput: api/teleprompt/avatar_optimizer/ActionOutput.md
-                - AvatarOptimizer: api/teleprompt/avatar_optimizer/AvatarOptimizer.md
-                - Comparator: api/teleprompt/avatar_optimizer/Comparator.md
-                - EvalResult: api/teleprompt/avatar_optimizer/EvalResult.md
-                - FeedbackBasedInstruction: api/teleprompt/avatar_optimizer/FeedbackBasedInstruction.md
-                - Teleprompter: api/teleprompt/avatar_optimizer/Teleprompter.md
-            - bettertogether:
-                - BetterTogether: api/teleprompt/bettertogether/BetterTogether.md
-                - BootstrapFewShotWithRandomSearch: api/teleprompt/bettertogether/BootstrapFewShotWithRandomSearch.md
-                - BootstrapFinetune: api/teleprompt/bettertogether/BootstrapFinetune.md
-                - Example: api/teleprompt/bettertogether/Example.md
-                - LM: api/teleprompt/bettertogether/LM.md
-                - Program: api/teleprompt/bettertogether/Program.md
-                - Teleprompter: api/teleprompt/bettertogether/Teleprompter.md
-                - prepare_student: api/teleprompt/bettertogether/prepare_student.md
-                - set_missing_predictor_lms: api/teleprompt/bettertogether/set_missing_predictor_lms.md
-            - bootstrap:
-                - BootstrapFewShot: api/teleprompt/bootstrap/BootstrapFewShot.md
-                - LabeledFewShot: api/teleprompt/bootstrap/LabeledFewShot.md
-                - Teleprompter: api/teleprompt/bootstrap/Teleprompter.md
-            - bootstrap_finetune:
-                - Adapter: api/teleprompt/bootstrap_finetune/Adapter.md
-                - BootstrapFinetune: api/teleprompt/bootstrap_finetune/BootstrapFinetune.md
-                - Evaluate: api/teleprompt/bootstrap_finetune/Evaluate.md
-                - Example: api/teleprompt/bootstrap_finetune/Example.md
-                - FinetuneTeleprompter: api/teleprompt/bootstrap_finetune/FinetuneTeleprompter.md
-                - LM: api/teleprompt/bootstrap_finetune/LM.md
-                - Predict: api/teleprompt/bootstrap_finetune/Predict.md
-                - Program: api/teleprompt/bootstrap_finetune/Program.md
-                - Teleprompter: api/teleprompt/bootstrap_finetune/Teleprompter.md
-                - assert_no_shared_predictor: api/teleprompt/bootstrap_finetune/assert_no_shared_predictor.md
-                - assert_structural_equivalency: api/teleprompt/bootstrap_finetune/assert_structural_equivalency.md
-                - bootstrap_trace_data: api/teleprompt/bootstrap_finetune/bootstrap_trace_data.md
-                - bootstrap_trace_data_one_example: api/teleprompt/bootstrap_finetune/bootstrap_trace_data_one_example.md
-                - build_call_data_from_trace: api/teleprompt/bootstrap_finetune/build_call_data_from_trace.md
-                - infer_data_format: api/teleprompt/bootstrap_finetune/infer_data_format.md
-                - prepare_student: api/teleprompt/bootstrap_finetune/prepare_student.md
-                - prepare_teacher: api/teleprompt/bootstrap_finetune/prepare_teacher.md
-                - set_missing_predictor_lms: api/teleprompt/bootstrap_finetune/set_missing_predictor_lms.md
-            - copro_optimizer:
-                - BasicGenerateInstruction: api/teleprompt/copro_optimizer/BasicGenerateInstruction.md
-                - COPRO: api/teleprompt/copro_optimizer/COPRO.md
-                - Evaluate: api/teleprompt/copro_optimizer/Evaluate.md
-                - GenerateInstructionGivenAttempts: api/teleprompt/copro_optimizer/GenerateInstructionGivenAttempts.md
-                - Signature: api/teleprompt/copro_optimizer/Signature.md
-                - Teleprompter: api/teleprompt/copro_optimizer/Teleprompter.md
-            - ensemble:
-                - Ensemble: api/teleprompt/ensemble/Ensemble.md
-                - Teleprompter: api/teleprompt/ensemble/Teleprompter.md
-            - knn_fewshot:
-                - BootstrapFewShot: api/teleprompt/knn_fewshot/BootstrapFewShot.md
-                - KNN: api/teleprompt/knn_fewshot/KNN.md
-                - KNNFewShot: api/teleprompt/knn_fewshot/KNNFewShot.md
-                - Teleprompter: api/teleprompt/knn_fewshot/Teleprompter.md
-            - mipro_optimizer_v2:
-                - Evaluate: api/teleprompt/mipro_optimizer_v2/Evaluate.md
-                - GroundedProposer: api/teleprompt/mipro_optimizer_v2/GroundedProposer.md
-                - MIPROv2: api/teleprompt/mipro_optimizer_v2/MIPROv2.md
-                - Teleprompter: api/teleprompt/mipro_optimizer_v2/Teleprompter.md
-                - create_minibatch: api/teleprompt/mipro_optimizer_v2/create_minibatch.md
-                - create_n_fewshot_demo_sets: api/teleprompt/mipro_optimizer_v2/create_n_fewshot_demo_sets.md
-                - eval_candidate_program: api/teleprompt/mipro_optimizer_v2/eval_candidate_program.md
-                - get_program_with_highest_avg_score: api/teleprompt/mipro_optimizer_v2/get_program_with_highest_avg_score.md
-                - get_signature: api/teleprompt/mipro_optimizer_v2/get_signature.md
-                - print_full_program: api/teleprompt/mipro_optimizer_v2/print_full_program.md
-                - save_candidate_program: api/teleprompt/mipro_optimizer_v2/save_candidate_program.md
-                - set_signature: api/teleprompt/mipro_optimizer_v2/set_signature.md
-            - random_search:
-                - BootstrapFewShot: api/teleprompt/random_search/BootstrapFewShot.md
-                - BootstrapFewShotWithRandomSearch: api/teleprompt/random_search/BootstrapFewShotWithRandomSearch.md
-                - Evaluate: api/teleprompt/random_search/Evaluate.md
-                - LabeledFewShot: api/teleprompt/random_search/LabeledFewShot.md
-                - Teleprompter: api/teleprompt/random_search/Teleprompter.md
-            - teleprompt:
-                - Teleprompter: api/teleprompt/teleprompt/Teleprompter.md
-            - teleprompt_optuna:
-                - BootstrapFewShot: api/teleprompt/teleprompt_optuna/BootstrapFewShot.md
-                - BootstrapFewShotWithOptuna: api/teleprompt/teleprompt_optuna/BootstrapFewShotWithOptuna.md
-                - Evaluate: api/teleprompt/teleprompt_optuna/Evaluate.md
-                - Teleprompter: api/teleprompt/teleprompt_optuna/Teleprompter.md
-            - vanilla:
-                - LabeledFewShot: api/teleprompt/vanilla/LabeledFewShot.md
-                - Teleprompter: api/teleprompt/vanilla/Teleprompter.md
+        - propose:
+            - GroundedProposer: api/propose/GroundedProposer.md
+        - retrievers:
+            - Embeddings: api/retrievers/Embeddings.md
+        - utils:
+            - BaseCallback: api/utils/BaseCallback.md
+            - DummyLM: api/utils/DummyLM.md
+            - DummyVectorizer: api/utils/DummyVectorizer.md
+            - download: api/utils/download.md
+            - dummy_rm: api/utils/dummy_rm.md
+            - with_callbacks: api/utils/with_callbacks.md
+        - Adapter: api/Adapter.md
+        - AvatarOptimizer: api/AvatarOptimizer.md
+        - BaseLM: api/BaseLM.md
+        - BaseModule: api/BaseModule.md
+        - BetterTogether: api/BetterTogether.md
+        - BootstrapFewShot: api/BootstrapFewShot.md
+        - BootstrapFewShotWithOptuna: api/BootstrapFewShotWithOptuna.md
+        - BootstrapFewShotWithRandomSearch: api/BootstrapFewShotWithRandomSearch.md
+        - BootstrapFinetune: api/BootstrapFinetune.md
+        - BootstrapRS: api/BootstrapRS.md
+        - COPRO: api/COPRO.md
+        - ChainOfThought: api/ChainOfThought.md
+        - ChainOfThoughtWithHint: api/ChainOfThoughtWithHint.md
+        - ChatAdapter: api/ChatAdapter.md
+        - CodePrompt: api/CodePrompt.md
+        - ColBERTv2: api/ColBERTv2.md
+        - Completions: api/Completions.md
+        - Embedder: api/Embedder.md
+        - Ensemble: api/Ensemble.md
+        - Evaluate: api/Evaluate.md
+        - Example: api/Example.md
+        - Image: api/Image.md
+        - InputField: api/InputField.md
+        - JSONAdapter: api/JSONAdapter.md
+        - KNN: api/KNN.md
+        - KNNFewShot: api/KNNFewShot.md
+        - LM: api/LM.md
+        - LabeledFewShot: api/LabeledFewShot.md
+        - MIPROv2: api/MIPROv2.md
+        - Module: api/Module.md
+        - MultiChainComparison: api/MultiChainComparison.md
+        - OldField: api/OldField.md
+        - OldInputField: api/OldInputField.md
+        - OldOutputField: api/OldOutputField.md
+        - OutputField: api/OutputField.md
+        - Parallel: api/Parallel.md
+        - Predict: api/Predict.md
+        - Prediction: api/Prediction.md
+        - Program: api/Program.md
+        - ProgramOfThought: api/ProgramOfThought.md
+        - Provider: api/Provider.md
+        - PythonInterpreter: api/PythonInterpreter.md
+        - ReAct: api/ReAct.md
+        - Retrieve: api/Retrieve.md
+        - Signature: api/Signature.md
+        - SignatureMeta: api/SignatureMeta.md
+        - TextPrompt: api/TextPrompt.md
+        - Tool: api/Tool.md
+        - TrainingJob: api/TrainingJob.md
+        - asyncify: api/asyncify.md
+        - configure_dspy_loggers: api/configure_dspy_loggers.md
+        - disable_litellm_logging: api/disable_litellm_logging.md
+        - disable_logging: api/disable_logging.md
+        - enable_litellm_logging: api/enable_litellm_logging.md
+        - enable_logging: api/enable_logging.md
+        - ensure_signature: api/ensure_signature.md
+        - infer_prefix: api/infer_prefix.md
+        - inspect_history: api/inspect_history.md
+        - load: api/load.md
+        - majority: api/majority.md
+        - make_signature: api/make_signature.md
+        - update_signatures: api/update_signatures.md
 
 theme:
     name: material
@@ -296,18 +197,17 @@ plugins:
                     heading_level: 3
                     members_order: source
                     separate_signature: false
-                    filters: ["!^_"]
                     show_category_heading: true
                     show_symbol_type_heading: true
-                    show_if_no_docstring: false
+                    show_if_no_docstring: true
                     show_signature_annotations: true
                     unwrap_annotated: true
-                    merge_init_into_class: true
+                    merge_init_into_class: false
                     docstring_options:
                         ignore_init: true
                     docstring_section_style: table
                     rendering:
-                        show_if_no_docstring: false
+                        show_if_no_docstring: true
                         show_warnings: false
                         html_meta: false
     - redirects:

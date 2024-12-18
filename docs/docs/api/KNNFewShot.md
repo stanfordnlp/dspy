@@ -1,8 +1,10 @@
-# dspy.evaluate.answer_exact_match
+# dspy.KNNFewShot
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.KNNFewShot
     handler: python
     options:
+        members:
+            - compile
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +17,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.teleprompt.KNNFewShot`
 

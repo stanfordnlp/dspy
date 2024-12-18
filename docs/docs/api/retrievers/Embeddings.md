@@ -1,8 +1,11 @@
-# dspy.evaluate.answer_exact_match
+# dspy.retrievers.Embeddings
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.retrievers.Embeddings
     handler: python
     options:
+        members:
+            - __call__
+            - forward
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +18,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.retrievers.Embeddings`
 

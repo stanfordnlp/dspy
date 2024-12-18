@@ -1,8 +1,10 @@
-# dspy.evaluate.answer_exact_match
+# dspy.utils.DummyVectorizer
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.utils.DummyVectorizer
     handler: python
     options:
+        members:
+            - __call__
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +17,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.utils.DummyVectorizer`
 

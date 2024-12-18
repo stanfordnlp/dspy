@@ -1,8 +1,12 @@
-# dspy.evaluate.answer_exact_match
+# dspy.BaseLM
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.BaseLM
     handler: python
     options:
+        members:
+            - __call__
+            - inspect_history
+            - update_global_history
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +19,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.clients.BaseLM`
 

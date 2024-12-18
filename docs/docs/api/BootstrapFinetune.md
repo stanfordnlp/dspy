@@ -1,8 +1,12 @@
-# dspy.evaluate.answer_exact_match
+# dspy.BootstrapFinetune
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.BootstrapFinetune
     handler: python
     options:
+        members:
+            - compile
+            - convert_to_lm_dict
+            - finetune_lms
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +19,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.teleprompt.BootstrapFinetune`
 

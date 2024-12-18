@@ -1,8 +1,16 @@
-# dspy.evaluate.answer_exact_match
+# dspy.Signature
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.Signature
     handler: python
     options:
+        members:
+            - copy
+            - dict
+            - json
+            - model_copy
+            - model_dump
+            - model_dump_json
+            - model_post_init
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +23,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.signatures.Signature`
 

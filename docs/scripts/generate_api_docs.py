@@ -85,18 +85,38 @@ This object can also be accessed as `{module_path}.{name}`
         return ""
 
 
+def get_public_methods(cls):
+    """Returns a list of all public methods in a class."""
+    return [
+        name for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
+        if name == "__call__" or not name.startswith("_")  # Exclude private and dunder methods
+    ]
+
+
+
 def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = False) -> str:
     """Generate documentation page content for an object."""
+    members_config = ""
+    if inspect.isclass(obj):
+        methods = get_public_methods(obj)
+        if methods:
+            methods_list = "\n".join(f"            - {method}" for method in methods)
+            members_config = f"""
+        members:
+{methods_list}"""
+
     return f"""# {module_path}.{name}
 
 ::: {module_path}.{name}
     handler: python
-    options:
+    options:{members_config}
         show_source: true
+        show_undocumented_members: true
         show_root_heading: true
+        show_inherited_members: true
         heading_level: 2
         docstring_section_style: google
-        show_root_full_path: false
+        show_root_full_path: true
         show_object_full_path: false
         separate_signature: false
 
@@ -104,9 +124,7 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
 """
 
 
-def generate_md_docs(output_dir: Path):
-    import dspy
-
+def generate_md_docs(output_dir: Path, excluded_modules=None):
     module = importlib.import_module("dspy")
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -131,10 +149,13 @@ def generate_md_docs(output_dir: Path):
         if submodule_name.startswith("_") or submodule_name not in init_contents:
             continue
 
-        generate_md_docs_submodule(submodule.name, output_dir / submodule_name, root_objects)
+        generate_md_docs_submodule(submodule.name, output_dir / submodule_name, root_objects, excluded_modules)
 
 
-def generate_md_docs_submodule(module_path: str, output_dir: Path, root_objects=None):
+def generate_md_docs_submodule(module_path: str, output_dir: Path, root_objects=None, excluded_modules=None):
+    if excluded_modules and module_path in excluded_modules:
+        return
+
     try:
         module = importlib.import_module(module_path)
     except ImportError:
@@ -177,6 +198,7 @@ if __name__ == "__main__":
     if api_dir.exists():
         shutil.rmtree(api_dir)
 
-    generate_md_docs(api_dir)
+    excluded_modules = ["dspy.dsp"]
+    generate_md_docs(api_dir, excluded_modules=excluded_modules)
     # Add final cleanup of empty directories
     remove_empty_dirs(api_dir)

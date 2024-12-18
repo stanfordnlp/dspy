@@ -1,6 +1,6 @@
-# dspy.evaluate.answer_exact_match
+# dspy.make_signature
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.make_signature
     handler: python
     options:
         show_source: true
@@ -15,5 +15,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.signatures.make_signature`
 

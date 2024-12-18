@@ -1,6 +1,6 @@
-# dspy.evaluate.answer_exact_match
+# dspy.majority
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.majority
     handler: python
     options:
         show_source: true
@@ -15,5 +15,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.predict.majority`
 

@@ -1,6 +1,6 @@
-# dspy.evaluate.SemanticF1
+# dspy.Program
 
-::: dspy.evaluate.SemanticF1
+::: dspy.Program
     handler: python
     options:
         members:
@@ -8,7 +8,6 @@
             - batch
             - deepcopy
             - dump_state
-            - forward
             - get_lm
             - load
             - load_state
@@ -33,5 +32,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.SemanticF1`
+This object can also be accessed as `dspy.Module`
 

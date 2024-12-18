@@ -1,6 +1,6 @@
-# dspy.evaluate.SemanticF1
+# dspy.ProgramOfThought
 
-::: dspy.evaluate.SemanticF1
+::: dspy.ProgramOfThought
     handler: python
     options:
         members:
@@ -8,6 +8,7 @@
             - batch
             - deepcopy
             - dump_state
+            - execute_code
             - forward
             - get_lm
             - load
@@ -17,6 +18,7 @@
             - named_predictors
             - named_sub_modules
             - parameters
+            - parse_code
             - predictors
             - reset_copy
             - save
@@ -33,5 +35,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.SemanticF1`
+This object can also be accessed as `dspy.predict.ProgramOfThought`
 

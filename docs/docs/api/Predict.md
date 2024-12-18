@@ -1,6 +1,6 @@
-# dspy.evaluate.SemanticF1
+# dspy.Predict
 
-::: dspy.evaluate.SemanticF1
+::: dspy.Predict
     handler: python
     options:
         members:
@@ -9,6 +9,7 @@
             - deepcopy
             - dump_state
             - forward
+            - get_config
             - get_lm
             - load
             - load_state
@@ -18,9 +19,11 @@
             - named_sub_modules
             - parameters
             - predictors
+            - reset
             - reset_copy
             - save
             - set_lm
+            - update_config
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -33,5 +36,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.SemanticF1`
+This object can also be accessed as `dspy.predict.Predict`
 

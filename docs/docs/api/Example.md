@@ -1,8 +1,19 @@
-# dspy.evaluate.answer_exact_match
+# dspy.Example
 
-::: dspy.evaluate.answer_exact_match
+::: dspy.Example
     handler: python
     options:
+        members:
+            - copy
+            - get
+            - inputs
+            - items
+            - keys
+            - labels
+            - toDict
+            - values
+            - with_inputs
+            - without
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
@@ -15,5 +26,5 @@
 
 ## Alias
 
-This object can also be accessed as `dspy.evaluate.answer_exact_match`
+This object can also be accessed as `dspy.primitives.Example`
 
