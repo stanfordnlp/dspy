@@ -46,15 +46,15 @@ nav:
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Compound AI Systems:
-            - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
-            - Agents: tutorials/agents/index.ipynb
-            - Reasoning: tutorials/math/index.ipynb
-            - Entity Extraction: tutorials/entity_extraction/index.ipynb
-            - Privacy-Conscious Delegation: tutorials/papillon/index.md
+            - Retrieval-Augmented Generation: tutorials/compound_ai_systems/rag/index.ipynb
+            - Agents: tutorials/compound_ai_systems/agents/index.ipynb
+            - Reasoning: tutorials/compound_ai_systems/math/index.ipynb
+            - Entity Extraction: tutorials/compound_ai_systems/entity_extraction/index.ipynb
+            - Privacy-Conscious Delegation: tutorials/compound_ai_systems/papillon/index.md
         - Quick DSPy Recipes:
-            - Saving and Loading: tutorials/saving/index.md
-            - Deployment: tutorials/deployment/index.md
-            - Debugging & Observability: tutorials/observability/index.md
+            - Saving and Loading: tutorials/quick_recipes/saving/index.md
+            - Deployment: tutorials/quick_recipes/deployment/index.md
+            - Debugging & Observability: tutorials/quick_recipes/observability/index.md
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
@@ -138,10 +138,10 @@ plugins:
               "intro/index.md": "index.md"
               "intro.md": "index.md"
 
-              "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-              "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
-              "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-              "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+              "docs/quick-start/getting-started-01.md": "tutorials/compound_ai_systems/rag/index.ipynb"
+              "docs/quick-start/getting-started-02.md": "tutorials/compound_ai_systems/rag/index.ipynb"
+              "quick-start/getting-started-01.md": "tutorials/compound_ai_systems/rag/index.ipynb"
+              "quick-start/getting-started-02.md": "tutorials/compound_ai_systems/rag/index.ipynb"
 
 extra:
     social:
