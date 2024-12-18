@@ -219,9 +219,7 @@ class BaseModule:
             with open(path, "wb") as f:
                 cloudpickle.dump(state, f)
         else:
-            raise ValueError(
-                f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}"
-            )
+            raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
     def load(self, path):
         """Load the saved module. You may also want to check out dspy.load, if you want to

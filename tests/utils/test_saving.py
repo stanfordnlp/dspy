@@ -1,5 +1,9 @@
 import dspy
 from dspy.utils import DummyLM
+from unittest.mock import patch
+import pytest
+from dspy.utils.saving import get_dependency_versions
+import logging
 
 
 def test_save_predict(tmp_path):
@@ -74,3 +78,54 @@ def test_save_compiled_model(tmp_path):
     loaded_predict = dspy.load(tmp_path)
     assert compiled_predict.demos == loaded_predict.demos
     assert compiled_predict.signature == loaded_predict.signature
+
+
+def test_load_with_version_mismatch(tmp_path):
+    from dspy.utils.saving import logger
+
+    # Mock versions during save
+    save_versions = {"python": "3.9", "dspy": "2.4.0", "cloudpickle": "2.0"}
+
+    # Mock versions during load
+    load_versions = {"python": "3.10", "dspy": "2.5.0", "cloudpickle": "2.1"}
+
+    predict = dspy.Predict("question->answer")
+
+    # Create a custom handler to capture log messages
+    class ListHandler(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.messages = []
+
+        def emit(self, record):
+            self.messages.append(record.getMessage())
+
+    # Add handler and set level
+    handler = ListHandler()
+    original_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+
+    try:
+        # Mock version during save
+        with patch("dspy.utils.saving.get_dependency_versions", return_value=save_versions):
+            predict.save(tmp_path, save_program=True)
+
+        # Mock version during load
+        with patch("dspy.utils.saving.get_dependency_versions", return_value=load_versions):
+            loaded_predict = dspy.load(tmp_path)
+
+        # Assert warnings were logged, and one warning for each mismatched dependency.
+        assert len(handler.messages) == 3
+
+        for msg in handler.messages:
+            assert "There is a mismatch of" in msg
+
+        # Verify the model still loads correctly despite version mismatches
+        assert isinstance(loaded_predict, dspy.Predict)
+        assert predict.signature == loaded_predict.signature
+
+    finally:
+        # Clean up: restore original level and remove handler
+        logger.setLevel(original_level)
+        logger.removeHandler(handler)

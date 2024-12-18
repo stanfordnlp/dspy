@@ -12,6 +12,7 @@ from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image  # isort: ski
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load
+from dspy.utils.streaming import streamify
 
 from dspy.dsp.utils.settings import settings
 

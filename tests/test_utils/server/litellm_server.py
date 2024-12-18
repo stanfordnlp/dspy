@@ -1,8 +1,11 @@
 import json
 import os
+import time
+from typing import AsyncIterator, Iterator
 
 import litellm
 from litellm import CustomLLM
+from litellm.types.utils import GenericStreamingChunk
 
 LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR = "LITELLM_TEST_SERVER_LOG_FILE_PATH"
 
@@ -15,6 +18,28 @@ class DSPyTestModel(CustomLLM):
     async def acompletion(self, *args, **kwargs) -> litellm.ModelResponse:
         _append_request_to_log_file(kwargs)
         return _get_mock_llm_response(kwargs)
+
+    def streaming(self, *args, **kwargs) -> Iterator[GenericStreamingChunk]:
+        generic_streaming_chunk: GenericStreamingChunk = {
+            "finish_reason": "stop",
+            "index": 0,
+            "is_finished": True,
+            "text": '{"output_text": "Hello!"}',
+            "tool_use": None,
+            "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0},
+        }
+        return generic_streaming_chunk  # type: ignore
+
+    async def astreaming(self, *args, **kwargs) -> AsyncIterator[GenericStreamingChunk]:
+        generic_streaming_chunk: GenericStreamingChunk = {
+            "finish_reason": "stop",
+            "index": 0,
+            "is_finished": True,
+            "text": '{"output_text": "Hello!"}',
+            "tool_use": None,
+            "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0},
+        }
+        yield generic_streaming_chunk
 
 
 def _get_mock_llm_response(request_kwargs):
