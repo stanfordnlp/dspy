@@ -1,6 +1,6 @@
 import dspy
 from dspy.datasets import HotPotQA
-from dspy.evaluate import Evaluate
+from dspy.evaluate import Evaluate, normalize_text, answer_exact_match_and_semantic
 
 from .base_task import BaseTask
 
@@ -14,7 +14,7 @@ class MultiHop(dspy.Module):
 
     def forward(self, question):
         context = []
-        for hop in range(2):
+        for _ in range(2):
             query = self.generate_query(context=context, question=question).search_query
             context += self.retrieve(query).passages
         return dspy.Prediction(
@@ -34,32 +34,26 @@ class HotPotQATask(BaseTask):
         # Set up metrics
         NUM_THREADS = 16
 
-        metric_EM = dspy.evaluate.answer_exact_match
-        self.metric = metric_EM
-
-        def gold_passages_retrieved(example, pred, trace=None):
-            gold_titles = set(map(dspy.evaluate.normalize_text, example["gold_titles"]))
-            found_titles = set(
-                map(
-                    dspy.evaluate.normalize_text,
-                    [c.split(" | ")[0] for c in pred.context],
-                )
-            )
-            return gold_titles.issubset(found_titles)
-
         kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=15)
-        self.evaluate_EM = Evaluate(devset=self.trainset, metric=metric_EM, **kwargs)
-        self.evaluate_retrieval = Evaluate(
-            devset=self.trainset, metric=gold_passages_retrieved, **kwargs
-        )
+        self.evaluate_EM = Evaluate(devset=self.trainset, metric=self.get_metric(), **kwargs)
+        self.evaluate_retrieval = Evaluate(devset=self.trainset, metric=self.get_metric(retrieval=True), **kwargs)
 
         self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
         return MultiHop(passages_per_hop=3)
 
-    def get_metric(self):
-        return self.metric
+    def get_metric(self, retrieval=False):
+        if not retrieval:
+            return answer_exact_match_and_semantic
+
+        def gold_passages_retrieved(example, pred, trace=None):
+            gold_titles = example["gold_titles"]
+            found_titles = [c.split(" | ")[0] for c in pred.context]
+
+            return set(map(normalize_text, gold_titles)) <= set(map(normalize_text, found_titles))
+
+        return gold_passages_retrieved
 
     def get_retrieval_metric(self):
         return self.evaluate_retrieval

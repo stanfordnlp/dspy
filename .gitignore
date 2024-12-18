@@ -16,6 +16,7 @@
 /ScoNe/
 testing/outputs/
 testing/playbook.ipynb
+testing/outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

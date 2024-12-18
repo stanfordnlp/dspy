@@ -1,7 +1,7 @@
 from functools import lru_cache
 import random
-
 import logging
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -139,7 +139,6 @@ class Predict(Module, Parameter):
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -164,9 +163,7 @@ class Predict(Module, Parameter):
 
         import dspy
 
-        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
-            demos = demos[:] + self.retrieve_demos(**inputs)
-            random.Random(self.random_seed).shuffle(demos)
+        demos = self.demos_for(inputs, static=None)
 
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
@@ -187,6 +184,13 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
+    def demos_for(self, inputs, static: Optional[list] = None):
+        demos = static or self.demos
+        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
+            demos = demos[:] + self.retrieve_demos(**inputs)
+            random.Random(self.random_seed).shuffle(demos)
+        return demos
 
 
 # TODO: get some defaults during init from the context window?

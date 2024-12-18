@@ -1,11 +1,13 @@
-from dspy.clients.lm import LM
-from dspy.clients.provider import Provider, TrainingJob
+from pathlib import Path
+import os
+
+from litellm.caching import Cache
+import litellm
+
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.embedding import Embedder
-import litellm
-import os
-from pathlib import Path
-from litellm.caching import Cache
+from dspy.clients.lm import LM
+from dspy.clients.provider import Provider, TrainingJob
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default

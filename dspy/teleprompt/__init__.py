@@ -9,7 +9,7 @@ from dspy.teleprompt.knn_fewshot import KNNFewShot
 # from .mipro_optimizer import MIPRO
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch, BootstrapKNNWithRandomSearch
-
+from dspy.teleprompt.mipro_optimizer_v2_knn import MIPROv2KNN
 
 # from .signature_opt import SignatureOptimizer
 # from .signature_opt_bayesian import BayesianSignatureOptimizer
@@ -27,6 +27,7 @@ __all__ = [
     "Ensemble",
     "KNNFewShot",
     "MIPROv2",
+    "MIPROv2KNN",
     "BootstrapFewShotWithRandomSearch",
     "BootstrapKNNWithRandomSearch",
     "BootstrapFewShotWithOptuna",

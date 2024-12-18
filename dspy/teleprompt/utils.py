@@ -42,24 +42,22 @@ def create_minibatch(trainset, batch_size=50, rng=None):
     return minibatch
 
 
-def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None):
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, **kwargs):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
 
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            score = evaluate(candidate_program, devset=trainset)
+            return evaluate(candidate_program, devset=trainset)
         # Or evaluate on a minibatch
         else:
-            score = evaluate(
+            return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
             )
     except Exception as e:
         print(f"Exception occurred: {e}")
-        score = 0.0  # TODO: Handle this better, as -ve scores are possible
-
-    return score
+        return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 
 def eval_candidate_program_with_pruning(
@@ -282,6 +280,7 @@ def create_n_fewshot_demo_sets(
     teacher=None,
     include_non_bootstrapped=True,
     seed=0,
+    num_threads=6,
     rng=None
 ):
     """
@@ -294,8 +293,8 @@ def create_n_fewshot_demo_sets(
     num_candidate_sets -= 3
 
     # Initialize demo_candidates dictionary
-    for i, _ in enumerate(student.predictors()):
-        demo_candidates[i] = []
+    for name, _ in enumerate(student.predictors()):
+        demo_candidates[name] = []
 
     rng = rng or random.Random(seed)
 
@@ -330,6 +329,7 @@ def create_n_fewshot_demo_sets(
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
+                num_threads=num_threads,
             )
             program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -346,14 +346,15 @@ def create_n_fewshot_demo_sets(
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
+                num_threads=num_threads,
             )
 
             program2 = teleprompter.compile(
                 student, teacher=teacher, trainset=trainset_copy,
             )
 
-        for i, _ in enumerate(student.predictors()):
-            demo_candidates[i].append(program2.predictors()[i].demos)
+        for name, _ in enumerate(student.predictors()):
+            demo_candidates[name].append(program2.predictors()[name].demos)
 
     return demo_candidates
 

@@ -5,7 +5,6 @@ from dspy.signatures import *
 from dspy.teleprompt import *
 
 import dspy.retrievers
-import dspy.teleprompt
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
@@ -25,6 +24,7 @@ from dspy.dsp.colbertv2 import ColBERTv2
 configure = settings.configure
 context = settings.context
 
+import dspy.teleprompt
 
 LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
@@ -36,4 +36,5 @@ BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
 BetterTogether = dspy.teleprompt.BetterTogether
 COPRO = dspy.teleprompt.COPRO
 MIPROv2 = dspy.teleprompt.MIPROv2
+MIPROv2KNN = dspy.teleprompt.MIPROv2KNN
 Ensemble = dspy.teleprompt.Ensemble

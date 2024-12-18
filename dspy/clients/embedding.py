@@ -1,5 +1,8 @@
+from typing import Callable, List, Optional, Union
 import litellm
 import numpy as np
+
+from .lm import request_cache
 
 
 class Embedder:
@@ -56,13 +59,28 @@ class Embedder:
         ```
     """
 
-    def __init__(self, model, batch_size=200, caching=True, **kwargs):
+    def __init__(self, model: Union[str, Callable], batch_size=200, **kwargs):
+        if not isinstance(model, str) and not callable(model):
+            raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
+
         self.model = model
         self.batch_size = batch_size
-        self.caching = caching
         self.default_kwargs = kwargs
 
-    def __call__(self, inputs, batch_size=None, caching=None, **kwargs):
+    def _embed(self, inputs: List[str], cache: bool, **kwargs):
+        if callable(self.model):
+            return self.model(inputs, **kwargs)
+
+        response = litellm_embedding({"model": self.model, "input": inputs, **kwargs}).data
+        return [data["embedding"] for data in response]
+
+    def __call__(
+        self,
+        inputs: Union[str, List[str]],
+        batch_size: Optional[int] = None,
+        cache: Optional[bool] = None,
+        **kwargs,
+    ) -> np.ndarray:
         """Compute embeddings for the given inputs.
 
         Args:
@@ -76,46 +94,29 @@ class Embedder:
             If the input is a list of strings, returns a 2D numpy array of embeddings, one embedding per row.
         """
 
-        if isinstance(inputs, str):
-            is_single_input = True
+        multi_input = isinstance(inputs, list)
+        if not multi_input:
             inputs = [inputs]
-        else:
-            is_single_input = False
 
         assert all(isinstance(inp, str) for inp in inputs), "All inputs must be strings."
 
-        if batch_size is None:
-            batch_size = self.batch_size
-        if caching is None:
-            caching = self.caching
+        batch_size = batch_size or self.batch_size
+        kwargs = {**self.default_kwargs, **kwargs}
 
-        merged_kwargs = self.default_kwargs.copy()
-        merged_kwargs.update(kwargs)
+        embeddings = flatten([self._embed(c, cache, **kwargs) for c in chunk(inputs, batch_size)])
+        embeddings = embeddings if multi_input else embeddings[0]
+        return np.array(embeddings, dtype=np.float32)
 
-        embeddings_list = []
 
-        def chunk(inputs_list, size):
-            for i in range(0, len(inputs_list), size):
-                yield inputs_list[i : i + size]
+def chunk(inputs_list, size):
+    for i in range(0, len(inputs_list), size):
+        yield inputs_list[i : i + size]
 
-        for batch_inputs in chunk(inputs, batch_size):
-            if isinstance(self.model, str):
-                embedding_response = litellm.embedding(
-                    model=self.model, input=batch_inputs, caching=caching, **merged_kwargs
-                )
-                batch_embeddings = [data["embedding"] for data in embedding_response.data]
-            elif callable(self.model):
-                batch_embeddings = self.model(batch_inputs, **merged_kwargs)
-            else:
-                raise ValueError(
-                    f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(self.model)}."
-                )
 
-            embeddings_list.extend(batch_embeddings)
+def flatten(list_of_lists):
+    return [item for sublist in list_of_lists for item in sublist]
 
-        embeddings = np.array(embeddings_list, dtype=np.float32)
 
-        if is_single_input:
-            return embeddings[0]
-        else:
-            return embeddings
+@request_cache(maxsize=None)
+def litellm_embedding(request):
+    return litellm.embedding(**request, cache={"no-cache": False, "no-store": False})
