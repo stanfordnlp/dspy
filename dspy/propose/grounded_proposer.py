@@ -5,7 +5,7 @@ from dspy.propose.dataset_summary_generator import create_dataset_summary
 from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix, get_dspy_source_code
 from dspy.teleprompt.utils import get_signature, get_prompt_model
 
-from .propose_base import Proposer
+from dspy.propose.propose_base import Proposer
 
 # Hardcoded variables (TODO: update)
 MAX_INSTRUCT_IN_HISTORY = 5  # 10

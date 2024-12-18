@@ -1,6 +1,6 @@
 black==24.2.0
 datamodel-code-generator==0.26.3
-litellm[proxy]==1.51.0
+litellm[proxy]==1.53.7
 pillow==10.4.0
 pre-commit==3.7.0
 pytest==8.3.3

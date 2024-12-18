@@ -124,6 +124,9 @@ means that care must be taken that the adapter is accessed at `forward` runtime,
 Another potential fix is to more natively support a "variadic" input field, where the input is a list of dictionaries,
 or a big dictionary, and have each adatper format it accordingly.
 
+Trajectories also affect meta-programming modules that view the trace later. It's inefficient O(n^2) to view the
+trace of every module repeating the prefix.
+
 
 TOPIC 02: Handling default arguments in the Tool class.
 
@@ -140,4 +143,13 @@ TOPIC 04: Default behavior when the trajectory gets too long.
 TOPIC 05: Adding more structure around how the instruction is formatted.
     * Concretely, it's now a string, so an optimizer can and does rewrite it freely.
     * An alternative would be to add more structure, such that a certain template is fixed but values are variable?
+
+
+TOPIC 06: Idiomatically allowing tools that maintain state across iterations, but not across different `forward` calls.
+    * So the tool would be newly initialized at the start of each `forward` call, but maintain state across iterations.
+    * This is pretty useful for allowing the agent to keep notes or count certain things, etc.
+
+TOPIC 07: Make max_iters a bit more expressive.
+    * Allow passing `max_iters` in forward to overwrite the default.
+    * Get rid of `last_iteration: bool` in the format function. It's not necessary now.
 """

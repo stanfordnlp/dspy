@@ -1,7 +1,7 @@
 import random
 import uuid
 
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 from dspy import Example
 
 

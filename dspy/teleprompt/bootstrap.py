@@ -13,7 +13,7 @@ from .vanilla import LabeledFewShot
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
 
-# TODO: Switch here from dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
+# TODO: Switch here from dspy.dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
 # NOTE: Notice the places where we don't shuffle examples. I do like that this one doesn't shuffle.
 # Other ones that consider options may want to use both unshuffled and then shuffle a few times, when
 # considering candidates.
@@ -264,11 +264,7 @@ class BootstrapFewShot(Teleprompter):
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)
-
-            if dspy.settings.release >= 20230928:
-                predictor.demos = raw_demos + augmented_demos
-            else:
-                predictor.demos = augmented_demos + raw_demos
+            predictor.demos = augmented_demos + raw_demos
 
         return self.student
 

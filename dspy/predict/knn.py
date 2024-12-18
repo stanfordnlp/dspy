@@ -1,15 +1,8 @@
-from typing import List, TYPE_CHECKING
-
 import numpy as np
-
-import dsp
-
-if TYPE_CHECKING:
-    import dspy
 
 
 class KNN:
-    def __init__(self, k: int, trainset: List["dspy.Example"], vectorizer=None):
+    def __init__(self, k: int, trainset: list, vectorizer=None):
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
 
@@ -23,6 +16,8 @@ class KNN:
             >>> knn = KNN(k=3, trainset=trainset)
             >>> similar_examples = knn(input="hello")
         """
+
+        import dspy.dsp as dsp
         import dspy
 
         self.k = k
@@ -34,7 +29,7 @@ class KNN:
         ]
         self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
 
-    def __call__(self, **kwargs) -> List["dspy.Example"]:
+    def __call__(self, **kwargs) -> list:
         input_example_vector = self.embedding([" | ".join([f"{key}: {val}" for key, val in kwargs.items()])])
         scores = np.dot(self.trainset_vectors, input_example_vector.T).squeeze()
         nearest_samples_idxs = scores.argsort()[-self.k :][::-1]
