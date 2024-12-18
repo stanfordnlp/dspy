@@ -45,11 +45,13 @@ class SemanticF1(dspy.Module):
             self.module = dspy.ChainOfThought(SemanticRecallPrecision)
 
     def forward(self, example, pred, trace=None):
-        scores = self.module(question=example.question, ground_truth=example.response, system_response=pred.response)
+        ground_truth = example.response if hasattr(example, "response") else getattr(example, "answer", None)
+        system_response = pred.response if hasattr(pred, "response") else getattr(pred, "answer", None)
+
+        scores = self.module(question=example.question, ground_truth=ground_truth, system_response=system_response)
         score = f1_score(scores.precision, scores.recall)
 
         return score if trace is None else score >= self.threshold
-
 
 
 ###########
@@ -70,7 +72,6 @@ class AnswerCompleteness(dspy.Signature):
     completeness: float = dspy.OutputField(desc="fraction (out of 1.0) of ground truth covered by the system response")
 
 
-
 class AnswerGroundedness(dspy.Signature):
     """
     Estimate the groundedness of a system's responses, against real retrieved documents written by people.
@@ -81,9 +82,13 @@ class AnswerGroundedness(dspy.Signature):
     question: str = dspy.InputField()
     retrieved_context: str = dspy.InputField()
     system_response: str = dspy.InputField()
-    system_response_claims: str = dspy.OutputField(desc="enumeration of non-trivial or check-worthy claims in the system response")
+    system_response_claims: str = dspy.OutputField(
+        desc="enumeration of non-trivial or check-worthy claims in the system response"
+    )
     discussion: str = dspy.OutputField(desc="discussion of how supported the claims are by the retrieved context")
-    groundedness: float = dspy.OutputField(desc="fraction (out of 1.0) of system response supported by the retrieved context")
+    groundedness: float = dspy.OutputField(
+        desc="fraction (out of 1.0) of system response supported by the retrieved context"
+    )
 
 
 class CompleteAndGrounded(dspy.Module):
@@ -93,12 +98,15 @@ class CompleteAndGrounded(dspy.Module):
         self.groundedness_module = dspy.ChainOfThought(AnswerGroundedness)
 
     def forward(self, example, pred, trace=None):
-        completeness = self.completeness_module(question=example.question, ground_truth=example.response, system_response=pred.response)
-        groundedness = self.groundedness_module(question=example.question, retrieved_context=pred.context, system_response=pred.response)
+        completeness = self.completeness_module(
+            question=example.question, ground_truth=example.response, system_response=pred.response
+        )
+        groundedness = self.groundedness_module(
+            question=example.question, retrieved_context=pred.context, system_response=pred.response
+        )
         score = f1_score(groundedness.groundedness, completeness.completeness)
 
         return score if trace is None else score >= self.threshold
-
 
 
 # """

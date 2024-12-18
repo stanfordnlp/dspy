@@ -2,32 +2,15 @@ import random
 
 import tqdm
 from datasets import load_dataset
-import pandas as pd
+
+from dspy.evaluate import Evaluate, normalize_text
 import dspy
-from dsp.utils.utils import deduplicate
-from dspy.evaluate import Evaluate
 
 from .base_task import BaseTask
 
 
 def count_unique_docs(example):
-    return len(set([fact["key"] for fact in example["supporting_facts"]]))
-
-
-def discrete_retrieval_eval(example, pred, trace=None):
-    gold_titles = set(
-        map(
-            dspy.evaluate.normalize_text,
-            [doc["key"] for doc in example["supporting_facts"]],
-        )
-    )
-    found_titles = set(
-        map(
-            dspy.evaluate.normalize_text,
-            [c.split(" | ")[0] for c in pred.retrieved_docs],
-        )
-    )
-    return gold_titles.issubset(found_titles)
+    return len(set(fact["key"] for fact in example["supporting_facts"]))
 
 
 class RetrieveMultiHop2(dspy.Module):
@@ -115,18 +98,21 @@ class HoverRetrieveDiscrete(BaseTask):
         # Set up metrics
         NUM_THREADS = 16
 
-        self.metric = discrete_retrieval_eval
-
         kwargs = dict(num_threads=NUM_THREADS, display_progress=True, display_table=15)
-        self.evaluate = Evaluate(devset=self.trainset, metric=self.metric, **kwargs)
+        self.evaluate = Evaluate(devset=self.trainset, metric=self.get_metric(), **kwargs)
 
         self.set_splits(TRAIN_NUM=100, DEV_NUM=100, TEST_NUM=100)
 
     def get_program(self):
-        return RetrieveMultiHop2()
+        return RetrieveMultiHop4()
 
     def get_metric(self):
-        return self.metric
+        def discrete_retrieval_eval(example, pred, trace=None):
+            gold_titles = [fact["key"] for fact in example["supporting_facts"]]
+            found_titles = [c.split(" | ")[0] for c in pred.retrieved_docs]
+            return set(map(normalize_text, gold_titles)) <= set(map(normalize_text, found_titles))
+
+        return discrete_retrieval_eval
 
     def get_default_max_bootstrapped_demos(self):
         return 1
