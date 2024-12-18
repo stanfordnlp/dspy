@@ -9,6 +9,7 @@ import dspy
 from dspy.teleprompt import BootstrapFewShot
 from dspy.evaluate import Evaluate, answer_exact_match, SemanticF1
 from abc import ABC, abstractmethod
+from opentelemetry import trace
 
 class BaseMaxScoreTester(ABC):
     def __init__(
@@ -23,20 +24,6 @@ class BaseMaxScoreTester(ABC):
         colbert_v2_endpoint: str = "http://20.102.90.50:2017/wiki17_abstracts",
         dataset_name: str = "default",
     ):
-        """
-        Base class for testing maximum achievable scores on datasets.
-        
-        Args:
-            num_threads: Number of threads for parallel evaluation
-            early_stopping_threshold: Stop if we achieve this score
-            max_errors: Maximum number of errors before stopping evaluation
-            prompt_model_name: Name of the model to use for prompting
-            task_model_name: Name of the model to use for task execution
-            prompt_model: Optional custom prompt model
-            task_model: Optional custom task model
-            colbert_v2_endpoint: Endpoint for ColBERTv2 service
-            dataset_name: Name of the dataset being tested
-        """
         self.num_threads = num_threads
         self.max_errors = max_errors
         self.early_stopping_threshold = early_stopping_threshold
@@ -44,12 +31,14 @@ class BaseMaxScoreTester(ABC):
         self.TASK_MODEL_NAME = task_model_name
         self.COLBERT_V2_ENDPOINT = colbert_v2_endpoint
         self.dataset_name = dataset_name
-        
+            
         # Initialize models
         self._setup_models(prompt_model, task_model)
         
         self.programs = []
         self.performance_cache = pd.DataFrame()
+        self.tracer = trace.get_tracer(__name__)
+        self.project_id = "UHJvamVjdDox"
 
     def _setup_models(self, prompt_model, task_model):
         """Setup the language models and retrieval model."""
@@ -141,87 +130,83 @@ class BaseMaxScoreTester(ABC):
         )
         
         class ItemProcessor:
-            def __init__(self, programs, metric, dataset_name):
+            def __init__(self, programs, metric, dataset_name, tracer, project_id):
                 self.programs = programs
                 self.metric = metric
                 self.dataset_name = dataset_name
-            
-            def discrete_retrieval_eval(self, example, pred, trace=None):
-                gold_titles = set(
-                    map(
-                        dspy.evaluate.normalize_text,
-                        [doc["key"] for doc in example["supporting_facts"]],
-                    )
-                )
-                found_titles = set(
-                    map(
-                        dspy.evaluate.normalize_text,
-                        [c.split(" | ")[0] for c in pred.retrieved_docs],
-                    )
-                )
-                return gold_titles, found_titles
+                self.tracer = tracer
+                self.project_id = project_id
             
             def __call__(self, item_idx, item):
-                """Process a single dataset item with all programs until success."""
                 item_results = {
                     'item_idx': item_idx,
                     'split': split_name,
                     'input': str(item.inputs()),
                     'expected': str(item),
-                    'successful_prediction': None,  # Will store the first successful prediction
-                    'successful_program_idx': -1    # Will store index of first successful program
+                    'successful_prediction': None,
+                    'successful_program_idx': -1
                 }
                 
-                # Try each program until success
                 for prog_idx, program in enumerate(self.programs):
                     try:
-                        # Run the program on the item
-                        prediction = program(**item.inputs())
-                        
-                        # Calculate score using metric
-                        raw_score = self.metric(item, prediction)
-                        score = raw_score[0] if isinstance(raw_score, tuple) else raw_score
-                        score = float(score)
-                        
-                        # Record result with prediction
-                        item_results[f'program_{prog_idx}'] = score
-                        item_results[f'prediction_{prog_idx}'] = str(prediction)
-                        
-                        if self.dataset_name == "hover_retrieve_discrete":
-                            gold_titles, found_titles = self.discrete_retrieval_eval(item, prediction)
-                            item_results[f'gold_titles_{prog_idx}'] = gold_titles
-                            item_results[f'gold_titles_len_{prog_idx}'] = len(gold_titles)
-                            item_results[f'found_titles_{prog_idx}'] = found_titles
-                            item_results[f'found_titles_len_{prog_idx}'] = len(found_titles)
-                            item_results[f'gold_titles_issubset_found_titles_{prog_idx}'] = gold_titles.issubset(found_titles)
-                            item_results[f'gold_titles_intersection_found_titles_{prog_idx}'] = gold_titles.intersection(found_titles)
-                            item_results[f'gold_titles_intersection_found_titles_len_{prog_idx}'] = len(gold_titles.intersection(found_titles))
-                            item_results[f'gold_titles_diff_found_titles_{prog_idx}'] = gold_titles.difference(found_titles)
-                            item_results[f'gold_titles_diff_found_titles_len_{prog_idx}'] = len(gold_titles.difference(found_titles))
-                            item_results[f'found_titles_diff_gold_titles_{prog_idx}'] = found_titles.difference(gold_titles)
-                            item_results[f'found_titles_diff_gold_titles_len_{prog_idx}'] = len(found_titles.difference(gold_titles))
-                        
-                        if self.dataset_name == "hotpotqa":
-                            item_results[f'exact_match_{prog_idx}'] = answer_exact_match(item, prediction)
-                            item_results[f'semantic_f1_95_{prog_idx}'] = SemanticF1(threshold=0.95)(item, prediction)
-
-                        # Check if this program passed and it's our first success
-                        if score == 1.0 and item_results['successful_prediction'] is None:
-                            item_results['successful_prediction'] = str(prediction)
-                            item_results['successful_program_idx'] = prog_idx
+                        with self.tracer.start_as_current_span(f"prediction_program_{prog_idx}") as span:
+                            prediction = program(**item.inputs())
+                            
+                            # Get trace ID and URL
+                            trace_id = format(span.get_span_context().trace_id, '032x')
+                            trace_url = f"https://app.phoenix.arize.com/projects/{self.project_id}/traces/{trace_id}"
+                            
+                            # Calculate score using metric
+                            raw_score = self.metric(item, prediction)
+                            score = raw_score[0] if isinstance(raw_score, tuple) else raw_score
+                            score = float(score)
+                            
+                            # Record result with prediction and trace URL
+                            item_results[f'program_{prog_idx}'] = score
+                            item_results[f'prediction_{prog_idx}'] = str(prediction)
+                            item_results[f'trace_url_{prog_idx}'] = trace_url
+                            
+                            if self.dataset_name == "hover_retrieve_discrete":
+                                gold_titles, found_titles = self.discrete_retrieval_eval(item, prediction)
+                                item_results[f'gold_titles_{prog_idx}'] = gold_titles
+                                item_results[f'gold_titles_len_{prog_idx}'] = len(gold_titles)
+                                item_results[f'found_titles_{prog_idx}'] = found_titles
+                                item_results[f'found_titles_len_{prog_idx}'] = len(found_titles)
+                                item_results[f'gold_titles_issubset_found_titles_{prog_idx}'] = gold_titles.issubset(found_titles)
+                                item_results[f'gold_titles_intersection_found_titles_{prog_idx}'] = gold_titles.intersection(found_titles)
+                                item_results[f'gold_titles_intersection_found_titles_len_{prog_idx}'] = len(gold_titles.intersection(found_titles))
+                                item_results[f'gold_titles_diff_found_titles_{prog_idx}'] = gold_titles.difference(found_titles)
+                                item_results[f'gold_titles_diff_found_titles_len_{prog_idx}'] = len(gold_titles.difference(found_titles))
+                                item_results[f'found_titles_diff_gold_titles_{prog_idx}'] = found_titles.difference(gold_titles)
+                                item_results[f'found_titles_diff_gold_titles_len_{prog_idx}'] = len(found_titles.difference(gold_titles))
+                            
                             if self.dataset_name == "hotpotqa":
-                                item_results[f'successful_exact_match'] = answer_exact_match(item, prediction)
-                                item_results[f'successful_semantic_f1_95'] = SemanticF1(threshold=0.95)(item, prediction)
-                            break
+                                item_results[f'exact_match_{prog_idx}'] = answer_exact_match(item, prediction)
+                                item_results[f'semantic_f1_95_{prog_idx}'] = SemanticF1(threshold=0.95)(item, prediction)
+
+                            # Check if this program passed and it's our first success
+                            if score == 1.0 and item_results['successful_prediction'] is None:
+                                item_results['successful_prediction'] = str(prediction)
+                                item_results['successful_program_idx'] = prog_idx
+                                if self.dataset_name == "hotpotqa":
+                                    item_results[f'successful_exact_match'] = answer_exact_match(item, prediction)
+                                    item_results[f'successful_semantic_f1_95'] = SemanticF1(threshold=0.95)(item, prediction)
+                                break
                             
                     except Exception as e:
                         item_results[f'program_{prog_idx}'] = 0.0
                         item_results[f'prediction_{prog_idx}'] = str(e)
+                        item_results[f'trace_url_{prog_idx}'] = None
                 
                 return item_results
         
-        # Create processor instance
-        processor = ItemProcessor(self.programs, metric, dataset_name=self.dataset_name)
+        processor = ItemProcessor(
+            self.programs, 
+            metric, 
+            dataset_name=self.dataset_name,
+            tracer=self.tracer,
+            project_id=self.project_id
+        )
         
         # Create list of (idx, item) pairs
         items_with_idx = list(enumerate(dataset))
