@@ -72,7 +72,14 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-dev = ["pytest>=6.2.5"]
+dev = [
+    "pytest>=6.2.5",
+    "pillow",
+    "pytest-mock",
+    "datamodel-code-generator",
+    "transformers>=4.47.0",
+
+]
 fastembed = ["fastembed>=0.2.0"]
 
 [project.urls]
