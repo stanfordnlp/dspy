@@ -123,6 +123,7 @@ class LM(BaseLM):
             timestamp=datetime.now().isoformat(),
             uuid=str(uuid.uuid4()),
             model=self.model,
+            response_model=response["model"],
             model_type=self.model_type,
         )
         self.history.append(entry)
