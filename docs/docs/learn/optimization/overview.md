@@ -3,7 +3,7 @@ sidebar_position: 1
 ---
 
 
-# Optimization in DSPy
+# Optimize your DSPy program
 
 Once you have a system and a way to evaluate it, you can use DSPy optimizers to tune the prompts or weights in your program. Now it's useful to expand your data collection effort into building a training set and a held-out test set, in addition to the development set you've been using for exploration. For the training set (and its subset, validation set), you can often get substantial value out of 30 examples, but aim for at least 300 examples. Some optimizers accept a `trainset` only. Others ask for a `trainset` and a `valset`. For prompt optimizers, we suggest starting with a 20% split for training and 80% for validation, which is often the _opposite_ of what one does for DNNs.
 
