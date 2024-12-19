@@ -3,7 +3,7 @@ from typing import List, Optional, Union
 import logging
 import random
 
-import dsp
+from dspy import dsp
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
