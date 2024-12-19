@@ -15,10 +15,9 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
-
-from ..adapters.image_utils import Image
-from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
+from dspy.adapters.image_utils import Image
+from dspy.signatures.signature import SignatureMeta
+from dspy.signatures.utils import get_dspy_field_type
 
 _logger = logging.getLogger(__name__)
 

@@ -140,5 +140,5 @@ class RetrieveThenRerank(Parameter):
 
                     pred_returns.append(Prediction(**passages_dict))
                 return pred_returns
-            elif isinstance(passages[0], Dict):
+            elif isinstance(passages[0], dict):
                 return single_query_passage(passages=passages)

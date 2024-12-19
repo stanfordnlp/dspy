@@ -5,8 +5,13 @@
 """
 
 import unicodedata
+import logging
+import copy
 
 import regex
+
+
+logger = logging.getLogger(__name__)
 
 
 class Tokens:

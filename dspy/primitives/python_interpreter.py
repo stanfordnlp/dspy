@@ -26,8 +26,11 @@ class InterpreterError(ValueError):
     expression, due to syntax error or unsupported operations.
     """
 
+class BreakException(Exception):
     pass
 
+class ContinueException(Exception):
+    pass
 
 class PythonInterpreter:
     r"""A customized python interpreter to control the execution of
