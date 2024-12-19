@@ -135,7 +135,11 @@ class SignatureMeta(type(BaseModel)):
         return cls._get_fields_with_type("output")
 
     def _get_fields_with_type(cls, field_type) -> dict[str, FieldInfo]:
-        return {k: v for k, v in cls.model_fields.items() if v.json_schema_extra["__dspy_field_type"] == field_type}
+        return {
+            k: v
+            for k, v in cls.model_fields.items()
+            if v.json_schema_extra["__dspy_field_type"] == field_type
+        }
 
     def prepend(cls, name, field, type_=None) -> Type["Signature"]:
         return cls.insert(0, name, field, type_)
@@ -143,7 +147,9 @@ class SignatureMeta(type(BaseModel)):
     def append(cls, name, field, type_=None) -> Type["Signature"]:
         return cls.insert(-1, name, field, type_)
 
-    def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
+    def insert(
+            cls, index: int, name: str, field, type_: Type = None
+    ) -> Type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -155,7 +161,11 @@ class SignatureMeta(type(BaseModel)):
         output_fields = list(cls.output_fields.items())
 
         # Choose the list to insert into based on the field type
-        lst = input_fields if field.json_schema_extra["__dspy_field_type"] == "input" else output_fields
+        lst = (
+            input_fields
+            if field.json_schema_extra["__dspy_field_type"] == "input"
+            else output_fields
+        )
         # We support negative insert indices
         if index < 0:
             index += len(lst) + 1
@@ -236,7 +246,7 @@ class SignatureMeta(type(BaseModel)):
 
 
 class Signature(BaseModel, metaclass=SignatureMeta):
-    ""  # noqa: D419
+    """"""  # noqa: D419
 
     # Note: Don't put a docstring here, as it will become the default instructions
     # for any signature that doesn't define it's own instructions.
@@ -245,9 +255,9 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     @contextmanager
     def replace(
-        cls,
-        new_signature: "Type[Signature]",
-        validate_new_signature: bool = True,
+            cls,
+            new_signature: "Type[Signature]",
+            validate_new_signature: bool = True,
     ) -> typing.Generator[None, None, None]:
         """Replace the signature with an updated version.
 
@@ -271,21 +281,34 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         def swap_attributes(source: Type[Signature]):
             unhandled = {}
 
-            for attr in ["__doc__", "__pydantic_fields__", "model_fields", "model_extra", "model_config"]:
+            for attr in [
+                "__doc__",
+                "__pydantic_fields__",
+                "model_fields",
+                "model_extra",
+                "model_config",
+            ]:
                 try:
                     setattr(cls, attr, getattr(source, attr))
                 except AttributeError as exc:
                     if attr in ("__pydantic_fields__", "model_fields"):
-                        version = "< 2.10" if attr == "__pydantic_fields__" else ">= 2.10"
-                        logging.debug(f"Model attribute {attr} not replaced, expected with pydantic {version}")
+                        version = (
+                            "< 2.10" if attr == "__pydantic_fields__" else ">= 2.10"
+                        )
+                        logging.debug(
+                            f"Model attribute {attr} not replaced, expected with pydantic {version}"
+                        )
                         unhandled[attr] = exc
                     else:
                         raise exc
 
             # if neither of the attributes were replaced, raise an error to prevent silent failures
             if set(unhandled.keys()) >= {"model_fields", "__pydantic_fields__"}:
-                raise ValueError("Failed to replace either model_fields or __pydantic_fields__") from (
-                    unhandled.get("model_fields") or unhandled.get("__pydantic_fields__")
+                raise ValueError(
+                    "Failed to replace either model_fields or __pydantic_fields__"
+                ) from (
+                    unhandled.get("model_fields")
+                    or unhandled.get("__pydantic_fields__")
                 )
 
         swap_attributes(new_signature)
@@ -299,30 +322,38 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
 @contextmanager
 def update_signatures(
-    signature_map: Dict[Type[Signature], Type[Signature]],
-    validate_new_signature: bool = True,
+        signature_map: Dict[Type[Signature], Type[Signature]],
+        validate_new_signature: bool = True,
 ) -> typing.Generator[None, None, None]:
     """Replace multiple signatures with updated versions, according to a mapping between the old and new signatures."""
     with ExitStack() as stack:
         for old_signature, new_signature in signature_map.items():
-            stack.enter_context(old_signature.replace(new_signature, validate_new_signature=validate_new_signature))
+            stack.enter_context(
+                old_signature.replace(
+                    new_signature, validate_new_signature=validate_new_signature
+                )
+            )
         yield
 
 
-def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
+def ensure_signature(
+        signature: Union[str, Type[Signature]], instructions=None
+) -> Signature:
     if signature is None:
         return None
     if isinstance(signature, str):
         return Signature(signature, instructions)
     if instructions is not None:
-        raise ValueError("Don't specify instructions when initializing with a Signature")
+        raise ValueError(
+            "Don't specify instructions when initializing with a Signature"
+        )
     return signature
 
 
 def make_signature(
-    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-    instructions: str = None,
-    signature_name: str = "StringSignature",
+        signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
+        instructions: str = None,
+        signature_name: str = "StringSignature",
 ) -> Type[Signature]:
     """Create a new Signature type with the given fields and instructions.
 
@@ -356,7 +387,9 @@ def make_signature(
         if type_ is None:
             type_ = str
         # if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
+        if not isinstance(
+                type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)
+        ):
             raise ValueError(f"Field types must be types, not {type(type_)}")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, not {type(field)}")
@@ -380,7 +413,9 @@ def make_signature(
 
 def _parse_signature(signature: str) -> Tuple[Type, Field]:
     if signature.count("->") != 1:
-        raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
+        raise ValueError(
+            f"Invalid signature format: '{signature}', must contain exactly one '->'."
+        )
 
     inputs_str, outputs_str = signature.split("->")
 
@@ -396,7 +431,10 @@ def _parse_signature(signature: str) -> Tuple[Type, Field]:
 def _parse_arg_string(string: str, names=None) -> Dict[str, str]:
     args = ast.parse("def f(" + string + "): pass").body[0].args.args
     names = [arg.arg for arg in args]
-    types = [str if arg.annotation is None else _parse_type_node(arg.annotation) for arg in args]
+    types = [
+        str if arg.annotation is None else _parse_type_node(arg.annotation)
+        for arg in args
+    ]
     return zip(names, types)
 
 
@@ -405,7 +443,7 @@ def _parse_type_node(node, names=None) -> Any:
 
     if names is None:
         names = dict(typing.__dict__)
-        names['NoneType'] = type(None)
+        names["NoneType"] = type(None)
 
     def resolve_name(id_: str):
         # Check if it's a built-in known type or in the provided names
@@ -413,19 +451,33 @@ def _parse_type_node(node, names=None) -> Any:
             return names[id_]
 
         # Common built-in types
-        builtin_types = [int, str, float, bool, list, tuple, dict, set, frozenset, complex, bytes, bytearray]
+        builtin_types = [
+            int,
+            str,
+            float,
+            bool,
+            list,
+            tuple,
+            dict,
+            set,
+            frozenset,
+            complex,
+            bytes,
+            bytearray,
+        ]
 
         # Try PIL Image if 'Image' encountered
-        if 'Image' not in names:
+        if "Image" not in names:
             try:
                 from PIL import Image
-                names['Image'] = Image
+
+                names["Image"] = Image
             except ImportError:
                 pass
 
         # If we have PIL Image and id_ is 'Image', return it
-        if 'Image' in names and id_ == 'Image':
-            return names['Image']
+        if "Image" in names and id_ == "Image":
+            return names["Image"]
 
         # Check if it matches any known built-in type by name
         for t in builtin_types:
@@ -490,7 +542,11 @@ def _parse_type_node(node, names=None) -> Any:
     if isinstance(node, ast.Constant):
         return node.value
 
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Field":
+    if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "Field"
+    ):
         keys = [kw.arg for kw in node.keywords]
         values = []
         for kw in node.keywords:
@@ -501,6 +557,7 @@ def _parse_type_node(node, names=None) -> Any:
         return Field(**dict(zip(keys, values)))
 
     raise ValueError(f"Unhandled AST node type in annotation: {ast.dump(node)}")
+
 
 def infer_prefix(attribute_name: str) -> str:
     """Infer a prefix from an attribute name."""

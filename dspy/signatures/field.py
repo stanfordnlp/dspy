@@ -1,4 +1,5 @@
 import pydantic
+
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
@@ -34,7 +35,11 @@ def OutputField(**kwargs):
 
 
 def new_to_old_field(field):
-    return (OldInputField if field.json_schema_extra["__dspy_field_type"] == "input" else OldOutputField)(
+    return (
+        OldInputField
+        if field.json_schema_extra["__dspy_field_type"] == "input"
+        else OldOutputField
+    )(
         prefix=field.json_schema_extra["prefix"],
         desc=field.json_schema_extra["desc"],
         format=field.json_schema_extra.get("format"),
