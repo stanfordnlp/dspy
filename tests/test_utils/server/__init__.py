@@ -1,19 +1,18 @@
+from typing import Any, Generator
 import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Tuple
 
 import pytest
 
-from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR
+from .litellm_server import LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR
 
 
 @pytest.fixture()
-def litellm_test_server() -> Tuple[str, str]:
+def litellm_test_server() -> Generator[tuple[str, str], None, None]:
     """
     Start a LiteLLM test server for a DSPy integration test case, and tear down the
     server when the test case completes.
@@ -46,7 +45,7 @@ def litellm_test_server() -> Tuple[str, str]:
         process.wait()
 
 
-def read_litellm_test_server_request_logs(server_log_file_path: str) -> List[Dict[str, Any]]:
+def read_litellm_test_server_request_logs(server_log_file_path: str) -> list[dict[str, Any]]:
     """
     Read request logs from a LiteLLM server used during DSPy integration tests.
 
