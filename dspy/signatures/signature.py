@@ -7,24 +7,13 @@ import typing
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
+import importlib
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-import dsp
-from dspy.adapters.image_utils import Image
-from dspy.signatures.field import InputField, OutputField, new_to_old_field
-
-
-def signature_to_template(signature, adapter=None) -> dsp.Template:
-    """Convert from new to legacy format."""
-
-    adapter = adapter or dsp.Template
-
-    return adapter(
-        signature.instructions,
-        **{name: new_to_old_field(field) for name, field in signature.fields.items()},
-    )
+from dspy.adapters.image_utils import Image  # noqa: F401
+from dspy.signatures.field import InputField, OutputField
 
 
 def _default_instructions(cls) -> str:
@@ -355,7 +344,7 @@ def make_signature(
         if type_ is None:
             type_ = str
         # if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias)):
+        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
             raise ValueError(f"Field types must be types, not {type(type_)}")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, not {type(field)}")
@@ -400,53 +389,106 @@ def _parse_arg_string(string: str, names=None) -> Dict[str, str]:
 
 
 def _parse_type_node(node, names=None) -> Any:
-    """Recursively parse an AST node representing a type annotation.
-
-    without using structural pattern matching introduced in Python 3.10.
-    """
+    """Recursively parse an AST node representing a type annotation."""
 
     if names is None:
-        names = typing.__dict__
+        names = dict(typing.__dict__)
+        names['NoneType'] = type(None)
 
-    if isinstance(node, ast.Module):
-        body = node.body
-        if len(body) != 1:
-            raise ValueError(f"Code is not syntactically valid: {node}")
-        return _parse_type_node(body[0], names)
-
-    if isinstance(node, ast.Expr):
-        value = node.value
-        return _parse_type_node(value, names)
-
-    if isinstance(node, ast.Name):
-        id_ = node.id
+    def resolve_name(id_: str):
+        # Check if it's a built-in known type or in the provided names
         if id_ in names:
             return names[id_]
 
-        for type_ in [int, str, float, bool, list, tuple, dict, Image]:
-            if type_.__name__ == id_:
-                return type_
+        # Common built-in types
+        builtin_types = [int, str, float, bool, list, tuple, dict, set, frozenset, complex, bytes, bytearray]
+
+        # Try PIL Image if 'Image' encountered
+        if 'Image' not in names:
+            try:
+                from PIL import Image
+                names['Image'] = Image
+            except ImportError:
+                pass
+
+        # If we have PIL Image and id_ is 'Image', return it
+        if 'Image' in names and id_ == 'Image':
+            return names['Image']
+
+        # Check if it matches any known built-in type by name
+        for t in builtin_types:
+            if t.__name__ == id_:
+                return t
+
+        # Attempt to import a module with this name dynamically
+        # This allows handling of module-based annotations like `dspy.Image`.
+        try:
+            mod = importlib.import_module(id_)
+            names[id_] = mod
+            return mod
+        except ImportError:
+            pass
+
+        # If we don't know the type or module, raise an error
         raise ValueError(f"Unknown name: {id_}")
+
+    if isinstance(node, ast.Module):
+        if len(node.body) != 1:
+            raise ValueError(f"Code is not syntactically valid: {ast.dump(node)}")
+        return _parse_type_node(node.body[0], names)
+
+    if isinstance(node, ast.Expr):
+        return _parse_type_node(node.value, names)
+
+    if isinstance(node, ast.Name):
+        return resolve_name(node.id)
+
+    if isinstance(node, ast.Attribute):
+        base = _parse_type_node(node.value, names)
+        attr_name = node.attr
+        if hasattr(base, attr_name):
+            return getattr(base, attr_name)
+        else:
+            raise ValueError(f"Unknown attribute: {attr_name} on {base}")
 
     if isinstance(node, ast.Subscript):
         base_type = _parse_type_node(node.value, names)
-        arg_type = _parse_type_node(node.slice, names)
-        return base_type[arg_type]
+        slice_node = node.slice
+        if isinstance(slice_node, ast.Index):  # For older Python versions
+            slice_node = slice_node.value
+
+        if isinstance(slice_node, ast.Tuple):
+            arg_types = tuple(_parse_type_node(elt, names) for elt in slice_node.elts)
+        else:
+            arg_types = (_parse_type_node(slice_node, names),)
+
+        # Special handling for Union, Optional
+        if base_type is typing.Union:
+            return typing.Union[arg_types]
+        if base_type is typing.Optional:
+            if len(arg_types) != 1:
+                raise ValueError("Optional must have exactly one type argument")
+            return typing.Optional[arg_types[0]]
+
+        return base_type[arg_types]
 
     if isinstance(node, ast.Tuple):
-        elts = node.elts
-        return tuple(_parse_type_node(elt, names) for elt in elts)
+        return tuple(_parse_type_node(elt, names) for elt in node.elts)
 
-    if isinstance(node, ast.Call) and node.func.id == "Field":
+    if isinstance(node, ast.Constant):
+        return node.value
+
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Field":
         keys = [kw.arg for kw in node.keywords]
-        values = [kw.value.value for kw in node.keywords]
+        values = []
+        for kw in node.keywords:
+            if isinstance(kw.value, ast.Constant):
+                values.append(kw.value.value)
+            else:
+                values.append(_parse_type_node(kw.value, names))
         return Field(**dict(zip(keys, values)))
 
-    if isinstance(node, ast.Attribute) and node.attr == "Image":
-        return Image
-
-    raise ValueError(f"Code is not syntactically valid: {node}")
-
+    raise ValueError(f"Unhandled AST node type in annotation: {ast.dump(node)}")
 
 def infer_prefix(attribute_name: str) -> str:
     """Infer a prefix from an attribute name."""

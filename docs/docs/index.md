@@ -117,9 +117,9 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
 ## 1) **Modules** help you describe AI behavior as _code_, not strings.
 
-To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and so built DSPy to decouple defining LM systems from messy incidental choices about specific LMs or prompting strategies.
+To build reliable AI systems, you must iterate fast. But maintaining prompts makes that hard: it forces you to tinker with strings or data _every time you change your LM, metrics, or pipeline_. Having built over a dozen best-in-class compound LM systems since 2020, we learned this the hard way—and so built DSPy to decouple AI system design from messy incidental choices about specific LMs or prompting strategies.
 
-DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can write ergonomic, portable, and optimizable AI systems.
+DSPy shifts your focus from tinkering with prompt strings to **programming with structured and declarative natural-language modules**. For every AI component in your system, you specify input/output behavior as a _signature_ and select a _module_ to assign a strategy for invoking your LM. DSPy expands your signatures into prompts and parses your typed outputs, so you can compose different modules together into ergonomic, portable, and optimizable AI systems.
 
 
 !!! info "Getting Started II: Build DSPy modules for various tasks"
@@ -140,7 +140,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         )
         ```
 
-    === "Retrieval-Augmented Generation"
+    === "RAG"
 
         ```python linenums="1"       
         def search_wikipedia(query: str) -> list[str]:
@@ -236,6 +236,61 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         ```text
         5761.328
         ```
+    
+    === "Multi-Stage Pipelines"
+
+        ```python linenums="1"       
+        class Outline(dspy.Signature):
+            """Outline a thorough overview of a topic."""
+            
+            topic: str = dspy.InputField()
+            title: str = dspy.OutputField()
+            sections: list[str] = dspy.OutputField()
+            section_subheadings: dict[str, list[str]] = dspy.OutputField(desc="mapping from section headings to subheadings")
+
+        class DraftSection(dspy.Signature):
+            """Draft a top-level section of an article."""
+            
+            topic: str = dspy.InputField()
+            section_heading: str = dspy.InputField()
+            section_subheadings: list[str] = dspy.InputField()
+            content: str = dspy.OutputField(desc="markdown-formatted section")
+
+        class DraftArticle(dspy.Module):
+            def __init__(self):
+                self.build_outline = dspy.ChainOfThought(Outline)
+                self.draft_section = dspy.ChainOfThought(DraftSection)
+
+            def forward(self, topic):
+                outline = self.build_outline(topic=topic)
+                sections = []
+                for heading, subheadings in outline.section_subheadings.items():
+                    section, subheadings = f"## {heading}", [f"### {subheading}" for subheading in subheadings]
+                    section = self.draft_section(topic=outline.title, section_heading=section, section_subheadings=subheadings)
+                    sections.append(section.content)
+                return dspy.Prediction(title=outline.title, sections=sections)
+
+        draft_article = DraftArticle()
+        article = draft_article(topic="World Cup 2002")
+        ```
+        
+        **Possible Output:**
+
+        A 1500-word article on the topic, e.g.
+
+        ```text
+        ## Qualification Process
+
+        The qualification process for the 2002 FIFA World Cup involved a series of..... [shortened here for presentation].
+
+        ### UEFA Qualifiers
+
+        The UEFA qualifiers involved 50 teams competing for 13..... [shortened here for presentation].
+
+        .... [rest of the article]
+        ```
+
+        Note that DSPy makes it straightforward to optimize multi-stage modules like this. As long as you can evaluate the _final_ output of the system, every DSPy optimizer can tune all of the intermediate modules.
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
@@ -370,6 +425,6 @@ BootstrapFS on MATH with a tiny LM like Llama-3.2 with Ollama (maybe with a big 
 
 Compared to monolithic LMs, DSPy's modular paradigm enables a large community to improve the compositional architectures, inference-time strategies, and optimizers for LM programs in an open, distributed way. This gives DSPy users more control, helps them iterate much faster, and allows their programs to get better over time by applying the latest optimizers or modules.
 
-The DSPy research effort started at Stanford NLP in Feb 2022, building on what we learned from developing early [compound LM systems](https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/) like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [DSP](https://arxiv.org/abs/2212.14024) in Dec 2022 and evolved by Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [250 contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
+The DSPy research effort started at Stanford NLP in Feb 2022, building on what we had learned from developing early [compound LM systems](https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/) like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [DSP](https://arxiv.org/abs/2212.14024) in Dec 2022 and evolved by Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [250 contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
 
 Since then, DSPy's community has produced a large body of work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214), on program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382), and on successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [WangLab@MEDIQA](https://arxiv.org/abs/2404.14544), [UMD's Prompting Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming Program](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects, production applications, and other [use cases](/dspy-usecases/).

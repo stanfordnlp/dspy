@@ -5,7 +5,7 @@ Retriever model for Milvus or Zilliz Cloud
 from typing import Callable, List, Optional, Union
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     from pymilvus import MilvusClient

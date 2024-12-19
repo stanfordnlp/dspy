@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
+
 class ParallelExecutor:
     def __init__(
         self,
@@ -20,7 +21,6 @@ class ParallelExecutor:
         compare_results=False,
     ):
         """Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1."""
-        
         self.num_threads = num_threads
         self.disable_progress_bar = disable_progress_bar
         self.max_errors = max_errors
@@ -72,15 +72,17 @@ class ParallelExecutor:
             file=sys.stdout
         )
 
+        from dspy.dsp.utils.settings import thread_local_overrides
+        original_overrides = thread_local_overrides.overrides
+
         for item in data:
             with logging_redirect_tqdm():
                 if self.cancel_jobs.is_set():
                     break
 
-                # Create an isolated context for each task using thread-local overrides
-                from dsp.utils.settings import thread_local_overrides
-                original_overrides = thread_local_overrides.overrides
-                thread_local_overrides.overrides = thread_local_overrides.overrides.copy()
+                # Create an isolated context for each task by copying current overrides
+                # This way, even if an iteration modifies the overrides, it won't affect subsequent iterations
+                thread_local_overrides.overrides = original_overrides.copy()
 
                 try:
                     result = function(item)
@@ -122,6 +124,8 @@ class ParallelExecutor:
         @contextlib.contextmanager
         def interrupt_handler_manager():
             """Sets the cancel_jobs event when a SIGINT is received, only in the main thread."""
+
+            # TODO: Is this check conducive to nested usage of ParallelExecutor?
             if threading.current_thread() is threading.main_thread():
                 default_handler = signal.getsignal(signal.SIGINT)
 
@@ -145,8 +149,8 @@ class ParallelExecutor:
             if self.cancel_jobs.is_set():
                 return index, job_cancelled
 
-            # Create an isolated context for each task using thread-local overrides
-            from dsp.utils.settings import thread_local_overrides
+            # Create an isolated context for each task by copying parent's overrides
+            from dspy.dsp.utils.settings import thread_local_overrides
             original_overrides = thread_local_overrides.overrides
             thread_local_overrides.overrides = parent_overrides.copy()
 
@@ -156,8 +160,7 @@ class ParallelExecutor:
                 thread_local_overrides.overrides = original_overrides
 
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor, interrupt_handler_manager():
-            # Capture the parent thread's overrides
-            from dsp.utils.settings import thread_local_overrides
+            from dspy.dsp.utils.settings import thread_local_overrides
             parent_overrides = thread_local_overrides.overrides.copy()
 
             futures = {}

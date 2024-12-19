@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import List, Union
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     import marqo

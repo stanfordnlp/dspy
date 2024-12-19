@@ -1,6 +1,6 @@
 # FILEPATH: /Users/ahle/repos/dspy/tests/evaluate/test_metrics.py
 
-import dsp, dspy
+import dspy
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
 

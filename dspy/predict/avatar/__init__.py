@@ -1,3 +1,3 @@
-from .avatar import *
-from .models import *
-from .signatures import *
+from dspy.predict.avatar.avatar import *
+from dspy.predict.avatar.models import *
+from dspy.predict.avatar.signatures import *

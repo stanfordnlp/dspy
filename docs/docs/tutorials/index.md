@@ -1,8 +1,12 @@
 * [Retrieval-Augmented Generation](/tutorials/rag/)
 
-* [Math Reasoning](/tutorials/math/)
+* [Agents](/tutorials/agents/)
+
+* [Reasoning](/tutorials/math/)
 
 * [Entity Extraction](/tutorials/entity_extraction/)
+
+* [Privacy-Conscious Delegation](/tutorials/papillon/)
 
 * [Deployment](/tutorials/deployment/)
 
