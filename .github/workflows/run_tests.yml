@@ -41,6 +41,17 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
+      - name: Install Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "Deno installed"
+
+      - name: Add Deno to PATH
+        run: echo "${HOME}/.deno/bin" >> $GITHUB_PATH
+
+      - name: Verify Deno installation
+        run: deno --version
+
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
