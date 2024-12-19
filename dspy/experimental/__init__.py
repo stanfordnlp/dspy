@@ -1,4 +1,4 @@
-from .module_graph import *
+from dspy.experimental.module_graph import *
 
-from .synthesizer import *
-from .synthetic_data import *
+from dspy.experimental.synthesizer import *
+from dspy.experimental.synthetic_data import *

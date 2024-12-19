@@ -5,7 +5,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 
 class WatsonDiscoveryRM(dspy.Retrieve):

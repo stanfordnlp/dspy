@@ -1,13 +1,15 @@
-from anyio import CapacityLimiter
-import asyncer
+from typing import Any, Awaitable, Callable
 
+import asyncer
+from anyio import CapacityLimiter
+
+from dspy.primitives.program import Module
 
 _limiter = None
 
 
 def get_async_max_workers():
     import dspy
-
     return dspy.settings.async_max_workers
 
 
@@ -23,23 +25,36 @@ def get_limiter():
     return _limiter
 
 
-def asyncify(program):
-    import dspy
-    import threading
+def asyncify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
+    """
+    Wraps a DSPy program so that it can be called asynchronously. This is useful for running a
+    program in parallel with another task (e.g., another DSPy program).
 
-    assert threading.get_ident() == dspy.settings.main_tid, "asyncify can only be called from the main thread"
+    This implementation propagates the current thread's configuration context to the worker thread.
 
-    def wrapped(*args, **kwargs):
-        thread_stacks = dspy.settings.stack_by_thread
-        current_thread_id = threading.get_ident()
-        creating_new_thread = current_thread_id not in thread_stacks
+    Args:
+        program: The DSPy program to be wrapped for asynchronous execution.
 
-        assert creating_new_thread
-        thread_stacks[current_thread_id] = list(dspy.settings.main_stack)
+    Returns:
+        An async function that, when awaited, runs the program in a worker thread. The current 
+        thread's configuration context is inherited for each call.
+    """
+    async def async_program(*args, **kwargs) -> Any:
+        # Capture the current overrides at call-time.
+        from dspy.dsp.utils.settings import thread_local_overrides
+        parent_overrides = thread_local_overrides.overrides.copy()
 
-        try:
-            return program(*args, **kwargs)
-        finally:
-            del thread_stacks[threading.get_ident()]
+        def wrapped_program(*a, **kw):
+            from dspy.dsp.utils.settings import thread_local_overrides
+            original_overrides = thread_local_overrides.overrides
+            thread_local_overrides.overrides = parent_overrides.copy()
+            try:
+                return program(*a, **kw)
+            finally:
+                thread_local_overrides.overrides = original_overrides
 
-    return asyncer.asyncify(wrapped, abandon_on_cancel=True, limiter=get_limiter())
+        # Create a fresh asyncified callable each time, ensuring the latest context is used.
+        call_async = asyncer.asyncify(wrapped_program, abandon_on_cancel=True, limiter=get_limiter())
+        return await call_async(*args, **kwargs)
+
+    return async_program
