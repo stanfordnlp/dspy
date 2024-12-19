@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 import numpy as np
 
-from dspy.clients.embedding import Embedding
+from dspy.clients.embedding import Embedder
 
 
 # Mock response format similar to litellm's embedding response.
@@ -27,7 +27,7 @@ def test_litellm_embedding():
         mock_litellm.return_value = MockEmbeddingResponse(mock_embeddings)
 
         # Create embedding instance and call it.
-        embedding = Embedding(embedding_model=model)
+        embedding = Embedder(model)
         result = embedding(inputs)
 
         # Verify litellm was called with correct parameters.
@@ -51,14 +51,14 @@ def test_callable_embedding():
         return expected_embeddings
 
     # Create embedding instance with callable
-    embedding = Embedding(embedding_model=mock_embedding_fn)
+    embedding = Embedder(mock_embedding_fn)
     result = embedding(inputs)
 
     np.testing.assert_allclose(result, expected_embeddings)
 
 
 def test_invalid_model_type():
-    # Test that invalid model type raises ExceptionError from LiteLLM (default embedding_function)
-    with pytest.raises(Exception) as exc_info:
-        embedding = Embedding(embedding_model=123)
+    # Test that invalid model type raises ValueError
+    with pytest.raises(ValueError):
+        embedding = Embedder(123)  # Invalid model type
         embedding(["test"])

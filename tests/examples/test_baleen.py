@@ -1,5 +1,5 @@
 import pytest
-from dsp.utils import deduplicate
+from dspy.dsp.utils import deduplicate
 import dspy.evaluate
 import dspy
 from dspy.datasets import HotPotQA

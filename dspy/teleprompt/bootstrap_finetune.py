@@ -2,8 +2,8 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
-from dspy import LM  # TODO: Remove after the old LM class is removed
 from dspy.adapters.base import Adapter
+from dspy.clients.lm import LM  # TODO: Remove after the old LM class is removed
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
@@ -79,7 +79,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             training_key = (pred.lm, data_pred_ind)
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind)
-                print(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
+                print(f"[BootstrapFinetune] Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_kwargs=self.train_kwargs[pred.lm], data_format=data_format)
                 key_to_data[training_key] = finetune_kwargs
         
@@ -108,7 +108,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
     @staticmethod
     def finetune_lms(finetune_dict) -> Dict[Any, LM]:
         num_jobs = len(finetune_dict)
-        print(f"[BootstrapFinetune] Starting {num_jobs} fine-tuning jobs...")
+        print(f"[BootstrapFinetune] Starting {num_jobs} fine-tuning job(s)...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
         # coming from different fine-tune threads.
 
@@ -121,7 +121,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         for ind, (key, job) in enumerate(key_to_job.items()):
             key_to_lm[key] = job.result()
             job.thread.join()
-            print(f"Job {ind + 1}/{num_jobs} completed.")
+            print(f"[BootstrapFinetune] Job {ind + 1}/{num_jobs} is done")
 
         return key_to_lm
 
@@ -130,7 +130,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         if self.metric:
             print(f"[BootstrapFinetune] Collected data for {len(trace_data)} examples")
             trace_data = [d for d in trace_data if d["score"]]
-            print(f"[BootstrapFinetune] After filtering for score, {len(trace_data)} examples remain")
+            print(f"[BootstrapFinetune] After filtering with the metric, {len(trace_data)} examples remain")
 
         data = []
         adapter = self.adapter[lm] or lm.infer_adapter()
@@ -234,7 +234,6 @@ def set_missing_predictor_lms(program: Program) -> Program:
 
 
 def prepare_student(student: Program) -> Program:
-    print("Ensuring that the student is not compiled")
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
 
@@ -246,15 +245,14 @@ def prepare_student(student: Program) -> Program:
 
 def prepare_teacher(student: Program, teacher: Program = None) -> Program:
     if teacher is None:
-        print("No teacher provided. Using a copy of the student program as the teacher.")
         return student.deepcopy()
     else:
         teacher = teacher.deepcopy()
 
-    print("Ensuring that the student and teacher are are structurally equivalent.")
+    # Ensuring that the student and teacher are are structurally equivalent
     assert_structural_equivalency(student, teacher)
 
-    print("Ensuring that the student and teacher programs do not share predictors.")
+    # Ensuring that the student and teacher programs do not share predictors
     assert_no_shared_predictor(student, teacher)
 
     return teacher

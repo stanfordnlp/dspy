@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 #replace_package_name_marker
-name="dspy"
+name = "dspy"
 #replace_package_version_marker
-version="2.5.30"
+version = "2.5.43"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -17,17 +17,15 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",    # removed 3.8
+    "Programming Language :: Python :: 3", # removed 3.8
     "Programming Language :: Python :: 3.9",
 ]
-
 # We have both project and tool.poetry.dependencies. Should we remove one?
 # tool.poetry.dependencies is a convenience thing for poetry users.
 # project dependencies function similarly to requirements.txt,
 # `pip install .` will pull from pyproject.toml dependencies
-
 dependencies = [
-    "backoff~=2.2",
+    "backoff",
     "joblib~=1.3",
     "openai",
     "pandas",
@@ -40,10 +38,14 @@ dependencies = [
     "pydantic~=2.0",
     "jinja2",
     "magicattr~=0.1.6",
-    "litellm",
+    "litellm==1.55.3",
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
+    "anyio",
+    "asyncer==0.0.8",
+    "cachetools",
+    "cloudpickle",
 ]
 
 [project.optional-dependencies]
@@ -86,9 +88,8 @@ readme = "README.md"
 homepage = "https://github.com/stanfordnlp/dspy"
 repository = "https://github.com/stanfordnlp/dspy"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
+
 # may be a bit much
-
-
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 pydantic = "^2.0"
@@ -104,10 +105,10 @@ requests = "^2.31.0"
 optuna = "^3.4.0"
 anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
 chromadb = { version = "^0.4.14", optional = true }
-lancedb = {version = "^0.11.0", optional = true}
+lancedb = { version = "^0.11.0", optional = true }
 fastembed = { version = ">=0.2.0", optional = true }
 marqo = { version = "*", optional = true }
-pyepsilla = {version = "^0.3.7", optional = true}
+pyepsilla = { version = "^0.3.7", optional = true }
 qdrant-client = { version = "^1.6.2", optional = true }
 pinecone-client = { version = "^2.2.4", optional = true }
 weaviate-client = { version = "^4.5.4", optional = true }
@@ -128,23 +129,19 @@ groq = { version = "^0.4.2", optional = true }
 rich = "^13.7.1"
 psycopg2 = { version = "^2.9.9", optional = true }
 pgvector = { version = "^0.2.5", optional = true }
-llama-index = {version = "^0.10.30", optional = true}
-snowflake-snowpark-python = { version = "*",optional=true, python = ">=3.9,<3.12" }
+llama-index = { version = "^0.10.30", optional = true }
 jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
-litellm = "1.51.0"
+litellm = { version = "==1.55.3", extras = ["proxy"] }
 diskcache = "^5.6.0"
-
-redis = "^5.1.1"
-falkordb = "^1.0.9"
-
-
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
-
+asyncer = "0.0.8"
+cachetools = "^5.5.0"
+cloudpickle = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^6.2.5"
+pytest = "^8.3.3"
 transformers = "^4.38.2"
 torch = "^2.2.1"
 pytest-mock = "^3.12.0"
@@ -154,7 +151,7 @@ pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
-litellm = {version = "1.51.0", extras = ["proxy"]}
+litellm = { version = "^1.51.0", extras = ["proxy"] }
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
@@ -230,14 +227,14 @@ target-version = "py39"
 [tool.ruff.lint]
 # Select a minimal set of rules
 select = [
-    "F",  # Pyflakes
-    "E",  # Pycodestyle
+    "F", # Pyflakes
+    "E", # Pycodestyle
+    "TID252",  # Absolute imports
 ]
-
 ignore = [
-    "E501",  # Line too long
-]
+    "E501", # Line too long
 
+]
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []

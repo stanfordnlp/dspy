@@ -4,7 +4,7 @@ import pytest
 
 import dspy
 from tests.conftest import clear_settings
-from tests.reliability.utils import parse_reliability_conf_yaml
+from tests.reliability.utils import get_adapter, parse_reliability_conf_yaml
 
 # Standard list of models that should be used for periodic DSPy reliability testing
 MODEL_LIST = [
@@ -46,13 +46,7 @@ def configure_model(request):
     module_dir = os.path.dirname(os.path.abspath(__file__))
     conf_path = os.path.join(module_dir, "reliability_conf.yaml")
     reliability_conf = parse_reliability_conf_yaml(conf_path)
-
-    if reliability_conf.adapter.lower() == "chat":
-        adapter = dspy.ChatAdapter()
-    elif reliability_conf.adapter.lower() == "json":
-        adapter = dspy.JSONAdapter()
-    else:
-        raise ValueError(f"Unknown adapter specification '{adapter}' in reliability_conf.yaml")
+    adapter = get_adapter(reliability_conf)
 
     model_name, should_ignore_failure = request.param
     model_params = reliability_conf.models.get(model_name)
@@ -61,7 +55,9 @@ def configure_model(request):
         dspy.configure(lm=lm, adapter=adapter)
     else:
         pytest.skip(
-            f"Skipping test because no reliability testing YAML configuration was found" f" for model {model_name}."
+            f"Skipping test because no reliability testing YAML configuration was found"
+            f" for model {model_name}, or the YAML configuration is missing LiteLLM parameters"
+            f" for this model ('litellm_params' section of conf file is missing)."
         )
 
     # Store `should_ignore_failure` flag on the request node for use in post-test handling

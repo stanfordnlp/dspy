@@ -8,18 +8,14 @@
 
 **Documentation:** [DSPy Docs](https://dspy.ai/)
 
-[![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy-ai/month)](https://pepy.tech/project/dspy-ai)
+[![Downloads](https://static.pepy.tech/badge/dspy-ai)](https://pepy.tech/project/dspy-ai)  [![Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/project/dspy)
 
 
 ----
 
-DSPy is the open-source framework for **building high-quality, modular AI systems** by _programming—rather than prompting—language models_. It provides abstractions and algorithms for **optimizing the prompts and weights** in LM programs, ranging from simple classifiers to sophisticated RAG pipelines and Agent loops.
+DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-Instead of writing brittle LM-specific prompts, you write compositional code and use DSPy optimizers to teach different models like `GPT-4o` or `Llama-3.2` to **deliver higher quality outputs** or avoid specific failure patterns. In essence, DSPy optimizers then _compile your high-level code_ into low-level computations, prompts, or weight updates that **align your LM with your program’s structure and metrics**.
-
-
-DSPy stands for Declarative Self-improving Python. This [recent lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Our [Discord server](https://discord.gg/XCGy2WDCQB) is a great place to meet the community, seek help, or start contributing.
-
+DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs**. Learn more via our [official documentation site](https://dspy.ai/) or meet the community, seek help, or start contributing via this GitHub repo and our [Discord server](https://discord.gg/XCGy2WDCQB).
 
 
 ## Documentation: [dspy.ai](https://dspy.ai)

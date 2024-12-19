@@ -1,0 +1,86 @@
+{
+  "description": "The AI program is designed to process hierarchical data structures with multiple levels of nesting. The program will take a deeply nested input structure representing a complex dataset, perform specific transformations, validations, and computations, and then produce an equally complex nested output structure. The program is suitable for applications that require detailed data processing, such as multi-level data aggregation, hierarchical data validation, and nested data transformation.",
+  "properties": {
+    "level1": {
+      "properties": {
+        "level2": {
+          "properties": {
+            "level3": {
+              "properties": {
+                "level4": {
+                  "properties": {
+                    "level5": {
+                      "properties": {
+                        "field1": {
+                          "description": "A string field at the deepest level",
+                          "type": "string"
+                        },
+                        "field2": {
+                          "description": "A numerical field at the deepest level",
+                          "type": "number"
+                        }
+                      },
+                      "required": ["field1", "field2"],
+                      "type": "object"
+                    }
+                  },
+                  "required": ["level5"],
+                  "type": "object"
+                }
+              },
+              "required": ["level4"],
+              "type": "object"
+            }
+          },
+          "required": ["level3"],
+          "type": "object"
+        }
+      },
+      "required": ["level2"],
+      "type": "object"
+    },
+    "resultLevel1": {
+      "properties": {
+        "resultLevel2": {
+          "properties": {
+            "resultLevel3": {
+              "properties": {
+                "resultLevel4": {
+                  "properties": {
+                    "resultLevel5": {
+                      "properties": {
+                        "outputField1": {
+                          "description": "A boolean field indicating success or failure",
+                          "type": "boolean"
+                        },
+                        "outputField2": {
+                          "description": "An array of strings representing messages",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": ["outputField1", "outputField2"],
+                      "type": "object"
+                    }
+                  },
+                  "required": ["resultLevel5"],
+                  "type": "object"
+                }
+              },
+              "required": ["resultLevel4"],
+              "type": "object"
+            }
+          },
+          "required": ["resultLevel3"],
+          "type": "object"
+        }
+      },
+      "required": ["resultLevel2"],
+      "type": "object"
+    }
+  },
+  "required": ["level1", "resultLevel1"],
+  "type": "object"
+}

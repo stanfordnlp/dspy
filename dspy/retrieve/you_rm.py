@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional, Union
 import requests
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 
 class YouRM(dspy.Retrieve):

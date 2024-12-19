@@ -1,6 +1,6 @@
 # DSPy Documentation
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This website is built using [Material for MKDocs](https://squidfunk.github.io/mkdocs-material/), a Material UI inspired theme for MKDocs.
 
 ## Building docs locally
 
@@ -13,21 +13,27 @@ To build and test the documentation locally:
 
 2. Install the necessary dependencies:
    ```bash
-   npm install
+   pip install -r requirements.txt
    ```
 
 3. Run the build command:
    ```bash
-   npm run build
+   mkdocs build
    ```
 
-This will generate a static build of the documentation site in the `build` directory. You can then serve this directory to view the site locally. If you see the build failing make sure to fix it before pushing.
+This will generate a static build of the documentation site in the `site` directory. You can then serve this directory to view the site locally using:
+
+```bash
+mkdocs serve
+```
+
+If you see the build failing make sure to fix it before pushing.
 
 ## Continuous Integration (CI) Build Checks
 
 We have automated build checks set up in our CI pipeline to ensure the documentation builds successfully before merging changes. These checks:
 
-1. Run the `npm run build` command
+1. Run the `mkdocs build` command
 2. Verify that the build completes without errors
 3. Help catch potential issues early in the development process
 

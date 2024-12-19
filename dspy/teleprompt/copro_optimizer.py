@@ -1,7 +1,6 @@
 import logging
 from collections import defaultdict
 
-import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.signatures import Signature
@@ -50,7 +49,7 @@ class GenerateInstructionGivenAttempts(dspy.Signature):
 
     Your task is to propose a new instruction that will lead a good language model to perform the task even better. Don't be afraid to be creative."""
 
-    attempted_instructions = dspy.InputField(format=dsp.passages2text)
+    attempted_instructions = dspy.InputField()
     proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
     proposed_prefix_for_output_field = dspy.OutputField(
         desc="The string at the end of the prompt, which will help the model start solving the task",
@@ -114,16 +113,12 @@ class COPRO(Teleprompter):
         logger.debug(f"p: {list(signature.fields.values())[-1].json_schema_extra['prefix']}")
 
     def _get_signature(self, predictor):
-        if hasattr(predictor, "extended_signature"):
-            return predictor.extended_signature
-        elif hasattr(predictor, "signature"):
-            return predictor.signature
+        assert hasattr(predictor, "signature")
+        return predictor.signature
 
     def _set_signature(self, predictor, updated_signature):
-        if hasattr(predictor, "extended_signature"):
-            predictor.extended_signature = updated_signature
-        elif hasattr(predictor, "signature"):
-            predictor.signature = updated_signature
+        assert hasattr(predictor, "signature")
+        predictor.signature = updated_signature
 
     def compile(self, student, *, trainset, eval_kwargs):
         """
