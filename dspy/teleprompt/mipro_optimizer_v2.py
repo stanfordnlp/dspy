@@ -437,6 +437,7 @@ class MIPROv2(Teleprompter):
             program_aware=program_aware_proposer,
             use_dataset_summary=data_aware_proposer,
             use_task_demos=fewshot_aware_proposer,
+            num_demos_in_context = BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT,
             use_tip=tip_aware_proposer,
             set_tip_randomly=tip_aware_proposer,
             use_instruct_history=False,
