@@ -23,6 +23,7 @@ jobs:
       name: pypi
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.9
@@ -62,6 +63,7 @@ jobs:
       name: pypi
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.9
@@ -100,3 +102,22 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
         with: 
           attestations: false
+      - uses: stefanzweifel/git-auto-commit-action@v5 # auto commit changes to main
+        with:
+          commit_message: Update versions
+          create_branch: true
+          branch: release-${{ needs.extract-tag.outputs.version }}
+      - name: Checkout main branch  
+        run: |  
+          git fetch origin  
+          git checkout main  
+      - name: Configure git user
+        run: | 
+          git config --global user.email "actions@github.com"
+          git config --global user.name "Github Actions"
+      - name: Merge release branch into main  
+        run: |  
+          git merge --no-ff release-${{ needs.extract-tag.outputs.version }}          
+      - name: Push changes to main
+        run: |  
+          git push origin main  
