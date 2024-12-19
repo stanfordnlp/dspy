@@ -15,10 +15,9 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
-
-from ..adapters.image_utils import Image
-from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
+from dspy.adapters.image_utils import Image
+from dspy.signatures.signature import SignatureMeta
+from dspy.signatures.utils import get_dspy_field_type
 
 _logger = logging.getLogger(__name__)
 
@@ -38,7 +37,8 @@ class JSONAdapter(Adapter):
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+            params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+            if params and "response_format" in params:
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)

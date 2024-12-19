@@ -150,7 +150,8 @@ class BootstrapFewShot(Teleprompter):
         self.name2traces = {name: [] for name in self.name2predictor}
 
         for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-            if len(bootstrapped) >= max_bootstraps: break
+            if len(bootstrapped) >= max_bootstraps:
+                break
 
             for round_idx in range(self.max_rounds):
                 bootstrap_attempts += 1

@@ -232,7 +232,7 @@ def load_batch_backgrounds(args, qids):
     for qid in qids:
         back = args.qid2backgrounds[qid]
 
-        if len(back) and type(back[0]) == int:
+        if len(back) and isinstance(back[0], int):
             x = [args.collection[pid] for pid in back]
         else:
             x = [args.collectionX.get(pid, "") for pid in back]

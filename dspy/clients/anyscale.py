@@ -5,9 +5,9 @@ from typing import Any, Dict, List, Optional
 import yaml
 import logging
 
-from dspy.clients.finetune import (
+from dspy.clients.lm import (
     FinetuneJob,
-    # TrainingMethod,
+    TrainingMethod,
     save_data,
 )
 from dspy.clients.openai import openai_data_validation
@@ -180,11 +180,6 @@ def start_remote_training(job_config) -> str:
     job_id: str = anyscale.job.submit(job_config)
     print(f"[Finetune] Remote training started. Job ID: {job_id}")
     return job_id
-
-
-def wait_for_training(job_id):
-    print("Waiting for training to complete")
-    anyscale.job.wait(id=job_id, timeout_s=18000)
 
 
 def get_model_info(job_id):

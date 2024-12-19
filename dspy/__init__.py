@@ -3,8 +3,7 @@ from dspy.primitives import *
 from dspy.retrieve import *
 from dspy.signatures import *
 from dspy.teleprompt import *
-
-import dspy.retrievers
+from dspy.retrievers import *
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
@@ -27,6 +26,7 @@ context = settings.context
 
 import dspy.teleprompt
 
+ColBERTv2 = ColBERTv2
 LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
 BootstrapFewShotWithRandomSearch = dspy.teleprompt.BootstrapFewShotWithRandomSearch
