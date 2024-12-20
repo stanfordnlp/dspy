@@ -241,7 +241,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
     print(compiled_predictor.demos)
     # Test dump state with save verbose = True and False
-    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True, suffix=".json") as temp_file:
         compiled_predictor.save(temp_file.name)
         loaded_predictor = dspy.Predict(signature)
         loaded_predictor.load(temp_file.name)
@@ -276,7 +276,7 @@ def test_save_load_complex_default_types():
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
     print(compiled_predictor.demos)
 
-    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True, suffix=".json") as temp_file:
         print("compiled_predictor state: ", compiled_predictor.dump_state())
         compiled_predictor.save(temp_file.name)
         loaded_predictor = dspy.Predict(ComplexTypeSignature)
@@ -316,7 +316,7 @@ def test_save_load_complex_pydantic_types():
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True, suffix=".json") as temp_file:
         compiled_predictor.save(temp_file.name)
         loaded_predictor = dspy.Predict(ComplexPydanticSignature)
         loaded_predictor.load(temp_file.name)

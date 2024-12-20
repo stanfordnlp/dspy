@@ -114,8 +114,24 @@ class Predict(Module, Parameter):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
+def serialize_object(obj):
+    """
+    Recursively serialize a given object into a JSON-compatible format.
+    Supports Pydantic models, lists, dicts, and primitive types.
+    """
+    if isinstance(obj, BaseModel):
+        # Use model_dump to convert the model into a JSON-serializable dict
+        return obj.model_dump_json()
+    elif isinstance(obj, list):
+        return [serialize_object(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_object(item) for item in obj)
+    elif isinstance(obj, dict):
+        return {key: serialize_object(value) for key, value in obj.items()}
+    else:
+        return obj
 
-# TODO: get some defaults during init from the context window?
+
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
 # affect execution. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
 # Generally, unless overwritten, we'd see n=None, temperature=None.
