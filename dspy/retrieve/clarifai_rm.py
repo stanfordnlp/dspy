@@ -6,7 +6,7 @@ from typing import List, Optional, Union
 import requests
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     from clarifai.client.search import Search

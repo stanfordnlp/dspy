@@ -57,10 +57,47 @@ async def predict(question: Question):
 ```
 
 In the code above, we call `dspy.asyncify` to convert the dspy program to run in async mode for high-throughput FastAPI
-deployments. Currently, this runs the dspy program in a
-separate thread and awaits its result. By default, the limit of spawned threads is 8. Think of this like a worker pool.
+deployments. Currently, this runs the dspy program in a separate thread and awaits its result.
+
+By default, the limit of spawned threads is 8. Think of this like a worker pool.
 If you have 8 in-flight programs and call it once more, the 9th call will wait until one of the 8 returns.
 You can configure the async capacity using the new `async_max_workers` setting.
+
+??? "Streaming, in DSPy 2.6.0+"
+
+    Streaming is also supported in DSPy 2.6.0+, available as a release candidate via `pip install -U --pre dspy`.
+
+    We can use `dspy.streamify` to convert the dspy program to a streaming mode. This is useful when you want to stream
+    the intermediate outputs (i.e. O1-style reasoning) to the client before the final prediction is ready. This uses
+    asyncify under the hood and inherits the execution semantics.
+
+    ```python
+    dspy_program = dspy.asyncify(dspy.ChainOfThought("question -> answer"))
+    streaming_dspy_program = dspy.streamify(dspy_program)
+
+    @app.post("/predict/stream")
+    async def stream(question: Question):
+        async def generate():
+            async for value in streaming_dspy_program(question=question.text):
+                if isinstance(value, dspy.Prediction):
+                    data = {"prediction": value.labels().toDict()}
+                elif isinstance(value, litellm.ModelResponse):
+                    data = {"chunk": value.json()}
+                yield f"data: {ujson.dumps(data)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    # Since you're often going to want to stream the result of a DSPy program as server-sent events,
+    # we've included a helper function for that, which is equivalent to the code above.
+
+    from dspy.utils.streaming import streaming_response
+
+    @app.post("/predict/stream")
+    async def stream(question: Question):
+        stream = streaming_dspy_program(question=question.text)
+        return StreamingResponse(streaming_response(stream), media_type="text/event-stream")
+    ```
 
 Write your code to a file, e.g., `fastapi_dspy.py`. Then you can serve the app with:
 

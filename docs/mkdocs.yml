@@ -1,4 +1,4 @@
-site_name: DSPy Documentation
+site_name: DSPy
 site_description: The framework for programming—rather than prompting—language models.
 site_url: https://dspy.ai
 
@@ -46,8 +46,11 @@ nav:
   - Tutorials:
       - Tutorials Overview: tutorials/index.md
       - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
-      - Math Reasoning: tutorials/math/index.ipynb
+      - Agents: tutorials/agents/index.ipynb
+      - Reasoning: tutorials/math/index.ipynb
       - Entity Extraction: tutorials/entity_extraction/index.ipynb
+      - Privacy-Conscious Delegation: tutorials/papillon/index.md
+      - Saving and Loading: tutorials/saving/index.md
       - Deployment: tutorials/deployment/index.md
       - Debugging & Observability: tutorials/observability/index.md
   - Community:

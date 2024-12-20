@@ -7,7 +7,7 @@ import pytest
 import ujson
 
 import dspy
-from dspy import Predict, Signature, TypedPredictor
+from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
 
 
@@ -88,45 +88,45 @@ def test_demos_after_dump_and_load_state():
     assert new_instance.demos[0]["content"] == original_instance.demos[0].content
 
 
-def test_typed_demos_after_dump_and_load_state():
-    class TypedTranslateToEnglish(dspy.Signature):
-        """Translate content from a language to English."""
+# def test_typed_demos_after_dump_and_load_state():
+#     class TypedTranslateToEnglish(dspy.Signature):
+#         """Translate content from a language to English."""
 
-        class Input(pydantic.BaseModel):
-            content: str
-            language: str
+#         class Input(pydantic.BaseModel):
+#             content: str
+#             language: str
 
-        class Output(pydantic.BaseModel):
-            translation: str
+#         class Output(pydantic.BaseModel):
+#             translation: str
 
-        input: Input = dspy.InputField()
-        output: Output = dspy.OutputField()
+#         input: Input = dspy.InputField()
+#         output: Output = dspy.OutputField()
 
-    original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-    original_instance.demos = [
-        dspy.Example(
-            input=TypedTranslateToEnglish.Input(
-                content="¿Qué tal?",
-                language="SPANISH",
-            ),
-            output=TypedTranslateToEnglish.Output(
-                translation="Hello there",
-            ),
-        ).with_inputs("input"),
-    ]
+#     original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
+#     original_instance.demos = [
+#         dspy.Example(
+#             input=TypedTranslateToEnglish.Input(
+#                 content="¿Qué tal?",
+#                 language="SPANISH",
+#             ),
+#             output=TypedTranslateToEnglish.Output(
+#                 translation="Hello there",
+#             ),
+#         ).with_inputs("input"),
+#     ]
 
-    dumped_state = original_instance.dump_state()
-    assert len(dumped_state["demos"]) == len(original_instance.demos)
-    assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
+#     dumped_state = original_instance.dump_state()
+#     assert len(dumped_state["demos"]) == len(original_instance.demos)
+#     assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
 
-    saved_state = ujson.dumps(dumped_state)
-    loaded_state = ujson.loads(saved_state)
+#     saved_state = ujson.dumps(dumped_state)
+#     loaded_state = ujson.loads(saved_state)
 
-    new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-    new_instance.load_state(loaded_state)
-    assert len(new_instance.demos) == len(original_instance.demos)
-    # Demos don't need to keep the same types after saving and loading the state.
-    assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
+#     new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
+#     new_instance.load_state(loaded_state)
+#     assert len(new_instance.demos) == len(original_instance.demos)
+#     # Demos don't need to keep the same types after saving and loading the state.
+#     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
 
 
 def test_signature_fields_after_dump_and_load_state(tmp_path):
@@ -335,29 +335,6 @@ def test_output_only():
     assert predictor().output == "short answer"
 
 
-def test_chainable_load(tmp_path):
-    """Test both traditional and chainable load methods."""
-
-    file_path = tmp_path / "test_chainable.json"
-
-    original = Predict("question -> answer")
-    original.demos = [{"question": "test", "answer": "response"}]
-    original.save(file_path)
-
-    traditional = Predict("question -> answer")
-    traditional.load(file_path)
-    assert traditional.demos == original.demos
-
-    chainable = Predict("question -> answer").load(file_path, return_self=True)
-    assert chainable is not None
-    assert chainable.demos == original.demos
-
-    assert chainable.signature.dump_state() == original.signature.dump_state()
-
-    result = Predict("question -> answer").load(file_path)
-    assert result is None
-
-
 def test_load_state_chaining():
     """Test that load_state returns self for chaining."""
     original = Predict("question -> answer")
@@ -367,7 +344,3 @@ def test_load_state_chaining():
     new_instance = Predict("question -> answer").load_state(state)
     assert new_instance is not None
     assert new_instance.demos == original.demos
-
-    legacy_instance = Predict("question -> answer").load_state(state, use_legacy_loading=True)
-    assert legacy_instance is not None
-    assert legacy_instance.demos == original.demos

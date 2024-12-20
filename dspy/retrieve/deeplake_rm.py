@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 import openai
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     import openai

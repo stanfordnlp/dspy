@@ -5,7 +5,7 @@ from typing import Any, Optional, Type, Union
 from pydantic import BaseModel, Field, ValidationError
 
 import dspy
-from dsp.utils import dotdict
+from dspy.dsp.utils import dotdict
 
 try:
     from snowflake.core import Root

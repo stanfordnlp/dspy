@@ -12,7 +12,6 @@ import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import find_enum_member, format_field_value
 from dspy.signatures.field import OutputField
@@ -60,7 +59,7 @@ class ChatAdapter(Adapter):
         messages = try_expand_image_tags(messages)
         return messages
 
-    def parse(self, signature, completion, _parse_values=True):
+    def parse(self, signature, completion):
         sections = [(None, [])]
 
         for line in completion.splitlines():
@@ -76,7 +75,7 @@ class ChatAdapter(Adapter):
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation) if _parse_values else v
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except Exception as e:
                     raise ValueError(
                         f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
@@ -274,7 +273,7 @@ def get_annotation_name(annotation):
         return f"{get_annotation_name(origin)}[{args_str}]"
 
 
-def enumerate_fields(fields: dict[str, Field]) -> str:
+def enumerate_fields(fields: dict) -> str:
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
