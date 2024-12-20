@@ -376,3 +376,5 @@ def test_image_optional_input():
 # complex image types
 # Return "None" when dspy.Image is missing for the input, similarly to str input fields
 # JSON adapter
+
+# TODO: test to make sure that text field collapsing works
