@@ -33,38 +33,42 @@ from .vanilla import LabeledFewShot
 
 logger = logging.getLogger(__name__)
 
+
 class BootstrapFewShot(Teleprompter):
+    """BootstrapFewShot optimizer.
+
+    A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
+    These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
+    """
+
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict]=None,
+        teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
         max_errors=5,
     ):
-        """
-        A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
-        These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
+        """Init the BootstrapFewShot class.
 
-        Parameters
-        ----------
-        metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison. 
-        metric_threshold: optional float, default `None`
-            If the metric yields a numerical value, then check it against this threshold when
-            deciding whether or not to accept a bootstrap example.
-        teacher_settings: dict, optional
-            Settings for the `teacher` model.
-        max_bootstrapped_demos: int, default 4
-            Maximum number of bootstrapped demonstrations to include
-        max_labeled_demos: int, default 16
-            Maximum number of labeled demonstrations to include.
-        max_rounds: int, default 1
-            Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
-        max_errors: int, default 5
-            Maximum number of errors until program ends.
+        Args:
+            metric: Callable
+                A function that compares an expected value and predicted value, outputting the result of that comparison.
+            metric_threshold: optional float, default `None`
+                If the metric yields a numerical value, then check it against this threshold when
+                deciding whether or not to accept a bootstrap example.
+            teacher_settings: dict, optional
+                Settings for the `teacher` model.
+            max_bootstrapped_demos: int, default 4
+                Maximum number of bootstrapped demonstrations to include
+            max_labeled_demos: int, default 16
+                Maximum number of labeled demonstrations to include.
+            max_rounds: int, default 1
+                Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
+            max_errors: int, default 5
+                Maximum number of errors until program ends.
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
@@ -78,6 +82,16 @@ class BootstrapFewShot(Teleprompter):
         self.error_lock = threading.Lock()
 
     def compile(self, student, *, teacher=None, trainset):
+        """Compile the DSPy program with bootstrapping.
+
+        Args:
+            student: The DSPy program to compile.
+            teacher: The teacher model to use for bootstrapping.
+            trainset: The training set to use for bootstrapping.
+
+        Returns:
+            The compiled DSPy program.
+        """
         self.trainset = trainset
 
         self._prepare_student_and_teacher(student, teacher)
@@ -118,9 +132,10 @@ class BootstrapFewShot(Teleprompter):
             if hasattr(predictor1.signature, "equals"):
                 assert predictor1.signature.equals(
                     predictor2.signature,
-                ), (f"Student and teacher must have the same signatures. "
+                ), (
+                    f"Student and teacher must have the same signatures. "
                     f"{type(predictor1.signature)} != {type(predictor2.signature)}"
-                    )
+                )
             else:
                 # fallback in case if .equals is not implemented (e.g. dsp.Prompt)
                 assert predictor1.signature == predictor2.signature, (
@@ -150,7 +165,8 @@ class BootstrapFewShot(Teleprompter):
         self.name2traces = {name: [] for name in self.name2predictor}
 
         for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-            if len(bootstrapped) >= max_bootstraps: break
+            if len(bootstrapped) >= max_bootstraps:
+                break
 
             for round_idx in range(self.max_rounds):
                 bootstrap_attempts += 1
@@ -176,7 +192,7 @@ class BootstrapFewShot(Teleprompter):
         # score = evaluate(self.metric, display_table=False, display_progress=True)
 
     def _bootstrap_one_example(self, example, round_idx=0):
-        name2traces = {} #self.name2traces
+        name2traces = {}  # self.name2traces
         teacher = self.teacher  # .deepcopy()
         predictor_cache = {}
 
@@ -236,10 +252,11 @@ class BootstrapFewShot(Teleprompter):
 
                 name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
-        
+
             # Update the traces
             for name, demos in name2traces.items():
                 from datasets.fingerprint import Hasher
+
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:

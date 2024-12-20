@@ -7,13 +7,12 @@ from rich import print as rprint
 from tqdm import tqdm, trange
 
 import dspy
-
-from .config import SynthesizerArguments
-from .instruction_suffixes import (
+from dspy.experimental.synthesizer.config import SynthesizerArguments
+from dspy.experimental.synthesizer.instruction_suffixes import (
     INPUT_GENERATION_TASK_WITH_EXAMPLES_SUFFIX,
     INPUT_GENERATION_TASK_WITH_FEEDBACK_SUFFIX,
 )
-from .signatures import (
+from dspy.experimental.synthesizer.signatures import (
     ExplainTask,
     GenerateFieldDescription,
     GenerateInputFieldsData,
@@ -22,12 +21,8 @@ from .signatures import (
     UnderstandTask,
     UpdateTaskDescriptionBasedOnFeedback,
 )
-from .utils import format_examples
+from dspy.experimental.synthesizer.utils import format_examples
 
-__all__ = [
-    "Synthesizer",
-    "SynthesizerArguments",
-]
 
 class Synthesizer:
     def __init__(self, config: SynthesizerArguments):

@@ -3,7 +3,6 @@ from dspy.signatures.signature import (
     SignatureMeta,
     Signature,
     update_signatures,
-    ensure_signature,
     make_signature,
     infer_prefix,
 )
@@ -18,6 +17,5 @@ __all__ = [
     "Signature",
     "infer_prefix",
     "update_signatures",
-    "ensure_signature",
     "make_signature",
 ]

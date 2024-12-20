@@ -18,9 +18,7 @@ def download(url):
 
 
 __all__ = [
-    "download",
     "BaseCallback",
-    "with_callbacks",
     "DummyLM",
     "DummyVectorizer",
     "dummy_rm",

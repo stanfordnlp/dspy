@@ -10,6 +10,7 @@ _limiter = None
 
 def get_async_max_workers():
     import dspy
+
     return dspy.settings.async_max_workers
 
 
@@ -36,16 +37,19 @@ def asyncify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
         program: The DSPy program to be wrapped for asynchronous execution.
 
     Returns:
-        An async function that, when awaited, runs the program in a worker thread. The current 
-        thread's configuration context is inherited for each call.
+        An async function: An async function that, when awaited, runs the program in a worker thread.
+            The current thread's configuration context is inherited for each call.
     """
+
     async def async_program(*args, **kwargs) -> Any:
         # Capture the current overrides at call-time.
         from dspy.dsp.utils.settings import thread_local_overrides
+
         parent_overrides = thread_local_overrides.overrides.copy()
 
         def wrapped_program(*a, **kw):
             from dspy.dsp.utils.settings import thread_local_overrides
+
             original_overrides = thread_local_overrides.overrides
             thread_local_overrides.overrides = parent_overrides.copy()
             try:
