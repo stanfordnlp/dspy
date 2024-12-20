@@ -2,7 +2,6 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module

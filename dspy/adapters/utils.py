@@ -4,7 +4,6 @@ from typing import Any, List, Union
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from .image_utils import Image, encode_image
 
 
 def serialize_for_json(value: Any) -> Any:
