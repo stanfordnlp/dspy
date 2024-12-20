@@ -88,10 +88,10 @@ This object can also be accessed as `{module_path}.{name}`
 def get_public_methods(cls):
     """Returns a list of all public methods in a class."""
     return [
-        name for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
+        name
+        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
         if name == "__call__" or not name.startswith("_")  # Exclude private and dunder methods
     ]
-
 
 
 def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = False) -> str:
@@ -115,7 +115,7 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
         show_root_heading: true
         show_inherited_members: true
         heading_level: 2
-        docstring_section_style: google
+        docstring_style: google
         show_root_full_path: true
         show_object_full_path: false
         separate_signature: false

@@ -46,12 +46,14 @@ nav:
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Compound AI Systems:
+            - Overview: tutorials/compound_ai_systems/index.md
             - Retrieval-Augmented Generation: tutorials/compound_ai_systems/rag/index.ipynb
             - Agents: tutorials/compound_ai_systems/agents/index.ipynb
             - Reasoning: tutorials/compound_ai_systems/math/index.ipynb
             - Entity Extraction: tutorials/compound_ai_systems/entity_extraction/index.ipynb
             - Privacy-Conscious Delegation: tutorials/compound_ai_systems/papillon/index.md
         - Quick DSPy Recipes:
+            - Overview: tutorials/quick_recipes/index.md
             - Saving and Loading: tutorials/quick_recipes/saving/index.md
             - Deployment: tutorials/quick_recipes/deployment/index.md
             - Debugging & Observability: tutorials/quick_recipes/observability/index.md
@@ -63,6 +65,7 @@ nav:
     - FAQ:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
+
 
 theme:
     name: material
@@ -121,17 +124,21 @@ plugins:
                     separate_signature: false
                     show_category_heading: true
                     show_symbol_type_heading: true
+                    show_docstring_parameters: true
                     show_if_no_docstring: true
                     show_signature_annotations: true
                     unwrap_annotated: true
-                    merge_init_into_class: false
-                    docstring_options:
-                        ignore_init: true
+                    annotations_path: brief
                     docstring_section_style: table
+                    merge_init_into_class: true
                     rendering:
                         show_if_no_docstring: true
                         show_warnings: false
                         html_meta: false
+                    docstring_options:
+                        returns_style: table
+                        separate_signature: false
+                        merge_return_lines: true
     - redirects:
             redirect_maps:
               # Redirect /intro/ to the main page

@@ -1,14 +1,12 @@
 /* Custom styles for logo */
-.md-logo {
+.md-logo, .md-logo img {
     width: auto !important;
-    height: 1.5rem !important; /* Reduced from 1.8rem */
+    height: 1.5rem !important;
     padding: 0 !important;
     margin: 0 !important;
 }
 
 .md-logo img {
-    width: auto !important;
-    height: 1.5rem !important; /* Reduced from 1.8rem */
     object-fit: contain !important;
 }
 
@@ -46,13 +44,6 @@
         min-width: 980px;
     }
 }
-
-/* Fully responsive on smaller screens */
-/* @media (max-width: 6px) {
-    .md-content {
-        max-width: 98%;
-    }
-} */
 
 
 /* Justified text for main content */
@@ -143,23 +134,24 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
     width: auto;  /* Allow text container to shrink */
 }
 
+h2.doc-heading {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
 /* Add more spacing between API sections */
 .doc-heading {
     margin-top: 1em;
     border-top: 1px solid var(--md-default-fg-color--lightest);
+    font-size: 0.85rem;
 }
 
 /* Make method names more prominent */
-.doc-method {
+.doc-method, .doc-function {
     background-color: var(--md-code-bg-color);
-    padding: 0.5em;
-    margin: 1em 0;
+    padding: 0.1em;
+    margin: 0.5em 0;
     border-radius: 4px;
-}
-
-/* Add spacing between methods */
-.doc-contents {
-    margin-bottom: 2em;
 }
 
 /* Make class documentation stand out */
@@ -178,24 +170,9 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
     background-color: var(--md-code-bg-color);
     display: inline-block;
     margin: 0.2em 0;
-    font-weight: 500;
+    font-weight: 400;
     text-transform: none;  /* Prevent uppercase transformation */
     color: var(--md-code-fg-color);
-}
-
-.doc-object-name {
-    text-transform: none !important;
-}
-
-/* Remove colored backgrounds from type indicators */
-.doc-attribute-name::before,
-.doc-method-name::before,
-.doc-class-name::before,
-.doc-module-name::before {
-    background: none !important;
-    color: inherit !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
 }
 
 /* Add indentation and visual cues for nested navigation items */
@@ -251,3 +228,4 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 .highlight .md-clipboard:hover {
     color: var(--md-accent-fg-color);
 }
+
