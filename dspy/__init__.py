@@ -24,6 +24,9 @@ from dspy.dsp.colbertv2 import ColBERTv2
 configure = settings.configure
 context = settings.context
 
+# allow version introspection. Reads from the version in setup.py
+from pkg_resources import get_distribution
+__version__ = get_distribution('dspy').version
 
 import dspy.teleprompt
 
