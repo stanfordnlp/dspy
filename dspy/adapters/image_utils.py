@@ -64,8 +64,9 @@ class Image(pydantic.BaseModel):
     def __repr__(self):
         if "base64" in self.url:
             len_base64 = len(self.url.split("base64,")[1])
-            return f"Image(url=data:image/...base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
-        return f"Image(url='{self.url}')"
+            image_type = self.url.split(";")[0].split("/")[-1]
+            return f"Image(url = data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({str(len_base64)})>)"
+        return f"Image(url = '{self.url}')"
 
 def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
