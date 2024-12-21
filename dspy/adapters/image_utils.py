@@ -181,9 +181,7 @@ def try_expand_image_tags(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
     """Try to expand image tags in the messages."""
     for message in messages:
         # NOTE: Assumption that content is a string
-        print(message, "content" in message, "<DSPY_IMAGE_START>" in message["content"])
         if "content" in message and "<DSPY_IMAGE_START>" in message["content"]:
-            print("Expanding image tags")
             message["content"] = expand_image_tags(message["content"])
     return messages
 
