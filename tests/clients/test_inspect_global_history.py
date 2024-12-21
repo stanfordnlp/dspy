@@ -27,6 +27,9 @@ def test_inspect_history_basic(capsys):
     assert all("messages" in entry for entry in history)
 
 def test_inspect_history_with_n(capsys):
+    """Test that inspect_history works with n
+    Random failures in this test most likely mean you are printing messages somewhere
+    """
     lm = DummyLM([{"response": "One"}, {"response": "Two"}, {"response": "Three"}])
     dspy.settings.configure(lm=lm)
     
