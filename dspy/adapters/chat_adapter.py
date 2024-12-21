@@ -323,7 +323,9 @@ def prepare_instructions(signature: SignatureMeta):
         elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
         elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
-            desc = f"must be one of: {'; '.join([str(x) for x in field_type.__args__])}"
+            desc = (
+                f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
+            )
         else:
             desc = "must be pareseable according to the following JSON schema: "
             desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
