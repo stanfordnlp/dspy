@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from tests.reliability.generate.utils import load_generated_cases, run_generated_case
+from .generate.utils import load_generated_cases, run_generated_case
 
 _DIR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 

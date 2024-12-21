@@ -1,3 +1,4 @@
+from typing import Literal
 import dspy
 import random
 from datasets import load_dataset
@@ -22,37 +23,12 @@ mappings = {
     "target": {0: "no", 1: "yes"},  # presence of heart disease
 }
 
-dataset = load_dataset("buio/heart-disease")
-fullset = []
-
-for x in dataset["train"]:
-    for key, value in x.items():
-        if key in mappings:
-            x[key] = mappings[key].get(value, value)
-        x[key] = str(x[key])
-
-    inputs = [k for k in x.keys() if k != "target"]
-    x["answer"] = x["target"]
-    del x["target"]
-
-    fullset.append(dspy.Example(**x).with_inputs(*inputs))
-
-random.Random(0).shuffle(fullset)
-
-trainset = fullset[:120]
-devset = trainset
-testset = fullset[120:]
-
 
 class HeartDiseaseInput(dspy.Signature):
     age = dspy.InputField(desc="Age in years")
     sex = dspy.InputField(desc="Sex (male or female)")
-    cp = dspy.InputField(
-        desc="Chest pain type (typical angina, atypical angina, non-anginal pain, asymptomatic)"
-    )
-    trestbps = dspy.InputField(
-        desc="Resting blood pressure (in mm Hg on admission to the hospital)"
-    )
+    cp = dspy.InputField(desc="Chest pain type (typical angina, atypical angina, non-anginal pain, asymptomatic)")
+    trestbps = dspy.InputField(desc="Resting blood pressure (in mm Hg on admission to the hospital)")
     chol = dspy.InputField(desc="Serum cholesterol in mg/dl")  # Nov 2nd, 2024: fixed typo from `cholesteral`
     fbs = dspy.InputField(desc="Fasting blood sugar > 120 mg/dl (true or false)")
     restecg = dspy.InputField(
@@ -61,9 +37,7 @@ class HeartDiseaseInput(dspy.Signature):
     thalach = dspy.InputField(desc="Maximum heart rate achieved")
     exang = dspy.InputField(desc="Exercise induced angina (yes or no)")
     oldpeak = dspy.InputField(desc="ST depression induced by exercise relative to rest")
-    slope = dspy.InputField(
-        desc="The slope of the peak exercise ST segment (upsloping, flat, downsloping)"
-    )
+    slope = dspy.InputField(desc="The slope of the peak exercise ST segment (upsloping, flat, downsloping)")
     ca = dspy.InputField(desc="Number of major vessels (0-3) colored by flourosopy")
     thal = dspy.InputField(desc="Thalassemia (normal, fixed defect, reversible defect)")
 
@@ -71,26 +45,19 @@ class HeartDiseaseInput(dspy.Signature):
 class HeartDiseaseSignature(HeartDiseaseInput):
     """Given patient information, predict the presence of heart disease."""
 
-    answer = dspy.OutputField(
-        desc="Does this patient have heart disease? Just yes or no."
-    )
+    answer: Literal["yes", "no"] = dspy.OutputField(desc="Does this patient have heart disease? Just yes or no.")
 
 
 class HeartDiseaseVote(HeartDiseaseInput):
-    """Given patient information, predict the presence of heart disease. I can critically assess the provided trainee opinions."""
+    """Given patient information, predict the presence of heart disease. Critically assess the provided trainee opinions."""
 
     context = dspy.InputField(desc="A list of opinions from trainee doctors.")
-    answer = dspy.OutputField(
-        desc="Does this patient have heart disease? Just yes or no."
-    )
+    answer: Literal["yes", "no"] = dspy.OutputField(desc="Does this patient have heart disease? Just yes or no.")
 
 
 class Classify(dspy.Module):
     def __init__(self):
-        self.classify = [
-            dspy.ChainOfThought(HeartDiseaseSignature, temperature=0.7 + i * 0.01)
-            for i in range(3)
-        ]
+        self.classify = [dspy.ChainOfThought(HeartDiseaseSignature, temperature=0.7 + i * 0.01) for i in range(3)]
         self.vote = dspy.ChainOfThought(HeartDiseaseVote)
 
     def forward(
@@ -126,24 +93,38 @@ class Classify(dspy.Module):
         )
 
         opinions = [c(**kwargs) for c in self.classify]
-        opinions = [
-            (opinion.reasoning.replace("\n", " ").strip("."), opinion.answer.strip("."))
-            for opinion in opinions
-        ]
+        opinions = [(o.reasoning.replace("\n", " ").strip("."), o.answer.strip(".")) for o in opinions]
 
-        opinions = [
-            f"I'm a trainee doctor, trying to {reason}. Hence, my answer is {answer}."
-            for reason, answer in opinions
-        ]
+        opinions = [f"{reasoning}. Hence, my answer is {answer}." for reasoning, answer in opinions]
         return self.vote(context=opinions, **kwargs)
 
 
 class HeartDiseaseTask(BaseTask):
     def __init__(self):
-        self.trainset = trainset
-        self.devset = devset
-        self.testset = testset
         self.metric = dspy.evaluate.answer_exact_match
+        self._load_dataset()
+
+    def _load_dataset(self):
+        dataset = load_dataset("buio/heart-disease")
+        fullset = []
+
+        for x in dataset["train"]:
+            for key, value in x.items():
+                if key in mappings:
+                    x[key] = mappings[key].get(value, value)
+                x[key] = str(x[key])
+
+            inputs = [k for k in x.keys() if k != "target"]
+            x["answer"] = x["target"]
+            del x["target"]
+
+            fullset.append(dspy.Example(**x).with_inputs(*inputs))
+
+        random.Random(0).shuffle(fullset)
+
+        self.trainset = fullset[:120]
+        self.devset = self.trainset
+        self.testset = fullset[120:]
 
     def get_program(self):
         return Classify()

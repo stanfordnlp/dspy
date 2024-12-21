@@ -9,17 +9,6 @@ from dotenv import load_dotenv
 import dspy
 from dspy.evaluate import Evaluate
 
-from tasks.gsm8k import GSM8KTask
-from tasks.hotpotqa import HotPotQATask
-from tasks.scone import ScoNeTask
-from tasks.tweet import TweetTask
-from tasks.tweet_metric import TweetMetricTask
-from tasks.heart_disease import HeartDiseaseTask
-from tasks.hotpotqa_conditional import HotPotQAConditionalTask
-from tasks.hover import HoverRetrieveDiscrete
-from tasks.iris_typo import IrisTypoClassifierTask
-from tasks.iris import IrisClassifierTask
-
 datasets = [
     "scone",
     "hotpotqa",
@@ -72,9 +61,7 @@ class OptimizerTester:
 
         # Prompt gen model
         if not prompt_model:
-            self.prompt_model = dspy.OpenAI(
-                model=self.PROMPT_MODEL_NAME, max_tokens=700
-            )
+            self.prompt_model = dspy.OpenAI(model=self.PROMPT_MODEL_NAME, max_tokens=700)
         else:
             self.prompt_model = prompt_model
 
@@ -146,33 +133,35 @@ class OptimizerTester:
             writer.writerow(formatted_data)
 
     def load_dataset(self, dataset):
-        ds = None
         dataset = dataset.lower()
+
+        # Import task based on dataset name
+        Task = None
         if dataset == "scone":
-            ds = ScoNeTask()
+            from tasks.scone import ScoNeTask as Task
         elif dataset == "hotpotqa":
-            ds = HotPotQATask()
+            from tasks.hotpotqa import HotPotQATask as Task
         elif dataset == "hotpotqa_conditional":
-            ds = HotPotQAConditionalTask()
+            from tasks.hotpotqa_conditional import HotPotQAConditionalTask as Task
         elif dataset == "gsm8k":
-            ds = GSM8KTask()
+            from tasks.gsm8k import GSM8KTask as Task
         elif dataset == "tweet":
-            ds = TweetTask()
+            from tasks.tweet import TweetTask as Task
         elif dataset == "heart_disease":
-            ds = HeartDiseaseTask()
+            from tasks.heart_disease import HeartDiseaseTask as Task
         elif dataset == "iris":
-            ds = IrisClassifierTask()
+            from tasks.iris import IrisClassifierTask as Task
         elif dataset == "iris_typo":
-            ds = IrisTypoClassifierTask()
+            from tasks.iris_typo import IrisTypoClassifierTask as Task
         elif dataset == "hover_retrieve_discrete":
-            ds = HoverRetrieveDiscrete()
+            from tasks.hover import HoverRetrieveDiscrete as Task
         elif dataset == "tweet_metric":
-            ds = TweetMetricTask()
+            from tasks.tweet_metric import TweetMetricTask as Task
         else:
             raise ValueError("Invalid dataset name.")
-        ds.set_splits(
-            TRAIN_NUM=self.TRAIN_NUM, DEV_NUM=self.DEV_NUM, TEST_NUM=self.TEST_NUM
-        )
+
+        ds = Task()
+        ds.set_splits(TRAIN_NUM=self.TRAIN_NUM, DEV_NUM=self.DEV_NUM, TEST_NUM=self.TEST_NUM)
         return ds
 
     # Computes baseline results for a given dataset
@@ -246,10 +235,7 @@ class OptimizerTester:
                 },
             )
 
-    def test_optimizer_default(
-        self, optimizer_function, datasets=datasets, test_name="default"
-    ):
-
+    def test_optimizer_default(self, optimizer_function, datasets=datasets, test_name="default"):
         for dataset in datasets:
             task = self.load_dataset(dataset)
             print(f"Testing  Optimizers on {dataset} ...")
@@ -280,9 +266,7 @@ class OptimizerTester:
 
             # Set up the optimizer kwargs
             date_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_dir = (
-                "log_dir/" + dataset + "_" + test_name + "_" + date_timestamp + "/"
-            )
+            log_dir = "log_dir/" + dataset + "_" + test_name + "_" + date_timestamp + "/"
             os.makedirs(log_dir, exist_ok=True)
             kwargs = dict(
                 breadth=self.BREADTH,
