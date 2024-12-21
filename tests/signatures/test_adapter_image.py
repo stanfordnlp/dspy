@@ -341,7 +341,7 @@ def test_image_repr():
     assert str(pil_image).endswith("<DSPY_IMAGE_END>")
     # Test repr() behavior
     repr_str = repr(pil_image)
-    assert repr_str.startswith("Image(url=data:image/...base64,<IMAGE_BASE_64_ENCODED(")
+    assert repr_str.startswith("Image(url=data:image/png;base64,<IMAGE_BASE_64_ENCODED(")
     assert repr_str.endswith(")>)")
     assert "base64" in str(pil_image)
 
