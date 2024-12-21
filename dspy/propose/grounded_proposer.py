@@ -195,7 +195,8 @@ class GenerateModuleInstruction(dspy.Module):
                         program_code=self.program_code_string, program_example=task_demos,
                     ).program_description,
                 )
-                if self.verbose: print(f"PROGRAM DESCRIPTION: {program_description}")
+                if self.verbose:
+                    print(f"PROGRAM DESCRIPTION: {program_description}")
 
                 inputs = []
                 outputs = []
@@ -218,12 +219,14 @@ class GenerateModuleInstruction(dspy.Module):
                     module=module_code,
                     max_depth=10,
                 ).module_description
-            except:
-                if self.verbose: print("Error getting program description. Running without program aware proposer.")
+            except Exception:
+                if self.verbose:
+                    print("Error getting program description. Running without program aware proposer.")
                 self.program_aware = False
 
         # Generate an instruction for our chosen module
-        if self.verbose: print(f"task_demos {task_demos}")
+        if self.verbose:
+            print(f"task_demos {task_demos}")
         instruct = self.generate_module_instruction(
             dataset_description=data_summary,
             program_code=self.program_code_string,
@@ -237,7 +240,8 @@ class GenerateModuleInstruction(dspy.Module):
         )
         if hasattr(instruct, "module_description"):
             module_description = strip_prefix(instruct.module_description)
-            if self.verbose: print(f"MODULE DESCRIPTION: {module_description}")
+            if self.verbose:
+                print(f"MODULE DESCRIPTION: {module_description}")
         proposed_instruction = strip_prefix(instruct.proposed_instruction)
 
         return dspy.Prediction(proposed_instruction=proposed_instruction)
@@ -278,7 +282,8 @@ class GroundedProposer(Proposer):
         if self.program_aware:
             try:
                 self.program_code_string = get_dspy_source_code(program)
-                if self.verbose: print("SOURCE CODE:",self.program_code_string)
+                if self.verbose:
+                    print("SOURCE CODE:",self.program_code_string)
             except Exception as e:
                 print(f"Error getting source code: {e}.\n\nRunning without program aware proposer.")
                 self.program_aware = False
@@ -289,7 +294,8 @@ class GroundedProposer(Proposer):
                 self.data_summary = create_dataset_summary(
                     trainset=trainset, view_data_batch_size=view_data_batch_size, prompt_model=prompt_model,
                 )
-                if self.verbose: print(f"DATA SUMMARY: {self.data_summary}")
+                if self.verbose:
+                    print(f"DATA SUMMARY: {self.data_summary}")
             except Exception as e:
                 print(f"Error getting data summary: {e}.\n\nRunning without data aware proposer.")
                 self.use_dataset_summary = False
@@ -313,12 +319,14 @@ class GroundedProposer(Proposer):
             # Randomly select whether or not we're using instruction history
             use_history = self.rng.random() < 0.5
             self.use_instruct_history = use_history
-            if self.verbose: print(f"Use history T/F: {self.use_instruct_history}")
+            if self.verbose:
+                print(f"Use history T/F: {self.use_instruct_history}")
 
         num_demos = max(len(demo_candidates[0]) if demo_candidates else N, 1)
 
         if not demo_candidates:
-            if self.verbose: print("No demo candidates provided. Running without task demos.")
+            if self.verbose:
+                print("No demo candidates provided. Running without task demos.")
             self.use_task_demos = False
 
         # Create an instruction for each predictor 
@@ -327,14 +335,14 @@ class GroundedProposer(Proposer):
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
                 if self.set_tip_randomly:
-                    if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
+                    if self.verbose:
+                        print("Using a randomly generated configuration for our grounded proposer.")
                     # Randomly select the tip
                     selected_tip_key = self.rng.choice(list(TIPS.keys()))
                     selected_tip = TIPS[selected_tip_key]
-                    self.use_tip = bool(
-                        selected_tip,
-                    )
-                    if self.verbose: print(f"Selected tip: {selected_tip_key}")
+                    self.use_tip = bool(selected_tip)
+                    if self.verbose:
+                        print(f"Selected tip: {selected_tip_key}")
 
                 proposed_instructions[pred_i].append(
                     self.propose_instruction_for_predictor(
@@ -399,7 +407,8 @@ class GroundedProposer(Proposer):
         self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
-        if self.verbose: self.prompt_model.inspect_history(n=1)
-        if self.verbose: print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
+        if self.verbose:
+            self.prompt_model.inspect_history(n=1)
+            print(f"PROPOSED INSTRUCTION: {proposed_instruction}")
 
         return strip_prefix(proposed_instruction)

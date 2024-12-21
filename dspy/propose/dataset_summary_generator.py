@@ -45,7 +45,8 @@ def order_input_keys_in_string(unordered_repr):
     return ordered_repr
 
 def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_file=None, verbose=False):
-    if verbose: print("\nBootstrapping dataset summary (this will be used to generate instructions)...")
+    if verbose:
+        print("\nBootstrapping dataset summary (this will be used to generate instructions)...")
     upper_lim = min(len(trainset), view_data_batch_size)
     prompt_model = prompt_model if prompt_model else dspy.settings.lm
     with dspy.settings.context(lm=prompt_model):
@@ -63,7 +64,8 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             calls+=1
             if calls >= max_calls:
                 break
-            if verbose: print(f"b: {b}")
+            if verbose:
+                print(f"b: {b}")
             upper_lim = min(len(trainset), b+view_data_batch_size)
             with dspy.settings.context(lm=prompt_model):
                 output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()))
@@ -77,17 +79,20 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             if log_file: 
                 log_file.write(f"observations {observations}\n")
     except Exception as e:
-        if verbose: print(f"e {e}. using observations from past round for a summary.")
+        if verbose:
+            print(f"e {e}. using observations from past round for a summary.")
 
     if prompt_model:
         with dspy.settings.context(lm=prompt_model):
             summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
     else:
         summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
-    if verbose: print(f"summary: {summary}")
+
     if log_file:
         log_file.write(f"summary: {summary}\n")
-    
-    if verbose: print(f"\nGenerated summary: {strip_prefix(summary.summary)}\n")
+
+    if verbose:
+        print(f"summary: {summary}")
+        print(f"\nGenerated summary: {strip_prefix(summary.summary)}\n")
 
     return strip_prefix(summary.summary)

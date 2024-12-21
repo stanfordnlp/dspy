@@ -1,4 +1,5 @@
 import functools
+import importlib.util
 from typing import Any, List, Optional, Union
 
 import requests
@@ -7,7 +8,6 @@ from dspy.dsp.cache_utils import CacheMemory, NotebookCacheMemory
 from dspy.dsp.utils import dotdict
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
-
 
 class ColBERTv2:
     """Wrapper for the ColBERTv2 Retrieval."""
@@ -76,7 +76,7 @@ def colbertv2_post_request_v2_wrapped(*args, **kwargs):
 colbertv2_post_request = colbertv2_post_request_v2_wrapped
 
 class ColBERTv2RetrieverLocal:
-    def __init__(self,passages:List[str],colbert_config=None,load_only:bool=False):
+    def __init__(self,passages: List[str], colbert_config=None, load_only=False):
         """Colbertv2 retriever module
 
         Args:
@@ -84,6 +84,9 @@ class ColBERTv2RetrieverLocal:
             colbert_config (ColBERTConfig, optional): colbert config for building and searching. Defaults to None.
             load_only (bool, optional): whether to load the index or build and then load. Defaults to False.
         """
+        if importlib.util.find_spec("colbert") is None:
+            raise ImportError("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
+
         assert colbert_config is not None, "Please pass a valid colbert_config, which you can import from colbert.infra.config import ColBERTConfig and modify it"
         self.colbert_config = colbert_config
 
@@ -101,12 +104,6 @@ class ColBERTv2RetrieverLocal:
         self.searcher = self.get_index()
 
     def build_index(self):
-
-        try:
-            import colbert
-        except ImportError:
-            print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
-
         from colbert import Indexer
         from colbert.infra import Run, RunConfig
         with Run().context(RunConfig(nranks=self.colbert_config.nranks, experiment=self.colbert_config.experiment)):  
@@ -114,11 +111,6 @@ class ColBERTv2RetrieverLocal:
             indexer.index(name=self.colbert_config.index_name, collection=self.passages, overwrite=True)
 
     def get_index(self):
-        try:
-            import colbert
-        except ImportError:
-            print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
-
         from colbert import Searcher
         from colbert.infra import Run, RunConfig
         
@@ -153,16 +145,15 @@ class ColBERTv2RetrieverLocal:
 class ColBERTv2RerankerLocal:
     
     def __init__(self,colbert_config=None,checkpoint:str='bert-base-uncased'):
-        try:
-            import colbert
-        except ImportError:
-            print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
         """_summary_
 
         Args:
             colbert_config (ColBERTConfig, optional): Colbert config. Defaults to None.
             checkpoint_name (str, optional): checkpoint for embeddings. Defaults to 'bert-base-uncased'.
         """
+
+        if importlib.util.find_spec("colbert") is None:
+            raise ImportError("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
         self.colbert_config = colbert_config
         self.checkpoint = checkpoint
         self.colbert_config.checkpoint = checkpoint
