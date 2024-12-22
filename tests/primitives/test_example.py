@@ -56,11 +56,11 @@ def test_example_repr_str_img():
     )
     assert (
         repr(example)
-        == "Example({'img': Image(url = data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
+        == "Example({'img': Image(url=data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
     )
     assert (
         str(example)
-        == "Example({'img': Image(url = data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
+        == "Example({'img': Image(url=data:image/gif;base64,<IMAGE_BASE_64_ENCODED(56)>)}) (input_keys=None)"
     )
 
 
