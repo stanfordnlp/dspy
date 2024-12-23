@@ -3,7 +3,7 @@ from dspy.primitives.example import Example
 from dspy.primitives.module import BaseModule
 from dspy.primitives.prediction import Prediction, Completions
 from dspy.primitives.program import Program, Module
-from dspy.primitives.python_interpreter import PythonInterpreter, TextPrompt, CodePrompt
+from dspy.primitives.python_interpreter import PythonInterpreter
 
 
 __all__ = [
@@ -15,6 +15,4 @@ __all__ = [
     "Program",
     "Module",
     "PythonInterpreter",
-    "TextPrompt",
-    "CodePrompt",
 ]
