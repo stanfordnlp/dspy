@@ -1,6 +1,6 @@
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.base_lm import inspect_history
+from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.embedding import Embedder
 import litellm
 import os
@@ -36,6 +36,7 @@ def disable_litellm_logging():
 
 
 __all__ = [
+    "BaseLM",
     "LM",
     "Provider",
     "TrainingJob",
