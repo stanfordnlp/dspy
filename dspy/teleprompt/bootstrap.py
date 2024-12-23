@@ -48,23 +48,22 @@ class BootstrapFewShot(Teleprompter):
         A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
         These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
 
-        Parameters
-        ----------
-        metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison. 
-        metric_threshold: optional float, default `None`
-            If the metric yields a numerical value, then check it against this threshold when
-            deciding whether or not to accept a bootstrap example.
-        teacher_settings: dict, optional
-            Settings for the `teacher` model.
-        max_bootstrapped_demos: int, default 4
-            Maximum number of bootstrapped demonstrations to include
-        max_labeled_demos: int, default 16
-            Maximum number of labeled demonstrations to include.
-        max_rounds: int, default 1
-            Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
-        max_errors: int, default 5
-            Maximum number of errors until program ends.
+        Args:
+            metric: Callable
+                A function that compares an expected value and predicted value, outputting the result of that comparison. 
+            metric_threshold: optional float, default `None`
+                If the metric yields a numerical value, then check it against this threshold when
+                deciding whether or not to accept a bootstrap example.
+            teacher_settings: dict, optional
+                Settings for the `teacher` model.
+            max_bootstrapped_demos: int, default 4
+                Maximum number of bootstrapped demonstrations to include
+            max_labeled_demos: int, default 16
+                Maximum number of labeled demonstrations to include.
+            max_rounds: int, default 1
+                Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
+            max_errors: int, default 5
+                Maximum number of errors until program ends.
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
