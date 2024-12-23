@@ -24,15 +24,4 @@ from dspy.dsp.colbertv2 import ColBERTv2
 configure = settings.configure
 context = settings.context
 
-
-import dspy.teleprompt
-
-LabeledFewShot = dspy.teleprompt.LabeledFewShot
-BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
-BootstrapFewShotWithRandomSearch = dspy.teleprompt.BootstrapFewShotWithRandomSearch
-BootstrapRS = dspy.teleprompt.BootstrapFewShotWithRandomSearch
-BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
-BetterTogether = dspy.teleprompt.BetterTogether
-COPRO = dspy.teleprompt.COPRO
-MIPROv2 = dspy.teleprompt.MIPROv2
-Ensemble = dspy.teleprompt.Ensemble
+BootstrapRS = BootstrapFewShotWithRandomSearch

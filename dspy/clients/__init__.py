@@ -1,6 +1,6 @@
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.base_lm import BaseLM, inspect_history
+from dspy.clients.base_lm import inspect_history
 from dspy.clients.embedding import Embedder
 import litellm
 import os
@@ -39,7 +39,6 @@ __all__ = [
     "LM",
     "Provider",
     "TrainingJob",
-    "BaseLM",
     "inspect_history",
     "Embedder",
     "enable_litellm_logging",
