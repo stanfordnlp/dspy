@@ -14,13 +14,12 @@ from pydantic import TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
+from dspy.adapters.image_utils import Image
 from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
+from dspy.signatures.signature import SignatureMeta
+from dspy.signatures.utils import get_dspy_field_type
 
-from ..adapters.image_utils import Image
-from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
-
-_logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class FieldInfoWithName(NamedTuple):
@@ -43,7 +42,7 @@ class JSONAdapter(Adapter):
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
                 except Exception:
-                    _logger.debug(
+                    logger.debug(
                         "Failed to obtain response using signature-based structured outputs"
                         " response format: Falling back to default 'json_object' response format."
                         " Exception: {e}"
@@ -147,6 +146,7 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Args:
       field_info: Information about the field, including its DSPy field type and annotation.
       value: The value of the field.
+
     Returns:
       The formatted value of the field, represented as a string.
     """
@@ -188,15 +188,15 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
 
     Args:
-      signature: The DSPy signature to which future LLM responses should conform.
-      values: A dictionary mapping field names (from the DSPy signature) to corresponding values
-              that should be included in the message.
-      role: The role of the message, which can be either "user" or "assistant".
-      incomplete: If True, indicates that output field values are present in the set of specified
-                  ``values``. If False, indicates that ``values`` only contains input field values.
+        signature: The DSPy signature to which future LLM responses should conform.
+        values: A dictionary mapping field names (from the DSPy signature) to corresponding values
+            that should be included in the message.
+        role: The role of the message, which can be either "user" or "assistant".
+        incomplete: If True, indicates that output field values are present in the set of specified
+            ``values``. If False, indicates that ``values`` only contains input field values.
     Returns:
-      A chat message that can be appended to a chat thread. The message contains two string fields:
-      ``role`` ("user" or "assistant") and ``content`` (the message text).
+        A chat message that can be appended to a chat thread. The message contains two string fields:
+        ``role`` ("user" or "assistant") and ``content`` (the message text).
     """
     content = []
 
