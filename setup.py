@@ -41,7 +41,8 @@ setup(
         "groq": ["groq~=0.8.0"],
         "langfuse": ["langfuse~=2.36.1"],
         "pgvector": ["psycopg2~=2.9.9","pgvector~=0.2.5"],
-        "falkordb": ["falkordb", "redis", "async-timeout"]
+        "falkordb": ["falkordb", "redis", "async-timeout"],
+        "needle": ["needle-python~=0.4.0"]
     },
     classifiers=[	
         "Development Status :: 3 - Alpha",	
