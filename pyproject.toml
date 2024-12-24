@@ -58,6 +58,7 @@ epsilla = ["pyepsilla~=0.3.7"]
 pinecone = ["pinecone-client~=2.2.4"]
 weaviate = ["weaviate-client~=4.5.4"]
 milvus = ["pymilvus~=2.3.7"]
+needle = ["needle-python~=0.4.0"]
 aws = ["boto3~=1.34.78"]
 docs = [
     "sphinx>=4.3.0",
