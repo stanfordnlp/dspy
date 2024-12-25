@@ -1,8 +1,13 @@
 import magicattr
+import inspect
+import asyncio
+from typing import Any, Union, Awaitable, TypeVar, Optional, List, Callable
 
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
+
+T = TypeVar('T')
 
 
 class ProgramMeta(type):
@@ -18,8 +23,116 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
 
     @with_callbacks
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Union[T, Awaitable[T]]:
+        """Call the module with given arguments.
+        
+        Automatically determines whether to use sync or async execution based on arguments.
+        If any argument is a coroutine, awaitable, or future, uses async execution.
+        Also uses async execution if the module has a custom aforward implementation.
+        
+        Args:
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Either the direct result (sync) or an awaitable of the result (async)
+        """
+        def is_async_arg(arg):
+            return (inspect.iscoroutine(arg) or 
+                   inspect.isawaitable(arg) or 
+                   isinstance(arg, asyncio.Future))
+
+        # Check if we should use async execution
+        use_async = (
+            # If any argument is async
+            any(is_async_arg(arg) for arg in args) or
+            any(is_async_arg(v) for v in kwargs.values()) or
+            # Or if we have a custom aforward implementation
+            (hasattr(self, 'aforward') and 
+             self.aforward.__func__ is not Module.aforward)
+        )
+
+        if use_async:
+            async def _async_call():
+                # Await any async arguments
+                async_args = []
+                for arg in args:
+                    if is_async_arg(arg):
+                        async_args.append(await arg)
+                    else:
+                        async_args.append(arg)
+                
+                async_kwargs = {}
+                for k, v in kwargs.items():
+                    if is_async_arg(v):
+                        async_kwargs[k] = await v
+                    else:
+                        async_kwargs[k] = v
+                
+                return await self.aforward(*async_args, **async_kwargs)
+            return _async_call()
+        
+        # Use sync execution
         return self.forward(*args, **kwargs)
+
+    async def aforward(self, *args: Any, **kwargs: Any) -> T:
+        """Async version of forward.
+        
+        This method should be implemented by subclasses to provide async execution.
+        By default, raises NotImplementedError to encourage proper async implementation.
+        
+        When implementing this method:
+        1. Use 'async def' and 'await' for async operations
+        2. Avoid blocking operations - they should be properly awaited
+        3. Consider using asyncio.create_task for concurrent operations
+        4. Be mindful of async context managers (use 'async with')
+        
+        Example:
+            ```python
+            class MyAsyncModule(Module):
+                async def aforward(self, x):
+                    # Good: proper async operation
+                    result = await async_operation(x)
+                    return result
+                    
+                    # Bad: blocking operation
+                    # time.sleep(1)  # Don't do this!
+                    
+                    # Bad: sync operation without proper async
+                    # return self.forward(x)  # Don't do this!
+            ```
+        
+        Args:
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            The result of the async computation
+            
+        Raises:
+            NotImplementedError: Subclasses must implement this method for async operations
+        """
+        raise NotImplementedError(
+            "Subclasses must implement aforward for async operations. "
+            "Do not use sync operations or blocking calls in this method."
+        )
+
+    def forward(self, *args: Any, **kwargs: Any) -> T:
+        """Synchronous forward pass.
+        
+        Must be implemented by subclasses to define the module's computation.
+        
+        Args:
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            The result of the computation
+            
+        Raises:
+            NotImplementedError: If not implemented by subclass
+        """
+        raise NotImplementedError("Subclasses must implement forward method")
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
