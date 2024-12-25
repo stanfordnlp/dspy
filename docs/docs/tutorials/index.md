@@ -6,7 +6,11 @@
 
 * [Entity Extraction](/tutorials/entity_extraction/)
 
+* [Multi-Hop Search](tutorials/multihop_search/)
+
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
+
+* [Saving and Loading](tutorials/saving/index.md)
 
 * [Deployment](/tutorials/deployment/)
 
