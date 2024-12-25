@@ -64,7 +64,6 @@ nav:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
 
-
 theme:
     name: material
     custom_dir: overrides
@@ -108,7 +107,33 @@ extra_css:
 plugins:
     - social
     - search
-    - mkdocstrings
+    - mkdocstrings:
+        handlers:
+            python:
+                options:
+                    docstring_style: google
+                    show_source: true
+                    show_root_heading: true
+                    heading_level: 3
+                    members_order: source
+                    separate_signature: false
+                    show_category_heading: true
+                    show_symbol_type_heading: true
+                    show_docstring_parameters: true
+                    show_if_no_docstring: true
+                    show_signature_annotations: true
+                    unwrap_annotated: true
+                    annotations_path: brief
+                    docstring_section_style: table
+                    merge_init_into_class: true
+                    rendering:
+                        show_if_no_docstring: true
+                        show_warnings: false
+                        html_meta: false
+                    docstring_options:
+                        returns_style: table
+                        separate_signature: false
+                        merge_return_lines: true
     - mkdocs-jupyter:
         ignore_h1_titles: True
     - redirects:
