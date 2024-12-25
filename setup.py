@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import os
 
 # Read the content of the README file
 with open("README.md", encoding="utf-8") as f:
@@ -8,20 +9,25 @@ with open("README.md", encoding="utf-8") as f:
 with open("requirements.txt", encoding="utf-8") as f:
     requirements = f.read().splitlines()
 
+metadata = {}
+here = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(here, "dspy", "__metadata__.py"), "r", encoding="utf-8") as f:
+    exec(f.read(), metadata)
+f.close()
+
+
 setup(	
-    #replace_package_name_marker
-    name="dspy",
-    #replace_package_version_marker
-    version="2.5.43", 	
-    description="DSPy",	
+    name=metadata["__name__"],
+    version=metadata["__version__"],
+    description=metadata["__description__"],
+    url=metadata["__url__"],
+    author=metadata["__author__"],
+    author_email=metadata["__author_email__"],
     long_description=long_description,	
     long_description_content_type="text/markdown",	
-    url="https://github.com/stanfordnlp/dspy",	
-    author="Omar Khattab",	
-    author_email="okhattab@stanford.edu",	
     license="MIT License",	
     packages=find_packages(include=["dspy.*", "dspy"]),	
-    python_requires=">=3.9",	
+    python_requires=">=3.9",
     install_requires=requirements,	
 
     extras_require={
