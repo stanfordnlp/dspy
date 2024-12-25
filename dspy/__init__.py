@@ -25,3 +25,12 @@ configure = settings.configure
 context = settings.context
 
 BootstrapRS = BootstrapFewShotWithRandomSearch
+
+from .__metadata__ import (
+    __name__,
+    __version__,
+    __description__,
+    __url__,
+    __author__,
+    __author_email__
+)
