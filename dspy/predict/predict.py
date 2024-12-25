@@ -1,4 +1,7 @@
+from functools import lru_cache
 import random
+
+import logging
 
 from pydantic import BaseModel
 
@@ -8,6 +11,11 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
+
+
+@lru_cache(maxsize=None)
+def warn_once(msg: str):
+    logging.warning(msg)
 
 
 class Predict(Module, Parameter):
@@ -71,10 +79,55 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
+
+    def _load_state_legacy(self, state):
+        """Legacy state loading for backwards compatibility.
+
+        This method is used to load the saved state of a `Predict` object from a version of DSPy prior to v2.5.3.
+        Returns:
+            self: Returns self to allow method chaining
+        """
+        for name, value in state.items():
+            setattr(self, name, value)
+
+        # Reconstruct the signature.
+        if "signature_instructions" in state:
+            instructions = state["signature_instructions"]
+            self.signature = self.signature.with_instructions(instructions)
+
+        if "signature_prefix" in state:
+            prefix = state["signature_prefix"]
+            *_, last_key = self.signature.fields.keys()
+            self.signature = self.signature.with_updated_fields(last_key, prefix=prefix)
+
+        # Some special stuff for CoT.
+        if "extended_signature_instructions" in state:
+            instructions = state["extended_signature_instructions"]
+            self.extended_signature = self.extended_signature.with_instructions(instructions)
+
+        if "extended_signature_prefix" in state:
+            prefix = state["extended_signature_prefix"]
+            *_, last_key = self.extended_signature.fields.keys()
+            self.extended_signature = self.extended_signature.with_updated_fields(last_key, prefix=prefix)
+
+        return self
+
+    def load(self, path, return_self=False):
+        """Load a saved state from a file.
+
+        Args:
+            path (str): Path to the saved state file
+            return_self (bool): If True, returns self to allow method chaining. Default is False for backwards compatibility.
+
+        Returns:
+            Union[None, Predict]: Returns None if return_self is False (default), returns self if return_self is True
+        """
+        super().load(path)
+        return self if return_self else None
 
     @with_callbacks
     def __call__(self, **kwargs):
@@ -106,13 +159,21 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
+        _trace = kwargs.pop("_trace", True)
+        inputs = kwargs
+
         import dspy
+
+        if hasattr(self, "retrieve_demos") and callable(self.retrieve_demos):
+            demos = demos[:] + self.retrieve_demos(**inputs)
+            random.Random(self.random_seed).shuffle(demos)
+
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
-        if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
+        if _trace and dspy.settings.trace is not None:
             trace = dspy.settings.trace
             trace.append((self, {**kwargs}, pred))
 

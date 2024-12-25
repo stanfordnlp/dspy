@@ -3,7 +3,7 @@ import random
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from .bootstrap import BootstrapFewShot
+from .bootstrap import BootstrapFewShot, BootstrapKNN
 from .vanilla import LabeledFewShot
 
 # TODO: Don't forget dealing with the raw demos.
@@ -27,7 +27,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        teacher_settings={},
+        teacher_settings=None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -38,7 +38,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         metric_threshold=None,
     ):
         self.metric = metric
-        self.teacher_settings = teacher_settings
+        self.teacher_settings = teacher_settings or {}
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
@@ -61,7 +61,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         all_subscores = []
         score_data = []
 
-        for seed in range(-3, self.num_candidate_sets):
+        for seed in range(-1, self.num_candidate_sets):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
@@ -103,6 +103,138 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
                     max_errors=self.max_errors,
+                )
+
+                program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
+
+            evaluate = Evaluate(
+                devset=self.valset,
+                metric=self.metric,
+                num_threads=self.num_threads,
+                max_errors=self.max_errors,
+                display_table=False,
+                display_progress=True,
+            )
+
+            score, subscores = evaluate(program, return_all_scores=True)
+
+            all_subscores.append(subscores)
+
+            ############ Assertion-aware Optimization ############
+            if hasattr(program, "_suggest_failures"):
+                score = score - program._suggest_failures * 0.2
+            if hasattr(program, "_assert_failures"):
+                score = 0 if program._assert_failures > 0 else score
+            ######################################################
+
+            if len(scores) == 0 or score > max(scores):
+                print("New best score:", score, "for seed", seed)
+                best_program = program
+
+            scores.append(score)
+            print(f"Scores so far: {scores}")
+            print(f"Best score so far: {max(scores)}")
+
+            score_data.append((score, subscores, seed, program))
+
+            if self.stop_at_score is not None and score >= self.stop_at_score:
+                print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
+                break
+
+        # To best program, attach all program candidates in decreasing average score
+        best_program.candidate_programs = score_data
+        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x[0], reverse=True)
+
+        print(f"{len(best_program.candidate_programs)} candidate programs found.")
+
+        return best_program
+
+
+class BootstrapKNNWithRandomSearch(Teleprompter):
+    def __init__(
+        self,
+        metric,
+        embedder,
+        teacher_settings=None,
+        max_bootstrapped_demos=64,
+        max_labeled_demos=16,
+        max_rounds=1,
+        num_candidate_programs=16,
+        num_threads=6,
+        max_errors=10,
+        stop_at_score=None,
+        metric_threshold=None,
+    ):
+        self.metric = metric
+        self.embedder = embedder
+        self.teacher_settings = teacher_settings or {}
+        self.max_rounds = max_rounds
+
+        self.num_threads = num_threads
+        self.stop_at_score = stop_at_score
+        self.metric_threshold = metric_threshold
+        self.max_static_demos = max_labeled_demos - 1
+        self.max_errors = max_errors
+        self.num_candidate_sets = num_candidate_programs
+        self.max_labeled_demos = max_labeled_demos
+        self.max_bootstrapped_demos = max_bootstrapped_demos
+
+        print(f"Going to sample between 1 and {self.max_static_demos} static demos per predictor.")
+        print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
+
+    def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
+        self.trainset = trainset
+        self.valset = valset or trainset  # TODO: FIXME: Note this choice.
+
+        scores = []
+        all_subscores = []
+        score_data = []
+
+        for seed in range(-1, self.num_candidate_sets):
+            if (restrict is not None) and (seed not in restrict):
+                continue
+
+            trainset_copy = list(self.trainset)
+
+            if seed == -3:
+                "Zero Shot"
+                program = student.reset_copy()
+
+            elif seed == -2:
+                "Labeled Few Shot"
+                teleprompter = LabeledFewShot(k=self.max_labeled_demos)
+                program = teleprompter.compile(student, trainset=trainset_copy, sample=labeled_sample)
+
+            elif seed == -1:
+                print("BootstrapKNN with 0 static demos")
+                optimizer = BootstrapKNN(
+                    metric=self.metric,
+                    embedder=self.embedder,
+                    metric_threshold=self.metric_threshold,
+                    max_bootstrapped_demos=self.max_bootstrapped_demos,
+                    max_labeled_demos=self.max_labeled_demos,
+                    num_static_demos=0,
+                    teacher_settings=self.teacher_settings,
+                    max_rounds=self.max_rounds,
+                    max_errors=self.max_errors,
+                )
+                program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
+
+            else:
+                num_static_demos = random.Random(seed).randint(1, self.max_static_demos)
+                print(f"BootstrapKNN with {num_static_demos} static demos")
+
+                optimizer = BootstrapKNN(
+                    metric=self.metric,
+                    embedder=self.embedder,
+                    metric_threshold=self.metric_threshold,
+                    max_bootstrapped_demos=self.max_bootstrapped_demos,
+                    max_labeled_demos=self.max_labeled_demos,
+                    teacher_settings=self.teacher_settings,
+                    max_rounds=self.max_rounds,
+                    max_errors=self.max_errors,
+                    num_static_demos=num_static_demos,
+                    random_seed=seed,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)

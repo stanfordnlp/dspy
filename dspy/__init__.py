@@ -5,6 +5,7 @@ from dspy.signatures import *
 from dspy.teleprompt import *
 
 import dspy.retrievers
+import dspy.teleprompt
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
@@ -33,11 +34,11 @@ from .__metadata__ import (
     __author_email__
 )
 
-import dspy.teleprompt
-
 LabeledFewShot = dspy.teleprompt.LabeledFewShot
 BootstrapFewShot = dspy.teleprompt.BootstrapFewShot
 BootstrapFewShotWithRandomSearch = dspy.teleprompt.BootstrapFewShotWithRandomSearch
+BootstrapKNN = dspy.teleprompt.BootstrapKNN
+BootstrapKNNWithRandomSearch = dspy.teleprompt.BootstrapKNNWithRandomSearch
 BootstrapRS = dspy.teleprompt.BootstrapFewShotWithRandomSearch
 BootstrapFinetune = dspy.teleprompt.BootstrapFinetune
 BetterTogether = dspy.teleprompt.BetterTogether
