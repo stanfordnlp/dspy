@@ -4,7 +4,7 @@ def test_execute_simple_code():
     interpreter = PythonInterpreter()
     code = "print('Hello, World!')"
     result = interpreter.execute(code)
-    assert result == 'Hello, World!', "Simple print statement should return 'Hello World!'"
+    assert result == 'Hello, World!\n', "Simple print statement should return 'Hello World!\n'"
 
 def test_import():
     interpreter = PythonInterpreter()

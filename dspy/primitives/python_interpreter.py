@@ -12,7 +12,6 @@ class PythonInterpreter:
 
     Prerequisites:
     - Deno (https://docs.deno.com/runtime/getting_started/installation/).
-    - runner.js in the same directory as this file.
 
     Example Usage:
     ```python
@@ -53,7 +52,9 @@ class PythonInterpreter:
                 install_instructions = (
                     "Deno executable not found. Please install Deno to proceed.\n"
                     "Installation instructions:\n"
-                    "curl -fsSL https://deno.land/install.sh | sh\n"
+                    "> curl -fsSL https://deno.land/install.sh | sh\n"
+                    "*or*, on macOS with Homebrew:\n"
+                    "> brew install deno\n"
                     "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
                 )
                 raise InterpreterError(install_instructions) from e
