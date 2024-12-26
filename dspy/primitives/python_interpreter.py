@@ -9,25 +9,27 @@ class InterpreterError(ValueError):
 class PythonInterpreter:
     r"""
     PythonInterpreter that runs code in a sandboxed environment using Deno and Pyodide.
-    Adapted from "Simon Willison’s TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
     Prerequisites:
     - Deno (https://docs.deno.com/runtime/getting_started/installation/).
+    - runner.js in the same directory as this file.
 
-    Example Usage: 
+    Example Usage:
     ```python
-    code_string = "4 + 5"
-    output =PythonInterpreter()(code_string)
-    print(output)
+    code_string = "print('Hello'); 1 + 2"
+    interp = PythonInterpreter()
+    output = interp(code_string)
+    print(output)  # If final statement is non-None, prints the numeric result, else prints captured output
+    interp.shutdown()
     ```
     """
 
     def __init__(
-        self, 
+        self,
         deno_command: Optional[List[str]] = None
     ) -> None:
         if isinstance(deno_command, dict):
-            deno_command = None #no-op
+            deno_command = None  # no-op, just a guard in case someone passes a dict
         self.deno_command = deno_command or [
             "deno", "run", "--allow-read", self._get_runner_path()
         ]
@@ -57,6 +59,7 @@ class PythonInterpreter:
                 raise InterpreterError(install_instructions) from e
 
     def _inject_variables(self, code: str, variables: Dict[str, Any]) -> str:
+        # Insert Python assignments for each variable at the top of the code
         injected_lines = []
         for key, value in variables.items():
             if not key.isidentifier():
@@ -67,6 +70,7 @@ class PythonInterpreter:
         return injected_code
 
     def _serialize_value(self, value: Any) -> str:
+        # Basic safe serialization
         if isinstance(value, str):
             return repr(value)
         elif isinstance(value, (int, float, bool)):
@@ -79,38 +83,54 @@ class PythonInterpreter:
             raise InterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def execute(
-        self, 
-        code: str, 
+        self,
+        code: str,
         variables: Optional[Dict[str, Any]] = None,
     ) -> Any:
         variables = variables or {}
         code = self._inject_variables(code, variables)
         self._ensure_deno_process()
+
+        # Send the code as JSON
         input_data = json.dumps({"code": code})
         try:
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
         except BrokenPipeError:
+            # If the process died, restart and try again once
             self._ensure_deno_process()
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
+
+        # Read one JSON line from stdout
         output_line = self.deno_process.stdout.readline().strip()
         if not output_line:
+            # Possibly the subprocess died or gave no output
             err_output = self.deno_process.stderr.read()
             raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
+
+        # Parse that line as JSON
         try:
             result = json.loads(output_line)
         except json.JSONDecodeError:
+            # If not valid JSON, just return raw text
             result = {"output": output_line}
-        if not isinstance(result, dict):
-            result = {"output": result}
-        if 'error' in result:
-            raise InterpreterError(f"Sandbox Error: {result['error']}")
-        return result.get('output', None)
+
+        # If we have an error, handle SyntaxError vs. other error
+        if "error" in result:
+            error_msg = result["error"]
+            error_type = result.get("errorType", "")
+            if error_type == "SyntaxError":
+                raise SyntaxError(error_msg)
+            else:
+                raise InterpreterError(f"Sandbox Error: {error_msg}")
+
+        # If there's no error, return the "output" field
+        return result.get("output", None)
 
     def __call__(
-        self, 
-        code: str, 
+        self,
+        code: str,
         variables: Optional[Dict[str, Any]] = None,
     ) -> Any:
         return self.execute(code, variables)
