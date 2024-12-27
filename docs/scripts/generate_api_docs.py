@@ -4,6 +4,74 @@ import inspect
 import pkgutil
 import shutil
 from typing import Any
+import dspy
+
+API_MAPPING = {
+    "models": [
+        dspy.LM,
+        dspy.Embedder,
+    ],
+    "primitives": [
+        dspy.Example,
+        dspy.Image,
+        dspy.Prediction,
+        dspy.Tool,
+    ],
+    "signatures": [
+        dspy.Signature,
+        dspy.InputField,
+        dspy.OutputField,
+    ],
+    "adapters": [
+        dspy.Adapter,
+        dspy.ChatAdapter,
+        dspy.JSONAdapter,
+    ],
+    "modules": [
+        dspy.Module,
+        dspy.Predict,
+        dspy.ChainOfThought,
+        dspy.ReAct,
+        dspy.ProgramOfThought,
+        dspy.MultiChainComparison,
+        dspy.ChainOfThoughtWithHint,
+        dspy.Parallel,
+    ],
+    "tools": [
+        dspy.ColBERTv2,
+        dspy.retrievers.Embeddings,
+        dspy.PythonInterpreter,
+    ],
+    "utils": [
+        dspy.inspect_history,
+        dspy.load,
+        dspy.asyncify,
+        dspy.streamify,
+        dspy.enable_logging,
+        dspy.disable_logging,
+        dspy.enable_litellm_logging,
+        dspy.disable_litellm_logging,
+    ],
+    "evaluation": [
+        dspy.Evaluate,
+        dspy.evaluate.answer_exact_match,
+        dspy.evaluate.answer_passage_match,
+        dspy.evaluate.SemanticF1,
+        dspy.evaluate.CompleteAndGrounded,
+    ],
+    "optimizers": [
+        dspy.LabeledFewShot,
+        dspy.BootstrapFewShot,
+        dspy.BootstrapFewShotWithRandomSearch,
+        dspy.MIPROv2,
+        dspy.BetterTogether,
+        dspy.BootstrapFinetune,
+        dspy.COPRO,
+        dspy.Ensemble,
+        dspy.KNN,
+        dspy.KNNFewShot,
+    ],
+}
 
 
 def get_module_contents(module):
@@ -62,6 +130,13 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
 """
 
 
+def get_api_category(obj):
+    for category, objects in API_MAPPING.items():
+        if obj in objects:
+            return category
+    return None
+
+
 def generate_md_docs(output_dir: Path, excluded_modules=None):
     """Generate documentation for all public classes and functions in the dspy package.
 
@@ -80,8 +155,13 @@ def generate_md_docs(output_dir: Path, excluded_modules=None):
         if inspect.ismodule(obj):
             continue
 
+        category = get_api_category(obj)
+        if category is None:
+            # Skip if the object is not in the API mapping.
+            continue
+
         page_content = generate_doc_page(name, "dspy", obj, is_root=True)
-        with open(output_dir / f"{name}.md", "w") as f:
+        with open(output_dir / category / f"{name}.md", "w") as f:
             f.write(page_content)
 
         objects_processed[f"{obj.__module__}.{name}"] = obj
@@ -93,7 +173,7 @@ def generate_md_docs(output_dir: Path, excluded_modules=None):
         if submodule_name.startswith("_") or submodule_name not in init_contents:
             continue
 
-        generate_md_docs_submodule(submodule.name, output_dir / submodule_name, objects_processed, excluded_modules)
+        generate_md_docs_submodule(submodule.name, output_dir, objects_processed, excluded_modules)
 
 
 def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_processed=None, excluded_modules=None):
@@ -116,7 +196,6 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
     except ImportError:
         print(f"Skipping {module_path} due to import error")
         return
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     init_contents = get_module_contents(module)
 
@@ -124,11 +203,16 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
         if inspect.ismodule(obj):
             continue
 
+        category = get_api_category(obj)
+        if category is None:
+            # Skip if the object is not in the API mapping.
+            continue
+
         full_name = f"{obj.__module__}.{name}"
         if full_name not in objects_processed:
             # Only generate docs for objects that are not root-level objects.
             page_content = generate_doc_page(name, module_path, obj, is_root=False)
-            with open(output_dir / f"{name}.md", "w") as f:
+            with open(output_dir / category / f"{name}.md", "w") as f:
                 f.write(page_content)
 
             objects_processed[full_name] = obj
@@ -152,6 +236,11 @@ if __name__ == "__main__":
     api_dir = Path("docs/api")
     if api_dir.exists():
         shutil.rmtree(api_dir)
+
+    for keys in API_MAPPING.keys():
+        # Create a directory for each API category
+        subpath = api_dir / keys
+        subpath.mkdir(parents=True, exist_ok=True)
 
     excluded_modules = ["dspy.dsp"]
     generate_md_docs(api_dir, excluded_modules=excluded_modules)

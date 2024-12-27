@@ -1,5 +1,17 @@
 from pathlib import Path
 
+INDEX_NAME = {
+    "models": "Models",
+    "primitives": "Primitives",
+    "signatures": "Signatures",
+    "adapters": "Adapters",
+    "modules": "Modules",
+    "evaluation": "Evaluation",
+    "optimizers": "Optimizers",
+    "utils": "Utils",
+    "tools": "Tools",
+}
+
 
 def build_nav_structure(directory: Path, base_path: Path) -> dict:
     """Recursively build navigation structure for a directory."""
@@ -8,18 +20,10 @@ def build_nav_structure(directory: Path, base_path: Path) -> dict:
     # Get all items in current directory
     items = sorted(directory.iterdir())
 
-    # First handle all MD files in current directory
     for path in items:
         if path.suffix == ".md":
             name = path.stem
             nav[name] = str(path.relative_to(base_path))
-
-    # Then handle all subdirectories
-    for path in items:
-        if path.is_dir():
-            sub_nav = build_nav_structure(path, base_path)
-            if sub_nav:  # Only add non-empty directories
-                nav[path.name] = sub_nav
 
     return nav
 
@@ -90,17 +94,10 @@ def generate_api_nav():
     api_nav = {}
     api_path = Path("docs/api")
 
-    # First process each top-level module directory
     for dir_path in sorted(api_path.iterdir()):
         if dir_path.is_dir():
-            category = dir_path.name
+            category = INDEX_NAME[dir_path.name]
             api_nav[category] = build_nav_structure(dir_path, Path("docs"))
-
-    # Then process any .md files directly in the api directory
-    for path in sorted(api_path.glob("*.md")):
-        if path.parent == api_path:  # Only process files directly in api/
-            name = path.stem
-            api_nav[name] = str(path.relative_to(Path("docs")))
 
     return api_nav
 
