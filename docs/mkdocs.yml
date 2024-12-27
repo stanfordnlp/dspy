@@ -64,6 +64,65 @@ nav:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
 
+    - API Reference:
+        - Adapters:
+            - Adapter: api/adapters/Adapter.md
+            - ChatAdapter: api/adapters/ChatAdapter.md
+            - JSONAdapter: api/adapters/JSONAdapter.md
+        - Evaluation:
+            - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
+            - Evaluate: api/evaluation/Evaluate.md
+            - SemanticF1: api/evaluation/SemanticF1.md
+            - answer_exact_match: api/evaluation/answer_exact_match.md
+            - answer_passage_match: api/evaluation/answer_passage_match.md
+        - Models:
+            - Embedder: api/models/Embedder.md
+            - LM: api/models/LM.md
+        - Modules:
+            - ChainOfThought: api/modules/ChainOfThought.md
+            - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
+            - Module: api/modules/Module.md
+            - MultiChainComparison: api/modules/MultiChainComparison.md
+            - Parallel: api/modules/Parallel.md
+            - Predict: api/modules/Predict.md
+            - Program: api/modules/Program.md
+            - ProgramOfThought: api/modules/ProgramOfThought.md
+            - ReAct: api/modules/ReAct.md
+        - Optimizers:
+            - BetterTogether: api/optimizers/BetterTogether.md
+            - BootstrapFewShot: api/optimizers/BootstrapFewShot.md
+            - BootstrapFewShotWithRandomSearch: api/optimizers/BootstrapFewShotWithRandomSearch.md
+            - BootstrapFinetune: api/optimizers/BootstrapFinetune.md
+            - BootstrapRS: api/optimizers/BootstrapRS.md
+            - COPRO: api/optimizers/COPRO.md
+            - Ensemble: api/optimizers/Ensemble.md
+            - KNN: api/optimizers/KNN.md
+            - KNNFewShot: api/optimizers/KNNFewShot.md
+            - LabeledFewShot: api/optimizers/LabeledFewShot.md
+            - MIPROv2: api/optimizers/MIPROv2.md
+        - Primitives:
+            - Example: api/primitives/Example.md
+            - Image: api/primitives/Image.md
+            - Prediction: api/primitives/Prediction.md
+            - Tool: api/primitives/Tool.md
+        - Signatures:
+            - InputField: api/signatures/InputField.md
+            - OutputField: api/signatures/OutputField.md
+            - Signature: api/signatures/Signature.md
+        - Tools:
+            - ColBERTv2: api/tools/ColBERTv2.md
+            - Embeddings: api/tools/Embeddings.md
+            - PythonInterpreter: api/tools/PythonInterpreter.md
+        - Utils:
+            - asyncify: api/utils/asyncify.md
+            - disable_litellm_logging: api/utils/disable_litellm_logging.md
+            - disable_logging: api/utils/disable_logging.md
+            - enable_litellm_logging: api/utils/enable_litellm_logging.md
+            - enable_logging: api/utils/enable_logging.md
+            - inspect_history: api/utils/inspect_history.md
+            - load: api/utils/load.md
+            - streamify: api/utils/streamify.md
+
 theme:
     name: material
     custom_dir: overrides
