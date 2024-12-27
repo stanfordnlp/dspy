@@ -20,7 +20,7 @@ class BingConfig(BaseModel):
     endpoints: dict = {
         "web_search": "v7.0/search", # Alias for search
         "search": "v7.0/search",
-        "news": "v7.0/news",
+        "news": "v7.0/news/search",
     }
 
     @classmethod

@@ -52,7 +52,9 @@ class BingRM(dspy.Retrieve):
         import dspy
         from dspy.retrieve.bing_rm import BingRM
 
-        dspy.settings.configure(rm=BingRM())
+        dspy.settings.configure(
+            rm=BingRM()
+        )
 
         bing = dspy.Retrieve(k=3)
         results = bing("Current interest rates in the USA")
@@ -63,8 +65,8 @@ class BingRM(dspy.Retrieve):
         import dspy
         from dspy.retrieve.bing_rm import BingRM
 
-        bing = BingRM()
-        results = bing("Current interest rates in the USA", k=3)
+        bing = BingRM(api="news")
+        results = bing("OpenAI o3 model", k=3)
         # Returns a list of BingSource objects, top 3; easily parsable
         ```
     """
@@ -93,23 +95,4 @@ class BingRM(dspy.Retrieve):
             response.data[:k]
         ]
 
-        print('******** RETRIEVED PASSAGES ********')
-
-        out = dspy.Prediction(
-            query=query
-            , passages=passages
-            , warnings=(
-                None 
-                if not response.warnings 
-                else response.warnings
-            )
-            , status=response.status
-        )      
-
-        print(out)
-        print(out.passages[0])  
-        print(out.passages[0].long_text)
-
         return passages
-
-
