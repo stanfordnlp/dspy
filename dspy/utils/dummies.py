@@ -4,57 +4,66 @@ from typing import Any, Dict, Union
 
 import numpy as np
 
-from dspy.dsp.utils.utils import dotdict
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
 from dspy.clients.lm import LM
+from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.callback import with_callbacks
 
 
 class DummyLM(LM):
-    """
-    Dummy language model for unit testing purposes.
+    """Dummy language model for unit testing purposes.
 
     Three modes of operation:
 
-    ## 1. List of dictionaries
+    Mode 1: List of dictionaries
 
     If a list of dictionaries is provided, the dummy model will return the next dictionary
     in the list for each request, formatted according to the `format_fields` function.
     from the chat adapter.
 
-    ```python
-        lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
-        dspy.settings.configure(lm=lm)
-        predictor("What color is the sky?")
-        # Output: "[[## answer ##]]\nred"
-        predictor("What color is the sky?")
-        # Output: "[[## answer ##]]\nblue"
+    Example:
+
+    ```
+    lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    dspy.settings.configure(lm=lm)
+    predictor("What color is the sky?")
+    # Output:
+    # [[## answer ##]]
+    # red
+    predictor("What color is the sky?")
+    # Output:
+    # [[## answer ##]]
+    # blue
     ```
 
-    ## 2. Dictionary of dictionaries
+    Mode 2: Dictionary of dictionaries
 
     If a dictionary of dictionaries is provided, the dummy model will return the value
     corresponding to the key which is contained with the final message of the prompt,
     formatted according to the `format_fields` function from the chat adapter.
 
-    ```python
-        lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
-        dspy.settings.configure(lm=lm)
-        predictor("What color is the sky?")
-        # Output: "[[## answer ##]]\nblue"
+    ```
+    lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
+    dspy.settings.configure(lm=lm)
+    predictor("What color is the sky?")
+    # Output:
+    # [[## answer ##]]
+    # blue
     ```
 
-    ## 3. Follow examples
+    Mode 3: Follow examples
 
     If `follow_examples` is set to True, and the prompt contains an example input exactly equal to the prompt,
     the dummy model will return the output from that example.
 
-    ```python
-        lm = DummyLM([{"answer": "red"}], follow_examples=True)
-        dspy.settings.configure(lm=lm)
-        predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
-        # Output: "[[## answer ##]]\nblue"
+    ```
+    lm = DummyLM([{"answer": "red"}], follow_examples=True)
+    dspy.settings.configure(lm=lm)
+    predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
+    # Output:
+    # [[## answer ##]]
+    # blue
     ```
 
     """
