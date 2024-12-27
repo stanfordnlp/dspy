@@ -233,8 +233,8 @@ class BingClient(BaseModel):
                     return BingResponse.from_search_json(
                         json
                     )
-                except aiohttp.ClientResponseError as err:
-                    err = f"Error "
+                except aiohttp.ClientResponseError:
+                    err = "Error "
                     return BingResponse.from_error(
                         err.status, str(err)
                     )
