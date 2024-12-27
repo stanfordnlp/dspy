@@ -7,7 +7,6 @@ from pydantic import Field, BaseModel
 from typing import (
     Optional
     , List
-    , Coroutine
     , Dict
 )
 import logging

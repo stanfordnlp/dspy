@@ -1,7 +1,7 @@
 from dspy.retrieve.bing_rm.base import BingClient
 import dspy
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 
 class BingSource(BaseModel):
     headline: Optional[str] = Field(None, description="The headline of the passage")
