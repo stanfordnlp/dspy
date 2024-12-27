@@ -273,16 +273,12 @@ class DatabricksRM(dspy.Retrieve):
 
         # Extracting the results
         items = []
-        if "data_array" not in results["result"]:
-            raise ValueError(
-                "`data_array` not found in the results from the Databricks Vector Search Index. Please check if your "
-                "index is running."
-            )
-        for _, data_row in enumerate(results["result"]["data_array"]):
-            item = {}
-            for col_name, val in zip(col_names, data_row):
-                item[col_name] = val
-            items += [item]
+        if "data_array" in results["result"]:
+            for _, data_row in enumerate(results["result"]["data_array"]):
+                item = {}
+                for col_name, val in zip(col_names, data_row):
+                    item[col_name] = val
+                items += [item]
 
         # Sorting results by score in descending order
         sorted_docs = sorted(items, key=lambda x: x["score"], reverse=True)[: self.k]
