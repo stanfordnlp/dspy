@@ -12,6 +12,8 @@
 
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
 
+* [Finetuning Agents](/tutorials/games/)
+
 * [Saving and Loading](/tutorials/saving/index.md)
 
 * [Deployment](/tutorials/deployment/)

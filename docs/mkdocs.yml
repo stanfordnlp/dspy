@@ -50,8 +50,9 @@ nav:
         - Reasoning: tutorials/math/index.ipynb
         - Entity Extraction: tutorials/entity_extraction/index.ipynb
         - Classification: tutorials/classification/index.md
-        - Privacy-Conscious Delegation: tutorials/papillon/index.md
         - Multi-Hop Search: tutorials/multihop_search/index.ipynb
+        - Privacy-Conscious Delegation: tutorials/papillon/index.md
+        - Finetuning Agents: tutorials/games/index.ipynb
         - Saving and Loading: tutorials/saving/index.md
         - Deployment: tutorials/deployment/index.md
         - Debugging & Observability: tutorials/observability/index.md
