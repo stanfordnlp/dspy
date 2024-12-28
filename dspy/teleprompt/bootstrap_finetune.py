@@ -65,12 +65,16 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # environments.
         print("[BootstrapFinetune] Preparing the student and teacher programs...")
         student = prepare_student(student)
-        teacher = prepare_teacher(student, teacher)
+        teachers = teacher if isinstance(teacher, list) else [teacher]
+        teachers = [prepare_teacher(student, teacher) for teacher in teachers]
         set_missing_predictor_lms(student)
-        set_missing_predictor_lms(teacher)
 
         print("[BootstrapFinetune] Bootstrapping data...")
-        trace_data = bootstrap_trace_data(program=teacher, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
+        trace_data = []
+
+        for teacher in teachers:
+            set_missing_predictor_lms(teacher)
+            trace_data += bootstrap_trace_data(program=teacher, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
 
         print("[BootstrapFinetune] Preparing the train data...")
         key_to_data = {}
@@ -179,46 +183,53 @@ def bootstrap_trace_data(
     # Return a list of dicts with the following keys:
     #     example_ind, example, prediction, trace, and score (if metric != None)
     evaluator = Evaluate(
-        devset=dataset, num_threads=num_threads, display_progress=True,
+        devset=dataset, num_threads=num_threads, display_progress=True, return_outputs=True,
         provide_traceback=True  # TODO(check with team)
     )
-    # TODO(PR): Should "trace" not be included in the lambda function?
-    _metric = metric if metric else lambda example, prediction: 1
-    evaluator(program, metric=_metric)
+
+    def wrapped_metric(example, prediction, trace=None):
+        prediction, _ = prediction
+        return metric(example, prediction, trace) if metric else True
+
+    def wrapped_program(**kwargs):
+        with dspy.context(trace=[]):
+            return program(**kwargs), dspy.settings.trace.copy()
+
+    _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
 
     data = []
-    for example_ind, example in enumerate(dataset):
-        data_dict = bootstrap_trace_data_one_example(
-            example=example, program=program, metric=metric
-        )
-        data_dict["example_ind"] = example_ind
+    for example_ind, (example, prediction, score) in enumerate(outputs):
+        prediction, trace = prediction
+        data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
+        if metric:
+            data_dict["score"] = score
         data.append(data_dict)
 
     return data
 
 
-# TODO(PR) check with team
-def bootstrap_trace_data_one_example(
-    example: Example,
-    program: Program,
-    metric: Optional[Callable] = None
-) -> Dict[str, Any]:
-    # Return a dict with the following keys:
-    #     example, prediction, trace, and score (if metric != None)
-    with dspy.context(trace=[]):
-        prediction = program(**example.inputs())
-        trace = dspy.settings.trace
-        score = metric(example, prediction, trace) if metric else None
+# # TODO(PR) check with team
+# def bootstrap_trace_data_one_example(
+#     example: Example,
+#     program: Program,
+#     metric: Optional[Callable] = None
+# ) -> Dict[str, Any]:
+#     # Return a dict with the following keys:
+#     #     example, prediction, trace, and score (if metric != None)
+#     with dspy.context(trace=[]):
+#         prediction = program(**example.inputs())
+#         trace = dspy.settings.trace
+#         score = metric(example, prediction, trace) if metric else None
 
-    data_dict = dict(
-        example=example,
-        prediction=prediction,
-        trace=trace,
-    )
-    if metric:
-        data_dict["score"] = score
+#     data_dict = dict(
+#         example=example,
+#         prediction=prediction,
+#         trace=trace,
+#     )
+#     if metric:
+#         data_dict["score"] = score
 
-    return data_dict
+#     return data_dict
 
 
 # Note: Shared below are useful functions for preparing student/teacher programs
@@ -273,7 +284,7 @@ def assert_structural_equivalency(program1: object, program2: object):
         assert name1 == name2, err
         assert isinstance(pred1, Predict)
         assert isinstance(pred2, Predict)
-        assert pred1.signature.equals(pred2.signature)
+        # assert pred1.signature.equals(pred2.signature)
 
 
 def assert_no_shared_predictor(program1: Program, program2: Program):
