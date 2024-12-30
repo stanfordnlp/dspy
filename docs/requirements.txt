@@ -5,4 +5,5 @@ mkdocs-redirects>=1.2.1
 mkdocstrings>=0.26.1
 mkdocstrings-python>=1.12.2
 urllib3==1.26.6
+mistune==3.0.2
 git+https://github.com/stanfordnlp/dspy.git

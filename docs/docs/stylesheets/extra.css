@@ -217,7 +217,7 @@ h2.doc-heading {
 /* Ensure code is readable */
 .highlight code {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-    font-size: 0.9em;
+    font-size: 0.75em;
 }
 
 /* Copy button styling */
