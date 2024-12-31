@@ -42,6 +42,10 @@ pip install git+https://github.com/stanfordnlp/dspy.git
 
 ## 📜 Citation & Reading More
 
+If you're looking to understand the framework, please go to the [DSPy Docs at dspy.ai](https://dspy.ai).
+
+If you're looking to understand the underlying research, this is a set of our papers:
+
 **[Jun'24] [Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs](https://arxiv.org/abs/2406.11695)**       
 **[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
 [Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     
