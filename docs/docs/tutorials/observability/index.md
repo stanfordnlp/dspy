@@ -176,7 +176,7 @@ dspy.configure(callbacks=[AgentLoggingCallback()])
   Action_1: Search[Shohei Ohtani current team 2023]
 
 == Acting Step ===
-  passages: ["Shohei Otani ..."]
+  passages: ["Shohei Ohtani ..."]
 
 ...
 ```
