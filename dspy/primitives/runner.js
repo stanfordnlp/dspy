@@ -35,6 +35,7 @@ for await (const line of readLines(Deno.stdin)) {
   
   // Wrap execution in a try/catch so we can handle syntax errors, etc.
   try {
+    await pyodide.loadPackagesFromImports(code);
     // 1. Temporarily override stdout/stderr so we can capture prints.
     pyodide.runPython(`
 import sys
