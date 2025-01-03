@@ -242,7 +242,7 @@ class MIPROv2(Teleprompter):
                 )
             valset_size = min(1000, max(1, int(len(trainset) * 0.80)))
             cutoff = len(trainset) - valset_size
-            random.shuffle(trainset)
+            self.rng.shuffle(trainset)
             valset = trainset[cutoff:]
             trainset = trainset[:cutoff]
         else:
