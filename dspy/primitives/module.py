@@ -213,8 +213,15 @@ class BaseModule:
         state = self.dump_state()
         state["metadata"] = metadata
         if path.suffix == ".json":
-            with open(path, "w") as f:
-                f.write(ujson.dumps(state, indent=2))
+            try:
+                with open(path, "w") as f:
+                    f.write(ujson.dumps(state, indent=2))
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
+                    "json-serializable objects, please consider saving the state in .pkl by using `path` ending "
+                    "with `.pkl`, or saving the whole program by setting `save_program=True`."
+                )
         elif path.suffix == ".pkl":
             with open(path, "wb") as f:
                 cloudpickle.dump(state, f)
