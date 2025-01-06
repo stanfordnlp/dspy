@@ -66,6 +66,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
       - name: Install dependencies
         run: poetry install --no-interaction
       - name: Run lint with tests
