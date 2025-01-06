@@ -11,7 +11,15 @@ from dspy.utils.callback import with_callbacks
 
 
 class Tool:
-    def __init__(self, func: Callable, name: str = None, desc: str = None, args: dict[str, Any] = None):
+
+    def __init__(
+        self,
+        func: Callable,
+        name: str = None,
+        desc: str = None,
+        args: dict[str, Any] = None,
+        defaults: dict[str, Any] = None,
+    ):
         annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, "__name__", type(func).__name__)
@@ -23,6 +31,7 @@ class Tool:
             for k, v in (args or get_type_hints(annotations_func)).items()
             if k != "return"
         }
+        self.defaults = defaults
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
@@ -63,6 +72,8 @@ class ReAct(Module):
             args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
+            if tool.defaults:
+                desc += f" Default arguments are {tool.defaults}."
             instr.append(f"({idx+1}) {tool.name}{desc}")
 
         react_signature = (
