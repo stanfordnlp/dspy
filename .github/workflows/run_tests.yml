@@ -60,15 +60,14 @@ jobs:
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install Poetry
         if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
+        run: python -m pip install --upgrade poetry==${{ env.POETRY_VERSION }}
+
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
+
       - name: Install dependencies
         run: poetry install --no-interaction
       - name: Run lint with tests
@@ -94,7 +93,8 @@ jobs:
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install Poetry
         if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
+        run: python -m pip install --upgrade poetry==${{ env.POETRY_VERSION }}
+
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -123,7 +123,8 @@ jobs:
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install Poetry
         if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
+        run: python -m pip install --upgrade poetry==${{ env.POETRY_VERSION }}
+
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
