@@ -1,6 +1,6 @@
 import logging
 import types
-from typing import Any
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 import tqdm
@@ -38,25 +38,40 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger(__name__)
-
-
 class Evaluate:
+    """DSPy Evaluate class.
+
+    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and 
+    a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
+    """
     def __init__(
         self,
         *,
-        devset,
-        metric=None,
-        num_threads=1,
-        display_progress=False,
-        display_table=False,
-        max_errors=5,
-        return_all_scores=False,
-        return_outputs=False,
-        provide_traceback=False,
-        failure_score=0.0,
-        **_kwargs,
+        devset: List["dspy.Example"],
+        metric: Optional[Callable] = None,
+        num_threads: int = 1,
+        display_progress: bool = False,
+        display_table: bool = False,
+        max_errors: int = 5,
+        return_all_scores: bool = False,
+        return_outputs: bool = False,
+        provide_traceback: bool = False,
+        failure_score: float = 0.0,
+        **kwargs,
     ):
+        """
+        Args:
+            devset (List[dspy.Example]): the evaluation dataset.
+            metric (Callable): The metric function to use for evaluation.
+            num_threads (int): The number of threads to use for parallel evaluation.
+            display_progress (bool): Whether to display progress during evaluation.
+            display_table (bool): Whether to display the evaluation results in a table.
+            max_errors (int): The maximum number of errors to allow before stopping evaluation.
+            return_all_scores (bool): Whether to return scores for every data record in `devset`.
+            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
+            provide_traceback (bool): Whether to provide traceback information during evaluation.
+            failure_score (float): The default score to use if evaluation fails due to an exception.
+        """
         self.devset = devset
         self.metric = metric
         self.num_threads = num_threads
@@ -70,15 +85,48 @@ class Evaluate:
 
     def __call__(
         self,
-        program,
-        metric=None,
-        devset=None,
-        num_threads=None,
-        display_progress=None,
-        display_table=None,
-        return_all_scores=None,
-        return_outputs=None,
+        program: "dspy.Module",
+        metric: Optional[Callable] = None,
+        devset: Optional[List["dspy.Example"]] = None,
+        num_threads: Optional[int] = None,
+        display_progress: Optional[bool] = None,
+        display_table: Optional[bool] = None,
+        return_all_scores: Optional[bool] = None,
+        return_outputs: Optional[bool] = None,
     ):
+        """
+        Args:
+            program (dspy.Module): The DSPy program to evaluate.
+            metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
+            devset (List[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
+            num_threads (int): The number of threads to use for parallel evaluation. if not provided, use
+                `self.num_threads`.
+            display_progress (bool): Whether to display progress during evaluation. if not provided, use
+                `self.display_progress`.
+            display_table (bool): Whether to display the evaluation results in a table. if not provided, use
+                `self.display_table`.
+            return_all_scores (bool): Whether to return scores for every data record in `devset`. if not provided,
+                use `self.return_all_scores`.
+            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`. if not
+                provided, use `self.return_outputs`.
+
+        Returns:
+            The evaluation results are returned in different formats based on the flags:
+            
+            - Base return: A float percentage score (e.g., 67.30) representing overall performance
+            
+            - With `return_all_scores=True`:
+                Returns (overall_score, individual_scores) where individual_scores is a list of 
+                float scores for each example in devset
+            
+            - With `return_outputs=True`:
+                Returns (overall_score, result_triples) where result_triples is a list of 
+                (example, prediction, score) tuples for each example in devset
+
+            - With both flags=True:
+                Returns (overall_score, result_triples, individual_scores)
+
+        """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
