@@ -2,7 +2,7 @@ import logging
 import random
 import textwrap
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import optuna
@@ -52,7 +52,7 @@ class MIPROv2(Teleprompter):
         teacher_settings: Dict = {},
         max_bootstrapped_demos: int = 4,
         max_labeled_demos: int = 16,
-        auto: Optional[str] = None,
+        auto: Optional[Literal["light", "medium", "heavy"]] = None,
         num_candidates: int = 10,
         num_threads: int = 6,
         max_errors: int = 10,
