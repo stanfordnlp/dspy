@@ -3,6 +3,7 @@ from unittest import mock
 import litellm
 import pydantic
 import pytest
+import os
 
 import dspy
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
@@ -158,22 +159,23 @@ def test_lm_text_calls_are_retried_for_expected_failures(
     assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
 
 
-def test_tools_rejected_for_non_function_models():
-    with pytest.raises(ValueError):
-        lm = dspy.LM(model="palm/chat-bison")
-        lm("query", tools=[{"type": "function", "function": {}}])
-
-
-def test_lm_tool_calls_are_returned(litellm_test_server):
+def test_tools_rejected_for_non_function_models(litellm_test_server):
     api_base, server_log_file_path = litellm_test_server
 
-    openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        model_type="chat",
-        cache=False,
-    )
+    with mock.patch("dspy.clients.lm.litellm.supports_function_calling", return_value=False):
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="chat",
+        )
+        with pytest.raises(ValueError):
+            lm("query", tools=[{"type": "function", "function": {}}])
+
+
+@pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API key is not set")
+def test_lm_tool_calls_are_returned():
+    openai_lm = dspy.LM(model="openai/gpt-4o-mini")
     tools = [
         {
             "type": "function",
@@ -186,5 +188,5 @@ def test_lm_tool_calls_are_returned(litellm_test_server):
             },
         }
     ]
-    outputs = openai_lm("Query", tools=tools)
+    outputs = openai_lm("what's the weather in Paris?", tools=tools)
     assert "tool_calls" in outputs[0]
