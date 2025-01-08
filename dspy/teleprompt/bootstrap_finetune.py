@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
 from dspy.adapters.base import Adapter
-from dspy.clients.lm import LM  # TODO: Remove after the old LM class is removed
+from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
@@ -30,8 +30,6 @@ class FinetuneTeleprompter(Teleprompter):
 
 
 class BootstrapFinetune(FinetuneTeleprompter):
-
-    # TODO(PR) check with team
     def __init__(
         self,
         metric: Optional[Callable] = None,
@@ -47,10 +45,6 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # attached to LMs themselves -- an LM could know which adapter it should
         # be used with along with the train_kwargs. This will lead the only
         # required argument for LM.finetune() to be the train dataset.
-        err = "This is an experimental optimizer."
-        err += " Set `dspy.settings.experimental` to `True` to use it."
-        err += " Constructor arguments subject to change."
-        assert dspy.settings.experimental, err
         
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -145,6 +139,9 @@ class BootstrapFinetune(FinetuneTeleprompter):
                 if include_data:
                     call_data = build_call_data_from_trace(trace=item['trace'], pred_ind=pred_ind,  adapter=adapter, exclude_demos=self.exclude_demos)
                     data.append(call_data)
+
+        import random
+        random.Random(0).shuffle(data)
 
         return data, data_format
 
