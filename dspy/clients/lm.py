@@ -89,7 +89,13 @@ class LM(BaseLM):
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def __call__(self, prompt=None, messages=None, tools=None, **kwargs):
+        if tools is not None and not litellm.supports_function_calling(self.model):
+            raise ValueError(
+                f"The model {self.model} does not support function calling, but tools were provided. Please use a "
+                "model that supports function calling."
+            )
+
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         # disable cache will also disable in memory cache
@@ -101,7 +107,7 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            response =  completion(
+            response = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )
@@ -115,6 +121,10 @@ class LM(BaseLM):
                 cache={"no-cache": not cache, "no-store": not cache},
             )
 
+        response = completion(
+            request=dict(model=self.model, messages=messages, tools=tools, **kwargs),
+            num_retries=self.num_retries,
+        )
         if kwargs.get("logprobs"):
             outputs = [
                 {
@@ -123,6 +133,8 @@ class LM(BaseLM):
                 }
                 for c in response["choices"]
             ]
+        elif tools:
+            outputs = [{"text": c.message.content, "tool_calls": c.message.tool_calls} for c in response["choices"]]
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
