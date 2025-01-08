@@ -156,3 +156,35 @@ def test_lm_text_calls_are_retried_for_expected_failures(
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
+
+
+def test_tools_rejected_for_non_function_models():
+    with pytest.raises(ValueError):
+        lm = dspy.LM(model="palm/chat-bison")
+        lm("query", tools=[{"type": "function", "function": {}}])
+
+
+def test_lm_tool_calls_are_returned(litellm_test_server):
+    api_base, server_log_file_path = litellm_test_server
+
+    openai_lm = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+        model_type="chat",
+        cache=False,
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                },
+            },
+        }
+    ]
+    outputs = openai_lm("Query", tools=tools)
+    assert "tool_calls" in outputs[0]
