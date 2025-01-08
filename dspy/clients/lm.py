@@ -133,11 +133,11 @@ class LM(BaseLM):
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.launch(self.model, launch_kwargs)
+        self.provider.launch(self, launch_kwargs)
 
     def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.kill(self.model, launch_kwargs)
+        self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,

@@ -8,6 +8,8 @@
 
 * [Classification](/tutorials/classification/)
 
+* [Classification Finetuning](/tutorials/classification_finetuning/)
+
 * [Multi-Hop Search](/tutorials/multihop_search/)
 
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
