@@ -37,7 +37,8 @@ class JSONAdapter(Adapter):
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+            params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+            if params and "response_format" in params:
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)

@@ -262,9 +262,9 @@ def request_cache(maxsize: Optional[int] = None):
 
         def transform_value(value):
             if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.schema()
+                return value.model_json_schema()
             elif isinstance(value, pydantic.BaseModel):
-                return value.dict()
+                return value.model_dump()
             elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
                 return value.__code__.co_code.decode("utf-8")
             else:
