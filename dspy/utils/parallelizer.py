@@ -5,7 +5,7 @@ import threading
 import traceback
 
 from tqdm.contrib.logging import logging_redirect_tqdm
-import tqdm
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,15 @@ class ParallelExecutor:
         return wrapped
 
     def _create_pbar(self, data: list):
-        return tqdm.tqdm(total=len(data), dynamic_ncols=True, disable=self.disable_progress_bar, file=sys.stdout)
+        return tqdm(total=len(data), dynamic_ncols=True, disable=self.disable_progress_bar, file=sys.stdout)
 
-    def _update_pbar(self, pbar: tqdm.tqdm, nresults, ntotal):
+    def _update_pbar(self, pbar: tqdm, nresults, ntotal):
         if self.compare_results:
             percentage = round(100 * nresults / ntotal, 1) if ntotal > 0 else 0
-            pbar.set_description(f"Average Metric: {nresults:.2f} / {ntotal} ({percentage}%)", refresh=True)
+            description = f"Average Metric: {nresults:.2f} / {ntotal} ({percentage}%)"
         else:
-            pbar.set_description(f"Processed {nresults} / {ntotal} examples", refresh=True)
+            description = f"Processed {nresults} / {ntotal} examples"
+        pbar.set_description(description, refresh=True)
 
     def _execute_single_thread(self, function, data):
         total_score = 0
@@ -80,14 +81,15 @@ class ParallelExecutor:
         def function_with_progress(item):
             result = function(item)
 
-            nonlocal total_score, total_processed, pbar
-            total_processed += 1
-            if self.compare_results:
-                if result is not None:
-                    total_score += result[-1]
-                self._update_pbar(pbar, total_score, total_processed)
-            else:
-                self._update_pbar(pbar, total_processed, len(data))
+            with self._lock:
+                nonlocal total_score, total_processed, pbar
+                total_processed += 1
+                if self.compare_results:
+                    if result is not None:
+                        total_score += result[-1]
+                    self._update_pbar(pbar, total_score, total_processed)
+                else:
+                    self._update_pbar(pbar, total_processed, len(data))
 
             return result
 
@@ -102,14 +104,15 @@ class ParallelExecutor:
         def function_with_progress(item):
             result = function(item)
 
-            nonlocal total_score, total_processed, pbar
-            total_processed += 1
-            if self.compare_results:
-                if result is not None:
-                    total_score += result[-1]
-                self._update_pbar(pbar, total_score, total_processed)
-            else:
-                self._update_pbar(pbar, total_processed, len(data))
+            with self._lock:
+                nonlocal total_score, total_processed, pbar
+                total_processed += 1
+                if self.compare_results:
+                    if result is not None:
+                        total_score += result[-1]
+                    self._update_pbar(pbar, total_score, total_processed)
+                else:
+                    self._update_pbar(pbar, total_processed, len(data))
 
             return result
 
