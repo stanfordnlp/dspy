@@ -1,5 +1,5 @@
 import json
-from typing import Any, List, Union
+from typing import Any, List, Literal, Union, get_args, get_origin
 
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
@@ -101,6 +101,31 @@ def find_enum_member(enum, identifier):
         return enum[identifier]
 
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
+
+
+def get_annotation_name(annotation) -> str:
+    """
+    Obtains a string representation of the specified Python type annotation
+
+    Args:
+        annotation: The Python type annotation of which to obtain a string representation.
+    Returns:
+        A string representation of the specified Python type annotation.
+    """
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None:
+        if hasattr(annotation, "__name__"):
+            return annotation.__name__
+        else:
+            return str(annotation)
+    else:
+        if origin is Literal:
+            # string values in Literals should be quoted
+            args_str = ", ".join(f'"{arg}"' if isinstance(arg, str) else str(arg) for arg in args)
+        else:
+            args_str = ", ".join(get_annotation_name(arg) for arg in args)
+        return f"{get_annotation_name(origin)}[{args_str}]"
 
 
 def _format_input_list_field_value(value: List[Any]) -> str:

@@ -5,7 +5,7 @@ import json
 import logging
 import textwrap
 from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple, get_args, get_origin
+from typing import Any, Dict, KeysView, Literal, NamedTuple
 
 import json_repair
 import litellm
@@ -14,11 +14,10 @@ from pydantic import TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
-
-from ..adapters.image_utils import Image
-from ..signatures.signature import SignatureMeta
-from ..signatures.utils import get_dspy_field_type
+from dspy.adapters.image_utils import Image
+from dspy.adapters.utils import find_enum_member, format_field_value, get_annotation_name, serialize_for_json
+from dspy.signatures.signature import SignatureMeta
+from dspy.signatures.utils import get_dspy_field_type
 
 _logger = logging.getLogger(__name__)
 
@@ -240,19 +239,6 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
         )
 
     return {"role": role, "content": "\n\n".join(content).strip()}
-
-
-def get_annotation_name(annotation):
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is None:
-        if hasattr(annotation, "__name__"):
-            return annotation.__name__
-        else:
-            return str(annotation)
-    else:
-        args_str = ", ".join(get_annotation_name(arg) for arg in args)
-        return f"{get_annotation_name(origin)}[{args_str}]"
 
 
 def enumerate_fields(fields):

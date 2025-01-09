@@ -6,14 +6,14 @@ import re
 import textwrap
 from collections.abc import Mapping
 from itertools import chain
-from typing import Any, Dict, List, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Any, Dict, List, Literal, NamedTuple, Union
 
 import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import find_enum_member, format_field_value
+from dspy.adapters.utils import find_enum_member, format_field_value, get_annotation_name
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -265,19 +265,6 @@ def format_turn(signature, values, role, incomplete=False):
             collapsed_messages.append(item)
 
     return {"role": role, "content": collapsed_messages}
-
-
-def get_annotation_name(annotation):
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is None:
-        if hasattr(annotation, "__name__"):
-            return annotation.__name__
-        else:
-            return str(annotation)
-    else:
-        args_str = ", ".join(get_annotation_name(arg) for arg in args)
-        return f"{get_annotation_name(origin)}[{args_str}]"
 
 
 def enumerate_fields(fields: dict) -> str:
