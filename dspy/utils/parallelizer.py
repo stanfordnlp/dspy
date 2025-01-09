@@ -75,6 +75,7 @@ class ParallelExecutor:
         pbar.set_description(description, refresh=True)
 
     def _execute_single_thread(self, function, data):
+        pbar = self._create_pbar(data)
         total_score = 0
         total_processed = 0
 
@@ -93,8 +94,11 @@ class ParallelExecutor:
 
             return result
 
-        with self._create_pbar(data) as pbar, logging_redirect_tqdm():
-            return list(map(function_with_progress, data))
+        with logging_redirect_tqdm():
+            try:
+                return list(map(function_with_progress, data))
+            finally:
+                pbar.close()
 
     def _execute_multi_thread(self, function, data):
         pbar = self._create_pbar(data)
