@@ -52,6 +52,7 @@ nav:
         - Classification: tutorials/classification/index.md
         - Multi-Hop Search: tutorials/multihop_search/index.ipynb
         - Privacy-Conscious Delegation: tutorials/papillon/index.md
+        - Program Of Thought: tutorials/program_of_thought/index.md
         - Finetuning Agents: tutorials/games/index.ipynb
         - Saving and Loading: tutorials/saving/index.md
         - Deployment: tutorials/deployment/index.md

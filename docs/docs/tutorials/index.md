@@ -12,6 +12,8 @@
 
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
 
+* [Program Of Thought](/tutorials/program_of_thought/)
+
 * [Finetuning Agents](/tutorials/games/)
 
 * [Saving and Loading](/tutorials/saving/index.md)
