@@ -8,7 +8,7 @@ setup(
     #replace_package_name_marker
     name="dspy-ai",
     #replace_package_version_marker
-    version="2.5.25", 	
+    version="2.6.0rc8", 	
     description="DSPy",	
     long_description=long_description,	
     long_description_content_type="text/markdown",	
@@ -19,5 +19,5 @@ setup(
     packages=find_packages(include=["dsp.*", "dspy.*", "dsp", "dspy"]),	
     python_requires=">=3.9",
     #replace_dspy_version_marker
-    install_requires=["dspy>=2.5.3"]
+    install_requires=["dspy>=2.6.0rc8"]
 )	

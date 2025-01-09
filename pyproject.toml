@@ -3,10 +3,12 @@ requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
+# Do not add spaces around the '=' sign for any of the fields 
+# preceeded by a marker comment as it affects the publish workflow. 
 #replace_package_name_marker
-name = "dspy"
+name="dspy"
 #replace_package_version_marker
-version = "2.5.43"
+version="2.6.0rc8"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]

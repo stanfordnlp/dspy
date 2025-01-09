@@ -16,7 +16,14 @@ To build and test the documentation locally:
    pip install -r requirements.txt
    ```
 
-3. Run the build command:
+3. In docs/ directory, run the command below to generate the API docs and index them:
+   ```bash
+   cd docs/
+   python scripts/generate_api_docs.py
+   python scripts/generate_api_summary.py
+   ```
+
+4. Run the build command:
    ```bash
    mkdocs build
    ```
