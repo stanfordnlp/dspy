@@ -1,3 +1,20 @@
+"""Signature class for DSPy.
+
+You typically subclass the Signature class, like this:
+    class MySignature(dspy.Signature):
+        input: str = InputField(desc="...")
+        output: int = OutputField(desc="...")
+
+You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
+You can also include instructions, Signature("input -> output", "This is a test").
+But it's generally better to use the make_signature function.
+
+If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
+or a signature, you can use the ensure_signature function.
+
+For compatibility with the legacy dsp format, you can use the signature_to_template function.
+"""
+
 import ast
 import importlib
 import inspect
@@ -14,15 +31,16 @@ from dspy.adapters.image_utils import Image  # noqa: F401
 from dspy.signatures.field import InputField, OutputField
 
 
-def _default_instructions(signature) -> str:
-    input_fields = ", ".join([f"`{field}`" for field in signature.input_fields])
-    output_fields = ", ".join([f"`{field}`" for field in signature.output_fields])
-    return f"Given the fields {input_fields}, produce the fields {output_fields}."
+def _default_instructions(cls) -> str:
+    inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
+    outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
+    return f"Given the fields {inputs_}, produce the fields {outputs_}."
 
 
 class SignatureMeta(type(BaseModel)):
     def __call__(cls, *args, **kwargs):  # noqa: ANN002
         if cls is Signature:
+            # We don't create an actual Signature instance, instead, we create a new Signature class.
             return make_signature(*args, **kwargs)
         return super().__call__(*args, **kwargs)
 
@@ -75,38 +93,6 @@ class SignatureMeta(type(BaseModel)):
                     f"field `{name}` has `field.json_schema_extra={field.json_schema_extra}`",
                 )
 
-
-# A signature for a predictor.
-#
-# You typically subclass it, like this:
-# class MySignature(Signature):
-#     input: str = InputField(desc="...")
-#     output: int = OutputField(desc="...")
-#
-# You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
-# You can also include instructions, Signature("input -> output", "This is a test").
-# But it's generally better to use the make_signature function.
-#
-# If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
-# or a signature, you can use the ensure_signature function.
-#
-# For compatibility with the legacy dsp format, you can use the signature_to_template function.
-#
-
-
-class Signature(BaseModel, metaclass=SignatureMeta):
-    ""  # noqa: D419
-
-    # Note: Don't put a docstring here, as it will become the default instructions
-    # for any signature that doesn't define it's own instructions.
-
-    @property
-    def signature(cls) -> str:
-        """The string representation of the signature."""
-        input_fields = ", ".join(cls.input_fields.keys())
-        output_fields = ", ".join(cls.output_fields.keys())
-        return f"{input_fields} -> {output_fields}"
-
     @property
     def instructions(cls) -> str:
         return inspect.cleandoc(getattr(cls, "__doc__", ""))
@@ -115,14 +101,57 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def instructions(cls, instructions: str) -> None:
         setattr(cls, "__doc__", instructions)
 
-    def with_instructions(cls, instructions: str) -> Type["Signature"]:
-        return Signature(cls.fields, instructions)
+    @property
+    def input_fields(cls) -> dict[str, FieldInfo]:
+        return cls._get_fields_with_type("input")
+
+    @property
+    def output_fields(cls) -> dict[str, FieldInfo]:
+        return cls._get_fields_with_type("output")
 
     @property
     def fields(cls) -> dict[str, FieldInfo]:
         # Make sure to give input fields before output fields
         return {**cls.input_fields, **cls.output_fields}
 
+    @property
+    def signature(cls) -> str:
+        """The string representation of the signature."""
+        input_fields = ", ".join(cls.input_fields.keys())
+        output_fields = ", ".join(cls.output_fields.keys())
+        return f"{input_fields} -> {output_fields}"
+
+    def _get_fields_with_type(cls, field_type) -> dict[str, FieldInfo]:
+        return {k: v for k, v in cls.model_fields.items() if v.json_schema_extra["__dspy_field_type"] == field_type}
+
+    def __repr__(cls):
+        """Output a representation of the signature.
+
+        Uses the form:
+        Signature(question, context -> answer
+            question: str = InputField(desc="..."),
+            context: List[str] = InputField(desc="..."),
+            answer: int = OutputField(desc="..."),
+        ).
+        """
+        field_reprs = []
+        for name, field in cls.fields.items():
+            field_reprs.append(f"{name} = Field({field})")
+        field_repr = "\n    ".join(field_reprs)
+        return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
+
+
+class Signature(BaseModel, metaclass=SignatureMeta):
+    ""  # noqa: D419
+
+    # Note: Don't put a docstring here, as it will become the default instructions
+    # for any signature that doesn't define it's own instructions.
+
+    @classmethod
+    def with_instructions(cls, instructions: str) -> Type["Signature"]:
+        return Signature(cls.fields, instructions)
+
+    @classmethod
     def with_updated_fields(cls, name, type_=None, **kwargs) -> Type["Signature"]:
         """Create a new Signature class with the updated field information.
 
@@ -148,23 +177,15 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             fields_copy[name].annotation = type_
         return Signature(fields_copy, cls.instructions)
 
-    @property
-    def input_fields(cls) -> dict[str, FieldInfo]:
-        return cls._get_fields_with_type("input")
-
-    @property
-    def output_fields(cls) -> dict[str, FieldInfo]:
-        return cls._get_fields_with_type("output")
-
-    def _get_fields_with_type(cls, field_type) -> dict[str, FieldInfo]:
-        return {k: v for k, v in cls.model_fields.items() if v.json_schema_extra["__dspy_field_type"] == field_type}
-
+    @classmethod
     def prepend(cls, name, field, type_=None) -> Type["Signature"]:
         return cls.insert(0, name, field, type_)
 
+    @classmethod
     def append(cls, name, field, type_=None) -> Type["Signature"]:
         return cls.insert(-1, name, field, type_)
 
+    @classmethod
     def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
@@ -191,28 +212,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         new_fields = dict(input_fields + output_fields)
         return Signature(new_fields, cls.instructions)
 
-    def dump_state(cls):
-        state = {"instructions": cls.instructions, "fields": []}
-        for field in cls.fields:
-            state["fields"].append(
-                {
-                    "prefix": cls.fields[field].json_schema_extra["prefix"],
-                    "description": cls.fields[field].json_schema_extra["desc"],
-                }
-            )
-
-        return state
-
-    def load_state(cls, state):
-        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
-
-        signature_copy.instructions = state["instructions"]
-        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
-            field.json_schema_extra["prefix"] = saved_field["prefix"]
-            field.json_schema_extra["desc"] = saved_field["description"]
-
-        return signature_copy
-
+    @classmethod
     def equals(cls, other) -> bool:
         """Compare the JSON schema of two Signature classes."""
         if not isinstance(other, type) or not issubclass(other, BaseModel):
@@ -226,21 +226,29 @@ class Signature(BaseModel, metaclass=SignatureMeta):
                 return False
         return True
 
-    def __repr__(cls):
-        """Output a representation of the signature.
+    @classmethod
+    def dump_state(cls):
+        state = {"instructions": cls.instructions, "fields": []}
+        for field in cls.fields:
+            state["fields"].append(
+                {
+                    "prefix": cls.fields[field].json_schema_extra["prefix"],
+                    "description": cls.fields[field].json_schema_extra["desc"],
+                }
+            )
 
-        Uses the form:
-        Signature(question, context -> answer
-            question: str = InputField(desc="..."),
-            context: List[str] = InputField(desc="..."),
-            answer: int = OutputField(desc="..."),
-        ).
-        """
-        field_reprs = []
-        for name, field in cls.fields.items():
-            field_reprs.append(f"{name} = Field({field})")
-        field_repr = "\n    ".join(field_reprs)
-        return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
+        return state
+
+    @classmethod
+    def load_state(cls, state):
+        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+
+        signature_copy.instructions = state["instructions"]
+        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
+            field.json_schema_extra["prefix"] = saved_field["prefix"]
+            field.json_schema_extra["desc"] = saved_field["description"]
+
+        return signature_copy
 
 
 def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
@@ -329,65 +337,83 @@ def _parse_signature(signature: str) -> Dict[str, Tuple[Type, Field]]:
     inputs_str, outputs_str = signature.split("->")
 
     fields = {}
-    for name, type_ in _parse_arg_string(inputs_str):
-        fields[name] = (type_, InputField())
-    for name, type_ in _parse_arg_string(outputs_str):
-        fields[name] = (type_, OutputField())
+    for field_name, field_type in _parse_field_string(inputs_str):
+        fields[field_name] = (field_type, InputField())
+    for field_name, field_type in _parse_field_string(outputs_str):
+        fields[field_name] = (field_type, OutputField())
 
     return fields
 
 
-def _parse_arg_string(string: str, names=None) -> Dict[str, str]:
-    args = ast.parse("def f(" + string + "): pass").body[0].args.args
+def _parse_field_string(field_string: str) -> Dict[str, str]:
+    """Extract the field name and type from field string in the string-based Signature.
+
+    It takes a string like "x: int, y: str" and returns a dictionary mapping field names to their types.
+    For example, "x: int, y: str" -> [("x", int), ("y", str)]. This function utitlizes the Python AST to parse the
+    fields and types.
+    """
+
+    args = ast.parse(f"def f({field_string}): pass").body[0].args.args
     names = [arg.arg for arg in args]
     types = [str if arg.annotation is None else _parse_type_node(arg.annotation) for arg in args]
     return zip(names, types)
 
 
 def _parse_type_node(node, names=None) -> Any:
-    """Recursively parse an AST node representing a type annotation."""
+    """Recursively parse an AST node representing a type annotation.
+
+    This function converts Python's Abstract Syntax Tree (AST) nodes into actual Python types.
+    It's used to parse type annotations in signature strings like "x: List[int] -> y: str".
+
+    Examples:
+        - For "x: int", the AST node represents 'int' and returns the int type
+        - For "x: List[str]", it processes a subscript node to return typing.List[str]
+        - For "x: Optional[int]", it handles the Union type to return Optional[int]
+        - For "x: MyModule.CustomType", it processes attribute access to return the actual type
+
+    Args:
+        node: An AST node from Python's ast module, representing a type annotation.
+            Common node types include:
+            - ast.Name: Simple types like 'int', 'str'
+            - ast.Attribute: Nested types like 'typing.List'
+            - ast.Subscript: Generic types like 'List[int]'
+        names: Optional dictionary mapping type names to their actual type objects.
+            Defaults to Python's typing module contents plus NoneType.
+
+    Returns:
+        The actual Python type represented by the AST node.
+
+    Raises:
+        ValueError: If the AST node represents an unknown or invalid type annotation.
+    """
 
     if names is None:
         names = dict(typing.__dict__)
         names["NoneType"] = type(None)
 
-    def resolve_name(id_: str):
+    def resolve_name(type_name: str):
         # Check if it's a built-in known type or in the provided names
-        if id_ in names:
-            return names[id_]
-
+        if type_name in names:
+            return names[type_name]
         # Common built-in types
         builtin_types = [int, str, float, bool, list, tuple, dict, set, frozenset, complex, bytes, bytearray]
 
-        # Try PIL Image if 'Image' encountered
-        if "Image" not in names:
-            try:
-                from PIL import Image
-
-                names["Image"] = Image
-            except ImportError:
-                pass
-
-        # If we have PIL Image and id_ is 'Image', return it
-        if "Image" in names and id_ == "Image":
-            return names["Image"]
-
         # Check if it matches any known built-in type by name
         for t in builtin_types:
-            if t.__name__ == id_:
+            if t.__name__ == type_name:
                 return t
 
         # Attempt to import a module with this name dynamically
         # This allows handling of module-based annotations like `dspy.Image`.
         try:
-            mod = importlib.import_module(id_)
-            names[id_] = mod
+            mod = importlib.import_module(type_name)
+            names[type_name] = mod
             return mod
         except ImportError:
             pass
 
         # If we don't know the type or module, raise an error
-        raise ValueError(f"Unknown name: {id_}")
+        raise ValueError(f"Unknown name: {type_name}")
 
     if isinstance(node, ast.Module):
         if len(node.body) != 1:
@@ -445,34 +471,54 @@ def _parse_type_node(node, names=None) -> Any:
                 values.append(_parse_type_node(kw.value, names))
         return Field(**dict(zip(keys, values)))
 
-    raise ValueError(f"Unhandled AST node type in annotation: {ast.dump(node)}")
+    raise ValueError(
+        f"Failed to parse string-base Signature due to unhandled AST node type in annotation: {ast.dump(node)}. "
+        "Please consider using class-based DSPy Signatures instead."
+    )
 
 
 def infer_prefix(attribute_name: str) -> str:
-    """Infer a prefix from an attribute name."""
-    # Convert camelCase to snake_case, but handle sequences of capital letters properly
+    """Infer a prefix from an attribute name by converting it to a human-readable format.
+
+    Examples:
+        "camelCaseText" -> "Camel Case Text"
+        "snake_case_text" -> "Snake Case Text"
+        "text2number" -> "Text 2 Number"
+        "HTMLParser" -> "HTML Parser"
+    """
+    # Step 1: Convert camelCase to snake_case
+    # Example: "camelCase" -> "camel_Case"
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", attribute_name)
+
+    # Handle consecutive capitals
+    # Example: "camel_Case" -> "camel_case"
     intermediate_name = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1)
 
-    # Insert underscores around numbers to ensure spaces in the final output
+    # Step 2: Handle numbers by adding underscores around them
+    # Example: "text2number" -> "text_2_number"
     with_underscores_around_numbers = re.sub(
-        r"([a-zA-Z])(\d)",
-        r"\1_\2",
+        r"([a-zA-Z])(\d)",  # Match letter followed by number
+        r"\1_\2",  # Add underscore between them
         intermediate_name,
     )
+    # Example: "2text" -> "2_text"
     with_underscores_around_numbers = re.sub(
-        r"(\d)([a-zA-Z])",
-        r"\1_\2",
+        r"(\d)([a-zA-Z])",  # Match number followed by letter
+        r"\1_\2",  # Add underscore between them
         with_underscores_around_numbers,
     )
 
-    # Convert snake_case to 'Proper Title Case', but ensure acronyms are uppercased
+    # Step 3: Convert to Title Case while preserving acronyms
     words = with_underscores_around_numbers.split("_")
     title_cased_words = []
     for word in words:
         if word.isupper():
+            # Preserve acronyms like 'HTML', 'API' as-is
             title_cased_words.append(word)
         else:
+            # Capitalize first letter: 'text' -> 'Text'
             title_cased_words.append(word.capitalize())
 
+    # Join words with spaces
+    # Example: ["Text", "2", "Number"] -> "Text 2 Number"
     return " ".join(title_cased_words)
