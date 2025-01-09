@@ -1,13 +1,11 @@
 import ast
+import importlib
 import inspect
-import logging
 import re
 import types
 import typing
-from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
-import importlib
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -16,10 +14,10 @@ from dspy.adapters.image_utils import Image  # noqa: F401
 from dspy.signatures.field import InputField, OutputField
 
 
-def _default_instructions(cls) -> str:
-    inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
-    outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
-    return f"Given the fields {inputs_}, produce the fields {outputs_}."
+def _default_instructions(signature) -> str:
+    input_fields = ", ".join([f"`{field}`" for field in signature.input_fields])
+    output_fields = ", ".join([f"`{field}`" for field in signature.output_fields])
+    return f"Given the fields {input_fields}, produce the fields {output_fields}."
 
 
 class SignatureMeta(type(BaseModel)):
@@ -73,15 +71,41 @@ class SignatureMeta(type(BaseModel)):
             field_type = extra.get("__dspy_field_type")
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field '{name}' in '{cls.__name__}' must be declared with "
-                    "InputField or OutputField. {field.json_schema_extra=}",
+                    f"Field `{name}` in `{cls.__name__}` must be declared with InputField or OutputField, but "
+                    f"field `{name}` has `field.json_schema_extra={field.json_schema_extra}`",
                 )
+
+
+# A signature for a predictor.
+#
+# You typically subclass it, like this:
+# class MySignature(Signature):
+#     input: str = InputField(desc="...")
+#     output: int = OutputField(desc="...")
+#
+# You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
+# You can also include instructions, Signature("input -> output", "This is a test").
+# But it's generally better to use the make_signature function.
+#
+# If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
+# or a signature, you can use the ensure_signature function.
+#
+# For compatibility with the legacy dsp format, you can use the signature_to_template function.
+#
+
+
+class Signature(BaseModel, metaclass=SignatureMeta):
+    ""  # noqa: D419
+
+    # Note: Don't put a docstring here, as it will become the default instructions
+    # for any signature that doesn't define it's own instructions.
 
     @property
     def signature(cls) -> str:
-        in_args = ", ".join(cls.input_fields.keys())
-        out_args = ", ".join(cls.output_fields.keys())
-        return f"{in_args} -> {out_args}"
+        """The string representation of the signature."""
+        input_fields = ", ".join(cls.input_fields.keys())
+        output_fields = ", ".join(cls.output_fields.keys())
+        return f"{input_fields} -> {output_fields}"
 
     @property
     def instructions(cls) -> str:
@@ -100,12 +124,22 @@ class SignatureMeta(type(BaseModel)):
         return {**cls.input_fields, **cls.output_fields}
 
     def with_updated_fields(cls, name, type_=None, **kwargs) -> Type["Signature"]:
-        """Update the field, name, in a new Signature type.
+        """Create a new Signature class with the updated field information.
 
-        Returns a new Signature type with the field, name, updated
+        Returns a new Signature class with the field, name, updated
         with fields[name].json_schema_extra[key] = value.
+
+        Args:
+            name: The name of the field to update.
+            type_: The new type of the field.
+            **kwargs: The new values for the field.
+
+        Returns:
+            A new Signature class (not an instance) with the updated field information.
         """
         fields_copy = deepcopy(cls.fields)
+        # Update `fields_copy[name].json_schema_extra` with the new kwargs, on conflicts
+        # we use the new value in kwargs.
         fields_copy[name].json_schema_extra = {
             **fields_copy[name].json_schema_extra,
             **kwargs,
@@ -148,7 +182,10 @@ class SignatureMeta(type(BaseModel)):
         if index < 0:
             index += len(lst) + 1
         if index < 0 or index > len(lst):
-            raise ValueError(f"Invalid index: {index}")
+            raise ValueError(
+                f"Invalid index to insert: {index}, index must be in the range of [{len(lst) - 1}, {len(lst)}] for "
+                f"{field.json_schema_extra['__dspy_field_type']} fields, but received: {index}.",
+            )
         lst.insert(index, (name, (type_, field)))
 
         new_fields = dict(input_fields + output_fields)
@@ -177,7 +214,7 @@ class SignatureMeta(type(BaseModel)):
         return signature_copy
 
     def equals(cls, other) -> bool:
-        """Compare the JSON schema of two Pydantic models."""
+        """Compare the JSON schema of two Signature classes."""
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
         if cls.instructions != other.instructions:
@@ -185,7 +222,8 @@ class SignatureMeta(type(BaseModel)):
         for name in cls.fields.keys() | other.fields.keys():
             if name not in other.fields or name not in cls.fields:
                 return False
-            # TODO: Should we compare the fields?
+            if cls.fields[name].json_schema_extra != other.fields[name].json_schema_extra:
+                return False
         return True
 
     def __repr__(cls):
@@ -205,98 +243,6 @@ class SignatureMeta(type(BaseModel)):
         return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
 
 
-# A signature for a predictor.
-#
-# You typically subclass it, like this:
-# class MySignature(Signature):
-#     input: str = InputField(desc="...")  # noqa: ERA001
-#     output: int = OutputField(desc="...")  # noqa: ERA001
-#
-# You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
-# You can also include instructions, Signature("input -> output", "This is a test").
-# But it's generally better to use the make_signature function.
-#
-# If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
-# or a signature, you can use the ensure_signature function.
-#
-# For compatibility with the legacy dsp format, you can use the signature_to_template function.
-#
-
-
-class Signature(BaseModel, metaclass=SignatureMeta):
-    ""  # noqa: D419
-
-    # Note: Don't put a docstring here, as it will become the default instructions
-    # for any signature that doesn't define it's own instructions.
-    pass
-
-    @classmethod
-    @contextmanager
-    def replace(
-        cls,
-        new_signature: "Type[Signature]",
-        validate_new_signature: bool = True,
-    ) -> typing.Generator[None, None, None]:
-        """Replace the signature with an updated version.
-
-        This is useful for updating the internal signatures of dspy
-
-        Args:
-            new_signature: The new signature to replace the old one with.
-            validate_new_signature: Whether to validate the new signature against the old one
-                to ensure that no fields are missing.
-        """
-        if validate_new_signature:
-            for field in cls.model_fields:
-                if field not in new_signature.model_fields:
-                    raise ValueError(
-                        f"Field '{field}' is missing from the updated signature '{new_signature.__class__}.",
-                    )
-
-        class OldSignature(cls):
-            pass
-
-        def swap_attributes(source: Type[Signature]):
-            unhandled = {}
-
-            for attr in ["__doc__", "__pydantic_fields__", "model_fields", "model_extra", "model_config"]:
-                try:
-                    setattr(cls, attr, getattr(source, attr))
-                except AttributeError as exc:
-                    if attr in ("__pydantic_fields__", "model_fields"):
-                        version = "< 2.10" if attr == "__pydantic_fields__" else ">= 2.10"
-                        logging.debug(f"Model attribute {attr} not replaced, expected with pydantic {version}")
-                        unhandled[attr] = exc
-                    else:
-                        raise exc
-
-            # if neither of the attributes were replaced, raise an error to prevent silent failures
-            if set(unhandled.keys()) >= {"model_fields", "__pydantic_fields__"}:
-                raise ValueError("Failed to replace either model_fields or __pydantic_fields__") from (
-                    unhandled.get("model_fields") or unhandled.get("__pydantic_fields__")
-                )
-
-        swap_attributes(new_signature)
-        cls.model_rebuild(force=True)
-
-        yield
-
-        swap_attributes(OldSignature)
-        cls.model_rebuild(force=True)
-
-
-@contextmanager
-def update_signatures(
-    signature_map: Dict[Type[Signature], Type[Signature]],
-    validate_new_signature: bool = True,
-) -> typing.Generator[None, None, None]:
-    """Replace multiple signatures with updated versions, according to a mapping between the old and new signatures."""
-    with ExitStack() as stack:
-        for old_signature, new_signature in signature_map.items():
-            stack.enter_context(old_signature.replace(new_signature, validate_new_signature=validate_new_signature))
-        yield
-
-
 def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
     if signature is None:
         return None
@@ -312,17 +258,31 @@ def make_signature(
     instructions: str = None,
     signature_name: str = "StringSignature",
 ) -> Type[Signature]:
-    """Create a new Signature type with the given fields and instructions.
-
-    Note:
-        Even though we're calling a type, we're not making an instance of the type.
-        In general, instances of Signature types are not allowed to be made. The call
-        syntax is provided for convenience.
+    """Create a new Signature subclass with the specified fields and instructions.
 
     Args:
-        signature: The signature format, specified as "input1, input2 -> output1, output2".
-        instructions: An optional prompt for the signature.
-        signature_name: An optional name for the new signature type.
+        signature: Either a string in the format "input1, input2 -> output1, output2"
+            or a dictionary mapping field names to tuples of (type, FieldInfo).
+        instructions: Optional string containing instructions/prompt for the signature.
+            If not provided, defaults to a basic description of inputs and outputs.
+        signature_name: Optional string to name the generated Signature subclass.
+            Defaults to "StringSignature".
+
+    Returns:
+        A new signature class with the specified fields and instructions.
+
+    Examples:
+
+    ```
+    # Using string format
+    sig1 = make_signature("question, context -> answer")
+
+    # Using dictionary format
+    sig2 = make_signature({
+        "question": (str, InputField()),
+        "answer": (str, OutputField())
+    })
+    ```
     """
     fields = _parse_signature(signature) if isinstance(signature, str) else signature
 
@@ -331,27 +291,23 @@ def make_signature(
     fixed_fields = {}
     for name, type_field in fields.items():
         if not isinstance(name, str):
-            raise ValueError(f"Field names must be strings, not {type(name)}")
+            raise ValueError(f"Field names must be strings, but received: {name}.")
         if isinstance(type_field, FieldInfo):
             type_ = type_field.annotation
             field = type_field
         else:
             if not isinstance(type_field, tuple):
-                raise ValueError(f"Field values must be tuples, not {type(type_field)}")
+                raise ValueError(f"Field values must be tuples, but received: {type_field}.")
             type_, field = type_field
         # It might be better to be explicit about the type, but it currently would break
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        # if not isinstance(type_, type) and not isinstance(typing.get_origin(type_), type):
         if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
-            raise ValueError(f"Field types must be types, not {type(type_)}")
+            raise ValueError(f"Field types must be types, but received: {type_} of type {type(type_)}.")
         if not isinstance(field, FieldInfo):
-            raise ValueError(f"Field values must be Field instances, not {type(field)}")
+            raise ValueError(f"Field values must be Field instances, but received: {field}.")
         fixed_fields[name] = (type_, field)
-
-    # Fixing the fields shouldn't change the order
-    assert list(fixed_fields.keys()) == list(fields.keys())  # noqa: S101
 
     # Default prompt when no instructions are provided
     if instructions is None:
@@ -366,7 +322,7 @@ def make_signature(
     )
 
 
-def _parse_signature(signature: str) -> Tuple[Type, Field]:
+def _parse_signature(signature: str) -> Dict[str, Tuple[Type, Field]]:
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
@@ -393,7 +349,7 @@ def _parse_type_node(node, names=None) -> Any:
 
     if names is None:
         names = dict(typing.__dict__)
-        names['NoneType'] = type(None)
+        names["NoneType"] = type(None)
 
     def resolve_name(id_: str):
         # Check if it's a built-in known type or in the provided names
@@ -404,16 +360,17 @@ def _parse_type_node(node, names=None) -> Any:
         builtin_types = [int, str, float, bool, list, tuple, dict, set, frozenset, complex, bytes, bytearray]
 
         # Try PIL Image if 'Image' encountered
-        if 'Image' not in names:
+        if "Image" not in names:
             try:
                 from PIL import Image
-                names['Image'] = Image
+
+                names["Image"] = Image
             except ImportError:
                 pass
 
         # If we have PIL Image and id_ is 'Image', return it
-        if 'Image' in names and id_ == 'Image':
-            return names['Image']
+        if "Image" in names and id_ == "Image":
+            return names["Image"]
 
         # Check if it matches any known built-in type by name
         for t in builtin_types:
@@ -489,6 +446,7 @@ def _parse_type_node(node, names=None) -> Any:
         return Field(**dict(zip(keys, values)))
 
     raise ValueError(f"Unhandled AST node type in annotation: {ast.dump(node)}")
+
 
 def infer_prefix(attribute_name: str) -> str:
     """Infer a prefix from an attribute name."""
