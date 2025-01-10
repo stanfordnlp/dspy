@@ -78,7 +78,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         if isinstance(value, Prediction):
             data = {"prediction": {k: v for k, v in value.items(include_dspy=False)}}
             yield f"data: {ujson.dumps(data)}\n\n"
-        elif isinstance(value, litellm.ModelResponse):
+        elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
             yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
