@@ -112,6 +112,7 @@ def main():
 
     # Create API section
     api_section = ["    - API Reference:"]
+    api_section.append("        - API Reference: api/index.md")
     api_section.extend(format_nav_section(api_nav))
     api_section.append("")  # Add empty line before theme section
 

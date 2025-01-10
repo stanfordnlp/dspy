@@ -67,6 +67,7 @@ nav:
         - Cheatsheet: cheatsheet.md
 
     - API Reference:
+        - API Reference: api/index.md
         - Adapters:
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
