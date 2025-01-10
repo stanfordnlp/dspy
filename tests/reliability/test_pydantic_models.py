@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List
+from typing import Any, List, Literal
 
 import pydantic
 import pytest
@@ -102,4 +102,28 @@ def test_entity_extraction_with_multiple_primitive_outputs():
             "The text should contain English language categories that apply to the word 'coffee'."
             " The categories should be separated by the character '|'."
         ),
+    )
+
+
+@pytest.mark.parametrize("module", [dspy.Predict, dspy.ChainOfThought])
+def test_tool_calling_with_literals(module):
+    class ToolCalling(dspy.Signature):
+        """
+        Given the fields question, produce the fields response.
+        You will be given question and your goal is to finish with response.
+        To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.
+        """
+
+        question: str = dspy.InputField()
+        trajectory: str = dspy.InputField()
+        next_thought: str = dspy.OutputField()
+        next_tool_name: Literal["get_docs", "finish"] = dspy.OutputField()
+        next_tool_args: dict[str, Any] = dspy.OutputField()
+
+    program = dspy.Predict(ToolCalling)
+    print(
+        program(
+            question="Tell me more about the company's internal policy for PTO",
+            trajectory="[]",
+        )
     )
