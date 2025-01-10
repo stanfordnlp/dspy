@@ -235,7 +235,10 @@ def remove_empty_dirs(path: Path):
 if __name__ == "__main__":
     api_dir = Path("docs/api")
     if api_dir.exists():
-        shutil.rmtree(api_dir)
+        # Delete only subdirectories
+        for item in api_dir.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
 
     for keys in API_MAPPING.keys():
         # Create a directory for each API category
@@ -243,6 +246,7 @@ if __name__ == "__main__":
         subpath.mkdir(parents=True, exist_ok=True)
 
     excluded_modules = ["dspy.dsp"]
+
     generate_md_docs(api_dir, excluded_modules=excluded_modules)
     # Clean up empty directories
     remove_empty_dirs(api_dir)
