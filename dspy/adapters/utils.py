@@ -103,15 +103,7 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-def get_annotation_name(annotation) -> str:
-    """
-    Obtains a string representation of the specified Python type annotation
-
-    Args:
-        annotation: The Python type annotation of which to obtain a string representation.
-    Returns:
-        A string representation of the specified Python type annotation.
-    """
+def get_annotation_name(annotation):
     origin = get_origin(annotation)
     args = get_args(annotation)
     if origin is None:
@@ -119,12 +111,15 @@ def get_annotation_name(annotation) -> str:
             return annotation.__name__
         else:
             return str(annotation)
+
+    # If we get here, `origin` is not None
+    if origin is Literal:
+        # Use our custom ipython-style quoting for strings
+        # For non-string, just do `repr()`
+        args_str = ", ".join(_ipython_style_quote(a) if isinstance(a, str) else repr(a) for a in args)
+        return f"{get_annotation_name(origin)}[{args_str}]"
     else:
-        if origin is Literal:
-            # string values in Literals should be quoted
-            args_str = ", ".join(f'"{arg}"' if isinstance(arg, str) else str(arg) for arg in args)
-        else:
-            args_str = ", ".join(get_annotation_name(arg) for arg in args)
+        args_str = ", ".join(get_annotation_name(a) for a in args)
         return f"{get_annotation_name(origin)}[{args_str}]"
 
 
@@ -160,3 +155,33 @@ def _format_blob(blob: str) -> str:
 
     modified_blob = blob.replace("\n", "\n    ")
     return f"«««\n    {modified_blob}\n»»»"
+
+
+def _ipython_style_quote(s: str) -> str:
+    """
+    Return a string quoted the same way IPython displays it in an interactive
+    console when showing a typing.Literal that contains s.
+
+    Rules (based on observed IPython behavior for str):
+      1) If s has a single quote but no double quotes => use double quotes.
+      2) If s has a double quote but no single quotes => use single quotes.
+      3) If s has both single and double quotes => use single quotes,
+         and escape each single quote as \' (only one backslash).
+      4) If s has neither => use single quotes as-is.
+    """
+    has_single = "'" in s
+    has_double = '"' in s
+
+    if has_single and not has_double:
+        # Only single quotes => enclose in double quotes
+        return f'"{s}"'
+    elif has_double and not has_single:
+        # Only double quotes => enclose in single quotes
+        return f"'{s}'"
+    elif has_single and has_double:
+        # Both => enclose in single quotes; escape each single quote with \'
+        escaped = s.replace("'", "\\'")
+        return f"'{escaped}'"
+    else:
+        # Neither => enclose in single quotes
+        return f"'{s}'"

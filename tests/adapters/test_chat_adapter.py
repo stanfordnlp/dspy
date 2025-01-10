@@ -1,21 +1,75 @@
 from typing import Literal
 from unittest import mock
 
+import pytest
+
 import dspy
 
 
-def test_chat_adapter_quotes_literals_as_expected():
-    class TestSignature(dspy.Signature):
-        input_text: Literal["one", "two", "three"] = dspy.InputField()
-        output_text: Literal["four", "five", "six"] = dspy.OutputField()
+@pytest.mark.parametrize(
+    "input_literal, output_literal, input_value, expected_input_str, expected_output_str",
+    [
+        # Original scenario: double quotes escaped within strings
+        (
+            Literal["one", "two", 'three"'],
+            Literal["four", "five", 'six"'],
+            "two",
+            "Literal['one', 'two', 'three\"']",
+            "Literal['four', 'five', 'six\"']",
+        ),
+        # Scenario 2: Single quotes inside strings
+        (
+            Literal["she's here", "okay", "test"],
+            Literal["done", "maybe'soon", "later"],
+            "she's here",
+            "Literal[\"she's here\", 'okay', 'test']",
+            "Literal['done', \"maybe'soon\", 'later']",
+        ),
+        # Scenario 3: Strings containing both single and double quotes
+        (
+            Literal["both\"and'", "another"],
+            Literal["yet\"another'", "plain"],
+            "another",
+            "Literal['both\"and\\'', 'another']",
+            "Literal['yet\"another\\'', 'plain']",
+        ),
+        # Scenario 4: No quotes at all (check the default)
+        (
+            Literal["foo", "bar"],
+            Literal["baz", "qux"],
+            "foo",
+            "Literal['foo', 'bar']",
+            "Literal['baz', 'qux']",
+        ),
+    ],
+)
+def test_chat_adapter_quotes_literals_as_expected(
+    input_literal, output_literal, input_value, expected_input_str, expected_output_str
+):
+    """
+    This test verifies that when we declare Literal fields with various mixes
+    of single/double quotes, the generated content string includes those
+    Literals exactly as we want them to appear (like IPython does).
+    """
 
+    class TestSignature(dspy.Signature):
+        input_text: input_literal = dspy.InputField()
+        output_text: output_literal = dspy.OutputField()
+
+    # Create a program from that signature
     program = dspy.Predict(TestSignature)
 
     dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input_text="two")
 
+    # Patch the LM call
+    with mock.patch("litellm.completion") as mock_completion:
+        program(input_text=input_value)
+
+    # Check what was actually sent
     mock_completion.assert_called_once()
     _, call_kwargs = mock_completion.call_args
-    assert 'Literal["one", "two", "three"]' in str(call_kwargs)
-    assert 'Literal["four", "five", "six"]' in str(call_kwargs)
+    content = call_kwargs["messages"][0]["content"]
+
+    # Ensure the content string has the exact literal representations
+    assert expected_input_str in content
+    assert expected_output_str in content
