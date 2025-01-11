@@ -41,6 +41,14 @@ import dspy
             "Literal['foo', 'bar']",
             "Literal['baz', 'qux']",
         ),
+        # Scenario 5: Mixed types
+        (
+            Literal[1, "bar"],
+            Literal[True, 3, "foo"],
+            "bar",
+            "Literal[1, 'bar']",
+            "Literal[True, 3, 'foo']",
+        ),
     ],
 )
 def test_chat_adapter_quotes_literals_as_expected(

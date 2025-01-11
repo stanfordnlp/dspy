@@ -114,9 +114,9 @@ def get_annotation_name(annotation):
 
     # If we get here, `origin` is not None
     if origin is Literal:
-        # Use our custom ipython-style quoting for strings
-        # For non-string, just do `repr()`
-        args_str = ", ".join(_ipython_style_quote(a) if isinstance(a, str) else repr(a) for a in args)
+        args_str = ", ".join(
+            _quoted_string_for_literal_type_annotation(a) if isinstance(a, str) else str(a) for a in args
+        )
         return f"{get_annotation_name(origin)}[{args_str}]"
     else:
         args_str = ", ".join(get_annotation_name(a) for a in args)
@@ -157,17 +157,9 @@ def _format_blob(blob: str) -> str:
     return f"«««\n    {modified_blob}\n»»»"
 
 
-def _ipython_style_quote(s: str) -> str:
+def _quoted_string_for_literal_type_annotation(s: str) -> str:
     """
-    Return a string quoted the same way IPython displays it in an interactive
-    console when showing a typing.Literal that contains s.
-
-    Rules (based on observed IPython behavior for str):
-      1) If s has a single quote but no double quotes => use double quotes.
-      2) If s has a double quote but no single quotes => use single quotes.
-      3) If s has both single and double quotes => use single quotes,
-         and escape each single quote as \' (only one backslash).
-      4) If s has neither => use single quotes as-is.
+    Return the specified string quoted for inclusion in a literal type annotation.
     """
     has_single = "'" in s
     has_double = '"' in s
