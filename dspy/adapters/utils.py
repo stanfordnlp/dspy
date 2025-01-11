@@ -112,7 +112,6 @@ def get_annotation_name(annotation):
         else:
             return str(annotation)
 
-    # If we get here, `origin` is not None
     if origin is Literal:
         args_str = ", ".join(
             _quoted_string_for_literal_type_annotation(a) if isinstance(a, str) else str(a) for a in args
