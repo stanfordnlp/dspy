@@ -64,20 +64,16 @@ def test_chat_adapter_quotes_literals_as_expected(
         input_text: input_literal = dspy.InputField()
         output_text: output_literal = dspy.OutputField()
 
-    # Create a program from that signature
     program = dspy.Predict(TestSignature)
 
     dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
 
-    # Patch the LM call
     with mock.patch("litellm.completion") as mock_completion:
         program(input_text=input_value)
 
-    # Check what was actually sent
     mock_completion.assert_called_once()
     _, call_kwargs = mock_completion.call_args
     content = call_kwargs["messages"][0]["content"]
 
-    # Ensure the content string has the exact literal representations
     assert expected_input_str in content
     assert expected_output_str in content
