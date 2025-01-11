@@ -134,7 +134,7 @@ def test_tool_from_function():
     tool = react.Tool(foo)
     assert tool.name == "foo"
     assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": "int", "b": "int"}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
 
 
 def test_tool_from_class():
@@ -149,7 +149,7 @@ def test_tool_from_class():
     tool = react.Tool(Foo("123").foo)
     assert tool.name == "foo"
     assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": "int", "b": "int"}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
 
 
 def test_tool_calling_with_pydantic_args():
