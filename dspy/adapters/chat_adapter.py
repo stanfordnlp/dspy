@@ -311,7 +311,7 @@ def prepare_instructions(signature: SignatureMeta):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
         elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
             desc = (
-                # Strongly encourage the LLM to avoid choosing values that don't appear in the
+                # Strongly encourage the LM to avoid choosing values that don't appear in the
                 # literal or returning a value of the form 'Literal[<selected_value>]'
                 f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
             )
