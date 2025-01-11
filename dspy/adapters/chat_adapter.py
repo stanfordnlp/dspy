@@ -250,7 +250,7 @@ def format_turn(signature: Signature, values: Dict[str, Any], role: str, incompl
             that should be included in the message.
         role: The role of the message, which can be either "user" or "assistant".
         incomplete: If True, indicates that output field values are present in the set of specified
-            `values. If False, indicates that ``values` only contains input field values.
+            `values`. If False, indicates that `values` only contains input field values.
 
     Returns:
         A chat message that can be appended to a chat thread. The message contains two string fields:
@@ -415,7 +415,7 @@ def enumerate_fields(fields: Dict[str, FieldInfo]) -> str:
     """Enumerates the fields in a signature."""
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
-        parts.append(f"{idx + 1}. {k}")
+        parts.append(f"{idx+1}. `{k}`")
         parts[-1] += f" ({get_annotation_name(v.annotation)})"
         parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
         metadata_info = format_metadata_summary(v)
@@ -461,7 +461,7 @@ def prepare_instructions(signature: SignatureMeta) -> str:
             if metadata_info: desc += metadata_info
         elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
-        elif hasattr(field_type, "_origin") and field_type.origin_ is Literal:
+        elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
             desc = f"must be one of: {'; '.join([str(x) for x in field_type.__args__])}"
         else:
             desc = "must be pareseable according to the following JSON schema: "
