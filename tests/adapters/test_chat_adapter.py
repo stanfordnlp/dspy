@@ -9,7 +9,7 @@ import dspy
 @pytest.mark.parametrize(
     "input_literal, output_literal, input_value, expected_input_str, expected_output_str",
     [
-        # Original scenario: double quotes escaped within strings
+        # Scenario 1: double quotes escaped within strings
         (
             Literal["one", "two", 'three"'],
             Literal["four", "five", 'six"'],
