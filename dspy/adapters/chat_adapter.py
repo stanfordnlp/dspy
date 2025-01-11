@@ -349,8 +349,8 @@ def get_annotation_name(annotation: Type) -> str:
     origin = get_origin(annotation)
     args = get_args(annotation)
     if origin is None:
-        if hasattr(annotation, "_name_"):
-            return annotation._name_
+        if hasattr(annotation, "__name__"):
+            return annotation.__name__
         else:
             return str(annotation)
     else:
