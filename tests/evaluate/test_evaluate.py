@@ -68,44 +68,6 @@ def test_multithread_evaluate_call():
     assert score == 100.0
 
 
-def test_multi_thread_evaluate_call_cancelled(monkeypatch):
-    # slow LM that sleeps for 1 second before returning the answer
-    class SlowLM(DummyLM):
-        def __call__(self, *args, **kwargs):
-            import time
-
-            time.sleep(1)
-            return super().__call__(*args, **kwargs)
-
-    dspy.settings.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
-
-    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
-    program = Predict("question -> answer")
-    assert program(question="What is 1+1?").answer == "2"
-
-    # spawn a thread that will sleep for .1 seconds then send a KeyboardInterrupt
-    def sleep_then_interrupt():
-        import time
-
-        time.sleep(0.1)
-        import os
-
-        os.kill(os.getpid(), signal.SIGINT)
-
-    input_thread = threading.Thread(target=sleep_then_interrupt)
-    input_thread.start()
-
-    with pytest.raises(KeyboardInterrupt):
-        ev = Evaluate(
-            devset=devset,
-            metric=answer_exact_match,
-            display_progress=False,
-            num_threads=2,
-        )
-        score = ev(program)
-        assert score == 100.0
-
-
 def test_evaluate_call_bad():
     dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
