@@ -1,5 +1,5 @@
 import json
-from typing import Any, List, Union
+from typing import Any, List, Literal, Union, get_args, get_origin
 
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
@@ -103,6 +103,26 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
+def get_annotation_name(annotation):
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None:
+        if hasattr(annotation, "__name__"):
+            return annotation.__name__
+        else:
+            return str(annotation)
+
+    if origin is Literal:
+        args_str = ", ".join(
+            _quoted_string_for_literal_type_annotation(a) if isinstance(a, str) else get_annotation_name(a)
+            for a in args
+        )
+        return f"{get_annotation_name(origin)}[{args_str}]"
+    else:
+        args_str = ", ".join(get_annotation_name(a) for a in args)
+        return f"{get_annotation_name(origin)}[{args_str}]"
+
+
 def _format_input_list_field_value(value: List[Any]) -> str:
     """
     Formats the value of an input field of type List[Any].
@@ -135,3 +155,25 @@ def _format_blob(blob: str) -> str:
 
     modified_blob = blob.replace("\n", "\n    ")
     return f"«««\n    {modified_blob}\n»»»"
+
+
+def _quoted_string_for_literal_type_annotation(s: str) -> str:
+    """
+    Return the specified string quoted for inclusion in a literal type annotation.
+    """
+    has_single = "'" in s
+    has_double = '"' in s
+
+    if has_single and not has_double:
+        # Only single quotes => enclose in double quotes
+        return f'"{s}"'
+    elif has_double and not has_single:
+        # Only double quotes => enclose in single quotes
+        return f"'{s}'"
+    elif has_single and has_double:
+        # Both => enclose in single quotes; escape each single quote with \'
+        escaped = s.replace("'", "\\'")
+        return f"'{escaped}'"
+    else:
+        # Neither => enclose in single quotes
+        return f"'{s}'"
