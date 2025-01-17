@@ -48,7 +48,7 @@ class Embedder:
         from sentence_transformers import SentenceTransformer
 
         # Load an extremely efficient local model for retrieval
-        model = SentenceTransformer("static-retrieval-mrl-en-v1", device="cpu")
+        model = SentenceTransformer("sentence-transformers/static-retrieval-mrl-en-v1", device="cpu")
 
         embedder = dspy.Embedder(model.encode)
         embeddings = embedder(["hello", "world"], batch_size=1)
