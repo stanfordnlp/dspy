@@ -220,6 +220,10 @@ h2.doc-heading {
     font-size: 0.75em;
 }
 
+.highlight .linenos {
+    font-size: 0.75em;
+}
+
 /* Copy button styling */
 .highlight .md-clipboard {
     color: var(--md-default-fg-color--lighter);
