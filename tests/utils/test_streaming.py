@@ -2,10 +2,10 @@ import pytest
 
 import dspy
 from dspy.utils.streaming import streaming_response
-from tests.test_utils.server import litellm_test_server
+from ..test_utils.server import litellm_test_server
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_streamify_yields_expected_response_chunks(litellm_test_server):
     api_base, _ = litellm_test_server
     lm = dspy.LM(
@@ -37,7 +37,7 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         assert last_chunk2.output_text == "Hello!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_streaming_response_yields_expected_response_chunks(litellm_test_server):
     api_base, _ = litellm_test_server
     lm = dspy.LM(

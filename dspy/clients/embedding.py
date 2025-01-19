@@ -40,7 +40,23 @@ class Embedder:
         assert embeddings.shape == (2, 1536)
         ```
 
-        Example 2: Using a custom function.
+        Example 2: Using any local embedding model, e.g. from https://huggingface.co/models?library=sentence-transformers.
+
+        ```python
+        # pip install sentence_transformers
+        import dspy
+        from sentence_transformers import SentenceTransformer
+
+        # Load an extremely efficient local model for retrieval
+        model = SentenceTransformer("sentence-transformers/static-retrieval-mrl-en-v1", device="cpu")
+
+        embedder = dspy.Embedder(model.encode)
+        embeddings = embedder(["hello", "world"], batch_size=1)
+
+        assert embeddings.shape == (2, 1024)
+        ```
+
+        Example 3: Using a custom function.
 
         ```python
         import dspy

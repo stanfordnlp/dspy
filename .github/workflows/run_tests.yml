@@ -8,7 +8,7 @@ on:
     types: [opened, synchronize, reopened]
 
 env:
-  POETRY_VERSION: "1.7.1"
+  POETRY_VERSION: "2.0.0"
 
 jobs:
   fix:
@@ -41,6 +41,20 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "Deno installed"
+
+      - name: Add Deno to PATH
+        run: echo "${HOME}/.deno/bin" >> $GITHUB_PATH
+
+      - name: Verify Deno installation
+        run: deno --version
+
       - name: Load cached Poetry installation
         id: cached-poetry
         uses: actions/cache@v3
@@ -48,13 +62,7 @@ jobs:
           path: ~/.local
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "poetry"
+        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
       - name: Install dependencies
         run: poetry install --no-interaction
       - name: Run lint with tests
@@ -78,14 +86,11 @@ jobs:
         with:
           path: ~/.local
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "poetry"
+      - name: Install Poetry
+        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
       - name: Build
         run: poetry build
       - name: Install built package
@@ -107,13 +112,10 @@ jobs:
         with:
           path: ~/.local
           key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "poetry"
+      - name: Install Poetry
+        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
       - name: Run setup.py build
         run: python setup.py build

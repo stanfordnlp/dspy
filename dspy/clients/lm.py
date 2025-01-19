@@ -123,6 +123,7 @@ class LM(BaseLM):
             timestamp=datetime.now().isoformat(),
             uuid=str(uuid.uuid4()),
             model=self.model,
+            response_model=response["model"],
             model_type=self.model_type,
         )
         self.history.append(entry)
@@ -132,11 +133,11 @@ class LM(BaseLM):
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.launch(self.model, launch_kwargs)
+        self.provider.launch(self, launch_kwargs)
 
     def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.kill(self.model, launch_kwargs)
+        self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,
@@ -261,9 +262,9 @@ def request_cache(maxsize: Optional[int] = None):
 
         def transform_value(value):
             if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.schema()
+                return value.model_json_schema()
             elif isinstance(value, pydantic.BaseModel):
-                return value.dict()
+                return value.model_dump()
             elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
                 return value.__code__.co_code.decode("utf-8")
             else:

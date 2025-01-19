@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import dspy
 from dspy.utils.dummies import DummyLM, dummy_rm
 from dspy.predict import react
+from pydantic import BaseModel
 
 
 # def test_example_no_tools():
@@ -124,15 +125,17 @@ from dspy.predict import react
 #     assert react.react[0].signature.instructions is not None
 #     assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")
 
+
 def test_tool_from_function():
     def foo(a: int, b: int) -> int:
         """Add two numbers."""
         return a + b
-    
+
     tool = react.Tool(foo)
     assert tool.name == "foo"
     assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": "int", "b": "int"}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
+
 
 def test_tool_from_class():
     class Foo:
@@ -146,4 +149,82 @@ def test_tool_from_class():
     tool = react.Tool(Foo("123").foo)
     assert tool.name == "foo"
     assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": "int", "b": "int"}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
+
+
+def test_tool_calling_with_pydantic_args():
+    class CalendarEvent(BaseModel):
+        name: str
+        date: str
+        participants: dict[str, str]
+
+    def write_invitation_letter(participant_name: str, event_info: CalendarEvent):
+        if participant_name not in event_info.participants:
+            return None
+        return f"It's my honor to invite {participant_name} to event {event_info.name} on {event_info.date}"
+
+    class InvitationSignature(dspy.Signature):
+        participant_name: str = dspy.InputField(desc="The name of the participant to invite")
+        event_info: CalendarEvent = dspy.InputField(desc="The information about the event")
+        invitation_letter: str = dspy.OutputField(desc="The invitation letter to be sent to the participant")
+
+    react = dspy.ReAct(InvitationSignature, tools=[write_invitation_letter])
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to write an invitation letter for Alice to the Science Fair event.",
+                "next_tool_name": "write_invitation_letter",
+                "next_tool_args": {
+                    "participant_name": "Alice",
+                    "event_info": {
+                        "name": "Science Fair",
+                        "date": "Friday",
+                        "participants": {"Alice": "female", "Bob": "male"},
+                    },
+                },
+            },
+            {
+                "next_thought": (
+                    "I have successfully written the invitation letter for Alice to the Science Fair. Now "
+                    "I can finish the task."
+                ),
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "This is a very rigorous reasoning process, trust me bro!",
+                "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
+            },
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(
+        participant_name="Alice",
+        event_info=CalendarEvent(
+            name="Science Fair",
+            date="Friday",
+            participants={"Alice": "female", "Bob": "male"},
+        ),
+    )
+    assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
+
+    expected_trajectory = {
+        "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
+        "tool_name_0": "write_invitation_letter",
+        "tool_args_0": {
+            "participant_name": "Alice",
+            "event_info": {
+                "name": "Science Fair",
+                "date": "Friday",
+                "participants": {"Alice": "female", "Bob": "male"},
+            },
+        },
+        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
+        "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
+        "tool_name_1": "finish",
+        "tool_args_1": {},
+        "observation_1": "Completed.",
+    }
+    assert outputs.trajectory == expected_trajectory

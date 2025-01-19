@@ -1,10 +1,9 @@
 import inspect
 from typing import Any, Callable, Literal, get_origin, get_type_hints
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 import dspy
-from dspy.adapters.json_adapter import get_annotation_name
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
@@ -16,13 +15,16 @@ class Tool:
         self.func = func
         self.name = name or getattr(func, "__name__", type(func).__name__)
         self.desc = desc or getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
-        self.args = {
-            k: v.schema()
-            if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel)
-            else get_annotation_name(v)
-            for k, v in (args or get_type_hints(annotations_func)).items()
-            if k != "return"
-        }
+        self.args = {}
+        self.arg_types = {}
+        for k, v in (args or get_type_hints(annotations_func)).items():
+            self.arg_types[k] = v
+            if k == "return":
+                continue
+            if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
+                self.args[k] = v.model_json_schema()
+            else:
+                self.args[k] = TypeAdapter(v).json_schema()
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
@@ -96,7 +98,14 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                parsed_tool_args = {}
+                for k, v in pred.next_tool_args.items():
+                    arg_type = self.tools[pred.next_tool_name].arg_types[k]
+                    if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(origin, BaseModel):
+                        parsed_tool_args[k] = arg_type.model_validate(v)
+                    else:
+                        parsed_tool_args[k] = v
+                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
