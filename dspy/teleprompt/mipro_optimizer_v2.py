@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import optuna
+from optuna.distributions import CategoricalDistribution
 
 import dspy
 from dspy.evaluate.evaluate import Evaluate
@@ -477,8 +478,19 @@ class MIPROv2(Teleprompter):
         minibatch_full_eval_steps: int,
         seed: int,
     ) -> Optional[Any]:
-        logger.info("Evaluating the default program...\n")
-        default_score = eval_candidate_program(len(valset), valset, program, evaluate, self.rng)
+
+        # Run optimization
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
+        logger.info(
+            "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
+        )
+
+        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
+        logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
+
+        # logger.info("Evaluating the default program...\n")
+        default_score, baseline_results = eval_candidate_program(len(valset), valset, program, evaluate, self.rng, return_all_scores=True)
         logger.info(f"Default program score: {default_score}\n")
 
         trial_logs = {}
@@ -500,11 +512,12 @@ class MIPROv2(Teleprompter):
 
         # Define the objective function
         def objective(trial):
-            nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data
+            nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data, minibatch_full_eval_steps
 
             trial_num = trial.number + 1
             if minibatch:
-                logger.info(f"== Minibatch Trial {trial_num} / {num_trials} ==")
+                adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
+                logger.info(f"== Trial {trial_num} / {adjusted_num_trials} - Minibatch ==")
             else:
                 logger.info(f"===== Trial {trial_num} / {num_trials} =====")
 
@@ -514,7 +527,7 @@ class MIPROv2(Teleprompter):
             candidate_program = program.deepcopy()
 
             # Choose instructions and demos, insert them into the program
-            chosen_params = self._select_and_insert_instructions_and_demos(
+            chosen_params, raw_chosen_params = self._select_and_insert_instructions_and_demos(
                 candidate_program,
                 instruction_candidates,
                 demo_candidates,
@@ -554,6 +567,7 @@ class MIPROv2(Teleprompter):
                     num_trials,
                     trial_logs,
                     trial_num,
+                    minibatch_full_eval_steps,
                     candidate_program,
                     total_eval_calls,
                 )
@@ -563,7 +577,7 @@ class MIPROv2(Teleprompter):
                 )
             categorical_key = ",".join(map(str, chosen_params))
             param_score_dict[categorical_key].append(
-                (score, candidate_program),
+                (score, candidate_program, raw_chosen_params),
             )
 
             # If minibatch, perform full evaluation at intervals
@@ -573,6 +587,8 @@ class MIPROv2(Teleprompter):
             ):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
+                    num_trials,
+                    minibatch_full_eval_steps,
                     param_score_dict,
                     fully_evaled_param_combos,
                     evaluate,
@@ -582,20 +598,28 @@ class MIPROv2(Teleprompter):
                     score_data,
                     best_score,
                     best_program,
+                    study,
+                    instruction_candidates,
+                    demo_candidates
                 )
-
+            
             return score
-
-        # Run optimization
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
-        logger.info(
-            "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
-        )
 
         sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
         study = optuna.create_study(direction="maximize", sampler=sampler)
-        study.optimize(objective, n_trials=num_trials)
+
+        default_params = {f"{i}_predictor_instruction": 0 for i in range(len(program.predictors()))}
+        if demo_candidates:
+            default_params.update({f"{i}_predictor_demos": 0 for i in range(len(program.predictors()))})
+
+        # Add default run as a baseline in optuna (TODO: figure out how to weight this by # of samples evaluated on)
+        trial = optuna.trial.create_trial(
+            params=default_params,
+            distributions= self._get_param_distributions(program, instruction_candidates, demo_candidates),
+            value=default_score,
+        )
+        study.add_trial(trial)
+        study.optimize(objective, n_trials=num_trials-1)
 
         # Attach logs to best program
         if best_program is not None and self.track_stats:
@@ -624,6 +648,7 @@ class MIPROv2(Teleprompter):
         num_trials,
         trial_logs,
         trial_num,
+        minibatch_full_eval_steps,
         candidate_program,
         total_eval_calls,
     ):
@@ -633,6 +658,9 @@ class MIPROv2(Teleprompter):
         trial_logs[trial_num]["mb_score"] = score
         trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
         trial_logs[trial_num]["mb_program"] = candidate_program.deepcopy()
+        
+        # Log adjusted num trials as total trial num
+        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
 
         logger.info(
             f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}."
@@ -642,7 +670,7 @@ class MIPROv2(Teleprompter):
         logger.info(f"Full eval scores so far: {trajectory}")
         logger.info(f"Best full score so far: {best_score}")
         logger.info(
-            f'{"="*len(f"== Minibatch Trial {trial.number+1} / {num_trials} ==")}\n\n'
+            f'{"="*len(f"== Trial {trial.number+1} / {adjusted_num_trials} - Minibatch Evaluation ==")}\n\n'
         )
 
     def _log_normal_eval(
@@ -670,6 +698,7 @@ class MIPROv2(Teleprompter):
         trial_num: int,
     ) -> List[str]:
         chosen_params = []
+        raw_chosen_params = {}
 
         for i, predictor in enumerate(candidate_program.predictors()):
             # Select instruction
@@ -683,7 +712,7 @@ class MIPROv2(Teleprompter):
             set_signature(predictor, updated_signature)
             trial_logs[trial_num][f"{i}_predictor_instruction"] = instruction_idx
             chosen_params.append(f"Predictor {i}: Instruction {instruction_idx}")
-
+            raw_chosen_params[f"{i}_predictor_instruction"] = instruction_idx
             # Select demos if available
             if demo_candidates:
                 demos_idx = trial.suggest_categorical(
@@ -692,12 +721,25 @@ class MIPROv2(Teleprompter):
                 predictor.demos = demo_candidates[i][demos_idx]
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
+                raw_chosen_params[f"{i}_predictor_demos"] = instruction_idx
 
-        return chosen_params
+        return chosen_params, raw_chosen_params
+
+    def _get_param_distributions(self, program, instruction_candidates, demo_candidates):
+        param_distributions = {}
+
+        for i in range(len(instruction_candidates)):
+            param_distributions[f"{i}_predictor_instruction"] = CategoricalDistribution(range(len(instruction_candidates[i])))
+            if demo_candidates:
+                param_distributions[f"{i}_predictor_demos"] = CategoricalDistribution(range(len(demo_candidates[i])))
+
+        return param_distributions
 
     def _perform_full_evaluation(
         self,
         trial_num: int,
+        num_trials: int,
+        minibatch_full_eval_steps: int,
         param_score_dict: Dict,
         fully_evaled_param_combos: Dict,
         evaluate: Evaluate,
@@ -707,11 +749,15 @@ class MIPROv2(Teleprompter):
         score_data,
         best_score: float,
         best_program: Any,
+        study: optuna.Study,
+        instruction_candidates: List,
+        demo_candidates: List,
     ):
-        logger.info(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====")
+        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
+        logger.info(f"===== Trial {trial_num+1} /{adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully
-        highest_mean_program, mean_score, combo_key = (
+        highest_mean_program, mean_score, combo_key, params = (
             get_program_with_highest_avg_score(
                 param_score_dict, fully_evaled_param_combos
             )
@@ -723,6 +769,14 @@ class MIPROv2(Teleprompter):
             len(valset), valset, highest_mean_program, evaluate, self.rng
         )
         score_data.append((full_eval_score, highest_mean_program, True))
+
+        # Log full eval as a trial so that optuna can learn from the new results
+        trial = optuna.trial.create_trial(
+            params=params,
+            distributions= self._get_param_distributions(best_program, instruction_candidates, demo_candidates),
+            value=full_eval_score,
+        )
+        study.add_trial(trial)
 
         # Log full evaluation results
         fully_evaled_param_combos[combo_key] = {
