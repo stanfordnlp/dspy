@@ -19,6 +19,20 @@ WeaviateRM(
 )
 ```
 
+## Using Multitenancy
+If your Weaviate instance is tenant-aware, you can provide a tenant_id in the WeaviateRM constructor or as a keyword argument:
+
+```python
+retriever_model = WeaviateRM(
+    weaviate_collection_name="<WEAVIATE_COLLECTION>",
+    weaviate_client=weaviate_client,
+    tenant_id="tenant123"
+)
+
+results = retriever_model("Your query here", tenant_id="tenantXYZ")
+```
+When tenant_id is specified, this will scope all retrieval requests to the tenant ID provided.
+
 ## Under the Hood
 
 `forward(self, query_or_queries: Union[str, List[str]], k: Optional[int] = None, **kwargs) -> dspy.Prediction`

@@ -51,11 +51,13 @@ class WeaviateRM(dspy.Retrieve):
         weaviate_client: Union[weaviate.WeaviateClient, weaviate.Client],
         weaviate_collection_text_key: Optional[str] = "content",
         k: int = 3,
+        tenant_id: Optional[str] = None,
     ):
         self._weaviate_collection_name = weaviate_collection_name
         self._weaviate_client = weaviate_client
         self._weaviate_collection = self._weaviate_client.collections.get(self._weaviate_collection_name)
         self._weaviate_collection_text_key = weaviate_collection_text_key
+        self._tenant_id = tenant_id
 
         # Check the type of weaviate_client (this is added to support v3 and v4)
         if hasattr(weaviate_client, "collections"):
@@ -82,26 +84,23 @@ class WeaviateRM(dspy.Retrieve):
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]
         passages, parsed_results = [], []
+        tenant = kwargs.pop("tenant_id", self._tenant_id)
         for query in queries:
             if self._client_type == "WeaviateClient":
-                results = self._weaviate_collection.query.hybrid(
-                    query=query,
-                    limit=k,
-                    **kwargs,
-                )
+                if tenant:
+                    results = self._weaviate_collection.query.tenant(tenant).hybrid(query=query, limit=k, **kwargs)
+                else:
+                    results = self._weaviate_collection.query.hybrid(query=query, limit=k, **kwargs)
 
                 parsed_results = [result.properties[self._weaviate_collection_text_key] for result in results.objects]
 
             elif self._client_type == "Client":
-                results = (
-                    self._weaviate_client.query.get(
-                        self._weaviate_collection_name,
-                        [self._weaviate_collection_text_key],
+                q = self._weaviate_client.query.get(
+                        self._weaviate_collection_name, [self._weaviate_collection_text_key]
                     )
-                    .with_hybrid(query=query)
-                    .with_limit(k)
-                    .do()
-                )
+                if tenant:
+                    q = q.with_tenant(tenant)
+                results = q.with_hybrid(query=query).with_limit(k).do()
 
                 results = results["data"]["Get"][self._weaviate_collection_name]
                 parsed_results = [result[self._weaviate_collection_text_key] for result in results]
