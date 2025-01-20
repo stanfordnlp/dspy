@@ -490,7 +490,6 @@ class MIPROv2(Teleprompter):
         adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
-        # logger.info("Evaluating the default program...\n")
         default_score, baseline_results = eval_candidate_program(len(valset), valset, program, evaluate, self.rng, return_all_scores=True)
         logger.info(f"Default program score: {default_score}\n")
 
@@ -513,7 +512,7 @@ class MIPROv2(Teleprompter):
 
         # Define the objective function
         def objective(trial):
-            nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data, minibatch_full_eval_steps
+            nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data
 
             trial_num = trial.number + 1
             if minibatch:
