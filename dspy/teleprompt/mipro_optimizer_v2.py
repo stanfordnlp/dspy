@@ -544,7 +544,7 @@ class MIPROv2(Teleprompter):
             # Evaluate the candidate program (on minibatch if minibatch=True)
             batch_size = minibatch_size if minibatch else len(valset)
             score = eval_candidate_program(
-                batch_size, valset, candidate_program, evaluate, self.rng
+               batch_size, valset, candidate_program, evaluate, self.rng
             )
             total_eval_calls += batch_size
 
@@ -581,9 +581,11 @@ class MIPROv2(Teleprompter):
             )
 
             # If minibatch, perform full evaluation at intervals
+            adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
+
             if minibatch and (
                 (trial_num % minibatch_full_eval_steps == 0)
-                or (trial_num == num_trials)
+                or (trial_num == (adjusted_num_trials -1))
             ):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
