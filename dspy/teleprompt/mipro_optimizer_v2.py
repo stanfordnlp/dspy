@@ -486,7 +486,8 @@ class MIPROv2(Teleprompter):
             "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
         )
 
-        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
+        # Compute the adjusted total trials that we will run (including full evals)
+        adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
         # logger.info("Evaluating the default program...\n")
@@ -516,7 +517,6 @@ class MIPROv2(Teleprompter):
 
             trial_num = trial.number + 1
             if minibatch:
-                adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
                 logger.info(f"== Trial {trial_num} / {adjusted_num_trials} - Minibatch ==")
             else:
                 logger.info(f"===== Trial {trial_num} / {num_trials} =====")
@@ -564,10 +564,9 @@ class MIPROv2(Teleprompter):
                     chosen_params,
                     score_data,
                     trial,
-                    num_trials,
+                    adjusted_num_trials,
                     trial_logs,
                     trial_num,
-                    minibatch_full_eval_steps,
                     candidate_program,
                     total_eval_calls,
                 )
@@ -580,17 +579,14 @@ class MIPROv2(Teleprompter):
                 (score, candidate_program, raw_chosen_params),
             )
 
-            # If minibatch, perform full evaluation at intervals
-            adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
-
+            # If minibatch, perform full evaluation at intervals (and at the very end)
             if minibatch and (
                 (trial_num % minibatch_full_eval_steps == 0)
                 or (trial_num == (adjusted_num_trials -1))
             ):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
-                    num_trials,
-                    minibatch_full_eval_steps,
+                    adjusted_num_trials,
                     param_score_dict,
                     fully_evaled_param_combos,
                     evaluate,
@@ -647,10 +643,9 @@ class MIPROv2(Teleprompter):
         chosen_params,
         score_data,
         trial,
-        num_trials,
+        adjusted_num_trials,
         trial_logs,
         trial_num,
-        minibatch_full_eval_steps,
         candidate_program,
         total_eval_calls,
     ):
@@ -661,9 +656,6 @@ class MIPROv2(Teleprompter):
         trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
         trial_logs[trial_num]["mb_program"] = candidate_program.deepcopy()
         
-        # Log adjusted num trials as total trial num
-        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
-
         logger.info(
             f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}."
         )
@@ -740,8 +732,7 @@ class MIPROv2(Teleprompter):
     def _perform_full_evaluation(
         self,
         trial_num: int,
-        num_trials: int,
-        minibatch_full_eval_steps: int,
+        adjusted_num_trials: int,
         param_score_dict: Dict,
         fully_evaled_param_combos: Dict,
         evaluate: Evaluate,
@@ -755,7 +746,6 @@ class MIPROv2(Teleprompter):
         instruction_candidates: List,
         demo_candidates: List,
     ):
-        adjusted_num_trials = num_trials + num_trials // minibatch_full_eval_steps + 1
         logger.info(f"===== Trial {trial_num+1} /{adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully
