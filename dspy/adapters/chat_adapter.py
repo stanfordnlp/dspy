@@ -316,7 +316,7 @@ def prepare_instructions(signature: SignatureMeta):
                 f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
             )
         else:
-            desc = "must be pareseable according to the following JSON schema: "
+            desc = "must be parseable according to the following JSON schema: "
             desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
