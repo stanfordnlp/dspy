@@ -54,22 +54,42 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         if use_async:
             async def _async_call():
-                # Await any async arguments
-                async_args = []
-                for arg in args:
-                    if is_async_arg(arg):
-                        async_args.append(await arg)
-                    else:
-                        async_args.append(arg)
+                # Process args concurrently
+                args_coros = []
+                args_indices = []
+                resolved_args = list(args)  # Create modifiable copy
                 
+                # Identify async args and their positions
+                for idx, arg in enumerate(resolved_args):
+                    if is_async_arg(arg):
+                        args_coros.append(arg)
+                        args_indices.append(idx)
+                
+                # Resolve async args concurrently
+                if args_coros:
+                    args_results = await asyncio.gather(*args_coros)
+                    for i, result in zip(args_indices, args_results):
+                        resolved_args[i] = result  # Replace with resolved values
+                
+                # Process kwargs concurrently
                 async_kwargs = {}
+                kwarg_coros = []
+                kwarg_keys = []
+                
+                # Separate async and sync kwargs
                 for k, v in kwargs.items():
                     if is_async_arg(v):
-                        async_kwargs[k] = await v
+                        kwarg_coros.append(v)
+                        kwarg_keys.append(k)
                     else:
                         async_kwargs[k] = v
                 
-                return await self.aforward(*async_args, **async_kwargs)
+                # Resolve async kwargs concurrently
+                if kwarg_coros:
+                    kwarg_results = await asyncio.gather(*kwarg_coros)
+                    async_kwargs.update(zip(kwarg_keys, kwarg_results))
+                
+                return await self.aforward(*resolved_args, **async_kwargs)
             return _async_call()
         
         # Use sync execution
