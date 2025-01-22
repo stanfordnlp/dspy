@@ -3,6 +3,16 @@ import inspect
 import asyncio
 from typing import Any, Union, Awaitable, TypeVar, Optional, List, Callable
 
+# Marker for async arguments
+ASYNC_MARKER = object()
+
+def is_async_arg(arg):
+    """Check if an argument requires async resolution."""
+    return (arg is ASYNC_MARKER or 
+            inspect.iscoroutine(arg) or 
+            inspect.isawaitable(arg) or 
+            isinstance(arg, asyncio.Future))
+
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
@@ -37,11 +47,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Returns:
             Either the direct result (sync) or an awaitable of the result (async)
         """
-        def is_async_arg(arg):
-            return (inspect.iscoroutine(arg) or 
-                   inspect.isawaitable(arg) or 
-                   isinstance(arg, asyncio.Future))
-
         # Check if we should use async execution
         use_async = (
             # If any argument is async
@@ -54,42 +59,39 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         if use_async:
             async def _async_call():
-                # Process args concurrently
-                args_coros = []
-                args_indices = []
-                resolved_args = list(args)  # Create modifiable copy
-                
-                # Identify async args and their positions
-                for idx, arg in enumerate(resolved_args):
-                    if is_async_arg(arg):
-                        args_coros.append(arg)
-                        args_indices.append(idx)
-                
-                # Resolve async args concurrently
-                if args_coros:
-                    args_results = await asyncio.gather(*args_coros)
-                    for i, result in zip(args_indices, args_results):
-                        resolved_args[i] = result  # Replace with resolved values
-                
-                # Process kwargs concurrently
-                async_kwargs = {}
-                kwarg_coros = []
-                kwarg_keys = []
-                
-                # Separate async and sync kwargs
-                for k, v in kwargs.items():
-                    if is_async_arg(v):
-                        kwarg_coros.append(v)
-                        kwarg_keys.append(k)
+                try:
+                    # Collect ALL async values first
+                    all_async = [
+                        arg for arg in args if is_async_arg(arg)
+                    ] + [
+                        v for v in kwargs.values() if is_async_arg(v)
+                    ]
+                    
+                    # Resolve ALL concurrently
+                    if all_async:
+                        resolved = await asyncio.gather(*all_async)
                     else:
-                        async_kwargs[k] = v
-                
-                # Resolve async kwargs concurrently
-                if kwarg_coros:
-                    kwarg_results = await asyncio.gather(*kwarg_coros)
-                    async_kwargs.update(zip(kwarg_keys, kwarg_results))
-                
-                return await self.aforward(*resolved_args, **async_kwargs)
+                        resolved = []
+                    
+                    # Rebuild args/kwargs with resolved values
+                    resolved_iter = iter(resolved)
+                    new_args = [next(resolved_iter) if is_async_arg(arg) else arg for arg in args]
+                    new_kwargs = {k: next(resolved_iter) if is_async_arg(v) else v for k, v in kwargs.items()}
+                    
+                    # Validate all async values were resolved
+                    for arg in new_args:
+                        if arg is ASYNC_MARKER:
+                            raise ValueError("Unresolved async argument in args")
+                    for v in new_kwargs.values():
+                        if v is ASYNC_MARKER:
+                            raise ValueError("Unresolved async argument in kwargs")
+                    
+                    return await self.aforward(*new_args, **new_kwargs)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Async execution failed in {self.__class__.__name__} "
+                        f"with args={args} kwargs={kwargs}"
+                    ) from e
             return _async_call()
         
         # Use sync execution
