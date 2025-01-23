@@ -58,10 +58,21 @@ class JSONAdapter(Adapter):
         values = []
 
         for output in outputs:
-            value = self.parse(signature, output)
-            assert set(value.keys()) == set(
-                signature.output_fields.keys()
-            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
+            if isinstance(output, dict):
+                output_text = output["text"]
+            else:
+                output_text = output
+
+            if output_text:
+                # Output text, e.g., response["choices"][0]["message"]["content"] can be None when tool calls are used.
+                value = self.parse(signature, output_text)
+                if not set(value.keys()) == set(signature.output_fields.keys()):
+                    raise ValueError(f"Expected {signature.output_fields.keys()} but got {value.keys()}")
+            else:
+                value = {}
+
+            if isinstance(output, dict) and "tool_calls" in output:
+                value["tool_calls"] = output["output_tool_calls"]
             values.append(value)
 
         return values

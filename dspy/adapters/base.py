@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from dspy.utils.callback import with_callbacks
 
+
 class Adapter(ABC):
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
@@ -22,19 +23,26 @@ class Adapter(ABC):
 
         try:
             for output in outputs:
-                output_logprobs = None
-
                 if isinstance(output, dict):
-                    output, output_logprobs = output["text"], output["logprobs"]
+                    output_text = output["text"]
+                else:
+                    output_text = output
 
-                value = self.parse(signature, output)
+                if output_text:
+                    # Output text, e.g., response["choices"][0]["message"]["content"] can be None when tool calls are
+                    # used.
+                    value = self.parse(signature, output_text)
+                    if not set(value.keys()) == set(signature.output_fields.keys()):
+                        raise ValueError(f"Expected {signature.output_fields.keys()} but got {value.keys()}")
+                else:
+                    value = {}
 
-                assert set(value.keys()) == set(signature.output_fields.keys()), \
-                    f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-                
-                if output_logprobs is not None:
-                    value["logprobs"] = output_logprobs
-                
+                if isinstance(output, dict) and "logprobs" in output:
+                    value["logprobs"] = output["logprobs"]
+
+                if isinstance(output, dict) and "tool_calls" in output:
+                    value["tool_calls"] = output["tool_calls"]
+
                 values.append(value)
 
             return values

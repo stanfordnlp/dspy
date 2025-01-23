@@ -9,6 +9,7 @@ import ujson
 import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
+import os
 
 
 def test_initialization_with_string_signature():
@@ -403,3 +404,22 @@ def test_load_state_chaining():
     new_instance = Predict("question -> answer").load_state(state)
     assert new_instance is not None
     assert new_instance.demos == original.demos
+
+@pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API key is not set")
+def test_predict_tool_calls_are_returned():
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                },
+            },
+        }
+    ]
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        predict = Predict("question -> answer")
+        outputs = predict(question="what's the weather in Paris?", tools=tools)
+        assert "tool_calls" in outputs
