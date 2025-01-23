@@ -106,6 +106,9 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
+        if "tools" in kwargs:
+            config["tools"]  = kwargs.pop("tools")
+
         import dspy
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)

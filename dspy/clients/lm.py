@@ -108,18 +108,30 @@ class LM(BaseLM):
             request=dict(model=self.model, messages=messages, tools=tools, **kwargs),
             num_retries=self.num_retries,
         )
+
+        output_text = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        output_logprobs = None
+        output_tool_calls = None
         if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response["choices"]
+            output_logprobs = [c.logprobs if hasattr(c, "logprobs") else c["logprobs"] for c in response["choices"]]
+        if tools:
+            output_tool_calls = [
+                c.message.tool_calls if hasattr(c, "message") else c["tool_calls"] for c in response["choices"]
             ]
-        elif tools:
-            outputs = [{"text": c.message.content, "tool_calls": c.message.tool_calls} for c in response["choices"]]
+
+        outputs = []
+        if output_logprobs is None and output_tool_calls is None:
+            # If no logprobs or tool_calls are provided, return the text only as a list instead of a dict for
+            # backward compatibility.
+            outputs = output_text
         else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+            for i, text in enumerate(output_text):
+                output = {"text": text}
+                if kwargs.get("logprobs"):
+                    output["logprobs"] = output_logprobs[i]
+                if tools:
+                    output["tool_calls"] = output_tool_calls[i]
+                outputs.append(output)
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
