@@ -88,10 +88,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                     
                     return await self.aforward(*new_args, **new_kwargs)
                 except Exception as e:
-                    raise RuntimeError(
-                        f"Async execution failed in {self.__class__.__name__} "
-                        f"with args={args} kwargs={kwargs}"
-                    ) from e
+                    raise e
             return _async_call()
         
         # Use sync execution

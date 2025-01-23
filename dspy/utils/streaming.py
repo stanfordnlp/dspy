@@ -37,25 +37,48 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
         >>>         print(value)  # Print each streamed value incrementally
     """
     import dspy
+    import inspect
 
     if not iscoroutinefunction(program):
         program = asyncify(program)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with dspy.settings.context(send_stream=stream):
-            prediction = await program(*args, **kwargs)
+        try:
+            with dspy.settings.context(send_stream=stream):
+                # Get the raw output from the program
+                output = program(*args, **kwargs)
+                
+                # Handle both async and sync outputs
+                if inspect.isawaitable(output):
+                    output = await output
 
-        await stream.send(prediction)
+                # If output is a generator/async generator, stream its items
+                if inspect.isgenerator(output) or inspect.isasyncgen(output):
+                    async for chunk in output:
+                        await stream.send(chunk)
+                else:
+                    # For single predictions, send as a single chunk
+                    await stream.send(output)
+                
+                # Send completion marker
+                await stream.send(None)
+        finally:
+            await stream.aclose()
 
     async def streamer(*args, **kwargs):
         send_stream, receive_stream = create_memory_object_stream(16)
-        async with create_task_group() as tg, send_stream, receive_stream:
+        async with create_task_group() as tg:
             tg.start_soon(generator, args, kwargs, send_stream)
+            
+            try:
+                async for value in receive_stream:
+                    if value is None:  # Completion marker
+                        break
+                    yield value
+            finally:
+                await receive_stream.aclose()
 
-            async for value in receive_stream:
-                yield value
-                if isinstance(value, Prediction):
-                    return
+    return streamer
 
     return streamer
 
