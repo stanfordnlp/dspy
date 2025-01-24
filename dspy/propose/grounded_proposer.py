@@ -326,6 +326,7 @@ class GroundedProposer(Proposer):
             for demo_set_i in range(num_demos):
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
+                selected_tip = None
                 if self.set_tip_randomly:
                     if self.verbose: print("Using a randomly generated configuration for our grounded proposer.")
                     # Randomly select the tip
