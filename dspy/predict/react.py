@@ -1,34 +1,12 @@
-import inspect
-from typing import Any, Callable, Literal, get_origin, get_type_hints
+from typing import Any, Callable, Literal, get_origin
 
-from pydantic import BaseModel, TypeAdapter
+from litellm import supports_function_calling
+from pydantic import BaseModel
 
 import dspy
 from dspy.primitives.program import Module
+from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.callback import with_callbacks
-
-
-class Tool:
-    def __init__(self, func: Callable, name: str = None, desc: str = None, args: dict[str, Any] = None):
-        annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
-        self.func = func
-        self.name = name or getattr(func, "__name__", type(func).__name__)
-        self.desc = desc or getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
-        self.args = {}
-        self.arg_types = {}
-        for k, v in (args or get_type_hints(annotations_func)).items():
-            self.arg_types[k] = v
-            if k == "return":
-                continue
-            if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
-                self.args[k] = v.model_json_schema()
-            else:
-                self.args[k] = TypeAdapter(v).json_schema()
-
-    @with_callbacks
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
 
 
 class ReAct(Module):
@@ -40,7 +18,7 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        tools = [t if isinstance(t, Tool) or hasattr(t, "input_variable") else Tool(t) for t in tools]
+        tools = [t if isinstance(t, Tool) else Tool.from_function(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
@@ -67,7 +45,7 @@ class ReAct(Module):
             desc += f" It takes arguments {args} in JSON format."
             instr.append(f"({idx+1}) {tool.name}{desc}")
 
-        react_signature = (
+        custom_react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
@@ -75,23 +53,30 @@ class ReAct(Module):
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
 
+        native_react_signature = dspy.Signature(
+            {**signature.input_fields, **signature.output_fields}, signature.instructions
+        ).append("trajectory", dspy.InputField(), type_=str)
+
         fallback_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields}, signature.instructions
         ).append("trajectory", dspy.InputField(), type_=str)
 
         self.tools = tools
-        self.react = dspy.Predict(react_signature)
+        self.react_with_custom_tool_calling = dspy.Predict(native_react_signature)
+        self.react_with_native_tool_calling = dspy.PredictWithToolCalling(custom_react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
 
-    def forward(self, **input_args):
-        def format(trajectory: dict[str, Any], last_iteration: bool):
-            adapter = dspy.settings.adapter or dspy.ChatAdapter()
-            trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
-            return adapter.format_fields(trajectory_signature, trajectory, role="user")
+    def _format_trajectory(self, trajectory: dict[str, Any], last_iteration: bool):
+        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
+        return adapter.format_fields(trajectory_signature, trajectory, role="user")
 
+    def _forward_with_custom_tool_calling(self, **input_args):
         trajectory = {}
         for idx in range(self.max_iters):
-            pred = self.react(**input_args, trajectory=format(trajectory, last_iteration=(idx == self.max_iters - 1)))
+            pred = self.react(
+                **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
+            )
 
             trajectory[f"thought_{idx}"] = pred.next_thought
             trajectory[f"tool_name_{idx}"] = pred.next_tool_name
@@ -112,8 +97,18 @@ class ReAct(Module):
             if pred.next_tool_name == "finish":
                 break
 
-        extract = self.extract(**input_args, trajectory=format(trajectory, last_iteration=False))
+        extract = self.extract(**input_args, trajectory=self._format_trajectory(trajectory, last_iteration=False))
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def _forward_with_litellm_tool_calling(self, **input_args):
+        tools = [tool.convert_to_litellm_tool_format() for tool in self.tools]
+
+    def forward(self, **input_args):
+        lm = dspy.settings.lm
+        if supports_function_calling(lm):
+            return self._forward_with_litellm_tool_calling(**input_args)
+        else:
+            return self._forward_with_custom_tool_calling(**input_args)
 
 
 """
