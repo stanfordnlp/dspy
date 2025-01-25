@@ -20,12 +20,12 @@ class ReAct(Module):
 
         tools = [t if isinstance(t, Tool) else Tool.from_function(t) for t in tools]
 
-        self.tools_in_litellm_format = {tool.name: tool.convert_to_litellm_tool_format() for tool in tools}
+        self.tools_in_litellm_format = [tool.convert_to_litellm_tool_format() for tool in tools]
         self.tools = {tool.name: tool for tool in tools}
         self.tools["finish"] = Tool(
             name="finish",
             desc="Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
-            args={},
+            parameters={},
             func=lambda **kwargs: "Completed.",
         )
 
@@ -53,8 +53,8 @@ class ReAct(Module):
             ]
         )
 
-        for idx, tool in enumerate(tools.values()):
-            args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
+        for idx, tool in enumerate(self.tools.values()):
+            args = getattr(tool, "parameters", [])
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
             instruction_custom_tool_calling.append(f"({idx+1}) {tool.name}{desc}")
@@ -63,16 +63,16 @@ class ReAct(Module):
             dspy.Signature({**signature.input_fields}, "\n".join(instruction_custom_tool_calling))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(self.tools.keys())])
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
         native_react_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields}, signature.instructions
         ).append("trajectory", dspy.InputField(), type_=str)
 
-        self.react_with_custom_tool_calling = dspy.Predict(native_react_signature)
+        self.react_with_custom_tool_calling = dspy.Predict(custom_react_signature)
         self.react_with_native_tool_calling = dspy.PredictWithTools(
-            custom_react_signature, tools=self.tools_in_litellm_format
+            native_react_signature, tools=self.tools_in_litellm_format
         )
 
         fallback_signature = dspy.Signature(
@@ -88,7 +88,7 @@ class ReAct(Module):
     def _forward_with_custom_tool_calling(self, **input_args):
         trajectory = {}
         for idx in range(self.max_iters):
-            pred = self.react(
+            pred = self.react_with_custom_tool_calling(
                 **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
             )
 
@@ -121,17 +121,20 @@ class ReAct(Module):
                 **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
             )
 
-            if "tool_calls" not in pred:
+            if not getattr(pred, "tool_calls", None):
                 # No more tools are needed, which means LLM decides that we have reached the final outputs.
-                return dspy.Prediction(trajectory=trajectory, **pred)
+                # Remove `tool_calls` to denoise.
+                pred_dict = pred.toDict()
+                del pred_dict["tool_calls"]
+                return dspy.Prediction(trajectory=trajectory, **pred_dict)
 
             trajectory[f"tool_name_{idx}"] = []
             trajectory[f"tool_args_{idx}"] = []
             trajectory[f"observation_{idx}"] = []
 
             for tool_call in pred.tool_calls:
-                tool_name = tool_call["function"]["name"]
-                tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_name = tool_call.function["name"]
+                tool_args = json.loads(tool_call.function["arguments"])
                 trajectory[f"tool_name_{idx}"].append(tool_name)
                 trajectory[f"tool_args_{idx}"].append(tool_args)
 
@@ -145,7 +148,7 @@ class ReAct(Module):
 
     def forward(self, **input_args):
         lm = dspy.settings.lm
-        if supports_function_calling(lm):
+        if supports_function_calling(lm.model):
             return self._forward_with_litellm_tool_calling(**input_args)
         else:
             return self._forward_with_custom_tool_calling(**input_args)

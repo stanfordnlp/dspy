@@ -6,6 +6,7 @@ class PredictWithTools(Predict):
 
     This class is a thin wrapper around the Predict class that explicit has tool calling support.
     """
+
     def __init__(self, signature, callbacks=None, tools=None, tool_choice="auto", **configs):
         """Initialize the PredictWithTools class.
 
