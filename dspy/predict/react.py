@@ -1,7 +1,7 @@
-from typing import Any, Callable, Literal, get_origin
+import json
+from typing import Any, Callable, Literal
 
 from litellm import supports_function_calling
-from pydantic import BaseModel
 
 import dspy
 from dspy.primitives.program import Module
@@ -19,51 +19,65 @@ class ReAct(Module):
         self.max_iters = max_iters
 
         tools = [t if isinstance(t, Tool) else Tool.from_function(t) for t in tools]
-        tools = {tool.name: tool for tool in tools}
+
+        self.tools_in_litellm_format = {tool.name: tool.convert_to_litellm_tool_format() for tool in tools}
+        self.tools = {tool.name: tool for tool in tools}
+        self.tools["finish"] = Tool(
+            name="finish",
+            desc="Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
+            args={},
+            func=lambda **kwargs: "Completed.",
+        )
 
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
         outputs = ", ".join([f"`{k}`" for k in signature.output_fields.keys()])
-        instr = [f"{signature.instructions}\n"] if signature.instructions else []
+        instruction = [f"{signature.instructions}\n"] if signature.instructions else []
 
-        instr.extend(
+        instruction_custom_tool_calling = list(instruction)
+        instruction_native_tool_calling = list(instruction)
+
+        instruction_custom_tool_calling.extend(
             [
                 f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
                 "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.\n",
                 "Thought can reason about the current situation, and Tool Name can be the following types:\n",
             ]
         )
-
-        finish_desc = (
-            f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete."
+        instruction_native_tool_calling.extend(
+            [
+                f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
+                "To do this, you will be given a list of tools, and you will need to think about which tool to use "
+                "next, and what arguments to pass to it.\n",
+                "You will then receive an observation, which is the result of the tool call.\n",
+                "You will then repeat this process until you decide no more tools are needed and provide the final outputs.\n",
+            ]
         )
-        finish_args = {}  # k: v.annotation for k, v in signature.output_fields.items()}
-        tools["finish"] = Tool(func=lambda **kwargs: "Completed.", name="finish", desc=finish_desc, args=finish_args)
 
         for idx, tool in enumerate(tools.values()):
             args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
-            instr.append(f"({idx+1}) {tool.name}{desc}")
+            instruction_custom_tool_calling.append(f"({idx+1}) {tool.name}{desc}")
 
         custom_react_signature = (
-            dspy.Signature({**signature.input_fields}, "\n".join(instr))
+            dspy.Signature({**signature.input_fields}, "\n".join(instruction_custom_tool_calling))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
             .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
-
         native_react_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields}, signature.instructions
         ).append("trajectory", dspy.InputField(), type_=str)
 
+        self.react_with_custom_tool_calling = dspy.Predict(native_react_signature)
+        self.react_with_native_tool_calling = dspy.PredictWithTools(
+            custom_react_signature, tools=self.tools_in_litellm_format
+        )
+
         fallback_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields}, signature.instructions
         ).append("trajectory", dspy.InputField(), type_=str)
-
-        self.tools = tools
-        self.react_with_custom_tool_calling = dspy.Predict(native_react_signature)
-        self.react_with_native_tool_calling = dspy.PredictWithToolCalling(custom_react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
 
     def _format_trajectory(self, trajectory: dict[str, Any], last_iteration: bool):
@@ -101,7 +115,33 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _forward_with_litellm_tool_calling(self, **input_args):
-        tools = [tool.convert_to_litellm_tool_format() for tool in self.tools]
+        trajectory = {}
+        for idx in range(self.max_iters):
+            pred = self.react_with_native_tool_calling(
+                **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
+            )
+
+            if "tool_calls" not in pred:
+                # No more tools are needed, which means LLM decides that we have reached the final outputs.
+                return dspy.Prediction(trajectory=trajectory, **pred)
+
+            trajectory[f"tool_name_{idx}"] = []
+            trajectory[f"tool_args_{idx}"] = []
+            trajectory[f"observation_{idx}"] = []
+
+            for tool_call in pred.tool_calls:
+                tool_name = tool_call["function"]["name"]
+                tool_args = json.loads(tool_call["function"]["arguments"])
+                trajectory[f"tool_name_{idx}"].append(tool_name)
+                trajectory[f"tool_args_{idx}"].append(tool_args)
+
+                try:
+                    trajectory[f"observation_{idx}"].append(self.tools[tool_name](**tool_args))
+                except Exception as e:
+                    trajectory[f"observation_{idx}"].append(f"Failed to execute: {e}")
+
+        extract = self.extract(**input_args, trajectory=self._format_trajectory(trajectory, last_iteration=False))
+        return dspy.Prediction(trajectory=trajectory, **extract)
 
     def forward(self, **input_args):
         lm = dspy.settings.lm
