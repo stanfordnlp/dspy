@@ -1,3 +1,4 @@
+import json
 import random
 
 from pydantic import BaseModel
@@ -80,7 +81,7 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
@@ -116,13 +117,27 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         if "tools" in kwargs:
-            config["tools"]  = kwargs.pop("tools")
+            config["tools"] = kwargs.pop("tools")
 
         import dspy
+
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
+
+        if "tools" in config:
+            pred_dict = pred.toDict()
+            tool_calls = pred_dict.pop("tool_calls", None)
+            if tool_calls is None:
+                return Prediction(**pred_dict)
+            parsed_tool_calls = []
+            for tool_call in tool_calls:
+                tool_name = tool_call.function["name"]
+                tool_args = json.loads(tool_call.function["arguments"])
+                parsed_tool_calls.append(dict(tool_name=tool_name, tool_args=tool_args))
+            pred_dict["tool_calls"] = parsed_tool_calls
+            pred = Prediction(**pred_dict)
 
         if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
             trace = dspy.settings.trace

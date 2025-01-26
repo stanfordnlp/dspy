@@ -1,4 +1,3 @@
-import json
 from typing import Any, Callable, Literal
 
 from litellm import supports_function_calling
@@ -121,20 +120,18 @@ class ReAct(Module):
                 **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
             )
 
-            if not getattr(pred, "tool_calls", None):
+            if not hasattr(pred, "tool_calls"):
                 # No more tools are needed, which means LLM decides that we have reached the final outputs.
                 # Remove `tool_calls` to denoise.
-                pred_dict = pred.toDict()
-                del pred_dict["tool_calls"]
-                return dspy.Prediction(trajectory=trajectory, **pred_dict)
+                return dspy.Prediction(trajectory=trajectory, **pred)
 
             trajectory[f"tool_name_{idx}"] = []
             trajectory[f"tool_args_{idx}"] = []
             trajectory[f"observation_{idx}"] = []
 
             for tool_call in pred.tool_calls:
-                tool_name = tool_call.function["name"]
-                tool_args = json.loads(tool_call.function["arguments"])
+                tool_name = tool_call["tool_name"]
+                tool_args = tool_call["tool_args"]
                 trajectory[f"tool_name_{idx}"].append(tool_name)
                 trajectory[f"tool_args_{idx}"].append(tool_args)
 
