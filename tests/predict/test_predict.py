@@ -87,6 +87,65 @@ def test_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["content"] == original_instance.demos[0].content
 
+def test_typed_demos_after_dump_and_load_state():
+    class Item(pydantic.BaseModel):
+        name: str
+        quantity: int
+
+    class InventorySignature(dspy.Signature):
+        """Handle inventory items and their translations."""
+        items: list[Item] = dspy.InputField()
+        language: str = dspy.InputField()
+        translated_items: list[Item] = dspy.OutputField()
+        total_quantity: int = dspy.OutputField()
+
+    original_instance = Predict(InventorySignature)
+    original_instance.demos = [
+        dspy.Example(
+            items=[
+                Item(name="apple", quantity=5),
+                Item(name="banana", quantity=3)
+            ],
+            language="SPANISH",
+            translated_items=[
+                Item(name="manzana", quantity=5),
+                Item(name="plátano", quantity=3)
+            ],
+            total_quantity=8
+        ).with_inputs("items", "language"),
+    ]
+
+    # Test dump_state
+    dumped_state = original_instance.dump_state()
+    assert len(dumped_state["demos"]) == len(original_instance.demos)
+    # Verify the input items were properly serialized
+    assert isinstance(dumped_state["demos"][0]["items"], list)
+    assert len(dumped_state["demos"][0]["items"]) == 2
+    assert dumped_state["demos"][0]["items"][0] == {"name": "apple", "quantity": 5}
+
+    # Test serialization/deserialization
+    saved_state = ujson.dumps(dumped_state)
+    loaded_state = ujson.loads(saved_state)
+
+    # Test load_state
+    new_instance = Predict(InventorySignature)
+    new_instance.load_state(loaded_state)
+    assert len(new_instance.demos) == len(original_instance.demos)
+
+    # Verify the structure is maintained after loading
+    loaded_demo = new_instance.demos[0]
+    assert isinstance(loaded_demo["items"], list)
+    assert len(loaded_demo["items"]) == 2
+    assert loaded_demo["items"][0]["name"] == "apple"
+    assert loaded_demo["items"][0]["quantity"] == 5
+    assert loaded_demo["items"][1]["name"] == "banana"
+    assert loaded_demo["items"][1]["quantity"] == 3
+
+    # Verify output items were also properly maintained
+    assert isinstance(loaded_demo["translated_items"], list)
+    assert len(loaded_demo["translated_items"]) == 2
+    assert loaded_demo["translated_items"][0]["name"] == "manzana"
+    assert loaded_demo["translated_items"][1]["name"] == "plátano"
 
 # def test_typed_demos_after_dump_and_load_state():
 #     class TypedTranslateToEnglish(dspy.Signature):

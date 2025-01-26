@@ -38,7 +38,16 @@ class Predict(Module, Parameter):
                 if isinstance(demo[field], Image):
                     demo[field] = demo[field].model_dump()
                 elif isinstance(demo[field], BaseModel):
-                    demo[field] = demo[field].model_dump_json()
+                    demo[field] = demo[field].model_dump()
+                # Handle lists of BaseModels
+                elif isinstance(demo[field], list):
+                    processed_list = []
+                    for item in demo[field]:
+                        if isinstance(item, BaseModel):
+                            processed_list.append(item.model_dump())
+                        else:
+                            processed_list.append(item)
+                    demo[field] = processed_list
 
             state["demos"].append(demo)
 
