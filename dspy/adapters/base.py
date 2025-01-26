@@ -49,17 +49,18 @@ class Adapter(ABC):
 
         except Exception as e:
             from .json_adapter import JSONAdapter
+
             if not isinstance(self, JSONAdapter):
                 return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
             raise e
 
     @abstractmethod
     def format(self, signature, demos, inputs):
-       raise NotImplementedError
+        raise NotImplementedError
 
     @abstractmethod
     def parse(self, signature, completion):
-       raise NotImplementedError
+        raise NotImplementedError
 
     def format_finetune_data(self, signature, demos, inputs, outputs):
         raise NotImplementedError

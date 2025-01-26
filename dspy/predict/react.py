@@ -45,13 +45,14 @@ class ReAct(Module):
         instruction_native_tool_calling.extend(
             [
                 f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
-                "To do this, you will be given a list of tools, and you will need to think about which tool to use "
-                "next, and what arguments to pass to it.\n",
-                "You will then receive an observation, which is the result of the tool call.\n",
-                "You will then repeat this process until you decide no more tools are needed and provide the final outputs.\n",
+                "To help you reach this goal, you will be given a list of tools, and you will need to think about "
+                "which tool to use in order to progress towards the goal.\n",
+                "Your selected tool will be executed with your suggested arguments, and the result will be sent along "
+                "in the next hop to you.\n",
+                "You will then repeat this process until you decide no more tools are needed and provide the final "
+                "outputs.\n",
             ]
         )
-
         for idx, tool in enumerate(self.tools.values()):
             args = getattr(tool, "parameters", [])
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
@@ -66,7 +67,7 @@ class ReAct(Module):
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
         native_react_signature = dspy.Signature(
-            {**signature.input_fields, **signature.output_fields}, signature.instructions
+            {**signature.input_fields, **signature.output_fields}, "\n".join(instruction_native_tool_calling)
         ).append("trajectory", dspy.InputField(), type_=str)
 
         self.react_with_custom_tool_calling = dspy.Predict(custom_react_signature)

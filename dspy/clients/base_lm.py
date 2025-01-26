@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 
 GLOBAL_HISTORY = []
 
+
 class BaseLM(ABC):
-    def __init__(self, model, model_type='chat', temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
         self.model = model
         self.model_type = model_type
         self.cache = cache
@@ -27,6 +28,7 @@ def _green(text: str, end: str = "\n"):
 
 def _red(text: str, end: str = "\n"):
     return "\x1b[31m" + str(text) + "\x1b[0m" + end
+
 
 def _blue(text: str, end: str = "\n"):
     return "\x1b[34m" + str(text) + "\x1b[0m" + end
@@ -63,13 +65,17 @@ def _inspect_history(history, n: int = 1):
             print("\n")
 
         print(_red("Response:"))
-        print(_green(outputs[0].strip()))
+        if isinstance(outputs[0], str):
+            print(_green(outputs[0].strip()))
+        else:
+            print(_green(outputs[0]))
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs)-1} other completions)"
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
+
 
 def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
