@@ -14,7 +14,14 @@ class Tool:
     functions for now.
     """
 
-    def __init__(self, name: str = None, desc: str = None, parameters: dict[str, Any] = None, func: Callable = None):
+    def __init__(
+        self,
+        name: str = None,
+        desc: str = None,
+        parameters: dict[str, Any] = None,
+        arg_types: dict[str, Any] = None,
+        func: Callable = None,
+    ):
         """Initialize the Tool class.
 
         Args:
@@ -26,7 +33,8 @@ class Tool:
         """
         self.name = name
         self.desc = desc
-        self.parameters = parameters
+        self.parameters = parameters or {}
+        self.arg_types = arg_types or {}
         self.func = func
 
     @classmethod
@@ -46,7 +54,9 @@ class Tool:
         name = getattr(func, "__name__", type(func).__name__)
         desc = getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
         parameters = {}
+        arg_types = {}
         for k, v in get_type_hints(annotations_func).items():
+            arg_types[k] = v
             if k == "return":
                 continue
             if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
@@ -54,7 +64,7 @@ class Tool:
             else:
                 parameters[k] = TypeAdapter(v).json_schema()
 
-        return cls(name=name, desc=desc, parameters=parameters, func=func)
+        return cls(name=name, desc=desc, parameters=parameters, arg_types=arg_types, func=func)
 
     def convert_to_litellm_tool_format(self):
         """Converts the tool to the format required by litellm for tool calling."""

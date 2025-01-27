@@ -1,6 +1,8 @@
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, get_origin
 
+from jsonschema import ValidationError, validate
 from litellm import supports_function_calling
+from pydantic import BaseModel
 
 import dspy
 from dspy.primitives.program import Module
@@ -9,14 +11,14 @@ from dspy.signatures.signature import ensure_signature
 
 
 class ReAct(Module):
-    def __init__(self, signature, tools: list[Callable], max_iters=5):
+    def __init__(self, signature, tools: list[Callable], max_iters=5, use_litellm_tool_calling=None):
         """
         `tools` is either a list of functions, callable classes, or `dspy.Tool` instances.
         """
 
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
-
+        self.use_litellm_tool_calling = use_litellm_tool_calling
         tools = [t if isinstance(t, Tool) else Tool.from_function(t) for t in tools]
 
         self.tools_in_litellm_format = [tool.convert_to_litellm_tool_format() for tool in tools]
@@ -85,6 +87,25 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_fields(trajectory_signature, trajectory, role="user")
 
+    def _validate_and_parse_tool_arg(self, tool, arg_name, arg_value):
+        tool_parameters = tool.parameters
+        if arg_name not in tool_parameters:
+            raise ValueError(f"Recevied unexpected argument {arg_name} for tool {tool.name}")
+
+        try:
+            validate(instance=arg_value, schema=tool_parameters[arg_name])
+        except ValidationError as e:
+            raise ValueError(f"Received invalid argument {arg_name} for tool {tool.name}: {e}")
+
+        if arg_name in tool.arg_types:
+            arg_type = tool.arg_types[arg_name]
+            if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(origin, BaseModel):
+                return arg_type.model_validate(arg_value)
+            else:
+                return arg_value
+        else:
+            return arg_value
+
     def _forward_with_custom_tool_calling(self, **input_args):
         trajectory = {}
         for idx in range(self.max_iters):
@@ -98,13 +119,10 @@ class ReAct(Module):
 
             try:
                 parsed_tool_args = {}
+                tool = self.tools[pred.next_tool_name]
                 for k, v in pred.next_tool_args.items():
-                    arg_type = self.tools[pred.next_tool_name].arg_types[k]
-                    if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(origin, BaseModel):
-                        parsed_tool_args[k] = arg_type.model_validate(v)
-                    else:
-                        parsed_tool_args[k] = v
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
+                    parsed_tool_args[k] = self._validate_and_parse_tool_arg(tool, k, v)
+                trajectory[f"observation_{idx}"] = tool(**parsed_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
@@ -136,8 +154,13 @@ class ReAct(Module):
                 trajectory[f"tool_name_{idx}"].append(tool_name)
                 trajectory[f"tool_args_{idx}"].append(tool_args)
 
+                parsed_tool_args = {}
+                tool = self.tools[tool_name]
+                for k, v in tool_args.items():
+                    parsed_tool_args[k] = self._validate_and_parse_tool_arg(tool, k, v)
+
                 try:
-                    trajectory[f"observation_{idx}"].append(self.tools[tool_name](**tool_args))
+                    trajectory[f"observation_{idx}"].append(tool(**parsed_tool_args))
                 except Exception as e:
                     trajectory[f"observation_{idx}"].append(f"Failed to execute: {e}")
 
@@ -146,7 +169,16 @@ class ReAct(Module):
 
     def forward(self, **input_args):
         lm = dspy.settings.lm
-        if supports_function_calling(lm.model):
+        if self.use_litellm_tool_calling and not supports_function_calling(lm.model):
+            raise ValueError(
+                f"Your lm {lm.model} doesn't support litellm tool calling. Please set `use_litellm_tool_calling=False` "
+                "or choose an lm that supports litellm tool calling."
+            )
+        use_litellm_tool_calling = self.use_litellm_tool_calling
+        if use_litellm_tool_calling is None:
+            use_litellm_tool_calling = supports_function_calling(lm.model)
+
+        if use_litellm_tool_calling:
             return self._forward_with_litellm_tool_calling(**input_args)
         else:
             return self._forward_with_custom_tool_calling(**input_args)
