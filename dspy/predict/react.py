@@ -123,8 +123,8 @@ class ReAct(Module):
 
             if not hasattr(pred, "tool_calls"):
                 # No more tools are needed, which means LLM decides that we have reached the final outputs.
-                # Remove `tool_calls` to denoise.
-                return dspy.Prediction(trajectory=trajectory, **pred)
+                trajectory["finish"] = pred.toDict()
+                break
 
             trajectory[f"tool_name_{idx}"] = []
             trajectory[f"tool_args_{idx}"] = []
