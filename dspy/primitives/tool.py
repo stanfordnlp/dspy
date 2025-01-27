@@ -37,6 +37,34 @@ class Tool:
         self.arg_types = arg_types or {}
         self.func = func
 
+    @staticmethod
+    def _resolve_pydantic_schema(model: type[BaseModel]) -> dict:
+        """Recursively resolve Pydantic model schema, expanding all references."""
+        schema = model.model_json_schema()
+
+        # If there are no definitions, return the main schema
+        if "$defs" not in schema:
+            return schema
+
+        def resolve_refs(obj: Any) -> Any:
+            if not isinstance(obj, (dict, list)):
+                return obj
+
+            if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref_path = obj["$ref"].split("/")[-1]
+                    return resolve_refs(schema["$defs"][ref_path])
+                return {k: resolve_refs(v) for k, v in obj.items()}
+
+            # Must be a list
+            return [resolve_refs(item) for item in obj]
+
+        # Resolve all references in the main schema
+        resolved_schema = resolve_refs(schema)
+        # Remove the $defs key as it's no longer needed
+        resolved_schema.pop("$defs", None)
+        return resolved_schema
+
     @classmethod
     def from_function(cls, func: Callable):
         """Class method that converts a python function to a `Tool`.
@@ -60,7 +88,8 @@ class Tool:
             if k == "return":
                 continue
             if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
-                parameters[k] = v.model_json_schema()
+                schema = cls._resolve_pydantic_schema(origin)
+                parameters[k] = schema
             else:
                 parameters[k] = TypeAdapter(v).json_schema()
 
@@ -87,7 +116,8 @@ class Tool:
             if k not in self.parameters:
                 raise ValueError(f"Parameter {k} is not in the tool's parameters.")
             try:
-                validate(instance=v, schema=self.parameters[k])
+                instance = v.model_dump() if hasattr(v, "model_dump") else v
+                validate(instance=instance, schema=self.parameters[k])
             except ValidationError as e:
                 raise ValueError(f"Parameter {k} is invalid: {e.message}")
         return self.func(**kwargs)

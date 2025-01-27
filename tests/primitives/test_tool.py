@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel
 from dspy.primitives.tool import Tool
-from typing import Any
+from typing import Any, Optional
 
 
 # Test fixtures
@@ -34,19 +34,19 @@ class Address(BaseModel):
 
 class ContactInfo(BaseModel):
     email: str
-    phone: str | None = None
+    phone: Optional[str] = None
     addresses: list[Address]
 
 
 class UserProfile(BaseModel):
     user_id: int
     name: str
-    age: int | None = None
+    age: Optional[int] = None
     contact: ContactInfo
     tags: list[str] = []
 
 
-def complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
+def complex_dummy_function(profile: UserProfile, priority: int, notes: Optional[str] = None) -> dict[str, Any]:
     """Process user profile with complex nested structure.
 
     Args:
@@ -62,12 +62,12 @@ def complex_dummy_function(profile: UserProfile, priority: int, notes: str | Non
         "user_id": profile.user_id,
         "name": profile.name,
         "priority": priority,
-        "primary_address": primary_address.dict(),
+        "primary_address": primary_address.model_dump(),
         "notes": notes,
     }
 
 
-def test_basic_initialization(self):
+def test_basic_initialization():
     tool = Tool(name="test_tool", desc="A test tool", parameters={"param1": {"type": "string"}}, func=lambda x: x)
     assert tool.name == "test_tool"
     assert tool.desc == "A test tool"
@@ -75,7 +75,7 @@ def test_basic_initialization(self):
     assert callable(tool.func)
 
 
-def test_from_function(self):
+def test_from_function():
     tool = Tool.from_function(dummy_function)
 
     assert tool.name == "dummy_function"
@@ -86,7 +86,7 @@ def test_from_function(self):
     assert tool.parameters["y"]["type"] == "string"
 
 
-def test_from_function_with_pydantic(self):
+def test_from_function_with_pydantic():
     tool = Tool.from_function(dummy_with_pydantic)
 
     assert tool.name == "dummy_with_pydantic"
@@ -96,7 +96,7 @@ def test_from_function_with_pydantic(self):
     assert "field2" in tool.parameters["model"]["properties"]
 
 
-def test_convert_to_litellm_tool_format(self):
+def test_convert_to_litellm_tool_format():
     tool = Tool.from_function(dummy_function)
     litellm_format = tool.convert_to_litellm_tool_format()
 
@@ -107,26 +107,26 @@ def test_convert_to_litellm_tool_format(self):
     assert not litellm_format["function"]["parameters"]["additionalProperties"]
 
 
-def test_tool_callable(self):
+def test_tool_callable():
     tool = Tool.from_function(dummy_function)
     result = tool(x=42, y="hello")
     assert result == "hello 42"
 
 
-def test_tool_with_pydantic_callable(self):
+def test_tool_with_pydantic_callable():
     tool = Tool.from_function(dummy_with_pydantic)
     model = DummyModel(field1="test", field2=123)
     result = tool(model=model)
     assert result == "test 123"
 
 
-def test_invalid_function_call(self):
+def test_invalid_function_call():
     tool = Tool.from_function(dummy_function)
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         tool(x="not an integer", y="hello")
 
 
-def test_complex_nested_schema(self):
+def test_complex_nested_schema():
     tool = Tool.from_function(complex_dummy_function)
 
     assert tool.name == "complex_dummy_function"
@@ -150,45 +150,61 @@ def test_complex_nested_schema(self):
         "type": "function",
         "function": {
             "name": "complex_dummy_function",
-            "description": "Process user profile with complex nested structure.",
+            "description": (
+                "Process user profile with complex nested structure.\n\n    Args:\n        profile: User "
+                "profile containing nested contact and address information\n        priority: Priority "
+                "level of the processing\n        notes: Optional processing notes\n    "
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "profile": {
-                        "type": "object",
                         "properties": {
-                            "user_id": {"type": "integer"},
-                            "name": {"type": "string"},
-                            "age": {"type": "integer", "nullable": True},
+                            "user_id": {"title": "User Id", "type": "integer"},
+                            "name": {"title": "Name", "type": "string"},
+                            "age": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Age"},
                             "contact": {
-                                "type": "object",
                                 "properties": {
-                                    "email": {"type": "string"},
-                                    "phone": {"type": "string", "nullable": True},
+                                    "email": {"title": "Email", "type": "string"},
+                                    "phone": {
+                                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                                        "default": None,
+                                        "title": "Phone",
+                                    },
                                     "addresses": {
-                                        "type": "array",
                                         "items": {
-                                            "type": "object",
                                             "properties": {
-                                                "street": {"type": "string"},
-                                                "city": {"type": "string"},
-                                                "zip_code": {"type": "string"},
-                                                "is_primary": {"type": "boolean", "default": False},
+                                                "street": {"title": "Street", "type": "string"},
+                                                "city": {"title": "City", "type": "string"},
+                                                "zip_code": {"title": "Zip Code", "type": "string"},
+                                                "is_primary": {
+                                                    "default": False,
+                                                    "title": "Is Primary",
+                                                    "type": "boolean",
+                                                },
                                             },
                                             "required": ["street", "city", "zip_code"],
+                                            "title": "Address",
+                                            "type": "object",
                                         },
+                                        "title": "Addresses",
+                                        "type": "array",
                                     },
                                 },
                                 "required": ["email", "addresses"],
+                                "title": "ContactInfo",
+                                "type": "object",
                             },
-                            "tags": {"type": "array", "items": {"type": "string"}, "default": []},
+                            "tags": {"default": [], "items": {"type": "string"}, "title": "Tags", "type": "array"},
                         },
                         "required": ["user_id", "name", "contact"],
+                        "title": "UserProfile",
+                        "type": "object",
                     },
                     "priority": {"type": "integer"},
-                    "notes": {"type": "string", "nullable": True},
+                    "notes": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 },
-                "required": ["profile", "priority"],
+                "required": ["profile", "priority", "notes"],
                 "additionalProperties": False,
             },
         },
