@@ -72,7 +72,7 @@ class JSONAdapter(Adapter):
                 value = {}
 
             if isinstance(output, dict) and "tool_calls" in output:
-                value["tool_calls"] = output["output_tool_calls"]
+                value["tool_calls"] = output["tool_calls"]
             values.append(value)
 
         return values
