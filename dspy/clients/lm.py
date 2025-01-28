@@ -90,12 +90,6 @@ class LM(BaseLM):
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, tools=None, **kwargs):
-        if tools is not None and not litellm.supports_function_calling(self.model):
-            raise ValueError(
-                f"The model {self.model} does not support function calling, but tools were provided. Please use a "
-                "model that supports function calling."
-            )
-
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         # disable cache will also disable in memory cache

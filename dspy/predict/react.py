@@ -1,6 +1,5 @@
 from typing import Any, Callable, Literal, get_origin
 
-from litellm import supports_function_calling
 from pydantic import BaseModel
 
 import dspy
@@ -10,7 +9,7 @@ from dspy.signatures.signature import ensure_signature
 
 
 class ReAct(Module):
-    def __init__(self, signature, tools: list[Callable], max_iters=5, use_litellm_tool_calling=None):
+    def __init__(self, signature, tools: list[Callable], max_iters=5, use_litellm_tool_calling=False):
         """
         `tools` is either a list of functions, callable classes, or `dspy.Tool` instances.
         """
@@ -158,17 +157,7 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def forward(self, **input_args):
-        lm = dspy.settings.lm
-        if self.use_litellm_tool_calling and not supports_function_calling(lm.model):
-            raise ValueError(
-                f"Your lm {lm.model} doesn't support litellm tool calling. Please set `use_litellm_tool_calling=False` "
-                "or choose an lm that supports litellm tool calling."
-            )
-        use_litellm_tool_calling = self.use_litellm_tool_calling
-        if use_litellm_tool_calling is None:
-            use_litellm_tool_calling = supports_function_calling(lm.model)
-
-        if use_litellm_tool_calling:
+        if self.use_litellm_tool_calling:
             return self._forward_with_litellm_tool_calling(**input_args)
         else:
             return self._forward_with_custom_tool_calling(**input_args)
