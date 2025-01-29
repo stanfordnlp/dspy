@@ -1,17 +1,39 @@
----
-name: Bug report
-about: Create a report to help us improve
-title: ''
+
+name: Bug Report
+description: Report a bug in the project
+title: "[Bug] "
 labels: bug
-assignees: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🐛 Bug Report
+        Please fill out all required fields to help us diagnose and fix the issue.
 
----
+  - type: textarea
+    id: description
+    attributes:
+      label: "What happened?"
+      description: "Clearly describe the unexpected behavior."
+      placeholder: "Example: When I try to save a file, I get an error message..."
+      value: ""
+    validations:
+      required: true
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "Steps to reproduce"
+      description: "Tell us how to reproduce the issue."
+      placeholder: "Please provide a code snippet or a github gist for reproducing purpose."
+    validations:
+      required: true
 
-**Code to Reproduce**
-Please provide a code snippet or a github gist for reproducing purpose. 
+  - type: input
+    id: environment
+    attributes:
+      label: "DSPy version"
+      description: "Tell us your DSPy version."
+    validations:
+      required: true
 
-**DSPy Versions**
-Tell us your DSPy version.

@@ -1,21 +1,34 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: ''
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature] "
 labels: enhancement
-assignees: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🚀 Feature Request
+        Please fill out the following details.
 
----
+  - type: textarea
+    id: description
+    attributes:
+      label: "What feature would you like to see?"
+      description: "Describe the feature clearly."
+      value: ""
+    validations:
+      required: true
 
-**Describe the feature**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: "Would you like to contribute?"
+      options:
+        - label: Yes, I'd like to help implement this.
+        - label: No, I just want to request it.
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
-
-**Additional context**
-Any additional context you would like to provide?
-
-** Would you like to contribute to this feature?**
-- [ ] Yes, I'd like to help with implementation
-- [ ] No, I just want to request the feature
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "Additional Context"
+      description: "Any links, references, or extra details?"
+      placeholder: "Example: This feature exists in XYZ tool."
