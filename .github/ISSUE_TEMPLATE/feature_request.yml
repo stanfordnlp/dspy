@@ -14,7 +14,6 @@ body:
     attributes:
       label: "What feature would you like to see?"
       description: "Describe the feature clearly."
-      value: ""
     validations:
       required: true
 
