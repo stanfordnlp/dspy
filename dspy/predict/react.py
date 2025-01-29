@@ -17,7 +17,7 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.use_litellm_tool_calling = use_litellm_tool_calling
-        tools = [t if isinstance(t, Tool) else Tool.from_function(t) for t in tools]
+        tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
 
         self.tools_in_litellm_format = [tool.convert_to_litellm_tool_format() for tool in tools]
         self.tools = {tool.name: tool for tool in tools}

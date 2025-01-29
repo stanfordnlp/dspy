@@ -1,5 +1,5 @@
 import inspect
-from typing import Any, Callable, get_origin, get_type_hints
+from typing import Any, Callable, Optional, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter
@@ -16,31 +16,36 @@ class Tool:
 
     def __init__(
         self,
-        name: str = None,
-        desc: str = None,
-        parameters: dict[str, Any] = None,
-        arg_types: dict[str, Any] = None,
-        func: Callable = None,
+        func: Callable,
+        name: Optional[str] = None,
+        desc: Optional[str] = None,
+        parameters: Optional[dict[str, Any]] = None,
+        arg_types: Optional[dict[str, Any]] = None,
+        parameter_desc: Optional[dict[str, str]] = None,
     ):
         """Initialize the Tool class.
 
         Args:
-            name (str): The name of the tool.
-            desc (str): The description of the tool.
-            parameters (dict[str, Any]): The parameters of the tool, represented as a dictionary from parameter name to
-                parameter's json schema.
-            arg_types (dict[str, Any]): The argument types of the tool, represented as a dictionary from parameter name
-                to the type of the argument.
             func (Callable): The actual function that is being wrapped by the tool.
+            name (Optional[str], optional): The name of the tool. Defaults to None.
+            desc (Optional[str], optional): The description of the tool. Defaults to None.
+            parameters (Optional[dict[str, Any]], optional): The parameters of the tool, represented as a dictionary
+                from parameter name to parameter's json schema. Defaults to None.
+            arg_types (Optional[dict[str, Any]], optional): The argument types of the tool, represented as a dictionary
+                from parameter name to the type of the argument. Defaults to None.
+            parameter_desc (Optional[dict[str, str]], optional): Descriptions for each parameter, represented as a
+                dictionary from parameter name to description string. Defaults to None.
         """
+        self.func = func
         self.name = name
         self.desc = desc
-        self.parameters = parameters or {}
-        self.arg_types = arg_types or {}
-        self.func = func
+        self.parameters = parameters
+        self.arg_types = arg_types
+        self.parameter_desc = parameter_desc
 
-    @staticmethod
-    def _resolve_pydantic_schema(model: type[BaseModel]) -> dict:
+        self._parse_function(func, parameter_desc)
+
+    def _resolve_pydantic_schema(self, model: type[BaseModel]) -> dict:
         """Recursively resolve Pydantic model schema, expanding all references."""
         schema = model.model_json_schema()
 
@@ -67,18 +72,11 @@ class Tool:
         resolved_schema.pop("$defs", None)
         return resolved_schema
 
-    @classmethod
-    def from_function(cls, func: Callable):
-        """Class method that converts a python function to a `Tool`.
+    def _parse_function(self, func: Callable, parameter_desc: dict[str, str] = None):
+        """Helper method that parses a function to extract the name, description, and parameters.
 
         This is a helper function that automatically infers the name, description, and parameters of the tool from the
         provided function. In order to make the inference work, the function must have valid type hints.
-
-        Args:
-            func (Callable): The function to be wrapped by the tool.
-
-        Returns:
-            Tool: The tool object.
         """
         annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
         name = getattr(func, "__name__", type(func).__name__)
@@ -89,13 +87,19 @@ class Tool:
             arg_types[k] = v
             if k == "return":
                 continue
+
             if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
-                schema = cls._resolve_pydantic_schema(origin)
+                schema = self._resolve_pydantic_schema(origin)
                 parameters[k] = schema
             else:
                 parameters[k] = TypeAdapter(v).json_schema()
+            if parameter_desc and k in parameter_desc:
+                parameters[k]["description"] = parameter_desc[k]
 
-        return cls(name=name, desc=desc, parameters=parameters, arg_types=arg_types, func=func)
+        self.name = self.name or name
+        self.desc = self.desc or desc
+        self.parameters = self.parameters or parameters
+        self.arg_types = self.arg_types or arg_types
 
     def convert_to_litellm_tool_format(self):
         """Converts the tool to the format required by litellm for tool calling."""

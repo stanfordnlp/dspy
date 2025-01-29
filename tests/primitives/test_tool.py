@@ -75,8 +75,8 @@ def test_basic_initialization():
     assert callable(tool.func)
 
 
-def test_from_function():
-    tool = Tool.from_function(dummy_function)
+def test_tool_from_function():
+    tool = Tool(dummy_function)
 
     assert tool.name == "dummy_function"
     assert "A dummy function for testing" in tool.desc
@@ -95,14 +95,14 @@ def test_tool_from_class():
             """Add two numbers."""
             return a + b
 
-    tool = Tool.from_function(Foo("123"))
+    tool = Tool(Foo("123"))
     assert tool.name == "Foo"
     assert tool.desc == "Add two numbers."
     assert tool.parameters == {"a": {"type": "integer"}, "b": {"type": "integer"}}
 
 
-def test_from_function_with_pydantic():
-    tool = Tool.from_function(dummy_with_pydantic)
+def test_tool_from_function_with_pydantic():
+    tool = Tool(dummy_with_pydantic)
 
     assert tool.name == "dummy_with_pydantic"
     assert "model" in tool.parameters
@@ -112,7 +112,7 @@ def test_from_function_with_pydantic():
 
 
 def test_convert_to_litellm_tool_format():
-    tool = Tool.from_function(dummy_function)
+    tool = Tool(dummy_function)
     litellm_format = tool.convert_to_litellm_tool_format()
 
     assert litellm_format["type"] == "function"
@@ -123,32 +123,38 @@ def test_convert_to_litellm_tool_format():
 
 
 def test_tool_callable():
-    tool = Tool.from_function(dummy_function)
+    tool = Tool(dummy_function)
     result = tool(x=42, y="hello")
     assert result == "hello 42"
 
 
 def test_tool_with_pydantic_callable():
-    tool = Tool.from_function(dummy_with_pydantic)
+    tool = Tool(dummy_with_pydantic)
     model = DummyModel(field1="test", field2=123)
     result = tool(model=model)
     assert result == "test 123"
 
 
 def test_invalid_function_call():
-    tool = Tool.from_function(dummy_function)
+    tool = Tool(dummy_function)
     with pytest.raises(ValueError):
         tool(x="not an integer", y="hello")
 
 
+def test_parameter_desc():
+    tool = Tool(dummy_function, parameter_desc={"x": "The x parameter"})
+    assert tool.parameters["x"]["description"] == "The x parameter"
+
+
 def test_complex_nested_schema():
-    tool = Tool.from_function(complex_dummy_function)
+    tool = Tool(complex_dummy_function, parameter_desc={"profile": "The user ultimate profile"})
 
     assert tool.name == "complex_dummy_function"
     assert "profile" in tool.parameters
 
     profile_schema = tool.parameters["profile"]
     assert profile_schema["type"] == "object"
+    assert profile_schema["description"] == "The user ultimate profile"
 
     # Check nested structure
     properties = profile_schema["properties"]
@@ -214,6 +220,7 @@ def test_complex_nested_schema():
                         },
                         "required": ["user_id", "name", "contact"],
                         "title": "UserProfile",
+                        "description": "The user ultimate profile",
                         "type": "object",
                     },
                     "priority": {"type": "integer"},

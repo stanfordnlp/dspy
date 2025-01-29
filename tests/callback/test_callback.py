@@ -201,7 +201,7 @@ def test_tool_calls():
 
     class MyModule(dspy.Module):
         def __init__(self):
-            self.tools = [dspy.Tool.from_function(tool_1), dspy.Tool.from_function(tool_2)]
+            self.tools = [dspy.Tool(tool_1), dspy.Tool(tool_2)]
 
         def forward(self, query: str) -> str:
             query = self.tools[0](query=query)
