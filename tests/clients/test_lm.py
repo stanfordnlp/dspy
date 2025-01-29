@@ -29,6 +29,30 @@ def test_chat_lms_can_be_queried(litellm_test_server):
     assert azure_openai_lm("azure openai query") == expected_response
 
 
+@pytest.mark.parametrize(
+    ("cache", "cache_in_memory"),
+    [
+        (True, True),
+        (True, False),
+        (False, True),
+        (False, False),
+    ],
+)
+def test_chat_lms_cache(litellm_test_server, cache, cache_in_memory):
+    api_base, _ = litellm_test_server
+    expected_response = ["Hi!"]
+
+    openai_lm = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+        model_type="chat",
+        cache=cache,
+        cache_in_memory=cache_in_memory,
+    )
+    assert openai_lm("openai query") == expected_response
+
+
 def test_text_lms_can_be_queried(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
