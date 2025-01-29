@@ -16,7 +16,6 @@ body:
       label: "What happened?"
       description: "Clearly describe the unexpected behavior."
       placeholder: "Example: When I try to save a file, I get an error message..."
-      value: ""
     validations:
       required: true
 
