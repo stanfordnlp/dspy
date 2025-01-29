@@ -4,7 +4,8 @@ import dspy
 from dspy.utils.dummies import DummyLM, dummy_rm
 from dspy.predict import react
 from pydantic import BaseModel
-
+import os
+import pytest
 
 # def test_example_no_tools():
 #     # Create a simple dataset which the model will use with the Retrieve tool.
@@ -126,32 +127,6 @@ from pydantic import BaseModel
 #     assert react.react[0].signature.instructions.startswith("You are going to generate output based on input.")
 
 
-def test_tool_from_function():
-    def foo(a: int, b: int) -> int:
-        """Add two numbers."""
-        return a + b
-
-    tool = react.Tool(foo)
-    assert tool.name == "foo"
-    assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
-
-
-def test_tool_from_class():
-    class Foo:
-        def __init__(self, user_id: str):
-            self.user_id = user_id
-
-        def foo(self, a: int, b: int) -> int:
-            """Add two numbers."""
-            return a + b
-
-    tool = react.Tool(Foo("123").foo)
-    assert tool.name == "foo"
-    assert tool.desc == "Add two numbers."
-    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
-
-
 def test_tool_calling_with_pydantic_args():
     class CalendarEvent(BaseModel):
         name: str
@@ -228,3 +203,70 @@ def test_tool_calling_with_pydantic_args():
         "observation_1": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+@pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="Openai API key is not set")
+@pytest.mark.parametrize(
+    "use_litellm_tool_calling,test_name",
+    [
+        (True, "with_litellm_tool_calling"),
+        (False, "with_custom_tool_calling"),
+    ],
+)
+def test_react_tool_calling(use_litellm_tool_calling: bool, test_name: str):
+    lm = dspy.LM("openai/gpt-4o-mini")
+    dspy.settings.configure(lm=lm)
+
+    class CalendarEvent(BaseModel):
+        name: str
+        date: str
+        participants: list[str]
+
+    def write_invitation_letter(participant_name: str, event_info: CalendarEvent):
+        if participant_name not in event_info.participants:
+            return None
+        return f"It's my honor to invite {participant_name} to event {event_info.name} on {event_info.date}"
+
+    class InvitationSignature(dspy.Signature):
+        participant_name: str = dspy.InputField(desc="The name of the participant to invite")
+        event_info: CalendarEvent = dspy.InputField(desc="The information about the event")
+        invitation_letter: str = dspy.OutputField(desc="The invitation letter to be sent to the participant")
+
+    react = dspy.ReAct(
+        InvitationSignature,
+        tools=[write_invitation_letter],
+        use_litellm_tool_calling=use_litellm_tool_calling,
+    )
+
+    outputs = react(
+        participant_name="Alice",
+        event_info=CalendarEvent(
+            name="Science Fair",
+            date="Friday",
+            participants=["Alice", "Bob"],
+        ),
+    )
+    if use_litellm_tool_calling:
+        # Litellm tool calling returns a list of tool names and tool args
+        assert outputs.trajectory["tool_name_0"] == ["write_invitation_letter"]
+        assert outputs.trajectory["tool_args_0"] == [
+            {
+                "participant_name": "Alice",
+                "event_info": {
+                    "name": "Science Fair",
+                    "date": "Friday",
+                    "participants": ["Alice", "Bob"],
+                },
+            }
+        ]
+    else:
+        # Custom tool calling returns a single tool name and tool args
+        assert outputs.trajectory["tool_name_0"] == "write_invitation_letter"
+        assert outputs.trajectory["tool_args_0"] == {
+            "participant_name": "Alice",
+            "event_info": {
+                "name": "Science Fair",
+                "date": "Friday",
+                "participants": ["Alice", "Bob"],
+            },
+        }

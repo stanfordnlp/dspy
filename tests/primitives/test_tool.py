@@ -86,6 +86,21 @@ def test_from_function():
     assert tool.parameters["y"]["type"] == "string"
 
 
+def test_tool_from_class():
+    class Foo:
+        def __init__(self, user_id: str):
+            self.user_id = user_id
+
+        def __call__(self, a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+    tool = Tool.from_function(Foo("123"))
+    assert tool.name == "Foo"
+    assert tool.desc == "Add two numbers."
+    assert tool.parameters == {"a": {"type": "integer"}, "b": {"type": "integer"}}
+
+
 def test_from_function_with_pydantic():
     tool = Tool.from_function(dummy_with_pydantic)
 

@@ -33,16 +33,17 @@ class ReAct(Module):
         instruction = [f"{signature.instructions}\n"] if signature.instructions else []
 
         instruction_custom_tool_calling = list(instruction)
-        instruction_native_tool_calling = list(instruction)
+        instruction_litellm_tool_calling = list(instruction)
 
         instruction_custom_tool_calling.extend(
             [
                 f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
-                "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.\n",
+                "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting "
+                "Observation.\n",
                 "Thought can reason about the current situation, and Tool Name can be the following types:\n",
             ]
         )
-        instruction_native_tool_calling.extend(
+        instruction_litellm_tool_calling.extend(
             [
                 f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
                 "To help you reach this goal, you will be given a list of tools, and you will need to think about "
@@ -67,11 +68,11 @@ class ReAct(Module):
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
         native_react_signature = dspy.Signature(
-            {**signature.input_fields, **signature.output_fields}, "\n".join(instruction_native_tool_calling)
+            {**signature.input_fields, **signature.output_fields}, "\n".join(instruction_litellm_tool_calling)
         ).append("trajectory", dspy.InputField(), type_=str)
 
         self.react_with_custom_tool_calling = dspy.Predict(custom_react_signature)
-        self.react_with_native_tool_calling = dspy.PredictWithTools(
+        self.react_with_litellm_tool_calling = dspy.PredictWithTools(
             native_react_signature, tools=self.tools_in_litellm_format
         )
 
@@ -124,7 +125,7 @@ class ReAct(Module):
     def _forward_with_litellm_tool_calling(self, **input_args):
         trajectory = {}
         for idx in range(self.max_iters):
-            pred = self.react_with_native_tool_calling(
+            pred = self.react_with_litellm_tool_calling(
                 **input_args, trajectory=self._format_trajectory(trajectory, last_iteration=(idx == self.max_iters - 1))
             )
 

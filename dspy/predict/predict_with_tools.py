@@ -1,5 +1,4 @@
 from dspy.predict.predict import Predict
-from dspy.primitives.prediction import Prediction
 
 
 class PredictWithTools(Predict):
@@ -47,5 +46,4 @@ class PredictWithTools(Predict):
         kwargs["tools"] = tools or self.tools
         kwargs["tool_choice"] = tool_choice or self.tool_choice
 
-        pred = super().__call__(**kwargs).toDict()
-        return Prediction(**pred)
+        return super().__call__(**kwargs)

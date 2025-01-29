@@ -29,6 +29,8 @@ class Tool:
             desc (str): The description of the tool.
             parameters (dict[str, Any]): The parameters of the tool, represented as a dictionary from parameter name to
                 parameter's json schema.
+            arg_types (dict[str, Any]): The argument types of the tool, represented as a dictionary from parameter name
+                to the type of the argument.
             func (Callable): The actual function that is being wrapped by the tool.
         """
         self.name = name
@@ -42,8 +44,8 @@ class Tool:
         """Recursively resolve Pydantic model schema, expanding all references."""
         schema = model.model_json_schema()
 
-        # If there are no definitions, return the main schema
-        if "$defs" not in schema:
+        # If there are no definitions to resolve, return the main schema
+        if "$defs" not in schema and "definitions" not in schema:
             return schema
 
         def resolve_refs(obj: Any) -> Any:
