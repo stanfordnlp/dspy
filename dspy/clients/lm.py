@@ -102,23 +102,18 @@ class LM(BaseLM):
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
             response = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
+                request=dict(model=self.model, messages=messages, tools=tools, **kwargs),
                 num_retries=self.num_retries,
             )
         else:
             completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
             response = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
+                request=dict(model=self.model, messages=messages, tools=tools, **kwargs),
                 num_retries=self.num_retries,
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
-
-        response = completion(
-            request=dict(model=self.model, messages=messages, tools=tools, **kwargs),
-            num_retries=self.num_retries,
-        )
 
         output_text = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
         output_logprobs = None
