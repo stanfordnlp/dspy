@@ -85,22 +85,30 @@ class LM(BaseLM):
                 max_tokens >= 5000 and temperature == 1.0
             ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
 
-    @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        # Build the request.
+    def _build_request(self, prompt=None, messages=None, **kwargs):
+        """Build the request dictionary for LM calls"""
         cache = kwargs.pop("cache", self.cache)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
-
-        # Make the request and handle LRU & disk caching.
+        
         if self.model_type == "chat":
             completion = cached_litellm_completion if cache else litellm_completion
         else:
             completion = cached_litellm_text_completion if cache else litellm_text_completion
-
-        response = completion(
+            
+        return dict(
             request=dict(model=self.model, messages=messages, **kwargs),
+            completion=completion,  # <-- ADD THIS LINE
             num_retries=self.num_retries,
+        )
+
+    @with_callbacks
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        request = self._build_request(prompt, messages, **kwargs)
+        # Pass required arguments explicitly instead of **request
+        response = request["completion"](
+            request=request["request"],
+            num_retries=request["num_retries"]
         )
         if kwargs.get("logprobs"):
             outputs = [
@@ -215,6 +223,47 @@ class LM(BaseLM):
         }
         model_type = self.model_type
         return model_type_to_adapter[model_type]
+
+    async def _async_request(self, request: dict) -> list:
+        """Base async request handler"""
+        # Pass required arguments explicitly
+        response = await litellm.acompletion(**request["request"])
+        if request["request"].get("logprobs"):
+            outputs = [
+                {
+                    "text": c.message.content if hasattr(c, "message") else c["text"],
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
+                }
+                for c in response["choices"]
+            ]
+        else:
+            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        
+        # Logging
+        kwargs = {k: v for k, v in request["request"].items() if not k.startswith("api_")}
+        entry = dict(
+            prompt=request["request"].get("prompt"),
+            messages=request["request"].get("messages"),
+            kwargs=kwargs,
+            response=response,
+            outputs=outputs,
+            usage=dict(response["usage"]),
+            cost=response.get("_hidden_params", {}).get("response_cost"),
+            timestamp=datetime.now().isoformat(),
+            uuid=str(uuid.uuid4()),
+            model=self.model,
+            response_model=response["model"],
+            model_type=self.model_type,
+        )
+        self.history.append(entry)
+        self.update_global_history(entry)
+        
+        return outputs
+
+    async def __acall__(self, prompt=None, messages=None, **kwargs):
+        """Async call interface"""
+        request = self._build_request(prompt, messages, **kwargs)
+        return await self._async_request(request)
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters."""
