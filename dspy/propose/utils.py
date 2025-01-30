@@ -146,6 +146,7 @@ def get_dspy_source_code(module):
     base_code = ""
 
     # Don't get source code for Predict or ChainOfThought modules (NOTE we will need to extend this list as more DSPy.modules are added)
+    # TODO: if type(module).__name__ not in ["Predict", "ChainOfThought", "ReAct"]:
     if not type(module).__name__ == "Predict" and not type(module).__name__ == "ChainOfThought":
         try:
             base_code = inspect.getsource(type(module))
