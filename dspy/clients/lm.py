@@ -39,6 +39,7 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
+        cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 8,
         provider=None,
@@ -57,6 +58,7 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
+            cache_in_memory: To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -69,6 +71,7 @@ class LM(BaseLM):
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -89,19 +92,29 @@ class LM(BaseLM):
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
+        # disable cache will also disable in memory cache
+        cache_in_memory = cache and kwargs.pop("cache_in_memory", self.cache_in_memory)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        if cache_in_memory:
+            completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-        response = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-        )
+            response =  completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+            )
+        else:
+            completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+
+            response = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                # only leverage LiteLLM cache in this case
+                cache={"no-cache": not cache, "no-store": not cache},
+            )
+
         if kwargs.get("logprobs"):
             outputs = [
                 {
