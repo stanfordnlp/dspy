@@ -495,7 +495,7 @@ class MIPROv2(Teleprompter):
         best_score = default_score
         best_program = program.deepcopy()
         total_eval_calls = len(valset)
-        score_data= [(best_score, program.deepcopy(), True)]
+        score_data = [{"score": best_score, "program": program.deepcopy(), "full_eval": True}]
         param_score_dict = defaultdict(list)
         fully_evaled_param_combos = {}
 
@@ -543,7 +543,7 @@ class MIPROv2(Teleprompter):
                 logger.info(f"{GREEN}Best full score so far!{ENDC} Score: {score}")
 
             # Log evaluation results
-            score_data.append((score, candidate_program, batch_size >= len(valset))) # score, prog, full_eval
+            score_data.append({"score": score, "program": candidate_program, "full_eval": batch_size >= len(valset)}) # score, prog, full_eval
             if minibatch:
                 self._log_minibatch_eval(
                     score,
@@ -604,11 +604,11 @@ class MIPROv2(Teleprompter):
             best_program.score = best_score
             best_program.prompt_model_total_calls = self.prompt_model_total_calls
             best_program.total_calls = self.total_calls
-            sorted_candidate_programs = sorted(score_data, key=lambda x: x[0], reverse=True)
+            sorted_candidate_programs = sorted(score_data, key=lambda x: x["score"], reverse=True)
             # Attach all minibatch programs
-            best_program.mb_candidate_programs = [score_data for score_data in sorted_candidate_programs if not score_data[2]]
+            best_program.mb_candidate_programs = [score_data for score_data in sorted_candidate_programs if not score_data["full_eval"]]
             # Attach all programs that were evaluated on the full trainset, in descending order of score
-            best_program.candidate_programs = [score_data for score_data in sorted_candidate_programs if score_data[2]]
+            best_program.candidate_programs = [score_data for score_data in sorted_candidate_programs if score_data["full_eval"]]
 
         logger.info(f"Returning best identified program with score {best_score}!")
 
@@ -638,8 +638,10 @@ class MIPROv2(Teleprompter):
         logger.info(
             f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}."
         )
-        logger.info(f"Minibatch scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if not s[2]]) +']'}")
-        trajectory = "[" + ", ".join([f"{s[0]}" for s in score_data if s[2]]) + "]"
+        minibatch_scores = ', '.join([f'{s["score"]}' for s in score_data if not s["full_eval"]])
+        logger.info(f"Minibatch scores so far: {'['+ minibatch_scores +']'}")
+        full_eval_scores = ', '.join([f'{s["score"]}' for s in score_data if s["full_eval"]])
+        trajectory = "[" + full_eval_scores + "]"
         logger.info(f"Full eval scores so far: {trajectory}")
         logger.info(f"Best full score so far: {best_score}")
         logger.info(
@@ -657,7 +659,8 @@ class MIPROv2(Teleprompter):
         trial_logs[trial_num]["full_eval_program"] = candidate_program.deepcopy()
 
         logger.info(f"Score: {score} with parameters {chosen_params}.")
-        logger.info(f"Scores so far: {'['+', '.join([f'{s[0]}' for s in score_data if s[2]])+']'}")
+        full_eval_scores = ', '.join([f'{s["score"]}' for s in score_data if s["full_eval"]])
+        logger.info(f"Scores so far: {'['+full_eval_scores+']'}")
         logger.info(f"Best score so far: {best_score}")
         logger.info(f'{"="*len(f"===== Trial {trial.number+1} / {num_trials} =====")}\n\n')
 
@@ -723,7 +726,7 @@ class MIPROv2(Teleprompter):
         full_eval_score = eval_candidate_program(
             len(valset), valset, highest_mean_program, evaluate, self.rng
         )
-        score_data.append((full_eval_score, highest_mean_program, True))
+        score_data.append({"score": full_eval_score, "program": highest_mean_program, "full_eval": True})
 
         # Log full evaluation results
         fully_evaled_param_combos[combo_key] = {
@@ -746,7 +749,8 @@ class MIPROv2(Teleprompter):
             logger.info(f"{GREEN}New best full eval score!{ENDC} Score: {full_eval_score}")
             best_score = full_eval_score
             best_program = highest_mean_program.deepcopy()
-        trajectory = "[" + ", ".join([f"{s[0]}" for s in score_data if s[2]]) + "]"
+        full_eval_scores = ', '.join([f'{s["score"]}' for s in score_data if s["full_eval"]])
+        trajectory = "[" + full_eval_scores + "]"
         logger.info(f"Full eval scores so far: {trajectory}")
         logger.info(f"Best full score so far: {best_score}")
         logger.info(len(f"===== Full Eval {len(fully_evaled_param_combos)+1} =====") * "=")
