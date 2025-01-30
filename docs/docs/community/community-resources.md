@@ -21,6 +21,7 @@ This is the list of tutorials and blog posts on DSPy. If you would like to add y
 | **Intro to DSPy: Goodbye Prompting, Hello Programming** | [Link](https://medium.com/towards-data-science/intro-to-dspy-goodbye-prompting-hello-programming-4ca1c6ce3eb9) |
 | **DSPyGen: Revolutionizing AI** | [Link](https://www.linkedin.com/pulse/launch-alert-dspygen-20242252-revolutionizing-ai-sean-chatman--g9f1c/) |
 | **Building an AI Assistant with DSPy** | [Link](https://www.linkedin.com/pulse/building-ai-assistant-dspy-valliappa-lakshmanan-vgnsc/) |
+| **Building Self-improving Agents in Production with DSPy** | [Link](https://relevanceai.com/blog/building-self-improving-agentic-systems-in-production-with-dspy) |
 
 
 ### Videos
@@ -42,7 +43,7 @@ This is the list of tutorials and blog posts on DSPy. If you would like to add y
 | **DSPy End-to-End: SF Meetup** | [Link](https://www.youtube.com/watch?v=Y81DoFmt-2U) |
 | **Monitoring & Tracing DSPy with Langtrace** | [Link](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace) |
 | **Teaching chat models to solve chess puzzles using DSPy + Finetuning** | [Link](https://raw.sh/posts/chess_puzzles) |
-
+| **Build Self-Improving AI Agents with DSPy (No Code)** | [Link](https://www.youtube.com/watch?v=UY8OsMlV21Y) |
 
 ### Podcasts
 
