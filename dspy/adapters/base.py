@@ -37,10 +37,10 @@ class Adapter:
 
     @with_callbacks
     def __sync_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values):
-        inputs = self.format(signature, demos, inputs)
-        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+        _inputs = self.format(signature, demos, inputs)
+        _inputs = dict(prompt=_inputs) if isinstance(_inputs, str) else dict(messages=_inputs)
 
-        outputs = lm(**inputs, **lm_kwargs)
+        outputs = lm(**_inputs, **lm_kwargs)
 
         try:
             values = []
@@ -62,11 +62,11 @@ class Adapter:
     @with_async_callbacks
     async def __async_call(self, lm, lm_kwargs, signature, demos, inputs, _parse_values):
         """Internal async implementation"""
-        inputs = self.format(signature, demos, inputs)
-        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+        _inputs = self.format(signature, demos, inputs)
+        _inputs = dict(prompt=_inputs) if isinstance(_inputs, str) else dict(messages=_inputs)
 
         assert dspy.settings.async_mode, "Async mode is not enabled"
-        outputs = await lm.acall(**inputs, **lm_kwargs)
+        outputs = await lm.acall(**_inputs, **lm_kwargs)
 
         try:
             values = []
