@@ -32,8 +32,8 @@ class LocalProvider(Provider):
                 '`pip install "sglang[all]"; pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/`'
             )
 
-        if hasattr(lm, "_launched") and lm._launched:
-            logger.info("Server already launched.")
+        if hasattr(lm, "process"):
+            logger.info("Server is already launched.")
             return
 
         launch_kwargs = launch_kwargs or lm.launch_kwargs
@@ -116,10 +116,11 @@ class LocalProvider(Provider):
         lm.process = process
         lm.thread = thread
 
+
     @staticmethod
     def kill(lm: 'LM', launch_kwargs: Optional[Dict[str, Any]] = None):
         from sglang.utils import terminate_process
-        if not hasattr(lm, "thread"):
+        if not hasattr(lm, "process"):
             logger.info("No running server to kill.")
             return
         # Ideally, the following happens atomically
