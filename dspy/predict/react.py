@@ -10,7 +10,13 @@ from dspy.utils.callback import with_callbacks
 
 
 class Tool:
-    def __init__(self, func: Callable, name: str = None, desc: str = None, args: dict[str, Any] = None):
+    def __init__(
+        self,
+        func: Callable,
+        name: str = None,
+        desc: str = None,
+        args: dict[str, Any] = None,
+    ):
         annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
         self.func = func
         self.name = name or getattr(func, "__name__", type(func).__name__)
@@ -59,7 +65,12 @@ class ReAct(Module):
             f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete."
         )
         finish_args = {}  # k: v.annotation for k, v in signature.output_fields.items()}
-        tools["finish"] = Tool(func=lambda **kwargs: "Completed.", name="finish", desc=finish_desc, args=finish_args)
+        tools["finish"] = Tool(
+            func=lambda **kwargs: "Completed.",
+            name="finish",
+            desc=finish_desc,
+            args=finish_args,
+        )
 
         for idx, tool in enumerate(tools.values()):
             args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
@@ -76,7 +87,8 @@ class ReAct(Module):
         )
 
         fallback_signature = dspy.Signature(
-            {**signature.input_fields, **signature.output_fields}, signature.instructions
+            {**signature.input_fields, **signature.output_fields},
+            signature.instructions,
         ).append("trajectory", dspy.InputField(), type_=str)
 
         self.tools = tools
@@ -91,7 +103,10 @@ class ReAct(Module):
 
         trajectory = {}
         for idx in range(self.max_iters):
-            pred = self.react(**input_args, trajectory=format(trajectory, last_iteration=(idx == self.max_iters - 1)))
+            pred = self.react(
+                **input_args,
+                trajectory=format(trajectory, last_iteration=(idx == self.max_iters - 1)),
+            )
 
             trajectory[f"thought_{idx}"] = pred.next_thought
             trajectory[f"tool_name_{idx}"] = pred.next_tool_name
@@ -99,12 +114,16 @@ class ReAct(Module):
 
             try:
                 parsed_tool_args = {}
+                tool = self.tools[pred.next_tool_name]
                 for k, v in pred.next_tool_args.items():
-                    arg_type = self.tools[pred.next_tool_name].arg_types[k]
-                    if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(origin, BaseModel):
-                        parsed_tool_args[k] = arg_type.model_validate(v)
-                    else:
-                        parsed_tool_args[k] = v
+                    if hasattr(tool, "arg_types") and k in tool.arg_types:
+                        arg_type = tool.arg_types[k]
+                        if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(
+                            origin, BaseModel
+                        ):
+                            parsed_tool_args[k] = arg_type.model_validate(v)
+                            continue
+                    parsed_tool_args[k] = v
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"

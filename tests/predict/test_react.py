@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-import dspy
-from dspy.utils.dummies import DummyLM, dummy_rm
-from dspy.predict import react
 from pydantic import BaseModel
 
+import dspy
+from dspy.predict import react
+from dspy.utils.dummies import DummyLM, dummy_rm
 
 # def test_example_no_tools():
 #     # Create a simple dataset which the model will use with the Retrieve tool.
@@ -223,6 +223,38 @@ def test_tool_calling_with_pydantic_args():
         },
         "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
         "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
+        "tool_name_1": "finish",
+        "tool_args_1": {},
+        "observation_1": "Completed.",
+    }
+    assert outputs.trajectory == expected_trajectory
+
+
+def test_tool_calling_without_typehint():
+    def foo(a, b):
+        """Add two numbers."""
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    lm = DummyLM(
+        [
+            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
+            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "I added the numbers successfully", "c": 3},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+    outputs = react(a=1, b=2)
+
+    expected_trajectory = {
+        "thought_0": "I need to add two numbers.",
+        "tool_name_0": "foo",
+        "tool_args_0": {
+            "a": 1,
+            "b": 2,
+        },
+        "observation_0": 3,
+        "thought_1": "I have the sum, now I can finish.",
         "tool_name_1": "finish",
         "tool_args_1": {},
         "observation_1": "Completed.",
