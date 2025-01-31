@@ -22,10 +22,6 @@ def noop_decorator(arg=None, *noop_args, **noop_kwargs):
     else:
         return decorator
 
-
-cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), 'cachedir_joblib')
-CacheMemory = Memory(location=cachedir, verbose=0)
-
 cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR')
 NotebookCacheMemory = dotdict()
 NotebookCacheMemory.cache = noop_decorator
@@ -34,7 +30,10 @@ if cachedir2:
     NotebookCacheMemory = Memory(location=cachedir2, verbose=0)
 
 
-if not cache_turn_on:
+if cache_turn_on:
+    cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), 'cachedir_joblib')
+    CacheMemory = Memory(location=cachedir, verbose=0)
+else:
     CacheMemory = dotdict()
     CacheMemory.cache = noop_decorator
 
