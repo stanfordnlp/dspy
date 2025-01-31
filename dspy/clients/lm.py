@@ -126,6 +126,9 @@ class LM(BaseLM):
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
+        if dspy.settings.disable_history:
+            return outputs
+
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
