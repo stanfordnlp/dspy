@@ -29,7 +29,7 @@ CacheMemory = dotdict()
 CacheMemory.cache = noop_decorator
 
 if cache_turn_on:
-    cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), 'cachedir_joblib')
+    cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache/cachedir_joblib')
     CacheMemory = Memory(location=cachedir, verbose=0)
 
     cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR')
