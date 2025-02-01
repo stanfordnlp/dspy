@@ -1,14 +1,60 @@
+import logging
 from asyncio import iscoroutinefunction
-from typing import Any, AsyncGenerator, Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 
 import litellm
 import ujson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
+from asyncer import syncify
 
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.utils.asyncify import asyncify
+from dspy.utils.callback import BaseCallback
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StatusMessage:
+    message: str
+
+
+class StatusStreamingCallback(BaseCallback):
+    def on_tool_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_tool_calling_status():
+            await stream.send(StatusMessage(f"Calling tool {instance.name}..."))
+
+        send_tool_calling_status()
+
+    def on_tool_end(
+        self,
+        call_id: str,
+        outputs: Optional[Dict[str, Any]],
+        exception: Optional[Exception] = None,
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_tool_calling_status():
+            await stream.send(StatusMessage("Tool calling finished! Querying the LLM with tool calling results..."))
+
+        send_tool_calling_status()
 
 
 def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
@@ -45,6 +91,11 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
     if not iscoroutinefunction(program):
         program = asyncify(program)
 
+    callbacks = dspy.settings.callbacks
+    if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
+        callbacks.append(StatusStreamingCallback())
+    dspy.settings.configure(callbacks=callbacks)
+
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
         with dspy.settings.context(send_stream=stream):
             prediction = await program(*args, **kwargs)
@@ -58,10 +109,21 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
 
             async for value in receive_stream:
                 yield value
+                if isinstance(value, StatusMessage):
+                    logger.info(value.message)
                 if isinstance(value, Prediction):
                     return
 
     return streamer
+
+
+async def get_final_output(streamer: AsyncGenerator) -> Prediction:
+    prediction = None
+    async for value in streamer:
+        if isinstance(value, Prediction):
+            prediction = value
+
+    return prediction
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
