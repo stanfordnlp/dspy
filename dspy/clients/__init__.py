@@ -2,20 +2,22 @@ from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.embedding import Embedder
+from dspy.utils.caching import DSPY_CACHEDIR
 import litellm
 import os
 from pathlib import Path
 from litellm.caching import Cache
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_DIR = DSPY_CACHEDIR
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
-# TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
-# the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
-litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+if os.environ.get("DSP_CACHEBOOL", "True").lower() != "false":
+  # TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
+  # the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
+  litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 
-if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
-    litellm.cache.cache.disk_cache.reset("size_limit", DISK_CACHE_LIMIT)
+  if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
+      litellm.cache.cache.disk_cache.reset("size_limit", DISK_CACHE_LIMIT)
 
 litellm.telemetry = False
 
