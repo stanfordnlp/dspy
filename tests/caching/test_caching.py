@@ -14,6 +14,7 @@ from tests.test_utils.server import litellm_test_server, read_litellm_test_serve
 def temporary_blank_cache_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as cache_dir_path:
         monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
+        importlib.reload(dspy.utils.caching)
         importlib.reload(dspy.clients)
         yield cache_dir_path
 
@@ -30,6 +31,7 @@ def temporary_populated_cache_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as cache_dir_path:
         shutil.copytree(populated_cache_path, cache_dir_path, dirs_exist_ok=True)
         monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
+        importlib.reload(dspy.utils.caching)
         importlib.reload(dspy.clients)
         yield cache_dir_path
 
