@@ -7,7 +7,7 @@ import pytest
 import dspy
 from tests.reliability.utils import assert_program_output_correct, known_failing_models
 
-
+@pytest.mark.reliability
 def test_qa_with_pydantic_answer_model():
     class Answer(pydantic.BaseModel):
         value: str
@@ -44,6 +44,7 @@ def test_qa_with_pydantic_answer_model():
 
 
 @pytest.mark.parametrize("module", [dspy.Predict, dspy.ChainOfThought])
+@pytest.mark.reliability
 def test_color_classification_using_enum(module):
     Color = Enum("Color", ["RED", "GREEN", "BLUE"])
 
@@ -61,6 +62,7 @@ def test_color_classification_using_enum(module):
     assert color == Color.BLUE
 
 
+@pytest.mark.reliability
 def test_entity_extraction_with_multiple_primitive_outputs():
     class ExtractEntityFromDescriptionOutput(pydantic.BaseModel):
         entity_hu: str = pydantic.Field(description="The extracted entity in Hungarian, cleaned and lowercased.")
@@ -106,6 +108,7 @@ def test_entity_extraction_with_multiple_primitive_outputs():
 
 
 @pytest.mark.parametrize("module", [dspy.Predict, dspy.ChainOfThought])
+@pytest.mark.reliability
 def test_tool_calling_with_literals(module):
     next_tool_names = [
         "get_docs",

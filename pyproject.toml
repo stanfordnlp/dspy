@@ -154,6 +154,7 @@ ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
 litellm = { version = "^1.51.0", extras = ["proxy"] }
+datamodel-code-generator = "^0.26.3"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
