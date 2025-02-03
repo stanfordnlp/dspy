@@ -297,13 +297,18 @@ class DatabricksRM(dspy.Retrieve):
                 for doc in sorted_docs
             ]
         else:
+            docs = []
+            for doc in sorted_docs:
+                docs.append(
+                    {
+                        "doc": doc[self.text_column_name],
+                        "doc_id": self._extract_doc_ids(doc),
+                        "doc_url": doc[self.docs_uri_column_name] if self.docs_uri_column_name else None,
+                    }
+                    + self._get_extra_columns(doc)
+                )
             # Returning the prediction
-            return Prediction(
-                docs=[doc[self.text_column_name] for doc in sorted_docs],
-                doc_ids=[self._extract_doc_ids(doc) for doc in sorted_docs],
-                doc_uris=[doc[self.docs_uri_column_name] for doc in sorted_docs] if self.docs_uri_column_name else None,
-                extra_columns=[self._get_extra_columns(item) for item in sorted_docs],
-            )
+            return Prediction(docs=docs)
 
     @staticmethod
     def _query_via_databricks_sdk(
