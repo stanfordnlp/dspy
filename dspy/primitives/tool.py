@@ -119,7 +119,8 @@ class Tool:
                 raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = v.model_dump() if hasattr(v, "model_dump") else v
-                validate(instance=instance, schema=self.args[k])
+                if not self.args[k] == "Any":
+                    validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")
         return self.func(**kwargs)
