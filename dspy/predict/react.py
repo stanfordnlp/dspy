@@ -8,7 +8,6 @@ from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
 
-
 class Tool:
     def __init__(
         self,
@@ -18,24 +17,46 @@ class Tool:
         args: dict[str, Any] = None,
     ):
         annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
+        
         self.func = func
         self.name = name or getattr(func, "__name__", type(func).__name__)
-        self.desc = desc or getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
+        self.desc = (
+            desc
+            or getattr(func, "__doc__", None)
+            or getattr(annotations_func, "__doc__", "")
+        )
         self.args = {}
         self.arg_types = {}
-        for k, v in (args or get_type_hints(annotations_func)).items():
+
+        # If an explicit args dict is passed, use that; otherwise, extract from the function.
+        if args is not None:
+            hints = args
+        else:
+            # Use inspect.signature to get all parameter names
+            sig = inspect.signature(annotations_func)
+            # Get available type hints
+            available_hints = get_type_hints(annotations_func)
+            # Build a dictionary of parameter name -> type (defaulting to Any when missing)
+            hints = {
+                param_name: available_hints.get(param_name, Any)
+                for param_name in sig.parameters.keys()
+            }
+
+        # Process each argument's type to generate its JSON schema.
+        for k, v in hints.items():
             self.arg_types[k] = v
             if k == "return":
                 continue
-            if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
+            # Check if the type (or its origin) is a subclass of Pydantic's BaseModel
+            origin = get_origin(v) or v
+            if isinstance(origin, type) and issubclass(origin, BaseModel):
                 self.args[k] = v.model_json_schema()
             else:
-                self.args[k] = TypeAdapter(v).json_schema()
+                self.args[k] = TypeAdapter(v).json_schema() or "Any"
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
         return self.func(*args, **kwargs)
-
 
 class ReAct(Module):
     def __init__(self, signature, tools: list[Callable], max_iters=5):
