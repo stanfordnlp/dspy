@@ -7,7 +7,7 @@ import textwrap
 from collections.abc import Mapping
 from itertools import chain
 
-from typing import Any, Dict, List, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Any, Dict, Literal, NamedTuple
 
 import pydantic
 from pydantic import TypeAdapter

@@ -307,6 +307,17 @@ def test_save_load_pydantic_model():
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
+def test_optional_image_field():
+    """Test that optional image fields are not required"""
+    class OptionalImageSignature(dspy.Signature):
+        image: Optional[dspy.Image] = dspy.InputField()
+        output: str = dspy.OutputField()
+
+    predictor, lm = setup_predictor(OptionalImageSignature, {"output": "Hello"})
+    result = predictor(image=None)
+    assert result.output == "Hello"
+    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 0
+
 def test_image_repr():
     """Test string representation of Image objects"""
     url_image = dspy.Image.from_url("https://example.com/dog.jpg", download=False)
