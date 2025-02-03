@@ -59,6 +59,9 @@ class ChatAdapter(Adapter):
         return messages
 
     def parse(self, signature, completion):
+        if "<think>" in completion:
+            print("inside chat adapter parse", completion)
+
         sections = [(None, [])]
 
         for line in completion.splitlines():
