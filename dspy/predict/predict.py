@@ -120,7 +120,7 @@ def serialize_object(obj):
     """
     if isinstance(obj, BaseModel):
         # Use model_dump to convert the model into a JSON-serializable dict
-        return obj.model_dump_json()
+        return obj.model_dump()
     elif isinstance(obj, list):
         return [serialize_object(item) for item in obj]
     elif isinstance(obj, tuple):
