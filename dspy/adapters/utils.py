@@ -4,7 +4,6 @@ from typing import Any, List, Literal, Union, get_args, get_origin
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from .image_utils import Image, encode_image
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -53,24 +52,6 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
 
     if assume_text:
         return string_value
-    elif isinstance(value, Image) or field_info.annotation == Image:
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
 
