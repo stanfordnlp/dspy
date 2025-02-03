@@ -45,6 +45,33 @@ class Tool:
 
         self._parse_function(func, arg_desc)
 
+    def _resolve_pydantic_schema(self, model: type[BaseModel]) -> dict:
+        """Recursively resolve Pydantic model schema, expanding all references."""
+        schema = model.model_json_schema()
+
+        # If there are no definitions to resolve, return the main schema
+        if "$defs" not in schema and "definitions" not in schema:
+            return schema
+
+        def resolve_refs(obj: Any) -> Any:
+            if not isinstance(obj, (dict, list)):
+                return obj
+
+            if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref_path = obj["$ref"].split("/")[-1]
+                    return resolve_refs(schema["$defs"][ref_path])
+                return {k: resolve_refs(v) for k, v in obj.items()}
+
+            # Must be a list
+            return [resolve_refs(item) for item in obj]
+
+        # Resolve all references in the main schema
+        resolved_schema = resolve_refs(schema)
+        # Remove the $defs key as it's no longer needed
+        resolved_schema.pop("$defs", None)
+        return resolved_schema
+
     def _parse_function(self, func: Callable, arg_desc: dict[str, str] = None):
         """Helper method that parses a function to extract the name, description, and args.
 
@@ -66,13 +93,15 @@ class Tool:
 
         # Process each argument's type to generate its JSON schema.
         for k, v in hints.items():
-            self.arg_types[k] = v
+            arg_types[k] = v
             if k == "return":
                 continue
             # Check if the type (or its origin) is a subclass of Pydantic's BaseModel
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
-                args[k] = v.model_json_schema(ref_template=None)
+                # Get json schema, and replace $ref with the actual schema
+                v_json_schema = self._resolve_pydantic_schema(v)
+                args[k] = v_json_schema
             else:
                 args[k] = TypeAdapter(v).json_schema() or "Any"
             if arg_desc and k in arg_desc:
@@ -82,21 +111,6 @@ class Tool:
         self.desc = self.desc or desc
         self.args = self.args or args
         self.arg_types = self.arg_types or arg_types
-
-    def convert_to_litellm_tool_format(self):
-        """Converts the tool to the format required by litellm for tool calling."""
-        args = {
-            "type": "object",
-            "properties": self.args,
-            "required": list(self.args.keys()),
-            "additionalProperties": False,
-        }
-
-        tool_dict = {
-            "type": "function",
-            "function": {"name": self.name, "description": self.desc, "args": args},
-        }
-        return tool_dict
 
     @with_callbacks
     def __call__(self, **kwargs):

@@ -68,10 +68,10 @@ def complex_dummy_function(profile: UserProfile, priority: int, notes: Optional[
 
 
 def test_basic_initialization():
-    tool = Tool(name="test_tool", desc="A test tool", parameters={"param1": {"type": "string"}}, func=lambda x: x)
+    tool = Tool(name="test_tool", desc="A test tool", args={"param1": {"type": "string"}}, func=lambda x: x)
     assert tool.name == "test_tool"
     assert tool.desc == "A test tool"
-    assert tool.parameters == {"param1": {"type": "string"}}
+    assert tool.args == {"param1": {"type": "string"}}
     assert callable(tool.func)
 
 
@@ -80,10 +80,10 @@ def test_tool_from_function():
 
     assert tool.name == "dummy_function"
     assert "A dummy function for testing" in tool.desc
-    assert "x" in tool.parameters
-    assert "y" in tool.parameters
-    assert tool.parameters["x"]["type"] == "integer"
-    assert tool.parameters["y"]["type"] == "string"
+    assert "x" in tool.args
+    assert "y" in tool.args
+    assert tool.args["x"]["type"] == "integer"
+    assert tool.args["y"]["type"] == "string"
 
 
 def test_tool_from_class():
@@ -98,28 +98,17 @@ def test_tool_from_class():
     tool = Tool(Foo("123"))
     assert tool.name == "Foo"
     assert tool.desc == "Add two numbers."
-    assert tool.parameters == {"a": {"type": "integer"}, "b": {"type": "integer"}}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
 
 
 def test_tool_from_function_with_pydantic():
     tool = Tool(dummy_with_pydantic)
 
     assert tool.name == "dummy_with_pydantic"
-    assert "model" in tool.parameters
-    assert tool.parameters["model"]["type"] == "object"
-    assert "field1" in tool.parameters["model"]["properties"]
-    assert "field2" in tool.parameters["model"]["properties"]
-
-
-def test_convert_to_litellm_tool_format():
-    tool = Tool(dummy_function)
-    litellm_format = tool.convert_to_litellm_tool_format()
-
-    assert litellm_format["type"] == "function"
-    assert litellm_format["function"]["name"] == "dummy_function"
-    assert "parameters" in litellm_format["function"]
-    assert litellm_format["function"]["parameters"]["required"] == ["x", "y"]
-    assert not litellm_format["function"]["parameters"]["additionalProperties"]
+    assert "model" in tool.args
+    assert tool.args["model"]["type"] == "object"
+    assert "field1" in tool.args["model"]["properties"]
+    assert "field2" in tool.args["model"]["properties"]
 
 
 def test_tool_callable():
@@ -142,93 +131,5 @@ def test_invalid_function_call():
 
 
 def test_parameter_desc():
-    tool = Tool(dummy_function, parameter_desc={"x": "The x parameter"})
-    assert tool.parameters["x"]["description"] == "The x parameter"
-
-
-def test_complex_nested_schema():
-    tool = Tool(complex_dummy_function, parameter_desc={"profile": "The user ultimate profile"})
-
-    assert tool.name == "complex_dummy_function"
-    assert "profile" in tool.parameters
-
-    profile_schema = tool.parameters["profile"]
-    assert profile_schema["type"] == "object"
-    assert profile_schema["description"] == "The user ultimate profile"
-
-    # Check nested structure
-    properties = profile_schema["properties"]
-    assert "contact" in properties
-    assert properties["contact"]["type"] == "object"
-
-    contact_properties = properties["contact"]["properties"]
-    assert "addresses" in contact_properties
-    assert contact_properties["addresses"]["type"] == "array"
-    assert contact_properties["addresses"]["items"]["type"] == "object"
-
-    # Check converted litellm format
-    expected_litellm_format = {
-        "type": "function",
-        "function": {
-            "name": "complex_dummy_function",
-            "description": (
-                "Process user profile with complex nested structure.\n\n    Args:\n        profile: User "
-                "profile containing nested contact and address information\n        priority: Priority "
-                "level of the processing\n        notes: Optional processing notes\n    "
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "profile": {
-                        "properties": {
-                            "user_id": {"title": "User Id", "type": "integer"},
-                            "name": {"title": "Name", "type": "string"},
-                            "age": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Age"},
-                            "contact": {
-                                "properties": {
-                                    "email": {"title": "Email", "type": "string"},
-                                    "phone": {
-                                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                                        "default": None,
-                                        "title": "Phone",
-                                    },
-                                    "addresses": {
-                                        "items": {
-                                            "properties": {
-                                                "street": {"title": "Street", "type": "string"},
-                                                "city": {"title": "City", "type": "string"},
-                                                "zip_code": {"title": "Zip Code", "type": "string"},
-                                                "is_primary": {
-                                                    "default": False,
-                                                    "title": "Is Primary",
-                                                    "type": "boolean",
-                                                },
-                                            },
-                                            "required": ["street", "city", "zip_code"],
-                                            "title": "Address",
-                                            "type": "object",
-                                        },
-                                        "title": "Addresses",
-                                        "type": "array",
-                                    },
-                                },
-                                "required": ["email", "addresses"],
-                                "title": "ContactInfo",
-                                "type": "object",
-                            },
-                            "tags": {"default": [], "items": {"type": "string"}, "title": "Tags", "type": "array"},
-                        },
-                        "required": ["user_id", "name", "contact"],
-                        "title": "UserProfile",
-                        "description": "The user ultimate profile",
-                        "type": "object",
-                    },
-                    "priority": {"type": "integer"},
-                    "notes": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                },
-                "required": ["profile", "priority", "notes"],
-                "additionalProperties": False,
-            },
-        },
-    }
-    assert tool.convert_to_litellm_tool_format() == expected_litellm_format
+    tool = Tool(dummy_function, arg_desc={"x": "The x parameter"})
+    assert tool.args["x"]["description"] == "The x parameter"

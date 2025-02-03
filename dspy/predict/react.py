@@ -40,11 +40,11 @@ class ReAct(Module):
             func=lambda **kwargs: "Completed.",
             name="finish",
             desc=finish_desc,
-            parameters=finish_args,
+            args=finish_args,
         )
 
         for idx, tool in enumerate(tools.values()):
-            args = getattr(tool, "parameters")
+            args = getattr(tool, "args")
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
             instr.append(f"({idx+1}) {tool.name}{desc}")
