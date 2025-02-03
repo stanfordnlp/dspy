@@ -36,10 +36,10 @@ def disable_litellm_logging():
 
 
 __all__ = [
+    "BaseLM",
     "LM",
     "Provider",
     "TrainingJob",
-    "BaseLM",
     "inspect_history",
     "Embedder",
     "enable_litellm_logging",

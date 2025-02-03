@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+import dspy
+
 GLOBAL_HISTORY = []
 
 class BaseLM(ABC):
@@ -18,6 +20,9 @@ class BaseLM(ABC):
         _inspect_history(self.history, n)
 
     def update_global_history(self, entry):
+        if dspy.settings.disable_history:
+            return
+
         GLOBAL_HISTORY.append(entry)
 
 

@@ -18,23 +18,27 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
 
     Args:
         program: The DSPy program to wrap with streaming functionality.
+
     Returns:
         A function that takes the same arguments as the original program, but returns an async
-        generator that yields the program's outputs incrementally.
+            generator that yields the program's outputs incrementally.
 
     Example:
-        >>> class TestSignature(dspy.Signature):
-        >>>     input_text: str = dspy.InputField()
-        >>>     output_text: str = dspy.OutputField()
-        >>>
-        >>> # Create the program and wrap it with streaming functionality
-        >>> program = dspy.streamify(dspy.Predict(TestSignature))
-        >>>
-        >>> # Use the program with streaming output
-        >>> async def use_streaming():
-        >>>     output_stream = program(input_text="Test")
-        >>>     async for value in output_stream:
-        >>>         print(value)  # Print each streamed value incrementally
+
+    ```python
+    class TestSignature(dspy.Signature):
+        input_text: str = dspy.InputField()
+        output_text: str = dspy.OutputField()
+
+    # Create the program and wrap it with streaming functionality
+    program = dspy.streamify(dspy.Predict(TestSignature))
+
+    # Use the program with streaming output
+    async def use_streaming():
+        output_stream = program(input_text="Test")
+        async for value in output_stream:
+            print(value)  # Print each streamed value incrementally
+    ```
     """
     import dspy
 
@@ -74,7 +78,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         if isinstance(value, Prediction):
             data = {"prediction": {k: v for k, v in value.items(include_dspy=False)}}
             yield f"data: {ujson.dumps(data)}\n\n"
-        elif isinstance(value, litellm.ModelResponse):
+        elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
             yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):

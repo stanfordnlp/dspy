@@ -6,14 +6,15 @@ import re
 import textwrap
 from collections.abc import Mapping
 from itertools import chain
-from typing import Any, Dict, Literal, NamedTuple, get_args, get_origin
+
+from typing import Any, Dict, List, Literal, NamedTuple, Union, get_args, get_origin
 
 import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import find_enum_member, format_field_value
+from dspy.adapters.utils import find_enum_member, format_field_value, get_annotation_name
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -209,19 +210,6 @@ def flatten_messages(messages):
         item if isinstance(item, list) else [item] for item in messages
     ))
 
-def get_annotation_name(annotation):
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is None:
-        if hasattr(annotation, "__name__"):
-            return annotation.__name__
-        else:
-            return str(annotation)
-    else:
-        args_str = ", ".join(get_annotation_name(arg) for arg in args)
-        return f"{get_annotation_name(origin)}[{args_str}]"
-
-
 def enumerate_fields(fields: dict) -> str:
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
@@ -265,7 +253,11 @@ def prepare_instructions(signature: SignatureMeta):
         elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
         elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
-            desc = f"must be one of: {'; '.join([str(x) for x in field_type.__args__])}"
+            desc = (
+                # Strongly encourage the LM to avoid choosing values that don't appear in the
+                # literal or returning a value of the form 'Literal[<selected_value>]'
+                f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
+            )
         else:
             desc = "must be pareseable according to the following JSON schema: "
             desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)

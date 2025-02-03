@@ -3,8 +3,8 @@ import os
 import pytest
 
 import dspy
-from tests.conftest import clear_settings
-from tests.reliability.utils import get_adapter, parse_reliability_conf_yaml
+from ..conftest import clear_settings
+from ..reliability.utils import get_adapter, parse_reliability_conf_yaml
 
 # Standard list of models that should be used for periodic DSPy reliability testing
 MODEL_LIST = [
