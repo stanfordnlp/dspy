@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import openai
 
 from dspy.clients.provider import TrainingJob, Provider
-from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
 
 
 _OPENAI_MODELS = [
@@ -123,11 +123,11 @@ class OpenAIProvider(Provider):
         job: TrainingJobOpenAI,
         model: str,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None,
     ) -> str:
         print("[OpenAI Provider] Validating the data format")
-        OpenAIProvider.validate_data_format(data_format)
+        OpenAIProvider.validate_data_format(train_data_format)
 
         print("[OpenAI Provider] Saving the data to a file")
         data_path = save_data(train_data)
@@ -212,10 +212,10 @@ class OpenAIProvider(Provider):
         return status
 
     @staticmethod
-    def validate_data_format(data_format: DataFormat):
+    def validate_data_format(data_format: TrainDataFormat):
         supported_data_formats = [
-            DataFormat.chat,
-            DataFormat.completion,
+            TrainDataFormat.CHAT,
+            TrainDataFormat.COMPLETION,
         ]
         if data_format not in supported_data_formats:
             err_msg = f"OpenAI does not support the data format {data_format}."
