@@ -129,7 +129,7 @@ def parse_value(value, annotation):
         parsed_value = find_enum_member(annotation, value)
     elif isinstance(value, str):
         try:
-            parsed_value = json.loads(value)
+            parsed_value = json_repair.loads(value)
         except json.JSONDecodeError:
             try:
                 parsed_value = ast.literal_eval(value)
