@@ -5,7 +5,7 @@ from dspy.predict.knn import KNN
 from dspy.predict.multi_chain_comparison import MultiChainComparison
 from dspy.predict.predict import Predict
 from dspy.predict.program_of_thought import ProgramOfThought
-from dspy.predict.react import ReAct, Tool
+from dspy.predict.react import ReAct
 from dspy.predict.parallel import Parallel
 
 __all__ = [
@@ -17,6 +17,5 @@ __all__ = [
     "Predict",
     "ProgramOfThought",
     "ReAct",
-    "Tool",
     "Parallel",
 ]
