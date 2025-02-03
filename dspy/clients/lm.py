@@ -1,6 +1,7 @@
 import functools
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime
@@ -74,19 +75,26 @@ class LM(BaseLM):
         self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
-        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
         self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs
 
-        # TODO(bug): Arbitrary model strings could include the substring "o1-".
-        # We should find a more robust way to check for the "o1-" family models.
-        if "o1-" in model:
+        # Handle model-specific configuration for different model families
+        model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+
+        # Match pattern: o[1,3] at the start, optionally followed by -mini and anything else
+        model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+
+        if model_pattern:
+            # Handle OpenAI reasoning models (o1, o3)
             assert (
                 max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+        else:
+            self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
@@ -101,7 +109,7 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            response =  completion(
+            response = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )

@@ -180,3 +180,49 @@ def test_lm_text_calls_are_retried_for_expected_failures(
 
     request_logs = read_litellm_test_server_request_logs(server_log_file_path)
     assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
+
+
+def test_reasoning_model_token_parameter():
+    test_cases = [
+        ("openai/o1", True),
+        ("openai/o1-mini", True),
+        ("openai/o1-2023-01-01", True),
+        ("openai/o3", True),
+        ("openai/o3-mini-2023-01-01", True),
+        ("openai/gpt-4", False),
+        ("anthropic/claude-2", False),
+    ]
+
+    for model_name, is_reasoning_model in test_cases:
+        lm = dspy.LM(
+            model=model_name,
+            temperature=1.0 if is_reasoning_model else 0.7,
+            max_tokens=5000 if is_reasoning_model else 1000,
+        )
+        if is_reasoning_model:
+            assert "max_completion_tokens" in lm.kwargs
+            assert "max_tokens" not in lm.kwargs
+            assert lm.kwargs["max_completion_tokens"] == 5000
+        else:
+            assert "max_completion_tokens" not in lm.kwargs
+            assert "max_tokens" in lm.kwargs
+            assert lm.kwargs["max_tokens"] == 1000
+
+
+def test_reasoning_model_requirements():
+    # Should raise assertion error if temperature or max_tokens requirements not met
+    with pytest.raises(AssertionError) as exc_info:
+        dspy.LM(
+            model="openai/o1",
+            temperature=0.7,  # Should be 1.0
+            max_tokens=1000,  # Should be >= 5000
+        )
+    assert "reasoning models require passing temperature=1.0 and max_tokens >= 5000" in str(exc_info.value)
+
+    # Should pass with correct parameters
+    lm = dspy.LM(
+        model="openai/o1",
+        temperature=1.0,
+        max_tokens=5000,
+    )
+    assert lm.kwargs["max_completion_tokens"] == 5000
