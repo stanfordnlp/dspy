@@ -221,8 +221,10 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         tokenizer.add_special_tokens({"pad_token": "[!#PAD#!]"})
 
     logger.info("Creating dataset")
-    max_seq_length = train_kwargs.get("max_seq_length", 4096)
-    train_kwargs['max_seq_length'] = max_seq_length
+    if "max_seq_length" not in train_kwargs:
+        train_kwargs["max_seq_length"] = 4096
+        logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
+
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):
         return encode_sft_example(example, tokenizer, max_seq_length)
@@ -263,7 +265,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         bf16=train_kwargs["bf16"],
         max_seq_length=train_kwargs["max_seq_length"],
         packing=train_kwargs["packing"],
-        dataset_kwargs={  # TODO: Are these needed?
+        dataset_kwargs={  # We need to pass dataset_kwargs because we are processing the dataset ourselves
             "add_special_tokens": False,  # Special tokens handled by template
             "append_concat_token": False,  # No additional separator needed
         },
