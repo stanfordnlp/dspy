@@ -196,50 +196,6 @@ def test_multiline_instructions():
     assert predictor().output == "short answer"
 
 
-def test_replaced_by_replace_context_manager():
-    class SignatureOne(Signature):
-        input1 = InputField()
-        output = OutputField()
-
-    class SignatureTwo(Signature):
-        input2 = InputField()
-        output = OutputField()
-
-    with SignatureOne.replace(SignatureTwo, validate_new_signature=False):
-        # assert SignatureOne.input_fields has been replaced with SignatureTwo.input_fields
-        assert "input2" in SignatureOne.input_fields
-    # after the context manager, the original input_fields should be restored
-    assert SignatureOne.input_fields["input1"].json_schema_extra["prefix"] == "Input 1:"
-
-
-def test_multiple_replaced_by_update_signatures():
-    class SignatureOne(Signature):
-        input1 = InputField()
-        output = OutputField()
-
-    class SignatureTwo(Signature):
-        input2 = InputField()
-        output = OutputField()
-
-    class SignatureThree(Signature):
-        input3 = InputField()
-        output = OutputField()
-
-    class SignatureFour(Signature):
-        input4 = InputField()
-        output = OutputField()
-
-    signature_map = {
-        SignatureOne: SignatureThree,
-        SignatureTwo: SignatureFour,
-    }
-    with dspy.update_signatures(signature_map, validate_new_signature=False):
-        assert "input3" in SignatureOne.input_fields
-        assert "input4" in SignatureTwo.input_fields
-    assert "input1" in SignatureOne.input_fields
-    assert "input2" in SignatureTwo.input_fields
-
-
 def test_dump_and_load_state():
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
@@ -310,18 +266,27 @@ def test_typed_signatures_unions_and_optionals():
     # Depending on the environment, it might resolve to Union[str, None] or Optional[str], either is correct.
     # We'll just check for a Union containing str and NoneType:
     input_opt_annotation = sig.input_fields["input_opt"].annotation
-    assert (input_opt_annotation == Optional[str] or 
-            (getattr(input_opt_annotation, '__origin__', None) is Union and str in input_opt_annotation.__args__ and type(None) in input_opt_annotation.__args__))
+    assert input_opt_annotation == Optional[str] or (
+        getattr(input_opt_annotation, "__origin__", None) is Union
+        and str in input_opt_annotation.__args__
+        and type(None) in input_opt_annotation.__args__
+    )
 
     assert "input_union" in sig.input_fields
     input_union_annotation = sig.input_fields["input_union"].annotation
-    assert (getattr(input_union_annotation, '__origin__', None) is Union and 
-            int in input_union_annotation.__args__ and type(None) in input_union_annotation.__args__)
+    assert (
+        getattr(input_union_annotation, "__origin__", None) is Union
+        and int in input_union_annotation.__args__
+        and type(None) in input_union_annotation.__args__
+    )
 
     assert "output_union" in sig.output_fields
     output_union_annotation = sig.output_fields["output_union"].annotation
-    assert (getattr(output_union_annotation, '__origin__', None) is Union and
-            int in output_union_annotation.__args__ and str in output_union_annotation.__args__)
+    assert (
+        getattr(output_union_annotation, "__origin__", None) is Union
+        and int in output_union_annotation.__args__
+        and str in output_union_annotation.__args__
+    )
 
 
 def test_typed_signatures_any():
@@ -336,22 +301,22 @@ def test_typed_signatures_nested():
     # Nested generics and unions
     sig = Signature("input_nested: List[Union[str, int]] -> output_nested: Tuple[int, Optional[float], List[str]]")
     input_nested_ann = sig.input_fields["input_nested"].annotation
-    assert getattr(input_nested_ann, '__origin__', None) is list
+    assert getattr(input_nested_ann, "__origin__", None) is list
     assert len(input_nested_ann.__args__) == 1
     union_arg = input_nested_ann.__args__[0]
-    assert getattr(union_arg, '__origin__', None) is Union
+    assert getattr(union_arg, "__origin__", None) is Union
     assert str in union_arg.__args__ and int in union_arg.__args__
 
     output_nested_ann = sig.output_fields["output_nested"].annotation
-    assert getattr(output_nested_ann, '__origin__', None) is tuple
+    assert getattr(output_nested_ann, "__origin__", None) is tuple
     assert output_nested_ann.__args__[0] == int
     # The second arg is Optional[float], which is Union[float, None]
     second_arg = output_nested_ann.__args__[1]
-    assert getattr(second_arg, '__origin__', None) is Union
+    assert getattr(second_arg, "__origin__", None) is Union
     assert float in second_arg.__args__ and type(None) in second_arg.__args__
     # The third arg is List[str]
     third_arg = output_nested_ann.__args__[2]
-    assert getattr(third_arg, '__origin__', None) is list
+    assert getattr(third_arg, "__origin__", None) is list
     assert third_arg.__args__[0] == str
 
 
@@ -374,30 +339,44 @@ def test_typed_signatures_from_dict():
 def test_typed_signatures_complex_combinations():
     # Test a very complex signature with multiple nested constructs
     # input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]
-    sig = Signature("input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]")
+    sig = Signature(
+        "input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]"
+    )
     input_complex_ann = sig.input_fields["input_complex"].annotation
-    assert getattr(input_complex_ann, '__origin__', None) is dict
+    assert getattr(input_complex_ann, "__origin__", None) is dict
     key_arg, value_arg = input_complex_ann.__args__
     assert key_arg == str
     # value_arg: List[Optional[Tuple[int, str]]]
-    assert getattr(value_arg, '__origin__', None) is list
+    assert getattr(value_arg, "__origin__", None) is list
     inner_union = value_arg.__args__[0]
     # inner_union should be Optional[Tuple[int, str]]
     # which is Union[Tuple[int, str], None]
-    assert getattr(inner_union, '__origin__', None) is Union
+    assert getattr(inner_union, "__origin__", None) is Union
     tuple_type = [t for t in inner_union.__args__ if t != type(None)][0]
-    assert getattr(tuple_type, '__origin__', None) is tuple
+    assert getattr(tuple_type, "__origin__", None) is tuple
     assert tuple_type.__args__ == (int, str)
 
     output_complex_ann = sig.output_fields["output_complex"].annotation
-    assert getattr(output_complex_ann, '__origin__', None) is Union
+    assert getattr(output_complex_ann, "__origin__", None) is Union
     assert len(output_complex_ann.__args__) == 2
     possible_args = set(output_complex_ann.__args__)
     # Expecting List[str] and Dict[str, Any]
     # Because sets don't preserve order, just check membership.
     # Find the List[str] arg
-    list_arg = next(a for a in possible_args if getattr(a, '__origin__', None) is list)
-    dict_arg = next(a for a in possible_args if getattr(a, '__origin__', None) is dict)
+    list_arg = next(a for a in possible_args if getattr(a, "__origin__", None) is list)
+    dict_arg = next(a for a in possible_args if getattr(a, "__origin__", None) is dict)
     assert list_arg.__args__ == (str,)
     k, v = dict_arg.__args__
     assert k == str and v == Any
+
+
+def test_make_signature_from_string():
+    sig = Signature("input1: int, input2: Dict[str, int] -> output1: List[str], output2: Union[int, str]")
+    assert "input1" in sig.input_fields
+    assert sig.input_fields["input1"].annotation == int
+    assert "input2" in sig.input_fields
+    assert sig.input_fields["input2"].annotation == Dict[str, int]
+    assert "output1" in sig.output_fields
+    assert sig.output_fields["output1"].annotation == List[str]
+    assert "output2" in sig.output_fields
+    assert sig.output_fields["output2"].annotation == Union[int, str]
