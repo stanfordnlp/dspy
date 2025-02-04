@@ -194,7 +194,6 @@ plugins:
                         show_warnings: false
                         html_meta: false
                     docstring_options:
-                        separate_signature: false
                         merge_return_lines: true
     - mkdocs-jupyter:
         ignore_h1_titles: True
