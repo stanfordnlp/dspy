@@ -24,6 +24,7 @@ class WeaviateRM(dspy.Retrieve):
         weaviate_collection_name (str): The name of the Weaviate collection.
         weaviate_client (WeaviateClient): An instance of the Weaviate client.
         k (int, optional): The default number of top passages to retrieve. Default to 3.
+        tenant_id (str, optional): The tenant to retrieve objects from.
 
     Examples:
         Below is a code snippet that shows how to use Weaviate as the default retriever:
@@ -114,7 +115,7 @@ class WeaviateRM(dspy.Retrieve):
         if self._client_type == "WeaviateClient":
             objects = []
             counter = 0
-            for item in self._weaviate_collection.iterator():
+            for item in self._weaviate_collection.iterator(): # TODO: add tenancy scoping
                 if counter >= num_samples:
                     break
                 new_object = {}
@@ -132,6 +133,6 @@ class WeaviateRM(dspy.Retrieve):
             self._weaviate_collection.data.insert(
                 properties=new_object_properties,
                 uuid=get_valid_uuid(uuid4())
-            )
+            ) # TODO: add tenancy scoping
         else:
             raise AttributeError("`insert` is not supported for the v3 Weaviate Python client, please upgrade to v4.")
