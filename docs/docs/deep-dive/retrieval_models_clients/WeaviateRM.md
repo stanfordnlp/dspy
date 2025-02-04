@@ -20,6 +20,8 @@ WeaviateRM(
 ```
 
 ## Using Multitenancy
+Multi-tenancy allows a collection to efficiently serve isolated groups of data. Each "tenant" in a multi-tenant collection can only access its own data, while sharing the same data structure and settings.
+
 If your Weaviate instance is tenant-aware, you can provide a tenant_id in the WeaviateRM constructor or as a keyword argument:
 
 ```python
