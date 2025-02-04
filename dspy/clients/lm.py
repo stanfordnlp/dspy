@@ -6,17 +6,14 @@ import threading
 import uuid
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, Optional
 
 import litellm
 import pydantic
 import ujson
-from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
 from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
-import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
@@ -229,8 +226,6 @@ class LM(BaseLM):
         return Provider()
 
     def infer_adapter(self) -> Adapter:
-        import dspy
-
         if dspy.settings.adapter:
             return dspy.settings.adapter
 
@@ -345,32 +340,11 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         max_retries=0,
     )
 
-    stream = dspy.settings.send_stream
-    if stream is None:
-        return litellm.completion(
-            cache=cache,
-            **retry_kwargs,
-            **request,
-        )
-
-    # The stream is already opened, and will be closed by the caller.
-    stream = cast(MemoryObjectSendStream, stream)
-
-    @syncify
-    async def stream_completion():
-        response = await litellm.acompletion(
-            cache=cache,
-            stream=True,
-            **retry_kwargs,
-            **request,
-        )
-        chunks = []
-        async for chunk in response:
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
-
-    return stream_completion()
+    return litellm.completion(
+        cache=cache,
+        **retry_kwargs,
+        **request,
+    )
 
 
 @request_cache(maxsize=None)

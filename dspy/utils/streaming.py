@@ -31,7 +31,7 @@ class StatusStreamingCallback(BaseCallback):
         inputs: Dict[str, Any],
     ):
         stream = settings.send_stream
-        if stream is None:
+        if stream is None or instance.name == "finish":
             return
 
         @syncify
@@ -47,7 +47,7 @@ class StatusStreamingCallback(BaseCallback):
         exception: Optional[Exception] = None,
     ):
         stream = settings.send_stream
-        if stream is None:
+        if stream is None or outputs == "Completed.":
             return
 
         @syncify
@@ -72,18 +72,18 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
     Example:
 
     ```python
-    class TestSignature(dspy.Signature):
-        input_text: str = dspy.InputField()
-        output_text: str = dspy.OutputField()
+    import asyncio
+    import dspy
 
     # Create the program and wrap it with streaming functionality
-    program = dspy.streamify(dspy.Predict(TestSignature))
+    program = dspy.streamify(dspy.Predict("q->a"))
 
     # Use the program with streaming output
     async def use_streaming():
-        output_stream = program(input_text="Test")
-        async for value in output_stream:
-            print(value)  # Print each streamed value incrementally
+        return await program(q="Why did a chicken cross the kitchen?")
+
+    output = asyncio.run(use_streaming())
+    print(output)
     ```
     """
     import dspy
@@ -104,15 +104,18 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
 
     async def streamer(*args, **kwargs):
         send_stream, receive_stream = create_memory_object_stream(16)
+        return_value = None
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                yield value
                 if isinstance(value, StatusMessage):
                     logger.info(value.message)
                 if isinstance(value, Prediction):
-                    return
+                    return_value = value
+                    break
+
+        return return_value
 
     return streamer
 
