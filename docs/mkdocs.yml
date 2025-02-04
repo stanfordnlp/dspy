@@ -194,7 +194,6 @@ plugins:
                         show_warnings: false
                         html_meta: false
                     docstring_options:
-                        returns_style: table
                         separate_signature: false
                         merge_return_lines: true
     - mkdocs-jupyter:
