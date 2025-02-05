@@ -4,7 +4,7 @@ This guide demonstrates how to debug problems and improve observability in DSPy.
 
 However, as systems grow more sophisticated, the ability to **understand what your system is doing** becomes critical. Without transparency, the prediction process can easily become a black box, making failures or quality issues difficult to diagnose and production maintenance challenging.
 
-By the end of this tutorial, you'll understand how to debug an issue and improve observability using [MLflow Tracing](#mlflow-tracing). You'll also explore how to build a custom logging solution using callbacks.
+By the end of this tutorial, you'll understand how to debug an issue and improve observability using [MLflow Tracing](#tracing). You'll also explore how to build a custom logging solution using callbacks.
 
 
 
