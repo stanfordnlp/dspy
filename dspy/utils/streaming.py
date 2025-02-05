@@ -1,7 +1,7 @@
 import logging
 from asyncio import iscoroutinefunction
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 
 import litellm
 import ujson
@@ -11,11 +11,13 @@ from asyncer import syncify
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module
 from dspy.utils.asyncify import asyncify
 from dspy.utils.callback import BaseCallback
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from dspy.primitives.program import Module
 
 
 @dataclass
@@ -157,7 +159,7 @@ class StatusStreamingCallback(BaseCallback):
 
 
 def streamify(
-    program: Module,
+    program: "Module",
     status_message_provider: Optional[StatusMessageProvider] = None,
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
@@ -191,48 +193,32 @@ def streamify(
     print(output)
     ```
     """
-    import dspy
-
     if not iscoroutinefunction(program):
         program = asyncify(program)
 
-    callbacks = dspy.settings.callbacks
+    callbacks = settings.callbacks
     status_streaming_callback = StatusStreamingCallback(status_message_provider)
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
-    dspy.settings.configure(callbacks=callbacks)
+    settings.configure(callbacks=callbacks)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with dspy.settings.context(send_stream=stream):
+        with settings.context(send_stream=stream):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
 
     async def streamer(*args, **kwargs):
         send_stream, receive_stream = create_memory_object_stream(16)
-        return_value = None
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                if isinstance(value, StatusMessage):
-                    logger.info(value.message)
+                yield value
                 if isinstance(value, Prediction):
-                    return_value = value
-                    break
-
-        return return_value
+                    return
 
     return streamer
-
-
-async def get_final_output(streamer: AsyncGenerator) -> Prediction:
-    prediction = None
-    async for value in streamer:
-        if isinstance(value, Prediction):
-            prediction = value
-
-    return prediction
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
