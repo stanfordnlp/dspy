@@ -58,6 +58,7 @@ nav:
         - Saving and Loading: tutorials/saving/index.md
         - Deployment: tutorials/deployment/index.md
         - Debugging & Observability: tutorials/observability/index.md
+    - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
@@ -128,8 +129,6 @@ nav:
             - inspect_history: api/utils/inspect_history.md
             - load: api/utils/load.md
             - streamify: api/utils/streamify.md
-
-    - DSPy in Production: production/index.md
 
 theme:
     name: material
