@@ -1,17 +1,15 @@
-# dspy.Image
+# dspy.utils.StatusMessageProvider
 
-::: dspy.Image
+::: dspy.utils.StatusMessageProvider
     handler: python
     options:
         members:
-            - copy
-            - dict
-            - json
-            - model_copy
-            - model_dump
-            - model_dump_json
-            - model_post_init
-            - serialize_model
+            - lm_end_status_message
+            - lm_start_status_message
+            - module_end_status_message
+            - module_start_status_message
+            - tool_end_status_message
+            - tool_start_status_message
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
