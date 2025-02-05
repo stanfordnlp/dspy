@@ -118,6 +118,8 @@ nav:
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - StatusMessage: api/utils/StatusMessage.md
+            - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - asyncify: api/utils/asyncify.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
