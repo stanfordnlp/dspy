@@ -127,6 +127,8 @@ nav:
             - load: api/utils/load.md
             - streamify: api/utils/streamify.md
 
+    - DSPy in Production: production/index.md
+
 theme:
     name: material
     custom_dir: overrides
@@ -231,6 +233,7 @@ markdown_extensions:
     - pymdownx.superfences
     - pymdownx.mark
     - attr_list
+    - md_in_html
     - pymdownx.emoji:
         emoji_index: !!python/name:material.extensions.emoji.twemoji
         emoji_generator: !!python/name:materialx.emoji.to_svg

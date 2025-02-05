@@ -51,6 +51,10 @@
     text-align: justify;
 }
 
+/* Left-aligned text for grid cards */
+.md-content__inner .grid.cards p {
+    text-align: left;
+}
 
 /* Base styling for the output area */
 .jp-Cell-outputWrapper .jp-OutputArea-output pre {
