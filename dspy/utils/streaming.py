@@ -23,7 +23,30 @@ class StatusMessage:
     message: str
 
 
+class StatusMessageProvider:
+    def tool_start_status_message(self, instance: Any):
+        return f"Calling tool {instance.name}..."
+
+    def tool_end_status_message(self, outputs: Any):
+        return "Tool calling finished! Querying the LLM with tool calling results..."
+
+    def module_start_status_message(self, instance: Any):
+        pass
+
+    def module_end_status_message(self, outputs: Any):
+        pass
+
+    def lm_start_status_message(self, instance: Any):
+        pass
+
+    def lm_end_status_message(self, outputs: Any):
+        pass
+
+
 class StatusStreamingCallback(BaseCallback):
+    def __init__(self, status_message_provider: Optional[StatusMessageProvider] = None):
+        self.status_message_provider = status_message_provider or StatusMessageProvider()
+
     def on_tool_start(
         self,
         call_id: str,
@@ -35,10 +58,12 @@ class StatusStreamingCallback(BaseCallback):
             return
 
         @syncify
-        async def send_tool_calling_status():
-            await stream.send(StatusMessage(f"Calling tool {instance.name}..."))
+        async def send_status():
+            status_message = self.status_message_provider.tool_start_status_message(instance)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
 
-        send_tool_calling_status()
+        send_status()
 
     def on_tool_end(
         self,
@@ -51,19 +76,99 @@ class StatusStreamingCallback(BaseCallback):
             return
 
         @syncify
-        async def send_tool_calling_status():
-            await stream.send(StatusMessage("Tool calling finished! Querying the LLM with tool calling results..."))
+        async def send_status():
+            status_message = self.status_message_provider.tool_end_status_message(outputs)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
 
-        send_tool_calling_status()
+        send_status()
+
+    def on_lm_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_status():
+            status_message = self.status_message_provider.lm_start_status_message(instance)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
+
+        send_status()
+
+    def on_lm_end(
+        self,
+        call_id: str,
+        outputs: Optional[Dict[str, Any]],
+        exception: Optional[Exception] = None,
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_status():
+            status_message = self.status_message_provider.lm_end_status_message(outputs)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
+
+        send_status()
+
+    def on_module_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_status():
+            status_message = self.status_message_provider.module_start_status_message(instance)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
+
+        send_status()
+
+    def on_module_end(
+        self,
+        call_id: str,
+        outputs: Optional[Dict[str, Any]],
+        exception: Optional[Exception] = None,
+    ):
+        stream = settings.send_stream
+        if stream is None:
+            return
+
+        @syncify
+        async def send_status():
+            status_message = self.status_message_provider.module_end_status_message(outputs)
+            if status_message:
+                await stream.send(StatusMessage(status_message))
+
+        send_status()
 
 
-def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
+def streamify(
+    program: Module,
+    status_message_provider: Optional[StatusMessageProvider] = None,
+) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
     all at once.
 
     Args:
         program: The DSPy program to wrap with streaming functionality.
+        status_message_provider: A custom status message generator to use instead of the default one. Users can
+            implement their own status message generator to customize the status messages and what module to generate
+            status messages for.
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -92,8 +197,9 @@ def streamify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
         program = asyncify(program)
 
     callbacks = dspy.settings.callbacks
+    status_streaming_callback = StatusStreamingCallback(status_message_provider)
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
-        callbacks.append(StatusStreamingCallback())
+        callbacks.append(status_streaming_callback)
     dspy.settings.configure(callbacks=callbacks)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
