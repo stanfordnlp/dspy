@@ -193,10 +193,6 @@ plugins:
                         show_if_no_docstring: true
                         show_warnings: false
                         html_meta: false
-                    docstring_options:
-                        returns_style: table
-                        separate_signature: false
-                        merge_return_lines: true
     - mkdocs-jupyter:
         ignore_h1_titles: True
     - redirects:

@@ -1,40 +1,11 @@
-import inspect
-from typing import Any, Callable, Literal, get_origin, get_type_hints
+from typing import Any, Callable, Literal, get_origin
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 
 import dspy
 from dspy.primitives.program import Module
+from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.callback import with_callbacks
-
-
-class Tool:
-    def __init__(
-        self,
-        func: Callable,
-        name: str = None,
-        desc: str = None,
-        args: dict[str, Any] = None,
-    ):
-        annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
-        self.func = func
-        self.name = name or getattr(func, "__name__", type(func).__name__)
-        self.desc = desc or getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
-        self.args = {}
-        self.arg_types = {}
-        for k, v in (args or get_type_hints(annotations_func)).items():
-            self.arg_types[k] = v
-            if k == "return":
-                continue
-            if isinstance((origin := get_origin(v) or v), type) and issubclass(origin, BaseModel):
-                self.args[k] = v.model_json_schema()
-            else:
-                self.args[k] = TypeAdapter(v).json_schema()
-
-    @with_callbacks
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
 
 
 class ReAct(Module):
@@ -46,7 +17,7 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        tools = [t if isinstance(t, Tool) or hasattr(t, "input_variable") else Tool(t) for t in tools]
+        tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
@@ -73,7 +44,7 @@ class ReAct(Module):
         )
 
         for idx, tool in enumerate(tools.values()):
-            args = tool.args if hasattr(tool, "args") else str({tool.input_variable: str})
+            args = getattr(tool, "args")
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
             instr.append(f"({idx+1}) {tool.name}{desc}")

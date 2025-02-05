@@ -9,7 +9,7 @@ httpx
 jinja2
 joblib~=1.3
 json-repair
-litellm[proxy]==1.57.4
+litellm[proxy]>=1.59.8,<2.0.0
 magicattr~=0.1.6
 openai
 optuna
