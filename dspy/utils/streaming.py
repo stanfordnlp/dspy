@@ -164,7 +164,9 @@ def streamify(
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
-    all at once.
+    all at once. It also provides status messages to the user to indicate the progress of the program, and users
+    can implement their own status message provider to customize the status messages and what module to generate
+    status messages for.
 
     Args:
         program: The DSPy program to wrap with streaming functionality.
@@ -184,6 +186,36 @@ def streamify(
 
     # Create the program and wrap it with streaming functionality
     program = dspy.streamify(dspy.Predict("q->a"))
+
+    # Use the program with streaming output
+    async def use_streaming():
+        output = program(q="Why did a chicken cross the kitchen?")
+        return_value = None
+        async for value in output:
+            if isinstance(value, dspy.Prediction):
+                return_value = value
+            else:
+                print(value)
+        return return_value
+
+    output = asyncio.run(use_streaming())
+    print(output)
+    ```
+
+    Example with custom status message provider:
+    ```python
+    import asyncio
+    import dspy
+
+    class MyStatusMessageProvider(StatusMessageProvider):
+        def module_start_status_message(self, instance, inputs):
+            return f"Predicting..."
+
+        def tool_end_status_message(self, outputs):
+            return f"Tool calling finished with output: {outputs}!"
+
+    # Create the program and wrap it with streaming functionality
+    program = dspy.streamify(dspy.Predict("q->a"), status_message_provider=MyStatusMessageProvider())
 
     # Use the program with streaming output
     async def use_streaming():
