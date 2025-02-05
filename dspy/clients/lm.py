@@ -5,14 +5,10 @@ import re
 import threading
 import uuid
 from datetime import datetime
-from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional
 
 import litellm
-import pydantic
 import ujson
-from cachetools import LRUCache, cached
-from litellm import RetryPolicy
 
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
@@ -37,9 +33,8 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
-        cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 8,
+        num_retries: int = 3,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
@@ -56,7 +51,6 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
-            cache_in_memory: To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -69,7 +63,6 @@ class LM(BaseLM):
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
@@ -97,39 +90,20 @@ class LM(BaseLM):
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
-        # disable cache will also disable in memory cache
-        cache_in_memory = cache and kwargs.pop("cache_in_memory", self.cache_in_memory)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if cache_in_memory:
-            completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
-
-            response = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-            )
+        if self.model_type == "chat":
+            completion = cached_litellm_completion if cache else litellm_completion
         else:
-            completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+            completion = cached_litellm_text_completion if cache else litellm_text_completion
 
-            response = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                # only leverage LiteLLM cache in this case
-                cache={"no-cache": not cache, "no-store": not cache},
-            )
-
-        if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response["choices"]
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+        response = completion(
+            request=ujson.dumps(dict(model=self.model, messages=messages, **kwargs)),
+            num_retries=self.num_retries,
+        )
+        outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
 
         if dspy.settings.disable_history:
             return outputs
@@ -144,7 +118,6 @@ class LM(BaseLM):
             timestamp=datetime.now().isoformat(),
             uuid=str(uuid.uuid4()),
             model=self.model,
-            response_model=response["model"],
             model_type=self.model_type,
         )
         self.history.append(entry)
@@ -154,11 +127,11 @@ class LM(BaseLM):
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.launch(self, launch_kwargs)
+        self.provider.launch(self.model, launch_kwargs)
 
     def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         launch_kwargs = launch_kwargs or self.launch_kwargs
-        self.provider.kill(self, launch_kwargs)
+        self.provider.kill(self.model, launch_kwargs)
 
     def finetune(
         self,
@@ -226,6 +199,8 @@ class LM(BaseLM):
         return Provider()
 
     def infer_adapter(self) -> Adapter:
+        import dspy
+
         if dspy.settings.adapter:
             return dspy.settings.adapter
 
@@ -252,78 +227,8 @@ class LM(BaseLM):
         return new_instance
 
 
-def request_cache(maxsize: Optional[int] = None):
-    """
-    A threadsafe decorator to create an in-memory LRU cache for LM inference functions that accept
-    a dictionary-like LM request. An in-memory cache for LM calls is critical for ensuring
-    good performance when optimizing and evaluating DSPy LMs (disk caching alone is too slow).
-
-    Args:
-        maxsize: The maximum size of the cache. If unspecified, no max size is enforced (cache is unbounded).
-
-    Returns:
-        A decorator that wraps the target function with caching.
-    """
-
-    def cache_key(request: Dict[str, Any]) -> str:
-        """
-        Obtain a unique cache key for the given request dictionary by hashing its JSON
-        representation. For request fields having types that are known to be JSON-incompatible,
-        convert them to a JSON-serializable format before hashing.
-
-        Note: Values that cannot be converted to JSON should *not* be ignored / discarded, since
-        that would potentially lead to cache collisions. For example, consider request A
-        containing only JSON-convertible values and request B containing the same JSON-convertible
-        values in addition to one unconvertible value. Discarding the unconvertible value would
-        lead to a cache collision between requests A and B, even though they are semantically
-        different.
-        """
-
-        def transform_value(value):
-            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.model_json_schema()
-            elif isinstance(value, pydantic.BaseModel):
-                return value.model_dump()
-            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
-                return value.__code__.co_code.decode("utf-8")
-            else:
-                # Note: We don't attempt to compute a hash of the value, since the default
-                # implementation of hash() is id(), which may collide if the same memory address
-                # is reused for different objects at different times
-                return value
-
-        params = {k: transform_value(v) for k, v in request.items()}
-        return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
-
-    def decorator(func):
-        @cached(
-            # NB: cachetools doesn't support maxsize=None; it recommends using float("inf") instead
-            cache=LRUCache(maxsize=maxsize or float("inf")),
-            key=lambda key, request, *args, **kwargs: key,
-            # Use a lock to ensure thread safety for the cache when DSPy LMs are queried
-            # concurrently, e.g. during optimization and evaluation
-            lock=threading.RLock(),
-        )
-        def func_cached(key: str, request: Dict[str, Any], *args, **kwargs):
-            return func(request, *args, **kwargs)
-
-        @functools.wraps(func)
-        def wrapper(request: dict, *args, **kwargs):
-            try:
-                key = cache_key(request)
-            except Exception:
-                # If the cache key cannot be computed (e.g. because it contains a value that cannot
-                # be converted to JSON), bypass the cache and call the target function directly
-                return func(request, *args, **kwargs)
-            return func_cached(key, request, *args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-@request_cache(maxsize=None)
-def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
+@functools.lru_cache(maxsize=None)
+def cached_litellm_completion(request, num_retries: int):
     return litellm_completion(
         request,
         cache={"no-cache": False, "no-store": False},
@@ -331,24 +236,17 @@ def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
     )
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    retry_kwargs = dict(
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
-    )
-
+def litellm_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
+    kwargs = ujson.loads(request)
     return litellm.completion(
+        num_retries=num_retries,
         cache=cache,
-        **retry_kwargs,
-        **request,
+        **kwargs,
     )
 
 
-@request_cache(maxsize=None)
-def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
+@functools.lru_cache(maxsize=None)
+def cached_litellm_text_completion(request, num_retries: int):
     return litellm_text_completion(
         request,
         num_retries=num_retries,
@@ -356,18 +254,20 @@ def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
     )
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request, num_retries: int, cache={"no-cache": True, "no-store": True}):
+    kwargs = ujson.loads(request)
+
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
-    model = request.pop("model").split("/", 1)
+    model = kwargs.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
-    # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
+    # Use the API key and base from the kwargs, or from the environment.
+    api_key = kwargs.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
+    api_base = kwargs.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
 
     # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
+    prompt = "\n\n".join([x["content"] for x in kwargs.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
         cache=cache,
@@ -375,32 +275,6 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
-        **request,
-    )
-
-
-def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
-    """
-    Get a LiteLLM retry policy for retrying requests when transient API errors occur.
-    Args:
-        num_retries: The number of times to retry a request if it fails transiently due to
-                     network error, rate limiting, etc. Requests are retried with exponential
-                     backoff.
-    Returns:
-        A LiteLLM RetryPolicy instance.
-    """
-    return RetryPolicy(
-        TimeoutErrorRetries=num_retries,
-        RateLimitErrorRetries=num_retries,
-        InternalServerErrorRetries=num_retries,
-        ContentPolicyViolationErrorRetries=num_retries,
-        # We don't retry on errors that are unlikely to be transient
-        # (e.g. bad request, invalid auth credentials)
-        BadRequestErrorRetries=0,
-        AuthenticationErrorRetries=0,
+        num_retries=num_retries,
+        **kwargs,
     )

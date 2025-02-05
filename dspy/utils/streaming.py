@@ -26,19 +26,19 @@ class StatusMessage:
 
 
 class StatusMessageProvider:
-    def tool_start_status_message(self, instance: Any):
+    def tool_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
         return f"Calling tool {instance.name}..."
 
     def tool_end_status_message(self, outputs: Any):
         return "Tool calling finished! Querying the LLM with tool calling results..."
 
-    def module_start_status_message(self, instance: Any):
+    def module_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
         pass
 
     def module_end_status_message(self, outputs: Any):
         pass
 
-    def lm_start_status_message(self, instance: Any):
+    def lm_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
         pass
 
     def lm_end_status_message(self, outputs: Any):
@@ -61,7 +61,7 @@ class StatusStreamingCallback(BaseCallback):
 
         @syncify
         async def send_status():
-            status_message = self.status_message_provider.tool_start_status_message(instance)
+            status_message = self.status_message_provider.tool_start_status_message(instance, inputs)
             if status_message:
                 await stream.send(StatusMessage(status_message))
 
@@ -97,7 +97,7 @@ class StatusStreamingCallback(BaseCallback):
 
         @syncify
         async def send_status():
-            status_message = self.status_message_provider.lm_start_status_message(instance)
+            status_message = self.status_message_provider.lm_start_status_message(instance, inputs)
             if status_message:
                 await stream.send(StatusMessage(status_message))
 
@@ -133,7 +133,7 @@ class StatusStreamingCallback(BaseCallback):
 
         @syncify
         async def send_status():
-            status_message = self.status_message_provider.module_start_status_message(instance)
+            status_message = self.status_message_provider.module_start_status_message(instance, inputs)
             if status_message:
                 await stream.send(StatusMessage(status_message))
 
@@ -187,7 +187,14 @@ def streamify(
 
     # Use the program with streaming output
     async def use_streaming():
-        return await program(q="Why did a chicken cross the kitchen?")
+        output = program(q="Why did a chicken cross the kitchen?")
+        return_value = None
+        async for value in output:
+            if isinstance(value, dspy.Prediction):
+                return_value = value
+            else:
+                print(value)
+        return return_value
 
     output = asyncio.run(use_streaming())
     print(output)
