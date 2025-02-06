@@ -126,7 +126,6 @@ class CouchbaseRM(Retrieve):
         """Lazily initialized bucket object singleton."""
         if self._bucket is None:
             self._bucket = self.cluster.bucket(self.bucket_name)
-            print("bucket", self._bucket)
         return self._bucket
 
     @property
@@ -193,7 +192,7 @@ class CouchbaseRM(Retrieve):
         """
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
         queries = [q for q in queries if q]  # Filter empty queries
-        query_vectors = self.embedder([queries])
+        query_vectors = self.embedder(queries)
         contents = []
         
         options = SearchOptions(
@@ -212,7 +211,7 @@ class CouchbaseRM(Retrieve):
                 )
                 if not self.use_kv_get_text:
                     print("response", response.rows(), self.is_global_index)
-                    contents.extend([dotdict({"long_text": hit["fields"][self.text_field]}) for hit in response.rows()])
+                    contents.extend([dotdict({"long_text": hit.fields[self.text_field]}) for hit in response.rows()])
                     #print("contents", contents)
                 else:
                     results = self.__get_docs_from_kv(response)
