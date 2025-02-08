@@ -1,10 +1,9 @@
 import json
-from typing import Any, List, Union
+from typing import Any, List, Literal, Union, get_args, get_origin
 
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from .image_utils import Image, encode_image
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -53,24 +52,6 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
 
     if assume_text:
         return string_value
-    elif isinstance(value, Image) or field_info.annotation == Image:
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
 
@@ -101,6 +82,26 @@ def find_enum_member(enum, identifier):
         return enum[identifier]
 
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
+
+
+def get_annotation_name(annotation):
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None:
+        if hasattr(annotation, "__name__"):
+            return annotation.__name__
+        else:
+            return str(annotation)
+
+    if origin is Literal:
+        args_str = ", ".join(
+            _quoted_string_for_literal_type_annotation(a) if isinstance(a, str) else get_annotation_name(a)
+            for a in args
+        )
+        return f"{get_annotation_name(origin)}[{args_str}]"
+    else:
+        args_str = ", ".join(get_annotation_name(a) for a in args)
+        return f"{get_annotation_name(origin)}[{args_str}]"
 
 
 def _format_input_list_field_value(value: List[Any]) -> str:
@@ -135,3 +136,25 @@ def _format_blob(blob: str) -> str:
 
     modified_blob = blob.replace("\n", "\n    ")
     return f"«««\n    {modified_blob}\n»»»"
+
+
+def _quoted_string_for_literal_type_annotation(s: str) -> str:
+    """
+    Return the specified string quoted for inclusion in a literal type annotation.
+    """
+    has_single = "'" in s
+    has_double = '"' in s
+
+    if has_single and not has_double:
+        # Only single quotes => enclose in double quotes
+        return f'"{s}"'
+    elif has_double and not has_single:
+        # Only double quotes => enclose in single quotes
+        return f"'{s}'"
+    elif has_single and has_double:
+        # Both => enclose in single quotes; escape each single quote with \'
+        escaped = s.replace("'", "\\'")
+        return f"'{escaped}'"
+    else:
+        # Neither => enclose in single quotes
+        return f"'{s}'"

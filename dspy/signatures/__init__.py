@@ -8,6 +8,7 @@ from dspy.signatures.signature import (
     infer_prefix,
 )
 
+
 __all__ = [
     "InputField",
     "OutputField",

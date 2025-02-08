@@ -9,6 +9,7 @@ from dspy.teleprompt.knn_fewshot import KNNFewShot
 # from .mipro_optimizer import MIPRO
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt.infer_rules import InferRules
 
 # from .signature_opt import SignatureOptimizer
 # from .signature_opt_bayesian import BayesianSignatureOptimizer
