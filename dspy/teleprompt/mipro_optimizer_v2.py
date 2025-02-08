@@ -749,7 +749,7 @@ class MIPROv2(Teleprompter):
         instruction_candidates: List,
         demo_candidates: List,
     ):
-        logger.info(f"===== Trial {trial_num+1} /{adjusted_num_trials} - Full Evaluation =====")
+        logger.info(f"===== Trial {trial_num+1} / {adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully
         highest_mean_program, mean_score, combo_key, params = (

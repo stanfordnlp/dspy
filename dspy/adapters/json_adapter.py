@@ -132,7 +132,7 @@ def parse_value(value, annotation):
         parsed_value = find_enum_member(annotation, value)
     elif isinstance(value, str):
         try:
-            parsed_value = json.loads(value)
+            parsed_value = json_repair.loads(value)
         except json.JSONDecodeError:
             try:
                 parsed_value = ast.literal_eval(value)
@@ -154,10 +154,11 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Returns:
       The formatted value of the field, represented as a string.
     """
+    # TODO: Wasnt this easy to fix?
     if field_info.annotation is Image:
         raise NotImplementedError("Images are not yet supported in JSON mode.")
 
-    return format_field_value(field_info=field_info, value=value, assume_text=True)
+    return format_field_value(field_info=field_info, value=value)
 
 
 def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:

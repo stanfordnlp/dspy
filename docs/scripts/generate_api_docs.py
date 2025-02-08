@@ -51,6 +51,8 @@ API_MAPPING = {
         dspy.disable_logging,
         dspy.enable_litellm_logging,
         dspy.disable_litellm_logging,
+        dspy.utils.streaming.StatusMessageProvider,
+        dspy.utils.streaming.StatusMessage,
     ],
     "evaluation": [
         dspy.Evaluate,
