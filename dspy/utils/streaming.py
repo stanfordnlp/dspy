@@ -266,10 +266,9 @@ def streamify(
     status_streaming_callback = StatusStreamingCallback(status_message_provider)
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
-    settings.configure(callbacks=callbacks)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream):
+        with settings.context(send_stream=stream, callbacks=callbacks):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
