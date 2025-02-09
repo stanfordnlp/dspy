@@ -70,8 +70,7 @@ def _inspect_history(history, n: int = 1):
 
         if reasoning_content_list:
             print(_red("Reasoning From LLM:"))
-            for c in reasoning_content_list:
-                print(c.strip())
+            print(reasoning_content_list[0].strip())
             print("\n")
 
         print(_red("Response:"))
