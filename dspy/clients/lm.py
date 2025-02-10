@@ -142,6 +142,11 @@ class LM(BaseLM):
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
         entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
         entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
+        if 'reasoning_field' in kwargs.keys():
+            entry = dict(**entry, reasoning_content_list=[getattr(c.message, kwargs['reasoning_field'])
+                                                          for c in response["choices"]
+                                                          if hasattr(c.message, kwargs['reasoning_field'])])
+
         entry = dict(
             **entry,
             timestamp=datetime.now().isoformat(),
