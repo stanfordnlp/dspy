@@ -170,7 +170,7 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost'])
 ```
 
-### Advanced: Building customer LMs and writing your own Adapters.
+### Advanced: Building custom LMs and writing your own Adapters.
 
 Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
 
