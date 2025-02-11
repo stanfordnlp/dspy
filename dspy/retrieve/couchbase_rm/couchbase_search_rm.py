@@ -55,6 +55,7 @@ class CouchbaseSearchRM(Retrieve):
     def __init__(
         self,
         cluster_connection_string: str,
+        cluster_options: ClusterOptions,
         bucket: str,
         index_name: str,
         k: int = 5,
@@ -64,7 +65,6 @@ class CouchbaseSearchRM(Retrieve):
         embedding_field: str = "embedding",
         scope: Optional[str] = None,
         collection: Optional[str] = None,
-        cluster_options: Optional[ClusterOptions] = None,
         is_global_index: bool = False,
         embedding_function: Optional[Callable[[List[str]], List[List[float]]]] = None,
         search_query: Optional[SearchQuery] = None,
