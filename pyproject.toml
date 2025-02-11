@@ -48,6 +48,7 @@ dependencies = [
     "asyncer==0.0.8",
     "cachetools",
     "cloudpickle",
+    "couchbase (>=4.3.5,<5.0.0)",
 ]
 
 [project.optional-dependencies]
