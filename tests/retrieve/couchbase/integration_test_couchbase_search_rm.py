@@ -8,7 +8,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.management.search import SearchIndex
 import json
 import time
-from dspy.retrieve.couchbase_rm import CouchbaseRM, Embedder
+from dspy.retrieve.couchbase_rm import CouchbaseSearchRM, Embedder
 from couchbase.vector_search import VectorQuery, VectorSearch
 from couchbase.bucket import Bucket
 from couchbase.scope import Scope
@@ -135,7 +135,7 @@ SCOPED_INDEX_NAME = "vector_search"
 
 @pytest.mark.integration
 class TestCouchbaseRMIntegration:
-    """Integration tests for CouchbaseRM using real Couchbase connection"""
+    """Integration tests for CouchbaseSearchRM using real Couchbase connection"""
     
     @staticmethod
     def create_vector_indexes(cluster: Cluster, scope: Scope = None) -> None:
@@ -271,7 +271,7 @@ class TestCouchbaseRMIntegration:
 
     def test_initialization(self, setup_couchbase,couchbase_config):
         """Test successful initialization with real Couchbase"""
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string=couchbase_config["cluster_connection_string"],
             bucket=couchbase_config["bucket"],
             scope=couchbase_config["scope"],
@@ -288,7 +288,7 @@ class TestCouchbaseRMIntegration:
 
     def test_vector_search(self, setup_couchbase, couchbase_config):
         """Test vector search with real Couchbase and OpenAI embeddings"""
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string=couchbase_config["cluster_connection_string"],
             bucket=couchbase_config["bucket"],
             scope=couchbase_config["scope"],
@@ -307,7 +307,7 @@ class TestCouchbaseRMIntegration:
 
     def test_global_vector_search(self, setup_couchbase, couchbase_config):
         """Test global vector search with real Couchbase"""
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string=couchbase_config["cluster_connection_string"],
             bucket=couchbase_config["bucket"],
             scope=couchbase_config["scope"],
@@ -327,7 +327,7 @@ class TestCouchbaseRMIntegration:
 
     def test_scoped_vector_search(self, setup_couchbase, couchbase_config):
         """Test scoped vector search with real Couchbase"""
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string=couchbase_config["cluster_connection_string"],
             bucket=couchbase_config["bucket"],
             scope=couchbase_config["scope"],
@@ -347,7 +347,7 @@ class TestCouchbaseRMIntegration:
 
     def test_kv_get_text(self, setup_couchbase, couchbase_config):
         """Test KV get operation with real Couchbase"""
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string=couchbase_config["cluster_connection_string"],
             bucket=couchbase_config["bucket"],
             scope=couchbase_config["scope"],
@@ -367,7 +367,7 @@ class TestCouchbaseRMIntegration:
     def test_error_handling(self, couchbase_config):
         """Test error handling with invalid configuration"""
         with pytest.raises(ConnectionError):
-            CouchbaseRM(
+            CouchbaseSearchRM(
                 cluster_connection_string="couchbase://invalid-host",
                 bucket="invalid_bucket",
                 scope="invalid_scope",

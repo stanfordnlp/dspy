@@ -8,7 +8,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.management.search import SearchIndex
 import json
 import time
-from dspy.retrieve.couchbase_rm import CouchbaseRM, Embedder
+from dspy.retrieve.couchbase_rm import CouchbaseSearchRM, Embedder
 from couchbase.vector_search import VectorQuery, VectorSearch
 from couchbase.bucket import Bucket
 from couchbase.scope import Scope
@@ -19,20 +19,20 @@ from couchbase.cluster import Cluster
 # Mock data
 MOCK_EMBEDDING = [0.1, 0.2, 0.3]
 MOCK_SEARCH_RESULTS = [
-    {"id": "doc1", "fields": {"text": "Sample text 1"}, "score": 0.9},
-    {"id": "doc2", "fields": {"text": "Sample text 2"}, "score": 0.8},
+    Mock(id= "doc1", fields= {"text": "Sample text 1"}, score= 0.9),
+    Mock(id= "doc2", fields= {"text": "Sample text 2"}, score= 0.8),
 ]
 
 ########################################################################################
 ### Unit tests
 ########################################################################################
 
-class TestCouchbaseRMUnit:
-    """Unit tests for CouchbaseRM using mocks"""
+class TestCouchbaseSearchRMUnit:
+    """Unit tests for CouchbaseSearchRM using mocks"""
     
     @pytest.fixture
     def mock_cluster(self):
-        with patch('dspy.retrieve.couchbase_rm.Cluster') as mock:
+        with patch('dspy.retrieve.couchbase_rm.couchbase_search_rm.Cluster') as mock:
             cluster = Mock()
             mock.return_value = cluster
             yield cluster
@@ -46,7 +46,7 @@ class TestCouchbaseRMUnit:
     @pytest.fixture
     def mock_openai_embeddings(self):
         """Mock OpenAI embedding API call inside the Embedder class."""
-        with patch("dspy.retrieve.couchbase_rm.OpenAI") as mock_openai:
+        with patch("dspy.retrieve.couchbase_rm.couchbase_search_rm.OpenAI") as mock_openai:
             mock_client = mock_openai.return_value
             mock_embedding_response = Mock()
             mock_embedding_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]  # Mocked embedding
@@ -55,7 +55,7 @@ class TestCouchbaseRMUnit:
 
     @pytest.fixture
     def couchbase_rm(self, mock_cluster, mock_embedder):
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string="couchbase://localhost",
             bucket="test_bucket",
             index_name="test_index",
@@ -110,13 +110,13 @@ class TestCouchbaseRMUnit:
         # Mock scope search response
         mock_response = Mock(spec=SearchResult)
         mock_response.rows.return_value = [
-            {"fields": {"text": "Sample text 1"}, "id": "doc1", "score": 0.9},
-            {"fields": {"text": "Sample text 2"}, "id": "doc2", "score": 0.8}
+            Mock(fields= {"text": "Sample text 1"}, id= "doc1", score= 0.9),
+            Mock(fields= {"text": "Sample text 2"}, id= "doc2", score= 0.8)
         ]
         mock_scope.search.return_value = mock_response
 
         # Create RM with scoped index
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string="couchbase://localhost",
             bucket="test_bucket",
             index_name="test_index",
@@ -166,7 +166,7 @@ class TestCouchbaseRMUnit:
         os.environ["OPENAI_API_KEY"] = "test-key"
         
         # Create RM with KV get enabled
-        rm = CouchbaseRM(
+        rm = CouchbaseSearchRM(
             cluster_connection_string="couchbase://localhost",
             bucket="test_bucket",
             index_name="test_index",
@@ -189,7 +189,7 @@ class TestCouchbaseRMUnit:
 
     def test_embedder_initialization(self):
         """Test Embedder initialization"""
-        with patch('dspy.retrieve.couchbase_rm.OpenAI') as mock_openai:
+        with patch('dspy.retrieve.couchbase_rm.couchbase_search_rm.OpenAI') as mock_openai:
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 embedder = Embedder(provider="openai", model="test-model")
                 assert embedder.model == "test-model"

@@ -49,8 +49,8 @@ class Embedder:
         return [result.embedding for result in embedding.data]
 
 
-class CouchbaseRM(Retrieve):
-    """Couchbase vector search retriever with support for global and scoped indexes."""
+class CouchbaseSearchRM(Retrieve):
+    """Couchbase Full Text Search vector search retriever with support for global and scoped indexes."""
 
     def __init__(
         self,
@@ -71,7 +71,7 @@ class CouchbaseRM(Retrieve):
         use_kv_get_text: Optional[bool] = False,
         **kwargs,
     ) -> None:
-        """Initialize CouchbaseRM.
+        """Initialize CouchbaseSearchRM.
         
         Args:
             cluster_connection_string: Connection string for Couchbase cluster
@@ -210,9 +210,7 @@ class CouchbaseRM(Retrieve):
                     else self.scope.search(self.index_name, request, options)
                 )
                 if not self.use_kv_get_text:
-                    print("response", response.rows(), self.is_global_index)
                     contents.extend([dotdict({"long_text": hit.fields[self.text_field]}) for hit in response.rows()])
-                    #print("contents", contents)
                 else:
                     results = self.__get_docs_from_kv(response)
                     contents.extend([dotdict({"long_text": doc[self.text_field] }) for doc in results])
