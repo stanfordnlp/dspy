@@ -134,6 +134,7 @@ GLOBAL_INDEX_NAME = "vector_search_global"
 SCOPED_INDEX_NAME = "vector_search"
 
 @pytest.mark.integration
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY environment variable not set")
 class TestCouchbaseRMIntegration:
     """Integration tests for CouchbaseSearchRM using real Couchbase connection"""
     
@@ -181,8 +182,6 @@ class TestCouchbaseRMIntegration:
     def openai_embedder(self):
         """Fixture for OpenAI embedder"""
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            pytest.skip("OPENAI_API_KEY environment variable not set")
         return Embedder(provider="openai", model="text-embedding-3-large")
 
     @pytest.fixture(scope="class")
@@ -191,7 +190,7 @@ class TestCouchbaseRMIntegration:
         cluster_options = ClusterOptions(
             authenticator=PasswordAuthenticator(
                 username=os.getenv("COUCHBASE_USER", "admin"),
-                password=os.getenv("COUCHBASE_PASSWORD", "Password@12345")
+                password=os.getenv("COUCHBASE_PASSWORD", "Password")
             )
         )
         cluster_options.apply_profile(KnownConfigProfiles.WanDevelopment)
