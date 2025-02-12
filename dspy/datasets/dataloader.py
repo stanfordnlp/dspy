@@ -13,6 +13,12 @@ class DataLoader(Dataset):
     def __init__(self):
         pass
 
+    @staticmethod
+    def _make_tuple(input : str) -> Tuple[str]:
+        if isinstance(input, str):
+            input = (input,)
+        return input
+
     def from_huggingface(
         self,
         dataset_name: str,
@@ -21,9 +27,11 @@ class DataLoader(Dataset):
         fields: Tuple[str] = None,
         **kwargs,
     ) -> Union[Mapping[str, List[dspy.Example]], List[dspy.Example]]:
+        fields = self._make_tuple(fields)
         if fields and not isinstance(fields, tuple):
             raise ValueError("Invalid fields provided. Please provide a tuple of fields.")
 
+        input_keys = self._make_tuple(input_keys)
         if not isinstance(input_keys, tuple):
             raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
 
@@ -63,17 +71,21 @@ class DataLoader(Dataset):
 
         if not fields:
             fields = list(dataset.features)
+        
+        input_keys = self._make_tuple(input_keys)
 
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_pandas(
         self,
         df: pd.DataFrame,
-        fields: list[str] = None,
-        input_keys: tuple[str] = (),
+        fields: List[str] = None,
+        input_keys: Tuple[str] = (),
     ) -> list[dspy.Example]:
         if fields is None:
             fields = list(df.columns)
+
+        input_keys = self._make_tuple(input_keys)
 
         return [
             dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
@@ -85,6 +97,8 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
+        input_keys = self._make_tuple(input_keys)
+
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
@@ -93,7 +107,9 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
-        return [dspy.Example({field: row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
+        input_keys = self._make_tuple(input_keys)
+
+        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_rm(self, num_samples: int, fields: List[str], input_keys: List[str]) -> List[dspy.Example]:
         try:
