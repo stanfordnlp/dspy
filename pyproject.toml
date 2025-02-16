@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="v2.6.3"
+version="2.6.3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -82,7 +82,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy"
-version = "2.0.8"
+version = "2.6.3"
 description = "DSPy"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 license = "MIT"
