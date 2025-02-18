@@ -4,9 +4,9 @@ import inspect
 import json
 import re
 import textwrap
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from itertools import chain
-
 from typing import Any, Dict, Literal, NamedTuple
 
 import pydantic
@@ -20,8 +20,6 @@ from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
 from dspy.adapters.image_utils import try_expand_image_tags
 
-field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
-
 
 class FieldInfoWithName(NamedTuple):
     name: str
@@ -32,7 +30,7 @@ class FieldInfoWithName(NamedTuple):
 BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=OutputField())
 
 
-class ChatAdapter(Adapter):
+class XMLAdapter(Adapter):
     def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
@@ -61,33 +59,32 @@ class ChatAdapter(Adapter):
         return messages
 
     def parse(self, signature, completion):
-        sections = [(None, [])]
-
-        for line in completion.splitlines():
-            match = field_header_pattern.match(line.strip())
-            if match:
-                sections.append((match.group(1), []))
-            else:
-                sections[-1][1].append(line)
-
-        sections = [(k, "\n".join(v).strip()) for k, v in sections]
-
         fields = {}
-        for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields):
-                try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
-                except Exception as e:
-                    raise ValueError(
-                        f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
-                    )
+        for field_name in signature.output_fields:
+            # if field name is reasoning, also search for think
+            # Simple regex pattern to match content between XML tags
+            pattern = f"<{field_name}>(.*?)</{field_name}>"
+            match = re.search(pattern, completion, re.DOTALL)
+
+            if field_name == "reasoning" and not match:
+                pattern = r"<think>(.*?)</think>"
+                match = re.search(pattern, completion, re.DOTALL)
+            
+            if not match:
+                raise ValueError(f"Missing required field: {field_name}")
+            
+            try:
+                # Extract the content and strip whitespace
+                value = match.group(1).strip()
+                fields[field_name] = parse_value(value, signature.output_fields[field_name].annotation)
+            except Exception as e:
+                raise ValueError(f"Error parsing field {field_name}: {str(e)} from value: {value}")
 
         if fields.keys() != signature.output_fields.keys():
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
         return fields
 
-    # TODO(PR): Looks ok?
     def format_finetune_data(self, signature, demos, inputs, outputs):
         # Get system + user messages
         messages = self.format(signature, demos, inputs)
@@ -117,20 +114,12 @@ class ChatAdapter(Adapter):
 
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     """
-    Formats the values of the specified fields according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-    into a single string, which is is a multiline string if there are multiple fields.
-
-    Args:
-      fields_with_values: A dictionary mapping information about a field to its corresponding
-                          value.
-    Returns:
-      The joined formatted values of the fields, represented as a string
+    Formats the values of the specified fields as XML tags.
     """
     output = []
     for field, field_value in fields_with_values.items():
         formatted_field_value = format_field_value(field_info=field.info, value=field_value)
-        output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+        output.append(f"<{field.name}>{formatted_field_value}</{field.name}>")
 
     return "\n\n".join(output).strip()
 
@@ -157,20 +146,8 @@ def parse_value(value, annotation):
 
 def format_turn(signature, values, role, incomplete=False):
     """
-    Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
-    so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
-
-    Args:
-        signature: The DSPy signature to which future LLM responses should conform.
-        values: A dictionary mapping field names (from the DSPy signature) to corresponding values
-            that should be included in the message.
-        role: The role of the message, which can be either "user" or "assistant".
-        incomplete: If True, indicates that output field values are present in the set of specified
-            ``values``. If False, indicates that ``values`` only contains input field values.
-
-    Returns:
-        A chat message that can be appended to a chat thread. The message contains two string fields:
-        ``role`` ("user" or "assistant") and ``content`` (the message text).
+    Constructs a new message ("turn") to append to a chat thread. The message is formatted
+    using XML tags for each field.
     """
     if role == "user":
         fields = signature.input_fields
@@ -197,27 +174,19 @@ def format_turn(signature, values, role, incomplete=False):
     # Add output field instructions for user messages
     if role == "user" and signature.output_fields:
         type_info = lambda v: f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})" if v.annotation is not str else ""
-        field_instructions = "Respond with the corresponding output fields, starting with the field " + \
-            ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items()) + \
-            ", and then ending with the marker for `[[ ## completed ## ]]`."
+        field_instructions = "Respond with the corresponding output fields, using XML tags for each field. For example: " + \
+            ", ".join(f"<{f}>{type_info(v)}</{f}>" for f, v in signature.output_fields.items()) + \
+            ", and then ending with <completed></completed>."
         messages.append(field_instructions)
+
     joined_messages = "\n\n".join(msg for msg in messages)
     return {"role": role, "content": joined_messages}
 
-def flatten_messages(messages):
-    """Flatten nested message lists."""
-    return list(chain.from_iterable(
-        item if isinstance(item, list) else [item] for item in messages
-    ))
 
-def enumerate_fields(fields: dict) -> str:
-    parts = []
-    for idx, (k, v) in enumerate(fields.items()):
-        parts.append(f"{idx+1}. `{k}`")
-        parts[-1] += f" ({get_annotation_name(v.annotation)})"
-        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
-
-    return "\n".join(parts).strip()
+def prepare_schema(type_):
+    schema = pydantic.TypeAdapter(type_).json_schema()
+    schema = move_type_to_front(schema)
+    return schema
 
 
 def move_type_to_front(d):
@@ -229,17 +198,11 @@ def move_type_to_front(d):
     return d
 
 
-def prepare_schema(type_):
-    schema = pydantic.TypeAdapter(type_).json_schema()
-    schema = move_type_to_front(schema)
-    return schema
-
-
 def prepare_instructions(signature: SignatureMeta):
     parts = []
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
-    parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+    parts.append("All interactions will be structured using XML tags for each field. For example:")
 
     def field_metadata(field_name, field_info):
         field_type = field_info.annotation
@@ -254,12 +217,10 @@ def prepare_instructions(signature: SignatureMeta):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
         elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
             desc = (
-                # Strongly encourage the LM to avoid choosing values that don't appear in the
-                # literal or returning a value of the form 'Literal[<selected_value>]'
-                f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
+                f"must be one of: {'; '.join([str(x) for x in field_type.__args__])}"
             )
         else:
-            desc = "must be pareseable according to the following JSON schema: "
+            desc = "must be parseable according to the following JSON schema: "
             desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
@@ -281,3 +242,13 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append(f"In adhering to this structure, your objective is: {objective}")
 
     return "\n\n".join(parts).strip()
+
+
+def enumerate_fields(fields: dict) -> str:
+    parts = []
+    for idx, (k, v) in enumerate(fields.items()):
+        parts.append(f"{idx+1}. `{k}`")
+        parts[-1] += f" ({get_annotation_name(v.annotation)})"
+        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+
+    return "\n".join(parts).strip() 
