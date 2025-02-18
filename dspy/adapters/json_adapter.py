@@ -1,4 +1,3 @@
-import ast
 import enum
 import inspect
 import json
@@ -10,12 +9,12 @@ from typing import Any, Dict, KeysView, Literal, NamedTuple
 import json_repair
 import litellm
 import pydantic
-from pydantic import TypeAdapter, create_model
+from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.image_utils import Image
-from dspy.adapters.utils import find_enum_member, format_field_value, get_annotation_name, serialize_for_json
+from dspy.adapters.utils import parse_value, format_field_value, get_annotation_name, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
 
@@ -117,26 +116,6 @@ class JSONAdapter(Adapter):
         }
 
         return format_fields(role=role, fields_with_values=fields_with_values)
-
-
-def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
-
-    parsed_value = value
-
-    if isinstance(annotation, enum.EnumMeta):
-        parsed_value = find_enum_member(annotation, value)
-    elif isinstance(value, str):
-        try:
-            parsed_value = json_repair.loads(value)
-        except json.JSONDecodeError:
-            try:
-                parsed_value = ast.literal_eval(value)
-            except (ValueError, SyntaxError):
-                parsed_value = value
-
-    return TypeAdapter(annotation).validate_python(parsed_value)
 
 
 def _format_field_value(field_info: FieldInfo, value: Any) -> str:
@@ -274,7 +253,7 @@ def prepare_instructions(signature: SignatureMeta):
         elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
             desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
         else:
-            desc = "must be pareseable according to the following JSON schema: "
+            desc = "must adhere to the JSON schema: "
             desc += json.dumps(pydantic.TypeAdapter(type_).json_schema())
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""

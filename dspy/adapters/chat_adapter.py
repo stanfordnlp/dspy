@@ -1,4 +1,3 @@
-import ast
 import enum
 import inspect
 import json
@@ -10,11 +9,10 @@ from itertools import chain
 from typing import Any, Dict, Literal, NamedTuple
 
 import pydantic
-from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import find_enum_member, format_field_value, get_annotation_name
+from dspy.adapters.utils import parse_value, format_field_value, get_annotation_name
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -135,26 +133,6 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     return "\n\n".join(output).strip()
 
 
-def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
-
-    parsed_value = value
-
-    if isinstance(annotation, enum.EnumMeta):
-        return find_enum_member(annotation, value)
-    elif isinstance(value, str):
-        try:
-            parsed_value = json.loads(value)
-        except json.JSONDecodeError:
-            try:
-                parsed_value = ast.literal_eval(value)
-            except (ValueError, SyntaxError):
-                parsed_value = value
-
-    return TypeAdapter(annotation).validate_python(parsed_value)
-
-
 def format_turn(signature, values, role, incomplete=False):
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
@@ -259,7 +237,8 @@ def prepare_instructions(signature: SignatureMeta):
                 f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
             )
         else:
-            desc = "must be pareseable according to the following JSON schema: "
+            # desc = "must be pareseable according to the following JSON schema: "
+            desc = "must adhere to the JSON schema: "
             desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
