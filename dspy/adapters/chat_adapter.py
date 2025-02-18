@@ -146,7 +146,7 @@ def parse_value(value, annotation):
         return find_enum_member(annotation, value)
     elif isinstance(value, str):
         parsed_value = json_repair.loads(value)
-        if parsed_value ==  '':
+        if parsed_value == '':
             try:
                 parsed_value = ast.literal_eval(value)
             except (ValueError, SyntaxError):
