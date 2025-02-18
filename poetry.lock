@@ -4676,7 +4676,7 @@ version = "2.2.3"
 description = "Powerful data structures for data analysis, time series, and statistics"
 optional = false
 python-versions = ">=3.9"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "pandas-2.2.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:1948ddde24197a0f7add2bdc4ca83bf2b1ef84a1bc8ccffd95eda17fd836ecb5"},
@@ -5974,7 +5974,7 @@ version = "2024.2"
 description = "World timezone definitions, modern and historical"
 optional = false
 python-versions = "*"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "pytz-2024.2-py2.py3-none-any.whl", hash = "sha256:31c7c1817eb7fae7ca4b8c7ee50c72f93aa2dd863de768e1ef4245d426aa0725"},
@@ -7799,11 +7799,11 @@ description = "Provider of IANA time zone data"
 optional = false
 python-versions = ">=2"
 groups = ["main", "dev"]
+markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "tzdata-2024.2-py2.py3-none-any.whl", hash = "sha256:a48093786cdcde33cad18c2555e8532f34422074448fbc874186f0abd79565cd"},
     {file = "tzdata-2024.2.tar.gz", hash = "sha256:7d85cc416e9382e69095b7bdf4afd9e3880418a2413feec7069d533d6b4e31cc"},
 ]
-markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and platform_system == \"Windows\""}
 
 [[package]]
 name = "tzlocal"
@@ -8707,7 +8707,7 @@ type = ["pytest-mypy"]
 anthropic = ["anthropic"]
 aws = ["boto3"]
 chromadb = ["chromadb"]
-dev = ["pytest"]
+dev = ["pandas", "pytest"]
 docs = ["autodoc_pydantic", "docutils", "furo", "m2r2", "myst-nb", "myst-parser", "sphinx", "sphinx-autobuild", "sphinx-automodapi", "sphinx-reredirects", "sphinx_rtd_theme"]
 epsilla = ["pyepsilla"]
 fastembed = ["fastembed"]
@@ -8721,4 +8721,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<3.13"
-content-hash = "94ae2a1c8598dd237c48541edfd79e863e9cf05b8b4da9b3dffbb21efb0f8ed2"
+content-hash = "43495711522b67b8cc2a23aa00a358a3b6a7bac15b360ac84a0d9bc3cc084ad0"
