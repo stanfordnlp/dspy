@@ -77,6 +77,10 @@ The log reveals that the agent could not retrieve helpful information from the s
 
 [MLflow](https://mlflow.org/docs/latest/llms/tracing/index.html) is an end-to-end machine learning platform that is integrated seamlessly with DSPy to support best practices in LLMOps. Using MLflow's automatic tracing capability with DSPy is straightforward; **No sign up for services or an API key is required**. You just need to install MLflow and call `mlflow.dspy.autolog()` in your notebook or script.
 
+!!! info Using any OpenTelemetry Backend
+
+    You can use MLflow to send trace data to any OpenTelemetry-compatible backend. See next chapter for more details.
+
 ```bash
 pip install -U mlflow>=2.18.0
 ```
@@ -132,6 +136,44 @@ print(agent.answer)
 ```
 Los Angeles Dodgers
 ```
+
+## Using any OpenTelemetry Backend
+
+By leveraging the MLflow instrumentation module described above, you can integrate any OpenTelemetry-compatible backend to monitor your DSPy programs.
+
+To log traces to a custom backend, set the following environment variables before initializing MLflow:
+
+```python
+os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = ""  
+os.environ["OTEL_EXPORTER_OTLP_TRACES_HEADERS"] = ""
+os.environ["OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"]= ""
+
+import mlflow
+mlflow.dspy.autolog()
+```
+Setting these environment variables ensures that MLflow logs traces to the specified OpenTelemetry endpoint.
+
+Here’s an example of how to set the environment variables for using [Langfuse's OpenTelemetry backend](https://langfuse.com/docs/opentelemetry/get-started):
+
+```python
+import os
+import base64
+
+LANGFUSE_PUBLIC_KEY = "pk-lf-..."
+LANGFUSE_SECRET_KEY = "sk-lf-..."
+# Langfuse uses Basic Auth to authenticate requests
+LANGFUSE_AUTH=base64.b64encode(f"{LANGFUSE_PUBLIC_KEY}:{LANGFUSE_SECRET_KEY}".encode()).decode()
+
+os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "https://cloud.langfuse.com/api/public/otel/v1/traces"  # 🇪🇺 EU data region
+# "https://us.cloud.langfuse.com/api/public/otel/v1/traces" for 🇺🇸 US data region
+os.environ["OTEL_EXPORTER_OTLP_TRACES_HEADERS"] = f"Authorization=Basic {LANGFUSE_AUTH}"
+os.environ['OTEL_EXPORTER_OTLP_TRACES_PROTOCOL'] = "http/protobuf"
+```
+After initializing MLflow, DSPy logs traces to Langfuse:
+
+![Example trace in Langfuse](https://langfuse.com/images/cookbook/integration-dspy/dspy-example-trace.png)
+
+_[Public example trace link in Langfuse](https://cloud.langfuse.com/project/cloramnkj0002jz088vzn1ja4/traces/5db0902e3e045c3832063536ae0cba1d?timestamp=2025-02-18T12%3A05%3A27.582Z&observation=c5a42e3c7c426d87)_
 
 
 ## Building a Custom Logging Solution
