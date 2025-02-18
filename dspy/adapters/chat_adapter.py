@@ -9,6 +9,7 @@ from itertools import chain
 
 from typing import Any, Dict, Literal, NamedTuple
 
+import json_repair
 import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
@@ -144,9 +145,8 @@ def parse_value(value, annotation):
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
     elif isinstance(value, str):
-        try:
-            parsed_value = json.loads(value)
-        except json.JSONDecodeError:
+        parsed_value = json_repair.loads(value)
+        if parsed_value ==  '':
             try:
                 parsed_value = ast.literal_eval(value)
             except (ValueError, SyntaxError):
