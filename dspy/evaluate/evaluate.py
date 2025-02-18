@@ -1,8 +1,10 @@
 import logging
 import types
-from typing import Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
+
 import tqdm
 
 import dspy
@@ -41,9 +43,10 @@ logger = logging.getLogger(__name__)
 class Evaluate:
     """DSPy Evaluate class.
 
-    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and 
+    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and
     a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
     """
+
     def __init__(
         self,
         *,
@@ -72,6 +75,7 @@ class Evaluate:
             provide_traceback (bool): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
         """
+
         self.devset = devset
         self.metric = metric
         self.num_threads = num_threads
@@ -112,21 +116,26 @@ class Evaluate:
 
         Returns:
             The evaluation results are returned in different formats based on the flags:
-            
+
             - Base return: A float percentage score (e.g., 67.30) representing overall performance
-            
+
             - With `return_all_scores=True`:
-                Returns (overall_score, individual_scores) where individual_scores is a list of 
+                Returns (overall_score, individual_scores) where individual_scores is a list of
                 float scores for each example in devset
-            
+
             - With `return_outputs=True`:
-                Returns (overall_score, result_triples) where result_triples is a list of 
+                Returns (overall_score, result_triples) where result_triples is a list of
                 (example, prediction, score) tuples for each example in devset
 
             - With both flags=True:
                 Returns (overall_score, result_triples, individual_scores)
 
         """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required for `dspy.Evaluate`. Please install it using `pip install pandas`.")
+
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
@@ -165,7 +174,7 @@ class Evaluate:
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
-            
+
         def prediction_is_dictlike(prediction):
             # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
             # having a method called `items()` for iterating through key/value pairs
@@ -179,7 +188,6 @@ class Evaluate:
             )
             for example, prediction, score in results
         ]
-
 
         # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
         result_df = pd.DataFrame(data)
@@ -250,7 +258,7 @@ def truncate_cell(content) -> str:
     return content
 
 
-def stylize_metric_name(df: pd.DataFrame, metric_name: str) -> pd.DataFrame:
+def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
     """
     Stylize the cell contents of a pandas DataFrame corresponding to the specified metric name.
 
@@ -263,26 +271,22 @@ def stylize_metric_name(df: pd.DataFrame, metric_name: str) -> pd.DataFrame:
     return df
 
 
-def display_dataframe(df: pd.DataFrame):
+def display_dataframe(df: "pd.DataFrame"):
     """
     Display the specified Pandas DataFrame in the console.
 
     :param df: The Pandas DataFrame to display.
     """
+    import pandas as pd
     if is_in_ipython_notebook_environment():
-        display(configure_dataframe_for_ipython_notebook_display(df))
+        with pd.option_context('display.max_colwidth', 70):
+            display(df)
     else:
         # Pretty print the DataFrame to the console
         with pd.option_context(
             "display.max_rows", None, "display.max_columns", None
         ):  # more options can be specified also
             print(df)
-
-
-def configure_dataframe_for_ipython_notebook_display(df: pd.DataFrame) -> pd.DataFrame:
-    """Set various pandas display options for DataFrame in an IPython notebook environment."""
-    pd.options.display.max_colwidth = 70
-    return df
 
 
 def is_in_ipython_notebook_environment():

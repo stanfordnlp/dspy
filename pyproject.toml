@@ -30,7 +30,6 @@ dependencies = [
     "backoff",
     "joblib~=1.3",
     "openai",
-    "pandas",
     "regex",
     "ujson",
     "tqdm",
@@ -74,7 +73,7 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-dev = ["pytest>=6.2.5"]
+dev = ["pytest>=6.2.5", "pandas"]
 fastembed = ["fastembed>=0.2.0"]
 
 [project.urls]
@@ -98,7 +97,6 @@ pydantic = "^2.0"
 backoff = "^2.2"
 joblib = "^1.3"
 openai = ">=0.28.1,<2.0.0"
-pandas = "^2.1.1"
 regex = "^2023.10.3"
 ujson = "^5.8.0"
 tqdm = "^4.66.1"
@@ -144,6 +142,7 @@ cloudpickle = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
+pandas = "^2.1.1"
 transformers = "^4.38.2"
 torch = "^2.2.1"
 pytest-mock = "^3.12.0"
