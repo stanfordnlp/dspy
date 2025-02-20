@@ -20,7 +20,7 @@ import dspy
 from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
+from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -46,6 +46,7 @@ class LM(BaseLM):
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
+        train_kwargs: Optional[dict[str, Any]] = None,
         **kwargs,
     ):
         """
@@ -79,7 +80,8 @@ class LM(BaseLM):
         self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
-        self.launch_kwargs = launch_kwargs
+        self.launch_kwargs = launch_kwargs or {}
+        self.train_kwargs = train_kwargs or {}
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
@@ -156,18 +158,16 @@ class LM(BaseLM):
         return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
-        launch_kwargs = launch_kwargs or self.launch_kwargs
         self.provider.launch(self, launch_kwargs)
 
     def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
-        launch_kwargs = launch_kwargs or self.launch_kwargs
         self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None,
     ) -> TrainingJob:
         from dspy import settings as settings
 
@@ -178,27 +178,18 @@ class LM(BaseLM):
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
-        # Perform data validation before starting the thread to fail early
-        train_kwargs = train_kwargs or {}
-        if not data_format:
-            adapter = self.infer_adapter()
-            data_format = infer_data_format(adapter)
-        validate_data_format(data=train_data, data_format=data_format)
-
-        # TODO(PR): We can quickly add caching, but doing so requires
-        # adding functions that just call other functions as we had in the last
-        # iteration, unless people have other ideas.
         def thread_function_wrapper():
             return self._run_finetune_job(job)
 
         thread = threading.Thread(target=thread_function_wrapper)
-        model_to_finetune = self.finetuning_model or self.model
+        train_kwargs = train_kwargs or self.train_kwargs
+        model_to_finetune = self.finetuning_model or self.model 
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
             train_data=train_data,
+            train_data_format=train_data_format,
             train_kwargs=train_kwargs,
-            data_format=data_format,
         )
         thread.start()
 
@@ -212,8 +203,8 @@ class LM(BaseLM):
                 job=job,
                 model=job.model,
                 train_data=job.train_data,
+                train_data_format=job.train_data_format,
                 train_kwargs=job.train_kwargs,
-                data_format=job.data_format,
             )
             lm = self.copy(model=model)
             job.set_result(lm)

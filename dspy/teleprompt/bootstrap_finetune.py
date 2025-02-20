@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
@@ -10,6 +11,9 @@ from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
+
+
+logger = logging.getLogger(__name__)
 
 
 class FinetuneTeleprompter(Teleprompter):
@@ -37,7 +41,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
         adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
         exclude_demos: bool = False,
-        num_threads: int = 6,
+        num_threads: int = 6
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -53,43 +57,42 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
     
-    def compile(self, student: Program, trainset: List[Example], teacher: Optional[Program] = None) -> Program:
+    def compile(self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None) -> Program:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
         # environments.
-        print("[BootstrapFinetune] Preparing the student and teacher programs...")
-        student = prepare_student(student)
-        teachers = teacher if isinstance(teacher, list) else [teacher]
-        teachers = [prepare_teacher(student, teacher) for teacher in teachers]
+        logger.info("Preparing the student and teacher programs...")
         set_missing_predictor_lms(student)
 
-        print("[BootstrapFinetune] Bootstrapping data...")
+        logger.info("Bootstrapping data...")
         trace_data = []
 
-        for teacher in teachers:
-            set_missing_predictor_lms(teacher)
-            trace_data += bootstrap_trace_data(program=teacher, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
+        teachers = teacher if isinstance(teacher, list) else [teacher]
+        teachers = [prepare_teacher(student, t) for t in teachers]
+        for t in teachers:
+            set_missing_predictor_lms(t)
+            trace_data += bootstrap_trace_data(program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
 
-        print("[BootstrapFinetune] Preparing the train data...")
+        logger.info("Preparing the train data...")
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind)
-                print(f"[BootstrapFinetune] Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
-                finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_kwargs=self.train_kwargs[pred.lm], data_format=data_format)
+                logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
+                finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_data_format=data_format, train_kwargs=self.train_kwargs[pred.lm])
                 key_to_data[training_key] = finetune_kwargs
         
-        print("[BootstrapFinetune] Starting LM fine-tuning...")
+        logger.info("Starting LM fine-tuning...")
         # TODO(feature): We could run batches of fine-tuning jobs in sequence
         # to avoid exceeding the number of threads.
         err = f"BootstrapFinetune requires `num_threads` to be bigger than or equal to the number of fine-tuning jobs. There are {len(key_to_data)} fine-tuning jobs to start, but the number of threads is: {self.num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will be equal to the number of predictors in the student program. If the `multitask` flag is set to True, the number of fine-tuning jobs will be equal to: 1 if there is only a context LM, or the number of unique LMs attached to the predictors in the student program. In any case, the number of fine-tuning jobs will be less than or equal to the number of predictors."
         assert len(key_to_data) <= self.num_threads, err
-        print(f"[BootstrapFinetune] {len(key_to_data)} fine-tuning job(s) to start")
+        logger.info(f"{len(key_to_data)} fine-tuning job(s) to start")
         key_to_lm = self.finetune_lms(key_to_data)
 
-        print("[BootstrapFinetune] Updating the student program with the fine-tuned LMs...")
+        logger.info("Updating the student program with the fine-tuned LMs...")
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
@@ -99,36 +102,42 @@ class BootstrapFinetune(FinetuneTeleprompter):
             # train data?
             pred.demos = [] if self.exclude_demos else pred.demos
         
-        print("[BootstrapFinetune] BootstrapFinetune has finished compiling the student program")
+        logger.info("BootstrapFinetune has finished compiling the student program")
         student._compiled = True
         return student
 
     @staticmethod
     def finetune_lms(finetune_dict) -> Dict[Any, LM]:
         num_jobs = len(finetune_dict)
-        print(f"[BootstrapFinetune] Starting {num_jobs} fine-tuning job(s)...")
+        logger.info(f"Starting {num_jobs} fine-tuning job(s)...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
         # coming from different fine-tune threads.
 
         key_to_job = {}
         for key, finetune_kwargs in finetune_dict.items():
             lm = finetune_kwargs.pop("lm")
+            # TODO: The following line is a hack. We should re-think how to free
+            # up resources for fine-tuning. This might mean introducing a new
+            # provider method (e.g. prepare_for_finetune) that can be called
+            # before fine-tuning is started.
+            logger.info("Calling lm.kill() on the LM to be fine-tuned to free up resources. This won't have any effect if the LM is not running.")
+            lm.kill()
             key_to_job[key] = lm.finetune(**finetune_kwargs)
         
         key_to_lm = {}
         for ind, (key, job) in enumerate(key_to_job.items()):
             key_to_lm[key] = job.result()
             job.thread.join()
-            print(f"[BootstrapFinetune] Job {ind + 1}/{num_jobs} is done")
+            logger.info(f"Job {ind + 1}/{num_jobs} is done")
 
         return key_to_lm
 
     def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: Optional[int] = None):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
-            print(f"[BootstrapFinetune] Collected data for {len(trace_data)} examples")
+            logger.info(f"Collected data for {len(trace_data)} examples")
             trace_data = [d for d in trace_data if d["score"]]
-            print(f"[BootstrapFinetune] After filtering with the metric, {len(trace_data)} examples remain")
+            logger.info(f"After filtering with the metric, {len(trace_data)} examples remain")
 
         data = []
         adapter = self.adapter[lm] or lm.infer_adapter()
@@ -292,3 +301,19 @@ def assert_no_shared_predictor(program1: Program, program2: Program):
     pred_names = ", ".join(id_to_name1[id] for id in shared_ids)
     err = f"The programs share the following predictor(s) with each other: {pred_names}"
     assert not shared_ids, err
+
+
+def get_unique_lms(program: Program) -> List[LM]:	
+    lms = [pred.lm for pred in program.predictors()]	
+    lms = list(set(lms))	
+    return lms
+
+def launch_lms(program: Program):
+    lms = get_unique_lms(program)
+    for lm in lms:
+        lm.launch()
+
+def kill_lms(program: Program):	
+    lms = get_unique_lms(program)	
+    for lm in lms:	
+        lm.kill()
