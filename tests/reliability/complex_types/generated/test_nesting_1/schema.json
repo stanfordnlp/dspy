@@ -20,23 +20,34 @@
                           "type": "number"
                         }
                       },
-                      "required": ["field1", "field2"],
+                      "required": [
+                        "field1",
+                        "field2"
+                      ],
                       "type": "object"
                     }
                   },
-                  "required": ["level5"],
+                  "required": [
+                    "level5"
+                  ],
                   "type": "object"
                 }
               },
-              "required": ["level4"],
+              "required": [
+                "level4"
+              ],
               "type": "object"
             }
           },
-          "required": ["level3"],
+          "required": [
+            "level3"
+          ],
           "type": "object"
         }
       },
-      "required": ["level2"],
+      "required": [
+        "level2"
+      ],
       "type": "object"
     },
     "resultLevel1": {
@@ -61,26 +72,40 @@
                           "type": "array"
                         }
                       },
-                      "required": ["outputField1", "outputField2"],
+                      "required": [
+                        "outputField1",
+                        "outputField2"
+                      ],
                       "type": "object"
                     }
                   },
-                  "required": ["resultLevel5"],
+                  "required": [
+                    "resultLevel5"
+                  ],
                   "type": "object"
                 }
               },
-              "required": ["resultLevel4"],
+              "required": [
+                "resultLevel4"
+              ],
               "type": "object"
             }
           },
-          "required": ["resultLevel3"],
+          "required": [
+            "resultLevel3"
+          ],
           "type": "object"
         }
       },
-      "required": ["resultLevel2"],
+      "required": [
+        "resultLevel2"
+      ],
       "type": "object"
     }
   },
-  "required": ["level1", "resultLevel1"],
+  "required": [
+    "level1",
+    "resultLevel1"
+  ],
   "type": "object"
 }
