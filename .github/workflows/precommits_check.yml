@@ -33,5 +33,6 @@ jobs:
           pre-commit run requirements-txt-fixer --all-files
           pre-commit run check-merge-conflict --all-files
           pre-commit run debug-statements --all-files
+          pre-commit run pretty-format-json --all-files
 
         shell: bash
