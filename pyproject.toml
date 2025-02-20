@@ -50,6 +50,9 @@ dependencies = [
     "cloudpickle",
 ]
 
+[tool.setuptools.packages.find]
+include = ["dspy*"]
+
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
