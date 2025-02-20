@@ -5,18 +5,17 @@ import re
 import textwrap
 from collections.abc import Mapping
 from itertools import chain
-
 from typing import Any, Dict, Literal, NamedTuple
 
 import pydantic
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.utils import parse_value, format_field_value, get_annotation_name
+from dspy.adapters.image_utils import try_expand_image_tags
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
-from dspy.adapters.image_utils import try_expand_image_tags
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 

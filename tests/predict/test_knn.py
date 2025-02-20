@@ -1,8 +1,9 @@
-import pytest
 import numpy as np
+import pytest
+
 import dspy
-from dspy.utils import DummyVectorizer
 from dspy.predict import KNN
+from dspy.utils import DummyVectorizer
 
 
 def mock_example(question: str, answer: str) -> dspy.Example:

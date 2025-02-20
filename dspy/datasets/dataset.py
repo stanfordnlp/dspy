@@ -1,8 +1,8 @@
 import random
 import uuid
 
-from dspy.dsp.utils import dotdict
 from dspy import Example
+from dspy.dsp.utils import dotdict
 
 
 class Dataset:

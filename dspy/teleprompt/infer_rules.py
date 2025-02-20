@@ -1,9 +1,10 @@
-import dspy
 import random
+
 import numpy as np
 
-from dspy.teleprompt import BootstrapFewShot
+import dspy
 from dspy.evaluate.evaluate import Evaluate
+from dspy.teleprompt import BootstrapFewShot
 
 
 class InferRules(BootstrapFewShot):

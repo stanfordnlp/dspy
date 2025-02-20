@@ -5,14 +5,14 @@ https://github.com/HackerCupAI/starter-kits/blob/main/submit_first_solution/01_o
 by @tcapelle, with some adaptations for this workflow.
 """
 
-import re
 import asyncio
-import multiprocessing
 import concurrent.futures
-from typing import Optional
+import multiprocessing
 import os
+import re
 import sys
 import traceback
+from typing import Optional
 
 
 def extract_code(code_str):

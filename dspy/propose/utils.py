@@ -1,7 +1,9 @@
+import inspect
 import json
 import re
+
 import dspy
-import inspect
+
 try:
     from IPython.core.magics.code import extract_symbols
 except ImportError:
@@ -9,8 +11,8 @@ except ImportError:
     extract_symbols = None
 
 from dspy.predict.parameter import Parameter
-
 from dspy.teleprompt.utils import get_signature
+
 
 def strip_prefix(text):
     pattern = r'^[\*\s]*(([\w\'\-]+\s+){0,4}[\w\'\-]+):\s*'

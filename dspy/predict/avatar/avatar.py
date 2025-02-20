@@ -1,11 +1,11 @@
-import dspy
-
 from copy import deepcopy
+
 from pydantic.fields import FieldInfo
 
+import dspy
+from dspy.predict.avatar.models import Action, ActionOutput, Tool
 from dspy.predict.avatar.signatures import Actor
 from dspy.signatures.signature import ensure_signature
-from dspy.predict.avatar.models import Action, ActionOutput, Tool
 
 
 def get_number_with_suffix(number: int) -> str:

@@ -1,10 +1,13 @@
+import os
+import string
+
+import pandas as pd
+
 import dspy
 from dspy.datasets import HotPotQA
 from dspy.evaluate import Evaluate
-import pandas as pd
-import os
+
 from .base_task import BaseTask
-import string
 
 
 def preprocess_text(text):

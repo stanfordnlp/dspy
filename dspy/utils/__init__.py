@@ -1,9 +1,10 @@
+import os
+
+import requests
+
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
 from dspy.utils.streaming import StatusMessage, StatusMessageProvider, streamify
-
-import os
-import requests
 
 
 def download(url):

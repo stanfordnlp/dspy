@@ -1,8 +1,9 @@
 import pytest
-from dspy.dsp.utils import deduplicate
-import dspy.evaluate
+
 import dspy
+import dspy.evaluate
 from dspy.datasets import HotPotQA
+from dspy.dsp.utils import deduplicate
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 

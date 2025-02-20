@@ -4,6 +4,7 @@ import dspy
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
 
+
 def test_answer_exact_match_string():
     example = dspy.Example(
         question="What is 1+1?",

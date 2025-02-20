@@ -1,8 +1,9 @@
-import dspy
-import threading
-from dspy.utils.dummies import DummyLM
 import logging
+import threading
 from unittest.mock import patch
+
+import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_deepcopy_basic():

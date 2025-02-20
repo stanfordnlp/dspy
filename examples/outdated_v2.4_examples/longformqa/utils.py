@@ -1,7 +1,7 @@
 import nltk
 import regex as re
-
 from nltk.tokenize import sent_tokenize
+
 nltk.download('punkt')
 
 

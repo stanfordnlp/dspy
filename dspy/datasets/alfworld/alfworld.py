@@ -2,6 +2,7 @@ import os
 import queue
 import random
 
+
 def env_worker(inq, outq):
     """
     Worker process: creates a single AlfredTWEnv instance,
@@ -10,9 +11,10 @@ def env_worker(inq, outq):
 
     try:
         import io
-        import yaml
+        from contextlib import redirect_stderr, redirect_stdout
+
         import alfworld.agents.environment as environment
-        from contextlib import redirect_stdout, redirect_stderr
+        import yaml
     except ImportError:
         raise ImportError("alfworld is not installed. " \
             "Please install it via `pip install alfworld==0.3.5` then run `alfworld-download`.")

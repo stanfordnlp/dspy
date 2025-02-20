@@ -1,15 +1,16 @@
-import datasets
 import os
-import openai
-import dspy
-from dspy import InputField, OutputField, Signature
-from dspy import Example
-from dspy.evaluate.evaluate import Evaluate
-from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
-from datetime import datetime
 import random
+from datetime import datetime
+
+import datasets
+import openai
+from hackercup_utils import check_solution, extract_code, run
+
+import dspy
+from dspy import Example, InputField, OutputField, Signature
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt import MIPROv2
-from hackercup_utils import extract_code, run, check_solution
+from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 openai.api_base = os.environ.get("OPENAI_API_BASE")

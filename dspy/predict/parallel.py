@@ -1,6 +1,5 @@
 import threading
-
-from typing import Tuple, List, Any
+from typing import Any, List, Tuple
 
 from ..primitives.example import Example
 from ..utils.parallelizer import ParallelExecutor

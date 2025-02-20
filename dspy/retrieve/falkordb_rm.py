@@ -1,20 +1,14 @@
 import os
-from typing import List, Optional, Union
-import string
 import random
+import string
+from typing import List, Optional, Union
 
 import backoff
-from openai import (
-    APITimeoutError,
-    InternalServerError,
-    OpenAI,
-    RateLimitError,
-    UnprocessableEntityError,
-)
+from openai import APITimeoutError, InternalServerError, OpenAI, RateLimitError, UnprocessableEntityError
 
-from dspy import Retrieve, Prediction
-from dspy.dsp.utils.settings import settings
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
 
 try:
     import falkordb

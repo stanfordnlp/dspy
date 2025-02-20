@@ -7,6 +7,7 @@ import pytest
 import dspy
 from tests.reliability.utils import assert_program_output_correct, known_failing_models
 
+
 @pytest.mark.reliability
 def test_qa_with_pydantic_answer_model():
     class Answer(pydantic.BaseModel):

@@ -7,9 +7,9 @@ from typing import List, Optional, Union
 
 import backoff
 
-from dspy import Retrieve, Prediction
-from dspy.dsp.utils.settings import settings
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
 
 try:
     import pinecone

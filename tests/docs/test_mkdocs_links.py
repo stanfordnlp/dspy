@@ -1,7 +1,9 @@
 
 
-import pytest
 import os
+
+import pytest
+
 
 def test_nav_files_exist():
     # Read mkdocs.yml

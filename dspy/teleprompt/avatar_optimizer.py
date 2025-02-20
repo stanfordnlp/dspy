@@ -1,15 +1,15 @@
-import dspy
-
-from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
-from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, List, Tuple, Optional
+from typing import Callable, List, Optional, Tuple
 
-from .teleprompt import Teleprompter
+from pydantic import BaseModel
+from tqdm import tqdm
+
+import dspy
 from dspy.predict.avatar import ActionOutput
 
+from .teleprompt import Teleprompter
 
 DEFAULT_MAX_EXAMPLES = 10
 

@@ -2,7 +2,6 @@ import random
 
 from dspy.teleprompt.teleprompt import Teleprompter
 
-
 # TODO:
 #  The EnsembledProgram should actually imitate the structure of the individual programs (IF they are all compatible).
 #  This allows compiling with an ensemble program as a (singular) teacher.

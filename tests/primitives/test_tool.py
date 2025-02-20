@@ -1,7 +1,9 @@
+from typing import Any, Optional
+
 import pytest
 from pydantic import BaseModel
+
 from dspy.primitives.tool import Tool
-from typing import Any, Optional
 
 
 # Test fixtures

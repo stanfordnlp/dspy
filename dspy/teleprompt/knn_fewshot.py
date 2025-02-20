@@ -1,4 +1,5 @@
 import types
+
 from dspy.predict.knn import KNN
 from dspy.teleprompt import BootstrapFewShot
 

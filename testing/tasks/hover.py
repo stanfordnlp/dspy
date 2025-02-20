@@ -1,10 +1,11 @@
 import random
 
+import pandas as pd
 import tqdm
 from datasets import load_dataset
-import pandas as pd
-import dspy
 from dsp.utils.utils import deduplicate
+
+import dspy
 from dspy.evaluate import Evaluate
 
 from .base_task import BaseTask

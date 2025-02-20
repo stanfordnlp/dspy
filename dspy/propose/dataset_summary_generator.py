@@ -3,6 +3,7 @@ import re
 import dspy
 from dspy.propose.utils import strip_prefix
 
+
 class ObservationSummarizer(dspy.Signature):
     ("""Given a series of observations I have made about my dataset, please summarize them into a brief 2-3 sentence summary which highlights only the most important details.""")
     observations = dspy.InputField(desc="Observations I have made about my dataset")

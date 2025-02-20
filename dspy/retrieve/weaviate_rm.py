@@ -5,9 +5,10 @@ from dspy.dsp.utils import dotdict
 from dspy.primitives.prediction import Prediction
 
 try:
+    from uuid import uuid4
+
     import weaviate
     from weaviate.util import get_valid_uuid
-    from uuid import uuid4
 except ImportError as err:
     raise ImportError(
         "The 'weaviate' extra is required to use WeaviateRM. Install it with `pip install dspy-ai[weaviate]`",

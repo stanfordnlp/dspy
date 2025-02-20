@@ -1,10 +1,11 @@
-import os
-import tqdm
 import copy
 import datetime
 import itertools
-
+import os
 from collections import defaultdict
+
+import tqdm
+
 
 def print_message(*s, condition=True, pad=False, sep=None):
     s = " ".join([str(x) for x in s])

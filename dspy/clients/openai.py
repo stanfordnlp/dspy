@@ -5,9 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import openai
 
-from dspy.clients.provider import TrainingJob, Provider
+from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
-
 
 _OPENAI_MODELS = [
   'gpt-4-turbo',

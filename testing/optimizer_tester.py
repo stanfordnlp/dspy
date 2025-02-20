@@ -5,20 +5,19 @@ from timeit import default_timer as timer
 
 import openai
 from dotenv import load_dotenv
-
-import dspy
-from dspy.evaluate import Evaluate
-
 from tasks.gsm8k import GSM8KTask
+from tasks.heart_disease import HeartDiseaseTask
 from tasks.hotpotqa import HotPotQATask
+from tasks.hotpotqa_conditional import HotPotQAConditionalTask
+from tasks.hover import HoverRetrieveDiscrete
+from tasks.iris import IrisClassifierTask
+from tasks.iris_typo import IrisTypoClassifierTask
 from tasks.scone import ScoNeTask
 from tasks.tweet import TweetTask
 from tasks.tweet_metric import TweetMetricTask
-from tasks.heart_disease import HeartDiseaseTask
-from tasks.hotpotqa_conditional import HotPotQAConditionalTask
-from tasks.hover import HoverRetrieveDiscrete
-from tasks.iris_typo import IrisTypoClassifierTask
-from tasks.iris import IrisClassifierTask
+
+import dspy
+from dspy.evaluate import Evaluate
 
 datasets = [
     "scone",

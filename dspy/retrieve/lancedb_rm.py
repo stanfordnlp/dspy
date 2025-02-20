@@ -8,9 +8,9 @@ from typing import List, Union
 import backoff
 import lancedb.table
 
-from dspy import Retrieve, Prediction
-from dspy.dsp.utils.settings import settings
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
 
 try:
     import lancedb

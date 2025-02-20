@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import Mock, patch
+
 import numpy as np
+import pytest
 
 from dspy.clients.embedding import Embedder
 

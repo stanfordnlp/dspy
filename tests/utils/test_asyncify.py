@@ -1,7 +1,7 @@
-from time import time, sleep
 import asyncio
-
 import math
+from time import sleep, time
+
 import pytest
 
 import dspy

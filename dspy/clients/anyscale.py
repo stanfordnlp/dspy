@@ -1,15 +1,11 @@
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
 import yaml
-import logging
 
-from dspy.clients.finetune import (
-    FinetuneJob,
-    # TrainingMethod,
-    save_data,
-)
+from dspy.clients.finetune import FinetuneJob, save_data
 from dspy.clients.openai import openai_data_validation
 
 try:

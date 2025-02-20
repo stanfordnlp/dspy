@@ -1,16 +1,17 @@
+import tempfile
+from io import BytesIO
 from typing import Dict, List, Optional, Tuple
 
+import pydantic
 import pytest
-from PIL import Image as PILImage
 import requests
-from io import BytesIO
+from PIL import Image as PILImage
 
 import dspy
 from dspy import Predict
-from dspy.utils.dummies import DummyLM
 from dspy.adapters.image_utils import encode_image
-import tempfile
-import pydantic
+from dspy.utils.dummies import DummyLM
+
 
 @pytest.fixture
 def sample_pil_image():

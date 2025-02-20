@@ -1,7 +1,9 @@
 import pytest
-from dspy.utils.dummies import DummyLM
-from dspy.clients.base_lm import GLOBAL_HISTORY
+
 import dspy
+from dspy.clients.base_lm import GLOBAL_HISTORY
+from dspy.utils.dummies import DummyLM
+
 
 @pytest.fixture(autouse=True)
 def clear_history():

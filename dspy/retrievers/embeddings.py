@@ -1,5 +1,7 @@
-import numpy as np
 from typing import Any, List, Optional
+
+import numpy as np
+
 from dspy.utils.unbatchify import Unbatchify
 
 # TODO: Add .save and .load methods!

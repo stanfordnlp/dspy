@@ -1,5 +1,5 @@
-from collections import defaultdict
 import logging
+from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
@@ -11,7 +11,6 @@ from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
-
 
 logger = logging.getLogger(__name__)
 
