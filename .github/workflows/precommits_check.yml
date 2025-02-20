@@ -24,6 +24,11 @@ jobs:
           echo "Running pre-commit scans:"
 
           # Run hooks individually, until we can run them all at once
+
+          # isort
+          pre-commit run isort --all-files
+
+          # pre-commit-hooks
           pre-commit run check-yaml --all-files
           pre-commit run end-of-file-fixer --all-files
           pre-commit run trailing-whitespace --all-files
