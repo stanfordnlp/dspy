@@ -32,5 +32,6 @@ jobs:
           pre-commit run check-added-large-files --all-files
           pre-commit run requirements-txt-fixer --all-files
           pre-commit run check-merge-conflict --all-files
+          pre-commit run debug-statements --all-files
 
         shell: bash
