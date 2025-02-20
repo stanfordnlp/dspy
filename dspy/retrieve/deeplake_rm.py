@@ -22,7 +22,7 @@ except Exception:
 
 
 class DeeplakeRM(dspy.Retrieve):
-    
+
     """
     A retriever module that uses deeplake to return the top passages for a given query.
 
@@ -74,13 +74,13 @@ class DeeplakeRM(dspy.Retrieve):
             texts = [texts]
 
         texts = [t.replace("\n", " ") for t in texts]
-        
+
         return [data.embedding for data in openai.embeddings.create(input = texts, model=model).data]
-    
+
     def forward(
         self, query_or_queries: Union[str, List[str]], k: Optional[int],**kwargs,
     ) -> dspy.Prediction:
-        
+
         """Search with DeepLake for self.k top passages for query
 
         Args:
@@ -109,5 +109,5 @@ class DeeplakeRM(dspy.Retrieve):
 
         sorted_passages = sorted(
             passages.items(), key=lambda x: x[1], reverse=True)[:k]
-        
+
         return [dotdict({"long_text": p}) for p, _ in sorted_passages]

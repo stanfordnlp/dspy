@@ -4,7 +4,7 @@ import AuthorDetails from '@site/src/components/AuthorDetails';
 
 ## Setting up the ColBERTv2 Client
 
-The constructor initializes the `ColBERTv2` class instance and sets up the request parameters for interacting with the ColBERTv2 retrieval server. This server is hosted remotely at `'http://20.102.90.50:2017/wiki17_abstracts`. 
+The constructor initializes the `ColBERTv2` class instance and sets up the request parameters for interacting with the ColBERTv2 retrieval server. This server is hosted remotely at `'http://20.102.90.50:2017/wiki17_abstracts`.
 
 - `url` (_str_): URL for ColBERTv2 server. Defaults to `"http://0.0.0.0"`
 - `port` (_Union[str, int]_, _Optional_): Port endpoint for ColBERTv2 server. Defaults to `None`.
@@ -34,7 +34,7 @@ class ColBERTv2:
 **Returns:**
 - `Union[list[str], list[dotdict]]`: Depending on `simplify` flag, either a list of strings representing the passage content (`True`) or a list of `dotdict` instances containing passage details (`False`).
 
-Internally, the method handles the specifics of preparing the request query to the ColBERTv2 server and corresponding payload to obtain the response. 
+Internally, the method handles the specifics of preparing the request query to the ColBERTv2 server and corresponding payload to obtain the response.
 
 The function handles the retrieval of the top-k passages based on the provided query.
 

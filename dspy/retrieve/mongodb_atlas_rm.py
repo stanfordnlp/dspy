@@ -2,16 +2,10 @@ import os
 from typing import Any, List
 
 import backoff
-from openai import (
-    APITimeoutError,
-    InternalServerError,
-    OpenAI,
-    RateLimitError,
-    UnprocessableEntityError,
-)
+from openai import APITimeoutError, InternalServerError, OpenAI, RateLimitError, UnprocessableEntityError
 
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils.settings import settings
-from dspy import Retrieve, Prediction
 
 try:
     from pymongo import MongoClient

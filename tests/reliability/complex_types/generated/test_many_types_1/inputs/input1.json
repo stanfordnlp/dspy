@@ -15,12 +15,18 @@
       "datetimeField": "2023-10-12T07:20:50.52Z",
       "enumField": "option2",
       "literalField": "literalValue",
-      "tupleField": ["nestedString", 789]
+      "tupleField": [
+        "nestedString",
+        789
+      ]
     },
     "objectField": {
       "subField1": "example",
       "subField2": 456
     },
-    "tupleField": ["string1", 123]
+    "tupleField": [
+      "string1",
+      123
+    ]
   }
 }

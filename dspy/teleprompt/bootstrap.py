@@ -50,7 +50,7 @@ class BootstrapFewShot(Teleprompter):
 
         Args:
             metric: Callable
-                A function that compares an expected value and predicted value, outputting the result of that comparison. 
+                A function that compares an expected value and predicted value, outputting the result of that comparison.
             metric_threshold: optional float, default `None`
                 If the metric yields a numerical value, then check it against this threshold when
                 deciding whether or not to accept a bootstrap example.
@@ -235,10 +235,11 @@ class BootstrapFewShot(Teleprompter):
 
                 name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
-        
+
             # Update the traces
             for name, demos in name2traces.items():
                 from datasets.fingerprint import Hasher
+
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:

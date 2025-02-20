@@ -2,6 +2,7 @@ import pytest
 
 import dspy
 from dspy.utils.streaming import StatusMessage, StatusMessageProvider, streaming_response
+
 from ..test_utils.server import litellm_test_server
 
 

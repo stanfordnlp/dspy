@@ -13,8 +13,8 @@
     git tag -d X.Y.Z # Delete locally
     ```
     * Fix the errors and then repeat the steps above to recreate the tag locally and push to GitHub to restart the process.
-    * Note that the github action takes care of incrementing the release version on test-pypi automatically by adding a pre-release identifier in the scenario where the tests fail and you need to delete and push the same tag again. 
-* [ ] [Create a release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) 
+    * Note that the github action takes care of incrementing the release version on test-pypi automatically by adding a pre-release identifier in the scenario where the tests fail and you need to delete and push the same tag again.
+* [ ] [Create a release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
 * [ ] Add release notes. You can make use of [automatically generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes)
 * If creating a new release for major or minor version:
     * [ ] Create a new release branch with the last commit and name it 'release/X.Y`
@@ -22,4 +22,4 @@
 
 ### Prerequisites
 
-The automation requires a [trusted publisher](https://docs.pypi.org/trusted-publishers/) to be set up on both the pypi and test-pypi packages. If the package is migrated to a new project, please follow the [steps](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) to create a trusted publisher. If you have no releases on the new project, you may have to create a [pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/) to allow the first automated deployment. 
+The automation requires a [trusted publisher](https://docs.pypi.org/trusted-publishers/) to be set up on both the pypi and test-pypi packages. If the package is migrated to a new project, please follow the [steps](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) to create a trusted publisher. If you have no releases on the new project, you may have to create a [pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/) to allow the first automated deployment.

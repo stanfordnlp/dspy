@@ -62,7 +62,7 @@ print(response)
 The constructor initializes the `HFModel` base class to support the handling of prompting models, configuring the client for communicating with the hosted vLLM server to generate requests. This requires the following parameters:
 
 - `model` (_str_): ID of model connected to the vLLM server.
-- `port` (_int_): Port for communicating to the vLLM server. 
+- `port` (_int_): Port for communicating to the vLLM server.
 - `url` (_str_): Base URL of hosted vLLM server. This will often be `"http://localhost"`.
 - `**kwargs`: Additional keyword arguments to configure the vLLM client.
 
@@ -82,7 +82,7 @@ class HFClientVLLM(HFModel):
 **Returns:**
 - `dict`: dictionary with `prompt` and list of response `choices`.
 
-Internally, the method handles the specifics of preparing the request prompt and corresponding payload to obtain the response. 
+Internally, the method handles the specifics of preparing the request prompt and corresponding payload to obtain the response.
 
 After generation, the method parses the JSON response received from the server and retrieves the output through `json_response["choices"]` and stored as the `completions` list.
 

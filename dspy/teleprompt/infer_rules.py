@@ -1,9 +1,10 @@
-import dspy
 import random
+
 import numpy as np
 
-from dspy.teleprompt import BootstrapFewShot
+import dspy
 from dspy.evaluate.evaluate import Evaluate
+from dspy.teleprompt import BootstrapFewShot
 
 
 class InferRules(BootstrapFewShot):
@@ -23,7 +24,7 @@ class InferRules(BootstrapFewShot):
             trainset, valset = trainset[:train_size], trainset[train_size:]
 
         super().compile(student, teacher=teacher, trainset=trainset)
-        
+
         original_program = self.student.deepcopy()
         all_predictors = [p for p in original_program.predictors() if hasattr(p, "signature")]
         instructions_list = [p.signature.instructions for p in all_predictors]
@@ -42,7 +43,7 @@ class InferRules(BootstrapFewShot):
                 rules = self.induce_natural_language_rules(predictor, trainset)
                 predictor.signature.instructions = instructions_list[i]
                 self.update_program_instructions(predictor, rules)
-            
+
             score = self.evaluate_program(candidate_program, valset)
 
             if score > best_score:
@@ -50,9 +51,9 @@ class InferRules(BootstrapFewShot):
                 best_program = candidate_program
 
             print(f"Evaluated Candidate {candidate_idx+1} with score {score}. Current best score: {best_score}")
-        
+
         print("Final best score:", best_score)
-        
+
         return best_program
 
     def induce_natural_language_rules(self, predictor, trainset):

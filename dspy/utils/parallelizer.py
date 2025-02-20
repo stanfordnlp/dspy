@@ -1,12 +1,13 @@
-import sys
-import tqdm
-import signal
+import contextlib
 import logging
+import signal
+import sys
 import threading
 import traceback
-import contextlib
-from tqdm.contrib.logging import logging_redirect_tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 logger = logging.getLogger(__name__)
 

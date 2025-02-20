@@ -1,6 +1,6 @@
-import pytest
 import copy
 
+import pytest
 
 SKIP_DEFAULT_FLAGS = ["reliability"]
 

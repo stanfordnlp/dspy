@@ -5,7 +5,7 @@
 
 ### Constructor
 
-The constructor initializes the `ChainOfThought` class and sets up its attributes. It inherits from the `Predict` class and adds specific functionality for chain of thought processing. 
+The constructor initializes the `ChainOfThought` class and sets up its attributes. It inherits from the `Predict` class and adds specific functionality for chain of thought processing.
 
 Internally, the class initializes the `activated` attribute to indicate if chain of thought processing has been selected. It extends the `signature` to include additional reasoning steps and an updated `rationale_type` when chain of thought processing is activated.
 
@@ -37,7 +37,7 @@ class ChainOfThought(Predict):
         else:
             # For dspy <2.5
             extended_signature = signature.prepend("rationale", rationale_type, type_=str)
-        
+
         self._predict = dspy.Predict(extended_signature, **config)
         self._predict.extended_signature = extended_signature
 ```
@@ -80,7 +80,7 @@ print(f"Question: {question}")
 print(f"Predicted Answer: {pred.answer}")
 ```
 
-The following example shows how to specify your custom rationale. Here `answer` corresponds to the last key to produce, it may be different in your case. 
+The following example shows how to specify your custom rationale. Here `answer` corresponds to the last key to produce, it may be different in your case.
 
 ```python
 #define a custom rationale

@@ -28,7 +28,7 @@ class MultiChainComparison(Module):
         for idx in range(M):
             candidate_type = dsp.Type(prefix=f"Student Attempt #{idx+1}:", desc="${reasoning attempt}")
             extended_kwargs.update({f'reasoning_attempt_{idx+1}': candidate_type})
-        
+
         rationale_type = dsp.Type(prefix="Accurate Reasoning: Thank you everyone. Let's now holistically", desc="${corrected reasoning}")
         extended_kwargs.update({'rationale': rationale_type, last_key: signature.kwargs[last_key]})
 

@@ -91,7 +91,7 @@ from typing import Literal
 
 class Emotion(dspy.Signature):
     """Classify emotion."""
-    
+
     sentence: str = dspy.InputField()
     sentiment: Literal['sadness', 'joy', 'love', 'anger', 'fear', 'surprise'] = dspy.OutputField()
 

@@ -11,9 +11,9 @@ sidebar_position: 2
 
 DSPy supports ReAct, an LLM agent designed to tackle complex tasks in an interactive fashion. ReAct is composed of an iterative loop of interpretation, decision and action-based activities ("Thought, Action, and Observation") based on an evolving set of input and output fields. Through this real-time iterative approach, the ReAct agent can both analyze and adapt to its responses over time as new information becomes available.
 
-## Instantiating ReAct 
+## Instantiating ReAct
 
-To instantiate the ReAct module, define and pass in a DSPy Signature. 
+To instantiate the ReAct module, define and pass in a DSPy Signature.
 
 ```python
 # Define a simple signature for basic question answering
@@ -60,7 +60,7 @@ Question: Aside from the Apple Remote, what other devices can control the progra
 Final Predicted Answer (after ReAct process): The Apple Remote and the Siri Remote can control the Front Row media program.
 ```
 
-Let's take a peek at how ReAct functioned internally by inspecting its history, up to maximum iterations. (This assumes the initial DSPy setup and configurations of LMs and RMs). 
+Let's take a peek at how ReAct functioned internally by inspecting its history, up to maximum iterations. (This assumes the initial DSPy setup and configurations of LMs and RMs).
 
 `lm.inspect_history(n=3)`
 

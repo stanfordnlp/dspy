@@ -15,6 +15,6 @@ document.addEventListener("DOMContentLoaded", function () {
       "runllm-slack-community-url",
       ""
     );
-  
+
     document.head.appendChild(script);
   });

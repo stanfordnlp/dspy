@@ -7,9 +7,9 @@ from typing import List, Optional, Union
 import backoff
 import openai
 
-from dspy import Retrieve, Prediction
-from dspy.dsp.utils.settings import settings
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
 
 try:
     import openai.error
@@ -20,10 +20,7 @@ except Exception:
 try:
     import chromadb
     import chromadb.utils.embedding_functions as ef
-    from chromadb.api.types import (
-        Embeddable,
-        EmbeddingFunction,
-    )
+    from chromadb.api.types import Embeddable, EmbeddingFunction
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
 except ImportError:
@@ -163,9 +160,9 @@ class ChromadbRM(Retrieve):
         )
 
         zipped_results = zip(
-            results["ids"][0], 
-            results["distances"][0], 
-            results["documents"][0], 
+            results["ids"][0],
+            results["distances"][0],
+            results["documents"][0],
             results["metadatas"][0])
         results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
         return results

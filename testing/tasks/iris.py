@@ -1,8 +1,10 @@
-from datasets import load_dataset
-from .base_task import BaseTask
-
 import random
+
+from datasets import load_dataset
+
 import dspy
+
+from .base_task import BaseTask
 
 
 class Sig(dspy.Signature):

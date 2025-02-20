@@ -1,13 +1,3 @@
-import logging
-from collections import defaultdict
-
-import dspy
-from dspy.evaluate.evaluate import Evaluate
-from dspy.signatures import Signature
-from dspy.teleprompt.teleprompt import Teleprompter
-
-logger = logging.getLogger(__name__)
-
 """
 USAGE SUGGESTIONS:
 
@@ -32,6 +22,16 @@ Note that this teleprompter takes in the following parameters:
                     * total_calls: The total number of calls to the task metric.
                 These statistics will be returned as attributes of the best program.
 """
+
+import logging
+from collections import defaultdict
+
+import dspy
+from dspy.evaluate.evaluate import Evaluate
+from dspy.signatures import Signature
+from dspy.teleprompt.teleprompt import Teleprompter
+
+logger = logging.getLogger(__name__)
 
 
 class BasicGenerateInstruction(Signature):

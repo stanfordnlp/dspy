@@ -35,4 +35,3 @@ body:
       description: "Tell us your DSPy version."
     validations:
       required: true
-

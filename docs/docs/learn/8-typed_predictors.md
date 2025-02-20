@@ -53,7 +53,7 @@ predictor = dspy.TypedPredictor("input:Input -> output:Output")
 
 ### I/O in Typed Predictors
 
-Now let's test out the Typed Predictor by providing some sample input to the predictor and verifying the output type. We can create an `Input` instance and pass it to the predictor to get a dictionary of the output. 
+Now let's test out the Typed Predictor by providing some sample input to the predictor and verifying the output type. We can create an `Input` instance and pass it to the predictor to get a dictionary of the output.
 
 ```python
 doc_query_pair = Input(

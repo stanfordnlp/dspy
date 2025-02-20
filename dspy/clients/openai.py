@@ -5,9 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import openai
 
-from dspy.clients.provider import TrainingJob, Provider
+from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
-
 
 _OPENAI_MODELS = [
   'gpt-4-turbo',
@@ -84,7 +83,7 @@ class TrainingJobOpenAI(TrainingJob):
 
 
 class OpenAIProvider(Provider):
-    
+
     def __init__(self):
         super().__init__()
         self.finetunable = True
@@ -184,7 +183,7 @@ class OpenAIProvider(Provider):
             TrainingStatus.failed,
             TrainingStatus.cancelled,
         ]
-    
+
     @staticmethod
     def get_training_status(job_id: str) -> TrainingStatus:
         provider_status_to_training_status = {

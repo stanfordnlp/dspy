@@ -216,7 +216,7 @@ def parse_integer_answer(answer, only_first_line=True):
     except (ValueError, IndexError):
         # print(answer)
         answer = 0
-    
+
     return answer
 
 # Metric Function
@@ -254,7 +254,7 @@ evaluate_program(your_dspy_program)
 
 ## DSPy Optimizers
 
-### LabeledFewShot 
+### LabeledFewShot
 ```python
 from dspy.teleprompt import LabeledFewShot
 
@@ -262,7 +262,7 @@ labeled_fewshot_optimizer = LabeledFewShot(k=8)
 your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-### BootstrapFewShot 
+### BootstrapFewShot
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
@@ -315,7 +315,7 @@ fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric,
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ```
-Other custom configurations are similar to customizing the `BootstrapFewShot` optimizer. 
+Other custom configurations are similar to customizing the `BootstrapFewShot` optimizer.
 
 
 ### Ensemble
@@ -483,7 +483,7 @@ fewshot_optuna_optimizer = BootstrapFewShotWithOptuna(metric=your_defined_metric
 
 your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
 ```
-Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
 
 ## DSPy Assertions
@@ -495,9 +495,9 @@ dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_m
 dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 ```
 
-### Activating DSPy Program with Assertions 
+### Activating DSPy Program with Assertions
 
-**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above.
 
 ```python
 #1. Using `assert_transform_module:

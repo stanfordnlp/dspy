@@ -7,7 +7,7 @@ sidebar_position: 7
 !!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
 
 
-Language models (LMs) have transformed how we interact with machine learning, offering vast capabilities in natural language understanding and generation. However, ensuring these models adhere to domain-specific constraints remains a challenge. Despite the growth of techniques like fine-tuning or “prompt engineering”, these approaches are extremely tedious and rely on heavy, manual hand-waving to guide the LMs in adhering to specific constraints. Even DSPy's modularity of programming prompting pipelines lacks mechanisms to effectively and automatically enforce these constraints. 
+Language models (LMs) have transformed how we interact with machine learning, offering vast capabilities in natural language understanding and generation. However, ensuring these models adhere to domain-specific constraints remains a challenge. Despite the growth of techniques like fine-tuning or “prompt engineering”, these approaches are extremely tedious and rely on heavy, manual hand-waving to guide the LMs in adhering to specific constraints. Even DSPy's modularity of programming prompting pipelines lacks mechanisms to effectively and automatically enforce these constraints.
 
 To address this, we introduce DSPy Assertions, a feature within the DSPy framework designed to automate the enforcement of computational constraints on LMs. DSPy Assertions empower developers to guide LMs towards desired outcomes with minimal manual intervention, enhancing the reliability, predictability, and correctness of LM outputs.
 
@@ -16,7 +16,7 @@ To address this, we introduce DSPy Assertions, a feature within the DSPy framewo
 We introduce two primary constructs within DSPy Assertions:
 
 - **`dspy.Assert`**:
-  - **Parameters**: 
+  - **Parameters**:
     - `constraint (bool)`: Outcome of Python-defined boolean validation check.
     - `msg (Optional[str])`: User-defined error message providing feedback or correction guidance.
     - `backtrack (Optional[module])`: Specifies target module for retry attempts upon constraint failure. The default backtracking module is the last module before the assertion.
@@ -26,7 +26,7 @@ We introduce two primary constructs within DSPy Assertions:
   - **Parameters**: Similar to `dspy.Assert`.
   - **Behavior**: Encourages self-refinement through retries without enforcing hard stops. Logs failures after maximum backtracking attempts and continues execution.
 
-- **dspy.Assert vs. Python Assertions**: Unlike conventional Python `assert` statements that terminate the program upon failure, `dspy.Assert` conducts a sophisticated retry mechanism, allowing the pipeline to adjust. 
+- **dspy.Assert vs. Python Assertions**: Unlike conventional Python `assert` statements that terminate the program upon failure, `dspy.Assert` conducts a sophisticated retry mechanism, allowing the pipeline to adjust.
 
 Specifically, when a constraint is not met:
 
@@ -35,9 +35,9 @@ Specifically, when a constraint is not met:
     - Past Output: your model's past output that did not pass the validation_fn
     - Instruction: your user-defined feedback message on what went wrong and what possibly to fix
 
-If the error continues past the `max_backtracking_attempts`, then `dspy.Assert` will halt the pipeline execution, altering you with an `dspy.AssertionError`. This ensures your program doesn't continue executing with “bad” LM behavior and immediately highlights sample failure outputs for user assessment. 
+If the error continues past the `max_backtracking_attempts`, then `dspy.Assert` will halt the pipeline execution, altering you with an `dspy.AssertionError`. This ensures your program doesn't continue executing with “bad” LM behavior and immediately highlights sample failure outputs for user assessment.
 
-- **dspy.Suggest vs. dspy.Assert**: `dspy.Suggest` on the other hand offers a softer approach. It maintains the same retry backtracking as `dspy.Assert` but instead serves as a gentle nudger. If the model outputs cannot pass the model constraints after the `max_backtracking_attempts`, `dspy.Suggest` will log the persistent failure and continue execution of the program on the rest of the data. This ensures the LM pipeline works in a "best-effort" manner without halting execution. 
+- **dspy.Suggest vs. dspy.Assert**: `dspy.Suggest` on the other hand offers a softer approach. It maintains the same retry backtracking as `dspy.Assert` but instead serves as a gentle nudger. If the model outputs cannot pass the model constraints after the `max_backtracking_attempts`, `dspy.Suggest` will log the persistent failure and continue execution of the program on the rest of the data. This ensures the LM pipeline works in a "best-effort" manner without halting execution.
 
 - **`dspy.Suggest`** are best utilized as "helpers" during the evaluation phase, offering guidance and potential corrections without halting the pipeline.
 - **`dspy.Assert`** are recommended during the development stage as "checkers" to ensure the LM behaves as expected, providing a robust mechanism for identifying and addressing errors early in the development cycle.
@@ -45,7 +45,7 @@ If the error continues past the `max_backtracking_attempts`, then `dspy.Assert` 
 
 ## Use Case: Including Assertions in DSPy Programs
 
-We start with using an example of a multi-hop QA SimplifiedBaleen pipeline as defined in the intro walkthrough. 
+We start with using an example of a multi-hop QA SimplifiedBaleen pipeline as defined in the intro walkthrough.
 
 ```python
 class SimplifiedBaleen(dspy.Module):
@@ -66,7 +66,7 @@ class SimplifiedBaleen(dspy.Module):
             prev_queries.append(query)
             passages = self.retrieve(query).passages
             context = deduplicate(context + passages)
-        
+
         pred = self.generate_answer(context=context, question=question)
         pred = dspy.Prediction(context=context, answer=pred.answer)
         return pred
@@ -76,12 +76,12 @@ baleen = SimplifiedBaleen()
 baleen(question = "Which award did Gary Zukav's first book receive?")
 ```
 
-To include DSPy Assertions, we simply define our validation functions and declare our assertions following the respective model generation. 
+To include DSPy Assertions, we simply define our validation functions and declare our assertions following the respective model generation.
 
 For this use case, suppose we want to impose the following constraints:
     1. Length - each query should be less than 100 characters
-    2. Uniqueness - each generated query should differ from previously-generated queries. 
-    
+    2. Uniqueness - each generated query should differ from previously-generated queries.
+
 We can define these validation checks as boolean functions:
 
 ```python
@@ -151,7 +151,7 @@ class SimplifiedBaleenAssertions(dspy.Module):
             prev_queries.append(query)
             passages = self.retrieve(query).passages
             context = deduplicate(context + passages)
-        
+
         if all_queries_distinct(prev_queries):
             self.passed_suggestions += 1
 
@@ -160,7 +160,7 @@ class SimplifiedBaleenAssertions(dspy.Module):
         return pred
 ```
 
-Now calling programs with DSPy Assertions requires one last step, and that is transforming the program to wrap it with internal assertions backtracking and Retry logic. 
+Now calling programs with DSPy Assertions requires one last step, and that is transforming the program to wrap it with internal assertions backtracking and Retry logic.
 
 ```python
 from dspy.primitives.assertions import assert_transform_module, backtrack_handler
@@ -169,7 +169,7 @@ baleen_with_assertions = assert_transform_module(SimplifiedBaleenAssertions(), b
 
 # backtrack_handler is parameterized over a few settings for the backtracking mechanism
 # To change the number of max retry attempts, you can do
-baleen_with_assertions_retry_once = assert_transform_module(SimplifiedBaleenAssertions(), 
+baleen_with_assertions_retry_once = assert_transform_module(SimplifiedBaleenAssertions(),
     functools.partial(backtrack_handler, max_backtracks=1))
 ```
 
@@ -251,7 +251,7 @@ DSPy Assertions work with optimizations that DSPy offers, particularly with `Boo
 - Compilation with Assertions
     This includes assertion-driven example bootstrapping and counterexample bootstrapping during compilation. The teacher model for bootstrapping few-shot demonstrations can make use of DSPy Assertions to offer robust bootstrapped examples for the student model to learn from during inference. In this setting, the student model does not perform assertion aware optimizations (backtracking and retry) during inference.
 - Compilation + Inference with Assertions
-    -This includes assertion-driven optimizations in both compilation and inference. Now the teacher model offers assertion-driven examples but the student can further optimize with assertions of its own during inference time. 
+    -This includes assertion-driven optimizations in both compilation and inference. Now the teacher model offers assertion-driven examples but the student can further optimize with assertions of its own during inference time.
 ```python
 teleprompter = BootstrapFewShotWithRandomSearch(
     metric=validate_context_and_answer_and_hops,

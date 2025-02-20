@@ -54,7 +54,7 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.

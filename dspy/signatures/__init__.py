@@ -1,12 +1,5 @@
-from dspy.signatures.field import InputField, OutputField, OldField, OldInputField, OldOutputField
-from dspy.signatures.signature import (
-    SignatureMeta,
-    Signature,
-    ensure_signature,
-    make_signature,
-    infer_prefix,
-)
-
+from dspy.signatures.field import InputField, OldField, OldInputField, OldOutputField, OutputField
+from dspy.signatures.signature import Signature, SignatureMeta, ensure_signature, infer_prefix, make_signature
 
 __all__ = [
     "InputField",

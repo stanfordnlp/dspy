@@ -1,5 +1,6 @@
-from setuptools import find_packages, setup
 import os
+
+from setuptools import find_packages, setup
 
 # Read the content of the README file
 with open("README.md", encoding="utf-8") as f:
@@ -16,19 +17,19 @@ with open(os.path.join(here, "dspy", "__metadata__.py"), "r", encoding="utf-8") 
 f.close()
 
 
-setup(	
+setup(
     name=metadata["__name__"],
     version=metadata["__version__"],
     description=metadata["__description__"],
     url=metadata["__url__"],
     author=metadata["__author__"],
     author_email=metadata["__author_email__"],
-    long_description=long_description,	
-    long_description_content_type="text/markdown",	
-    license="MIT License",	
-    packages=find_packages(include=["dspy.*", "dspy"]),	
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    license="MIT License",
+    packages=find_packages(include=["dspy.*", "dspy"]),
     python_requires=">=3.9",
-    install_requires=requirements,	
+    install_requires=requirements,
 
     extras_require={
         "chromadb": ["chromadb~=0.4.14"],
@@ -49,13 +50,13 @@ setup(
         "pgvector": ["psycopg2~=2.9.9","pgvector~=0.2.5"],
         "falkordb": ["falkordb", "redis", "async-timeout"]
     },
-    classifiers=[	
-        "Development Status :: 3 - Alpha",	
-        "Intended Audience :: Science/Research",	
-        "License :: OSI Approved :: MIT License",	
-        "Operating System :: POSIX :: Linux",	
-        "Programming Language :: Python :: 3",	
-        "Programming Language :: Python :: 3.8",	
-        "Programming Language :: Python :: 3.9",	
-    ],	
-)	
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+    ],
+)

@@ -54,4 +54,3 @@ Huge shoutout to them for the massive support ❤️. See the [Weaviate DSPy dir
 TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
 
 Credit: Some of these resources were originally compiled in the [Awesome DSPy](https://github.com/ganarajpr/awesome-dspy/tree/master) repo.
-

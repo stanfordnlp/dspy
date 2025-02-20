@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
+import litellm
 from pydantic import BaseModel
 
 import dspy
 from dspy.predict import react
 from dspy.utils.dummies import DummyLM, dummy_rm
-import litellm
 
 # def test_example_no_tools():
 #     # Create a simple dataset which the model will use with the Retrieve tool.

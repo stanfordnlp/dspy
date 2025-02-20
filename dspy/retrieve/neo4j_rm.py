@@ -1,25 +1,16 @@
 import os
-from typing import Any, List, Optional, Union, Callable
+from typing import Any, Callable, List, Optional, Union
 
 import backoff
-from openai import (
-    APITimeoutError,
-    InternalServerError,
-    OpenAI,
-    RateLimitError,
-    UnprocessableEntityError,
-)
+from openai import APITimeoutError, InternalServerError, OpenAI, RateLimitError, UnprocessableEntityError
 
-from dspy import Retrieve, Prediction
-from dspy.dsp.utils.settings import settings
+from dspy import Prediction, Retrieve
 from dspy.dsp.utils import dotdict
+from dspy.dsp.utils.settings import settings
 
 try:
     from neo4j import GraphDatabase
-    from neo4j.exceptions import (
-        AuthError,
-        ServiceUnavailable,
-    )
+    from neo4j.exceptions import AuthError, ServiceUnavailable
 except ImportError:
     raise ImportError(
         "Please install the neo4j package by running `pip install dspy-ai[neo4j]`",

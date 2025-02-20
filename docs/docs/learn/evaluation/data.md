@@ -9,7 +9,7 @@ DSPy is a machine learning framework, so working in it involves training sets, d
 
 ## DSPy `Example` objects
 
-The core data type for data in DSPy is `Example`. You will use **Examples** to represent items in your training set and test set. 
+The core data type for data in DSPy is `Example`. You will use **Examples** to represent items in your training set and test set.
 
 DSPy **Examples** are similar to Python `dict`s but have a few useful utilities. Your DSPy modules will return values of the type `Prediction`, which is a special sub-class of `Example`.
 
@@ -56,7 +56,7 @@ print(qa_pair.with_inputs("question"))
 print(qa_pair.with_inputs("question", "answer"))
 ```
 
-Values can be accessed using the `.`(dot) operator. You can access the value of key `name` in defined object `Example(name="John Doe", job="sleep")` through `object.name`. 
+Values can be accessed using the `.`(dot) operator. You can access the value of key `name` in defined object `Example(name="John Doe", job="sleep")` through `object.name`.
 
 To access or exclude certain keys, use `inputs()` and `labels()` methods to return new Example objects containing only input or non-input keys, respectively.
 
@@ -130,7 +130,7 @@ You can access the splits of the dataset by accessing the corresponding key:
 ```python
 train_split = blog_alpaca['train']
 
-# Since this is the only split in the dataset we can split this into 
+# Since this is the only split in the dataset we can split this into
 # train and test split ourselves by slicing or sampling 75 rows from the train
 # split for testing.
 testset = train_split[:75]

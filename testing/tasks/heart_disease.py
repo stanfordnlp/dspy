@@ -1,6 +1,9 @@
-import dspy
 import random
+
 from datasets import load_dataset
+
+import dspy
+
 from .base_task import BaseTask
 
 mappings = {

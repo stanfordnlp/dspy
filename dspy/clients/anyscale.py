@@ -1,15 +1,11 @@
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
 import yaml
-import logging
 
-from dspy.clients.finetune import (
-    FinetuneJob,
-    # TrainingMethod,
-    save_data,
-)
+from dspy.clients.finetune import FinetuneJob, save_data
 from dspy.clients.openai import openai_data_validation
 
 try:
@@ -94,7 +90,7 @@ def finetune_anyscale(
 
     lora_dynamic_path = storage_uri.split(model)[0]
     final_model_name = model + storage_uri.split(model)[1]
-    
+
     if serve_config_path:
         update_serve_model_config(lora_dynamic_path, serve_config_path)
     job.model_names = [final_model_name]
@@ -112,17 +108,17 @@ def update_serve_model_config(lora_dynamic_path: str, serve_config_path: str):
     """Update the model config storage location with the job_id."""
     with open(serve_config_path, "r") as f:
         serve_config = yaml.safe_load(f)
-    
+
     model_config_location = serve_config["applications"][0]["args"]["llm_configs"][0]
-    
+
     with open(model_config_location, "r") as f:
         model_config = yaml.safe_load(f)
 
     model_config["lora_config"]["dynamic_lora_loading_path"] = lora_dynamic_path
-    
+
     with open(model_config_location, "w") as f:
         yaml.safe_dump(model_config, f)
-    
+
 
 def verify_dataset(dataset: List[dict[str, Any]]) -> bool:
     """Verify the training arguments before starting training."""
@@ -150,10 +146,10 @@ def submit_data(train_path: str, job_config: Dict[str, Any]):
 def generate_config_files(train_path: str, llmforge_config_path: str, job_config_path: str, model: str):
     assert llmforge_config_path, "LLMForge config is required to generate the config files"
     assert job_config_path, "Job config is required to start the finetuning job"
-    
+
     llmforge_config = yaml.safe_load(open(llmforge_config_path, "r"))
     job_config_dict = yaml.safe_load(open(job_config_path, "r"))
-    
+
     llmforge_config["model_id"] = model
     llmforge_config["train_path"] = train_path
     llmforge_config = {k: v for k, v in llmforge_config.items() if v is not None}
@@ -167,7 +163,7 @@ def generate_config_files(train_path: str, llmforge_config_path: str, job_config
     for env_var in ["HF_TOKEN", "HF_HOME", "WANDB_API_KEY"]:
         if env_var not in job_config_dict["env_vars"] and os.environ.get(env_var, None):
             job_config_dict["env_vars"][env_var] = os.environ[env_var]
-    
+
 
     job_config = JobConfig(**job_config_dict)
 

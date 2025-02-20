@@ -8,7 +8,7 @@ sidebar_position: 1
 
 Working in DSPy involves training sets, development sets, and test sets. This is like traditional ML, but you usually need far fewer labels (or zero labels) to use DSPy effectively.
 
-The core data type for data in DSPy is `Example`. You will use **Examples** to represent items in your training set and test set. 
+The core data type for data in DSPy is `Example`. You will use **Examples** to represent items in your training set and test set.
 
 DSPy **Examples** are similar to Python `dict`s but have a few useful utilities. Your DSPy modules will return values of the type `Prediction`, which is a special sub-class of `Example`.
 
@@ -57,7 +57,7 @@ When you call `with_inputs()`, you get a new copy of the example. The original o
 
 ## Element Access and Updation
 
-Values can be accessed using the `.`(dot) operator. You can access the value of key `name` in defined object `Example(name="John Doe", job="sleep")` through `object.name`. 
+Values can be accessed using the `.`(dot) operator. You can access the value of key `name` in defined object `Example(name="John Doe", job="sleep")` through `object.name`.
 
 To access or exclude certain keys, use `inputs()` and `labels()` methods to return new Example objects containing only input or non-input keys, respectively.
 
@@ -98,7 +98,7 @@ article_summary.context = "new context"
 
 ## Iterating over Example
 
-Iteration in the `Example` class also functions like a dictionary, supporting methods like `keys()`, `values()`, etc: 
+Iteration in the `Example` class also functions like a dictionary, supporting methods like `keys()`, `values()`, etc:
 
 ```python
 for k, v in article_summary.items():

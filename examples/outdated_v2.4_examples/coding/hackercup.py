@@ -1,15 +1,16 @@
-import datasets
 import os
-import openai
-import dspy
-from dspy import InputField, OutputField, Signature
-from dspy import Example
-from dspy.evaluate.evaluate import Evaluate
-from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
-from datetime import datetime
 import random
+from datetime import datetime
+
+import datasets
+import openai
+from hackercup_utils import check_solution, extract_code, run
+
+import dspy
+from dspy import Example, InputField, OutputField, Signature
+from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt import MIPROv2
-from hackercup_utils import extract_code, run, check_solution
+from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 openai.api_base = os.environ.get("OPENAI_API_BASE")
@@ -153,7 +154,7 @@ class GenerateCode(dspy.Module):
                     )
         return dspy.Prediction(solution=python_code)
 
-### OPTIMIZATION ### 
+### OPTIMIZATION ###
 
 def optimize_with_mipro(program, prompt_model, task_model, metric, trainset):
     teleprompter = MIPROv2(
@@ -194,7 +195,7 @@ def optimize_with_bootstrap_fewshot(program, task_model, teacher_model, metric, 
         max_errors =10000,
         teacher_settings=dict(lm=teacher_model)
     )
-    
+
     optimized_program = rs_optimizer.compile(
         program,
         trainset=trainset,
@@ -228,16 +229,16 @@ def test_code(timeout=5):
 
 if __name__ == "__main__":
 
-    ### LOAD AND PREPARE DATA ### 
+    ### LOAD AND PREPARE DATA ###
     ds = datasets.load_dataset("hackercupai/hackercup")
 
-    # Shuffle data 
+    # Shuffle data
     ds_full_list = list(ds["full"])
     rng = random.Random(0)
     rng.shuffle(ds_full_list)
 
     # Format dataset to use in DSPy
-    # TODO: what does this syntax mean 
+    # TODO: what does this syntax mean
     sample_ds = [
         Example(
             problem_description=example["statement"],
@@ -258,7 +259,7 @@ if __name__ == "__main__":
         if example["sample_input"]
     ]
 
-    trainset = sample_ds + full_ds[0:40] # use sample in train because it's easier 
+    trainset = sample_ds + full_ds[0:40] # use sample in train because it's easier
     testset = full_ds[40:60]
 
     # Configure our dspy settings (particularly LM we're using)
@@ -274,7 +275,7 @@ if __name__ == "__main__":
     # Setup evaluation function
     evaluate = Evaluate(
         devset=testset,
-        num_threads=16, # Note: Set this to 1 for debugging purposes 
+        num_threads=16, # Note: Set this to 1 for debugging purposes
         display_progress=True,
         display_table=5,
         metric=test_code(timeout=5)
@@ -290,7 +291,7 @@ if __name__ == "__main__":
     print("Evaluating Multi-Stage Program on test...")
     evaluate(program=multi_stage_program, devset=testset)
 
-    # Try out more advanced pipeline | ~30% 
+    # Try out more advanced pipeline | ~30%
     # multi_stage_program = GenerateCode(max_tries=5, num_ensembles=5)
     # print(f"Evaluating Multi-Stage Program on test...")
     # evaluate(program=multi_stage_program, devset=testset)

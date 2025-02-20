@@ -45,16 +45,16 @@ class Synthesizer:
 
             print("-"*75)
             print_text = "[bold blue]Generated Data:[bold blue]\n[bold red]Inputs:[bold red]\n"
-            
+
             for key in input_keys:
                 print_text += f"\t[bold yellow]{key}[bold yellow]: [green]{examples[key]}[green]\n"
-            
+
             rprint(print_text)
             feedback = input("Provide feedback on the generated data: ")
             print("-"*75)
 
             return feedback
-        
+
         elif self.config.feedback_mode == "llm":
             feedback = self.get_feedback_on_generation(
                 synthetic_data=[examples],
@@ -144,7 +144,7 @@ class Synthesizer:
             task_description = ground_source.__doc__
             if task_description.startswith("Given the fields"):
                 task_description = self.understand_task(examples=ground_source.__doc__).explanation
-            
+
             input_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.input_fields.items()}
             output_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.output_fields.items()}
 
@@ -171,7 +171,7 @@ class Synthesizer:
 
         if self.config.num_example_for_optim:
             self.generate_input_data.__doc__ += INPUT_GENERATION_TASK_WITH_EXAMPLES_SUFFIX
-        
+
         if self.config.feedback_mode:
             self.generate_input_data.__doc__ += INPUT_GENERATION_TASK_WITH_FEEDBACK_SUFFIX
 
@@ -200,7 +200,7 @@ class Synthesizer:
                 if not isinstance(ground_source, list):
                     raise ValueError("Ground source must be a list of examples when `num_example_for_optim` is provided.")
                 kwargs["ground_source"] = random.sample(ground_source, k=self.config.num_example_for_optim)
-            
+
             with dspy.context(lm=self.input_lm):
                 inputs = self.input_predictor(**kwargs)
 
@@ -225,10 +225,10 @@ class Synthesizer:
                 }
 
                 data.append(dspy.Example(**kwargs, **output_kwargs).with_inputs(*input_keys))
-            
+
             if self.config.feedback_mode and idx < self.config.num_example_for_feedback:
                 feedback = self._gather_feedback(data[-1])
-               
+
                 task_description = self.update_task_description(
                     task_description=task_description,
                     feedback=feedback,

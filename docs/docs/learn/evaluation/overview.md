@@ -13,4 +13,3 @@ Now that you have some data and a metric, run development evaluations on your pi
 
 ??? "If your metric is itself a DSPy program..."
     If your metric is itself a DSPy program, a powerful way to iterate is to optimize your metric itself. That's usually easy because the output of the metric is usually a simple value (e.g., a score out of 5), so the metric's metric is easy to define and optimize by collecting a few examples.
-

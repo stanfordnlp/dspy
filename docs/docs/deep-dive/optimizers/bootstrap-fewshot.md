@@ -136,4 +136,3 @@ cot_compiled.save('turbo_gsm8k.json')
 8. If the prediction is successful, a demonstration (demo) is created for each step in the trace. This demo includes the inputs to the predictor and the outputs it generated.
 
 9. Other optimizers like `BootstrapFewShotWithOptuna`, `BootstrapFewShotWithRandomSearch` etc. also work on same principles with slight changes in the example discovery process.
-

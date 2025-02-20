@@ -16,9 +16,9 @@ class KNN:
             >>> knn = KNN(k=3, trainset=trainset)
             >>> similar_examples = knn(input="hello")
         """
-        
-        import dspy.dsp as dsp
+
         import dspy
+        import dspy.dsp as dsp
 
         self.k = k
         self.trainset = trainset

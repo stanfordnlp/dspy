@@ -1,11 +1,11 @@
-import dspy
-
 from copy import deepcopy
+
 from pydantic.fields import FieldInfo
 
+import dspy
+from dspy.predict.avatar.models import Action, ActionOutput, Tool
 from dspy.predict.avatar.signatures import Actor
 from dspy.signatures.signature import ensure_signature
-from dspy.predict.avatar.models import Action, ActionOutput, Tool
 
 
 def get_number_with_suffix(number: int) -> str:
@@ -73,8 +73,8 @@ class Avatar(dspy.Module):
 
     def _update_signature(self, idx: int, omit_action: bool = False):
         self.actor.signature = self.actor.signature.with_updated_fields(
-            f"action_{idx}", 
-            Action, 
+            f"action_{idx}",
+            Action,
             __dspy_field_type="input"
         )
 
@@ -86,7 +86,7 @@ class Avatar(dspy.Module):
                 type_=str,
             )
         )
-        
+
         if omit_action:
             for field in list(self.output_fields.keys()):
                 self.actor.signature = self.actor.signature.append(
@@ -94,7 +94,7 @@ class Avatar(dspy.Module):
                     self._get_field(self.output_fields[field]),
                     type_=self.output_fields[field].annotation,
                 )
-        else:        
+        else:
             self.actor.signature = self.actor.signature.append(
                 f"action_{idx+1}",
                 dspy.OutputField(
@@ -117,16 +117,16 @@ class Avatar(dspy.Module):
     def forward(self, **kwargs):
         if self.verbose:
             print("Starting the task...")
-        
+
         args = {
             "goal" : self.signature.__doc__,
             "tools" : [tool.name for tool in self.tools],
         }
-        
+
         for key in self.input_fields.keys():
             if key in kwargs:
                 args[key] = kwargs[key]
-        
+
         idx = 1
         tool_name = None
         action_results: list[ActionOutput] = []
@@ -146,8 +146,8 @@ class Avatar(dspy.Module):
                 tool_output = self._call_tool(tool_name, tool_input_query)
                 action_results.append(
                     ActionOutput(
-                        tool_name=tool_name, 
-                        tool_input_query=tool_input_query, 
+                        tool_name=tool_name,
+                        tool_input_query=tool_input_query,
                         tool_output=tool_output
                     )
                 )

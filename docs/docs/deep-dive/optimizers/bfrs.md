@@ -32,8 +32,8 @@ Let's take the example of optimizing a simple CoT pipeline for GSM8k dataset, we
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
 teleprompter = BootstrapFewShotWithRandomSearch(
-    metric=gsm8k_metric, 
-    max_bootstrapped_demos=8, 
+    metric=gsm8k_metric,
+    max_bootstrapped_demos=8,
     max_labeled_demos=8,
     num_threads=10,
     num_candidate_programs=10

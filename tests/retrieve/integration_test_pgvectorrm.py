@@ -12,9 +12,10 @@ Add to .personalization.sh:
     EOF
 poetry install -E postgres
 """
-from dspy.primitives.example import Example
-import pytest
 import psycopg2
+import pytest
+
+from dspy.primitives.example import Example
 from dspy.retrieve.pgvector_rm import PgVectorRM
 
 DB_URL = "postgresql://postgres:password@localhost/postgres"

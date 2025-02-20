@@ -15,7 +15,7 @@ The constructor initializes an instance of the `ChromadbRM` class, with the opti
 - `embedding_function` (_Optional[EmbeddingFunction[Embeddable]]_, _optional_): The function used for embedding documents and queries. Defaults to `DefaultEmbeddingFunction()` if not specified.
 - `k` (_int_, _optional_): The number of top passages to retrieve. Defaults to 7.
 
-Example of the ChromadbRM constructor: 
+Example of the ChromadbRM constructor:
 
 ```python
 ChromadbRM(

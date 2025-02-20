@@ -41,7 +41,7 @@ class CoT(dspy.Module):
     def __init__(self):
         super().__init__()
         self.prog = dspy.ChainOfThought("question -> answer")
-    
+
     def forward(self, question):
         return self.prog(question=question)
 ```
@@ -151,7 +151,7 @@ optimized_program = teleprompter.compile(
     num_trials=15,
     minibatch_size=25,
     minibatch_full_eval_steps=10,
-    minibatch=True, 
+    minibatch=True,
     requires_permission_to_run=False,
 )
 
@@ -178,7 +178,7 @@ evaluate(optimized_program, devset=devset[:])
 | `max_errors`       | `int`      | `10`                                                 | Maximum errors during an evaluation run that can be made before throwing an Exception.                                       |
 | `teacher_settings` | `dict`       | `{}`                                                 | Settings to use for the teacher model that bootstraps few-shot examples. An example dict would be `{lm=<dspy.LM object>}`. If your LM program with your default model is struggling to bootstrap any examples, it could be worth using a more powerful teacher model for bootstrapping.                                                     |
 | `max_bootstrapped_demos` | `int`  | `4`      | Maximum number of bootstrapped demonstrations to generate and include in the prompt.                              |
-| `max_labeled_demos`      | `int`  | `16`      | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps. 
+| `max_labeled_demos`      | `int`  | `16`      | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps.
 | `init_temperature` | `float`        | `1.0`                                                  | The initial temperature for prompt generation, influencing creativity.                                                       |
 | `verbose`          | `bool`      | `False`                                                | Enables printing intermediate steps and information.                                                                         |
 | `track_stats`      | `bool`      | `True`                                                | Logs relevant information through the optimization process if set to True.                                                                       |
@@ -196,7 +196,7 @@ evaluate(optimized_program, devset=devset[:])
 | `num_trials`            | `int`  | `30`      | Number of optimization trials to run. When `minibatch` is set to `True`, this represents the number of minibatch trials that will be run on batches of size `minibatch_size`. When minibatch is set to `False`, each trial uses a full evaluation on the training set. In both cases, we recommend setting `num_trials` to a *minimum* of .75 x # modules in program x # variables per module (2 if few-shot examples & instructions will both be optimized, 1 in the 0-shot case).        |
 | `minibatch`              | `bool`  | `True`    | Flag to enable evaluating over minibatches of data (instead of the full validation set) for evaluation each trial.                                                           |
 | `minibatch_size`         | `int`  | `25.0`    | Size of minibatches for evaluations.                                                                     |
-| `minibatch_full_eval_steps` | `int` | `10`    | When minibatching is enabled, a full evaluation on the validation set will be carried out every `minibatch_full_eval_steps` on the top averaging set of prompts (according to their average score on the minibatch trials).          
+| `minibatch_full_eval_steps` | `int` | `10`    | When minibatching is enabled, a full evaluation on the validation set will be carried out every `minibatch_full_eval_steps` on the top averaging set of prompts (according to their average score on the minibatch trials).
 | `max_bootstrapped_demos` | `Optional[int]`  | Defaults to `init` value. | Maximum number of bootstrapped demonstrations to generate and include in the prompt.                              |
 | `max_labeled_demos`      | `Optional[int]`  | Defaults to `init` value.  | Maximum number of labeled demonstrations to generate and include in the prompt. Note that these differ from bootstrapped examples because they are just inputs & outputs sampled directly from the training set and do not have bootstrapped intermediate steps.                             |
 | `seed`                   | `Optional[int]`  | Defaults to `init` value. | Seed for reproducibility.                                                    |                                  |
@@ -217,4 +217,4 @@ These steps are broken down in more detail below:
 3. **Find an Optimized Combination of Few-Shot Examples & Instructions**. Finally, now that we've created these few-shot examples and instructions, we use Bayesian Optimization to choose which set of these would work best for each predictor in our program. This works by running a series of `num_trials` trials, where a new set of prompts are evaluated over our validation set at each trial. This helps the Bayesian Optimizer learn which combination of prompts work best over time. If `minibatch` is set to `True` (which it is by default), then the new set of prompts are only evaluated on a minibatch of size `minibatch_size` at each trial which generally allows for more efficient exploration / exploitation. The best averaging set of prompts is then evaluated on the full validation set every `minibatch_full_eval_steps` get a less noisey performance benchmark. At the end of the optimization process, the LM program with the set of prompts that performed best on the full validation set is returned.
 
 
-For those interested in more details, more information on `MIPROv2` along with a study on `MIPROv2` compared with other DSPy optimizers can be found in [this paper](https://arxiv.org/abs/2406.11695). 
+For those interested in more details, more information on `MIPROv2` along with a study on `MIPROv2` compared with other DSPy optimizers can be found in [this paper](https://arxiv.org/abs/2406.11695).

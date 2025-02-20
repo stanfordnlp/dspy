@@ -1,5 +1,6 @@
 from dspy.primitives.python_interpreter import PythonInterpreter
 
+
 def test_execute_simple_code():
     interpreter = PythonInterpreter()
     code = "print('Hello, World!')"

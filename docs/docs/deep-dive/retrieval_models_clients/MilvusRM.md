@@ -19,7 +19,7 @@ The constructor initializes an instance of the `MilvusRM` class, with the option
     Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY and use OpenAI's embedding model "text-embedding-3-small" with the default dimension.
 - `k (int, optional)`: The number of top passages to retrieve. Defaults to 3.
 
-Example of the MilvusRM constructor: 
+Example of the MilvusRM constructor:
 
 ```python
 MilvusRM(
