@@ -29,5 +29,6 @@ jobs:
           pre-commit run trailing-whitespace --all-files
           pre-commit run check-docstring-first --all-files
           pre-commit run check-toml --all-files
+          pre-commit run check-added-large-files --all-files
 
         shell: bash
