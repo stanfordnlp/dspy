@@ -117,5 +117,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Poetry
         run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
-      - name: Run setup.py build
-        run: python setup.py build
+      - name: Build the wheel
+        run: python -m build
