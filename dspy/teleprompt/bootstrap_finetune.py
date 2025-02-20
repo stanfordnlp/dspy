@@ -301,3 +301,19 @@ def assert_no_shared_predictor(program1: Program, program2: Program):
     pred_names = ", ".join(id_to_name1[id] for id in shared_ids)
     err = f"The programs share the following predictor(s) with each other: {pred_names}"
     assert not shared_ids, err
+
+
+def get_unique_lms(program: Program) -> List[LM]:	
+    lms = [pred.lm for pred in program.predictors()]	
+    lms = list(set(lms))	
+    return lms
+
+def launch_lms(program: Program):
+    lms = get_unique_lms(program)
+    for lm in lms:
+        lm.launch()
+
+def kill_lms(program: Program):	
+    lms = get_unique_lms(program)	
+    for lm in lms:	
+        lm.kill()
