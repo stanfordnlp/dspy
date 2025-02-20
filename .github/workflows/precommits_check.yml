@@ -28,5 +28,6 @@ jobs:
           pre-commit run end-of-file-fixer --all-files
           pre-commit run trailing-whitespace --all-files
           pre-commit run check-docstring-first --all-files
+          pre-commit run check-toml --all-files
 
         shell: bash
