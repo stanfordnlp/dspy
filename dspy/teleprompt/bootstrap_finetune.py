@@ -41,8 +41,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
         adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
         exclude_demos: bool = False,
-        num_threads: int = 6,
-        max_errors: int = 10,
+        num_threads: int = 6
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -57,7 +56,6 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
-        self.max_errors = max_errors
     
     def compile(self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None) -> Program:
         # TODO: Print statements can be converted to logger.info if we ensure
@@ -73,7 +71,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         teachers = [prepare_teacher(student, t) for t in teachers]
         for t in teachers:
             set_missing_predictor_lms(t)
-            trace_data += bootstrap_trace_data(program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads, max_errors=self.max_errors)
+            trace_data += bootstrap_trace_data(program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads)
 
         logger.info("Preparing the train data...")
         key_to_data = {}
@@ -118,7 +116,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         key_to_job = {}
         for key, finetune_kwargs in finetune_dict.items():
             lm = finetune_kwargs.pop("lm")
-            # TODO: The following line is a hack. We shoul re-think how to free
+            # TODO: The following line is a hack. We should re-think how to free
             # up resources for fine-tuning. This might mean introducing a new
             # provider method (e.g. prepare_for_finetune) that can be called
             # before fine-tuning is started.
@@ -186,73 +184,58 @@ def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
-    num_threads: int =6,
-    max_errors: int =10,
+    num_threads=6,
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys:
     #     example_ind, example, prediction, trace, and score (if metric != None)
     evaluator = Evaluate(
-        devset=dataset, num_threads=num_threads, display_progress=False, return_outputs=True,
-        provide_traceback=False, max_errors=max_errors
+        devset=dataset, num_threads=num_threads, display_progress=True, return_outputs=True,
+        provide_traceback=True  # TODO(check with team)
     )
 
-    _metric = metric if metric else lambda example, prediction: 1
-    evaluator(program, metric=_metric)
+    def wrapped_metric(example, prediction, trace=None):
+        prediction, _ = prediction
+        return metric(example, prediction, trace) if metric else True
 
-    # Evaluate keeps track of the max_errors, so we don't count them again here.
+    def wrapped_program(**kwargs):
+        with dspy.context(trace=[]):
+            return program(**kwargs), dspy.settings.trace.copy()
+
+    _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
+
     data = []
-    for example_ind, example in enumerate(dataset):
-        try:
-            data_dict = bootstrap_trace_data_one_example(
-                example=example, program=program, metric=metric
-            )
-        except:
-            continue
-        data_dict["example_ind"] = example_ind
+    for example_ind, (example, prediction, score) in enumerate(outputs):
+        prediction, trace = prediction
+        data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
+        if metric:
+            data_dict["score"] = score
         data.append(data_dict)
 
     return data
 
 
-def bootstrap_trace_data_one_example(
-    example: Example,
-    program: Program,
-    metric: Optional[Callable] = None
-) -> Dict[str, Any]:
-    # Return a dict with the following keys:
-    #     example, prediction, trace, and score (if metric != None)
-    with dspy.context(trace=[]):
-        prediction = program(**example.inputs())
-        trace = dspy.settings.trace
-        score = metric(example, prediction, trace) if metric else None
+# # TODO(PR) check with team
+# def bootstrap_trace_data_one_example(
+#     example: Example,
+#     program: Program,
+#     metric: Optional[Callable] = None
+# ) -> Dict[str, Any]:
+#     # Return a dict with the following keys:
+#     #     example, prediction, trace, and score (if metric != None)
+#     with dspy.context(trace=[]):
+#         prediction = program(**example.inputs())
+#         trace = dspy.settings.trace
+#         score = metric(example, prediction, trace) if metric else None
 
-    data_dict = dict(
-        example=example,
-        prediction=prediction,
-        trace=trace,
-    )
-    if metric:
-        data_dict["score"] = score
+#     data_dict = dict(
+#         example=example,
+#         prediction=prediction,
+#         trace=trace,
+#     )
+#     if metric:
+#         data_dict["score"] = score
 
-    return data_dict
-
-
-def get_unique_lms(program: Program) -> List[LM]:
-    lms = [pred.lm for pred in program.predictors()]
-    lms = list(set(lms))
-    return lms
-
-
-def launch_lms(program: Program):
-    lms = get_unique_lms(program)
-    for lm in lms:
-        lm.launch()
-
-
-def kill_lms(program: Program):
-    lms = get_unique_lms(program)
-    for lm in lms:
-        lm.kill()
+#     return data_dict
 
 
 # Note: Shared below are useful functions for preparing student/teacher programs
@@ -270,6 +253,10 @@ def set_missing_predictor_lms(program: Program) -> Program:
 def prepare_student(student: Program) -> Program:
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
+
+    # TODO: Should we use reset_copy here? How would it affect the student
+    # program's predictor LMs, if they are set?
+    student = student.deepcopy()
     return student
 
 
