@@ -43,7 +43,7 @@ jobs:
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-test-chenmoney"/;}' pyproject.toml  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
         run: python3 -m build
       - name: Publish distribution 📦 to test-PyPI
@@ -53,6 +53,7 @@ jobs:
 
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi]
+    # Only publish to PyPI if the repository owner is stanfordnlp, while the test-PyPI is open to all forks for testing
     if: github.repository_owner == 'stanfordnlp'
     runs-on: ubuntu-latest
     environment: 
