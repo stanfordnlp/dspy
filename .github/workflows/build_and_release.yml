@@ -55,6 +55,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with: 
           repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          verbose: true
 
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi]
