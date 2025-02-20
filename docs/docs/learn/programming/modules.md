@@ -25,7 +25,7 @@ sentence = "it's a charming and often affecting journey."  # example from the SS
 # 1) Declare with a signature.
 classify = dspy.Predict('sentence -> sentiment: bool')
 
-# 2) Call with input argument(s). 
+# 2) Call with input argument(s).
 response = classify(sentence=sentence)
 
 # 3) Access the output.
@@ -119,7 +119,7 @@ We also have some function-style modules:
         math = dspy.ChainOfThought("question -> answer: float")
         math(question="Two dice are tossed. What is the probability that the sum equals two?")
         ```
-        
+
         **Possible Output:**
         ```text
         Prediction(
@@ -130,18 +130,18 @@ We also have some function-style modules:
 
     === "Retrieval-Augmented Generation"
 
-        ```python linenums="1"       
+        ```python linenums="1"
         def search(query: str) -> list[str]:
             """Retrieves abstracts from Wikipedia."""
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
             return [x['text'] for x in results]
-        
+
         rag = dspy.ChainOfThought('context, question -> response')
 
         question = "What's the name of the castle that David Gregory inherited?"
         rag(context=search(question), question=question)
         ```
-        
+
         **Possible Output:**
         ```text
         Prediction(
@@ -157,7 +157,7 @@ We also have some function-style modules:
 
         class Classify(dspy.Signature):
             """Classify sentiment of a given sentence."""
-            
+
             sentence: str = dspy.InputField()
             sentiment: Literal['positive', 'negative', 'neutral'] = dspy.OutputField()
             confidence: float = dspy.OutputField()
@@ -165,7 +165,7 @@ We also have some function-style modules:
         classify = dspy.Predict(Classify)
         classify(sentence="This book was super fun to read, though not the last chapter.")
         ```
-        
+
         **Possible Output:**
 
         ```text
@@ -177,7 +177,7 @@ We also have some function-style modules:
 
     === "Information Extraction"
 
-        ```python linenums="1"        
+        ```python linenums="1"
         text = "Apple Inc. announced its latest iPhone 14 today. The CEO, Tim Cook, highlighted its new features in a press release."
 
         module = dspy.Predict("text -> title, headings: list[str], entities_and_metadata: list[dict[str, str]]")
@@ -187,7 +187,7 @@ We also have some function-style modules:
         print(response.headings)
         print(response.entities_and_metadata)
         ```
-        
+
         **Possible Output:**
         ```text
         Apple Unveils iPhone 14
@@ -197,7 +197,7 @@ We also have some function-style modules:
 
     === "Agents"
 
-        ```python linenums="1"       
+        ```python linenums="1"
         def evaluate_math(expression: str) -> float:
             return dspy.PythonInterpreter({}).execute(expression)
 
@@ -210,7 +210,7 @@ We also have some function-style modules:
         pred = react(question="What is 9362158 divided by the year of birth of David Gregory of Kinnairdy castle?")
         print(pred.answer)
         ```
-        
+
         **Possible Output:**
 
         ```text
@@ -224,7 +224,7 @@ DSPy is just Python code that uses modules in any control flow you like, with a 
 
 See tutorials like [multi-hop search](https://dspy.ai/tutorials/multihop_search/), whose module is reproduced below as an example.
 
-```python linenums="1"        
+```python linenums="1"
 class Hop(dspy.Module):
     def __init__(self, num_docs=10, num_hops=4):
         self.num_docs, self.num_hops = num_docs, num_hops
@@ -241,6 +241,6 @@ class Hop(dspy.Module):
             prediction = self.append_notes(claim=claim, notes=notes, context=context)
             notes.extend(prediction.new_notes)
             titles.extend(prediction.titles)
-        
+
         return dspy.Prediction(notes=notes, titles=list(set(titles)))
 ```

@@ -12,7 +12,7 @@ class DatasetDescriptor(dspy.Signature):
     ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
     """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
     """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
-    
+
     examples = dspy.InputField(desc="Sample data points from the dataset")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed")
 
@@ -21,7 +21,7 @@ class DatasetDescriptorWithPriorObservations(dspy.Signature):
     """I will also provide you with a few observations I have already made.  Please add your own observations or if you feel the observations are comprehensive say 'COMPLETE' """
     """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
     """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
-    
+
     examples = dspy.InputField(desc="Sample data points from the dataset")
     prior_observations = dspy.InputField(desc="Some prior observations I made about the data")
     observations = dspy.OutputField(desc="Somethings that holds true for most or all of the data you observed or COMPLETE if you have nothing to add")
@@ -73,8 +73,8 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
                     break
                 continue
             observations += output["observations"]
-            
-            if log_file: 
+
+            if log_file:
                 log_file.write(f"observations {observations}\n")
     except Exception as e:
         if verbose: print(f"e {e}. using observations from past round for a summary.")
@@ -87,7 +87,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
     if verbose: print(f"summary: {summary}")
     if log_file:
         log_file.write(f"summary: {summary}\n")
-    
+
     if verbose: print(f"\nGenerated summary: {strip_prefix(summary.summary)}\n")
 
     return strip_prefix(summary.summary)

@@ -36,7 +36,7 @@ try:
 except Exception:
     ERRORS = (openai.RateLimitError, openai.APIError)
 
-    
+
 class LancedbRM(Retrieve):
     """
     A retrieval module that uses LanceDB to return the top passages for a given query.
@@ -72,7 +72,7 @@ class LancedbRM(Retrieve):
         persist_directory: str,
         k: int = 3,
     ):
-        
+
         self._table = self._init_lancedb(
             table_name, persist_directory,
         )
@@ -107,8 +107,8 @@ class LancedbRM(Retrieve):
         else:
             table = self.db.open_table(table_name)
         return table
-    
-    
+
+
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
@@ -130,7 +130,7 @@ class LancedbRM(Retrieve):
             else query_or_queries
         )
         queries = [q for q in queries if q]  # Filter empty queries
-        
+
         passages = []
         for q in queries:
             results = self._table.search(q).limit(self.k).to_list()

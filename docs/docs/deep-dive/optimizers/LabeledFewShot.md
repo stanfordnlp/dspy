@@ -46,7 +46,7 @@ class RAG(dspy.Module):
         #declare retrieval and predictor modules
         self.retrieve = dspy.Retrieve(k=num_passages)
         self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
-    
+
     #flow for answering questions using predictor and retrieval modules
     def forward(self, question):
         context = self.retrieve(question).passages

@@ -89,14 +89,14 @@ class ColBERTv2RetrieverLocal:
 
         assert self.colbert_config.checkpoint is not None, "Please pass a valid checkpoint like colbert-ir/colbertv2.0, which you can modify in the ColBERTConfig with attribute name checkpoint"
         self.passages = passages
-        
+
         assert self.colbert_config.index_name is not None, "Please pass a valid index_name, which you can modify in the ColBERTConfig with attribute name index_name"
         self.passages = passages
 
         if not load_only:
             print(f"Building the index for experiment {self.colbert_config.experiment} with index name {self.colbert_config.index_name}")
             self.build_index()
-        
+
         print(f"Loading the index for experiment {self.colbert_config.experiment} with index name {self.colbert_config.index_name}")
         self.searcher = self.get_index()
 
@@ -109,7 +109,7 @@ class ColBERTv2RetrieverLocal:
 
         from colbert import Indexer
         from colbert.infra import Run, RunConfig
-        with Run().context(RunConfig(nranks=self.colbert_config.nranks, experiment=self.colbert_config.experiment)):  
+        with Run().context(RunConfig(nranks=self.colbert_config.nranks, experiment=self.colbert_config.experiment)):
             indexer = Indexer(checkpoint=self.colbert_config.checkpoint, config=self.colbert_config)
             indexer.index(name=self.colbert_config.index_name, collection=self.passages, overwrite=True)
 
@@ -121,17 +121,17 @@ class ColBERTv2RetrieverLocal:
 
         from colbert import Searcher
         from colbert.infra import Run, RunConfig
-        
+
         with Run().context(RunConfig(experiment=self.colbert_config.experiment)):
             searcher = Searcher(index=self.colbert_config.index_name, collection=self.passages)
         return searcher
-    
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
     def forward(self,query:str,k:int=7,**kwargs):
         import torch
-        
+
         if kwargs.get("filtered_pids"):
             filtered_pids = kwargs.get("filtered_pids")
             assert type(filtered_pids) == List[int], "The filtered pids should be a list of integers"
@@ -139,8 +139,8 @@ class ColBERTv2RetrieverLocal:
             results = self.searcher.search(
                 query,
                 #Number of passages to receive
-                k=k, 
-                #Passing the filter function of relevant 
+                k=k,
+                #Passing the filter function of relevant
                 filter_fn=lambda pids: torch.tensor(
                     [pid for pid in pids if pid in filtered_pids],dtype=torch.int32).to(device))
         else:
@@ -151,7 +151,7 @@ class ColBERTv2RetrieverLocal:
         return results
 
 class ColBERTv2RerankerLocal:
-    
+
     def __init__(self,colbert_config=None,checkpoint:str='bert-base-uncased'):
         try:
             import colbert
@@ -177,14 +177,14 @@ class ColBERTv2RerankerLocal:
         from colbert.modeling.colbert import ColBERT
         from colbert.modeling.tokenization.doc_tokenization import DocTokenizer
         from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
-        
+
         self.colbert_config.nway = len(passages)
         query_tokenizer = QueryTokenizer(self.colbert_config,verbose=1)
         doc_tokenizer = DocTokenizer(self.colbert_config)
         query_ids,query_masks = query_tokenizer.tensorize([query])
         doc_ids,doc_masks = doc_tokenizer.tensorize(passages)
 
-        col = ColBERT(self.checkpoint,self.colbert_config) 
+        col = ColBERT(self.checkpoint,self.colbert_config)
         Q = col.query(query_ids,query_masks)
         DOC_IDS,DOC_MASKS = col.doc(doc_ids,doc_masks,keep_dims='return_mask')
         Q_duplicated = Q.repeat_interleave(len(passages), dim=0).contiguous()

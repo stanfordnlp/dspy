@@ -37,7 +37,7 @@
 # * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 # * verbose: Tells the method whether or not to print intermediate steps.
 # * track_stats: Tells the method whether or not to track statistics about the optimization process.
-#                 If True, the method will track a dictionary with a key corresponding to the trial number, 
+#                 If True, the method will track a dictionary with a key corresponding to the trial number,
 #                 and a value containing a dict with the following keys:
 #                     * program: the program being evaluated at a given trial
 #                     * score: the last average evaluated score for the program
@@ -383,7 +383,7 @@
 
 #             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-#             {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+#             {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
 #                         + (Number of calls to prompt model * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
 #             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task

@@ -163,9 +163,9 @@ class ChromadbRM(Retrieve):
         )
 
         zipped_results = zip(
-            results["ids"][0], 
-            results["distances"][0], 
-            results["documents"][0], 
+            results["ids"][0],
+            results["distances"][0],
+            results["documents"][0],
             results["metadatas"][0])
         results = [dotdict({"id": id, "score": dist, "long_text": doc, "metadatas": meta }) for id, dist, doc, meta in zipped_results]
         return results

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class Evaluate:
     """DSPy Evaluate class.
 
-    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and 
+    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and
     a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
     """
     def __init__(
@@ -112,15 +112,15 @@ class Evaluate:
 
         Returns:
             The evaluation results are returned in different formats based on the flags:
-            
+
             - Base return: A float percentage score (e.g., 67.30) representing overall performance
-            
+
             - With `return_all_scores=True`:
-                Returns (overall_score, individual_scores) where individual_scores is a list of 
+                Returns (overall_score, individual_scores) where individual_scores is a list of
                 float scores for each example in devset
-            
+
             - With `return_outputs=True`:
-                Returns (overall_score, result_triples) where result_triples is a list of 
+                Returns (overall_score, result_triples) where result_triples is a list of
                 (example, prediction, score) tuples for each example in devset
 
             - With both flags=True:
@@ -165,7 +165,7 @@ class Evaluate:
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
-            
+
         def prediction_is_dictlike(prediction):
             # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
             # having a method called `items()` for iterating through key/value pairs

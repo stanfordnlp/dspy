@@ -58,7 +58,5 @@ def extract_answer(s):
     return answer.strip()
 
 
-"""
-NOTE: MATH's official math_equivalence.is_equiv does not seem to have perfect recall.
-Consider its behavior on reference values like `left[\frac{1}{2}, \frac{4}{3}\right]`.
-"""
+# NOTE: MATH's official math_equivalence.is_equiv does not seem to have perfect recall.
+# Consider its behavior on reference values like `left[\frac{1}{2}, \frac{4}{3}\right]`.

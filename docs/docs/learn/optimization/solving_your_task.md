@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Using DSPy in 8 Steps
 
-Using DSPy well for solving a new task is just doing good machine learning with LMs. It's an iterative process: you make some initial choices, which will be sub-optimal, and then you refine them incrementally. 
+Using DSPy well for solving a new task is just doing good machine learning with LMs. It's an iterative process: you make some initial choices, which will be sub-optimal, and then you refine them incrementally.
 
 As we discuss below, you will define your task and the metrics you want to maximize, and prepare a few example inputs — typically without labels (or only with labels for the final outputs, if your metric requires them). Then, you build your pipeline by selecting built-in layers [(`modules`)](/building-blocks/3-modules) to use, giving each layer a [`signature` (input/output spec)](/building-blocks/2-signatures), and then calling your modules freely in your Python code. Lastly, you use a DSPy [`optimizer`](/building-blocks/6-optimizers) to compile your code into high-quality instructions, automatic few-shot examples, or updated LM weights for your LM.
 

@@ -159,10 +159,10 @@ class PineconeRM(Retrieve):
             )
 
         return pinecone.Index(index_name)
-    
+
     def _mean_pooling(
-            self, 
-            model_output, 
+            self,
+            model_output,
             attention_mask,
         ):
         try:
@@ -175,14 +175,14 @@ class PineconeRM(Retrieve):
         token_embeddings = model_output[0] # First element of model_output contains all token embeddings
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
- 
+
     @backoff.on_exception(
         backoff.expo,
         ERRORS,
         max_time=settings.backoff_time,
     )
     def _get_embeddings(
-        self, 
+        self,
         queries: List[str],
     ) -> List[List[float]]:
         """Return query vector after creating embedding using OpenAI
@@ -199,7 +199,7 @@ class PineconeRM(Retrieve):
             raise ModuleNotFoundError(
                 "You need to install torch to use a local embedding model with PineconeRM.",
             ) from exc
-        
+
         if not self.use_local_model:
             if OPENAI_LEGACY:
                 embedding = openai.Embedding.create(
@@ -210,7 +210,7 @@ class PineconeRM(Retrieve):
                     input=queries, model=self._openai_embed_model,
                 ).model_dump()
             return [embedding["embedding"] for embedding in embedding["data"]]
-        
+
         # Use local model
         encoded_input = self._local_tokenizer(queries, padding=True, truncation=True, return_tensors="pt").to(self.device)
         with torch.no_grad():

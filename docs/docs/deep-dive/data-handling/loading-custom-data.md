@@ -46,7 +46,7 @@ While this is fairly simple, let's take a look at how loading datasets would loo
 
 ## Advanced: Using DSPy's `Dataset` class (Optional)
 
-Let's take advantage of the `Dataset` class we defined in the previous article to accomplish the preprocessing: 
+Let's take advantage of the `Dataset` class we defined in the previous article to accomplish the preprocessing:
 
 * Load data from CSV to a dataframe.
 * Split the data to train, dev and test splits.
@@ -61,7 +61,7 @@ from dspy.datasets.dataset import Dataset
 class CSVDataset(Dataset):
     def __init__(self, file_path, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        
+
         df = pd.read_csv(file_path)
         self._train = df.iloc[0:700].to_dict(orient='records')
 
@@ -104,7 +104,7 @@ Using the Dataset base class now makes loading custom datasets incredibly easy a
         51     def test(self):
         52         if not hasattr(self, '_test_'):
     ---> 53             self._test_ = self._shuffle_and_sample('test', self._test, self.test_size, self.test_seed)
-        54 
+        54
         55         return self._test_
 
     AttributeError: 'CSVDataset' object has no attribute '_test'
@@ -112,6 +112,6 @@ Using the Dataset base class now makes loading custom datasets incredibly easy a
 
     To prevent that you'll just need to make sure `_test` is not `None` and populated with the appropriate data.
 
-You can override the methods in `Dataset` class to customize your class even more. 
+You can override the methods in `Dataset` class to customize your class even more.
 
 In summary, the Dataset base class provides a simplistic way to load and preprocess custom datasets with minimal code!

@@ -71,7 +71,7 @@ def test_batch_module():
             res2 = self.predictor2.batch([input] * 5)
 
             return (res1, res2)
-        
+
     result, reason_result = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
     assert result[0].output == "test output 1"
@@ -120,7 +120,7 @@ def test_nested_parallel_module():
                     (self.predictor, input),
                 ]),
             ])
-        
+
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
     assert output[0].output == "test output 1"
@@ -148,7 +148,7 @@ def test_nested_batch_method():
             res = self.predictor.batch([dspy.Example(input=input).with_inputs("input")]*2)
 
             return res
-        
+
     result = MyModule().batch([dspy.Example(input="test input").with_inputs("input")]*2)
 
     assert {result[0][0].output, result[0][1].output, result[1][0].output, result[1][1].output} \

@@ -2,9 +2,12 @@ import random
 
 from dspy.teleprompt.teleprompt import Teleprompter
 
-"""
-TODO: The EnsembledProgram should actually imitate the structure of the individual programs (IF they are all compatible). This allows compiling with an ensemble program as a (singular) teacher. Basically the top majority-compatible trace will end up being used, if dspy.majority is the reduce_fn.
-"""
+
+# TODO:
+#  The EnsembledProgram should actually imitate the structure of the individual programs (IF they are all compatible).
+#  This allows compiling with an ensemble program as a (singular) teacher.
+#  Basically the top majority-compatible trace will end up being used, if dspy.majority is the reduce_fn.
+
 
 
 class Ensemble(Teleprompter):

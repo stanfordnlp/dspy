@@ -44,7 +44,7 @@ class Embeddings:
 
         pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
         pids = np.tile(np.arange(len(self.corpus)), (len(queries), 1)) if pids is None else pids
-        
+
         return self._rerank_and_predict(q_embeds, pids)
 
     def _build_faiss(self):

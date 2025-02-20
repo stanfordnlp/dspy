@@ -1,6 +1,10 @@
 name: Pre-commit checks
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request: ~
+  workflow_dispatch: ~
 
 jobs:
   pre-commit-checks:
@@ -12,25 +16,23 @@ jobs:
         with:
           python-version: "3.9"
           cache: "pip"
-      - name: Check Pull Request Title
-        uses: Slashgear/action-check-pr-title@main
-        with:
-          regexp: '(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)' # Regex the title should match.
-      - name: Getting changed files list
-        id: files
-        uses: jitterbit/get-changed-files@master
-      - name: Checking changed files
-        shell: bash
-        run: |
-          echo "Changed files"
-          echo ${{ steps.files.outputs.all }}
-          echo "GitHub Client version"
-          echo $(gh --version)
+
       - name: Pre-Commit Checks
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           echo "Running pre-commit scans:"
-          # adding log display in case of pre-commit errors
-          pre-commit run -v --files ${{ steps.files.outputs.all }}
+
+          # Run hooks individually, until we can run them all at once
+          pre-commit run check-yaml --all-files
+          pre-commit run end-of-file-fixer --all-files
+          pre-commit run trailing-whitespace --all-files
+          pre-commit run check-docstring-first --all-files
+          pre-commit run check-toml --all-files
+          pre-commit run check-added-large-files --all-files
+          pre-commit run requirements-txt-fixer --all-files
+          pre-commit run check-merge-conflict --all-files
+          pre-commit run debug-statements --all-files
+          pre-commit run pretty-format-json --all-files
+
         shell: bash

@@ -13,7 +13,7 @@ class ChainOfThought(Module):
         desc = "${reasoning}"
         rationale_type = rationale_type or dspy.OutputField(prefix=prefix, desc=desc)
         extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
-        
+
         self.predict = dspy.Predict(extended_signature, **config)
 
     def forward(self, **kwargs):

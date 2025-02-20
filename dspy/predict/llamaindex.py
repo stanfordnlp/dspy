@@ -63,7 +63,7 @@
 
 #     Takes in a predict module from DSPy (whether unoptimized or optimized),
 #     and extracts the relevant prompt template from it given the input.
-    
+
 #     """
 
 #     predict_module: Predict
@@ -89,7 +89,7 @@
 #             template_var_mappings=template_var_mappings,
 #             function_mappings=function_mappings,
 #         )
-    
+
 #     def partial_format(self, **kwargs: Any) -> "BasePromptTemplate":
 #         """Returns a new prompt template with the provided kwargs."""
 #         # NOTE: this is a copy of the implementation in `PromptTemplate`
@@ -124,10 +124,10 @@
 #         # get kwarg templates
 #         kwarg_tmpl_map = {k: "{k}" for k in self.template_vars}
 
-#         # get "raw" template with all the values filled in with {var_name} 
+#         # get "raw" template with all the values filled in with {var_name}
 #         template0 = get_formatted_template(self.predict_module, kwarg_tmpl_map)
-#         # HACK: there are special 'format' variables of the form ${var_name} that are meant to 
-#         # prompt the LLM, but we do NOT want to replace with actual prompt variable values. 
+#         # HACK: there are special 'format' variables of the form ${var_name} that are meant to
+#         # prompt the LLM, but we do NOT want to replace with actual prompt variable values.
 #         # Replace those with double brackets
 #         template1 = replace_placeholder(template0)
 
@@ -147,10 +147,10 @@
 
 # def build_signature(prompt: PromptTemplate) -> dspy.Signature:
 #     """Attempt to build signature from prompt."""
-#     # TODO: allow plugging in any llamaindex LLM 
+#     # TODO: allow plugging in any llamaindex LLM
 #     gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=4000, model_type='chat')
 
-#     with dspy.context(lm=gpt4T): 
+#     with dspy.context(lm=gpt4T):
 #         parts = dspy.Predict(Template2Signature)(template=prompt.template)
 
 #     inputs = {k.strip(): InputField() for k in parts.input_keys.split(',')}
@@ -162,14 +162,14 @@
 #     }
 #     signature = make_signature(fields, parts.essential_instructions)
 #     return signature
-    
+
 
 # class DSPyComponent(QueryComponent):
-#     """DSPy Query Component. 
-    
+#     """DSPy Query Component.
+
 #     Can take in either a predict module directly.
 #     TODO: add ability to translate from an existing prompt template / LLM.
-    
+
 #     """
 #     predict_module: dspy.Predict
 #     predict_template: dsp.Template
@@ -196,12 +196,12 @@
 #         """Initialize from prompt template.
 
 #         LLM is a TODO - currently use DSPy LLM classes.
-        
+
 #         """
 #         signature = build_signature(prompt_template)
 #         predict_module = Predict(signature)
 #         return cls(predict_module=predict_module)
-    
+
 #     def set_callback_manager(self, callback_manager: CallbackManager) -> None:
 #         """Set callback manager."""
 #         # TODO: implement
@@ -240,7 +240,7 @@
 #     """A module for LlamaIndex.
 
 #     Wraps a QueryPipeline and exposes it as a dspy module for optimization.
-    
+
 #     """
 
 #     class Config:
@@ -254,10 +254,9 @@
 #         for module in query_pipeline.module_dict.values():
 #             if isinstance(module, DSPyComponent):
 #                 self.predict_modules.append(module.predict_module)
-        
+
 
 #     def forward(self, **kwargs: Any) -> Dict[str, Any]:
 #         """Forward."""
 #         output_dict = self.query_pipeline.run(**kwargs, return_values_direct=False)
 #         return dspy.Prediction(**output_dict)
-    

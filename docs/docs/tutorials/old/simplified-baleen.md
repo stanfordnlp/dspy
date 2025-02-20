@@ -12,7 +12,7 @@ The standard approach for this challenge in retrieval-augmented NLP literature i
 
 We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](/category/language-model-clients) and [RM](/category/retrieval-model-clients) APIs and [local models hosting](/category/local-language-model-clients).
 
-In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
+In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval.
 
 ```python
 import dspy
@@ -59,7 +59,7 @@ class GenerateAnswer(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 ```
 
-Unlike usual QA pipelines, we have an intermediate question-generation step in Baleen for which we'll need to define a new Signature for the "hop" behavior: inputting some context and a question to generate a search query to find missing information. 
+Unlike usual QA pipelines, we have an intermediate question-generation step in Baleen for which we'll need to define a new Signature for the "hop" behavior: inputting some context and a question to generate a search query to find missing information.
 
 ```python
 class GenerateSearchQuery(dspy.Signature):
@@ -90,10 +90,10 @@ class SimplifiedBaleen(dspy.Module):
         self.retrieve = dspy.Retrieve(k=passages_per_hop)
         self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
         self.max_hops = max_hops
-    
+
     def forward(self, question):
         context = []
-        
+
         for hop in range(self.max_hops):
             query = self.generate_query[hop](context=context, question=question).query
             passages = self.retrieve(query).passages
@@ -120,7 +120,7 @@ The `forward` method uses these sub-modules in simple control flow.
 
 ## Executing the Pipeline
 
-Let's execute this program in its zero-shot (uncompiled) setting. 
+Let's execute this program in its zero-shot (uncompiled) setting.
 
 This doesn't necessarily imply the performance will be bad but rather that we're bottlenecked directly by the reliability of the underlying LM to understand our sub-tasks from minimal instructions. Often, this is perfectly fine when using the most expensive/powerful models (e.g., GPT-4) on the easiest and most standard tasks (e.g., answering simple questions about popular entities).
 
@@ -152,11 +152,11 @@ turbo.inspect_history(n=3)
 
 ## Optimizing the Pipeline
 
-However, a zero-shot approach quickly falls short for more specialized tasks, novel domains/settings, and more efficient (or open) models. 
+However, a zero-shot approach quickly falls short for more specialized tasks, novel domains/settings, and more efficient (or open) models.
 
-To address this, **DSPy** offers compilation. Let's compile our multi-hop (`SimplifiedBaleen`) program. 
+To address this, **DSPy** offers compilation. Let's compile our multi-hop (`SimplifiedBaleen`) program.
 
-Let's first define our validation logic for compilation: 
+Let's first define our validation logic for compilation:
 
 - The predicted answer matches the gold answer.
 - The retrieved context contains the gold answer.
@@ -187,7 +187,7 @@ compiled_baleen = teleprompter.compile(SimplifiedBaleen(), teacher=SimplifiedBal
 
 ## Evaluating the Pipeline
 
-Let's now define our evaluation function and compare the performance of the uncompiled and compiled Baleen pipelines. While this devset does not serve as a completely reliable benchmark, it is instructive to use for this tutorial. 
+Let's now define our evaluation function and compare the performance of the uncompiled and compiled Baleen pipelines. While this devset does not serve as a completely reliable benchmark, it is instructive to use for this tutorial.
 
 ```python
 from dspy.evaluate.evaluate import Evaluate
@@ -220,6 +220,6 @@ Excellent! There might be something to this compiled, multi-hop program then.
 
 Earlier, we said simple programs are not very effective at finding all evidence required for answering each question. Is this resolved by the adding some greater prompting techniques in the forward function of `SimplifiedBaleen`? Does compiling programs improve performance?
 
-While in our tutorial we demonstrate our findings, the answer for these questions will not always be obvious. However, DSPy makes it extremely easy to try out the many diverse approaches with minimal effort. 
+While in our tutorial we demonstrate our findings, the answer for these questions will not always be obvious. However, DSPy makes it extremely easy to try out the many diverse approaches with minimal effort.
 
 Now that you've seen a example of how to build a simple yet powerful pipeline, it's time for you to build one yourself!

@@ -367,10 +367,10 @@ class AzureAISearchRM(dspy.Retrieve):
         assert (
             self.azure_openai_client or self.embedding_func
         ), "Either azure_openai_client or embedding_func must be provided."
-        
+
         if self.azure_openai_client is not None:
             assert field_vector, "field_vector must be provided."
-            
+
             embedding = (
                 self.azure_openai_client.embeddings.create(input=query, model=self.openai_embed_model).data[0].embedding
             )

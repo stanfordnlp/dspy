@@ -51,5 +51,3 @@ async def test_asyncify():
     await verify_asyncify(4, 10)
     await verify_asyncify(8, 15)
     await verify_asyncify(8, 30)
-
-

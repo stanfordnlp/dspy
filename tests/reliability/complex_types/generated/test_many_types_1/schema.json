@@ -8,12 +8,18 @@
       "type": "string"
     },
     "enumField": {
-      "enum": ["option1", "option2", "option3"],
+      "enum": [
+        "option1",
+        "option2",
+        "option3"
+      ],
       "type": "string"
     },
     "literalField": {
       "const": "literalValue",
-      "enum": ["literalValue"],
+      "enum": [
+        "literalValue"
+      ],
       "type": "string"
     },
     "nestedObjectField": {
@@ -23,12 +29,18 @@
           "type": "string"
         },
         "enumField": {
-          "enum": ["option1", "option2", "option3"],
+          "enum": [
+            "option1",
+            "option2",
+            "option3"
+          ],
           "type": "string"
         },
         "literalField": {
           "const": "literalValue",
-          "enum": ["literalValue"],
+          "enum": [
+            "literalValue"
+          ],
           "type": "string"
         },
         "tupleField": {
@@ -47,7 +59,12 @@
           "type": "array"
         }
       },
-      "required": ["tupleField", "enumField", "datetimeField", "literalField"],
+      "required": [
+        "tupleField",
+        "enumField",
+        "datetimeField",
+        "literalField"
+      ],
       "type": "object"
     },
     "objectField": {
@@ -59,7 +76,10 @@
           "type": "number"
         }
       },
-      "required": ["subField1", "subField2"],
+      "required": [
+        "subField1",
+        "subField2"
+      ],
       "type": "object"
     },
     "processedDatetimeField": {
@@ -69,12 +89,18 @@
       "type": "string"
     },
     "processedEnumField": {
-      "enum": ["option1", "option2", "option3"],
+      "enum": [
+        "option1",
+        "option2",
+        "option3"
+      ],
       "type": "string"
     },
     "processedLiteralField": {
       "const": "literalValue",
-      "enum": ["literalValue"],
+      "enum": [
+        "literalValue"
+      ],
       "type": "string"
     },
     "processedNestedObjectField": {
@@ -87,12 +113,18 @@
           "type": "string"
         },
         "enumField": {
-          "enum": ["option1", "option2", "option3"],
+          "enum": [
+            "option1",
+            "option2",
+            "option3"
+          ],
           "type": "string"
         },
         "literalField": {
           "const": "literalValue",
-          "enum": ["literalValue"],
+          "enum": [
+            "literalValue"
+          ],
           "type": "string"
         },
         "tupleField": {
@@ -132,7 +164,11 @@
           "type": "number"
         }
       },
-      "required": ["subField1", "subField2", "additionalField"],
+      "required": [
+        "subField1",
+        "subField2",
+        "additionalField"
+      ],
       "type": "object"
     },
     "processedTupleField": {

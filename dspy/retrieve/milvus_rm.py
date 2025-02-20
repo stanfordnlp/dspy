@@ -38,9 +38,9 @@ class MilvusRM(dspy.Retrieve):
         uri (str, optional): The Milvus connection uri. Defaults to "http://localhost:19530".
         token (str, optional): The Milvus connection token. Defaults to None.
         db_name (str, optional): The Milvus database name. Defaults to "default".
-        embedding_function (callable, optional): The function to convert a list of text to embeddings. 
+        embedding_function (callable, optional): The function to convert a list of text to embeddings.
             The embedding function should take a list of text strings as input and output a list of embeddings.
-            Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY 
+            Defaults to None. By default, it will get OpenAI client by the environment variable OPENAI_API_KEY
             and use OpenAI's embedding model "text-embedding-3-small" with the default dimension.
         k (int, optional): The number of top passages to retrieve. Defaults to 3.
 

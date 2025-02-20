@@ -200,7 +200,7 @@ class MIPROv2(Teleprompter):
         )
 
         return best_program
-    
+
     def _set_random_seeds(self,
         seed
     ):
@@ -342,7 +342,7 @@ class MIPROv2(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of program calls * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
@@ -600,7 +600,7 @@ class MIPROv2(Teleprompter):
                     instruction_candidates,
                     demo_candidates
                 )
-            
+
             return score
 
         sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
@@ -655,7 +655,7 @@ class MIPROv2(Teleprompter):
         trial_logs[trial_num]["mb_score"] = score
         trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
         trial_logs[trial_num]["mb_program"] = candidate_program.deepcopy()
-        
+
         logger.info(
             f"Score: {score} on minibatch of size {batch_size} with parameters {chosen_params}."
         )

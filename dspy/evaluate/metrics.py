@@ -30,13 +30,13 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
         return _answer_match(pred.answer, [example.answer], frac=frac)
     elif isinstance(example.answer, list):
         return _answer_match(pred.answer, example.answer, frac=frac)
-    
+
     raise ValueError(f"Invalid answer type: {type(example.answer)}")
 
-def answer_passage_match(example, pred, trace=None):   
+def answer_passage_match(example, pred, trace=None):
     if isinstance(example.answer, str):
         return _passage_match(pred.context, [example.answer])
     elif isinstance(example.answer, list):
         return _passage_match(pred.context, example.answer)
-    
+
     raise ValueError(f"Invalid answer type: {type(example.answer)}")

@@ -48,7 +48,7 @@ If the CI build check fails, please review your changes and ensure the documenta
 
 ## Contributing to the `docs` Folder
 
-This guide is for contributors looking to make changes to the documentation in the `dspy/docs` folder. 
+This guide is for contributors looking to make changes to the documentation in the `dspy/docs` folder.
 
 1. **Pull the up-to-date version of the website**: Please pull the latest version of the live documentation site via its subtree repository with the following command:
 
@@ -57,6 +57,6 @@ This guide is for contributors looking to make changes to the documentation in t
 git subtree pull --prefix=docs https://github.com/krypticmouse/dspy-docs master
 ```
 
-2. **Push your new changes on a new branch**: Feel free to add or edit existing documentation and open a PR for your changes. Once your PR is reviewed and approved, the changes will be ready to merge into main. 
+2. **Push your new changes on a new branch**: Feel free to add or edit existing documentation and open a PR for your changes. Once your PR is reviewed and approved, the changes will be ready to merge into main.
 
 3. **Updating the website**: Once your changes are merged to main, the changes would be reflected on live websites usually in 5-15 mins.

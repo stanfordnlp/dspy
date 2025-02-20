@@ -6,13 +6,13 @@
 ## Prerequisites
 
 1. Install the required packages using the following commands:
-   
+
    ```shell
    pip install --no-deps --pre --force-reinstall mlc-ai-nightly-cu118 mlc-chat-nightly-cu118 -f https://mlc.ai/wheels
    pip install transformers
    git lfs install
    ```
-   
+
    Adjust the pip wheels according to your OS/platform by referring to the provided commands in [MLC packages](https://mlc.ai/package/).
 
 ## Running MLC Llama-2 models
@@ -22,14 +22,14 @@
    ```shell
    mkdir -p dist/prebuilt
    ```
-   
+
 2. Clone the necessary libraries from the repository:
 
    ```shell
    git clone https://github.com/mlc-ai/binary-mlc-llm-libs.git dist/prebuilt/lib
    cd dist/prebuilt
    ```
-   
+
 3. Choose a Llama-2 model from [MLC LLMs](https://huggingface.co/mlc-ai) and clone the model repository:
 
    ```shell

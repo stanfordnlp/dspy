@@ -41,7 +41,7 @@ class WatsonDiscoveryRM(dspy.Retrieve):
         self.collection_ids=collection_ids
         self.k: k
         self.query_url=url + "/v2/projects/" + project_id + "/query?version=" + version
-        
+
         super().__init__(k=k)
 
     def forward(self, query_or_queries: Union[str, list[str]], k: Optional[int]= None) -> dspy.Prediction:
@@ -78,12 +78,12 @@ class WatsonDiscoveryRM(dspy.Retrieve):
 
                 discovery_results = requests.request(
                     "POST",
-                    url=self.query_url, 
+                    url=self.query_url,
                     headers=headers,
                     auth=HTTPBasicAuth("apikey", self.apikey),
                     data=payload,
                 )
-                
+
                 discovery_results.raise_for_status()
 
                 doc_dict={}

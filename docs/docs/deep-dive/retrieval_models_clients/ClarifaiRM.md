@@ -13,7 +13,7 @@ The ClarifaiRM module requires the `clarifai` Python package. If not already ins
 pip install clarifai
 ```
 
-**Note:** 
+**Note:**
 
 Before using ClarifaiRM, ensure you have:
 
@@ -41,7 +41,7 @@ ClarifaiRM(
 )
 ```
 
-**Note:** 
+**Note:**
 
 The PAT can be provided either directly to the constructor or through the `CLARIFAI_PAT` environment variable. For security best practices, using environment variables is recommended.
 
@@ -112,7 +112,7 @@ class RAG(dspy.Module):
     def __init__(self):
         super().__init__()
         self.retrieve = Retrieve(k=3)
-    
+
     def forward(self, query):
         passages = self.retrieve(query)
         return passages
@@ -137,7 +137,7 @@ num_results = len(results)
 
 ### Integration with Other DSPy Components
 ```python
-from dspy import ChainOfThought, Predict, Retrieve 
+from dspy import ChainOfThought, Predict, Retrieve
 
 # Create a simple QA chain
 class QAChain(dspy.Module):
@@ -145,7 +145,7 @@ class QAChain(dspy.Module):
         super().__init__()
         self.retrieve = Retrieve(k=3)
         self.generate_answer = ChainOfThought("question, context -> answer")
-    
+
     def forward(self, question):
         context = self.retrieve(question)
         answer = self.generate_answer(question=question, context=context)
@@ -168,7 +168,7 @@ except Exception as e:
     print(f"Error occurred: {e}")
 ```
 
-**Note:** 
+**Note:**
 
 These examples assume you have:
 

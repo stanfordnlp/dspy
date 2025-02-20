@@ -34,10 +34,10 @@ class Adapter(ABC):
 
                 assert set(value.keys()) == set(signature.output_fields.keys()), \
                     f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-                
+
                 if output_logprobs is not None:
                     value["logprobs"] = output_logprobs
-                
+
                 values.append(value)
 
             return values

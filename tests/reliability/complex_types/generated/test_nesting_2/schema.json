@@ -22,11 +22,18 @@
               "type": "string"
             }
           },
-          "required": ["value", "age"],
+          "required": [
+            "value",
+            "age"
+          ],
           "type": "object"
         }
       },
-      "required": ["customer_id", "customer_type", "details"],
+      "required": [
+        "customer_id",
+        "customer_type",
+        "details"
+      ],
       "type": "object"
     },
     "customer_summary": {
@@ -46,7 +53,10 @@
               "type": "boolean"
             }
           },
-          "required": ["is_premium", "category"],
+          "required": [
+            "is_premium",
+            "category"
+          ],
           "type": "object"
         },
         "value": {
@@ -54,7 +64,11 @@
           "type": "string"
         }
       },
-      "required": ["customer_id", "customer_type", "value"],
+      "required": [
+        "customer_id",
+        "customer_type",
+        "value"
+      ],
       "type": "object"
     },
     "transaction": {
@@ -75,7 +89,10 @@
               "type": "number"
             }
           },
-          "required": ["value", "timestamp"],
+          "required": [
+            "value",
+            "timestamp"
+          ],
           "type": "object"
         },
         "transaction_id": {
@@ -83,7 +100,11 @@
           "type": "string"
         }
       },
-      "required": ["transaction_id", "amount", "details"],
+      "required": [
+        "transaction_id",
+        "amount",
+        "details"
+      ],
       "type": "object"
     },
     "transaction_summary": {
@@ -100,7 +121,10 @@
               "type": "number"
             }
           },
-          "required": ["value", "timestamp"],
+          "required": [
+            "value",
+            "timestamp"
+          ],
           "type": "object"
         },
         "total_amount": {
@@ -112,7 +136,11 @@
           "type": "string"
         }
       },
-      "required": ["transaction_id", "total_amount", "details"],
+      "required": [
+        "transaction_id",
+        "total_amount",
+        "details"
+      ],
       "type": "object"
     }
   },

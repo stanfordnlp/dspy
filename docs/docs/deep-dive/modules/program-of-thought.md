@@ -11,7 +11,7 @@ sidebar_position: 2
 
 DSPy supports the Program of Thought (PoT) prompting technique, integrating an advanced module capable of problem-solving with program execution capabilities. PoT builds upon Chain of Thought by translating reasoning steps into executable programming language statements through iterative refinement. This enhances the accuracy of the output and self-corrects errors within the generated code. Upon completing these iterations, PoT delegates execution to a program interpreter. Currently, this class supports the generation and execution of Python code.
 
-## Instantiating Program of Thought 
+## Instantiating Program of Thought
 
 Program of Thought is instantiated based on a user-defined DSPy Signature, which can take a simple form such as `input_fields -> output_fields`. Users can also specify a `max_iters` to set the maximum number of iterations for the self-refinement process of the generated code. The default value is 3 iterations. Once the maximum iterations are reached, PoT will produce the final output.
 
@@ -76,7 +76,7 @@ Question: Sarah has 5 apples. She buys 7 more apples from the store. How many ap
 Final Predicted Answer (after ProgramOfThought process): 12
 ```
 
-Let's take a peek at how ProgramOfThought functioned internally by inspecting its history, up to maximum iterations (+ 1 to view the final generation). (This assumes the initial DSPy setup and configurations of LMs and RMs). 
+Let's take a peek at how ProgramOfThought functioned internally by inspecting its history, up to maximum iterations (+ 1 to view the final generation). (This assumes the initial DSPy setup and configurations of LMs and RMs).
 
 `lm.inspect_history(n=4)`
 
@@ -89,7 +89,7 @@ After you're done with the computation, make sure the last line in your code eva
 
 Follow the following format.
 
-Question: 
+Question:
 Reasoning: Let's think step by step in order to ${produce the generated_code}. We ...
 Code: python code that answers the question
 
@@ -97,7 +97,7 @@ Code: python code that answers the question
 
 Question: Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?
 Reasoning: Let's think step by step in order to produce the generated_code. We start with the initial number of apples that Sarah has, which is 5. Then, we add the number of apples she buys from the store, which is 7. Finally, we compute the total number of apples Sarah has by adding these two quantities together.
-Code: 
+Code:
 
 apples_initial = 5
 apples_bought = 7
@@ -111,7 +111,7 @@ Given the final code `question`, `final_generated_code`, `code_output`, provide 
 
 Follow the following format.
 
-Question: 
+Question:
 
 Code: python code that answers the question
 

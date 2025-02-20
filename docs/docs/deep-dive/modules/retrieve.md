@@ -16,7 +16,7 @@ class Retrieve(Parameter):
         self.k = k
 ```
 
-Additionally, configuring a Retrieval model client or server through `dspy.configure` allows for user retrieval in DSPy programs through internal calls from Retrieve. 
+Additionally, configuring a Retrieval model client or server through `dspy.configure` allows for user retrieval in DSPy programs through internal calls from Retrieve.
 
 ```python
 #Example Usage
@@ -33,9 +33,9 @@ retriever = dspy.Retrieve(k=3)
 
 ### Under the Hood
 
-Retrieve makes use of the internally configured retriever to send a single query or list of multiple queries to determine the top-k relevant passages. The module queries the retriever for each provided query, accumulating scores (or probabilities if the `by_prob` arg is set) for each passage and returns the passages sorted by their cumulative scores or probabilities. 
+Retrieve makes use of the internally configured retriever to send a single query or list of multiple queries to determine the top-k relevant passages. The module queries the retriever for each provided query, accumulating scores (or probabilities if the `by_prob` arg is set) for each passage and returns the passages sorted by their cumulative scores or probabilities.
 
-The Retrieve module can also integrate a reranker if this is configured, in which case, the reranker re-scores the retrieved passages based on their relevance to the quer, improving accuracy of the results. 
+The Retrieve module can also integrate a reranker if this is configured, in which case, the reranker re-scores the retrieved passages based on their relevance to the quer, improving accuracy of the results.
 
 ### Tying it All Together
 
@@ -54,12 +54,12 @@ for idx, passage in enumerate(topK_passages):
 ```
 
 ```
-Top 3 passages for question: When was the first FIFA World Cup held? 
- ------------------------------ 
+Top 3 passages for question: When was the first FIFA World Cup held?
+ ------------------------------
 
-1] History of the FIFA World Cup | The FIFA World Cup was first held in 1930, when FIFA president Jules Rimet [...]. 
+1] History of the FIFA World Cup | The FIFA World Cup was first held in 1930, when FIFA president Jules Rimet [...].
 
-2] 1950 FIFA World Cup | The 1950 FIFA World Cup, held in Brazil from 24 June to 16 July 1950, [...]. 
+2] 1950 FIFA World Cup | The 1950 FIFA World Cup, held in Brazil from 24 June to 16 July 1950, [...].
 
 3] 1970 FIFA World Cup | The 1970 FIFA World Cup was the ninth FIFA World Cup, the quadrennial [...].
 ```

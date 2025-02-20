@@ -1,3 +1,10 @@
+"""
+Note that this code is largely based off of the code here:
+https://github.com/HackerCupAI/starter-kits/blob/main/submit_first_solution/01_one_shot.py
+
+by @tcapelle, with some adaptations for this workflow.
+"""
+
 import re
 import asyncio
 import multiprocessing
@@ -7,12 +14,6 @@ import os
 import sys
 import traceback
 
-"""
-Note that this code is largely based off of the code here:
-https://github.com/HackerCupAI/starter-kits/blob/main/submit_first_solution/01_one_shot.py
-
-by @tcapelle, with some adaptations for this workflow.
-"""
 
 def extract_code(code_str):
     # Regex pattern to extract the code between ```python and ```

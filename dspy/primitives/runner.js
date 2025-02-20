@@ -32,7 +32,7 @@ for await (const line of readLines(Deno.stdin)) {
   }
 
   const code = input.code || "";
-  
+
   // Wrap execution in a try/catch so we can handle syntax errors, etc.
   try {
     await pyodide.loadPackagesFromImports(code);
@@ -75,7 +75,7 @@ sys.stderr = old_stderr
       // The final statement was None or no return => deliver printed output
       // If you want to combine capturedStderr as well, you can append it
       // But here we'll just do stdout for clarity
-      output = capturedStdout; 
+      output = capturedStdout;
       // If there's something in stderr, you might want to include that or log it
       // output += capturedStderr;
     } else {
