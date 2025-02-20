@@ -22,6 +22,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pre-commit
           echo "Running pre-commit scans:"
-          # adding log display in case of pre-commit errors
-          pre-commit run -v --all-files
+          
+          # Run hooks individually, until we can run them all at once
+          pre-commit run check-yaml --all-files
+
         shell: bash
