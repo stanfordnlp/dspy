@@ -58,6 +58,7 @@ jobs:
 
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi]
+    if: github.repository_owner == 'stanfordnlp'
     runs-on: ubuntu-latest
     environment: 
       name: pypi
