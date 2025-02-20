@@ -27,8 +27,6 @@ class ChainOfThoughtWithHint(Module):
         return self.module(**kwargs)
 
 
-"""
-TODO: In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
-
-IF the user didn't overwrite our default rationale_type.
-"""
+# TODO:
+#  In principle, we can update the field's prefix during forward too to fill any thing based on the input args.
+#  IF the user didn't overwrite our default rationale_type.

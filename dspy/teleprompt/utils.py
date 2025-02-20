@@ -1,3 +1,7 @@
+"""
+This file consists of helper functions for our variety of optimizers.
+"""
+
 import inspect
 import logging
 import math
@@ -16,10 +20,6 @@ except ImportError:
 
 import dspy
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
-
-"""
-This file consists of helper functions for our variety of optimizers.
-"""
 
 ### OPTIMIZER TRAINING UTILS ###
 

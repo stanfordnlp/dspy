@@ -1,5 +1,3 @@
-from .copro_optimizer import COPRO
-
 """
 ===============================================================
 DEPRECATED!!!
@@ -30,6 +28,8 @@ Note that this teleprompter takes in the following parameters:
                     * total_calls: The total number of calls to the task metric.
                 These statistics will be returned as attributes of the best program.
 """
+
+from .copro_optimizer import COPRO
 
 
 class SignatureOptimizer(COPRO):
