@@ -29,6 +29,20 @@ def test_chat_lms_can_be_queried(litellm_test_server):
     assert azure_openai_lm("azure openai query") == expected_response
 
 
+@pytest.mark.asyncio
+async def test_async_chat_lms_can_be_queried(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_response = ["Hi!"]
+
+    openai_lm = dspy.AsyncLM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+        model_type="chat",
+    )
+    assert await openai_lm("openai query") == expected_response
+
+
 @pytest.mark.parametrize(
     ("cache", "cache_in_memory"),
     [
@@ -72,6 +86,20 @@ def test_text_lms_can_be_queried(litellm_test_server):
         model_type="text",
     )
     assert azure_openai_lm("azure openai query") == expected_response
+
+
+@pytest.mark.asyncio
+async def test_async_text_lms_can_be_queried(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_response = ["Hi!"]
+
+    openai_lm = dspy.AsyncLM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+        model_type="text",
+    )
+    assert await openai_lm("openai query") == expected_response
 
 
 def test_lm_calls_support_callables(litellm_test_server):

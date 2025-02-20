@@ -74,7 +74,7 @@ docs = [
     "sphinx-reredirects>=0.1.2",
     "sphinx-automodapi==0.16.0",
 ]
-dev = ["pytest>=6.2.5"]
+dev = ["pytest>=6.2.5", "pytest-asyncio>=0.25.0"]
 fastembed = ["fastembed>=0.2.0"]
 
 [project.urls]
@@ -155,6 +155,7 @@ semver = "^3.0.2"
 pillow = "^10.1.0"
 litellm = {version = ">=1.59.8,<2.0.0", extras = ["proxy"]}
 datamodel-code-generator = "^0.26.3"
+pytest-asyncio = "^0.25.0"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
