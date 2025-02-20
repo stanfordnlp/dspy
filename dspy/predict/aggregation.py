@@ -51,5 +51,3 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     
     # if input_type == Prediction:
     return Prediction.from_completions([completion], signature=signature)
-
-

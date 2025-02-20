@@ -9,4 +9,3 @@ We are working on a development setup guide. If you're interested in contributin
 **How can I add my favorite LM or vector store?** 
 
 Check out these walkthroughs on setting up a [Custom LM client](/deep-dive/language_model_clients/custom-lm-client) and [Custom RM client](/deep-dive/retrieval_models_clients/custom-rm-client).
-
