@@ -30,5 +30,6 @@ jobs:
           pre-commit run check-docstring-first --all-files
           pre-commit run check-toml --all-files
           pre-commit run check-added-large-files --all-files
+          pre-commit run requirements-txt-fixer --all-files
 
         shell: bash
