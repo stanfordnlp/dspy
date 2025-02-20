@@ -26,5 +26,6 @@ jobs:
           # Run hooks individually, until we can run them all at once
           pre-commit run check-yaml --all-files
           pre-commit run end-of-file-fixer --all-files
+          pre-commit run trailing-whitespace --all-files
 
         shell: bash
