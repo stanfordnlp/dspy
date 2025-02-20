@@ -46,7 +46,7 @@ dspy.configure(lm=lm)
 
           ```bash
           > pip install "sglang[all]"
-          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
+          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
 
           > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Meta-Llama-3-8B-Instruct
           ```
@@ -86,7 +86,7 @@ dspy.configure(lm=lm)
         - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
         - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE`
 
-        
+
         If your provider offers an OpenAI-compatible endpoint, just add an `openai/` prefix to your full model name.
 
         ```python linenums="1"
@@ -99,16 +99,16 @@ dspy.configure(lm=lm)
 
 It's easy to call the `lm` you configured above directly. This gives you a unified API and lets you benefit from utilities like automatic caching.
 
-```python linenums="1"       
+```python linenums="1"
 lm("Say this is a test!", temperature=0.7)  # => ['This is a test!']
 lm(messages=[{"role": "user", "content": "Say this is a test!"}])  # => ['This is a test!']
-``` 
+```
 
 ## Using the LM with DSPy modules.
 
 Idiomatic DSPy involves using _modules_, which we discuss in the next guide.
 
-```python linenums="1" 
+```python linenums="1"
 # Define a module (ChainOfThought) and assign it a signature (return an answer, given a question).
 qa = dspy.ChainOfThought('question -> answer')
 
@@ -129,7 +129,7 @@ You can change the default LM globally with `dspy.configure` or change it inside
     Using `dspy.configure` and `dspy.context` is thread-safe!
 
 
-```python linenums="1" 
+```python linenums="1"
 dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
 response = qa(question="How many floors are in the castle David Gregory inherited?")
 print('GPT-4o-mini:', response.answer)
@@ -148,7 +148,7 @@ GPT-3.5-turbo: The castle David Gregory inherited has 7 floors.
 
 For any LM, you can configure any of the following attributes at initialization or in each subsequent call.
 
-```python linenums="1" 
+```python linenums="1"
 gpt_4o_mini = dspy.LM('openai/gpt-4o-mini', temperature=0.9, max_tokens=3000, stop=None, cache=False)
 ```
 
@@ -159,7 +159,7 @@ By default LMs in DSPy are cached. If you repeat the same call, you will get the
 
 Every LM object maintains the history of its interactions, including inputs, outputs, token usage (and $$$ cost), and metadata.
 
-```python linenums="1" 
+```python linenums="1"
 len(lm.history)  # e.g., 3 calls to the LM
 
 lm.history[-1].keys()  # access the last call to the LM, with all metadata

@@ -12,7 +12,7 @@ RAG ensures LLMs can dynamically utilize real-time knowledge even if not origina
 
 We'll start by setting up the language model (LM) and retrieval model (RM), which **DSPy** supports through multiple [LM](/building-blocks/1-language_models.md) and [RM](/deep-dive/retrieval_models_clients/Azure.md) APIs and [local models hosting](/deep-dive/language_model_clients/local_models/HFClientTGI).
 
-In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval. 
+In this notebook, we'll work with GPT-3.5 (`gpt-3.5-turbo`) and the `ColBERTv2` retriever (a free server hosting a Wikipedia 2017 "abstracts" search index containing the first paragraph of each article from this [2017 dump](https://hotpotqa.github.io/wiki-readme.html)). We configure the LM and RM within DSPy, allowing DSPy to internally call the respective module when needed for generation or retrieval.
 
 ```python
 import dspy
@@ -60,7 +60,7 @@ class GenerateAnswer(dspy.Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 ```
 
-We include small descriptions for the `context` and `answer` fields to define more robust guidelines on what the model will receive and should generate. 
+We include small descriptions for the `context` and `answer` fields to define more robust guidelines on what the model will receive and should generate.
 
 ## Building the Pipeline
 
@@ -77,7 +77,7 @@ class RAG(dspy.Module):
 
         self.retrieve = dspy.Retrieve(k=num_passages)
         self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
-    
+
     def forward(self, question):
         context = self.retrieve(question).passages
         prediction = self.generate_answer(context=context, question=question)

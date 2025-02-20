@@ -185,7 +185,7 @@ class GenerateModuleInstruction(dspy.Module):
         # Construct full program demo or single module demo depending on settings
         basic_instruction = get_signature(program.predictors()[pred_i]).instructions
         task_demos = ""
-        
+
         if self.use_task_demos:
             # Combine current and adjacent sets
             adjacent_sets = (
@@ -193,7 +193,7 @@ class GenerateModuleInstruction(dspy.Module):
                 demo_candidates[pred_i][demo_set_i + 1:] +
                 demo_candidates[pred_i][:demo_set_i]
             )
-            
+
             # Gather examples up to the required count
             example_strings = gather_examples_from_sets(adjacent_sets, num_demos_in_context)
             task_demos = "\n\n".join(example_strings) + "\n\n"
@@ -220,7 +220,7 @@ class GenerateModuleInstruction(dspy.Module):
                 for field_name, field in get_signature(program.predictors()[pred_i]).fields.items():
                     # Access the '__dspy_field_type' from the extra metadata
                     dspy_field_type = field.json_schema_extra.get('__dspy_field_type')
-                    
+
                     # Based on the '__dspy_field_type', append to the respective list
                     if dspy_field_type == "input":
                         inputs.append(field_name)
@@ -326,7 +326,7 @@ class GroundedProposer(Proposer):
     ):
         """This method is responsible for returning the full set of new instructions for our program, given the specified criteria."""
 
-        proposed_instructions = {}      
+        proposed_instructions = {}
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
@@ -338,7 +338,7 @@ class GroundedProposer(Proposer):
             if self.verbose: print("No demo candidates provided. Running without task demos.")
             self.use_task_demos = False
 
-        # Create an instruction for each predictor 
+        # Create an instruction for each predictor
         for pred_i, predictor in enumerate(program.predictors()):
             for demo_set_i in range(len(demo_candidates[0])):
                 if pred_i not in proposed_instructions:
@@ -366,7 +366,7 @@ class GroundedProposer(Proposer):
                         tip=selected_tip,
                     ),
                 )
-        
+
         return proposed_instructions
 
     def propose_instruction_for_predictor(

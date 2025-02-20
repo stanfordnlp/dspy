@@ -73,14 +73,14 @@ This optimizer is used to fine-tune the underlying LLM(s).
 
 ## Which optimizer should I use?
 
-Ultimately, finding the ‘right’ optimizer to use & the best configuration for your task will require experimentation. Success in DSPy is still an iterative process - getting the best performance on your task will require you to explore and iterate.  
+Ultimately, finding the ‘right’ optimizer to use & the best configuration for your task will require experimentation. Success in DSPy is still an iterative process - getting the best performance on your task will require you to explore and iterate.
 
 That being said, here's the general guidance on getting started:
 
 - If you have **very few examples** (around 10), start with `BootstrapFewShot`.
 - If you have **more data** (50 examples or more), try  `BootstrapFewShotWithRandomSearch`.
-- If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](/deep-dive/optimizers/miprov2#optimizing-instructions-only-with-miprov2-0-shot). 
-- If you’re willing to use more inference calls to perform **longer optimization runs** (e.g. 40 trials or more), and have enough data (e.g. 200 examples or more to prevent overfitting) then try `MIPROv2`. 
+- If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](/deep-dive/optimizers/miprov2#optimizing-instructions-only-with-miprov2-0-shot).
+- If you’re willing to use more inference calls to perform **longer optimization runs** (e.g. 40 trials or more), and have enough data (e.g. 200 examples or more to prevent overfitting) then try `MIPROv2`.
 - If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very **efficient program**, finetune a small LM for your task with `BootstrapFinetune`.
 
 ## How do I use an optimizer?
@@ -104,7 +104,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
     A typical simple optimization run costs on the order of $2 USD and takes around ten minutes, but be careful when running optimizers with very large LMs or very large datasets.
     Optimizer runs can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
-    
+
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
         search from Wikipedia and then optimizing it using `dspy.MIPROv2` in the cheap `light` mode on 500
@@ -180,7 +180,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         ```python linenums="1"
         import dspy
         dspy.configure(lm=dspy.LM('gpt-4o-mini-2024-07-18'))
-        
+
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThoughtWithHint(signature)

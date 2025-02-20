@@ -85,9 +85,9 @@ if __name__ == "__main__":
 
 """
 What was the population of the city where Woodward Avenue ends in 2010?
-Where did the star , who is also an executive producer, of the Mick begin her carrer? 
+Where did the star , who is also an executive producer, of the Mick begin her carrer?
 16 1000 0
 Both London and German have seen attacks during war, there was one specific type of attack that Germany called the blitz, what did London call a similar attack?
 Pre-Madonna was a collection of demos by the singer who was a leading presence during the emergence of what network?
-Alan Mills composed the classic folk song that tells the story of what? 
+Alan Mills composed the classic folk song that tells the story of what?
 """

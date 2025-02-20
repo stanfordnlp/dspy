@@ -105,7 +105,7 @@ def find_data_errors_completion(
     found_keys = sorted(data_dict.keys())
     if set(expected_keys) != set(found_keys):
         return f"Expected Keys: {expected_keys}; Found Keys: {found_keys}"
-    
+
     for key in keys:
         if not isinstance(data_dict[key], str):
             return f"Expected `{key}` to be of type `str`. Found: {type(data_dict[key])}"

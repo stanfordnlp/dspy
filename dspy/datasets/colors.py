@@ -20,7 +20,7 @@ class Colors(Dataset):
 
         random.Random(0).shuffle(self._train)
         random.Random(0).shuffle(self._dev)
-    
+
     def sorted_by_suffix(self, colors):
         if not self.sort_by_suffix:
             return colors

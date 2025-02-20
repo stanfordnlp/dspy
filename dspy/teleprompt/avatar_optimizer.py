@@ -113,7 +113,7 @@ class AvatarOptimizer(Teleprompter):
 
         except Exception as e:
             print(e)
-            
+
             if return_outputs:
                 return example, None, 0
             else:
@@ -127,7 +127,7 @@ class AvatarOptimizer(Teleprompter):
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]
-            
+
             for future in tqdm(futures, total=total_examples, desc="Processing examples"):
                 result = future.result()
                 if return_outputs:
@@ -136,9 +136,9 @@ class AvatarOptimizer(Teleprompter):
                     results.append((example, prediction, score))
                 else:
                     total_score += result
-        
+
         avg_metric = total_score / total_examples
-        
+
         if return_outputs:
             return avg_metric, results
         else:
@@ -146,13 +146,13 @@ class AvatarOptimizer(Teleprompter):
 
 
     def _get_pos_neg_results(
-        self, 
-        actor: dspy.Module, 
+        self,
+        actor: dspy.Module,
         trainset: List[dspy.Example]
     ) -> Tuple[float, List[EvalResult], List[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
-        
+
         avg_score, results = self.thread_safe_evaluator(trainset, actor, return_outputs=True)
         print(f"Average Score: {avg_score}")
 
@@ -178,14 +178,14 @@ class AvatarOptimizer(Teleprompter):
             raise ValueError("No positive examples found, try lowering the upper_bound or providing more training data")
         if len(neg_inputs) == 0:
             raise ValueError("No negative examples found, try raising the lower_bound or providing more training data")
-        
+
         return (avg_score, pos_inputs, neg_inputs)
-    
+
 
     def compile(self, student, *, trainset):
         best_actor = deepcopy(student)
         best_score = -999 if self.optimize_for == "max" else 999
-        
+
         for i in range(self.max_iters):
             print(20*'=')
             print(f"Iteration {i+1}/{self.max_iters}")
@@ -219,7 +219,7 @@ class AvatarOptimizer(Teleprompter):
                 best_actor.actor.signature = best_actor.actor.signature.with_instructions(new_instruction)
                 best_actor.actor_clone = deepcopy(best_actor.actor)
                 best_score = score
-        
+
         print(f"Best Actor: {best_actor}")
 
         return best_actor

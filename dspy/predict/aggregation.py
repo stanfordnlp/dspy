@@ -20,12 +20,12 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
         completions = prediction_or_completions.completions
     else:
         completions = prediction_or_completions
-    
+
     try:
         signature = completions.signature
     except Exception:
         signature = None
-    
+
     if not field:
         if signature:
             field = list(signature.output_fields.keys())[-1]
@@ -36,7 +36,7 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     normalize = normalize if normalize else lambda x: x
     normalized_values = [normalize(completion[field]) for completion in completions]
     normalized_values_ = [x for x in normalized_values if x is not None]
-    
+
     # Count
     value_counts = {}
     for value in (normalized_values_ or normalized_values):
@@ -48,6 +48,6 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     for completion in completions:
         if normalize(completion[field]) == majority_value:
             break
-    
+
     # if input_type == Prediction:
     return Prediction.from_completions([completion], signature=signature)

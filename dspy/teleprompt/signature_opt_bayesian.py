@@ -26,7 +26,7 @@
 # * init_temperature: The temperature used to generate new prompts. Higher roughly equals more creative. Default=1.0.
 # * verbose: Tells the method whether or not to print intermediate steps.
 # * track_stats: Tells the method whether or not to track statistics about the optimization process.
-#                 If True, the method will track a dictionary with a key corresponding to the trial number, 
+#                 If True, the method will track a dictionary with a key corresponding to the trial number,
 #                 and a value containing a dict with the following keys:
 #                     * program: the program being evaluated at a given trial
 #                     * score: the last average evaluated score for the program

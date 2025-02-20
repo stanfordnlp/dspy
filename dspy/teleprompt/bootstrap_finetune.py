@@ -45,18 +45,18 @@ class BootstrapFinetune(FinetuneTeleprompter):
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
-        # takingthese as parameters for the time being. However, they can be 
+        # takingthese as parameters for the time being. However, they can be
         # attached to LMs themselves -- an LM could know which adapter it should
         # be used with along with the train_kwargs. This will lead the only
         # required argument for LM.finetune() to be the train dataset.
-        
+
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
         self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
-    
+
     def compile(self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None) -> Program:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -83,7 +83,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
                 logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = dict(lm=pred.lm, train_data=train_data, train_data_format=data_format, train_kwargs=self.train_kwargs[pred.lm])
                 key_to_data[training_key] = finetune_kwargs
-        
+
         logger.info("Starting LM fine-tuning...")
         # TODO(feature): We could run batches of fine-tuning jobs in sequence
         # to avoid exceeding the number of threads.
@@ -98,10 +98,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
             training_key = (pred.lm, data_pred_ind)
             pred.lm = key_to_lm[training_key]
             # TODO: What should the correct behavior be here? Should
-            # BootstrapFinetune modify the prompt demos according to the 
+            # BootstrapFinetune modify the prompt demos according to the
             # train data?
             pred.demos = [] if self.exclude_demos else pred.demos
-        
+
         logger.info("BootstrapFinetune has finished compiling the student program")
         student._compiled = True
         return student
@@ -123,7 +123,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             logger.info("Calling lm.kill() on the LM to be fine-tuned to free up resources. This won't have any effect if the LM is not running.")
             lm.kill()
             key_to_job[key] = lm.finetune(**finetune_kwargs)
-        
+
         key_to_lm = {}
         for ind, (key, job) in enumerate(key_to_job.items()):
             key_to_lm[key] = job.result()
@@ -303,9 +303,9 @@ def assert_no_shared_predictor(program1: Program, program2: Program):
     assert not shared_ids, err
 
 
-def get_unique_lms(program: Program) -> List[LM]:	
-    lms = [pred.lm for pred in program.predictors()]	
-    lms = list(set(lms))	
+def get_unique_lms(program: Program) -> List[LM]:
+    lms = [pred.lm for pred in program.predictors()]
+    lms = list(set(lms))
     return lms
 
 def launch_lms(program: Program):
@@ -313,7 +313,7 @@ def launch_lms(program: Program):
     for lm in lms:
         lm.launch()
 
-def kill_lms(program: Program):	
-    lms = get_unique_lms(program)	
-    for lm in lms:	
+def kill_lms(program: Program):
+    lms = get_unique_lms(program)
+    for lm in lms:
         lm.kill()

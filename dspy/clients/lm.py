@@ -183,7 +183,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,

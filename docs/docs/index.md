@@ -70,11 +70,11 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
           ```bash
           > pip install "sglang[all]"
-          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
+          > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
 
           > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Llama-3.1-8B-Instruct
           ```
-        
+
         If you don't have access from Meta to download `meta-llama/Llama-3.1-8B-Instruct`, use `Qwen/Qwen2.5-7B-Instruct` for example.
 
         Next, connect to your local LM from your DSPy code as an `OpenAI`-compatible endpoint.
@@ -96,7 +96,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
         - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
         - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE`
 
-        
+
         If your provider offers an OpenAI-compatible endpoint, just add an `openai/` prefix to your full model name.
 
         ```python linenums="1"
@@ -109,10 +109,10 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
      Idiomatic DSPy involves using _modules_, which we define in the rest of this page. However, it's still easy to call the `lm` you configured above directly. This gives you a unified API and lets you benefit from utilities like automatic caching.
 
-     ```python linenums="1"       
+     ```python linenums="1"
      lm("Say this is a test!", temperature=0.7)  # => ['This is a test!']
      lm(messages=[{"role": "user", "content": "Say this is a test!"}])  # => ['This is a test!']
-     ``` 
+     ```
 
 
 ## 1) **Modules** help you describe AI behavior as _code_, not strings.
@@ -131,7 +131,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         math = dspy.ChainOfThought("question -> answer: float")
         math(question="Two dice are tossed. What is the probability that the sum equals two?")
         ```
-        
+
         **Possible Output:**
         ```text
         Prediction(
@@ -142,17 +142,17 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
     === "RAG"
 
-        ```python linenums="1"       
+        ```python linenums="1"
         def search_wikipedia(query: str) -> list[str]:
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
             return [x['text'] for x in results]
-        
+
         rag = dspy.ChainOfThought('context, question -> response')
 
         question = "What's the name of the castle that David Gregory inherited?"
         rag(context=search_wikipedia(question), question=question)
         ```
-        
+
         **Possible Output:**
         ```text
         Prediction(
@@ -168,7 +168,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         class Classify(dspy.Signature):
             """Classify sentiment of a given sentence."""
-            
+
             sentence: str = dspy.InputField()
             sentiment: Literal['positive', 'negative', 'neutral'] = dspy.OutputField()
             confidence: float = dspy.OutputField()
@@ -176,7 +176,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         classify = dspy.Predict(Classify)
         classify(sentence="This book was super fun to read, though not the last chapter.")
         ```
-        
+
         **Possible Output:**
 
         ```text
@@ -188,15 +188,15 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
     === "Information Extraction"
 
-        ```python linenums="1"        
+        ```python linenums="1"
         class ExtractInfo(dspy.Signature):
             """Extract structured information from text."""
-            
+
             text: str = dspy.InputField()
             title: str = dspy.OutputField()
             headings: list[str] = dspy.OutputField()
             entities: list[dict[str, str]] = dspy.OutputField(desc="a list of entities and their metadata")
-        
+
         module = dspy.Predict(ExtractInfo)
 
         text = "Apple Inc. announced its latest iPhone 14 today." \
@@ -207,7 +207,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         print(response.headings)
         print(response.entities)
         ```
-        
+
         **Possible Output:**
         ```text
         Apple Inc. Announces iPhone 14
@@ -217,7 +217,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
     === "Agents"
 
-        ```python linenums="1"       
+        ```python linenums="1"
         def evaluate_math(expression: str):
             return dspy.PythonInterpreter({}).execute(expression)
 
@@ -230,19 +230,19 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         pred = react(question="What is 9362158 divided by the year of birth of David Gregory of Kinnairdy castle?")
         print(pred.answer)
         ```
-        
+
         **Possible Output:**
 
         ```text
         5761.328
         ```
-    
+
     === "Multi-Stage Pipelines"
 
-        ```python linenums="1"       
+        ```python linenums="1"
         class Outline(dspy.Signature):
             """Outline a thorough overview of a topic."""
-            
+
             topic: str = dspy.InputField()
             title: str = dspy.OutputField()
             sections: list[str] = dspy.OutputField()
@@ -250,7 +250,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         class DraftSection(dspy.Signature):
             """Draft a top-level section of an article."""
-            
+
             topic: str = dspy.InputField()
             section_heading: str = dspy.InputField()
             section_subheadings: list[str] = dspy.InputField()
@@ -273,7 +273,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         draft_article = DraftArticle()
         article = draft_article(topic="World Cup 2002")
         ```
-        
+
         **Possible Output:**
 
         A 1500-word article on the topic, e.g.
@@ -295,7 +295,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
     Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
-    
+
     Even before you start using optimizers, DSPy's modules allow you to script effective LM systems as ergonomic, portable _code_. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
@@ -309,7 +309,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
     A typical simple optimization run costs on the order of $2 USD and takes around 20 minutes, but be careful when running optimizers with very large LMs or very large datasets.
     Optimization can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
-    
+
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
         search from Wikipedia and then optimizing it using `dspy.MIPROv2` in the cheap `light` mode on 500
@@ -384,7 +384,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         ```python linenums="1"
         import dspy
         dspy.configure(lm=dspy.LM('gpt-4o-mini-2024-07-18'))
-        
+
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThoughtWithHint(signature)

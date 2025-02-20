@@ -32,7 +32,7 @@ class Predict(Parameter):
 
             for k, v in inputs.items():
                 v.finalize(k, infer_prefix(k))
-            
+
             for k, v in outputs.items():
                 v.finalize(k, infer_prefix(k))
 

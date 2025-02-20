@@ -68,11 +68,11 @@
 #             setattr(self, name, value)
 
 #         self.demos = [dspy.Example(**x) for x in self.demos]
-    
+
 #     def __call__(self, *arg, **kwargs):
 #         if len(arg) > 0: kwargs = {**arg[0], **kwargs}
 #         return self.forward(**kwargs)
-    
+
 #     def _build_signature(self, template):
 #         gpt4T = dspy.OpenAI(model='gpt-4-1106-preview', max_tokens=4000, model_type='chat')
 
@@ -108,13 +108,13 @@
 #         # print(f"#> {prompt}")
 #         # print(f"#> PRED = {content}\n\n\n")
 #         dspy.settings.langchain_history.append((prompt, pred))
-            
+
 #         if dsp.settings.trace is not None:
 #             trace = dsp.settings.trace
 #             trace.append((self, {**kwargs}, pred))
 
 #         return output
-    
+
 #     def invoke(self, d, *args, **kwargs):
 #         # print(d)
 #         return self.forward(**d)
@@ -144,23 +144,23 @@
 # class LangChainModule(dspy.Module):
 #     def __init__(self, lcel):
 #         super().__init__()
-        
+
 #         modules = []
 #         for name, node in lcel.get_graph().nodes.items():
 #             if isinstance(node.data, LangChainPredict): modules.append(node.data)
 
 #         self.modules = modules
 #         self.chain = lcel
-    
+
 #     def forward(self, **kwargs):
 #         output_keys = ['output', self.modules[-1].output_field_key]
 #         output = self.chain.invoke(dict(**kwargs))
-        
+
 #         try: output = output.content
 #         except Exception: pass
 
 #         return dspy.Prediction({k: output for k in output_keys})
-    
+
 #     def invoke(self, d, *args, **kwargs):
 #         return self.forward(**d).output
 

@@ -87,7 +87,7 @@ def _shuffle_and_sample(self, split, data, size, seed=0):
 
     for example in data:
         output.append(Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split=split))
-    
+
         return output
 ```
 

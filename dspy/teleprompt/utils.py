@@ -387,13 +387,13 @@ def old_getfile(object):
 def new_getfile(object):
     if not inspect.isclass(object):
         return old_getfile(object)
-    
+
     # Lookup by parent module (as in current inspect)
     if hasattr(object, '__module__'):
         object_ = sys.modules.get(object.__module__)
         if hasattr(object_, '__file__'):
             return object_.__file__
-    
+
     # If parent module is __main__, lookup by methods (NEW)
     for name, member in inspect.getmembers(object):
         if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:

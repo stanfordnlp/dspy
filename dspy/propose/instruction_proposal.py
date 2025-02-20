@@ -106,8 +106,8 @@ class BasicGenerateInstructionOnly(Signature):
     proposed_instruction = dspy.OutputField(desc="The proposed instruction (reply with the instruction only).")
 
 class BasicGenerateField(Signature):
-    ("""You are an instruction optimizer for large language models. Your task is to propose a better string to use for one of the fields 
-    in a prompt that is being inputted to a large language model to perform a certain task. The goal is for this improved field to improve 
+    ("""You are an instruction optimizer for large language models. Your task is to propose a better string to use for one of the fields
+    in a prompt that is being inputted to a large language model to perform a certain task. The goal is for this improved field to improve
     the performance of the language model on this task. Don't be afraid to be creative.""")
 
     current_field = dspy.InputField(desc="The current string in use for this field.")

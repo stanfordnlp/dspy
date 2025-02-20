@@ -132,7 +132,7 @@ class VectaraRM(dspy.Retrieve):
             } for x in responses
         ]
         return res
-    
+
     def forward(self, query_or_queries: Union[str, List[str]], k: Optional[int]) -> dspy.Prediction:
         """Search with Vectara for self.k top passages for query
 
@@ -147,7 +147,7 @@ class VectaraRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-        queries = [q for q in queries if q]  # Filter empty queries        
+        queries = [q for q in queries if q]  # Filter empty queries
         k = k if k is not None else self.k
 
         all_res = []
@@ -164,4 +164,3 @@ class VectaraRM(dspy.Retrieve):
             passages.items(), key=lambda x: x[1], reverse=True)[:k]
 
         return [dotdict({"long_text": passage}) for passage, _ in sorted_passages]
-    

@@ -4,25 +4,25 @@ The [build_and_release](https://github.com/stanfordnlp/dspy/blob/main/.github/wo
 
 ## Overview
 
-At a high level, the workflow works as follows: 
+At a high level, the workflow works as follows:
 
 1. Maintainer of the repo pushes a tag following [semver](https://semver.org/) versioning for the new release.
 2. This triggers the github action which extracts the tag (the version)
 3. Builds and publishes a release on [test-pypi](https://test.pypi.org/project/dspy-ai-test/)
 4. Uses the test-pypi release to run build_utils/tests/intro.py with the new release as an integration test. Note intro.py is a copy of the intro notebook.
-5. Assuming the test runs successfully, it pushes a release to [pypi](https://pypi.org/project/dspy-ai/). If not, the user can delete the tag, make the fixes and then push the tag again. Versioning for multiple releases to test-pypi with the same tag version is taken care of by the workflow by appending a pre-release identifier, so the user only needs to consider the version for pypi. 
+5. Assuming the test runs successfully, it pushes a release to [pypi](https://pypi.org/project/dspy-ai/). If not, the user can delete the tag, make the fixes and then push the tag again. Versioning for multiple releases to test-pypi with the same tag version is taken care of by the workflow by appending a pre-release identifier, so the user only needs to consider the version for pypi.
 6. (Currently manual) the user creates a release and includes release notes, as described in docs/docs/release-checklist.md
 
 ## Implementation Details
 
-The workflow executes a series of jobs in sequence: 
+The workflow executes a series of jobs in sequence:
 - extract-tag
 - build-and-publish-test-pypi
 - test-intro-script
 - build-and-publish-pypi
 
 #### extract-tag
-Extracts the tag pushed to the commit. This tag is expected to be the version of the new deployment. 
+Extracts the tag pushed to the commit. This tag is expected to be the version of the new deployment.
 
 #### build-and-publish-test-pypi
 Builds and publishes the package to test-pypi.
@@ -36,13 +36,13 @@ Builds and publishes the package to test-pypi.
 1. Updates the package name placeholder in [setup.py](https://github.com/stanfordnlp/dspy/blob/main/setup.py) to  `dspy-ai-test`*
 1. Updates the package name placeholder in [pyproject.toml](https://github.com/stanfordnlp/dspy/blob/main/pyproject.toml) to `dspy-ai-test`*
 1. Builds the binary wheel
-1. Publishes the package to test-pypi. 
+1. Publishes the package to test-pypi.
 
 
 #### test-intro-script
 Runs the pytest containing the intro script as an integration test using the package published to test-pypi. This is a validation step before publishing to pypi.
 1. Uses a loop to install the version just published to test-pypi as sometimes there is a race condition between the package becoming available for installation and this job executing.
-2. Runs the test to ensure the package is working as expected. 
+2. Runs the test to ensure the package is working as expected.
 3. If this fails, the workflow fails and the maintainer needs to make a fix and delete and then recreate the tag.
 
 #### build-and-publish-pypi

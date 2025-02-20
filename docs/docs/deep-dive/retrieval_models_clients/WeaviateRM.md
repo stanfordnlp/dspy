@@ -1,15 +1,15 @@
 # Weaviate Retrieval Model
-[Weaviate](https://weaviate.io/) is an open-source vector database that can be used to retrieve relevant passages before passing it to the language model. Weaviate supports a variety of [embedding models](https://weaviate.io/developers/weaviate/model-providers) from OpenAI, Cohere, Google and more! Before building your DSPy program, you will need a Weaviate cluster running with data. You can follow this [notebook](https://github.com/weaviate/recipes/blob/main/integrations/llm-frameworks/dspy/Weaviate-Import.ipynb) as an example. 
+[Weaviate](https://weaviate.io/) is an open-source vector database that can be used to retrieve relevant passages before passing it to the language model. Weaviate supports a variety of [embedding models](https://weaviate.io/developers/weaviate/model-providers) from OpenAI, Cohere, Google and more! Before building your DSPy program, you will need a Weaviate cluster running with data. You can follow this [notebook](https://github.com/weaviate/recipes/blob/main/integrations/llm-frameworks/dspy/Weaviate-Import.ipynb) as an example.
 
 
-## Configuring the Weaviate Client 
-Weaviate is available via a hosted service ([WCD](https://console.weaviate.cloud/)) or as a self managed instance. You can learn about the different installation methods [here](https://weaviate.io/developers/weaviate/installation#installation-methods). 
+## Configuring the Weaviate Client
+Weaviate is available via a hosted service ([WCD](https://console.weaviate.cloud/)) or as a self managed instance. You can learn about the different installation methods [here](https://weaviate.io/developers/weaviate/installation#installation-methods).
 
 * `weaviate_collection_name` (str): The name of the Weaviate collection
 * `weaviate_client` (WeaviateClient): An instance of the Weaviate client
 * `k` (int, optional): The number of top passages to retrieve. The default is set to `3`
 
-An example of the WeaviateRM constructor: 
+An example of the WeaviateRM constructor:
 
 ```python
 WeaviateRM(
@@ -61,7 +61,7 @@ weaviate_client = weaviate.connect_to_embedded() # you can also use local or WCD
 
 retriever_model = WeaviateRM(
     weaviate_collection_name="<WEAVIATE_COLLECTION>",
-    weaviate_client=weaviate_client 
+    weaviate_client=weaviate_client
 )
 
 results = retriever_model("Explore the significance of quantum computing", k=5)

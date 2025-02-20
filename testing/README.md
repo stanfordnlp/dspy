@@ -2,7 +2,7 @@
 
 Optimizer Tester is intended to allow simple and repeatable testing of DSPy Optimizers.  This is a development tool for the creation of more optimizers, and the validation that they work across tasks.  This is still under development and subject to change.
 
-## Usage 
+## Usage
 
 To use the Optimizer Tester in code instantiate an OptimizerTester object:
 

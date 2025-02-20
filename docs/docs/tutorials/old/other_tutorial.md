@@ -7,7 +7,7 @@ sidebar_position: 99999
 ## Tutorials
 
 | **Level** |  **Tutorial** |  **Run in Colab** |  **Description** |
-| --- | -------------  |  -------------  |  -------------  | 
+| --- | -------------  |  -------------  |  -------------  |
 | Beginner |  [**Getting Started**](https://github.com/stanfordnlp/dspy/blob/main/intro.ipynb) | [<img align="center" src="https://colab.research.google.com/assets/colab-badge.svg" />](https://colab.research.google.com/github/stanfordnlp/dspy/blob/main/intro.ipynb)  |  Introduces the basic building blocks in DSPy. Tackles the task of complex question answering with HotPotQA. |
 | Beginner | [**Minimal Working Example**](/docs/docs/quick-start/getting-started-01.md) | N/A | Builds a very simple chain-of-thought program in DSPy for question answering. Very short. |
 | Beginner | [**Compiling for Tricky Tasks**](https://github.com/stanfordnlp/dspy/blob/main/examples/nli/scone/scone.ipynb) | N/A | Teaches LMs to reason about logical statements and negation. Uses GPT-4 to bootstrap few-shot CoT demonstrations for GPT-3.5. Establishes a state-of-the-art result on [ScoNe](https://arxiv.org/abs/2305.19426). Contributed by [Chris Potts](https://twitter.com/ChrisGPotts/status/1740033519446057077). |

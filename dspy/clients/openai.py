@@ -84,7 +84,7 @@ class TrainingJobOpenAI(TrainingJob):
 
 
 class OpenAIProvider(Provider):
-    
+
     def __init__(self):
         super().__init__()
         self.finetunable = True
@@ -184,7 +184,7 @@ class OpenAIProvider(Provider):
             TrainingStatus.failed,
             TrainingStatus.cancelled,
         ]
-    
+
     @staticmethod
     def get_training_status(job_id: str) -> TrainingStatus:
         provider_status_to_training_status = {

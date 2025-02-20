@@ -9,13 +9,13 @@ DSPy is a machine learning framework, so you must think about your **automatic m
 
 ## What is a metric and how do I define a metric for my task?
 
-A metric is just a function that will take examples from your data and the output of your system and return a score that quantifies how good the output is. What makes outputs from your system good or bad? 
+A metric is just a function that will take examples from your data and the output of your system and return a score that quantifies how good the output is. What makes outputs from your system good or bad?
 
 For simple tasks, this could be just "accuracy" or "exact match" or "F1 score". This may be the case for simple classification or short-form QA tasks.
 
 However, for most applications, your system will output long-form outputs. There, your metric should probably be a smaller DSPy program that checks multiple properties of the output (quite possibly using AI feedback from LMs).
 
-Getting this right on the first try is unlikely, but you should start with something simple and iterate. 
+Getting this right on the first try is unlikely, but you should start with something simple and iterate.
 
 
 ## Simple metrics
@@ -104,7 +104,7 @@ def metric(gold, pred, trace=None):
 
     engaging = "Does the assessed text make for a self-contained, engaging tweet?"
     correct = f"The text should answer `{question}` with `{answer}`. Does the assessed text contain this answer?"
-    
+
     correct =  dspy.Predict(Assess)(assessed_text=tweet, assessment_question=correct)
     engaging = dspy.Predict(Assess)(assessed_text=tweet, assessment_question=engaging)
 
