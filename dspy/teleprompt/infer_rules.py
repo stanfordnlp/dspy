@@ -1,9 +1,13 @@
-import dspy
+import logging
 import random
+
 import numpy as np
 
-from dspy.teleprompt import BootstrapFewShot
+import dspy
 from dspy.evaluate.evaluate import Evaluate
+from dspy.teleprompt import BootstrapFewShot
+
+logger = logging.getLogger(__name__)
 
 
 class InferRules(BootstrapFewShot):
@@ -23,7 +27,7 @@ class InferRules(BootstrapFewShot):
             trainset, valset = trainset[:train_size], trainset[train_size:]
 
         super().compile(student, teacher=teacher, trainset=trainset)
-        
+
         original_program = self.student.deepcopy()
         all_predictors = [p for p in original_program.predictors() if hasattr(p, "signature")]
         instructions_list = [p.signature.instructions for p in all_predictors]
@@ -42,17 +46,17 @@ class InferRules(BootstrapFewShot):
                 rules = self.induce_natural_language_rules(predictor, trainset)
                 predictor.signature.instructions = instructions_list[i]
                 self.update_program_instructions(predictor, rules)
-            
+
             score = self.evaluate_program(candidate_program, valset)
 
             if score > best_score:
                 best_score = score
                 best_program = candidate_program
 
-            print(f"Evaluated Candidate {candidate_idx+1} with score {score}. Current best score: {best_score}")
-        
-        print("Final best score:", best_score)
-        
+            logger.info(f"Evaluated Candidate {candidate_idx + 1} with score {score}. Current best score: {best_score}")
+
+        logger.info(f"Final best score: {best_score}")
+
         return best_program
 
     def induce_natural_language_rules(self, predictor, trainset):
@@ -72,7 +76,8 @@ class InferRules(BootstrapFewShot):
                     demos = demos[:-1]
                 else:
                     raise RuntimeError(
-                        "Failed to generate natural language rules since a single example couldn't fit in the model's context window."
+                        "Failed to generate natural language rules since a single example couldn't fit in the model's "
+                        "context window."
                     ) from e
 
     def update_program_instructions(self, predictor, natural_language_rules):
@@ -122,7 +127,11 @@ class RulesInductionProgram(dspy.Module):
         super().__init__()
 
         class CustomRulesInduction(dspy.Signature):
-            __doc__ = f"""Given a set of examples, extract a list of {num_rules} concise and non-redundant natural language rules that provide clear guidance for performing the task. All rules should be actionable for a well-specified scope of examples of this general kind of task."""
+            __doc__ = (
+                f"Given a set of examples, extract a list of {num_rules} concise and non-redundant natural language "
+                "rules that provide clear guidance for performing the task. All rules should be actionable for a "
+                "well-specified scope of examples of this general kind of task."
+            )
             examples_text = dspy.InputField(desc="Text containing examples")
             natural_language_rules = dspy.OutputField(desc="Induced natural language rules")
 
