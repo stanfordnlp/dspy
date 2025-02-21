@@ -37,7 +37,9 @@ To install the very latest from `main`:
 pip install git+https://github.com/stanfordnlp/dspy.git
 ````
 
+### Note for Windows Users
 
+The `uvloop` dependency is conditionally included for non-Windows platforms. If you encounter issues during installation, please ensure you are using a compatible platform or refer to the documentation for further assistance.
 
 
 ## 📜 Citation & Reading More

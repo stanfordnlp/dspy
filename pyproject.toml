@@ -48,6 +48,7 @@ dependencies = [
     "asyncer==0.0.8",
     "cachetools",
     "cloudpickle",
+    "uvloop; sys_platform != 'win32'",
 ]
 
 [tool.setuptools.packages.find]
@@ -144,6 +145,7 @@ tenacity = ">=8.2.3"
 asyncer = "0.0.8"
 cachetools = "^5.5.0"
 cloudpickle = "^3.0.0"
+uvloop = { version = "*", optional = true, markers = "sys_platform != 'win32'" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
