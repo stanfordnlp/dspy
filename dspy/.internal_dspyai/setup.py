@@ -21,6 +21,5 @@ setup(
     #replace_dspy_version_marker
     install_requires=[
         "dspy>=2.6.5",
-        "uvloop; sys_platform != 'win32'"
     ]
 )	
