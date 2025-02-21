@@ -6,13 +6,10 @@ from dspy.teleprompt.copro_optimizer import COPRO
 from dspy.teleprompt.ensemble import Ensemble
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 
-# from .mipro_optimizer import MIPRO
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.infer_rules import InferRules
 
-# from .signature_opt import SignatureOptimizer
-# from .signature_opt_bayesian import BayesianSignatureOptimizer
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
@@ -29,4 +26,5 @@ __all__ = [
     "BootstrapFewShotWithRandomSearch",
     "BootstrapFewShotWithOptuna",
     "LabeledFewShot",
+    "InferRules",
 ]
