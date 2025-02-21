@@ -72,6 +72,7 @@ API_MAPPING = {
         dspy.Ensemble,
         dspy.KNN,
         dspy.KNNFewShot,
+        dspy.InferRules,
     ],
 }
 
