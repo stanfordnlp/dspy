@@ -37,9 +37,7 @@ To install the very latest from `main`:
 pip install git+https://github.com/stanfordnlp/dspy.git
 ````
 
-### Note for Windows Users
 
-The `uvloop` dependency is conditionally included for non-Windows platforms. If you encounter issues during installation, please ensure you are using a compatible platform or refer to the documentation for further assistance.
 
 
 ## 📜 Citation & Reading More
@@ -86,4 +84,3 @@ If you use DSPy or DSP in a research paper, please cite our work as follows:
 * [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
 * [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
 * [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022) -->
-
