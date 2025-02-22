@@ -76,6 +76,19 @@ API_MAPPING = {
     ],
 }
 
+def is_documented_method(obj):
+    is_routine = inspect.isroutine(obj)
+    if not is_routine:
+        return False
+    name = obj.__name__
+    # Exclude methods defined in external libraries
+    module = getattr(obj, "__module__", "")
+    if not module or not module.startswith(f"dspy"):
+        return False
+    # Exclude private and dunder methods, but include `__call__`
+    if name == "__call__" or not name.startswith("_"):
+        return True
+    return False
 
 def get_module_contents(module):
     """Get all public classes and functions from a module."""
@@ -88,7 +101,7 @@ def get_module_contents(module):
         if inspect.ismodule(obj) and obj.__name__.startswith(module.__name__) and not name.startswith("_"):
             contents[name] = obj
         elif (
-            (inspect.isclass(obj) or inspect.isfunction(obj))
+            (inspect.isclass(obj) or is_documented_method(obj))
             and obj.__module__.startswith(module.__name__)
             and not name.startswith("_")
         ):
@@ -100,8 +113,7 @@ def get_public_methods(cls):
     """Returns a list of all public methods in a class."""
     return [
         name
-        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
-        if name == "__call__" or not name.startswith("_")  # Exclude private and dunder methods, but include `__call__`
+        for name, member in inspect.getmembers(cls, predicate=is_documented_method)
     ]
 
 
