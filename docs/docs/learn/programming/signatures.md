@@ -136,6 +136,27 @@ Prediction(
 )
 ```
 
+### Example E: Multi-modal image classification
+
+```python
+class DogPictureSignature(dspy.Signature):
+    """Output the dog breed of the dog in the image."""
+    image_1: dspy.Image = dspy.InputField(desc="An image of a dog")
+    answer: str = dspy.OutputField(desc="The dog breed of the dog in the image")
+
+image_url = "https://picsum.photos/id/237/200/300"
+classify = dspy.Predict(DogPictureSignature)
+classify(image_1=dspy.Image.from_url(image_url))
+```
+
+**Possible Output:**
+
+```text
+Prediction(
+    answer='Labrador Retriever'
+)
+```
+
 ## Using signatures to build modules & compiling them
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the only reason to use them!
