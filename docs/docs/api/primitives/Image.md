@@ -4,14 +4,11 @@
     handler: python
     options:
         members:
-            - copy
-            - dict
-            - json
-            - model_copy
-            - model_dump
-            - model_dump_json
-            - model_post_init
+            - from_PIL
+            - from_file
+            - from_url
             - serialize_model
+            - validate_input
         show_source: true
         show_undocumented_members: true
         show_root_heading: true

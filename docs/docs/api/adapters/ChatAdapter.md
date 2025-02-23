@@ -8,7 +8,6 @@
             - format
             - format_fields
             - format_finetune_data
-            - format_turn
             - parse
         show_source: true
         show_undocumented_members: true
