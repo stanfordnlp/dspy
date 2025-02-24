@@ -5,7 +5,6 @@ from dspy.signatures import *
 from dspy.teleprompt import *
 
 import dspy.retrievers
-from dspy.refine import Refine
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
