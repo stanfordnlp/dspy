@@ -59,7 +59,7 @@ class Refine(Module):
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-        for t in temps:
+        for idx, t in enumerate(temps):
             lm_ = lm.copy(temperature=t)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
@@ -98,13 +98,18 @@ class Refine(Module):
                 if self.threshold is not None and reward >= self.threshold:
                     break
 
+                if idx == self.N - 1:
+                    break
+
                 modules = dict(program_code=self.module_code, modules_defn=inspect_modules(mod))
                 trajectory = [dict(module_name=predictor2name[p], inputs=i, outputs=dict(o)) for p, i, o in trace]
                 trajectory = dict(program_inputs=kwargs, program_trajectory=trajectory, program_outputs=dict(outputs))
                 reward = dict(reward_code=self.reward_fn_code, target_threshold=self.threshold, reward_value=reward)
 
                 advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
-                advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
+                # advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
+                # only dumps if it's a list or dict
+                advise_kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
                 advice = dspy.Predict(OfferFeedback)(**advise_kwargs).advice
                 # print(f"Advice for each module: {advice}")
 
