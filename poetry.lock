@@ -246,7 +246,7 @@ description = "In-process task scheduler with Cron-like capabilities"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "APScheduler-3.11.0-py3-none-any.whl", hash = "sha256:fc134ca32e50f5eadcc4938e3a4545ab19131435e851abb40b34d63d5141c6da"},
     {file = "apscheduler-3.11.0.tar.gz", hash = "sha256:4c622d250b0955a65d5d0eb91c33e6d43fd879834bf541e0a18661ae60460133"},
@@ -392,7 +392,7 @@ files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
 ]
-markers = {main = "python_version < \"3.11\"", dev = "python_full_version < \"3.11.3\""}
+markers = {main = "python_version < \"3.11\"", dev = "python_full_version < \"3.11.3\" and (sys_platform != \"win32\" or python_version < \"3.11\")"}
 
 [[package]]
 name = "asyncer"
@@ -761,7 +761,6 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "cffi-1.17.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:df8b1c11f177bc2313ec4b2d46baec87a5f3e71fc8b45dab2ee7cae86d9aba14"},
     {file = "cffi-1.17.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8f2cdc858323644ab277e9bb925ad72ae0e67f69e804f4898c070998d50b1a67"},
@@ -831,6 +830,7 @@ files = [
     {file = "cffi-1.17.1-cp39-cp39-win_amd64.whl", hash = "sha256:d016c76bdd850f3c626af19b0542c9677ba156e4ee4fccfdd7848803533ef662"},
     {file = "cffi-1.17.1.tar.gz", hash = "sha256:1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and (sys_platform != \"win32\" or implementation_name == \"pypy\")"}
 
 [package.dependencies]
 pycparser = "*"
@@ -1152,7 +1152,6 @@ description = "cryptography is a package which provides cryptographic recipes an
 optional = false
 python-versions = ">=3.7"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "cryptography-43.0.3-cp37-abi3-macosx_10_9_universal2.whl", hash = "sha256:bf7a1932ac4176486eab36a19ed4c0492da5d97123f1406cf15e41b05e787d2e"},
     {file = "cryptography-43.0.3-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:63efa177ff54aec6e1c0aefaa1a241232dcd37413835a9b674b6e3f0ae2bfd3e"},
@@ -1182,6 +1181,7 @@ files = [
     {file = "cryptography-43.0.3-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:2ce6fae5bdad59577b44e4dfed356944fbf1d925269114c28be377692643b4ff"},
     {file = "cryptography-43.0.3.tar.gz", hash = "sha256:315b9001266a492a6ff443b61238f956b214dbec9910a081ba5b6646a055a805"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.dependencies]
 cffi = {version = ">=1.12", markers = "platform_python_implementation != \"PyPy\""}
@@ -1546,11 +1546,11 @@ description = "FastAPI framework, high performance, easy to learn, fast to code,
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "fastapi-0.115.6-py3-none-any.whl", hash = "sha256:e9240b29e36fa8f4bb7290316988e90c381e5092e0cbe84e7818cc3713bcf305"},
     {file = "fastapi-0.115.6.tar.gz", hash = "sha256:9ec46f7addc14ea472958a96aae5b5de65f39721a46aaf5705c480d9a8b76654"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.dependencies]
 pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<2.0.0 || >2.0.0,<2.0.1 || >2.0.1,<2.1.0 || >2.1.0,<3.0.0"
@@ -1568,7 +1568,7 @@ description = "FastAPI plugin to enable SSO to most common providers (such as Fa
 optional = false
 python-versions = "<4.0,>=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "fastapi_sso-0.16.0-py3-none-any.whl", hash = "sha256:3a66a942474ef9756d3a9d8b945d55bd9faf99781facdb9b87a40b73d6d6b0c3"},
     {file = "fastapi_sso-0.16.0.tar.gz", hash = "sha256:f3941f986347566b7d3747c710cf474a907f581bfb6697ff3bb3e44eb76b438c"},
@@ -2166,7 +2166,7 @@ description = "WSGI HTTP Server for UNIX"
 optional = false
 python-versions = ">=3.7"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "gunicorn-22.0.0-py3-none-any.whl", hash = "sha256:350679f91b24062c86e386e198a15438d53a7a8207235a78ba1b53df4c4378d9"},
     {file = "gunicorn-22.0.0.tar.gz", hash = "sha256:4a0b436239ff76fb33f11c07a16482c521a7e09c1ce3cc293c2330afe01bec63"},
@@ -4217,11 +4217,11 @@ description = "A generic, spec-compliant, thorough implementation of the OAuth r
 optional = false
 python-versions = ">=3.6"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "oauthlib-3.2.2-py3-none-any.whl", hash = "sha256:8139f29aac13e25d502680e9e19963e83f16838d48a0d71c287fe40e7067fbca"},
     {file = "oauthlib-3.2.2.tar.gz", hash = "sha256:9859c40929662bec5d64f34d01c99e093149682a3f38915dc0655d5a633dd918"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.extras]
 rsa = ["cryptography (>=3.0.0)"]
@@ -4548,7 +4548,6 @@ description = "Fast, correct Python JSON library supporting dataclasses, datetim
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "orjson-3.10.12-cp310-cp310-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl", hash = "sha256:ece01a7ec71d9940cc654c482907a6b65df27251255097629d0dea781f255c6d"},
     {file = "orjson-3.10.12-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c34ec9aebc04f11f4b978dd6caf697a2df2dd9b47d35aa4cc606cabcb9df69d7"},
@@ -4626,6 +4625,7 @@ files = [
     {file = "orjson-3.10.12-cp39-none-win_amd64.whl", hash = "sha256:be604f60d45ace6b0b33dd990a66b4526f1a7a186ac411c942674625456ca548"},
     {file = "orjson-3.10.12.tar.gz", hash = "sha256:0a78bbda3aea0f9f079057ee1ee8a1ecf790d4f1af88dd67493c6b8ee52506ff"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [[package]]
 name = "overrides"
@@ -5340,6 +5340,16 @@ files = [
     {file = "py_rust_stemmers-0.1.3-cp312-cp312-musllinux_1_2_armv7l.whl", hash = "sha256:fbb9f7933239a57d1d9c0fcdfbe0c5283a081e9e64ddc48ed878783be3d52b2b"},
     {file = "py_rust_stemmers-0.1.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:921803a6f8259f10bf348ac0e32a767c28ab587c9ad5c3b1ee593a4bbbe98d39"},
     {file = "py_rust_stemmers-0.1.3-cp312-none-win_amd64.whl", hash = "sha256:576206b540575e81bb84a0f620b7a8529f5e89b0b2ec7d4487f3183789dd5cfd"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:ab7b6cc01df4013bd2e766ea4c367922bff4612dd36ec4a8aa8125cb384c5dac"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d39a18641cfa6ff6678ea538d64926c1612eb6ddce9a90a61694f383743c0257"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9ca50cef25d31e6ea200791f28976ee9500ef61fc91101343877b3d38fe3207a"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:a5d1a885830c5d94d36f74c0a2017225401f10e64f011e37e7b171ea84c17eb8"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5bb25a58552c058530d69d119fc310dfa27e585dd7a4be6b8f739bd209c29164"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:8016d3e7c43b1a93ac06e9c4d68f77c4f8d6beec6984b4e86438406a0b589d48"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:846a16e43d8e12d3178d608f82dcbddc0fd03c4478cde9adc377de58a769b825"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:9931ef64c9f2ace96f533092f5161a97bbf867ec5f1a9cb139838a6cf52da4c4"},
+    {file = "py_rust_stemmers-0.1.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:aa1ee56ae903f126598f237b45f316b2704ec29a85ad1d27467bf6a5b27c71b9"},
+    {file = "py_rust_stemmers-0.1.3-cp313-none-win_amd64.whl", hash = "sha256:2837fc5a60eb0fa2cefc6e41f5fcfb9ff350cd3cdbed25d34a1bc36057d29397"},
     {file = "py_rust_stemmers-0.1.3-cp38-cp38-macosx_10_12_x86_64.whl", hash = "sha256:8cf4ddafea535c67c00191ff314f947e146b73b3c2a18f745c633f6da10e0118"},
     {file = "py_rust_stemmers-0.1.3-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:bc689a1b6413e0a5170ddb3902c9bec1422f2749ef4b61e8c88618d8b6d4c79a"},
     {file = "py_rust_stemmers-0.1.3-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5863d0e3dbf9c9564635ef29b60928d9ebdc407970fbded3f31e75ae695e108a"},
@@ -5459,11 +5469,11 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and (sys_platform != \"win32\" or implementation_name == \"pypy\")"}
 
 [[package]]
 name = "pycryptodome"
@@ -5710,7 +5720,7 @@ description = "JSON Web Token implementation in Python"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "PyJWT-2.10.1-py3-none-any.whl", hash = "sha256:dcdd193e30abefd5debf142f9adfcdd2b58004e644f25406ffaebd50bd98dacb"},
     {file = "pyjwt-2.10.1.tar.gz", hash = "sha256:3cc5772eb20009233caf06e9d8a0577824723b44e6648ee0a2aedb6cf9381953"},
@@ -5802,7 +5812,7 @@ description = "Python binding to the Networking and Cryptography (NaCl) library"
 optional = false
 python-versions = ">=3.6"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "PyNaCl-1.5.0-cp36-abi3-macosx_10_10_universal2.whl", hash = "sha256:401002a4aaa07c9414132aaed7f6836ff98f59277a234704ff66878c2ee4a0d1"},
     {file = "PyNaCl-1.5.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_24_aarch64.whl", hash = "sha256:52cb72a79269189d4e0dc537556f4740f7f0a9ec41c1322598799b0bdad4ef92"},
@@ -5962,7 +5972,7 @@ description = "A streaming multipart parser for Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "python_multipart-0.0.18-py3-none-any.whl", hash = "sha256:efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996"},
     {file = "python_multipart-0.0.18.tar.gz", hash = "sha256:7a68db60c8bfb82e460637fa4750727b45af1d5e2ed215593f917f64694d34fe"},
@@ -6265,7 +6275,7 @@ description = "Python client for Redis database and key-value store"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "redis-5.2.1-py3-none-any.whl", hash = "sha256:ee7e1056b9aea0f04c6c2ed59452947f34c4940ee025f5dd83e6a6418b6989e4"},
     {file = "redis-5.2.1.tar.gz", hash = "sha256:16f2e22dff21d5125e8481515e386711a34cbec50f0e44413dd7d9c060a54e0f"},
@@ -6601,7 +6611,7 @@ description = "RQ is a simple, lightweight, library for creating background jobs
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "rq-2.0.0-py3-none-any.whl", hash = "sha256:a3a767876675dcc42683bac1869494c5020ba7fcf5c026d1f6d36a8ab98573a6"},
     {file = "rq-2.0.0.tar.gz", hash = "sha256:76d2a4a27f8fd5c4cfa200cd442efe3c1fd73525c676af06f07fcc0b81bdb70d"},
@@ -7345,11 +7355,11 @@ description = "The little ASGI library that shines."
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "starlette-0.41.3-py3-none-any.whl", hash = "sha256:44cedb2b7c77a9de33a8b74b2b90e9f50d11fcf25d8270ea525ad71a25374ff7"},
     {file = "starlette-0.41.3.tar.gz", hash = "sha256:0e4ab3d16522a255be6b28260b938eae2482f98ce5cc934cb08dce8dc3ba5835"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.dependencies]
 anyio = ">=3.4.0,<5"
@@ -7803,7 +7813,7 @@ files = [
     {file = "tzdata-2024.2-py2.py3-none-any.whl", hash = "sha256:a48093786cdcde33cad18c2555e8532f34422074448fbc874186f0abd79565cd"},
     {file = "tzdata-2024.2.tar.gz", hash = "sha256:7d85cc416e9382e69095b7bdf4afd9e3880418a2413feec7069d533d6b4e31cc"},
 ]
-markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and platform_system == \"Windows\""}
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\" and platform_system == \"Windows\""}
 
 [[package]]
 name = "tzlocal"
@@ -7812,7 +7822,7 @@ description = "tzinfo object for the local timezone"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
+markers = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""
 files = [
     {file = "tzlocal-5.2-py3-none-any.whl", hash = "sha256:49816ef2fe65ea8ac19d19aa7a1ae0551c834303d5014c6d5a62e4cbda8047b8"},
     {file = "tzlocal-5.2.tar.gz", hash = "sha256:8d399205578f1a9342816409cc1e46a93ebd5755e39ea2d85334bea911bf0e6e"},
@@ -7957,11 +7967,11 @@ description = "The lightning-fast ASGI server."
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\" or python_version <= \"3.11\""
 files = [
     {file = "uvicorn-0.29.0-py3-none-any.whl", hash = "sha256:2c2aac7ff4f4365c206fd773a39bf4ebd1047c238f8b8268ad996829323473de"},
     {file = "uvicorn-0.29.0.tar.gz", hash = "sha256:6a69214c0b6a087462412670b3ef21224fa48cae0e452b5883e8e8bdfdd11dd0"},
 ]
+markers = {main = "python_version >= \"3.12\" or python_version <= \"3.11\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.dependencies]
 click = ">=7.0"
@@ -8024,7 +8034,7 @@ files = [
     {file = "uvloop-0.21.0-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:2d1f581393673ce119355d56da84fe1dd9d2bb8b3d13ce792524e1607139feff"},
     {file = "uvloop-0.21.0.tar.gz", hash = "sha256:3bf12b0fda68447806a7ad847bfa591613177275d35b6724b1ee573faa3704e3"},
 ]
-markers = {main = "(python_version >= \"3.12\" or python_version <= \"3.11\") and (sys_platform != \"win32\" and sys_platform != \"cygwin\") and platform_python_implementation != \"PyPy\"", dev = "python_version >= \"3.12\" or python_version <= \"3.11\""}
+markers = {main = "(python_version >= \"3.12\" or python_version <= \"3.11\") and (sys_platform != \"win32\" and sys_platform != \"cygwin\") and platform_python_implementation != \"PyPy\"", dev = "(python_version >= \"3.12\" or python_version <= \"3.11\") and sys_platform != \"win32\""}
 
 [package.extras]
 dev = ["Cython (>=3.0,<4.0)", "setuptools (>=60)"]
@@ -8721,4 +8731,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<3.13"
-content-hash = "94ae2a1c8598dd237c48541edfd79e863e9cf05b8b4da9b3dffbb21efb0f8ed2"
+content-hash = "b770f1ba95ba03ea7e54ffd72d9d9b81e0b36f280098c5734eeadfec6fa4706a"
