@@ -3,10 +3,12 @@ requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
+# Do not add spaces around the '=' sign for any of the fields
+# preceeded by a marker comment as it affects the publish workflow.
 #replace_package_name_marker
-name = "dspy"
+name="dspy"
 #replace_package_version_marker
-version = "2.5.43"
+version="2.6.5"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -38,7 +40,7 @@ dependencies = [
     "pydantic~=2.0",
     "jinja2",
     "magicattr~=0.1.6",
-    "litellm==1.55.3",
+    "litellm>=1.59.8,<2.0.0",
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
@@ -47,6 +49,9 @@ dependencies = [
     "cachetools",
     "cloudpickle",
 ]
+
+[tool.setuptools.packages.find]
+include = ["dspy*"]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
@@ -80,7 +85,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy"
-version = "2.0.8"
+version = "2.6.3"
 description = "DSPy"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 license = "MIT"
@@ -132,7 +137,7 @@ pgvector = { version = "^0.2.5", optional = true }
 llama-index = { version = "^0.10.30", optional = true }
 jinja2 = "^3.1.3"
 magicattr = "^0.1.6"
-litellm = { version = "==1.55.3", extras = ["proxy"] }
+litellm = { version = ">=1.59.8,<2.0.0", extras = ["proxy"] }
 diskcache = "^5.6.0"
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
@@ -151,7 +156,8 @@ pre-commit = "^3.7.0"
 ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
-litellm = { version = "^1.51.0", extras = ["proxy"] }
+litellm = {version = ">=1.59.8,<2.0.0", extras = ["proxy"]}
+datamodel-code-generator = "^0.26.3"
 
 [tool.poetry.extras]
 chromadb = ["chromadb"]
@@ -229,7 +235,8 @@ target-version = "py39"
 select = [
     "F", # Pyflakes
     "E", # Pycodestyle
-    "TID252",  # Absolute imports
+    "TID252", # Absolute imports
+
 ]
 ignore = [
     "E501", # Line too long

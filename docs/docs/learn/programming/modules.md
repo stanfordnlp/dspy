@@ -220,4 +220,27 @@ We also have some function-style modules:
 
 ## How do I compose multiple modules into a bigger program?
 
-DSPy is just Python code that uses modules in any control flow you like, with a little magic internally at `compile` time to trace your LM calls. What this means is that, you can just call the modules freely. No weird abstractions for chaining calls. This is basically PyTorch's design approach for define-by-run / dynamic computation graphs. Refer to the intro tutorials for examples.
+DSPy is just Python code that uses modules in any control flow you like, with a little magic internally at `compile` time to trace your LM calls. What this means is that, you can just call the modules freely.
+
+See tutorials like [multi-hop search](https://dspy.ai/tutorials/multihop_search/), whose module is reproduced below as an example.
+
+```python linenums="1"        
+class Hop(dspy.Module):
+    def __init__(self, num_docs=10, num_hops=4):
+        self.num_docs, self.num_hops = num_docs, num_hops
+        self.generate_query = dspy.ChainOfThought('claim, notes -> query')
+        self.append_notes = dspy.ChainOfThought('claim, notes, context -> new_notes: list[str], titles: list[str]')
+
+    def forward(self, claim: str) -> list[str]:
+        notes = []
+        titles = []
+
+        for _ in range(self.num_hops):
+            query = self.generate_query(claim=claim, notes=notes).query
+            context = search(query, k=self.num_docs)
+            prediction = self.append_notes(claim=claim, notes=notes, context=context)
+            notes.extend(prediction.new_notes)
+            titles.extend(prediction.titles)
+        
+        return dspy.Prediction(notes=notes, titles=list(set(titles)))
+```

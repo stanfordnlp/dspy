@@ -135,7 +135,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             print(f"Scores so far: {scores}")
             print(f"Best score so far: {max(scores)}")
 
-            score_data.append((score, subscores, seed, program))
+            score_data.append({"score": score, "subscores": subscores, "seed": seed, "program": program})
 
             if self.stop_at_score is not None and score >= self.stop_at_score:
                 print(f"Stopping early because score {score} is >= stop_at_score {self.stop_at_score}")
@@ -143,7 +143,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         # To best program, attach all program candidates in decreasing average score
         best_program.candidate_programs = score_data
-        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x[0], reverse=True)
+        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x["score"], reverse=True)
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
 

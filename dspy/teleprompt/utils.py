@@ -42,25 +42,23 @@ def create_minibatch(trainset, batch_size=50, rng=None):
     return minibatch
 
 
-def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None):
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, return_all_scores=False):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
 
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            score = evaluate(candidate_program, devset=trainset)
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores)
         # Or evaluate on a minibatch
         else:
-            score = evaluate(
+            return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
+                return_all_scores=return_all_scores
             )
     except Exception as e:
         print(f"Exception occurred: {e}")
-        score = 0.0  # TODO: Handle this better, as -ve scores are possible
-
-    return score
-
+        return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 def eval_candidate_program_with_pruning(
     trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,
@@ -114,22 +112,23 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
         scores = np.array([v[0] for v in values])
         mean = np.average(scores)
         program = values[0][1]
-        results.append((key, mean, program))
+        params = values[0][2]
+        results.append((key, mean, program, params))
 
     # Sort results by the mean
     sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
 
     # Find the combination with the highest mean, skip fully evaluated ones
     for combination in sorted_results:
-        key, mean, program = combination
+        key, mean, program, params = combination
 
         if key in fully_evaled_param_combos:
             continue
 
-        return program, mean, key
+        return program, mean, key, params
 
     # If no valid program is found, we return the last valid one that we found
-    return program, mean, key
+    return program, mean, key, params
 
 
 def calculate_last_n_proposed_quality(

@@ -2,7 +2,6 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters.image_utils import Image
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
@@ -34,11 +33,7 @@ class Predict(Module, Parameter):
 
             for field in demo:
                 # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
-                # It does matter for images
-                if isinstance(demo[field], Image):
-                    demo[field] = demo[field].model_dump()
-                elif isinstance(demo[field], BaseModel):
-                    demo[field] = demo[field].model_dump_json()
+                demo[field] = serialize_object(demo[field])
 
             state["demos"].append(demo)
 
@@ -59,16 +54,7 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-
-        # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
-        for demo in self.demos:
-            for field in demo:
-                if isinstance(demo[field], dict) and "url" in demo[field]:
-                    url = demo[field]["url"]
-                    if not isinstance(url, str):
-                        raise ValueError(f"Image URL must be a string, got {type(url)}")
-                    demo[field] = Image(url=url)
-
+                    
         self.signature = self.signature.load_state(state["signature"])
 
         if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
@@ -127,8 +113,24 @@ class Predict(Module, Parameter):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
+def serialize_object(obj):
+    """
+    Recursively serialize a given object into a JSON-compatible format.
+    Supports Pydantic models, lists, dicts, and primitive types.
+    """
+    if isinstance(obj, BaseModel):
+        # Use model_dump to convert the model into a JSON-serializable dict
+        return obj.model_dump()
+    elif isinstance(obj, list):
+        return [serialize_object(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_object(item) for item in obj)
+    elif isinstance(obj, dict):
+        return {key: serialize_object(value) for key, value in obj.items()}
+    else:
+        return obj
 
-# TODO: get some defaults during init from the context window?
+
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
 # affect execution. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
 # Generally, unless overwritten, we'd see n=None, temperature=None.

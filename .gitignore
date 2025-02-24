@@ -62,3 +62,4 @@ dummy.csv
 docs/docs/**/*.json*
 *.index
 *.pkl
+*.tar.gz

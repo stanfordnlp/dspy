@@ -273,11 +273,12 @@ class DatabricksRM(dspy.Retrieve):
 
         # Extracting the results
         items = []
-        for _, data_row in enumerate(results["result"]["data_array"]):
-            item = {}
-            for col_name, val in zip(col_names, data_row):
-                item[col_name] = val
-            items += [item]
+        if "data_array" in results["result"]:
+            for _, data_row in enumerate(results["result"]["data_array"]):
+                item = {}
+                for col_name, val in zip(col_names, data_row):
+                    item[col_name] = val
+                items += [item]
 
         # Sorting results by score in descending order
         sorted_docs = sorted(items, key=lambda x: x["score"], reverse=True)[: self.k]
@@ -288,7 +289,7 @@ class DatabricksRM(dspy.Retrieve):
                     page_content=doc[self.text_column_name],
                     metadata={
                         "doc_id": self._extract_doc_ids(doc),
-                        "doc_uri": doc[self.docs_uri_column_name],
+                        "doc_uri": doc[self.docs_uri_column_name] if self.docs_uri_column_name else None,
                     }
                     | self._get_extra_columns(doc),
                     type="Document",
@@ -300,7 +301,7 @@ class DatabricksRM(dspy.Retrieve):
             return Prediction(
                 docs=[doc[self.text_column_name] for doc in sorted_docs],
                 doc_ids=[self._extract_doc_ids(doc) for doc in sorted_docs],
-                doc_uris=[doc[self.docs_uri_column_name] for doc in sorted_docs],
+                doc_uris=[doc[self.docs_uri_column_name] for doc in sorted_docs] if self.docs_uri_column_name else None,
                 extra_columns=[self._get_extra_columns(item) for item in sorted_docs],
             )
 

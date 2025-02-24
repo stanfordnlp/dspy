@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 
+from litellm import ContextWindowExceededError
+
 from dspy.utils.callback import with_callbacks
+
 
 class Adapter(ABC):
     def __init__(self, callbacks=None):
@@ -40,6 +43,9 @@ class Adapter(ABC):
             return values
 
         except Exception as e:
+            if isinstance(e, ContextWindowExceededError):
+                # On context window exceeded error, we don't want to retry with a different adapter.
+                raise e
             from .json_adapter import JSONAdapter
             if not isinstance(self, JSONAdapter):
                 return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
