@@ -17,6 +17,7 @@ from dspy.adapters.utils import format_field_value, get_annotation_name, parse_v
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
+from dspy.adapters.media_utils import try_expand_media_tags
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 

@@ -14,6 +14,7 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.types.image import Image
+from dspy.adapters.audio_utils import Audio
 from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
@@ -136,7 +137,7 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
       The formatted value of the field, represented as a string.
     """
     # TODO: Wasnt this easy to fix?
-    if field_info.annotation is Image:
+    if field_info.annotation is Image or field_info.annotation is Audio:
         raise NotImplementedError("Images are not yet supported in JSON mode.")
 
     return format_field_value(field_info=field_info, value=value)
