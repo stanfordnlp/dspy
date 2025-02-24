@@ -46,9 +46,18 @@ class Adapter(ABC):
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
-            from .json_adapter import JSONAdapter
-            if not isinstance(self, JSONAdapter):
-                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+            from dspy import settings
+            if settings.config.backup_adapter is not None:
+                print(f"Error inside adapter, retrying with backup adapter. {e}")
+                return settings.config.backup_adapter()(lm, lm_kwargs, signature, demos, inputs)
+            else:
+                if settings.config.adapter is not None:
+                    print(f"Error inside adapter with no backup adapter, raising error. Assuming this is intentional. {e}")
+                    raise e
+                else:
+                    from .json_adapter import JSONAdapter
+                    if not isinstance(self, JSONAdapter):
+                        return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
             raise e
 
     @abstractmethod

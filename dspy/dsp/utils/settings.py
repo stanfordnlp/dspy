@@ -7,6 +7,7 @@ from dspy.dsp.utils.utils import dotdict
 DEFAULT_CONFIG = dotdict(
     lm=None,
     adapter=None,
+    backup_adapter=None,
     rm=None,
     branch_idx=0,
     trace=[],

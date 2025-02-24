@@ -92,8 +92,8 @@ class LM(BaseLM):
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
             assert (
-                max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+                max_tokens >= 10000 and temperature == 1.0
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 10000 to `dspy.LM(...)`"
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)

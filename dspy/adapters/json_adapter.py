@@ -90,6 +90,9 @@ class JSONAdapter(Adapter):
         return messages
 
     def parse(self, signature, completion):
+        if "<think>" in completion:
+            print("inside json adapter parse", completion)
+
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
