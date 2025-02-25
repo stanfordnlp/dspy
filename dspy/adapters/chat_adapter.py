@@ -35,7 +35,7 @@ class ChatAdapter(Adapter):
         signature: Signature,
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-        chat_history: list[dict[str, Any]],
+        conversation_history: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
@@ -52,6 +52,7 @@ class ChatAdapter(Adapter):
         ]
 
         demos = incomplete_demos + complete_demos
+        conversation_history = conversation_history or []
 
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
@@ -61,7 +62,7 @@ class ChatAdapter(Adapter):
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
         # Add the chat history after few-shot examples
-        for message in chat_history:
+        for message in conversation_history:
             messages.append(format_turn(signature, message, role="user"))
             messages.append(format_turn(signature, message, role="assistant"))
 
@@ -141,7 +142,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     return "\n\n".join(output).strip()
 
 
-def format_turn(signature, values, role, incomplete=False, is_chat_history=False):
+def format_turn(signature, values, role, incomplete=False, is_conversation_history=False):
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
@@ -153,8 +154,8 @@ def format_turn(signature, values, role, incomplete=False, is_chat_history=False
         role: The role of the message, which can be either "user" or "assistant".
         incomplete: If True, indicates that output field values are present in the set of specified
             `values`. If False, indicates that `values` only contains input field values. Only used if
-            `is_chat_history` is False.
-        is_chat_history: If True, indicates that the message is part of the chat history, otherwise
+            `is_conversation_history` is False.
+        is_conversation_history: If True, indicates that the message is part of the chat history, otherwise
             it is a demo (few-shot example).
 
     Returns:
@@ -163,7 +164,7 @@ def format_turn(signature, values, role, incomplete=False, is_chat_history=False
     """
     if role == "user":
         fields = signature.input_fields
-        if incomplete and not is_chat_history:
+        if incomplete and not is_conversation_history:
             message_prefix = "This is an example of the task, though some input or output fields are not supplied."
         else:
             message_prefix = ""
@@ -172,7 +173,7 @@ def format_turn(signature, values, role, incomplete=False, is_chat_history=False
         fields = {**signature.output_fields}
         values = {**values}
         message_prefix = ""
-        if not is_chat_history:
+        if not is_conversation_history:
             fields.update({BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info})
             values.update({BuiltInCompletedOutputFieldInfo.name: ""})
 

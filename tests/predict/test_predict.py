@@ -403,23 +403,32 @@ def test_load_state_chaining():
     assert new_instance.demos == original.demos
 
 
-def test_call_predict_with_chat_history():
-    class SpyLM(DummyLM):
-        def __init__(self, *args, **kwargs):
+@pytest.mark.parametrize("adapter_type", ["chat", "json"])
+def test_call_predict_with_chat_history(adapter_type):
+    class SpyLM(dspy.LM):
+        def __init__(self, *args, return_json=False, **kwargs):
             super().__init__(*args, **kwargs)
             self.calls = []
+            self.return_json = return_json
 
         def __call__(self, prompt=None, messages=None, **kwargs):
             self.calls.append({"prompt": prompt, "messages": messages, "kwargs": kwargs})
-            return super().__call__(prompt=prompt, messages=messages, **kwargs)
+            if self.return_json:
+                return ["{'answer':'100%'}"]
+            return ["[[ ## answer ## ]]\n100%!"]
 
     program = Predict("question -> answer")
-    lm = SpyLM([{"answer": "100%!"}])
-    dspy.settings.configure(lm=lm)
 
-    output = program(
+    if adapter_type == "chat":
+        lm = SpyLM("dummy_model")
+        dspy.settings.configure(adapter=dspy.ChatAdapter(), lm=lm)
+    else:
+        lm = SpyLM("dummy_model", return_json=True)
+        dspy.settings.configure(adapter=dspy.JSONAdapter(), lm=lm)
+
+    program(
         question="are you sure that's correct?",
-        chat_history=[{"question": "what's the capital of france?", "answer": "paris"}],
+        conversation_history=[{"question": "what's the capital of france?", "answer": "paris"}],
     )
 
     # Verify the LM was called with correct messages

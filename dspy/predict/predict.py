@@ -22,7 +22,6 @@ class Predict(Module, Parameter):
         self.traces = []
         self.train = []
         self.demos = []
-        self.chat_history = []
 
     def dump_state(self):
         state_keys = ["lm", "traces", "train"]
@@ -37,15 +36,6 @@ class Predict(Module, Parameter):
                 demo[field] = serialize_object(demo[field])
 
             state["demos"].append(demo)
-
-        state["chat_history"] = []
-        for message in self.chat_history:
-            message = message.copy()
-
-            for field in message:
-                message[field] = serialize_object(message[field])
-
-            state["chat_history"].append(message)
 
         state["signature"] = self.signature.dump_state()
         return state
@@ -83,7 +73,7 @@ class Predict(Module, Parameter):
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
-        chat_history = kwargs.pop("chat_history", self.chat_history)
+        conversation_history = kwargs.pop("conversation_history", None)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -111,7 +101,7 @@ class Predict(Module, Parameter):
             lm_kwargs=config,
             signature=signature,
             demos=demos,
-            chat_history=chat_history,
+            conversation_history=conversation_history,
             inputs=kwargs,
         )
 

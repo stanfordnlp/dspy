@@ -14,7 +14,7 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.image_utils import Image
-from dspy.adapters.utils import parse_value, format_field_value, get_annotation_name, serialize_for_json
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
 
@@ -30,8 +30,8 @@ class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        inputs = self.format(signature, demos, inputs)
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs, conversation_history=None):
+        inputs = self.format(signature, demos, inputs, conversation_history)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         try:
@@ -65,7 +65,7 @@ class JSONAdapter(Adapter):
 
         return values
 
-    def format(self, signature, demos, inputs):
+    def format(self, signature, demos, inputs, conversation_history=None):
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -78,12 +78,18 @@ class JSONAdapter(Adapter):
         ]
 
         demos = incomplete_demos + complete_demos
+        conversation_history = conversation_history or []
 
         messages.append({"role": "system", "content": prepare_instructions(signature)})
 
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
+
+        # Add the chat history after few-shot examples
+        for message in conversation_history:
+            messages.append(format_turn(signature, message, role="user"))
+            messages.append(format_turn(signature, message, role="assistant"))
 
         messages.append(format_turn(signature, inputs, role="user"))
 
@@ -163,7 +169,13 @@ def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -
     return "\n\n".join(output).strip()
 
 
-def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomplete=False) -> Dict[str, str]:
+def format_turn(
+    signature: SignatureMeta,
+    values: Dict[str, Any],
+    role,
+    incomplete=False,
+    is_conversation_history=False,
+) -> Dict[str, str]:
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
@@ -174,7 +186,10 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
             that should be included in the message.
         role: The role of the message, which can be either "user" or "assistant".
         incomplete: If True, indicates that output field values are present in the set of specified
-            ``values``. If False, indicates that ``values`` only contains input field values.
+            `values`. If False, indicates that `values` only contains input field values. Only
+            relevant if `is_conversation_history` is False.
+        is_conversation_history: If True, indicates that the message is part of a chat history instead of a
+            few-shot example.
     Returns:
         A chat message that can be appended to a chat thread. The message contains two string fields:
         ``role`` ("user" or "assistant") and ``content`` (the message text).
@@ -183,25 +198,27 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
 
     if role == "user":
         fields: Dict[str, FieldInfo] = signature.input_fields
-        if incomplete:
+        if incomplete and not is_conversation_history:
             content.append("This is an example of the task, though some input or output fields are not supplied.")
     else:
         fields: Dict[str, FieldInfo] = signature.output_fields
 
-    if not incomplete:
+    if not incomplete and not is_conversation_history:
+        # For complete few-shot examples, ensure that the values contain all the fields.
         field_names: KeysView = fields.keys()
         if not set(values).issuperset(set(field_names)):
             raise ValueError(f"Expected {field_names} but got {values.keys()}")
 
-    formatted_fields = format_fields(
-        role=role,
-        fields_with_values={
-            FieldInfoWithName(name=field_name, info=field_info): values.get(
+    fields_with_values = {}
+    for field_name, field_info in fields.items():
+        if is_conversation_history:
+            fields_with_values[FieldInfoWithName(name=field_name, info=field_info)] = values.get(field_name, None)
+        else:
+            fields_with_values[FieldInfoWithName(name=field_name, info=field_info)] = values.get(
                 field_name, "Not supplied for this particular example."
             )
-            for field_name, field_info in fields.items()
-        },
-    )
+
+    formatted_fields = format_fields(role=role, fields_with_values=fields_with_values)
     content.append(formatted_fields)
 
     if role == "user":
