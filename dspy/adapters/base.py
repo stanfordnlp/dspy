@@ -32,12 +32,15 @@ class Adapter(ABC):
 
                 value = self.parse(signature, output)
 
-                assert set(value.keys()) == set(signature.output_fields.keys()), \
-                    f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-                
+                if set(value.keys()) != set(signature.output_fields.keys()):
+                    raise ValueError(
+                        "Parsed output fields do not match signature output fields. "
+                        f"Expected: {set(signature.output_fields.keys())}, Got: {set(value.keys())}"
+                    )
+
                 if output_logprobs is not None:
                     value["logprobs"] = output_logprobs
-                
+
                 values.append(value)
 
             return values
@@ -46,18 +49,19 @@ class Adapter(ABC):
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
-            from .json_adapter import JSONAdapter
+            from dspy.adapters.json_adapter import JSONAdapter
+
             if not isinstance(self, JSONAdapter):
                 return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
             raise e
 
     @abstractmethod
     def format(self, signature, demos, inputs):
-       raise NotImplementedError
+        raise NotImplementedError
 
     @abstractmethod
     def parse(self, signature, completion):
-       raise NotImplementedError
+        raise NotImplementedError
 
     def format_finetune_data(self, signature, demos, inputs, outputs):
         raise NotImplementedError
