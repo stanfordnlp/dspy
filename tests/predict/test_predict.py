@@ -9,6 +9,7 @@ import ujson
 import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
+from unittest.mock import patch, MagicMock, Mock
 
 
 def test_initialization_with_string_signature():
@@ -87,6 +88,7 @@ def test_demos_after_dump_and_load_state():
     # Demos don't need to keep the same types after saving and loading the state.
     assert new_instance.demos[0]["content"] == original_instance.demos[0].content
 
+
 def test_typed_demos_after_dump_and_load_state():
     class Item(pydantic.BaseModel):
         name: str
@@ -94,6 +96,7 @@ def test_typed_demos_after_dump_and_load_state():
 
     class InventorySignature(dspy.Signature):
         """Handle inventory items and their translations."""
+
         items: list[Item] = dspy.InputField()
         language: str = dspy.InputField()
         translated_items: list[Item] = dspy.OutputField()
@@ -102,16 +105,10 @@ def test_typed_demos_after_dump_and_load_state():
     original_instance = Predict(InventorySignature)
     original_instance.demos = [
         dspy.Example(
-            items=[
-                Item(name="apple", quantity=5),
-                Item(name="banana", quantity=3)
-            ],
+            items=[Item(name="apple", quantity=5), Item(name="banana", quantity=3)],
             language="SPANISH",
-            translated_items=[
-                Item(name="manzana", quantity=5),
-                Item(name="plátano", quantity=3)
-            ],
-            total_quantity=8
+            translated_items=[Item(name="manzana", quantity=5), Item(name="plátano", quantity=3)],
+            total_quantity=8,
         ).with_inputs("items", "language"),
     ]
 
@@ -146,6 +143,7 @@ def test_typed_demos_after_dump_and_load_state():
     assert len(loaded_demo["translated_items"]) == 2
     assert loaded_demo["translated_items"][0]["name"] == "manzana"
     assert loaded_demo["translated_items"][1]["name"] == "plátano"
+
 
 # def test_typed_demos_after_dump_and_load_state():
 #     class TypedTranslateToEnglish(dspy.Signature):
@@ -403,3 +401,33 @@ def test_load_state_chaining():
     new_instance = Predict("question -> answer").load_state(state)
     assert new_instance is not None
     assert new_instance.demos == original.demos
+
+
+def test_call_predict_with_chat_history():
+    class SpyLM(DummyLM):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"prompt": prompt, "messages": messages, "kwargs": kwargs})
+            return super().__call__(prompt=prompt, messages=messages, **kwargs)
+
+    program = Predict("question -> answer")
+    lm = SpyLM([{"answer": "100%!"}])
+    dspy.settings.configure(lm=lm)
+
+    output = program(
+        question="are you sure that's correct?",
+        chat_history=[{"question": "what's the capital of france?", "answer": "paris"}],
+    )
+
+    # Verify the LM was called with correct messages
+    assert len(lm.calls) == 1
+    messages = lm.calls[0]["messages"]
+
+    assert len(messages) == 4
+
+    assert "what's the capital of france?" in messages[1]["content"]
+    assert "paris" in messages[2]["content"]
+    assert "are you sure that's correct" in messages[3]["content"]

@@ -22,6 +22,7 @@ class Predict(Module, Parameter):
         self.traces = []
         self.train = []
         self.demos = []
+        self.chat_history = []
 
     def dump_state(self):
         state_keys = ["lm", "traces", "train"]
@@ -36,6 +37,15 @@ class Predict(Module, Parameter):
                 demo[field] = serialize_object(demo[field])
 
             state["demos"].append(demo)
+
+        state["chat_history"] = []
+        for message in self.chat_history:
+            message = message.copy()
+
+            for field in message:
+                message[field] = serialize_object(message[field])
+
+            state["chat_history"].append(message)
 
         state["signature"] = self.signature.dump_state()
         return state
@@ -54,10 +64,10 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
@@ -73,6 +83,7 @@ class Predict(Module, Parameter):
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
+        chat_history = kwargs.pop("chat_history", self.chat_history)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -93,8 +104,16 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
+
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        completions = adapter(
+            lm,
+            lm_kwargs=config,
+            signature=signature,
+            demos=demos,
+            chat_history=chat_history,
+            inputs=kwargs,
+        )
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -112,6 +131,7 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def serialize_object(obj):
     """

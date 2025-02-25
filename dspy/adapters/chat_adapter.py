@@ -30,7 +30,13 @@ BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=Outpu
 
 
 class ChatAdapter(Adapter):
-    def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    def format(
+        self,
+        signature: Signature,
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+        chat_history: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -49,9 +55,15 @@ class ChatAdapter(Adapter):
 
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
+
+        # Add the few-shot examples
         for demo in demos:
             messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
             messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
+        # Add the chat history after few-shot examples
+        for message in chat_history:
+            messages.append(format_turn(signature, message, role="user"))
+            messages.append(format_turn(signature, message, role="assistant"))
 
         messages.append(format_turn(signature, inputs, role="user"))
         messages = try_expand_image_tags(messages)
@@ -129,7 +141,7 @@ def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
     return "\n\n".join(output).strip()
 
 
-def format_turn(signature, values, role, incomplete=False):
+def format_turn(signature, values, role, incomplete=False, is_chat_history=False):
     """
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
@@ -140,22 +152,29 @@ def format_turn(signature, values, role, incomplete=False):
             that should be included in the message.
         role: The role of the message, which can be either "user" or "assistant".
         incomplete: If True, indicates that output field values are present in the set of specified
-            ``values``. If False, indicates that ``values`` only contains input field values.
+            `values`. If False, indicates that `values` only contains input field values. Only used if
+            `is_chat_history` is False.
+        is_chat_history: If True, indicates that the message is part of the chat history, otherwise
+            it is a demo (few-shot example).
 
     Returns:
         A chat message that can be appended to a chat thread. The message contains two string fields:
-        ``role`` ("user" or "assistant") and ``content`` (the message text).
+        `role` ("user" or "assistant") and `content` (the message text).
     """
     if role == "user":
         fields = signature.input_fields
-        message_prefix = (
-            "This is an example of the task, though some input or output fields are not supplied." if incomplete else ""
-        )
+        if incomplete and not is_chat_history:
+            message_prefix = "This is an example of the task, though some input or output fields are not supplied."
+        else:
+            message_prefix = ""
     else:
-        # Add the completed field for the assistant turn
-        fields = {**signature.output_fields, BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info}
-        values = {**values, BuiltInCompletedOutputFieldInfo.name: ""}
+        # Add the completed field or chat history for the assistant turn
+        fields = {**signature.output_fields}
+        values = {**values}
         message_prefix = ""
+        if not is_chat_history:
+            fields.update({BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info})
+            values.update({BuiltInCompletedOutputFieldInfo.name: ""})
 
     if not incomplete and not set(values).issuperset(fields.keys()):
         raise ValueError(f"Expected {fields.keys()} but got {values.keys()}")

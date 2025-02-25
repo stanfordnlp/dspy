@@ -16,8 +16,8 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        inputs_ = self.format(signature, demos, inputs)
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs, chat_history=None):
+        inputs_ = self.format(signature, demos, inputs, chat_history)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
         outputs = lm(**inputs_, **lm_kwargs)
