@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from litellm import ContextWindowExceededError
 
 from dspy.adapters.types import History
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
 
@@ -17,11 +18,22 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs, predict=None):
         inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
-        outputs = lm(**inputs_, **lm_kwargs)
+        stream_listeners = settings.stream_listeners or []
+        if len(stream_listeners) == 0:
+            stream = True
+        else:
+            stream = any(stream_listener.predict == predict for stream_listener in stream_listeners)
+
+        if stream:
+            with settings.context(stream_predict=predict):
+                outputs = lm(**inputs_, **lm_kwargs)
+        else:
+            outputs = lm(**inputs_, **lm_kwargs)
+
         values = []
 
         try:

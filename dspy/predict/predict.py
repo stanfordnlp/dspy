@@ -98,13 +98,7 @@ class Predict(Module, Parameter):
         import dspy
 
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        completions = adapter(
-            lm,
-            lm_kwargs=config,
-            signature=signature,
-            demos=demos,
-            inputs=kwargs,
-        )
+        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs, predict=self)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
