@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.7"
+version="2.6.6"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -50,11 +50,8 @@ dependencies = [
     "cloudpickle",
 ]
 
-[tool.setuptools]
-packages = ["dspy"]
-
-[tool.setuptools.package-data]
-"dspy" = ["primitives/*.js"]
+[tool.setuptools.packages.find]
+include = ["dspy*"]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
