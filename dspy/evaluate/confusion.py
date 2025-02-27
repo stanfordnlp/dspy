@@ -8,16 +8,31 @@ import traceback
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import findall
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import pandas as pd
+import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
+import dspy
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
 from dspy.teleprompt.teleprompt import Teleprompter
-from tqdm.contrib.logging import logging_redirect_tqdm
+from dspy.utils.parallelizer import ParallelExecutor
 
 
 def most_votes(votes, tiebreaker=None):
+    """
+    Determine the most common element in a list with optional tiebreaking methods.
+
+    Args:
+        votes (List): A list of votes/labels.
+        tiebreaker (str, optional): Method to handle ties. Options: "first", "last".
+
+    Returns:
+        The most common element or, in case of ties, the one selected by the tiebreaker method.
+    """
     counts = Counter(votes)
     max_count = max(counts.values())
     winners = [label for label, count in counts.items() if count == max_count]
@@ -30,6 +45,27 @@ def most_votes(votes, tiebreaker=None):
 
 
 class Confusion:
+    """
+    Evaluate DSPy programs using Matthews Correlation Coefficient (MCC) as the metric.
+
+    This class is used to evaluate classification programs by comparing predictions
+    against expected labels and computing a confusion matrix and Matthews correlation coefficient.
+
+    Attributes:
+        devset (List[dspy.Example]): The evaluation dataset.
+        num_threads (int): Number of threads for parallel evaluation.
+        display_progress (bool): Whether to display progress during evaluation.
+        display_table (bool): Whether to display results in a table.
+        max_errors (int): Maximum number of errors before stopping evaluation.
+        return_matrix (bool): Whether to return the confusion matrix.
+        return_outputs (bool): Whether to return outputs for each example.
+        provide_traceback (bool): Whether to provide traceback information.
+        use_class_weight (bool): Whether to use class weighting in computing metrics.
+        output_field (str): The field in predictions to use as the output label.
+        extract (callable, optional): Function to extract labels from responses.
+        match (callable, optional): Function to match extracted values to labels.
+    """
+
     def __init__(
             self,
             *,
@@ -47,6 +83,24 @@ class Confusion:
             match="first",
             **_kwargs,
     ):
+        """
+        Initialize the Confusion evaluator.
+
+        Args:
+            devset (List[dspy.Example]): The evaluation dataset.
+            num_threads (int): Number of threads for parallel evaluation.
+            display_progress (bool): Whether to display progress during evaluation.
+            display_table (bool): Whether to display results in a table.
+            max_errors (int): Maximum number of errors before stopping evaluation.
+            return_matrix (bool): Whether to return the confusion matrix.
+            return_outputs (bool): Whether to return outputs for each example.
+            provide_traceback (bool): Whether to provide traceback information.
+            use_class_weight (bool): Whether to use class weighting in computing metrics.
+            output_field (str): The field in predictions to use as the output label.
+            extract (callable, optional): Function to extract labels from responses.
+            match (callable, str, optional): Function or method to match extracted values to labels.
+                                           Options: "first", "last", "most", or a custom function.
+        """
         self.devset = devset
         self.num_threads = num_threads
         self.display_progress = display_progress
@@ -60,6 +114,7 @@ class Confusion:
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
         self.output_field = output_field
+
         if extract is None:
             self.extract = self._extract
             if callable(match):
@@ -79,11 +134,32 @@ class Confusion:
             # match field is ignored
 
     def _extract(self, response, labels):
+        """
+        Extract labels from a response by finding matches.
+
+        Args:
+            response (str): The response text to search in.
+            labels (List[str]): The list of labels to look for.
+
+        Returns:
+            The matched label according to the match function.
+        """
         found = findall(r"|".join(labels), response.lower())
         if found:
             return self.match(found)
 
     def construct_labels_and_matrix(self, devset, preds=None):
+        """
+        Construct the list of unique labels and optionally the confusion matrix.
+
+        Args:
+            devset (List[Tuple]): List of (index, example) tuples.
+            preds (Dict[str, List[str]], optional): Predictions by label.
+
+        Returns:
+            If preds is None, returns the list of unique labels.
+            If preds is provided, returns a tuple (labels, confusion_matrix).
+        """
         classes = [arg[self.output_field].lower() for _, arg in devset]
         labels = np.unique(classes).tolist()
 
@@ -112,6 +188,18 @@ class Confusion:
         return labels, confusion_matrix
 
     def get_matthews_corrcoef(self, devset, preds, return_cm=False):
+        """
+        Calculate Matthews Correlation Coefficient from predictions.
+
+        Args:
+            devset (List[Tuple]): List of (index, example) tuples.
+            preds (Dict[str, List[str]]): Predictions by label.
+            return_cm (bool): Whether to return the confusion matrix.
+
+        Returns:
+            If return_cm is False, returns the MCC score.
+            If return_cm is True, returns a tuple (mcc_score, confusion_matrix_dataframe).
+        """
         labels, C = self.construct_labels_and_matrix(devset, preds)
 
         # <sklearn.metrics.matthews_corrcoef>
@@ -138,7 +226,32 @@ class Confusion:
             return out, cm
         return out
 
+    def _update_progress(self, pbar, preds, devset):
+        """
+        Update the progress bar with the current MCC score.
+
+        Args:
+            pbar (tqdm.tqdm): The progress bar object.
+            preds (Dict[str, List[str]]): Predictions by label.
+            devset (List[Tuple]): List of (index, example) tuples.
+        """
+        mcc = self.get_matthews_corrcoef(devset, preds)
+        pbar.set_description(f"MCC: {mcc:.6f}")
+        pbar.update()
+
     def _execute_single_thread(self, wrapped_program, devset, display_progress, preds):
+        """
+        Execute the program on the devset using a single thread.
+
+        Args:
+            wrapped_program (callable): The program wrapper function.
+            devset (List[Tuple]): List of (index, example) tuples.
+            display_progress (bool): Whether to display progress.
+            preds (Dict[str, List]): Dictionary to collect predictions by label.
+
+        Returns:
+            List[Tuple]: List of (example_idx, example, prediction) tuples.
+        """
         reordered_devset = []
 
         pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
@@ -146,7 +259,7 @@ class Confusion:
             with logging_redirect_tqdm():
                 example_idx, example, prediction = wrapped_program(idx, arg)
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field]].append(prediction.get(self.output_field, "error"))
+                preds[arg[self.output_field].lower()].append(prediction.get(self.output_field, "error"))
                 self._update_progress(pbar, preds, devset)
 
         pbar.close()
@@ -154,10 +267,23 @@ class Confusion:
         return reordered_devset
 
     def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress, preds):
+        """
+        Execute the program on the devset using multiple threads.
+
+        Args:
+            wrapped_program (callable): The program wrapper function.
+            devset (List[Tuple]): List of (index, example) tuples.
+            num_threads (int): Number of threads to use.
+            display_progress (bool): Whether to display progress.
+            preds (Dict[str, List]): Dictionary to collect predictions by label.
+
+        Returns:
+            List[Tuple]: Reordered list of (example_idx, example, prediction) tuples.
+        """
         reordered_devset = []
         job_cancelled = "cancelled"
 
-        # context manger to handle sigint
+        # context manager to handle sigint
         @contextlib.contextmanager
         def interrupt_handler_manager():
             """Sets the cancel_jobs event when a SIGINT is received."""
@@ -165,7 +291,7 @@ class Confusion:
 
             def interrupt_handler(sig, frame):
                 self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
+                logger.warning("Received SIGINT. Cancelling evaluation.")
                 default_handler(sig, frame)
 
             signal.signal(signal.SIGINT, interrupt_handler)
@@ -192,20 +318,15 @@ class Confusion:
                     continue
 
                 reordered_devset.append((example_idx, example, prediction))
-                preds[arg[self.output_field]].append(prediction.get(self.output_field, "error"))
+                preds[arg[self.output_field].lower()].append(prediction.get(self.output_field, "error"))
                 self._update_progress(pbar, preds, devset)
             pbar.close()
 
         if self.cancel_jobs.is_set():
-            dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
+            logger.warning("Evaluation was cancelled. The results may be incomplete.")
             raise KeyboardInterrupt
 
         return reordered_devset
-
-    def _update_progress(self, pbar, preds, devset):
-        mcc = self.get_matthews_corrcoef(devset, preds)
-        pbar.set_description(f"MCC: {mcc:.6f}")
-        pbar.update()
 
     def __call__(
             self,
@@ -217,6 +338,24 @@ class Confusion:
             return_matrix=None,
             return_outputs=None,
     ):
+        """
+        Evaluate a DSPy program on a dataset using MCC.
+
+        Args:
+            program (dspy.Module): The DSPy program to evaluate.
+            devset (List[dspy.Example], optional): The evaluation dataset.
+            num_threads (int, optional): Number of threads for parallel evaluation.
+            display_progress (bool, optional): Whether to display progress.
+            display_table (bool, optional): Whether to display a table of results.
+            return_matrix (bool, optional): Whether to return the confusion matrix.
+            return_outputs (bool, optional): Whether to return outputs for each example.
+
+        Returns:
+            Depending on the flags, returns combinations of:
+            - float: The MCC score
+            - List[Tuple]: Results for each example
+            - pandas.DataFrame: The confusion matrix
+        """
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -226,12 +365,6 @@ class Confusion:
         results = []
 
         def wrapped_program(example_idx, example):
-            # NOTE: TODO: Won't work if threads create threads!
-            thread_stacks = dspy.settings.stack_by_thread
-            creating_new_thread = threading.get_ident() not in thread_stacks
-            if creating_new_thread:
-                thread_stacks[threading.get_ident()] = list(dspy.settings.main_stack)
-
             try:
                 prediction = program(**example.inputs())
 
@@ -250,18 +383,15 @@ class Confusion:
                     raise e
 
                 if self.provide_traceback:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}"
                     )
                 else:
-                    dspy.logger.error(
+                    logger.error(
                         f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
                     )
 
                 return example_idx, example, {self.output_field: "error"}
-            finally:
-                if creating_new_thread:
-                    del thread_stacks[threading.get_ident()]
 
         devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
@@ -283,7 +413,7 @@ class Confusion:
 
         mcc, cm = self.get_matthews_corrcoef(devset, preds, return_cm=True)
 
-        dspy.logger.info(f"MCC: {mcc:.6f}")
+        logger.info(f"MCC: {mcc:.6f}")
 
         predicted_devset = sorted(reordered_devset)
 
@@ -332,6 +462,14 @@ class Confusion:
 
 
 class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
+    """
+    A Teleprompter that uses Matthews Correlation Coefficient for evaluating and
+    bootstrapping few-shot examples with random search.
+
+    This class compiles a program by bootstrapping demonstrations and evaluating
+    candidates using MCC as the metric.
+    """
+
     def __init__(
             self,
             teacher_settings={},
@@ -346,6 +484,22 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             use_class_weight=True,
             output_field="response",
     ):
+        """
+        Initialize the MCCBootstrapFewShotWithRandomSearch teleprompter.
+
+        Args:
+            teacher_settings (dict): Settings for the teacher.
+            max_bootstrapped_demos (int): Maximum number of bootstrapped demos.
+            max_labeled_demos (int): Maximum number of labeled demos.
+            max_rounds (int): Maximum number of optimization rounds.
+            num_candidate_programs (int): Number of candidate programs to evaluate.
+            num_threads (int): Number of threads for parallel evaluation.
+            max_errors (int): Maximum number of errors before stopping evaluation.
+            stop_at_score (float, optional): Score at which to stop optimization.
+            metric_threshold (float, optional): Threshold for the metric.
+            use_class_weight (bool): Whether to use class weights.
+            output_field (str): Field to use as the output.
+        """
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
 
@@ -365,6 +519,20 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
+        """
+        Compile a program by bootstrapping demonstrations and evaluating candidates.
+
+        Args:
+            student (dspy.Module): The student module to optimize.
+            teacher (dspy.Module, optional): The teacher module.
+            trainset (List[dspy.Example]): The training dataset.
+            valset (List[dspy.Example], optional): The validation dataset.
+            restrict (List[int], optional): Restrict optimization to these seeds.
+            labeled_sample (bool): Whether to sample labeled examples.
+
+        Returns:
+            The best program found during optimization.
+        """
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
