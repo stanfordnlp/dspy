@@ -54,10 +54,10 @@ class Predict(Module, Parameter):
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-                    
+
         self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
@@ -90,11 +90,23 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+
+            from dspy.adapters.types import History
+
+            if not all(signature.input_fields[k].annotation == History for k in missing):
+                # We allow missing history fields.
+                print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
+
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        completions = adapter(
+            lm,
+            lm_kwargs=config,
+            signature=signature,
+            demos=demos,
+            inputs=kwargs,
+        )
 
         pred = Prediction.from_completions(completions, signature=signature)
 
@@ -112,6 +124,7 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def serialize_object(obj):
     """

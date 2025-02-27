@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from litellm import ContextWindowExceededError
 
+from dspy.adapters.types import History
 from dspy.utils.callback import with_callbacks
 
 
@@ -65,3 +66,38 @@ class Adapter(ABC):
 
     def format_finetune_data(self, signature, demos, inputs, outputs):
         raise NotImplementedError
+
+    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
+        pass
+
+    def format_conversation_history(self, signature, inputs):
+        history_field_name = None
+        for name, field in signature.input_fields.items():
+            if field.annotation == History:
+                history_field_name = name
+                break
+
+        if history_field_name is None:
+            return []
+
+        # In order to format the conversation history, we need to remove the history field from the signature.
+        signature_without_history = signature.delete(history_field_name)
+        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+
+        if conversation_history is None:
+            return []
+
+        messages = []
+        for message in conversation_history:
+            messages.append(
+                self.format_turn(signature_without_history, message, role="user", is_conversation_history=True)
+            )
+            messages.append(
+                self.format_turn(signature_without_history, message, role="assistant", is_conversation_history=True)
+            )
+
+        inputs_copy = dict(inputs)
+        del inputs_copy[history_field_name]
+
+        messages.append(self.format_turn(signature_without_history, inputs_copy, role="user"))
+        return messages

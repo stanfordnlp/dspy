@@ -186,6 +186,17 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return cls.insert(-1, name, field, type_)
 
     @classmethod
+    def delete(cls, name) -> Type["Signature"]:
+        fields = dict(cls.fields)
+
+        if name in fields:
+            del fields[name]
+        else:
+            raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
+
+        return Signature(fields, cls.instructions)
+
+    @classmethod
     def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
