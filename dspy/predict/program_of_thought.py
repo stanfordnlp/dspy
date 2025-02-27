@@ -3,8 +3,8 @@ import re
 import dspy
 from dspy.signatures.signature import ensure_signature
 
-from ..primitives.program import Module
-from ..primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.program import Module
+from dspy.primitives.python_interpreter import PythonInterpreter
 
 
 class ProgramOfThought(Module):

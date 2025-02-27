@@ -25,7 +25,7 @@ class LocalProvider(Provider):
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         try:
-            import sglang
+            import sglang # noqa: F401
         except ImportError:
             raise ImportError(
                 "For local model launching, please install sglang by running "
