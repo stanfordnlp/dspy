@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.6"
+version="2.6.8"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -53,6 +53,9 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["dspy*"]
 
+[tool.setuptools]
+include-package-data = true
+
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 chromadb = ["chromadb~=0.4.14"]
@@ -85,7 +88,7 @@ homepage = "https://github.com/stanfordnlp/dspy"
 
 [tool.poetry]
 name = "dspy"
-version = "2.6.3"
+version = "2.6.8"
 description = "DSPy"
 authors = ["Omar Khattab <okhattab@stanford.edu>"]
 license = "MIT"
