@@ -47,7 +47,6 @@ class Adapter(ABC):
             return values
 
         except Exception as e:
-            raise e
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
@@ -81,6 +80,7 @@ class Adapter(ABC):
         if history_field_name is None:
             return []
 
+        # In order to format the conversation history, we need to remove the history field from the signature.
         signature_without_history = signature.delete(history_field_name)
         conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
 
@@ -96,8 +96,6 @@ class Adapter(ABC):
                 self.format_turn(signature_without_history, message, role="assistant", is_conversation_history=True)
             )
 
-        # We cannot manipulate the inputs dictionary in place, because if ChatAdapter fails then we
-        # fall back to JSONAdapter, which expects the inputs to be unchanged.
         inputs_copy = dict(inputs)
         del inputs_copy[history_field_name]
 

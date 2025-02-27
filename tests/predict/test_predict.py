@@ -417,7 +417,12 @@ def test_call_predict_with_chat_history(adapter_type):
                 return ["{'answer':'100%'}"]
             return ["[[ ## answer ## ]]\n100%!"]
 
-    program = Predict("question -> answer")
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    program = Predict(MySignature)
 
     if adapter_type == "chat":
         lm = SpyLM("dummy_model")
@@ -428,7 +433,7 @@ def test_call_predict_with_chat_history(adapter_type):
 
     program(
         question="are you sure that's correct?",
-        conversation_history=[{"question": "what's the capital of france?", "answer": "paris"}],
+        history=dspy.History(messages=[{"question": "what's the capital of france?", "answer": "paris"}]),
     )
 
     # Verify the LM was called with correct messages
