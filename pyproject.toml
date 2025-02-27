@@ -50,8 +50,11 @@ dependencies = [
     "cloudpickle",
 ]
 
-[tool.setuptools.packages.find]
-include = ["dspy*"]
+[tool.setuptools]
+packages = ["dspy"]
+
+[tool.setuptools.package-data]
+"dspy" = ["primitives/*.js"]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
