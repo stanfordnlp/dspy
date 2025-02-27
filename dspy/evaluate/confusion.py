@@ -10,13 +10,16 @@ from dspy.evaluate.evaluate import *
 from dspy.teleprompt.teleprompt import Teleprompter
 
 
-def most_votes(votes):
-    """Only returns a value if there is a single winner."""
+def most_votes(votes, tiebreaker=None):
     counts = Counter(votes)
     max_count = max(counts.values())
     winners = [label for label, count in counts.items() if count == max_count]
     if len(winners) == 1:
         return winners[0]
+    elif tiebreaker == "first":
+        return min(winners, key=votes.index)
+    elif tiebreaker == "last":
+        return max(winners, key=votes.index)
 
 
 class Confusion:
