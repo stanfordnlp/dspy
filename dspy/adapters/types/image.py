@@ -1,9 +1,8 @@
 import base64
 import io
 import os
-from typing import Any, Dict, List, Union
+from typing import Union
 from urllib.parse import urlparse
-import re
 
 import pydantic
 import requests

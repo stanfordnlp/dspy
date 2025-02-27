@@ -3,7 +3,7 @@ import os
 import pydantic
 import requests
 
-from typing import Any, Dict, List, Union
+from typing import Union
 from urllib.parse import urlparse
 
 
