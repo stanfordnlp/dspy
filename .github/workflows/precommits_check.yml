@@ -24,7 +24,7 @@ jobs:
         run: |
           echo "Changed files"
           echo ${{ steps.files.outputs.all }}
-          echo "Github Client version"
+          echo "GitHub Client version"
           echo $(gh --version)
       - name: Pre-Commit Checks
         run: |

@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-import dsp
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
@@ -120,14 +119,46 @@ def test_evaluate_call_bad():
     assert score == 0.0
 
 
+@pytest.mark.parametrize(
+    "program_with_example",
+    [
+        (Predict("question -> answer"), new_example("What is 1+1?", "2")),
+        # Create programs that do not return dictionary-like objects because Evaluate()
+        # has failed for such cases in the past
+        (
+            lambda text: Predict("text: str -> entities: List[str]")(text=text).entities,
+            dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
+        ),
+        (
+            lambda text: Predict("text: str -> entities: List[Dict[str, str]]")(text=text).entities,
+            dspy.Example(text="United States", entities=[{"name": "United States", "type": "location"}]).with_inputs(
+                "text"
+            ),
+        ),
+        (
+            lambda text: Predict("text: str -> first_word: Tuple[str, int]")(text=text).words,
+            dspy.Example(text="United States", first_word=("United", 6)).with_inputs("text"),
+        ),
+    ],
+)
 @pytest.mark.parametrize("display_table", [True, False, 1])
 @pytest.mark.parametrize("is_in_ipython_notebook_environment", [True, False])
-def test_evaluate_display_table(display_table, is_in_ipython_notebook_environment, capfd):
-    devset = [new_example("What is 1+1?", "2")]
-    program = Predict("question -> answer")
+def test_evaluate_display_table(program_with_example, display_table, is_in_ipython_notebook_environment, capfd):
+    program, example = program_with_example
+    example_input = next(iter(example.inputs().values()))
+    example_output = {key: value for key, value in example.toDict().items() if key not in example.inputs()}
+
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                example_input: example_output,
+            }
+        )
+    )
+
     ev = Evaluate(
-        devset=devset,
-        metric=answer_exact_match,
+        devset=[example],
+        metric=lambda example, pred, **kwargs: example == pred,
         display_table=display_table,
     )
     assert ev.display_table == display_table
@@ -140,4 +171,5 @@ def test_evaluate_display_table(display_table, is_in_ipython_notebook_environmen
         if not is_in_ipython_notebook_environment and display_table:
             # In console environments where IPython is not available, the table should be printed
             # to the console
-            assert "What is 1+1?" in out
+            example_input = next(iter(example.inputs().values()))
+            assert example_input in out

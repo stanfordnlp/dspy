@@ -1,0 +1,26 @@
+{
+  "assertions": [
+    "The 'processedTupleField' should be a tuple containing a string and a number.",
+    "The 'processedEnumField' should be one of the allowed enum values: 'option1', 'option2', or 'option3'.",
+    "The 'processedDatetimeField' should be a date-time",
+    "The 'processedLiteralField' should be exactly 'literalValue'.",
+    "The 'processedObjectField' should contain 'subField1' (string), 'subField2' (number), and an additional boolean field 'additionalField'.",
+    "The 'processedNestedObjectField' should contain 'tupleField' as a tuple with a string and float, 'enumField' (one of the allowed enum values), 'datetimeField' (string formatted as date-time), 'literalField' (exactly 'literalValue'), and an additional boolean field 'additionalField'."
+  ],
+  "input": {
+    "datetimeField": "2023-10-12T07:20:50.52Z",
+    "enumField": "option1",
+    "literalField": "literalValue",
+    "nestedObjectField": {
+      "datetimeField": "2023-10-12T07:20:50.52Z",
+      "enumField": "option2",
+      "literalField": "literalValue",
+      "tupleField": ["nestedString", 789]
+    },
+    "objectField": {
+      "subField1": "example",
+      "subField2": 456
+    },
+    "tupleField": ["string1", 123]
+  }
+}

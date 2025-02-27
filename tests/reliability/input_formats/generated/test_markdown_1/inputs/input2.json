@@ -1,0 +1,11 @@
+{
+  "assertions": [
+    "Each entry in the TOC should be a markdown link pointing to the corresponding section in the document.",
+    "The hierarchy of the TOC should match the levels of headings in the input markdown content (e.g., H1 headings as top-level, H2 headings nested under H1, etc.).",
+    "The TOC should include all headings from the input markdown content, in the order they appear.",
+    "The TOC should not include any non-heading content from the input markdown document."
+  ],
+  "input": {
+    "markdown_content": "# Introduction\n\nThis is the introduction section.\n\n## Overview\n\nAn overview of the document.\n\n### Details\n\nMore detailed information.\n\n#### Subdetails\n\nEven more detailed information.\n\n## Another Section\n\nContent of another section.\n\n### Subsection\n\nDetails of the subsection.\n\n```python\ndef example_function():\n    print(\"Hello, World!\")\n```\n\n# Conclusion\n\nFinal thoughts."
+  }
+}

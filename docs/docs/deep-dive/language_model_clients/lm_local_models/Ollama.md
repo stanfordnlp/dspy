@@ -1,8 +1,9 @@
 # OllamaLocal
 
-:::note
-Adapted from documentation provided by https://github.com/insop
-:::
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+!!! note
+    Adapted from documentation provided by https://github.com/insop
 
 Ollama is a good software tool that allows you to run LLMs locally, such as Mistral, Llama2, and Phi.
 The following are the instructions to install and run Ollama.

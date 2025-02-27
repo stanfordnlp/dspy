@@ -1,0 +1,26 @@
+{
+  "assertions": [
+    "The 'processedTupleField' should be an tuple with exactly two elements: the first element being a string and the second element being a number.",
+    "The 'processedEnumField' should be one of the predefined options: 'option1', 'option2', or 'option3'.",
+    "The 'processedDatetimeField' should be a date-time",
+    "The 'processedLiteralField' should be the enum 'literalValue'.",
+    "The 'processedObjectField' should be an object containing 'subField1' as a string, 'subField2' as a number, and an 'additionalField' as a boolean.",
+    "The 'processedNestedObjectField' should be an object containing 'tupleField' as a tuple with a string and float, 'enumField' as one of the predefined options (option1, option2, or option3), 'datetimeField' as a 'date-time' object, 'literalField' as the string 'literalValue', and an 'additionalField' as a boolean."
+  ],
+  "input": {
+    "datetimeField": "2023-10-01T12:00:00Z",
+    "enumField": "option1",
+    "literalField": "literalValue",
+    "nestedObjectField": {
+      "datetimeField": "2023-11-01T12:00:00Z",
+      "enumField": "option2",
+      "literalField": "literalValue",
+      "tupleField": ["nestedString", 789]
+    },
+    "objectField": {
+      "subField1": "Patriotism is a feeling of love, devotion, and sense of attachment to one's country. This attachment can be a combination of many different feelings relating to one's homeland, including ethnic, cultural, political or historical aspects. It encompasses a set of concepts closely related to those of nationalism. In the context of patriotism, people may express their feelings in a variety of ways, including supporting their country's interests and policies, celebrating national holidays, and participating in civic activities. Patriotism often involves a sense of pride in one's country and a willingness to defend it against any threats. It can also include a commitment to improving the country and making it a better place for future generations. The concept of patriotism is often linked with the idea of national identity, which is the sense of a nation as a cohesive whole, as represented by distinctive traditions, culture, language, and politics. Patriots may feel a strong sense of loyalty and duty to their country, and they may take actions to support and protect it. However, it is important to note that patriotism can also be a complex and sometimes controversial concept. While it can inspire positive actions and a sense of community, it can also lead to exclusionary or aggressive behaviors if taken to an extreme. In some cases, excessive patriotism can result in nationalism, which can lead to conflicts with other nations or groups. Despite these potential issues, many people view patriotism as a positive force that can unite people and inspire them to work together for the common good. It can foster a sense of belonging and purpose, and it can motivate individuals to contribute to the well-being of their country. Overall, patriotism is a multifaceted and deeply personal sentiment that can manifest in many different ways, depending on an individual's experiences, beliefs, and values.",
+      "subField2": 456
+    },
+    "tupleField": ["exampleString", 123]
+  }
+}

@@ -1,12 +1,11 @@
+import logging
 import random
 import threading
 from typing import Dict, Optional
 
 import tqdm
 
-import dsp
 import dspy
-from dspy.primitives import Example
 
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
@@ -14,7 +13,7 @@ from .vanilla import LabeledFewShot
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
 # They can also be sortable.
 
-# TODO: Switch here from dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
+# TODO: Switch here from dspy.dsp.Example to dspy.Example. Right now, it's okay because it's internal only (predictors).
 # NOTE: Notice the places where we don't shuffle examples. I do like that this one doesn't shuffle.
 # Other ones that consider options may want to use both unshuffled and then shuffle a few times, when
 # considering candidates.
@@ -32,38 +31,38 @@ from .vanilla import LabeledFewShot
 
 # TODO: Add baselines=[...]
 
+logger = logging.getLogger(__name__)
+
+
 class BootstrapFewShot(Teleprompter):
     def __init__(
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict]=None,
+        teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
         max_errors=5,
     ):
-        """
-        A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
+        """A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
         These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
 
-        Parameters
-        ----------
-        metric: Callable
-            A function that compares an expected value and predicted value, outputting the result of that comparison. 
-        metric_threshold: optional float, default `None`
-            If the metric yields a numerical value, then check it against this threshold when
-            deciding whether or not to accept a bootstrap example.
-        teacher_settings: dict, optional
-            Settings for the `teacher` model.
-        max_bootstrapped_demos: int, default 4
-            Maximum number of bootstrapped demonstrations to include
-        max_labeled_demos: int, default 16
-            Maximum number of labeled demonstrations to include.
-        max_rounds: int, default 1
-            Number of iterations to attempt generating the required bootstrap examples. If unsuccessful after `max_rounds`, the program ends.
-        max_errors: int, default 5
-            Maximum number of errors until program ends.
+        Args:
+            metric (Callable): A function that compares an expected value and predicted value,
+                outputting the result of that comparison.
+            metric_threshold (float, optional): If the metric yields a numerical value, then check it
+                against this threshold when deciding whether or not to accept a bootstrap example.
+                Defaults to None.
+            teacher_settings (dict, optional): Settings for the `teacher` model.
+                Defaults to None.
+            max_bootstrapped_demos (int): Maximum number of bootstrapped demonstrations to include.
+                Defaults to 4.
+            max_labeled_demos (int): Maximum number of labeled demonstrations to include.
+                Defaults to 16.
+            max_rounds (int): Number of iterations to attempt generating the required bootstrap
+                examples. If unsuccessful after `max_rounds`, the program ends. Defaults to 1.
+            max_errors (int): Maximum number of errors until program ends. Defaults to 5.
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
@@ -94,7 +93,9 @@ class BootstrapFewShot(Teleprompter):
 
     def _prepare_student_and_teacher(self, student, teacher):
         self.student = student.reset_copy()
-        self.teacher = teacher.deepcopy() if teacher is not None else student.reset_copy()
+
+        # NOTE: behavior change on Oct 28, 2024. Deep copy instead of reset copy for the student-as-teacher.
+        self.teacher = teacher.deepcopy() if teacher is not None else student.deepcopy()
 
         assert getattr(self.student, "_compiled", False) is False, "Student must be uncompiled."
 
@@ -115,9 +116,10 @@ class BootstrapFewShot(Teleprompter):
             if hasattr(predictor1.signature, "equals"):
                 assert predictor1.signature.equals(
                     predictor2.signature,
-                ), (f"Student and teacher must have the same signatures. "
+                ), (
+                    f"Student and teacher must have the same signatures. "
                     f"{type(predictor1.signature)} != {type(predictor2.signature)}"
-                    )
+                )
             else:
                 # fallback in case if .equals is not implemented (e.g. dsp.Prompt)
                 assert predictor1.signature == predictor2.signature, (
@@ -141,23 +143,25 @@ class BootstrapFewShot(Teleprompter):
 
     def _bootstrap(self, *, max_bootstraps=None):
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
+        bootstrap_attempts = 0
 
         bootstrapped = {}
         self.name2traces = {name: [] for name in self.name2predictor}
 
-        for round_idx in range(self.max_rounds):
-            for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-                if len(bootstrapped) >= max_bootstraps:
+        for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
+            if len(bootstrapped) >= max_bootstraps:
+                break
+
+            for round_idx in range(self.max_rounds):
+                bootstrap_attempts += 1
+
+                if self._bootstrap_one_example(example, round_idx):
+                    bootstrapped[example_idx] = True
                     break
 
-                if example_idx not in bootstrapped:
-                    success = self._bootstrap_one_example(example, round_idx)
-
-                    if success:
-                        bootstrapped[example_idx] = True
-
         print(
-            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx + 1} examples in round {round_idx}.",
+            f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
+            f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
         )
 
         # Unbootstrapped training examples
@@ -172,23 +176,23 @@ class BootstrapFewShot(Teleprompter):
         # score = evaluate(self.metric, display_table=False, display_progress=True)
 
     def _bootstrap_one_example(self, example, round_idx=0):
-        name2traces = self.name2traces
-        teacher = self.teacher  # .deepcopy()
+        name2traces = {}
+        teacher = self.teacher
         predictor_cache = {}
 
         try:
-            with dsp.settings.context(trace=[], **self.teacher_settings):
-                lm = dsp.settings.lm
+            with dspy.settings.context(trace=[], **self.teacher_settings):
+                lm = dspy.settings.lm
                 lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
                 new_settings = dict(lm=lm) if round_idx > 0 else {}
 
-                with dsp.settings.context(**new_settings):
+                with dspy.settings.context(**new_settings):
                     for name, predictor in teacher.named_predictors():
                         predictor_cache[name] = predictor.demos
                         predictor.demos = [x for x in predictor.demos if x != example]
 
                     prediction = teacher(**example.inputs())
-                    trace = dsp.settings.trace
+                    trace = dspy.settings.trace
 
                     for name, predictor in teacher.named_predictors():
                         predictor.demos = predictor_cache[name]
@@ -208,12 +212,12 @@ class BootstrapFewShot(Teleprompter):
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
                 raise e
-            dspy.logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
+            logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = Example(augmented=True, **inputs, **outputs)
+                demo = dspy.Example(augmented=True, **inputs, **outputs)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
@@ -230,7 +234,19 @@ class BootstrapFewShot(Teleprompter):
                     #     f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
                     # ) from e
 
+                name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
+
+            # Update the traces
+            for name, demos in name2traces.items():
+                from datasets.fingerprint import Hasher
+
+                # If there are multiple traces for the same predictor in the sample example,
+                # sample 50/50 from the first N-1 traces or the last trace.
+                if len(demos) > 1:
+                    rng = random.Random(Hasher.hash(tuple(demos)))
+                    demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
+                self.name2traces[name].extend(demos)
 
         return success
 
@@ -245,10 +261,6 @@ class BootstrapFewShot(Teleprompter):
             sample_size = max(0, sample_size)
 
             raw_demos = rng.sample(raw_demos, sample_size)
-
-            if dspy.settings.release >= 20230928:
-                predictor.demos = raw_demos + augmented_demos
-            else:
-                predictor.demos = augmented_demos + raw_demos
+            predictor.demos = augmented_demos + raw_demos
 
         return self.student

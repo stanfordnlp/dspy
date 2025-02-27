@@ -7,13 +7,12 @@ from rich import print as rprint
 from tqdm import tqdm, trange
 
 import dspy
-
-from .config import SynthesizerArguments
-from .instruction_suffixes import (
+from dspy.experimental.synthesizer.config import SynthesizerArguments
+from dspy.experimental.synthesizer.instruction_suffixes import (
     INPUT_GENERATION_TASK_WITH_EXAMPLES_SUFFIX,
     INPUT_GENERATION_TASK_WITH_FEEDBACK_SUFFIX,
 )
-from .signatures import (
+from dspy.experimental.synthesizer.signatures import (
     ExplainTask,
     GenerateFieldDescription,
     GenerateInputFieldsData,
@@ -22,12 +21,8 @@ from .signatures import (
     UnderstandTask,
     UpdateTaskDescriptionBasedOnFeedback,
 )
-from .utils import format_examples
+from dspy.experimental.synthesizer.utils import format_examples
 
-__all__ = [
-    "Synthesizer",
-    "SynthesizerArguments",
-]
 
 class Synthesizer:
     def __init__(self, config: SynthesizerArguments):
@@ -244,17 +239,17 @@ class Synthesizer:
         return data
 
     def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
-        extention = mode or path.split(".")[-1]
+        extension = mode or path.split(".")[-1]
 
         dataset = Dataset.from_list(
             [example.toDict() for example in data],
         )
 
-        if extention == "csv":
+        if extension == "csv":
             dataset.to_csv(path_or_buf=path, **kwargs)
 
-        elif extention == "json":
+        elif extension == "json":
             dataset.to_json(path_or_buf=path, **kwargs)
 
-        elif extention == "arrow" or extention == "hf":
+        elif extension == "arrow" or extension == "hf":
             dataset.save_to_disk(path)

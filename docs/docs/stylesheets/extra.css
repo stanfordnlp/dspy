@@ -1,0 +1,237 @@
+/* Custom styles for logo */
+.md-logo, .md-logo img {
+    width: auto !important;
+    height: 1.5rem !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.md-logo img {
+    object-fit: contain !important;
+}
+
+/* Adjust header to accommodate logo */
+.md-header__inner {
+    padding: 0.5rem !important;
+}
+
+/* Responsive adjustments */
+@media screen and (min-width: 76.25em) {
+    .md-logo {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+    .md-logo img {
+        height: 1.8rem !important; /* Reduced from 2.2rem */
+    }
+}
+
+/* Dark mode specific adjustments */
+[data-md-color-scheme="slate"] .md-logo img {
+    filter: brightness(0.9);
+}
+
+/* Default max-width */
+.md-content {
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+
+/* Adjust width when a sidebar or TOC is present */
+@media (min-width: 1700px) {
+    /* Increase width when there's enough space (like on desktop or tablet landscape) */
+    .md-content {
+        min-width: 980px;
+    }
+}
+
+
+/* Justified text for main content */
+.md-content__inner p {
+    text-align: justify;
+}
+
+/* Left-aligned text for grid cards */
+.md-content__inner .grid.cards p {
+    text-align: left;
+}
+
+/* Base styling for the output area */
+.jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* Light mode specific styling */
+:root {
+    --output-bg-light: #fafafa;
+    --output-border-light: #ddd;
+    --output-text-light: #333;
+}
+
+body[data-md-color-scheme="default"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-light);
+    border: 1px solid var(--output-border-light);
+    color: var(--output-text-light);
+    box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode specific styling */
+:root {
+    --output-bg-dark: #2e2e2e;
+    --output-border-dark: #555;
+    --output-text-dark: #e0e0e0;
+}
+
+body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output pre {
+    background-color: var(--output-bg-dark);
+    border: 1px solid var(--output-border-dark);
+    color: var(--output-text-dark);
+    box-shadow: 0px 1px 4px rgba(255, 255, 255, 0.1);
+}
+
+
+
+/* Set a fixed width for the sidebar */
+.md-sidebar {
+    width: 235px;
+}
+
+/* Adjust search bar position */
+.md-search {
+    margin-left: auto;
+    padding-right: 0;
+}
+
+/* If you need to adjust the width of the search bar */
+.md-search__inner {
+    width: 13rem;
+}
+
+/* Adjust repository button position and alignment */
+.md-header__source {
+    margin-left: 1rem;
+    margin-right: 0;
+    text-align: right;  /* Keep right alignment for container */
+}
+
+.md-header__source .md-source {
+    justify-content: flex-start;  /* Change to flex-start to align text to left */
+    width: auto;  /* Allow element to shrink to content */
+    min-width: 0;  /* Remove minimum width constraint */
+}
+
+.md-header__source .md-source__icon {
+    order: 2;  /* Keep icon on the right */
+    margin-left: 0.5rem;
+    margin-right: 0;
+}
+
+.md-header__source .md-source__repository {
+    order: 1;  /* Keep text on the left */
+    text-align: left;  /* Ensure text is left-aligned */
+}
+
+h2.doc-heading {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+/* Add more spacing between API sections */
+.doc-heading {
+    margin-top: 1em;
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+    font-size: 0.85rem;
+}
+
+/* Make method names more prominent */
+.doc-method, .doc-function {
+    background-color: var(--md-code-bg-color);
+    padding: 0.1em;
+    margin: 0.5em 0;
+    border-radius: 4px;
+}
+
+/* Make class documentation stand out */
+.doc-class {
+    padding: 1em;
+    margin: 1em 0;
+    border-left: 4px solid var(--md-primary-fg-color);
+    background-color: var(--md-code-bg-color);
+}
+
+/* Style for type labels */
+.doc-label {
+    font-size: 0.8em;
+    padding: 0.2em 0.6em;
+    border-radius: 4px;
+    background-color: var(--md-code-bg-color);
+    display: inline-block;
+    margin: 0.2em 0;
+    font-weight: 400;
+    text-transform: none;  /* Prevent uppercase transformation */
+    color: var(--md-code-fg-color);
+}
+
+/* Add indentation and visual cues for nested navigation items */
+.md-nav__item .md-nav__item {
+    padding-left: 0.3rem;
+    border-left: 1px solid var(--md-primary-fg-color--light);
+    margin-left: 0.2rem;
+}
+
+/* Add some spacing between items */
+.md-nav__item {
+    margin: 0.3em 0;  /* Reduced from 0.4em */
+}
+
+/* Optional: add hover effect */
+.md-nav__item .md-nav__item:hover {
+    border-left-color: var(--md-primary-fg-color);
+}
+
+
+/* Enhance code examples in documentation */
+.highlight {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    margin: 1.5em 0;
+    padding: 1em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .highlight {
+    background-color: #2b2b2b;
+    border-color: #404040;
+}
+
+/* Add subtle left border for visual interest */
+.highlight pre {
+    margin: 0;
+}
+
+/* Ensure code is readable */
+.highlight code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.75em;
+}
+
+.highlight .linenos {
+    font-size: 0.75em;
+}
+
+/* Copy button styling */
+.highlight .md-clipboard {
+    color: var(--md-default-fg-color--lighter);
+}
+
+.highlight .md-clipboard:hover {
+    color: var(--md-accent-fg-color);
+}
+

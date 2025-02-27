@@ -1,130 +1,180 @@
-import dsp
+import logging
+from typing import Any, Callable, Literal, get_origin
+
+from litellm import ContextWindowExceededError
+from pydantic import BaseModel
+
 import dspy
+from dspy.primitives.program import Module
+from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
 
-from ..primitives.program import Module
-from .predict import Predict
-
-# TODO: Simplify a lot.
-# TODO: Divide Action and Action Input like langchain does for ReAct.
-
-# TODO: There's a lot of value in having a stopping condition in the LM calls at `\n\nObservation:`
-
-# TODO [NEW]: When max_iters is about to be reached, reduce the set of available actions to only the Finish action.
+logger = logging.getLogger(__name__)
 
 
 class ReAct(Module):
-    def __init__(self, signature, max_iters=5, num_results=3, tools=None):
-        super().__init__()
+    def __init__(self, signature, tools: list[Callable], max_iters=5):
+        """
+        `tools` is either a list of functions, callable classes, or `dspy.Tool` instances.
+        """
+
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        self.tools = tools or [dspy.Retrieve(k=num_results)]
-        self.tools = {tool.name: tool for tool in self.tools}
+        tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
+        tools = {tool.name: tool for tool in tools}
 
-        self.input_fields = self.signature.input_fields
-        self.output_fields = self.signature.output_fields
+        inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
+        outputs = ", ".join([f"`{k}`" for k in signature.output_fields.keys()])
+        instr = [f"{signature.instructions}\n"] if signature.instructions else []
 
-        assert len(self.output_fields) == 1, "ReAct only supports one output field."
-
-        inputs_ = ", ".join([f"`{k}`" for k in self.input_fields.keys()])
-        outputs_ = ", ".join([f"`{k}`" for k in self.output_fields.keys()])
-
-        instr = []
-        
-        if self.signature.instructions is not None:
-            instr.append(f"{self.signature.instructions}\n")
-        
-        instr.extend([
-            f"You will be given {inputs_} and you will respond with {outputs_}.\n",
-            "To do this, you will interleave Thought, Action, and Observation steps.\n",
-            "Thought can reason about the current situation, and Action can be the following types:\n",
-        ])
-
-        self.tools["Finish"] = dspy.Example(
-            name="Finish",
-            input_variable=outputs_.strip("`"),
-            desc=f"returns the final {outputs_} and finishes the task",
+        instr.extend(
+            [
+                f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
+                "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.\n",
+                "Thought can reason about the current situation, and Tool Name can be the following types:\n",
+            ]
         )
 
-        for idx, tool in enumerate(self.tools):
-            tool = self.tools[tool]
-            instr.append(
-                f"({idx+1}) {tool.name}[{tool.input_variable}], which {tool.desc}",
-            )
+        tools["finish"] = Tool(
+            func=lambda **kwargs: "Completed.",
+            name="finish",
+            desc=f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
+            args={},
+        )
 
-        instr = "\n".join(instr)
-        self.react = [
-            Predict(dspy.Signature(self._generate_signature(i), instr))
-            for i in range(1, max_iters + 1)
-        ]
+        for idx, tool in enumerate(tools.values()):
+            args = getattr(tool, "args")
+            desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
+            desc += f" It takes arguments {args} in JSON format."
+            instr.append(f"({idx+1}) {tool.name}{desc}")
 
-    def _generate_signature(self, iters):
-        signature_dict = {}
-        for key, val in self.input_fields.items():
-            signature_dict[key] = val
+        react_signature = (
+            dspy.Signature({**signature.input_fields}, "\n".join(instr))
+            .append("trajectory", dspy.InputField(), type_=str)
+            .append("next_thought", dspy.OutputField(), type_=str)
+            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
+        )
 
-        for j in range(1, iters + 1):
-            IOField = dspy.OutputField if j == iters else dspy.InputField
+        fallback_signature = dspy.Signature(
+            {**signature.input_fields, **signature.output_fields},
+            signature.instructions,
+        ).append("trajectory", dspy.InputField(), type_=str)
 
-            signature_dict[f"Thought_{j}"] = IOField(
-                prefix=f"Thought {j}:",
-                desc="next steps to take based on last observation",
-            )
+        self.tools = tools
+        self.react = dspy.Predict(react_signature)
+        self.extract = dspy.ChainOfThought(fallback_signature)
 
-            tool_list = " or ".join(
-                [
-                    f"{tool.name}[{tool.input_variable}]"
-                    for tool in self.tools.values()
-                    if tool.name != "Finish"
-                ],
-            )
-            signature_dict[f"Action_{j}"] = IOField(
-                prefix=f"Action {j}:",
-                desc=f"always either {tool_list} or, when done, Finish[<answer>], where <answer> is the answer to the question itself.",
-            )
+    def _format_trajectory(self, trajectory: dict[str, Any]):
+        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
+        return adapter.format_fields(trajectory_signature, trajectory, role="user")
 
-            if j < iters:
-                signature_dict[f"Observation_{j}"] = IOField(
-                    prefix=f"Observation {j}:",
-                    desc="observations based on action",
-                    format=dsp.passages2text,
-                )
+    def forward(self, **input_args):
+        trajectory = {}
+        for idx in range(self.max_iters):
+            pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
 
-        return signature_dict
+            trajectory[f"thought_{idx}"] = pred.next_thought
+            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
+            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
-    def act(self, output, hop):
-        try:
-            action = output[f"Action_{hop+1}"]
-            action_name, action_val = action.strip().split("\n")[0].split("[", 1)
-            action_val = action_val.rsplit("]", 1)[0]
+            try:
+                parsed_tool_args = {}
+                tool = self.tools[pred.next_tool_name]
+                for k, v in pred.next_tool_args.items():
+                    if hasattr(tool, "arg_types") and k in tool.arg_types:
+                        arg_type = tool.arg_types[k]
+                        if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(
+                            origin, BaseModel
+                        ):
+                            parsed_tool_args[k] = arg_type.model_validate(v)
+                            continue
+                    parsed_tool_args[k] = v
+                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
+            except Exception as e:
+                trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
-            if action_name == "Finish":
-                return action_val
-
-            result = self.tools[action_name](action_val)  #result must be a str, list, or tuple
-            # Handle the case where 'passages' attribute is missing
-            output[f"Observation_{hop+1}"] = getattr(result, "passages", result)
-
-        except Exception:
-            output[f"Observation_{hop+1}"] = (
-                "Failed to parse action. Bad formatting or incorrect action name."
-            )
-            # raise e
-
-    def forward(self, **kwargs):
-        args = {key: kwargs[key] for key in self.input_fields.keys() if key in kwargs}
-
-        for hop in range(self.max_iters):
-            # with dspy.settings.context(show_guidelines=(i <= 2)):
-            output = self.react[hop](**args)
-            output[f'Action_{hop + 1}'] = output[f'Action_{hop + 1}'].split('\n')[0]
-
-            if action_val := self.act(output, hop):
+            if pred.next_tool_name == "finish":
                 break
-            args.update(output)
 
-        observations = [args[key] for key in args if key.startswith("Observation")]
-        
-        # assumes only 1 output field for now - TODO: handling for multiple output fields
-        return dspy.Prediction(observations=observations, **{list(self.output_fields.keys())[0]: action_val or ""})
+        extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
+        return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
+        while True:
+            try:
+                return module(
+                    **input_args,
+                    trajectory=self._format_trajectory(trajectory),
+                )
+            except ContextWindowExceededError:
+                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
+                trajectory = self.truncate_trajectory(trajectory)
+
+    def truncate_trajectory(self, trajectory):
+        """Truncates the trajectory so that it fits in the context window.
+
+        Users can override this method to implement their own truncation logic.
+        """
+        keys = list(trajectory.keys())
+        if len(keys) < 4:
+            # Every tool call has 4 keys: thought, tool_name, tool_args, and observation.
+            raise ValueError(
+                "The trajectory is too long so your prompt exceeded the context window, but the trajectory cannot be "
+                "truncated because it only has one tool call."
+            )
+
+        for key in keys[:4]:
+            trajectory.pop(key)
+
+        return trajectory
+
+
+"""
+Thoughts and Planned Improvements for dspy.ReAct.
+
+TOPIC 01: How Trajectories are Formatted, or rather when they are formatted.
+
+Right now, both sub-modules are invoked with a `trajectory` argument, which is a string formatted in `forward`. Though
+the formatter uses a general adapter.format_fields, the tracing of DSPy only sees the string, not the formatting logic.
+
+What this means is that, in demonstrations, even if the user adjusts the adapter for a fixed program, the demos' format
+will not update accordingly, but the inference-time trajectories will.
+
+One way to fix this is to support `format=fn` in the dspy.InputField() for "trajectory" in the signatures. But this
+means that care must be taken that the adapter is accessed at `forward` runtime, not signature definition time.
+
+Another potential fix is to more natively support a "variadic" input field, where the input is a list of dictionaries,
+or a big dictionary, and have each adatper format it accordingly.
+
+Trajectories also affect meta-programming modules that view the trace later. It's inefficient O(n^2) to view the
+trace of every module repeating the prefix.
+
+
+TOPIC 02: Handling default arguments in the Tool class.
+
+
+TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class.
+    * Handling descriptions and casting.
+    * Handling exceptions and error messages.
+    * More cleanly defining the "finish" tool, perhaps as a runtime-defined function?
+
+
+TOPIC 04: Default behavior when the trajectory gets too long.
+
+
+TOPIC 05: Adding more structure around how the instruction is formatted.
+    * Concretely, it's now a string, so an optimizer can and does rewrite it freely.
+    * An alternative would be to add more structure, such that a certain template is fixed but values are variable?
+
+
+TOPIC 06: Idiomatically allowing tools that maintain state across iterations, but not across different `forward` calls.
+    * So the tool would be newly initialized at the start of each `forward` call, but maintain state across iterations.
+    * This is pretty useful for allowing the agent to keep notes or count certain things, etc.
+
+TOPIC 07: Make max_iters a bit more expressive.
+    * Allow passing `max_iters` in forward to overwrite the default.
+    * Get rid of `last_iteration: bool` in the format function. It's not necessary now.
+"""

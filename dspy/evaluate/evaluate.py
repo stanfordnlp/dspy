@@ -1,16 +1,12 @@
-import contextlib
-import signal
-import sys
-import threading
-import traceback
+import logging
 import types
-from typing import Any
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 import dspy
+from dspy.utils.parallelizer import ParallelExecutor
 
 try:
     from IPython.display import HTML
@@ -36,125 +32,101 @@ except ImportError:
         return x
 
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 
+logger = logging.getLogger(__name__)
+
 
 class Evaluate:
+    """DSPy Evaluate class.
+
+    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and 
+    a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
+    """
     def __init__(
         self,
         *,
-        devset,
-        metric=None,
-        num_threads=1,
-        display_progress=False,
-        display_table=False,
-        max_errors=5,
-        return_all_scores=False,
-        return_outputs=False,
-        provide_traceback=False,
-        **_kwargs,
+        devset: List["dspy.Example"],
+        metric: Optional[Callable] = None,
+        num_threads: int = 1,
+        display_progress: bool = False,
+        display_table: bool = False,
+        max_errors: int = 5,
+        return_all_scores: bool = False,
+        return_outputs: bool = False,
+        provide_traceback: bool = False,
+        failure_score: float = 0.0,
+        **kwargs,
     ):
+        """
+        Args:
+            devset (List[dspy.Example]): the evaluation dataset.
+            metric (Callable): The metric function to use for evaluation.
+            num_threads (int): The number of threads to use for parallel evaluation.
+            display_progress (bool): Whether to display progress during evaluation.
+            display_table (bool): Whether to display the evaluation results in a table.
+            max_errors (int): The maximum number of errors to allow before stopping evaluation.
+            return_all_scores (bool): Whether to return scores for every data record in `devset`.
+            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
+            provide_traceback (bool): Whether to provide traceback information during evaluation.
+            failure_score (float): The default score to use if evaluation fails due to an exception.
+        """
         self.devset = devset
         self.metric = metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
         self.max_errors = max_errors
-        self.error_count = 0
-        self.error_lock = threading.Lock()
-        self.cancel_jobs = threading.Event()
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
-
-    def _execute_single_thread(self, wrapped_program, devset, display_progress):
-        ncorrect = 0
-        ntotal = 0
-        reordered_devset = []
-
-        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress, file=sys.stdout)
-        for idx, arg in devset:
-            with logging_redirect_tqdm():
-                example_idx, example, prediction, score = wrapped_program(idx, arg)
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
-
-        pbar.close()
-
-        return reordered_devset, ncorrect, ntotal
-
-    def _execute_multi_thread(self, wrapped_program, devset, num_threads, display_progress):
-        ncorrect = 0
-        ntotal = 0
-        reordered_devset = []
-        job_cancelled = "cancelled"
-
-        # context manger to handle sigint
-        @contextlib.contextmanager
-        def interrupt_handler_manager():
-            """Sets the cancel_jobs event when a SIGINT is received."""
-            default_handler = signal.getsignal(signal.SIGINT)
-
-            def interrupt_handler(sig, frame):
-                self.cancel_jobs.set()
-                dspy.logger.warning("Received SIGINT. Cancelling evaluation.")
-                default_handler(sig, frame)
-
-            signal.signal(signal.SIGINT, interrupt_handler)
-            yield
-            # reset to the default handler
-            signal.signal(signal.SIGINT, default_handler)
-
-        def cancellable_wrapped_program(idx, arg):
-            # If the cancel_jobs event is set, return the cancelled_job literal
-            if self.cancel_jobs.is_set():
-                return None, None, job_cancelled, None
-            return wrapped_program(idx, arg)
-
-        with ThreadPoolExecutor(max_workers=num_threads) as executor, interrupt_handler_manager():
-            futures = {executor.submit(cancellable_wrapped_program, idx, arg) for idx, arg in devset}
-            pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True, disable=not display_progress)
-
-            for future in as_completed(futures):
-                example_idx, example, prediction, score = future.result()
-
-                # use the cancelled_job literal to check if the job was cancelled - use "is" not "=="
-                # in case the prediction is "cancelled" for some reason.
-                if prediction is job_cancelled:
-                    continue
-
-                reordered_devset.append((example_idx, example, prediction, score))
-                ncorrect += score
-                ntotal += 1
-                self._update_progress(pbar, ncorrect, ntotal)
-            pbar.close()
-
-        if self.cancel_jobs.is_set():
-            dspy.logger.warning("Evaluation was cancelled. The results may be incomplete.")
-            raise KeyboardInterrupt
-
-        return reordered_devset, ncorrect, ntotal
-
-    def _update_progress(self, pbar, ncorrect, ntotal):
-        pbar.set_description(f"Average Metric: {ncorrect} / {ntotal}  ({round(100 * ncorrect / ntotal, 1)})")
-        pbar.update()
+        self.failure_score = failure_score
 
     def __call__(
         self,
-        program,
-        metric=None,
-        devset=None,
-        num_threads=None,
-        display_progress=None,
-        display_table=None,
-        return_all_scores=None,
-        return_outputs=None,
+        program: "dspy.Module",
+        metric: Optional[Callable] = None,
+        devset: Optional[List["dspy.Example"]] = None,
+        num_threads: Optional[int] = None,
+        display_progress: Optional[bool] = None,
+        display_table: Optional[bool] = None,
+        return_all_scores: Optional[bool] = None,
+        return_outputs: Optional[bool] = None,
     ):
+        """
+        Args:
+            program (dspy.Module): The DSPy program to evaluate.
+            metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
+            devset (List[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
+            num_threads (int): The number of threads to use for parallel evaluation. if not provided, use
+                `self.num_threads`.
+            display_progress (bool): Whether to display progress during evaluation. if not provided, use
+                `self.display_progress`.
+            display_table (bool): Whether to display the evaluation results in a table. if not provided, use
+                `self.display_table`.
+            return_all_scores (bool): Whether to return scores for every data record in `devset`. if not provided,
+                use `self.return_all_scores`.
+            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`. if not
+                provided, use `self.return_outputs`.
+
+        Returns:
+            The evaluation results are returned in different formats based on the flags:
+            
+            - Base return: A float percentage score (e.g., 67.30) representing overall performance
+            
+            - With `return_all_scores=True`:
+                Returns (overall_score, individual_scores) where individual_scores is a list of 
+                float scores for each example in devset
+            
+            - With `return_outputs=True`:
+                Returns (overall_score, result_triples) where result_triples is a list of 
+                (example, prediction, score) tuples for each example in devset
+
+            - With both flags=True:
+                Returns (overall_score, result_triples, individual_scores)
+
+        """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
@@ -162,77 +134,55 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         return_all_scores = return_all_scores if return_all_scores is not None else self.return_all_scores
         return_outputs = return_outputs if return_outputs is not None else self.return_outputs
-        results = []
 
-        def wrapped_program(example_idx, example):
-            # NOTE: TODO: Won't work if threads create threads!
-            thread_stacks = dspy.settings.stack_by_thread
-            creating_new_thread = threading.get_ident() not in thread_stacks
-            if creating_new_thread:
-                thread_stacks[threading.get_ident()] = list(dspy.settings.main_stack)
-
-            try:
-                prediction = program(**example.inputs())
-                score = metric(
-                    example,
-                    prediction,
-                )  # FIXME: TODO: What's the right order? Maybe force name-based kwargs!
-
-                # increment assert and suggest failures to program's attributes
-                if hasattr(program, "_assert_failures"):
-                    program._assert_failures += dspy.settings.get("assert_failures")
-                if hasattr(program, "_suggest_failures"):
-                    program._suggest_failures += dspy.settings.get("suggest_failures")
-
-                return example_idx, example, prediction, score
-            except Exception as e:
-                with self.error_lock:
-                    self.error_count += 1
-                    current_error_count = self.error_count
-                if current_error_count >= self.max_errors:
-                    raise e
-
-                if self.provide_traceback:
-                    dspy.logger.error(
-                        f"Error for example in dev set: \t\t {e}\n\twith inputs:\n\t\t{example.inputs()}\n\nStack trace:\n\t{traceback.format_exc()}"
-                    )
-                else:
-                    dspy.logger.error(
-                        f"Error for example in dev set: \t\t {e}. Set `provide_traceback=True` to see the stack trace."
-                    )
-
-                return example_idx, example, {}, 0.0
-            finally:
-                if creating_new_thread:
-                    del thread_stacks[threading.get_ident()]
-
-        devset = list(enumerate(devset))
         tqdm.tqdm._instances.clear()
 
-        if num_threads == 1:
-            reordered_devset, ncorrect, ntotal = self._execute_single_thread(wrapped_program, devset, display_progress)
-        else:
-            reordered_devset, ncorrect, ntotal = self._execute_multi_thread(
-                wrapped_program,
-                devset,
-                num_threads,
-                display_progress,
-            )
+        executor = ParallelExecutor(
+            num_threads=num_threads,
+            disable_progress_bar=not display_progress,
+            max_errors=self.max_errors,
+            provide_traceback=self.provide_traceback,
+            compare_results=True,
+        )
 
-        dspy.logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        def process_item(example):
+            prediction = program(**example.inputs())
+            score = metric(example, prediction)
 
-        predicted_devset = sorted(reordered_devset)
+            # Increment assert and suggest failures to program's attributes
+            if hasattr(program, "_assert_failures"):
+                program._assert_failures += dspy.settings.get("assert_failures")
+            if hasattr(program, "_suggest_failures"):
+                program._suggest_failures += dspy.settings.get("suggest_failures")
 
-        if return_outputs:  # Handle the return_outputs logic
-            results = [(example, prediction, score) for _, example, prediction, score in predicted_devset]
+            return prediction, score
+
+        results = executor.execute(process_item, devset)
+        assert len(devset) == len(results)
+
+        results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
+        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results)]
+        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+
+        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+            
+        def prediction_is_dictlike(prediction):
+            # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
+            # having a method called `items()` for iterating through key/value pairs
+            return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
 
         data = [
-            merge_dicts(example, prediction) | {"correct": score} for _, example, prediction, score in predicted_devset
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
+            for example, prediction, score in results
         ]
 
-        result_df = pd.DataFrame(data)
 
         # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
+        result_df = pd.DataFrame(data)
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
@@ -266,9 +216,9 @@ class Evaluate:
                 display(HTML(message))
 
         if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in predicted_devset]
+            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in results]
         if return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in predicted_devset]
+            return round(100 * ncorrect / ntotal, 2), [score for *_, score in results]
         if return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
 
@@ -331,24 +281,8 @@ def display_dataframe(df: pd.DataFrame):
 
 def configure_dataframe_for_ipython_notebook_display(df: pd.DataFrame) -> pd.DataFrame:
     """Set various pandas display options for DataFrame in an IPython notebook environment."""
-    pd.options.display.max_colwidth = None
-    pd.set_option("display.max_colwidth", 20)  # Adjust the number as needed
-    pd.set_option("display.width", 400)  # Adjust
-
-    # Return styled DataFrame
-    return df.style.set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "left")]},
-            {"selector": "td", "props": [("text-align", "left")]},
-        ],
-    ).set_properties(
-        **{
-            "text-align": "left",
-            "white-space": "pre-wrap",
-            "word-wrap": "break-word",
-            "max-width": "400px",
-        },
-    )
+    pd.options.display.max_colwidth = 70
+    return df
 
 
 def is_in_ipython_notebook_environment():

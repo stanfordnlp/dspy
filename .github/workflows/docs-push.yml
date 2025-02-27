@@ -15,7 +15,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -23,8 +24,8 @@ jobs:
       - name: Install dependencies and build
         run: |
           cd docs
-          npm install
-          npm run build
+          pip install -r requirements.txt
+          mkdocs build
 
   update-docs-subtree:
     if: github.event_name == 'push'

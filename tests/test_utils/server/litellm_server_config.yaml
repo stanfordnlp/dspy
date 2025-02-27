@@ -1,0 +1,15 @@
+model_list:
+  - model_name: "dspy-test-model"
+    litellm_params:
+      model: "dspy-test-provider/dspy-test-model"
+  - model_name: "dspy-test-model-2"
+    litellm_params:
+      model: "dspy-test-provider/dspy-test-model"
+
+litellm_settings:
+  num_retries: 0
+  custom_provider_map:
+    - {
+        "provider": "dspy-test-provider",
+        "custom_handler": litellm_server.dspy_test_model,
+      }

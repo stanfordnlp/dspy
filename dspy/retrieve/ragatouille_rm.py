@@ -1,7 +1,7 @@
 from typing import Optional, Union
 
 import dspy
-from dsp.utils.utils import dotdict
+from dspy.dsp.utils.utils import dotdict
 
 try:
     from ragatouille import RAGPretrainedModel

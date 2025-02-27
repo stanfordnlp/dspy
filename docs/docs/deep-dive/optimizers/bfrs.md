@@ -4,6 +4,9 @@ sidebar_position: 3
 
 # BootstrapFewShotWithRandomSearch
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+
+
 `BootstrapFewShotWithRandomSearch` is an teleprompter that extends `BootstrapFewShot` by incorporating a random search strategy to optimize the selection of few-shot examples. This teleprompter is useful when you want to explore a variety of example combinations to find the best examples for your model.
 
 ## Usage
@@ -23,7 +26,7 @@ In terms of API `BootstrapFewShotWithRandomSearch` teleprompter is quite similar
 
 ## Working Example
 
-Let's take the example of optimizing a simple CoT pipeline for GSM8k dataset, we'll take the example in [BootstrapFewShot](/docs/deep-dive/optimizers/bootstrap-fewshot.mdx) as our running example for optimizers. We're gonna assume our data and pipeline is same as the on in `BootstrapFewShot` article. So let's start by intializing the optimizer:
+Let's take the example of optimizing a simple CoT pipeline for GSM8k dataset, we'll take the example in [BootstrapFewShot](/deep-dive/optimizers/bootstrap-fewshot) as our running example for optimizers. We're gonna assume our data and pipeline is same as the on in `BootstrapFewShot` article. So let's start by initializing the optimizer:
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch

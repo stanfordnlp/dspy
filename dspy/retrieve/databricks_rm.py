@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import Any, Dict, List, Optional, Union
 
@@ -9,6 +10,20 @@ import dspy
 from dspy.primitives.prediction import Prediction
 
 _databricks_sdk_installed = find_spec("databricks.sdk") is not None
+
+
+@dataclass
+class Document:
+    page_content: str
+    metadata: Dict[str, Any]
+    type: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "page_content": self.page_content,
+            "metadata": self.metadata,
+            "type": self.type,
+        }
 
 
 class DatabricksRM(dspy.Retrieve):
@@ -75,7 +90,9 @@ class DatabricksRM(dspy.Retrieve):
         filters_json: Optional[str] = None,
         k: int = 3,
         docs_id_column_name: str = "id",
+        docs_uri_column_name: Optional[str] = None,
         text_column_name: str = "text",
+        use_with_databricks_agent_framework: bool = False,
     ):
         """
         Args:
@@ -98,8 +115,12 @@ class DatabricksRM(dspy.Retrieve):
             k (int): The number of documents to retrieve.
             docs_id_column_name (str): The name of the column in the Databricks Vector Search Index
                 containing document IDs.
+            docs_uri_column_name (Optional[str]): The name of the column in the Databricks Vector Search Index
+                containing document URI.
             text_column_name (str): The name of the column in the Databricks Vector Search Index
                 containing document text to retrieve.
+            use_with_databricks_agent_framework (bool): Whether to use the `DatabricksRM` in a way that is
+                compatible with the Databricks Mosaic Agent Framework.
         """
         super().__init__(k=k)
         self.databricks_token = databricks_token if databricks_token is not None else os.environ.get("DATABRICKS_TOKEN")
@@ -118,7 +139,23 @@ class DatabricksRM(dspy.Retrieve):
         self.filters_json = filters_json
         self.k = k
         self.docs_id_column_name = docs_id_column_name
+        self.docs_uri_column_name = docs_uri_column_name
         self.text_column_name = text_column_name
+        self.use_with_databricks_agent_framework = use_with_databricks_agent_framework
+        if self.use_with_databricks_agent_framework:
+            try:
+                import mlflow
+
+                mlflow.models.set_retriever_schema(
+                    primary_key="doc_id",
+                    text_column="page_content",
+                    doc_uri="doc_uri",
+                )
+            except ImportError:
+                raise ValueError(
+                    "To use the `DatabricksRM` retriever module with the Databricks Mosaic Agent Framework, "
+                    "you must install the mlflow Python library. Please install mlflow via `pip install mlflow`."
+                )
 
     def _extract_doc_ids(self, item: Dict[str, Any]) -> str:
         """Extracts the document id from a search result
@@ -139,9 +176,13 @@ class DatabricksRM(dspy.Retrieve):
         Args:
             item: Dict[str, Any]: a record from the search results.
         Returns:
-            Dict[str, Any]: Search result column values, excluding the "text" and not "id" columns.
+            Dict[str, Any]: Search result column values, excluding the "text", "id" and "uri" columns.
         """
-        extra_columns = {k: v for k, v in item.items() if k not in [self.docs_id_column_name, self.text_column_name]}
+        extra_columns = {
+            k: v
+            for k, v in item.items()
+            if k not in [self.docs_id_column_name, self.text_column_name, self.docs_uri_column_name]
+        }
         if self.docs_id_column_name == "metadata":
             extra_columns = {
                 **extra_columns,
@@ -154,7 +195,7 @@ class DatabricksRM(dspy.Retrieve):
         query: Union[str, List[float]],
         query_type: str = "ANN",
         filters_json: Optional[str] = None,
-    ) -> dspy.Prediction:
+    ) -> Union[dspy.Prediction, List[Dict[str, Any]]]:
         """
         Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
         specified query.
@@ -172,7 +213,9 @@ class DatabricksRM(dspy.Retrieve):
                 parameter overrides the `filters_json` parameter passed to the constructor.
 
         Returns:
-            dspy.Prediction: An object containing the retrieved results.
+            A list of dictionaries when ``use_with_databricks_agent_framework`` is ``True``,
+            or a ``dspy.Prediction`` object when ``use_with_databricks_agent_framework`` is
+            ``False``.
         """
         if query_type in ["vector", "text"]:
             # Older versions of DSPy used a `query_type` argument to disambiguate between text
@@ -230,21 +273,37 @@ class DatabricksRM(dspy.Retrieve):
 
         # Extracting the results
         items = []
-        for _, data_row in enumerate(results["result"]["data_array"]):
-            item = {}
-            for col_name, val in zip(col_names, data_row):
-                item[col_name] = val
-            items += [item]
+        if "data_array" in results["result"]:
+            for _, data_row in enumerate(results["result"]["data_array"]):
+                item = {}
+                for col_name, val in zip(col_names, data_row):
+                    item[col_name] = val
+                items += [item]
 
         # Sorting results by score in descending order
         sorted_docs = sorted(items, key=lambda x: x["score"], reverse=True)[: self.k]
 
-        # Returning the prediction
-        return Prediction(
-            docs=[doc[self.text_column_name] for doc in sorted_docs],
-            doc_ids=[self._extract_doc_ids(doc) for doc in sorted_docs],
-            extra_columns=[self._get_extra_columns(item) for item in sorted_docs],
-        )
+        if self.use_with_databricks_agent_framework:
+            return [
+                Document(
+                    page_content=doc[self.text_column_name],
+                    metadata={
+                        "doc_id": self._extract_doc_ids(doc),
+                        "doc_uri": doc[self.docs_uri_column_name] if self.docs_uri_column_name else None,
+                    }
+                    | self._get_extra_columns(doc),
+                    type="Document",
+                ).to_dict()
+                for doc in sorted_docs
+            ]
+        else:
+            # Returning the prediction
+            return Prediction(
+                docs=[doc[self.text_column_name] for doc in sorted_docs],
+                doc_ids=[self._extract_doc_ids(doc) for doc in sorted_docs],
+                doc_uris=[doc[self.docs_uri_column_name] for doc in sorted_docs] if self.docs_uri_column_name else None,
+                extra_columns=[self._get_extra_columns(item) for item in sorted_docs],
+            )
 
     @staticmethod
     def _query_via_databricks_sdk(
