@@ -1,8 +1,8 @@
-import dspy
+from dspy.signatures import InputField, OutputField
 from dspy.signatures.signature import ensure_signature
 
 from dspy.primitives.program import Module
-from dspy.predict import Predict
+from dspy.predict.predict import Predict
 
 
 class MultiChainComparison(Module):
@@ -17,14 +17,14 @@ class MultiChainComparison(Module):
         for idx in range(M):
             signature = signature.append(
                 f"reasoning_attempt_{idx+1}",
-                dspy.InputField(
+                InputField(
                     prefix=f"Student Attempt #{idx+1}:", desc="${reasoning attempt}",
                 ),
             )
 
         signature = signature.prepend(
             "rationale",
-            dspy.OutputField(
+            OutputField(
                 prefix="Accurate Reasoning: Thank you everyone. Let's now holistically",
                 desc="${corrected reasoning}",
             ),
