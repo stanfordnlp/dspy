@@ -20,3 +20,4 @@ requests
 tenacity>=8.2.3
 tqdm
 ujson
+git+https://github.com/rimon15/evil_twins

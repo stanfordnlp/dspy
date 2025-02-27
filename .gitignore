@@ -64,3 +64,4 @@ docs/docs/**/*.json*
 *.pkl
 *.tar.gz
 dspy_env/
+play.ipynb
