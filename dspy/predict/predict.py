@@ -73,7 +73,6 @@ class Predict(Module, Parameter):
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
-        conversation_history = kwargs.pop("conversation_history", None)
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
@@ -91,7 +90,12 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+
+            from dspy.adapters.types import History
+
+            if not all(signature.input_fields[k].annotation == History for k in missing):
+                # We allow missing history fields.
+                print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
 
@@ -101,7 +105,6 @@ class Predict(Module, Parameter):
             lm_kwargs=config,
             signature=signature,
             demos=demos,
-            conversation_history=conversation_history,
             inputs=kwargs,
         )
 

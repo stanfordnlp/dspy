@@ -14,6 +14,7 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.image_utils import Image
+from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
@@ -30,8 +31,8 @@ class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, conversation_history=None):
-        inputs = self.format(signature, demos, inputs, conversation_history)
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+        inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         try:
@@ -65,7 +66,7 @@ class JSONAdapter(Adapter):
 
         return values
 
-    def format(self, signature, demos, inputs, conversation_history=None):
+    def format(self, signature, demos, inputs):
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -78,20 +79,18 @@ class JSONAdapter(Adapter):
         ]
 
         demos = incomplete_demos + complete_demos
-        conversation_history = conversation_history or []
 
         messages.append({"role": "system", "content": prepare_instructions(signature)})
 
         for demo in demos:
-            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
-            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
+            messages.append(self.format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
+            messages.append(self.format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
         # Add the chat history after few-shot examples
-        for message in conversation_history:
-            messages.append(format_turn(signature, message, role="user"))
-            messages.append(format_turn(signature, message, role="assistant"))
-
-        messages.append(format_turn(signature, inputs, role="user"))
+        if any(field.annotation == History for field in signature.input_fields.values()):
+            messages.extend(self.format_conversation_history(signature, inputs))
+        else:
+            messages.append(self.format_turn(signature, inputs, role="user"))
 
         return messages
 
@@ -109,8 +108,8 @@ class JSONAdapter(Adapter):
 
         return fields
 
-    def format_turn(self, signature, values, role, incomplete=False):
-        return format_turn(signature, values, role, incomplete)
+    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
+        return format_turn(signature, values, role, incomplete, is_conversation_history)
 
     def format_fields(self, signature, values, role):
         fields_with_values = {
@@ -212,10 +211,12 @@ def format_turn(
     fields_with_values = {}
     for field_name, field_info in fields.items():
         if is_conversation_history:
-            fields_with_values[FieldInfoWithName(name=field_name, info=field_info)] = values.get(field_name, None)
+            fields_with_values[FieldInfoWithName(name=field_name, info=field_info)] = values.get(
+                field_name, "Not supplied for this conversation history message. "
+            )
         else:
             fields_with_values[FieldInfoWithName(name=field_name, info=field_info)] = values.get(
-                field_name, "Not supplied for this particular example."
+                field_name, "Not supplied for this particular example. "
             )
 
     formatted_fields = format_fields(role=role, fields_with_values=fields_with_values)

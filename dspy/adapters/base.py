@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from litellm import ContextWindowExceededError
 
+from dspy.adapters.types import History
 from dspy.utils.callback import with_callbacks
 
 
@@ -16,8 +17,8 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, conversation_history=None):
-        inputs_ = self.format(signature, demos, inputs, conversation_history)
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+        inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
         outputs = lm(**inputs_, **lm_kwargs)
@@ -46,6 +47,7 @@ class Adapter(ABC):
             return values
 
         except Exception as e:
+            raise e
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
@@ -65,3 +67,39 @@ class Adapter(ABC):
 
     def format_finetune_data(self, signature, demos, inputs, outputs):
         raise NotImplementedError
+
+    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
+        pass
+
+    def format_conversation_history(self, signature, inputs):
+        history_field_name = None
+        for name, field in signature.input_fields.items():
+            if field.annotation == History:
+                history_field_name = name
+                break
+
+        if history_field_name is None:
+            return []
+
+        signature_without_history = signature.delete(history_field_name)
+        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+
+        if conversation_history is None:
+            return []
+
+        messages = []
+        for message in conversation_history:
+            messages.append(
+                self.format_turn(signature_without_history, message, role="user", is_conversation_history=True)
+            )
+            messages.append(
+                self.format_turn(signature_without_history, message, role="assistant", is_conversation_history=True)
+            )
+
+        # We cannot manipulate the inputs dictionary in place, because if ChatAdapter fails then we
+        # fall back to JSONAdapter, which expects the inputs to be unchanged.
+        inputs_copy = dict(inputs)
+        del inputs_copy[history_field_name]
+
+        messages.append(self.format_turn(signature_without_history, inputs_copy, role="user"))
+        return messages

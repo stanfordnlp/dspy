@@ -12,6 +12,7 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.image_utils import try_expand_image_tags
+from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
@@ -30,13 +31,7 @@ BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=Outpu
 
 
 class ChatAdapter(Adapter):
-    def format(
-        self,
-        signature: Signature,
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-        conversation_history: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+    def format(self, signature: Signature, demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -52,21 +47,20 @@ class ChatAdapter(Adapter):
         ]
 
         demos = incomplete_demos + complete_demos
-        conversation_history = conversation_history or []
-
         prepared_instructions = prepare_instructions(signature)
         messages.append({"role": "system", "content": prepared_instructions})
 
         # Add the few-shot examples
         for demo in demos:
-            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
-            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
-        # Add the chat history after few-shot examples
-        for message in conversation_history:
-            messages.append(format_turn(signature, message, role="user"))
-            messages.append(format_turn(signature, message, role="assistant"))
+            messages.append(self.format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
+            messages.append(self.format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
-        messages.append(format_turn(signature, inputs, role="user"))
+        # Add the chat history after few-shot examples
+        if any(field.annotation == History for field in signature.input_fields.values()):
+            messages.extend(self.format_conversation_history(signature, inputs))
+        else:
+            messages.append(self.format_turn(signature, inputs, role="user"))
+
         messages = try_expand_image_tags(messages)
         return messages
 
@@ -105,7 +99,7 @@ class ChatAdapter(Adapter):
         # Add the assistant message
         role = "assistant"
         incomplete = False
-        assistant_message = format_turn(signature, outputs, role, incomplete)
+        assistant_message = self.format_turn(signature, outputs, role, incomplete)
         messages.append(assistant_message)
 
         # Wrap the messages in a dictionary with a "messages" key
@@ -120,6 +114,9 @@ class ChatAdapter(Adapter):
             if field_name in values
         }
         return format_fields(fields_with_values)
+
+    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
+        return format_turn(signature, values, role, incomplete, is_conversation_history)
 
 
 def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
@@ -177,7 +174,7 @@ def format_turn(signature, values, role, incomplete=False, is_conversation_histo
             fields.update({BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info})
             values.update({BuiltInCompletedOutputFieldInfo.name: ""})
 
-    if not incomplete and not set(values).issuperset(fields.keys()):
+    if not incomplete and not is_conversation_history and not set(values).issuperset(fields.keys()):
         raise ValueError(f"Expected {fields.keys()} but got {values.keys()}")
 
     messages = []
@@ -186,7 +183,12 @@ def format_turn(signature, values, role, incomplete=False, is_conversation_histo
 
     field_messages = format_fields(
         {
-            FieldInfoWithName(name=k, info=v): values.get(k, "Not supplied for this particular example.")
+            FieldInfoWithName(name=k, info=v): values.get(
+                k,
+                "Not supplied for this conversation history message. "
+                if is_conversation_history
+                else "Not supplied for this particular example. ",
+            )
             for k, v in fields.items()
         },
     )
