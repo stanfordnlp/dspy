@@ -51,10 +51,12 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["dspy*"]
+where = ["."]
+include = ["dspy", "dspy.*"]
+exclude = ["tests", "tests.*"]
 
-[tool.setuptools]
-include-package-data = true
+[tool.setuptools.package-data]
+dspy = ["primitives/*.js"]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
