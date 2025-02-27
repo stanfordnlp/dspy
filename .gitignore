@@ -63,3 +63,4 @@ docs/docs/**/*.json*
 *.index
 *.pkl
 *.tar.gz
+dspy_env/
