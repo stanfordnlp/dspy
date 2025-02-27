@@ -125,14 +125,23 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: Lis
         field_name_to_named_predictor[listener.signature_field_name] = None
 
     for name, predictor in predictors:
-        for field in predictor.signature.fields:
-            if field in field_name_to_named_predictor:
-                if field_name_to_named_predictor[field] is not None:
-                    raise ValueError(
-                        f"Signature field {field} is not unique in the program, cannot automatically determine which "
-                        "predictor to use for streaming. Please specify the predictor to listen to."
-                    )
-                field_name_to_named_predictor[field] = (name, predictor)
+        for field_name, field_info in predictor.signature.output_fields.items():
+            if field_name not in field_name_to_named_predictor:
+                continue
+
+            if field_name_to_named_predictor[field_name] is not None:
+                raise ValueError(
+                    f"Signature field {field_name} is not unique in the program, cannot automatically determine which "
+                    "predictor to use for streaming. Please specify the predictor to listen to."
+                )
+
+            if field_info.annotation != str:
+                raise ValueError(
+                    f"Stream listener can only be applied to string output field, but your field {field_name} is of "
+                    f"type {field_info.annotation}."
+                )
+
+            field_name_to_named_predictor[field_name] = (name, predictor)
 
     predict_id_to_listener = defaultdict(list)
     for listener in stream_listeners:

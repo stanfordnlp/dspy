@@ -37,10 +37,8 @@ class JSONAdapter(Adapter):
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         stream_listeners = settings.stream_listeners or []
-        if len(stream_listeners) == 0:
-            stream = True
-        else:
-            stream = any(stream_listener.predict == predict for stream_listener in stream_listeners)
+        if len(stream_listeners) > 0:
+            raise ValueError("Stream listener is not supported for JsonAdapter, please use ChatAdapter instead.")
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
@@ -48,11 +46,7 @@ class JSONAdapter(Adapter):
             if params and "response_format" in params:
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
-                    if stream:
-                        with settings.context(stream_predict=predict):
-                            outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
-                    else:
-                        outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
+                    outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
                 except Exception:
                     logger.debug(
                         "Failed to obtain response using signature-based structured outputs"
@@ -107,9 +101,6 @@ class JSONAdapter(Adapter):
 
     def parse(self, signature, completion):
         fields = json_repair.loads(completion)
-        import pdb
-
-        pdb.set_trace()
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
         # attempt to cast each value to type signature.output_fields[k].annotation

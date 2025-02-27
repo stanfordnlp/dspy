@@ -23,16 +23,16 @@ class Adapter(ABC):
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
         stream_listeners = settings.stream_listeners or []
-        if len(stream_listeners) == 0:
-            stream = True
-        else:
+        stream = settings.send_stream is not None
+        if stream and len(stream_listeners) > 0:
             stream = any(stream_listener.predict == predict for stream_listener in stream_listeners)
 
         if stream:
             with settings.context(stream_predict=predict):
                 outputs = lm(**inputs_, **lm_kwargs)
         else:
-            outputs = lm(**inputs_, **lm_kwargs)
+            with settings.context(send_stream=None):
+                outputs = lm(**inputs_, **lm_kwargs)
 
         values = []
 
