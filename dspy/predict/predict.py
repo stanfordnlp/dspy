@@ -7,6 +7,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
+from dspy.clients.lm import LM
 
 
 class Predict(Module, Parameter):
@@ -24,7 +25,7 @@ class Predict(Module, Parameter):
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train"]
+        state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
         state["demos"] = []
@@ -38,6 +39,7 @@ class Predict(Module, Parameter):
             state["demos"].append(demo)
 
         state["signature"] = self.signature.dump_state()
+        state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
     def load_state(self, state):
@@ -49,13 +51,14 @@ class Predict(Module, Parameter):
         Returns:
             self: Returns self to allow method chaining
         """
-        excluded_keys = ["signature", "extended_signature"]
+        excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
                     
         self.signature = self.signature.load_state(state["signature"])
+        self.lm = LM(**state["lm"]) if state["lm"] else None
 
         if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")

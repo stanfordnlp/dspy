@@ -246,6 +246,10 @@ class LM(BaseLM):
                 new_instance.kwargs[key] = value
 
         return new_instance
+    
+    def dump_state(self):
+        # TODO: callbacks cannot be saved. We should consider how to save callbacks.
+        return { k: v for k, v in self.__dict__.items() if k not in ["provider", "callbacks", "kwargs"] }
 
 
 def request_cache(maxsize: Optional[int] = None):

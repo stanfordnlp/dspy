@@ -211,6 +211,28 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
     new_instance.load(file_path)
     assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
 
+@pytest.mark.parametrize("filename", ["model.json", "model.pkl"])
+def test_lm_field_after_dump_and_load_state(tmp_path, filename):
+    file_path = tmp_path / filename
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini", 
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+    )
+    original_predict = dspy.Predict("q->a")
+    original_predict.lm = lm
+
+    original_predict.save(file_path)
+
+    assert file_path.exists()
+
+    loaded_predict = dspy.Predict("q->a")
+    loaded_predict.load(file_path)
+
+    assert original_predict.dump_state() == loaded_predict.dump_state()
+
 
 def test_forward_method():
     program = Predict("question -> answer")
