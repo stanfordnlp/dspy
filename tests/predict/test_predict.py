@@ -34,11 +34,18 @@ def test_reset_method():
 
 def test_lm_after_dump_and_load_state():
     predict_instance = Predict("input -> output")
-    predict_instance.lm = "lm_state"
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini", 
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+    )
+    predict_instance.lm = lm
     dumped_state = predict_instance.dump_state()
     new_instance = Predict("input -> output")
     new_instance.load_state(dumped_state)
-    assert new_instance.lm == "lm_state"
+    assert new_instance.lm.dump_state() == lm.dump_state()
 
 
 def test_call_method():
