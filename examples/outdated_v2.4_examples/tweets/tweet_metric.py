@@ -42,9 +42,13 @@ def metric(gold, pred, trace=None):
     score = (correct + engaging + faithful) if correct and (len(tweet) <= 280) else 0
 
     if METRIC is not None:
-        if METRIC == 'correct': return correct
-        if METRIC == 'engaging': return engaging
-        if METRIC == 'faithful': return faithful
+        if METRIC == 'correct':
+            return correct
+        if METRIC == 'engaging':
+            return engaging
+        if METRIC == 'faithful':
+            return faithful
 
-    if trace is not None: return score >= 3
+    if trace is not None:
+        return score >= 3
     return score / 3.0
