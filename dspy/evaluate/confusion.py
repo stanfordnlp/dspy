@@ -1,6 +1,12 @@
+import contextlib
 import inspect
 import random
+import signal
+import sys
+import threading
+import traceback
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import findall
 
 import numpy as np
@@ -8,6 +14,7 @@ import numpy as np
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
 from dspy.teleprompt.teleprompt import Teleprompter
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 
 def most_votes(votes, tiebreaker=None):
