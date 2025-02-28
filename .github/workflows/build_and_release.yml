@@ -56,7 +56,7 @@ jobs:
           source test_env/bin/activate
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest
-          python -m "import dspy; print(dspy.__version__)"
+          python -c "import dspy; print(dspy.__version__)"
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
