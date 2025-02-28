@@ -108,6 +108,7 @@ nav:
             - MIPROv2: api/optimizers/MIPROv2.md
         - Primitives:
             - Example: api/primitives/Example.md
+            - History: api/primitives/History.md
             - Image: api/primitives/Image.md
             - Prediction: api/primitives/Prediction.md
             - Tool: api/primitives/Tool.md

@@ -5,6 +5,7 @@
     options:
         members:
             - append
+            - delete
             - dump_state
             - equals
             - insert
