@@ -1,19 +1,8 @@
-# dspy.LM
+# dspy.History
 
-::: dspy.LM
+::: dspy.History
     handler: python
     options:
-        members:
-            - __call__
-            - copy
-            - dump_state
-            - finetune
-            - infer_adapter
-            - infer_provider
-            - inspect_history
-            - kill
-            - launch
-            - update_global_history
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
