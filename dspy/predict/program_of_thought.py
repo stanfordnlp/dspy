@@ -8,6 +8,10 @@ from dspy.primitives.python_interpreter import PythonInterpreter
 
 
 class ProgramOfThought(Module):
+    """
+    A DSPy module that runs Python programs to answer a question.
+    This module reuires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
+    """
     def __init__(self, signature, max_iters=3):
         super().__init__()
         self.signature = signature = ensure_signature(signature)

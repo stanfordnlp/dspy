@@ -5,7 +5,7 @@ import dspy
 from dspy import ProgramOfThought, Signature
 from dspy.utils import DummyLM
 
-
+# This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 class BasicQA(Signature):
     question = dspy.InputField()
     answer = dspy.OutputField(desc="often between 1 and 5 words")
