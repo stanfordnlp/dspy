@@ -6,9 +6,7 @@ from dspy.primitives import Example
 
 
 class KNN:
-
-    def __init__(self, k: int, trainset: list[Example],
-                 vectorizer: Callable[[list[str]], np.ndarray]):
+    def __init__(self, k: int, trainset: list[Example], vectorizer: Callable[[list[str]], np.ndarray]):
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
 

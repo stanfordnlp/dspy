@@ -11,13 +11,12 @@ from .teleprompt import Teleprompter
 
 
 class KNNFewShot(Teleprompter):
-
-    def __init__(self, k: int, trainset: list[Example],
-                 vectorizer: Callable[[list[str]],
-                                      np.ndarray], **few_shot_bootstrap_args):
+    def __init__(
+        self, k: int, trainset: list[Example], vectorizer: Callable[[list[str]], np.ndarray], **few_shot_bootstrap_args
+    ):
         """
-        KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors 
-        in a trainset at test time. For each input example in a forward call, it identifies the k most 
+        KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors
+        in a trainset at test time. For each input example in a forward call, it identifies the k most
         similar examples from the trainset and attaches them as demonstrations to the student module.
 
         Args:

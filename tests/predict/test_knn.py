@@ -8,8 +8,7 @@ from dspy.utils import DummyVectorizer
 
 def mock_example(question: str, answer: str) -> dspy.Example:
     """Creates a mock DSP example with specified question and answer."""
-    return dspy.Example(question=question,
-                        answer=answer).with_inputs("question")
+    return dspy.Example(question=question, answer=answer).with_inputs("question")
 
 
 @pytest.fixture
@@ -29,8 +28,7 @@ def test_knn_initialization(setup_knn):
     knn = setup_knn
     assert knn.k == 2, "Incorrect k value"
     assert len(knn.trainset_vectors) == 3, "Incorrect size of trainset vectors"
-    assert isinstance(knn.trainset_vectors,
-                      np.ndarray), "Trainset vectors should be a NumPy array"
+    assert isinstance(knn.trainset_vectors, np.ndarray), "Trainset vectors should be a NumPy array"
 
 
 def test_knn_query(setup_knn):
@@ -38,20 +36,14 @@ def test_knn_query(setup_knn):
     knn = setup_knn
     query = {"question": "What is 3+3?"}  # A query close to "What is 2+2?"
     nearest_samples = knn(**query)
-    assert len(
-        nearest_samples) == 2, "Incorrect number of nearest samples returned"
-    assert nearest_samples[
-        0].answer == "4", "Incorrect nearest sample returned"
+    assert len(nearest_samples) == 2, "Incorrect number of nearest samples returned"
+    assert nearest_samples[0].answer == "4", "Incorrect nearest sample returned"
 
 
 def test_knn_query_specificity(setup_knn):
     """Tests the KNN query functionality for specificity of returned examples."""
     knn = setup_knn
-    query = {
-        "question": "What is the capital of Germany?"
-    }  # A query close to "What is the capital of France?"
+    query = {"question": "What is the capital of Germany?"}  # A query close to "What is the capital of France?"
     nearest_samples = knn(**query)
-    assert len(
-        nearest_samples) == 2, "Incorrect number of nearest samples returned"
-    assert "Paris" in [sample.answer for sample in nearest_samples
-                       ], "Expected Paris to be a nearest sample answer"
+    assert len(nearest_samples) == 2, "Incorrect number of nearest samples returned"
+    assert "Paris" in [sample.answer for sample in nearest_samples], "Expected Paris to be a nearest sample answer"
