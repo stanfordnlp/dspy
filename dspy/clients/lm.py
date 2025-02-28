@@ -246,6 +246,10 @@ class LM(BaseLM):
                 new_instance.kwargs[key] = value
 
         return new_instance
+    
+    def dump_state(self):
+        state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
+        return { key: getattr(self, key) for key in state_keys } | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):

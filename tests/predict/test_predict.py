@@ -35,11 +35,31 @@ def test_reset_method():
 
 def test_lm_after_dump_and_load_state():
     predict_instance = Predict("input -> output")
-    predict_instance.lm = "lm_state"
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini", 
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+    )
+    predict_instance.lm = lm
+    expected_lm_state = {
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "temperature": 1,
+        "max_tokens": 100,
+        "num_retries": 10,
+        "cache": True,
+        "cache_in_memory": True,
+        "finetuning_model": None,
+        "launch_kwargs": {},
+        "train_kwargs": {},
+    }
+    assert lm.dump_state() == expected_lm_state
     dumped_state = predict_instance.dump_state()
     new_instance = Predict("input -> output")
     new_instance.load_state(dumped_state)
-    assert new_instance.lm == "lm_state"
+    assert new_instance.lm.dump_state() == expected_lm_state
 
 
 def test_call_method():
@@ -208,6 +228,28 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
     # After loading, the fields should be the same.
     new_instance.load(file_path)
     assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
+
+@pytest.mark.parametrize("filename", ["model.json", "model.pkl"])
+def test_lm_field_after_dump_and_load_state(tmp_path, filename):
+    file_path = tmp_path / filename
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini", 
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+    )
+    original_predict = dspy.Predict("q->a")
+    original_predict.lm = lm
+
+    original_predict.save(file_path)
+
+    assert file_path.exists()
+
+    loaded_predict = dspy.Predict("q->a")
+    loaded_predict.load(file_path)
+
+    assert original_predict.dump_state() == loaded_predict.dump_state()
 
 
 def test_forward_method():
