@@ -4,6 +4,7 @@ from typing import Callable
 import numpy as np
 
 from dspy.predict.knn import KNN
+from dspy.primitives import Example
 from dspy.teleprompt import BootstrapFewShot
 
 from .teleprompt import Teleprompter
@@ -11,7 +12,7 @@ from .teleprompt import Teleprompter
 
 class KNNFewShot(Teleprompter):
 
-    def __init__(self, k: int, trainset: list,
+    def __init__(self, k: int, trainset: list[Example],
                  vectorizer: Callable[[list[str]],
                                       np.ndarray], **few_shot_bootstrap_args):
         """
