@@ -17,7 +17,7 @@ class KNNFewShot(Teleprompter):
         """
         KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors 
         in a trainset at test time. For each input example in a forward call, it identifies the k most 
-        similar examples from the trainset and attaches them as demonstrations to the student model.
+        similar examples from the trainset and attaches them as demonstrations to the student module.
 
         Args:
             k: The number of nearest neighbors to attach to the student model.
