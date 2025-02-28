@@ -18,19 +18,21 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, predict=None):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
         stream_listeners = settings.stream_listeners or []
+        caller_predict = settings.caller_predict
         stream = settings.send_stream is not None
         if stream and len(stream_listeners) > 0:
-            stream = any(stream_listener.predict == predict for stream_listener in stream_listeners)
+            stream = any(stream_listener.predict == caller_predict for stream_listener in stream_listeners)
 
         if stream:
-            with settings.context(stream_predict=predict):
-                outputs = lm(**inputs_, **lm_kwargs)
+            outputs = lm(**inputs_, **lm_kwargs)
         else:
+            # Explicilty disable streaming if streaming is not enabled globally or the caller predict shouldn't be
+            # streamed.
             with settings.context(send_stream=None):
                 outputs = lm(**inputs_, **lm_kwargs)
 

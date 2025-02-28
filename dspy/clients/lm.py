@@ -341,7 +341,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     )
 
     stream = dspy.settings.send_stream
-    stream_predict = dspy.settings.stream_predict
+    caller_predict = dspy.settings.caller_predict
     if stream is None:
         # If `streamify` is not used, or if the exact predict doesn't need to be streamed,
         # we can just return the completion without streaming.
@@ -353,7 +353,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
 
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
-    stream_predict_id = id(stream_predict) if stream_predict else None
+    caller_predict_id = id(caller_predict) if caller_predict else None
 
     @syncify
     async def stream_completion():
@@ -365,9 +365,9 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         )
         chunks = []
         async for chunk in response:
-            if stream_predict_id:
+            if caller_predict_id:
                 # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
-                chunk.predict_id = stream_predict_id
+                chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
         return litellm.stream_chunk_builder(chunks)

@@ -20,7 +20,7 @@ DEFAULT_CONFIG = dotdict(
     async_max_workers=8,
     send_stream=None,
     disable_history=False,
-    stream_predict=None,
+    caller_predict=None,
     stream_listeners=[],
 )
 

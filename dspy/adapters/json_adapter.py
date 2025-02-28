@@ -32,13 +32,13 @@ class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs, predict=None):
+    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
         stream_listeners = settings.stream_listeners or []
         if len(stream_listeners) > 0:
-            raise ValueError("Stream listener is not supported for JsonAdapter, please use ChatAdapter instead.")
+            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
