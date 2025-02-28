@@ -90,12 +90,7 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-
-            from dspy.adapters.types import History
-
-            if not all(signature.input_fields[k].annotation == History for k in missing):
-                # We allow missing history fields.
-                print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         import dspy
 
