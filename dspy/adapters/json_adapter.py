@@ -13,7 +13,7 @@ from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.image_utils import Image
+from dspy.adapters.types.image import Image
 from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
