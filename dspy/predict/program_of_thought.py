@@ -180,7 +180,7 @@ class ProgramOfThought(Module):
         while error is not None:
             print(f"Error in code execution: {error}")
             if hop == self.max_iters:
-                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought. Error message: {error}")
+                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
             code, error = self._parse_code(code_data)
