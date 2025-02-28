@@ -24,7 +24,7 @@ class KNNFewShot(Teleprompter):
             trainset: The training set to use for few-shot prompting.
             vectorizer: A callable vectorizer for computing embeddings.
             **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
-            
+
         Example:
             >>> qa = dspy.ChainOfThought("question -> answer")
             >>> trainset = [dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"), ...]
