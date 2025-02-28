@@ -4,7 +4,10 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Union
 
 from dspy.clients.utils_finetune import TrainDataFormat
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 
 class TrainingJob(Future):
     def __init__(
@@ -44,14 +47,14 @@ class Provider:
         return False
 
     @staticmethod
-    def launch(lm: 'LM', launch_kwargs: Optional[Dict[str, Any]] = None):
+    def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         # Note that "launch" and "kill" methods might be called even if there
         # is a launched LM or no launched LM to kill. These methods should be
         # resillient to such cases.
         pass
 
     @staticmethod
-    def kill(lm: 'LM', launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         # We assume that LM.launch_kwargs dictionary will contain the necessary
         # information for a provider to launch and/or kill an LM. This is the
         # reeason why the argument here is named launch_kwargs and not

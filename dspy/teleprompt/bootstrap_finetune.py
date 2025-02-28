@@ -132,7 +132,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         key_to_job = {}
         for key, finetune_kwargs in finetune_dict.items():
-            lm = finetune_kwargs.pop("lm")
+            lm: LM = finetune_kwargs.pop("lm")
             # TODO: The following line is a hack. We should re-think how to free
             # up resources for fine-tuning. This might mean introducing a new
             # provider method (e.g. prepare_for_finetune) that can be called
