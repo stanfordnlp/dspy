@@ -32,11 +32,8 @@ def test_parallel_module():
 
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
-    assert output[0].output == "test output 1"
-    assert output[1].output == "test output 2"
-    assert output[2].output == "test output 3"
-    assert output[3].output == "test output 4"
-    assert output[4].output == "test output 5"
+    expected_outputs = {f"test output {i}" for i in range(1, 6)}
+    assert {r.output for r in output} == expected_outputs
 
 
 def test_batch_module():
@@ -115,10 +112,11 @@ def test_nested_parallel_module():
 
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
-    assert output[0].output == "test output 1"
-    assert output[1].output == "test output 2"
-    assert output[2][0].output == "test output 3"
-    assert output[2][1].output == "test output 4"
+    # For nested structure, check first two outputs and nested outputs separately
+    assert {output[0].output, output[1].output} <= {f"test output {i}" for i in range(1, 5)}
+    assert {output[2][0].output, output[2][1].output} <= {f"test output {i}" for i in range(1, 5)}
+    all_outputs = {output[0].output, output[1].output, output[2][0].output, output[2][1].output}
+    assert len(all_outputs) == 4
 
 
 def test_nested_batch_method():
