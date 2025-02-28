@@ -1,3 +1,4 @@
+import logging
 import re
 
 import dspy
@@ -6,11 +7,22 @@ from dspy.signatures.signature import ensure_signature
 from dspy.primitives.program import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 
+_logger = logging.getLogger(__name__)
 
 class ProgramOfThought(Module):
     """
-    A DSPy module that runs Python programs to answer a question.
+    A DSPy module that runs Python programs to solve a problem.
     This module reuires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
+
+    Example:
+    ```
+    import dspy
+
+    lm = dspy.LM('openai/gpt-4o-mini')
+    dspy.configure(lm=lm)
+    pot = dspy.ProgramOfThought("question -> answer")
+    pot(question="what is 1+1?", )
+    ```
     """
     def __init__(self, signature, max_iters=3):
         super().__init__()
@@ -178,7 +190,7 @@ class ProgramOfThought(Module):
         hop = 1
         # Retying code generation and execution until no error or reach max_iters
         while error is not None:
-            print(f"Error in code execution: {error}")
+            _logger.error(f"Error in code execution: {error}")
             if hop == self.max_iters:
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
