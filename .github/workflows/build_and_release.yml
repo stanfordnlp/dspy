@@ -35,17 +35,30 @@ jobs:
         id: check_version  
         run: |  
           VERSION=${{ needs.extract-tag.outputs.version }}  
-          PACKAGE_NAME="dspy-ai-test"
+          PACKAGE_NAME="dspy-test-chenmoney"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "::set-output name=version::$NEW_VERSION"  
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml  
+      - name: Update version in __metadata__.py
+        run: sed -i 's/^__version__ = "[^"]*"/__version__ = "${{ needs.extract-tag.outputs.version }}"/' dspy/__metadata__.py      
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-test-chenmoney"/;}' pyproject.toml  
       - name: Build a binary wheel
         run: python3 -m build
+      # Test the locally built wheel
+      - name: Create test environment
+        run: python -m venv test_env
+      - name: Test package installation and functionality
+        run: |
+          source test_env/bin/activate
+          # Install the locally built wheel and testing dependencies
+          pip install dist/*.whl pytest
+          python -m "import dspy; print(dspy.__version__)"
+          deactivate
+      # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with: 
@@ -71,6 +84,8 @@ jobs:
         run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+      - name: Update version in __metadata__.py
+        run: sed -i 's/^__version__ = "[^"]*"/__version__ = "${{ needs.extract-tag.outputs.version }}"/' dspy/__metadata__.py
       # Publish to dspy
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy"/;}' pyproject.toml
