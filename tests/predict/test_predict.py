@@ -42,10 +42,23 @@ def test_lm_after_dump_and_load_state():
         num_retries=10,
     )
     predict_instance.lm = lm
+    expected_lm_state = {
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "temperature": 1,
+        "max_tokens": 100,
+        "num_retries": 10,
+        "cache": True,
+        "cache_in_memory": True,
+        "finetuning_model": None,
+        "launch_kwargs": {},
+        "train_kwargs": {},
+    }
+    assert lm.dump_state() == expected_lm_state
     dumped_state = predict_instance.dump_state()
     new_instance = Predict("input -> output")
     new_instance.load_state(dumped_state)
-    assert new_instance.lm.dump_state() == lm.dump_state()
+    assert new_instance.lm.dump_state() == expected_lm_state
 
 
 def test_call_method():
