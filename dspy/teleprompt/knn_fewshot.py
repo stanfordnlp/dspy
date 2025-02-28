@@ -1,4 +1,8 @@
 import types
+from typing import Callable
+
+import numpy as np
+
 from dspy.predict.knn import KNN
 from dspy.teleprompt import BootstrapFewShot
 
@@ -6,11 +10,32 @@ from .teleprompt import Teleprompter
 
 
 class KNNFewShot(Teleprompter):
-    def __init__(self, k: int, trainset: list, vectorizer=None, **few_shot_bootstrap_args):
+
+    def __init__(self, k: int, trainset: list,
+                 vectorizer: Callable[[list[str]],
+                                      np.ndarray], **few_shot_bootstrap_args):
+        """
+        KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors 
+        in a trainset at test time. For each input example in a forward call, it identifies the k most 
+        similar examples from the trainset and attaches them as demonstrations to the student model.
+
+        Args:
+            k: The number of nearest neighbors to attach to the student model.
+            trainset: The training set to use for few-shot prompting.
+            vectorizer: A callable vectorizer for computing embeddings.
+            **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
+            
+        Example:
+            >>> qa = dspy.ChainOfThought("question -> answer")
+            >>> trainset = [dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"), ...]
+            >>> knn_few_shot = KNNFewShot(k=3, trainset=trainset, vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
+            >>> compiled_qa = knn_few_shot.compile(qa)
+            >>> compiled_qa("What is the capital of Belgium?")
+        """
         self.KNN = KNN(k, trainset, vectorizer=vectorizer)
         self.few_shot_bootstrap_args = few_shot_bootstrap_args
 
-    def compile(self, student, *, teacher=None, trainset=None, valset=None):
+    def compile(self, student, *, teacher=None):
         student_copy = student.reset_copy()
 
         def forward_pass(_, **kwargs):

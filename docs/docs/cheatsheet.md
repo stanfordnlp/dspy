@@ -466,12 +466,14 @@ compiled_program = optimize_signature(
 ### KNNFewShot
 
 ```python
+from sentence_transformers import SentenceTransformer
+from dspy import Embedder
 from dspy.predict import KNN
 from dspy.teleprompt import KNNFewShot
 
-knn_optimizer = KNNFewShot(KNN, k=3, trainset=trainset)
+knn_optimizer = KNNFewShot(KNN, k=3, trainset=trainset, vectorizer=Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
 
-your_dspy_program_compiled = knn_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
+your_dspy_program_compiled = knn_optimizer.compile(student=your_dspy_program)
 ```
 
 ### BootstrapFewShotWithOptuna

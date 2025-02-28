@@ -1,28 +1,28 @@
+from typing import Callable
+
 import numpy as np
 
 
 class KNN:
-    def __init__(self, k: int, trainset: list, vectorizer=None):
+
+    def __init__(self, k: int, trainset: list,
+                 vectorizer: Callable[[list[str]], np.ndarray]):
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
 
         Args:
             k: Number of nearest neighbors to retrieve
             trainset: List of training examples to search through
-            vectorizer: Optional dspy.Embedder for computing embeddings. If None, uses sentence-transformers.
+            vectorizer: A callable vectorizer for computing embeddings.
 
         Example:
             >>> trainset = [dsp.Example(input="hello", output="world"), ...]
-            >>> knn = KNN(k=3, trainset=trainset)
+            >>> knn = KNN(k=3, trainset=trainset, vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
             >>> similar_examples = knn(input="hello")
         """
-        
-        import dspy.dsp as dsp
-        import dspy
-
         self.k = k
         self.trainset = trainset
-        self.embedding = vectorizer or dspy.Embedder(dsp.SentenceTransformersVectorizer())
+        self.embedding = vectorizer
         trainset_casted_to_vectorize = [
             " | ".join([f"{key}: {value}" for key, value in example.items() if key in example._input_keys])
             for example in self.trainset
