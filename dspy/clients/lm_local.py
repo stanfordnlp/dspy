@@ -231,7 +231,6 @@ def train_sft_locally(model_name, train_data, train_kwargs):
 
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):
-        nonlocal tokenizer
         return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
     tokenized_dataset.set_format(type="torch")
