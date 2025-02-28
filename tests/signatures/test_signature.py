@@ -151,6 +151,17 @@ def test_insert_field_at_various_positions():
     assert "new_output_end" == list(S4.output_fields.keys())[-1]
 
 
+def test_order_preserved_with_mixed_annotations():
+    class ExampleSignature(dspy.Signature):
+        text: str = dspy.InputField()
+        output = dspy.OutputField()
+        pass_evaluation: bool = dspy.OutputField()
+
+    expected_order = ["text", "output", "pass_evaluation"]
+    actual_order = list(ExampleSignature.fields.keys())
+    assert actual_order == expected_order
+
+
 def test_infer_prefix():
     assert infer_prefix("someAttributeName42IsCool") == "Some Attribute Name 42 Is Cool"
     assert infer_prefix("version2Update") == "Version 2 Update"
