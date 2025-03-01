@@ -476,8 +476,7 @@ from dspy import ChainOfThought
 
 knn_optimizer = KNNFewShot(k=3, trainset=trainset, vectorizer=Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
 
-qa_compiled = knn_optimizer.compile(
-    student=ChainOfThought("question -> answer"))
+qa_compiled = knn_optimizer.compile(student=ChainOfThought("question -> answer"))
 ```
 
 ### BootstrapFewShotWithOptuna
