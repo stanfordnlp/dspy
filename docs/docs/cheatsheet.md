@@ -2,7 +2,6 @@
 sidebar_position: 999
 ---
 
-
 # DSPy Cheatsheet
 
 This page will contain snippets for frequent usage patterns.
@@ -216,7 +215,7 @@ def parse_integer_answer(answer, only_first_line=True):
     except (ValueError, IndexError):
         # print(answer)
         answer = 0
-    
+
     return answer
 
 # Metric Function
@@ -254,7 +253,8 @@ evaluate_program(your_dspy_program)
 
 ## DSPy Optimizers
 
-### LabeledFewShot 
+### LabeledFewShot
+
 ```python
 from dspy.teleprompt import LabeledFewShot
 
@@ -262,7 +262,8 @@ labeled_fewshot_optimizer = LabeledFewShot(k=8)
 your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-### BootstrapFewShot 
+### BootstrapFewShot
+
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
@@ -272,6 +273,7 @@ your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_progr
 ```
 
 #### Using another LM for compilation, specifying in teacher_settings
+
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
@@ -306,7 +308,6 @@ loaded_program.load(path=save_path)
 
 Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](deep-dive/optimizers/bootstrap-fewshot.md).
 
-
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
@@ -315,8 +316,8 @@ fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric,
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ```
-Other custom configurations are similar to customizing the `BootstrapFewShot` optimizer. 
 
+Other custom configurations are similar to customizing the `BootstrapFewShot` optimizer.
 
 ### Ensemble
 
@@ -363,7 +364,6 @@ for p in finetune_program.predictors():
 
 Detailed documentation on COPRO can be found [here](deep-dive/optimizers/copro.md).
 
-
 ```python
 from dspy.teleprompt import COPRO
 
@@ -375,7 +375,6 @@ compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_prog
 ```
 
 ### MIPRO
-
 
 ```python
 from dspy.teleprompt import MIPRO
@@ -392,7 +391,9 @@ compiled_program_optimized_bayesian_signature = teleprompter.compile(your_dspy_p
 Note: detailed documentation can be found [here](deep-dive/optimizers/miprov2.md). `MIPROv2` is the latest extension of `MIPRO` which includes updates such as (1) improvements to instruction proposal and (2) more efficient search with minibatching.
 
 #### Optimizing with MIPROv2
+
 This shows how to perform an easy out-of-the box run with `auto=light`, which configures many hyperparameters for you and performs a light optimization run. You can alternatively set `auto=medium` or `auto=heavy` to perform longer optimization runs. The more detailed `MIPROv2` documentation [here](deep-dive/optimizers/miprov2.md) also provides more information about how to set hyperparameters by hand.
+
 ```python
 # Import the optimizer
 from dspy.teleprompt import MIPROv2
@@ -422,6 +423,7 @@ evaluate(optimized_program, devset=devset[:])
 ```
 
 #### Optimizing instructions only with MIPROv2 (0-Shot)
+
 ```python
 # Import the optimizer
 from dspy.teleprompt import MIPROv2
@@ -449,6 +451,7 @@ optimized_program.save(f"mipro_optimized")
 print(f"Evaluate optimized program...")
 evaluate(optimized_program, devset=devset[:])
 ```
+
 ### Signature Optimizer with Types
 
 ```python
@@ -466,12 +469,14 @@ compiled_program = optimize_signature(
 ### KNNFewShot
 
 ```python
-from dspy.predict import KNN
+from sentence_transformers import SentenceTransformer
+from dspy import Embedder
 from dspy.teleprompt import KNNFewShot
+from dspy import ChainOfThought
 
-knn_optimizer = KNNFewShot(KNN, k=3, trainset=trainset)
+knn_optimizer = KNNFewShot(k=3, trainset=trainset, vectorizer=Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
 
-your_dspy_program_compiled = knn_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
+qa_compiled = knn_optimizer.compile(student=ChainOfThought("question -> answer"))
 ```
 
 ### BootstrapFewShotWithOptuna
@@ -483,21 +488,22 @@ fewshot_optuna_optimizer = BootstrapFewShotWithOptuna(metric=your_defined_metric
 
 your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
 ```
-Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer. 
 
+Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
 ## DSPy Assertions
 
 ### Including `dspy.Assert` and `dspy.Suggest` statements
+
 ```python
 dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 
 dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
 ```
 
-### Activating DSPy Program with Assertions 
+### Activating DSPy Program with Assertions
 
-**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above.
 
 ```python
 #1. Using `assert_transform_module:
