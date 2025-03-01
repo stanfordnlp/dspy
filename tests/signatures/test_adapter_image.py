@@ -8,7 +8,7 @@ from io import BytesIO
 import dspy
 from dspy import Predict
 from dspy.utils.dummies import DummyLM
-from dspy.adapters.image_utils import encode_image
+from dspy.adapters.types.image import encode_image
 import tempfile
 import pydantic
 

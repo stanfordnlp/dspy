@@ -11,7 +11,7 @@ import pydantic
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.image_utils import try_expand_image_tags
+from dspy.adapters.types.image import try_expand_image_tags
 from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
 from dspy.signatures.field import OutputField
