@@ -1,8 +1,6 @@
 import types
-from typing import Callable
 
-import numpy as np
-
+from dspy.clients import Embedder
 from dspy.predict.knn import KNN
 from dspy.primitives import Example
 from dspy.teleprompt import BootstrapFewShot
@@ -11,9 +9,7 @@ from .teleprompt import Teleprompter
 
 
 class KNNFewShot(Teleprompter):
-    def __init__(
-        self, k: int, trainset: list[Example], vectorizer: Callable[[list[str]], np.ndarray], **few_shot_bootstrap_args
-    ):
+    def __init__(self, k: int, trainset: list[Example], vectorizer: Embedder, **few_shot_bootstrap_args):
         """
         KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors
         in a trainset at test time. For each input example in a forward call, it identifies the k most
@@ -22,10 +18,13 @@ class KNNFewShot(Teleprompter):
         Args:
             k: The number of nearest neighbors to attach to the student model.
             trainset: The training set to use for few-shot prompting.
-            vectorizer: A callable vectorizer for computing embeddings.
+            vectorizer: The `Embedder` to use for vectorization
             **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
 
         Example:
+            >>> import dspy
+            >>> from sentence_transformers import SentenceTransformer
+            >>>
             >>> qa = dspy.ChainOfThought("question -> answer")
             >>> trainset = [dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"), ...]
             >>> knn_few_shot = KNNFewShot(k=3, trainset=trainset, vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))

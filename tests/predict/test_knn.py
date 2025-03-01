@@ -12,15 +12,14 @@ def mock_example(question: str, answer: str) -> dspy.Example:
 
 
 @pytest.fixture
-def setup_knn():
+def setup_knn() -> KNN:
     """Sets up a KNN instance with a mocked vectorizer for testing."""
     trainset = [
         mock_example("What is the capital of France?", "Paris"),
         mock_example("What is the largest ocean?", "Pacific"),
         mock_example("What is 2+2?", "4"),
     ]
-    knn = KNN(k=2, trainset=trainset, vectorizer=DummyVectorizer())
-    return knn
+    return KNN(k=2, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
 
 
 def test_knn_initialization(setup_knn):

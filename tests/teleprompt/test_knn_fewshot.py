@@ -11,15 +11,14 @@ def mock_example(question: str, answer: str) -> dspy.Example:
 
 
 @pytest.fixture
-def setup_knn_few_shot():
+def setup_knn_few_shot() -> KNNFewShot:
     """Sets up a KNNFewShot instance for testing."""
     trainset = [
         mock_example("What is the capital of France?", "Paris"),
         mock_example("What is the largest ocean?", "Pacific"),
         mock_example("What is 2+2?", "4"),
     ]
-    knn_few_shot = KNNFewShot(k=2, trainset=trainset, vectorizer=DummyVectorizer())
-    return knn_few_shot
+    return KNNFewShot(k=2, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
 
 
 def test_knn_few_shot_initialization(setup_knn_few_shot):
@@ -61,9 +60,6 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
     assert compiled_student.predictor.demos[0].output == trainset[0].output
     # Simulate a query that is similar to one of the training examples
     output = compiled_student.forward(input="What is the capital of Spain?").output
-
-    print("CONVO")
-    print(lm.get_convo(-1))
 
     # Validate that the output corresponds to one of the expected DummyLM responses
     # This assumes the compiled_student's forward method will execute the predictor with the given query
