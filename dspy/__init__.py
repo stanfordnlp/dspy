@@ -5,10 +5,12 @@ from dspy.signatures import *
 from dspy.teleprompt import *
 
 import dspy.retrievers
+import dspy.minions
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image, History  # isort: skip
+from dspy.minions import Minion, Minions, MinionsAdapter, MinionsPredictor  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load
