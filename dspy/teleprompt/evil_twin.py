@@ -266,11 +266,11 @@ class EvilTwin(Teleprompter):
         history = []
         pbar = tqdm(range(1, self.n_epochs + 1))
         for epoch in pbar:
-            candidate_loss = self.compute_kl_divergence(best_prompt)
-            history.append({"epoch": epoch, "loss": candidate_loss, "best_prompt": best_prompt})
+            candidate_loss = self.compute_kl_divergence_batch([best_prompt])
+            history.append({"epoch": epoch, "loss": float(candidate_loss), "best_prompt": best_prompt})
             with open(self.log_fpath, "w") as f:
                 json.dump(history, f, indent=4)
-            pbar.set_description(f"Epoch {epoch}, KL Loss: {candidate_loss:.4f}, Best prompt: {best_prompt}")
+            pbar.set_description(f"Epoch {epoch}, KL Loss: {candidate_loss.item():.4f}, Best prompt: {best_prompt}")
             if candidate_loss < self.early_stop_kl:
                 print(f"Early stopping: KL loss below {self.early_stop_kl}")
                 break
@@ -297,26 +297,19 @@ class EvilTwin(Teleprompter):
         grads = self.compute_gradients(tokens)
         # Get indices of top-k candidate tokens (by largest negative gradient).
         _, top_k_indices = torch.topk(-grads, self.top_k, dim=-1)
-        executor = ParallelExecutor(
-            num_threads=self.batch_size,
-            disable_progress_bar=False,
-            max_errors=5,
-            provide_traceback=True,
-            compare_results=True,
-        )
-        def process_replacement(i):
-            # Randomly sample one candidate token from the top-k for position i.
-            new_token_idx = random.choice(top_k_indices[i].tolist())
-            modified_tokens = tokens[:i] + [new_token_idx] + tokens[i+1:]
-            new_prompt = self.tokenizer.decode(modified_tokens, skip_special_tokens=True)
-            # Evaluate candidate prompt's KL divergence.
-            candidate_loss = self.compute_kl_divergence(new_prompt)
-            return (new_prompt, candidate_loss)
-        results = executor.execute(process_replacement, range(len(tokens)))
-        for new_prompt, new_loss in results:
-            if new_loss < best_loss:
-                best_loss = new_loss
-                best_prompt = new_prompt
+        candidate_prompts = []
+        # Generate candidate prompts by replacing one token at a time.
+        for i in range(len(tokens)):
+            for cand in top_k_indices[i].tolist():
+                new_tokens = tokens.copy()
+                new_tokens[i] = cand
+                candidate_prompts.append(self.tokenizer.decode(new_tokens, skip_special_tokens=True))
+        
+        # Evaluate all candidate prompts in one batched operation.
+        kl_losses = self.compute_kl_divergence_batch(candidate_prompts)
+        best_idx = torch.argmin(kl_losses).item()
+        best_prompt = candidate_prompts[best_idx]
+        best_loss = kl_losses[best_idx].item()
         return best_prompt, best_loss
 
     def compute_gradients(self, tokens):
@@ -399,68 +392,59 @@ class EvilTwin(Teleprompter):
         document_tokens = self.local_model.tokenizer(document, return_tensors="pt", truncation=True)
         return self.compute_log_prob_from_tokens(prompt_tokens, document_tokens)
 
-    def compute_kl_divergence(self, candidate_prompt):
-        """
-        Computes the approximate KL divergence between the original prompt and a candidate prompt.
-        
-        KL divergence is approximated as:
-          KL ≈ ∑_i exp(log_prob_orig_i) * (log_prob_orig_i - log_prob_candidate_i)
-        where log_prob_orig_i is the log probability (under the original prompt) for document i,
-        and log_prob_candidate_i is the log probability for document i under the candidate prompt.
+    def compute_kl_divergence_batch(self, candidate_prompts: list[str]) -> torch.Tensor:
+        # Tokenize candidate prompts in batch.
+        candidate_tokens = self.local_model.tokenizer(
+            candidate_prompts, return_tensors="pt", truncation=True, padding=True
+        )
+        cand_ids = candidate_tokens.input_ids  # shape: (num_candidates, L_candidate)
+        cand_mask = candidate_tokens.attention_mask
 
-        Batching:
-          - Tokenizes the candidate prompt once.
-          - Pads the pre-tokenized original documents into a batch (ensuring 2D tensors).
-          - Repeats the candidate prompt to match the batch size.
-          - Concatenates candidate prompt tokens with document tokens.
-          - Runs a single forward pass to obtain logits for all documents.
-          - Computes the summed negative log probability per document over the document region.
-        
-        Returns:
-          Mean KL divergence over the batch.
-        """
-        candidate_prompt_tokens = self.local_model.tokenizer(candidate_prompt, return_tensors="pt", truncation=True)
-        # Ensure candidate prompt tensors are 2D.
-        cand_ids = candidate_prompt_tokens.input_ids
-        if cand_ids.dim() > 2:
-            cand_ids = cand_ids.squeeze(0)
-        cand_mask = candidate_prompt_tokens.attention_mask
-        if cand_mask.dim() > 2:
-            cand_mask = cand_mask.squeeze(0)
-        candidate_prompt_tokens = {"input_ids": cand_ids, "attention_mask": cand_mask}
-        # Pad the list of pre-tokenized documents into a batch.
+        # Pad original documents into a batch.
         batch = self.local_model.tokenizer.pad(self.original_doc_tokens, return_tensors="pt")
         if batch['input_ids'].dim() == 3:
             batch['input_ids'] = batch['input_ids'].squeeze(1)
             batch['attention_mask'] = batch['attention_mask'].squeeze(1)
+        doc_batch_size = batch['input_ids'].size(0)
+        num_candidates = cand_ids.size(0)
 
-        batch_size = batch['input_ids'].size(0)
-        # Repeat candidate prompt tokens to match the batch size.
-        candidate_prompt_batch = {
-            'input_ids': candidate_prompt_tokens["input_ids"].repeat(batch_size, 1),
-            'attention_mask': candidate_prompt_tokens["attention_mask"].repeat(batch_size, 1)
-        }
-        # Concatenate candidate prompt with document tokens.
+        # Repeat candidate tokens for each document.
+        candidate_ids = cand_ids.unsqueeze(1).repeat(1, doc_batch_size, 1)
+        candidate_mask = cand_mask.unsqueeze(1).repeat(1, doc_batch_size, 1)
+        candidate_ids = candidate_ids.view(-1, cand_ids.size(1))
+        candidate_mask = candidate_mask.view(-1, cand_mask.size(1))
+
+        # Repeat document tokens for each candidate.
+        doc_ids = batch['input_ids'].unsqueeze(0).repeat(num_candidates, 1, 1)
+        doc_mask = batch['attention_mask'].unsqueeze(0).repeat(num_candidates, 1, 1)
+        doc_ids = doc_ids.view(-1, batch['input_ids'].size(1))
+        doc_mask = doc_mask.view(-1, batch['attention_mask'].size(1))
+
+        # Concatenate candidate prompt and document tokens.
+        inputs_ids = torch.cat([candidate_ids, doc_ids], dim=1)
+        inputs_mask = torch.cat([candidate_mask, doc_mask], dim=1)
         inputs = {
-            'input_ids': torch.cat([candidate_prompt_batch['input_ids'], batch['input_ids']], dim=1),
-            'attention_mask': torch.cat([candidate_prompt_batch['attention_mask'], batch['attention_mask']], dim=1)
+            'input_ids': inputs_ids.to(self.local_model.device),
+            'attention_mask': inputs_mask.to(self.local_model.device)
         }
-        inputs = {k: v.to(self.local_model.device) for k, v in inputs.items()}
         with torch.no_grad():
             logits = self.local_model.model(**inputs).logits
         T = inputs['input_ids'].size(1)
-        L_prompt = candidate_prompt_tokens["input_ids"].size(1)
+        L_prompt = cand_ids.size(1)
         pred_slice = slice(L_prompt + 1, T - 1)
         target_slice = slice(L_prompt + 2, T)
-        # Compute negative log probabilities for each document.
+        
         neg_log_probs = F.cross_entropy(
             logits[:, pred_slice, :].reshape(-1, logits.shape[-1]),
             inputs['input_ids'][:, target_slice].reshape(-1),
             reduction='none'
         )
-        neg_log_probs = neg_log_probs.view(batch_size, -1).mean(dim=1)
-        candidate_log_probs = -neg_log_probs.cpu()
-        original_log_probs = torch.tensor(self.original_log_probs)
-        # Compute the weighted KL divergence.
-        kl_div = torch.sum(torch.exp(original_log_probs) * (original_log_probs - candidate_log_probs))
-        return kl_div.mean().item()
+        neg_log_probs = neg_log_probs.view(-1, T - L_prompt - 2).mean(dim=1)
+        # Average loss over documents for each candidate.
+        candidate_log_probs = -neg_log_probs.view(num_candidates, doc_batch_size).mean(dim=1)
+        
+        # Here, we average the original log probabilities for simplicity.
+        original_log_prob = torch.tensor(self.original_log_probs).mean()
+        kl_div = torch.exp(original_log_prob) * (original_log_prob - candidate_log_probs)
+        return kl_div  # tensor of shape (num_candidates,)
+
