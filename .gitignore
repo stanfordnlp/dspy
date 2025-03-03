@@ -44,7 +44,7 @@ build/
 *.egg-info/
 # *.jsonl
 # *.json
-gcc_log.json
+gcg_log.json
 !/data/*.json
 /dist/
 # **/*.pkl
