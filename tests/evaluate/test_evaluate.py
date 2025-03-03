@@ -179,7 +179,9 @@ def test_evaluate_callback():
     class TestCallback(BaseCallback):
         def __init__(self):
             self.start_call_inputs = None
+            self.start_call_count = 0
             self.end_call_outputs = None
+            self.end_call_count = 0
 
         def on_evaluate_start(
             self,
@@ -188,6 +190,7 @@ def test_evaluate_callback():
             inputs,
         ):
             self.start_call_inputs = inputs
+            self.start_call_count += 1
         
         def on_evaluate_end(
             self,
@@ -196,6 +199,7 @@ def test_evaluate_callback():
             exception = None,
         ):
             self.end_call_outputs = outputs
+            self.end_call_count += 1
 
     callback = TestCallback()
     dspy.settings.configure(
@@ -218,4 +222,6 @@ def test_evaluate_callback():
     score = ev(program)
     assert score == 100.0
     assert callback.start_call_inputs["program"] == program
+    assert callback.start_call_count == 1
     assert callback.end_call_outputs == 100.0
+    assert callback.end_call_count == 1
