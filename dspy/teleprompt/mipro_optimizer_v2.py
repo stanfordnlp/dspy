@@ -109,6 +109,7 @@ class MIPROv2(Teleprompter):
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool = True,
+        provide_traceback: bool = False,
     ) -> Any:
         # Set random seeds
         seed = seed or self.seed
@@ -158,6 +159,7 @@ class MIPROv2(Teleprompter):
             max_errors=self.max_errors,
             display_table=False,
             display_progress=True,
+            provide_traceback=provide_traceback,
         )
 
         # Step 1: Bootstrap few-shot examples
@@ -326,7 +328,7 @@ class MIPROv2(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of program calls * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
