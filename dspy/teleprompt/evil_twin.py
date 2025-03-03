@@ -14,29 +14,6 @@ from dspy.teleprompt.utils import get_signature, set_signature
 # =============================================================================
 
 def compute_neg_log_prob(model, seq: torch.Tensor, pred_slice: slice, target_slice: slice) -> torch.Tensor:
-    """
-    Compute the negative log probability for a slice of a sequence.
-
-    Args:
-      model: A PreTrainedModel used to generate logits.
-      seq: Tensor of shape (batch_size, n_tokens) representing the input sequence.
-           Typically, this sequence is a concatenation of a prompt and a document.
-      pred_slice: A slice object defining the positions (indices) in the sequence where the model
-                  produces logits to predict the next token. For example, if pred_slice = slice(10, 20),
-                  logits for tokens 10 to 19 are used.
-      target_slice: A slice object defining the positions in the sequence that are the true targets 
-                    for prediction. These are usually shifted by one relative to pred_slice.
-    
-    Returns:
-      A tensor of negative log probabilities (loss values) computed per token (unsummed).
-    
-    Explanation:
-      - The function runs a forward pass on the input sequence to obtain logits.
-      - It selects logits from pred_slice and rearranges them (from shape [b, k, v] to [b, v, k])
-        to match the input expectations of cross-entropy loss.
-      - Cross-entropy is computed against the tokens in target_slice.
-      - The negative of this loss yields the negative log probability.
-    """
     pred_logits = model(seq).logits[:, pred_slice, :]
     log_probs = -F.cross_entropy(
         rearrange(pred_logits, "b k v -> b v k"),  # rearrange so that vocab dim is second
@@ -46,31 +23,6 @@ def compute_neg_log_prob(model, seq: torch.Tensor, pred_slice: slice, target_sli
     return log_probs
 
 def compute_grads(model, seq: torch.Tensor, prompt_slice: slice, doc_slice: slice, gamma: float = 0.0) -> torch.Tensor:
-    """
-    Compute per-token gradients for the prompt region given a concatenated sequence.
-
-    Args:
-      model: The PreTrainedModel used for forward and backward passes.
-      seq: Tensor of shape (batch_size, total_tokens) representing the concatenation [prompt; document].
-      prompt_slice: Slice covering the prompt tokens.
-      doc_slice: Slice covering the document tokens.
-      gamma: Fluency penalty coefficient. When > 0, a fluency penalty (encouraging natural text) is added.
-
-    Returns:
-      A tensor of shape (n_prompt_tokens, vocab_size) containing the averaged gradient for each token in the prompt.
-
-    Explanation:
-      - A one-hot representation of the prompt tokens is created (for differentiability).
-      - This one-hot tensor (shape: [batch, prompt_length, vocab_size]) is projected via the model’s
-        embedding matrix to get a differentiable surrogate of the prompt embeddings.
-      - The original embeddings for the full sequence are computed and then the prompt region is replaced 
-        by the differentiable surrogate.
-      - A forward pass computes logits for the full sequence.
-      - For the document region, cross-entropy loss is computed (after shifting indices appropriately).
-      - Additionally, a fluency penalty is computed on the prompt region (if gamma > 0).
-      - Loss is backpropagated and the gradients (with respect to the one-hot representation) are averaged
-        over the batch.
-    """
     model_embs = model.get_input_embeddings().weight  # shape: (vocab_size, emb_dim)
     one_hot_suffix = torch.zeros(
         seq.shape[0],
@@ -287,7 +239,7 @@ class EvilTwin(Teleprompter):
         """
         Iterates over each token in the prompt and attempts to replace it with one of the top-k candidates.
 
-        Uses a parallel executor to evaluate candidate replacements via KL divergence.
+        Evaluates candidate replacements via KL divergence.
         
         Returns:
           A tuple of (new_prompt, corresponding KL divergence loss).
