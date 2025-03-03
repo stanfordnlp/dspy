@@ -150,6 +150,7 @@ class EvilTwin(Teleprompter):
         self.local_model = LocalModelManager(local_model_name)
         # Will hold pre-tokenized document tokens from original outputs.
         self.original_doc_tokens = None
+        self.optimized_prompt = ""
 
     def compile(self, program: dspy.Module):
         """
@@ -184,8 +185,8 @@ class EvilTwin(Teleprompter):
         ]
 
         print(original_outputs[:10])
-        best_prompt = self.optim_gcg(optim_prompt)
-        updated_signature = get_signature(predictor).with_instructions(best_prompt)
+        self.optimized_prompt = self.optim_gcg(optim_prompt)
+        updated_signature = get_signature(predictor).with_instructions(self.optimized_prompt)
         set_signature(predictor, updated_signature)
         return program
 
