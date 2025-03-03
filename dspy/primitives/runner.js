@@ -86,7 +86,9 @@ sys.stderr = old_stderr
     console.log(JSON.stringify({ output }));
   } catch (error) {
     // We have an error => check if it's a SyntaxError or something else
-    const errorType = error.name || "Error";
+    // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
+    const errorType = error.type || "Error";
+    // error.message is mostly blank.
     const errorMessage = (error.message || "").trim();
     console.log(JSON.stringify({
       error: errorMessage,
