@@ -117,14 +117,14 @@ class PythonInterpreter:
             # If not valid JSON, just return raw text
             result = {"output": output_line}
 
-        # If we have an error, handle SyntaxError vs. other error
+        # If we have an error, determine if it's a SyntaxError or other error using error.errorType.
         if "error" in result:
             error_msg = result["error"]
             error_type = result.get("errorType", "")
             if error_type == "SyntaxError":
-                raise SyntaxError(error_msg)
+                raise SyntaxError(f"Invalid Python syntax received. message: {error_msg}")
             else:
-                raise InterpreterError(f"Sandbox Error: {error_msg}")
+                raise InterpreterError(f"{error_type}: {error_msg}")
 
         # If there's no error, return the "output" field
         return result.get("output", None)

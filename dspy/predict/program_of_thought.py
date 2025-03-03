@@ -1,13 +1,14 @@
 import logging
 import re
+from typing import Union, Type
 
 import dspy
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import ensure_signature, Signature
 
 from dspy.primitives.program import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 
-_logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class ProgramOfThought(Module):
     """
@@ -21,10 +22,16 @@ class ProgramOfThought(Module):
     lm = dspy.LM('openai/gpt-4o-mini')
     dspy.configure(lm=lm)
     pot = dspy.ProgramOfThought("question -> answer")
-    pot(question="what is 1+1?", )
+    pot(question="what is 1+1?")
     ```
     """
-    def __init__(self, signature, max_iters=3):
+
+    def __init__(self, signature: Union[str, Type[Signature]], max_iters=3):
+        """
+        Args:
+            signature: The signature of the module.
+            max_iters: The maximum number of iterations to retry code generation and execution.
+        """
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
@@ -72,6 +79,9 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
+        # Currently, the interpreter class checks the deno availability at execution time. 
+        # We may consider checking it at the initialization time for better instruction.
+        self.interpreter = PythonInterpreter()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -171,9 +181,9 @@ class ProgramOfThought(Module):
         """
         if not code:
             return None, "Error: Empty code before execution."
-        interpreter = PythonInterpreter()
+        
         try:
-            output = str(interpreter.execute(code))
+            output = str(self.interpreter.execute(code))
             return output, None
         except Exception as e:
             return None, str(e)
@@ -183,15 +193,16 @@ class ProgramOfThought(Module):
             field_name: kwargs[field_name] for field_name in self.input_fields
         }
         code_data = self.code_generate(**input_kwargs)
-        code = output = error = None
+        output = None
         code, error = self._parse_code(code_data)
         if not error:
             output, error = self._execute_code(code)
         hop = 1
         # Retying code generation and execution until no error or reach max_iters
         while error is not None:
-            _logger.error(f"Error in code execution: {error}")
+            logger.error(f"Error in code execution: {error}")
             if hop == self.max_iters:
+                self.interpreter.shutdown()
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
@@ -201,4 +212,5 @@ class ProgramOfThought(Module):
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
         answer_gen_result = self.generate_answer(**input_kwargs)
+        self.interpreter.shutdown()
         return answer_gen_result

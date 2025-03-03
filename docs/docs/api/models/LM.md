@@ -6,6 +6,7 @@
         members:
             - __call__
             - copy
+            - dump_state
             - finetune
             - infer_adapter
             - infer_provider
