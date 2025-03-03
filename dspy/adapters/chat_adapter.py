@@ -11,7 +11,6 @@ import pydantic
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.types.image import try_expand_image_tags
 from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
 from dspy.signatures.field import OutputField
@@ -62,7 +61,7 @@ class ChatAdapter(Adapter):
         else:
             messages.append(self.format_turn(signature, inputs, role="user"))
 
-        messages = try_expand_image_tags(messages)
+        messages = try_expand_media_tags(messages)
         return messages
 
     def parse(self, signature, completion):

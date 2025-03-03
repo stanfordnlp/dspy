@@ -9,7 +9,7 @@ import base64
 import dspy
 from dspy import Predict
 from dspy.utils.dummies import DummyLM
-from dspy.adapters.audio_utils import encode_audio, is_url, is_audio, Audio
+from dspy.adapters.types.audio import encode_audio, is_url, is_audio, Audio
 import tempfile
 import pydantic
 
