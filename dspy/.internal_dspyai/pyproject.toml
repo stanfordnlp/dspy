@@ -1,8 +1,8 @@
 [project]  
 #replace_package_name_marker
-name = "dspy-ai"  
+name="dspy-ai"  
 #replace_package_version_marker
-version = "2.6.5"  
+version="2.6.9"  
 description = "DSPy"  
 readme = "README.md"  
 authors = [  
