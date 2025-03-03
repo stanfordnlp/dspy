@@ -8,6 +8,7 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
+from dspy.utils.callback import BaseCallback
 from dspy.utils.dummies import DummyLM
 
 
@@ -173,3 +174,48 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
             # to the console
             example_input = next(iter(example.inputs().values()))
             assert example_input in out
+
+def test_evaluate_callback():
+    class TestCallback(BaseCallback):
+        def __init__(self):
+            self.start_call_inputs = None
+            self.end_call_outputs = None
+
+        def on_evaluate_start(
+            self,
+            call_id: str,
+            instance,
+            inputs,
+        ):
+            self.start_call_inputs = inputs
+        
+        def on_evaluate_end(
+            self,
+            call_id: str,
+            outputs,
+            exception = None,
+        ):
+            self.end_call_outputs = outputs
+
+    callback = TestCallback()
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        ),
+        callbacks=[callback]
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+    assert program(question="What is 1+1?").answer == "2"
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    score = ev(program)
+    assert score == 100.0
+    assert callback.start_call_inputs["program"] == program
+    assert callback.end_call_outputs == 100.0
