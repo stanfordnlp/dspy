@@ -128,7 +128,7 @@ class EvilTwin(Teleprompter):
         self,
         initial_et_prompt = "! ! ! ! ! ! ! ! ! ! ! ! ! ! !",
         n_epochs=500,
-        batch_size=10,
+        batch_size=5,
         top_k=256,
         log_fpath="gcg_log.json",
         early_stop_kl=0.0,
