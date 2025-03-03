@@ -4,7 +4,7 @@ from dspy.primitives.python_interpreter import PythonInterpreter, InterpreterErr
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 if shutil.which("deno") is None:
-    pytestmark = pytest.mark.skip(reason="Deno is not installed or not in PATH")
+    pytest.skip(reason="Deno is not installed or not in PATH")
 
 def test_execute_simple_code():
     interpreter = PythonInterpreter()
