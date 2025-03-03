@@ -203,7 +203,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         An informal run similar to this on DSPy 2.5.29 raises GPT-4o-mini's score 66% to 87%.
     
     === "Optimizing prompts with EvilTwin"
-        The `EvilTwin` optimizer is designed to generate adversarially equivalent prompts—inputs that may be garbled or obfuscated but still induce similar outputs in a DSPy program. This is based on the "Prompts have evil twins" [paper](https://arxiv.org/abs/2311.07064). It uses the Greedy Coordinate Gradient (GCG) algorithm to iteratively modify a prompt while minimizing KL divergence from the original response distribution.
+        The `EvilTwin` optimizer generates **adversarially equivalent prompts**—inputs that may appear garbled or obfuscated but still induce similar outputs in a DSPy program. This is based on the ["Prompts have evil twins"](https://arxiv.org/abs/2311.07064) paper. It uses the **Greedy Coordinate Gradient (GCG)** algorithm to iteratively modify a prompt while minimizing KL divergence from the original response distribution.
 
         EvilTwin is useful for exploring the resilience of language models to perturbations, identifying potential vulnerabilities, or simply generating non-human-like prompts that behave similarly to natural prompts.
 
@@ -230,22 +230,21 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         print("Evil Twin Output:", evil_twin_response.answer)
         ```
 
+        **How it works**  
+        EvilTwin first runs the DSPy program with the given prompt to **sample documents**. It then computes the **log probability of those outputs** and iteratively replaces tokens in the prompt to minimize **KL divergence** while preserving response consistency.
+
+        **Why EvilTwin requires a local model (GPU recommended)**  
+        Unlike other DSPy optimizers, EvilTwin **does not use API-based LLMs** (e.g., OpenAI, Anthropic) because its algorithm **requires access to model internals**—including **gradients, logits, and token likelihoods**, which APIs do not expose. Instead, EvilTwin runs a **local model** (default: `"EleutherAI/gpt-neo-125M"`) that allows full control over token replacements and optimization. Note that the DSPy program/module itself runs with your configured LM via the API as normal to generate its outputs.
+
+        Running EvilTwin on a **CPU is possible but slow**, especially for large models or high `n_epochs`. If a GPU is available, it will be used automatically.
+
         **Customization options:**
         - `n_epochs`: Number of optimization iterations (default: 500).
         - `batch_size`: Number of samples evaluated per iteration (default: 5).
         - `top_k`: Number of token candidates considered for replacement per iteration (default: 256).
         - `gamma`: Fluency penalty coefficient, controlling preference for natural-looking prompts (default: 0.0).
         - `local_model_name`: The Hugging Face model used for tokenization and log probability estimation (default: `"EleutherAI/gpt-neo-125M"`).
-        - In the future, warm start will be an option, as in the Evil Twins paper.
-
-        EvilTwin first runs the DSPy program with the given prompt to **sample documents**. It then computes the **log probability of those outputs** and iteratively replaces tokens in the prompt to minimize **KL divergence** while preserving response consistency.
-
-        To **see the final optimized prompt**, use:
-        ```python
-        print("Optimized Prompt:", optimizer.optimized_prompt)
-        ```
-
-
+        - **(Planned feature)** Warm start initialization, as described in the Evil Twins paper.
 
 ## Saving and loading optimizer output
 
