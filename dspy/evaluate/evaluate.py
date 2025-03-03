@@ -6,6 +6,7 @@ import pandas as pd
 import tqdm
 
 import dspy
+from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
 
 try:
@@ -83,6 +84,7 @@ class Evaluate:
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
 
+    @with_callbacks
     def __call__(
         self,
         program: "dspy.Module",

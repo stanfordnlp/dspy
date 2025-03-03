@@ -222,6 +222,38 @@ class BaseCallback:
         """
         pass
 
+    def on_evaluate_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        """A handler triggered when evaluation is started.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            instance: The Evaluate instance.
+            inputs: The inputs to the Evaluate's __call__ method. Each arguments is stored as
+                a key-value pair in a dictionary.
+        """
+        pass
+
+    def on_evaluate_end(
+        self,
+        call_id: str,
+        outputs: Optional[Dict[str, Any]],
+        exception: Optional[Exception] = None,
+    ):
+        """A handler triggered after evaluation is executed.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            outputs: The outputs of the Evaluate's __call__ method. If the method is interrupted by
+                an exception, this will be None.
+            exception: If an exception is raised during the execution, it will be stored here.
+        """
+        pass
+
 
 def with_callbacks(fn):
     @functools.wraps(fn)
@@ -279,6 +311,8 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
     if isinstance(instance, dspy.LM):
         return callback.on_lm_start
+    elif isinstance(instance, dspy.Evaluate):
+        return callback.on_evaluate_start
 
     if isinstance(instance, dspy.Adapter):
         if fn.__name__ == "format":
@@ -299,6 +333,8 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
     if isinstance(instance, (dspy.LM)):
         return callback.on_lm_end
+    elif isinstance(instance, dspy.Evaluate):
+        return callback.on_evaluate_end
 
     if isinstance(instance, (dspy.Adapter)):
         if fn.__name__ == "format":
