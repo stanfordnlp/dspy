@@ -120,9 +120,9 @@ class PythonInterpreter:
         # If we have an error, determine if it's a SyntaxError or other error using error.errorType.
         if "error" in result:
             error_msg = result["error"]
-            error_type = result.get("errorType", "")
+            error_type = result.get("errorType", "Sandbox Error")
             if error_type == "SyntaxError":
-                raise SyntaxError(f"Invalid Python syntax received. message: {error_msg}")
+                raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
             else:
                 raise InterpreterError(f"{error_type}: {error_msg}")
 
