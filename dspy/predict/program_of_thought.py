@@ -157,6 +157,9 @@ class ProgramOfThought(Module):
             return code, output, None
         except Exception as e:
             return code, None, str(e)
+        finally:
+            interpreter.shutdown()
+
     def forward(self, **kwargs):
         input_kwargs = {
             field_name: kwargs[field_name] for field_name in self.input_fields
