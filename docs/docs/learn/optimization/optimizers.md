@@ -202,7 +202,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
 
         An informal run similar to this on DSPy 2.5.29 raises GPT-4o-mini's score 66% to 87%.
     
-        === "Optimizing prompts with EvilTwin"
+    === "Optimizing prompts with EvilTwin"
         The `EvilTwin` optimizer is designed to generate adversarially equivalent prompts—inputs that may be garbled or obfuscated but still induce similar outputs in a DSPy program. This is based on the "Prompts have evil twins" [paper](https://arxiv.org/abs/2311.07064). It uses the Greedy Coordinate Gradient (GCG) algorithm to iteratively modify a prompt while minimizing KL divergence from the original response distribution.
 
         EvilTwin is useful for exploring the resilience of language models to perturbations, identifying potential vulnerabilities, or simply generating non-human-like prompts that behave similarly to natural prompts.
