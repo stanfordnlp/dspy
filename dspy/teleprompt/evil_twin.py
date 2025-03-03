@@ -10,7 +10,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from dspy.teleprompt.utils import get_signature, set_signature
 
 # =============================================================================
-# Official helper functions (copied and annotated)
+# Official helper functions (copied from https://github.com/rimon15/evil_twins/blob/main/evil_twins/prompt_optim.py)
 # =============================================================================
 
 def compute_neg_log_prob(model, seq: torch.Tensor, pred_slice: slice, target_slice: slice) -> torch.Tensor:
@@ -75,10 +75,6 @@ def compute_grads(model, seq: torch.Tensor, prompt_slice: slice, doc_slice: slic
     # Return the averaged gradient for each token in the prompt region.
     return one_hot_suffix.grad.clone().mean(dim=0)
 
-# =============================================================================
-# Main EvilTwin Optimizer Implementation (GCG-based)
-# =============================================================================
-
 class LocalModelManager:
     """
     Initializes and manages the local language model and tokenizer.
@@ -89,7 +85,6 @@ class LocalModelManager:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        # Ensure the tokenizer has a padding token for batching.
         if not self.tokenizer.pad_token:
             self.tokenizer.add_special_tokens({'pad_token': self.tokenizer.eos_token})
 
@@ -116,6 +111,8 @@ class EvilTwin(Teleprompter):
     """
     Implements the Evil Twin optimizer using the Greedy Coordinate Gradient (GCG) algorithm.
 
+    Currently this only supports a single prompt/input. Will be further expanded to support multiple inputs.
+    s
     The optimizer finds a hard prompt p that minimizes the KL divergence between the output distribution 
     induced by p and the ground truth prompt p*. It does so by solving the maximum-likelihood problem:
 
@@ -129,8 +126,7 @@ class EvilTwin(Teleprompter):
     """
     def __init__(
         self,
-        prompt: str,
-        initial_et_prompt = "I have a very important question for you to ask right now.",
+        initial_et_prompt = "! ! ! ! ! ! ! ! ! ! ! ! ! ! !",
         n_epochs=500,
         batch_size=10,
         top_k=256,
@@ -138,9 +134,12 @@ class EvilTwin(Teleprompter):
         early_stop_kl=0.0,
         local_model_name="EleutherAI/gpt-neo-125M",
         gamma=0.0,
+        **kwargs
     ):
         super().__init__()
-        self.prompt = prompt
+        if len(kwargs) != 1:
+            raise ValueError("Provide exactly one keyword argument for the input field.")
+        self.input_field, self.prompt = next(iter(kwargs.items()))
         self.initial_et_prompt = initial_et_prompt
         self.n_epochs = n_epochs
         self.batch_size = batch_size
@@ -155,7 +154,7 @@ class EvilTwin(Teleprompter):
     def compile(self, program: dspy.Module):
         """
         Compiles the DSPy program by:
-          1. Running the original prompt to sample a set of documents.
+          1. Running the original prompt through the program to sample a set of documents.
           2. Computing and storing log probabilities of these documents under the original prompt.
           3. Pre-tokenizing the document texts for efficient KL divergence computation.
           4. Running the GCG optimization to produce an optimized (evil twin) prompt.
@@ -167,10 +166,10 @@ class EvilTwin(Teleprompter):
         predictor = program.predictors()[0]
         optim_prompt = self.initial_et_prompt
         # Run the program to sample documents (n_samples = 100).
-        original_outputs: list[dspy.Prediction] = self.run_program(program, self.prompt, num_samples=100)
+        original_outputs: list[dspy.Prediction] = self.run_program(program, num_samples=100)
         # Compute original log probabilities for each document: log PLLM(di | p*).
         self.original_log_probs = [
-            self.compute_log_prob(self.prompt, doc.answer) for doc in original_outputs
+            self.compute_log_prob(doc.answer) for doc in original_outputs
         ]
         # Pre-tokenize documents once for efficient batched evaluation.
         self.original_doc_tokens = [
@@ -190,17 +189,18 @@ class EvilTwin(Teleprompter):
         set_signature(predictor, updated_signature)
         return program
 
-    def run_program(self, program, prompt, num_samples=1):
+    def run_program(self, program, num_samples=1):
         """
         Runs the DSPy program with the given prompt.
         
         If num_samples > 1, constructs a batch of examples.
         """
         if num_samples > 1:
-            examples = [dspy.Example(question=prompt).with_inputs("question") for _ in range(num_samples)]
+            examples = [dspy.Example(**{self.input_field: self.prompt}).with_inputs(self.input_field)
+                        for _ in range(num_samples)]
             responses = program.batch(examples)
             return responses
-        return program(question=prompt)
+        return program(**{self.input_field: self.prompt})
 
     def optim_gcg(self, optim_prompt):
         """
@@ -335,11 +335,11 @@ class EvilTwin(Teleprompter):
         )
         return -neg_log_prob.item()
 
-    def compute_log_prob(self, prompt, document):
+    def compute_log_prob(self, document):
         """
         Tokenizes a prompt and a document, then computes the log probability of the document given the prompt.
         """
-        prompt_tokens = self.local_model.tokenizer(prompt, return_tensors="pt", truncation=True)
+        prompt_tokens = self.local_model.tokenizer(text=self.prompt, return_tensors="pt", truncation=True)
         document_tokens = self.local_model.tokenizer(document, return_tensors="pt", truncation=True)
         return self.compute_log_prob_from_tokens(prompt_tokens, document_tokens)
 
