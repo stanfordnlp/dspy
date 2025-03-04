@@ -36,7 +36,6 @@ BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=Outpu
 class ChatAdapter(Adapter):
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         super().__init__(callbacks)
-        self.json_adapter = None
 
     def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         try:
@@ -46,9 +45,7 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
             # fallback to JSONAdapter
-            if self.json_adapter is None:
-                self.json_adapter = JSONAdapter()
-            return self.json_adapter(lm, lm_kwargs, signature, demos, inputs)
+            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
     
     def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
