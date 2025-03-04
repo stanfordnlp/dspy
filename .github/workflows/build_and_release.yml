@@ -90,7 +90,7 @@ jobs:
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy"/;}' pyproject.toml
       - name: Update package name in metadata.py
-        run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/name="dspy"/;}' ./dspy/__metadata__.py
+        run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
         run: python3 -m build
       - name: Publish distribution 📦 to PyPI (dspy)

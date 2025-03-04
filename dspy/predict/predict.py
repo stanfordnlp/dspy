@@ -2,13 +2,23 @@ import random
 
 from pydantic import BaseModel
 
+<<<<<<< HEAD
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
+=======
+from dspy.clients.base_lm import BaseLM
+from dspy.clients.lm import LM
+>>>>>>> main
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
+<<<<<<< HEAD
+=======
+from dspy.dsp.utils import settings
+from dspy.adapters.chat_adapter import ChatAdapter
+>>>>>>> main
 
 
 class Predict(Module, Parameter):
@@ -71,8 +81,6 @@ class Predict(Module, Parameter):
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
-        import dspy
-
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -80,8 +88,8 @@ class Predict(Module, Parameter):
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dspy.settings.lm
-        assert isinstance(lm, dspy.LM), "No LM is loaded."
+        lm = kwargs.pop("lm", self.lm) or settings.lm
+        assert isinstance(lm, BaseLM), "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
@@ -96,16 +104,14 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        import dspy
-
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = settings.adapter or ChatAdapter()
         with settings.context(caller_predict=self):
             completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
-        if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
-            trace = dspy.settings.trace
+        if kwargs.pop("_trace", True) and settings.trace is not None:
+            trace = settings.trace
             trace.append((self, {**kwargs}, pred))
 
         return pred

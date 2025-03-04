@@ -6,7 +6,7 @@ import threading
 import uuid
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, Optional, cast, TYPE_CHECKING
 
 import litellm
 import pydantic
@@ -17,11 +17,12 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
-from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.utils.callback import BaseCallback, with_callbacks
+if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
 
 from .base_lm import BaseLM
 
@@ -219,7 +220,7 @@ class LM(BaseLM):
         # providers in this file. Is this okay?
         return Provider()
 
-    def infer_adapter(self) -> Adapter:
+    def infer_adapter(self) -> "Adapter":
         import dspy
 
         if dspy.settings.adapter:
