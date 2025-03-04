@@ -3,6 +3,7 @@ import random
 from pydantic import BaseModel
 
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.lm import LM
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
