@@ -134,7 +134,7 @@ class ChatAdapter(Adapter):
         }
         return format_fields(fields_with_values)
 
-    def format_turn(self, signature: Type[Signature], values: dict[str, Any], role: str, incomplete=False, is_conversation_history=False) -> dict[str, Any]:
+    def format_turn(self, signature: Type[Signature], values: dict[str, Any], role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
         return format_turn(signature, values, role, incomplete, is_conversation_history)
 
 

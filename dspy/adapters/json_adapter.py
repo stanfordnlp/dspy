@@ -119,7 +119,7 @@ class JSONAdapter(Adapter):
 
         return format_fields(role=role, fields_with_values=fields_with_values)
     
-    def format_turn(self, signature: Type[Signature], values, role: str, incomplete=False, is_conversation_history=False) -> dict[str, Any]:
+    def format_turn(self, signature: Type[Signature], values, role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
         return format_turn(signature, values, role, incomplete, is_conversation_history)
     
     def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:

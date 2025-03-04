@@ -54,17 +54,14 @@ class Adapter(ABC):
     @abstractmethod
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         raise NotImplementedError
-
-    @abstractmethod
-    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
-        raise NotImplementedError
     
-    @abstractmethod
     def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
         raise NotImplementedError
+    
+    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def format_turn(self, signature: Type[Signature], values, role: str, incomplete=False, is_conversation_history=False) -> dict[str, Any]:
+    def format_turn(self, signature: Type[Signature], values, role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
         raise NotImplementedError
 
     def format_conversation_history(self, signature: Type[Signature], inputs: dict[str, Any]) -> list[dict[str, Any]]:
