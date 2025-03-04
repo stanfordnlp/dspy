@@ -2,12 +2,12 @@ import random
 
 from pydantic import BaseModel
 
+from dspy.clients.base_lm import BaseLM
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
-from dspy.clients.lm import LM
 from dspy.dsp.utils import settings
 from dspy.adapters.chat_adapter import ChatAdapter
 
@@ -80,7 +80,7 @@ class Predict(Module, Parameter):
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm
-        assert isinstance(lm, LM), "No LM is loaded."
+        assert isinstance(lm, BaseLM), "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
