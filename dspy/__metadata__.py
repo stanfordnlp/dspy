@@ -1,5 +1,5 @@
 #replace_package_name_marker
-name="dspy"
+__name__="dspy"
 #replace_package_version_marker
 __version__="2.6.9"
 __description__="DSPy"
