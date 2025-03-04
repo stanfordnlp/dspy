@@ -165,7 +165,7 @@ class Confusion:
         confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
 
         # Get model answers
-        answers = {label: [self.extract(pred, labels) for pred in preds[label]] for label in labels}
+        answers = {label: [self._extract(pred, labels) for pred in preds[label]] for label in labels}
 
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
