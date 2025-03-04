@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-
-from litellm import ContextWindowExceededError
+from typing import Type, Union, Any, Optional
 
 from dspy.adapters.types import History
-from dspy.utils.callback import with_callbacks
-
+from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.clients.lm import LM
+from dspy.signatures.signature import Signature
 
 class Adapter(ABC):
-    def __init__(self, callbacks=None):
+    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         self.callbacks = callbacks or []
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -17,60 +17,56 @@ class Adapter(ABC):
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+    def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
         outputs = lm(**inputs_, **lm_kwargs)
         values = []
 
-        try:
-            for output in outputs:
-                output_logprobs = None
+        for output in outputs:
+            output_logprobs = None
 
-                if isinstance(output, dict):
-                    output, output_logprobs = output["text"], output["logprobs"]
+            if isinstance(output, dict):
+                output, output_logprobs = output["text"], output["logprobs"]
 
-                value = self.parse(signature, output)
+            value = self.parse(signature, output)
 
-                if set(value.keys()) != set(signature.output_fields.keys()):
-                    raise ValueError(
-                        "Parsed output fields do not match signature output fields. "
-                        f"Expected: {set(signature.output_fields.keys())}, Got: {set(value.keys())}"
-                    )
+            if set(value.keys()) != set(signature.output_fields.keys()):
+                raise ValueError(
+                    "Parsed output fields do not match signature output fields. "
+                    f"Expected: {set(signature.output_fields.keys())}, Got: {set(value.keys())}"
+                )
 
-                if output_logprobs is not None:
-                    value["logprobs"] = output_logprobs
+            if output_logprobs is not None:
+                value["logprobs"] = output_logprobs
 
-                values.append(value)
+            values.append(value)
 
-            return values
+        return values
 
-        except Exception as e:
-            if isinstance(e, ContextWindowExceededError):
-                # On context window exceeded error, we don't want to retry with a different adapter.
-                raise e
-            from dspy.adapters.json_adapter import JSONAdapter
-
-            if not isinstance(self, JSONAdapter):
-                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
-            raise e
 
     @abstractmethod
-    def format(self, signature, demos, inputs):
+    def format(self, signature: Union[str, Type[Signature]], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     @abstractmethod
-    def parse(self, signature, completion):
+    def parse(self, signature: Union[str, Type[Signature]], completion: str) -> dict[str, Any]:
         raise NotImplementedError
 
-    def format_finetune_data(self, signature, demos, inputs, outputs):
+    @abstractmethod
+    def format_finetune_data(self, signature: Union[str, Type[Signature]], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+        raise NotImplementedError
+    
+    @abstractmethod
+    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
         raise NotImplementedError
 
-    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
-        pass
+    @abstractmethod
+    def format_turn(self, signature: Union[str, Type[Signature]], values, role: str, incomplete=False, is_conversation_history=False) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def format_conversation_history(self, signature, inputs):
+    def format_conversation_history(self, signature: Union[str, Type[Signature]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         history_field_name = None
         for name, field in signature.input_fields.items():
             if field.annotation == History:
