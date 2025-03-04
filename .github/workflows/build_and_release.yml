@@ -48,10 +48,10 @@ jobs:
         run: python3 -m build
       # Test the locally built wheel
       - name: Create test environment
-        run: python -m venv test_env
+        run: python -m venv test_before_testpypi
       - name: Test package installation and functionality
         run: |
-          source test_env/bin/activate
+          source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest
           python -c "import dspy; print(dspy.__version__)"
@@ -93,6 +93,16 @@ jobs:
         run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
         run: python3 -m build
+      # Test the locally built wheel before publishing to pypi
+      - name: Create test environment
+        run: python -m venv test_before_pypi
+      - name: Test package installation and functionality
+        run: |
+          source test_before_pypi/bin/activate
+          # Install the locally built wheel and testing dependencies
+          pip install dist/*.whl pytest
+          pytest tests/metadata/test_metadata.py tests/predict
+          deactivate
       - name: Publish distribution 📦 to PyPI (dspy)
         uses: pypa/gh-action-pypi-publish@release/v1
         with: 
