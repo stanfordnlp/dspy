@@ -35,7 +35,7 @@ jobs:
         id: check_version  
         run: |  
           VERSION=${{ needs.extract-tag.outputs.version }}  
-          PACKAGE_NAME="dspy-test-chenmoney"
+          PACKAGE_NAME="dspy-ai-test"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
@@ -43,7 +43,7 @@ jobs:
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml  
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-test-chenmoney"/;}' pyproject.toml  
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
         run: python3 -m build
       # Test the locally built wheel
