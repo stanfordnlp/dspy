@@ -40,7 +40,7 @@ class ChatAdapter(Adapter):
 
     def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         try:
-            super()(lm, lm_kwargs, signature, demos, inputs)
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
