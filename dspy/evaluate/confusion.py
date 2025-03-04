@@ -1,5 +1,4 @@
 import contextlib
-import inspect
 import random
 import signal
 import sys
@@ -8,10 +7,9 @@ import traceback
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from re import findall
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -19,7 +17,6 @@ import dspy
 from dspy import LabeledFewShot, BootstrapFewShot
 from dspy.evaluate.evaluate import *
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.utils.parallelizer import ParallelExecutor
 
 
 def most_votes(votes, tiebreaker=None):
@@ -62,7 +59,6 @@ class Confusion:
         provide_traceback (bool): Whether to provide traceback information.
         use_class_weight (bool): Whether to use class weighting in computing metrics.
         output_field (str): The field in predictions to use as the output label.
-        extract (callable, optional): Function to extract labels from responses.
         match (callable, optional): Function to match extracted values to labels.
     """
 
@@ -79,8 +75,7 @@ class Confusion:
             provide_traceback=False,
             use_class_weight=True,
             output_field="response",
-            extract=None,
-            match="first",
+            match="last",
             **_kwargs,
     ):
         """
@@ -97,7 +92,6 @@ class Confusion:
             provide_traceback (bool): Whether to provide traceback information.
             use_class_weight (bool): Whether to use class weighting in computing metrics.
             output_field (str): The field in predictions to use as the output label.
-            extract (callable, optional): Function to extract labels from responses.
             match (callable, str, optional): Function or method to match extracted values to labels.
                                            Options: "first", "last", "most", or a custom function.
         """
@@ -114,24 +108,16 @@ class Confusion:
         self.provide_traceback = provide_traceback
         self.use_class_weight = use_class_weight
         self.output_field = output_field
-
-        if extract is None:
-            self.extract = self._extract
-            if callable(match):
-                self.match = match
-            elif match == "first":
-                self.match = lambda x: x[0]
-            elif match == "last":
-                self.match = lambda x: x[-1]
-            elif match == "most":
-                self.match = most_votes
-            else:
-                raise ValueError(f"Invalid match function: {match}")
-        elif not callable(extract) or len(inspect.signature(extract).parameters) != 2:
-            raise ValueError("The extract function must be callable and have two parameters (response and labels).")
+        if callable(match):
+            self.match = match
+        elif match == "first":
+            self.match = lambda x: x[0]
+        elif match == "last":
+            self.match = lambda x: x[-1]
+        elif match == "most":
+            self.match = most_votes
         else:
-            self.extract = extract
-            # match field is ignored
+            raise ValueError(f"Invalid match function: {match}")
 
     def _extract(self, response, labels):
         """
@@ -147,6 +133,8 @@ class Confusion:
         found = findall(r"|".join(labels), response.lower())
         if found:
             return self.match(found)
+        else:
+            return response
 
     def construct_labels_and_matrix(self, devset, preds=None):
         """
@@ -479,7 +467,7 @@ class MCCBootstrapFewShotWithRandomSearch(Teleprompter):
             num_candidate_programs=16,
             num_threads=6,
             max_errors=10,
-            stop_at_score=None,
+            stop_at_score=1.0,
             metric_threshold=None,
             use_class_weight=True,
             output_field="response",
