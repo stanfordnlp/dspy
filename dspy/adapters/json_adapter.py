@@ -4,7 +4,7 @@ import json
 import logging
 import textwrap
 from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple
+from typing import Any, Dict, KeysView, Literal, NamedTuple, Type
 
 import json_repair
 import litellm
@@ -16,7 +16,8 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.types.image import Image
 from dspy.adapters.types.history import History
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
-from dspy.signatures.signature import SignatureMeta
+from dspy.clients.lm import LM
+from dspy.signatures.signature import SignatureMeta, Signature
 from dspy.signatures.utils import get_dspy_field_type
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,11 @@ class FieldInfoWithName(NamedTuple):
     name: str
     info: FieldInfo
 
-
 class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+    def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
@@ -66,7 +66,7 @@ class JSONAdapter(Adapter):
 
         return values
 
-    def format(self, signature, demos, inputs):
+    def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -94,7 +94,7 @@ class JSONAdapter(Adapter):
 
         return messages
 
-    def parse(self, signature, completion):
+    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
@@ -108,10 +108,7 @@ class JSONAdapter(Adapter):
 
         return fields
 
-    def format_turn(self, signature, values, role, incomplete=False, is_conversation_history=False):
-        return format_turn(signature, values, role, incomplete, is_conversation_history)
-
-    def format_fields(self, signature, values, role):
+    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
@@ -121,6 +118,13 @@ class JSONAdapter(Adapter):
         }
 
         return format_fields(role=role, fields_with_values=fields_with_values)
+    
+    def format_turn(self, signature: Type[Signature], values, role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
+        return format_turn(signature, values, role, incomplete, is_conversation_history)
+    
+    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+        # TODO: implement format_finetune_data method in JSONAdapter
+        raise NotImplementedError
 
 
 def _format_field_value(field_info: FieldInfo, value: Any) -> str:
