@@ -42,7 +42,8 @@ class Tool:
         self.args = args
         self.arg_types = arg_types
         self.arg_desc = arg_desc
-
+        self.has_var_kwargs = False
+        
         self._parse_function(func, arg_desc)
 
     def _resolve_pydantic_schema(self, model: type[BaseModel]) -> dict:
@@ -86,6 +87,8 @@ class Tool:
 
         # Use inspect.signature to get all arg names
         sig = inspect.signature(annotations_func)
+        # set has_var_kwargs to True if the function has a **kwargs parameter
+        self.has_var_kwargs = any([sig.parameters[k].kind == 4 for k in sig.parameters.keys()])
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
@@ -116,7 +119,10 @@ class Tool:
     def __call__(self, **kwargs):
         for k, v in kwargs.items():
             if k not in self.args:
-                raise ValueError(f"Arg {k} is not in the tool's args.")
+                if self.has_var_kwargs:
+                    continue
+                else:
+                    raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = v.model_dump() if hasattr(v, "model_dump") else v
                 if not self.args[k] == "Any":
