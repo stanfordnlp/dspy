@@ -2,11 +2,9 @@ import logging
 import random
 import threading
 from typing import Optional, Any
-
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 import dspy
-
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
 
@@ -148,20 +146,20 @@ class BootstrapFewShot(Teleprompter):
         bootstrapped = set()
         self.name2traces = {name: [] for name in self.name2predictor}
 
-        bootstrap_progress_bar = tqdm(total=max_bootstraps, desc="Bootstrapping Progress")
-        for example_idx, example in enumerate(self.trainset):
-            if len(bootstrapped) >= max_bootstraps:
-                break
-
-            for round_idx in range(self.max_rounds):
-                bootstrap_attempts += 1
-
-                if self._bootstrap_one_example(example, round_idx):
-                    bootstrapped.add(example_idx)
-                    bootstrap_progress_bar.update(1)
+        # We show two progress bars: one for the bootstrapping progress and one for the training sample progress.
+        with tqdm(total=max_bootstraps, desc="Bootstrapping Progress", position=0) as bootstrap_progress_bar:
+            for example_idx, example in enumerate(tqdm(self.trainset, position=1, desc="Training Sample Progress", leave=True)):
+                if len(bootstrapped) >= max_bootstraps:
                     break
+
+                for round_idx in range(self.max_rounds):
+                    bootstrap_attempts += 1
+
+                    if self._bootstrap_one_example(example, round_idx):
+                        bootstrapped.add(example_idx)
+                        bootstrap_progress_bar.update(1)
+                        break
         
-        bootstrap_progress_bar.close()
         logger.info(
             f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
             f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
@@ -212,7 +210,7 @@ class BootstrapFewShot(Teleprompter):
                 self.error_count += 1
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
-                raise e
+                raise
             logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
