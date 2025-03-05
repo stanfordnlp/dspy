@@ -140,6 +140,10 @@ class LM(BaseLM):
         if dspy.settings.disable_history:
             return outputs
 
+        self._log_entry(prompt, messages, kwargs, response, outputs)
+        return outputs
+
+    def _log_entry(self, prompt, messages, kwargs, response, outputs):
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
         entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
@@ -155,8 +159,6 @@ class LM(BaseLM):
         )
         self.history.append(entry)
         self.update_global_history(entry)
-
-        return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)

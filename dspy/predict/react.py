@@ -52,9 +52,18 @@ class ReAct(Module):
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
-            .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
+            .append("next_thought", dspy.OutputField(
+                desc="The next thought to consider in the trajectory."
+                     " Make sure the key is exactly 'next_thought'"
+            ), type_=str)
+            .append("next_tool_name", dspy.OutputField(
+                desc="The next tool to use in the trajectory."
+                     " Make sure the key is exactly 'next_tool_name'"
+            ), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_args", dspy.OutputField(
+                desc="The arguments to pass to the next tool in the trajectory."
+                     " Make sure the key is exactly 'next_tool_args'"
+            ), type_=dict[str, Any])
         )
 
         fallback_signature = dspy.Signature(
