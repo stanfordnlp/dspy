@@ -1,11 +1,12 @@
 import random
 from collections.abc import Mapping
-from typing import List, Tuple, Union
-
-import pandas as pd
+from typing import TYPE_CHECKING, List, Tuple, Union
 
 import dspy
 from dspy.datasets.dataset import Dataset
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class DataLoader(Dataset):
@@ -69,7 +70,7 @@ class DataLoader(Dataset):
 
     def from_pandas(
         self,
-        df: pd.DataFrame,
+        df: "pd.DataFrame",
         fields: list[str] = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
