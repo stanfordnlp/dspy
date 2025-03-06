@@ -1,18 +1,17 @@
 import datetime
 import logging
 import random
-import requests
 import socket
 import string
 import subprocess
-import time
 import threading
+import time
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from datasets import Dataset
-from typing import Any, Dict, List, Optional
-from dspy.clients.provider import TrainingJob, Provider
+import requests
+
+from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, save_data
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -29,7 +28,7 @@ class LocalProvider(Provider):
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         try:
-            import sglang # noqa: F401
+            import sglang  # noqa: F401
         except ImportError:
             raise ImportError(
                 "For local model launching, please install sglang by running "
@@ -228,6 +227,8 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     if "max_seq_length" not in train_kwargs:
         train_kwargs["max_seq_length"] = 4096
         logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
+
+    from datasets import Dataset
 
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):

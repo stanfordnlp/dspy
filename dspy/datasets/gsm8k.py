@@ -1,12 +1,13 @@
 import random
 
 import tqdm
-from datasets import load_dataset
 
 
 class GSM8K:
     def __init__(self):
         self.do_shuffle = False
+
+        from datasets import load_dataset
 
         dataset = load_dataset("gsm8k", "main")
 

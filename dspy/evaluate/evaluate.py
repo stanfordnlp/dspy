@@ -1,8 +1,10 @@
 import logging
 import types
-from typing import Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
+
 import tqdm
 
 import dspy
@@ -183,6 +185,7 @@ class Evaluate:
         ]
 
 
+        import pandas as pd
         # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
         result_df = pd.DataFrame(data)
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
@@ -252,7 +255,7 @@ def truncate_cell(content) -> str:
     return content
 
 
-def stylize_metric_name(df: pd.DataFrame, metric_name: str) -> pd.DataFrame:
+def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
     """
     Stylize the cell contents of a pandas DataFrame corresponding to the specified metric name.
 
@@ -265,12 +268,14 @@ def stylize_metric_name(df: pd.DataFrame, metric_name: str) -> pd.DataFrame:
     return df
 
 
-def display_dataframe(df: pd.DataFrame):
+def display_dataframe(df: "pd.DataFrame"):
     """
     Display the specified Pandas DataFrame in the console.
 
     :param df: The Pandas DataFrame to display.
     """
+    import pandas as pd
+
     if is_in_ipython_notebook_environment():
         display(configure_dataframe_for_ipython_notebook_display(df))
     else:
@@ -281,8 +286,10 @@ def display_dataframe(df: pd.DataFrame):
             print(df)
 
 
-def configure_dataframe_for_ipython_notebook_display(df: pd.DataFrame) -> pd.DataFrame:
+def configure_dataframe_for_ipython_notebook_display(df: "pd.DataFrame") -> "pd.DataFrame":
     """Set various pandas display options for DataFrame in an IPython notebook environment."""
+    import pandas as pd
+
     pd.options.display.max_colwidth = 70
     return df
 

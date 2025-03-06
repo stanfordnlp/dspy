@@ -1,7 +1,5 @@
 import random
 
-from datasets import load_dataset
-
 from dspy.datasets.dataset import Dataset
 
 
@@ -19,6 +17,8 @@ class HotPotQA(Dataset):
             "Care must be taken when adding support for easy examples."
             "Dev must be all hard to match official dev, but training can be flexible."
         )
+
+        from datasets import load_dataset
 
         hf_official_train = load_dataset("hotpot_qa", "fullwiki", split="train", trust_remote_code=True)
         hf_official_dev = load_dataset("hotpot_qa", "fullwiki", split="validation", trust_remote_code=True)
