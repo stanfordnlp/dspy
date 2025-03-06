@@ -2,7 +2,6 @@ import random
 from collections.abc import Mapping
 from typing import List, Optional, Union
 
-from datasets import Dataset
 from rich import print as rprint
 from tqdm import tqdm, trange
 
@@ -241,6 +240,7 @@ class Synthesizer:
     def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
         extension = mode or path.split(".")[-1]
 
+        from datasets import Dataset
         dataset = Dataset.from_list(
             [example.toDict() for example in data],
         )

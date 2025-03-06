@@ -3,7 +3,6 @@ from collections.abc import Mapping
 from typing import List, Tuple, Union
 
 import pandas as pd
-from datasets import load_dataset
 
 import dspy
 from dspy.datasets.dataset import Dataset
@@ -27,6 +26,7 @@ class DataLoader(Dataset):
         if not isinstance(input_keys, tuple):
             raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
 
+        from datasets import load_dataset
         dataset = load_dataset(dataset_name, *args, **kwargs)
 
         if isinstance(dataset, list) and isinstance(kwargs["split"], list):
@@ -59,6 +59,7 @@ class DataLoader(Dataset):
                 ]
 
     def from_csv(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
         dataset = load_dataset("csv", data_files=file_path)["train"]
 
         if not fields:
@@ -80,6 +81,7 @@ class DataLoader(Dataset):
         ]
 
     def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
         dataset = load_dataset("json", data_files=file_path)["train"]
 
         if not fields:
@@ -88,6 +90,7 @@ class DataLoader(Dataset):
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
         dataset = load_dataset("parquet", data_files=file_path)["train"]
 
         if not fields:
