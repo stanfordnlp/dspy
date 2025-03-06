@@ -28,6 +28,7 @@ class DataLoader(Dataset):
             raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
 
         from datasets import load_dataset
+
         dataset = load_dataset(dataset_name, *args, **kwargs)
 
         if isinstance(dataset, list) and isinstance(kwargs["split"], list):
@@ -61,6 +62,7 @@ class DataLoader(Dataset):
 
     def from_csv(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         from datasets import load_dataset
+
         dataset = load_dataset("csv", data_files=file_path)["train"]
 
         if not fields:
@@ -83,6 +85,7 @@ class DataLoader(Dataset):
 
     def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         from datasets import load_dataset
+
         dataset = load_dataset("json", data_files=file_path)["train"]
 
         if not fields:
@@ -92,6 +95,7 @@ class DataLoader(Dataset):
 
     def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
         from datasets import load_dataset
+
         dataset = load_dataset("parquet", data_files=file_path)["train"]
 
         if not fields:

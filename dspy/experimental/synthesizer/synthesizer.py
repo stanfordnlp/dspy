@@ -241,6 +241,7 @@ class Synthesizer:
         extension = mode or path.split(".")[-1]
 
         from datasets import Dataset
+
         dataset = Dataset.from_list(
             [example.toDict() for example in data],
         )

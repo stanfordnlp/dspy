@@ -19,6 +19,7 @@ class HotPotQA(Dataset):
         )
 
         from datasets import load_dataset
+
         hf_official_train = load_dataset("hotpot_qa", "fullwiki", split="train", trust_remote_code=True)
         hf_official_dev = load_dataset("hotpot_qa", "fullwiki", split="validation", trust_remote_code=True)
 

@@ -275,6 +275,7 @@ def display_dataframe(df: "pd.DataFrame"):
     :param df: The Pandas DataFrame to display.
     """
     import pandas as pd
+
     if is_in_ipython_notebook_environment():
         display(configure_dataframe_for_ipython_notebook_display(df))
     else:
@@ -288,6 +289,7 @@ def display_dataframe(df: "pd.DataFrame"):
 def configure_dataframe_for_ipython_notebook_display(df: "pd.DataFrame") -> "pd.DataFrame":
     """Set various pandas display options for DataFrame in an IPython notebook environment."""
     import pandas as pd
+
     pd.options.display.max_colwidth = 70
     return df
 

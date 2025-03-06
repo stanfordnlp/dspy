@@ -229,6 +229,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
 
     from datasets import Dataset
+
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):
         return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])

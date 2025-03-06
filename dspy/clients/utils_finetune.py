@@ -47,6 +47,7 @@ def save_data(
     data: List[Dict[str, Any]],
 ) -> str:
     from datasets.fingerprint import Hasher
+
     # Assign a unique name to the file based on the data hash
     hash = Hasher.hash(data)
     file_name = f"{hash}.jsonl"
