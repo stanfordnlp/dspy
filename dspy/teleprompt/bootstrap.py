@@ -1,12 +1,10 @@
 import logging
 import random
 import threading
-from typing import Dict, Optional
-
-import tqdm
+from typing import Optional, Any
+from tqdm.auto import tqdm
 
 import dspy
-
 from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
 
@@ -39,7 +37,7 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict] = None,
+        teacher_settings: Optional[dict[str, Any]] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -141,35 +139,35 @@ class BootstrapFewShot(Teleprompter):
         self.name2predictor = name2predictor
         self.predictor2name = predictor2name
 
-    def _bootstrap(self, *, max_bootstraps=None):
+    def _bootstrap(self, *, max_bootstraps: Optional[int] = None):
         max_bootstraps = max_bootstraps or self.max_bootstrapped_demos
         bootstrap_attempts = 0
 
-        bootstrapped = {}
+        bootstrapped = set()
         self.name2traces = {name: [] for name in self.name2predictor}
 
-        for example_idx, example in enumerate(tqdm.tqdm(self.trainset)):
-            if len(bootstrapped) >= max_bootstraps:
-                break
-
-            for round_idx in range(self.max_rounds):
-                bootstrap_attempts += 1
-
-                if self._bootstrap_one_example(example, round_idx):
-                    bootstrapped[example_idx] = True
+        # We show two progress bars: one for the bootstrapping progress and one for the training sample progress.
+        with tqdm(total=max_bootstraps, desc="Bootstrapping Progress", position=0) as bootstrap_progress_bar:
+            for example_idx, example in enumerate(tqdm(self.trainset, position=1, desc="Training Sample Progress", leave=True)):
+                if len(bootstrapped) >= max_bootstraps:
                     break
 
-        print(
+                for round_idx in range(self.max_rounds):
+                    bootstrap_attempts += 1
+
+                    if self._bootstrap_one_example(example, round_idx):
+                        bootstrapped.add(example_idx)
+                        bootstrap_progress_bar.update(1)
+                        break
+        
+        logger.info(
             f"Bootstrapped {len(bootstrapped)} full traces after {example_idx} examples "
             f"for up to {self.max_rounds} rounds, amounting to {bootstrap_attempts} attempts."
         )
 
         # Unbootstrapped training examples
-
         self.validation = [x for idx, x in enumerate(self.trainset) if idx not in bootstrapped]
         random.Random(0).shuffle(self.validation)
-
-        self.validation = self.validation
 
         # NOTE: Can't yet use evaluate because we need to trace *per example*
         # evaluate = Evaluate(program=self.teacher, metric=self.metric, num_threads=12)
@@ -192,6 +190,7 @@ class BootstrapFewShot(Teleprompter):
                         predictor.demos = [x for x in predictor.demos if x != example]
 
                     prediction = teacher(**example.inputs())
+                    # trace is updated within teacher's execution
                     trace = dspy.settings.trace
 
                     for name, predictor in teacher.named_predictors():
@@ -211,7 +210,7 @@ class BootstrapFewShot(Teleprompter):
                 self.error_count += 1
                 current_error_count = self.error_count
             if current_error_count >= self.max_errors:
-                raise e
+                raise
             logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
         if success:
