@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Callable, Literal, get_origin
 
+from litellm import ContextWindowExceededError
 from pydantic import BaseModel
 
 import dspy
@@ -108,12 +109,9 @@ class ReAct(Module):
                     **input_args,
                     trajectory=self._format_trajectory(trajectory),
                 )
-            except Exception as e:
-                if "ContextWindowExceededError" in str(e):
-                    logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
-                    trajectory = self.truncate_trajectory(trajectory)
-                else:
-                    raise e
+            except ContextWindowExceededError:
+                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
+                trajectory = self.truncate_trajectory(trajectory)
 
     def truncate_trajectory(self, trajectory):
         """Truncates the trajectory so that it fits in the context window.
