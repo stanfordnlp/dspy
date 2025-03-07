@@ -44,6 +44,7 @@ build/
 *.egg-info/
 # *.jsonl
 # *.json
+gcg_log.json
 !/data/*.json
 /dist/
 # **/*.pkl
@@ -63,3 +64,5 @@ docs/docs/**/*.json*
 *.index
 *.pkl
 *.tar.gz
+dspy_env/
+play.ipynb
