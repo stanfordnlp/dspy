@@ -57,7 +57,7 @@ class DeeplakeRM(dspy.Retrieve):
         k: int = 3,
     ):
         try:
-            from deeplake import VectorStore
+            from deeplake import VectorStore # noqa: F401
         except ImportError:
             raise ImportError("The 'deeplake' extra is required to use DeepLakeRM. Install it with `pip install dspy-ai[deeplake]`",)
 

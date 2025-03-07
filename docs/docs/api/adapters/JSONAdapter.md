@@ -6,6 +6,7 @@
         members:
             - __call__
             - format
+            - format_conversation_history
             - format_fields
             - format_finetune_data
             - format_turn

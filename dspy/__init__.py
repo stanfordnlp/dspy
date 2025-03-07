@@ -8,7 +8,7 @@ import dspy.retrievers
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
-from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image  # isort: skip
+from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, Image, History  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load
@@ -26,11 +26,4 @@ context = settings.context
 
 BootstrapRS = BootstrapFewShotWithRandomSearch
 
-from .__metadata__ import (
-    __name__,
-    __version__,
-    __description__,
-    __url__,
-    __author__,
-    __author_email__
-)
+from .__metadata__ import __name__, __version__, __description__, __url__, __author__, __author_email__

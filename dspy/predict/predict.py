@@ -2,12 +2,15 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters.image_utils import Image
+from dspy.clients.base_lm import BaseLM
+from dspy.clients.lm import LM
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
+from dspy.dsp.utils import settings
+from dspy.adapters.chat_adapter import ChatAdapter
 
 
 class Predict(Module, Parameter):
@@ -25,7 +28,7 @@ class Predict(Module, Parameter):
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train"]
+        state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
         state["demos"] = []
@@ -34,15 +37,12 @@ class Predict(Module, Parameter):
 
             for field in demo:
                 # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
-                # It does matter for images
-                if isinstance(demo[field], Image):
-                    demo[field] = demo[field].model_dump()
-                elif isinstance(demo[field], BaseModel):
-                    demo[field] = demo[field].model_dump_json()
+                demo[field] = serialize_object(demo[field])
 
             state["demos"].append(demo)
 
         state["signature"] = self.signature.dump_state()
+        state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
     def load_state(self, state):
@@ -54,24 +54,16 @@ class Predict(Module, Parameter):
         Returns:
             self: Returns self to allow method chaining
         """
-        excluded_keys = ["signature", "extended_signature"]
+        excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
 
-        # FIXME: Images are getting special treatment, but all basemodels initialized from json should be converted back to objects
-        for demo in self.demos:
-            for field in demo:
-                if isinstance(demo[field], dict) and "url" in demo[field]:
-                    url = demo[field]["url"]
-                    if not isinstance(url, str):
-                        raise ValueError(f"Image URL must be a string, got {type(url)}")
-                    demo[field] = Image(url=url)
-
         self.signature = self.signature.load_state(state["signature"])
+        self.lm = LM(**state["lm"]) if state["lm"] else None
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
@@ -81,8 +73,6 @@ class Predict(Module, Parameter):
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
-        import dspy
-
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -90,8 +80,8 @@ class Predict(Module, Parameter):
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dspy.settings.lm
-        assert isinstance(lm, dspy.LM), "No LM is loaded."
+        lm = kwargs.pop("lm", self.lm) or settings.lm
+        assert isinstance(lm, BaseLM), "No LM is loaded."
 
         # If temperature is 0.0 but its n > 1, set temperature to 0.7.
         temperature = config.get("temperature")
@@ -106,14 +96,19 @@ class Predict(Module, Parameter):
             missing = [k for k in signature.input_fields if k not in kwargs]
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
-        import dspy
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        adapter = settings.adapter or ChatAdapter()
+        completions = adapter(
+            lm,
+            lm_kwargs=config,
+            signature=signature,
+            demos=demos,
+            inputs=kwargs,
+        )
 
         pred = Prediction.from_completions(completions, signature=signature)
 
-        if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
-            trace = dspy.settings.trace
+        if kwargs.pop("_trace", True) and settings.trace is not None:
+            trace = settings.trace
             trace.append((self, {**kwargs}, pred))
 
         return pred
@@ -128,7 +123,24 @@ class Predict(Module, Parameter):
         return f"{self.__class__.__name__}({self.signature})"
 
 
-# TODO: get some defaults during init from the context window?
+def serialize_object(obj):
+    """
+    Recursively serialize a given object into a JSON-compatible format.
+    Supports Pydantic models, lists, dicts, and primitive types.
+    """
+    if isinstance(obj, BaseModel):
+        # Use model_dump to convert the model into a JSON-serializable dict
+        return obj.model_dump()
+    elif isinstance(obj, list):
+        return [serialize_object(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_object(item) for item in obj)
+    elif isinstance(obj, dict):
+        return {key: serialize_object(value) for key, value in obj.items()}
+    else:
+        return obj
+
+
 # # TODO: FIXME: Hmm, I guess expected behavior is that contexts can
 # affect execution. Well, we need to determine whether context dominates, __init__ demoninates, or forward dominates.
 # Generally, unless overwritten, we'd see n=None, temperature=None.

@@ -21,6 +21,7 @@
             - reset_copy
             - save
             - set_lm
+            - truncate_trajectory
         show_source: true
         show_undocumented_members: true
         show_root_heading: true

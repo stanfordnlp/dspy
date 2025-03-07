@@ -51,6 +51,10 @@
     text-align: justify;
 }
 
+/* Left-aligned text for grid cards */
+.md-content__inner .grid.cards p {
+    text-align: left;
+}
 
 /* Base styling for the output area */
 .jp-Cell-outputWrapper .jp-OutputArea-output pre {
@@ -113,7 +117,6 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
     margin-left: 1rem;
     margin-right: 0;
     text-align: right;  /* Keep right alignment for container */
-    width: auto;  /* Allow container to shrink to content */
 }
 
 .md-header__source .md-source {
@@ -131,7 +134,6 @@ body[data-md-color-scheme="slate"] .jp-Cell-outputWrapper .jp-OutputArea-output 
 .md-header__source .md-source__repository {
     order: 1;  /* Keep text on the left */
     text-align: left;  /* Ensure text is left-aligned */
-    width: auto;  /* Allow text container to shrink */
 }
 
 h2.doc-heading {
@@ -217,6 +219,10 @@ h2.doc-heading {
 /* Ensure code is readable */
 .highlight code {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.75em;
+}
+
+.highlight .linenos {
     font-size: 0.75em;
 }
 

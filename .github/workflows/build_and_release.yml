@@ -5,7 +5,6 @@ on:
     tags:
       - "*"
 jobs:
-
   extract-tag:  
     runs-on: ubuntu-latest  
     outputs:  
@@ -31,7 +30,7 @@ jobs:
         with:
           python-version: "3.9"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine semver packaging
+        run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Get correct version for TestPyPI release  
         id: check_version  
         run: |  
@@ -41,23 +40,34 @@ jobs:
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "::set-output name=version::$NEW_VERSION"  
-      - name: Update version in setup.py
-        run: sed -i '/#replace_package_version_marker/{n;s/__version__="[^"]*"/__version__="${{ steps.check_version.outputs.version }}"/;}' ./dspy/__metadata__.py
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml        
-      - name: Update package name in setup.py
-        run: sed -i '/#replace_package_name_marker/{n;s/__name__="[^"]*"/__name__="dspy-ai-test"/;}' ./dspy/__metadata__.py
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml  
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml  
       - name: Build a binary wheel
-        run: python3 setup.py sdist bdist_wheel
+        run: python3 -m build
+      # Test the locally built wheel
+      - name: Create test environment
+        run: python -m venv test_before_testpypi
+      - name: Test package installation and functionality
+        run: |
+          source test_before_testpypi/bin/activate
+          # Install the locally built wheel and testing dependencies
+          pip install dist/*.whl pytest
+          pytest tests/metadata/test_metadata.py tests/predict
+          deactivate
+      # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with: 
           repository-url: https://test.pypi.org/legacy/
 
+  # TODO: Add tests using dspy-ai-test
+
   build-and-publish-pypi:
     needs: [extract-tag, build-and-publish-test-pypi]
+    # Only publish to PyPI if the repository owner is stanfordnlp
+    if: github.repository_owner == 'stanfordnlp'
     runs-on: ubuntu-latest
     environment: 
       name: pypi
@@ -71,43 +81,47 @@ jobs:
         with:
           python-version: "3.9"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine
-      - name: Update version in setup.py (dspy)
-        run: sed -i '/#replace_package_version_marker/{n;s/__version__="[^"]*"/__version__="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/__metadata__.py
+        run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+      - name: Update version in __metadata__.py
+        run: sed -i '/#replace_package_version_marker/{n;s/__version__ *= *"[^"]*"/__version__="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/__metadata__.py
       # Publish to dspy
-      - name: Update package name in setup.py  
-        run: |
-          sed -i '/#replace_package_name_marker/{n;s/__name__="[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy"/;}' pyproject.toml
-      # Remove pyproject.toml temporarily to avoid conflicts
-      - name: Temporarily remove pyproject.toml  
-        run: mv pyproject.toml pyproject.toml.bak 
+        run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy"/;}' pyproject.toml
+      - name: Update package name in metadata.py
+        run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
-        run: python3 setup.py sdist bdist_wheel
+        run: python3 -m build
+      # Test the locally built wheel before publishing to pypi
+      - name: Create test environment
+        run: python -m venv test_before_pypi
+      - name: Test package installation and functionality
+        run: |
+          source test_before_pypi/bin/activate
+          # Install the locally built wheel and testing dependencies
+          pip install dist/*.whl pytest
+          pytest tests/metadata/test_metadata.py tests/predict
+          deactivate
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
         with: 
           attestations: false
       # Publish to dspy-ai
-      - name: Update version in setup.py (dspy-ai)
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/.internal_dspyai/setup.py
-      - name: Update package name in setup.py  
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai"/;}' ./dspy/.internal_dspyai/setup.py
-      - name: Update dspy dependency version in setup.py  
+      - name: Update package name in pyproject.toml
+        run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy-ai"/;}' ./dspy/.internal_dspyai/pyproject.toml
+      - name: Update version for dspy-ai release
+        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/.internal_dspyai/pyproject.toml
+      - name: Update dspy dependency for dspy-ai release 
         run: |
-          sed -i '/#replace_dspy_version_marker/{n;s/dspy>=[^"]*/dspy>=${{ needs.extract-tag.outputs.version }}/;}' ./dspy/.internal_dspyai/setup.py  
-      - name: Build a binary wheel
-        run: python3 ./dspy/.internal_dspyai/setup.py sdist bdist_wheel
+          sed -i '/#replace_dspy_version_marker/{n;s/dspy *>= *"[^"]*/dspy>=${{ needs.extract-tag.outputs.version }}/;}' ./dspy/.internal_dspyai/pyproject.toml
+      - name: Build a binary wheel (dspy-ai)
+        run: python3 -m build ./dspy/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
         with: 
           attestations: false
-      # Restore pyproject.toml
-      - name: Restore pyproject.toml  
-        run: mv pyproject.toml.bak pyproject.toml 
+          packages-dir: ./dspy/.internal_dspyai/dist/
       - uses: stefanzweifel/git-auto-commit-action@v5 # auto commit changes to main
         with:
           commit_message: Update versions

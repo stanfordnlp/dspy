@@ -1,11 +1,12 @@
 import functools
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, Optional, cast, TYPE_CHECKING
 
 import litellm
 import pydantic
@@ -16,11 +17,12 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
-from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.utils_finetune import DataFormat, infer_data_format, validate_data_format
+from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.utils.callback import BaseCallback, with_callbacks
+if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
 
 from .base_lm import BaseLM
 
@@ -39,11 +41,13 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         cache: bool = True,
+        cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 8,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
+        train_kwargs: Optional[dict[str, Any]] = None,
         **kwargs,
     ):
         """
@@ -57,6 +61,7 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
+            cache_in_memory: To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -69,39 +74,58 @@ class LM(BaseLM):
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
-        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
         self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
-        self.launch_kwargs = launch_kwargs
+        self.launch_kwargs = launch_kwargs or {}
+        self.train_kwargs = train_kwargs or {}
 
-        # TODO(bug): Arbitrary model strings could include the substring "o1-".
-        # We should find a more robust way to check for the "o1-" family models.
-        if "o1-" in model:
+        # Handle model-specific configuration for different model families
+        model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+
+        # Match pattern: o[1,3] at the start, optionally followed by -mini and anything else
+        model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+
+        if model_pattern:
+            # Handle OpenAI reasoning models (o1, o3)
             assert (
                 max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+        else:
+            self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
+        # disable cache will also disable in memory cache
+        cache_in_memory = cache and kwargs.pop("cache_in_memory", self.cache_in_memory)
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
         # Make the request and handle LRU & disk caching.
-        if self.model_type == "chat":
-            completion = cached_litellm_completion if cache else litellm_completion
-        else:
-            completion = cached_litellm_text_completion if cache else litellm_text_completion
+        if cache_in_memory:
+            completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-        response = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-        )
+            response = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+            )
+        else:
+            completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+
+            response = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                # only leverage LiteLLM cache in this case
+                cache={"no-cache": not cache, "no-store": not cache},
+            )
+
         if kwargs.get("logprobs"):
             outputs = [
                 {
@@ -112,6 +136,9 @@ class LM(BaseLM):
             ]
         else:
             outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+
+        if dspy.settings.disable_history:
+            return outputs
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
@@ -132,18 +159,16 @@ class LM(BaseLM):
         return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
-        launch_kwargs = launch_kwargs or self.launch_kwargs
         self.provider.launch(self, launch_kwargs)
 
     def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
-        launch_kwargs = launch_kwargs or self.launch_kwargs
         self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None,
     ) -> TrainingJob:
         from dspy import settings as settings
 
@@ -154,27 +179,18 @@ class LM(BaseLM):
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
-        # Perform data validation before starting the thread to fail early
-        train_kwargs = train_kwargs or {}
-        if not data_format:
-            adapter = self.infer_adapter()
-            data_format = infer_data_format(adapter)
-        validate_data_format(data=train_data, data_format=data_format)
-
-        # TODO(PR): We can quickly add caching, but doing so requires
-        # adding functions that just call other functions as we had in the last
-        # iteration, unless people have other ideas.
         def thread_function_wrapper():
             return self._run_finetune_job(job)
 
         thread = threading.Thread(target=thread_function_wrapper)
-        model_to_finetune = self.finetuning_model or self.model
+        train_kwargs = train_kwargs or self.train_kwargs
+        model_to_finetune = self.finetuning_model or self.model 
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
             train_data=train_data,
+            train_data_format=train_data_format,
             train_kwargs=train_kwargs,
-            data_format=data_format,
         )
         thread.start()
 
@@ -188,8 +204,8 @@ class LM(BaseLM):
                 job=job,
                 model=job.model,
                 train_data=job.train_data,
+                train_data_format=job.train_data_format,
                 train_kwargs=job.train_kwargs,
-                data_format=job.data_format,
             )
             lm = self.copy(model=model)
             job.set_result(lm)
@@ -204,7 +220,7 @@ class LM(BaseLM):
         # providers in this file. Is this okay?
         return Provider()
 
-    def infer_adapter(self) -> Adapter:
+    def infer_adapter(self) -> "Adapter":
         import dspy
 
         if dspy.settings.adapter:
@@ -231,6 +247,10 @@ class LM(BaseLM):
                 new_instance.kwargs[key] = value
 
         return new_instance
+    
+    def dump_state(self):
+        state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
+        return { key: getattr(self, key) for key in state_keys } | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):

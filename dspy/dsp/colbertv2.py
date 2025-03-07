@@ -103,7 +103,7 @@ class ColBERTv2RetrieverLocal:
     def build_index(self):
 
         try:
-            import colbert
+            import colbert # noqa: F401
         except ImportError:
             print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
 
@@ -115,7 +115,7 @@ class ColBERTv2RetrieverLocal:
 
     def get_index(self):
         try:
-            import colbert
+            import colbert # noqa: F401
         except ImportError:
             print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
 
@@ -154,7 +154,7 @@ class ColBERTv2RerankerLocal:
     
     def __init__(self,colbert_config=None,checkpoint:str='bert-base-uncased'):
         try:
-            import colbert
+            import colbert # noqa: F401
         except ImportError:
             print("Colbert not found. Please check your installation or install the module using pip install colbert-ai[faiss-gpu,torch].")
         """_summary_

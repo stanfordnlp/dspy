@@ -34,7 +34,9 @@ class Embeddings:
 
     def forward(self, query: str):
         import dspy
-        return dspy.Prediction(passages=self.search_fn(query))
+
+        passages, indices = self.search_fn(query)
+        return dspy.Prediction(passages=passages, indices=indices)
 
     def _batch_forward(self, queries: List[str]):
         q_embeds = self.embedder(queries)
@@ -76,7 +78,7 @@ class Embeddings:
         top_k_indices = np.argsort(-scores, axis=1)[:, :self.k]
         top_indices = candidate_indices[np.arange(len(q_embeds))[:, None], top_k_indices]
 
-        return [[self.corpus[idx] for idx in indices] for indices in top_indices]
+        return [([self.corpus[idx] for idx in indices], [idx for idx in indices]) for indices in top_indices]
 
     def _normalize(self, embeddings: np.ndarray):
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
