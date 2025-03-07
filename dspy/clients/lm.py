@@ -184,7 +184,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
@@ -342,7 +342,10 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     )
 
     stream = dspy.settings.send_stream
+    caller_predict = dspy.settings.caller_predict
     if stream is None:
+        # If `streamify` is not used, or if the exact predict doesn't need to be streamed,
+        # we can just return the completion without streaming.
         return litellm.completion(
             cache=cache,
             **retry_kwargs,
@@ -351,6 +354,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
 
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
+    caller_predict_id = id(caller_predict) if caller_predict else None
 
     @syncify
     async def stream_completion():
@@ -362,6 +366,9 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         )
         chunks = []
         async for chunk in response:
+            if caller_predict_id:
+                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
+                chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
         return litellm.stream_chunk_builder(chunks)

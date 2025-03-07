@@ -13,11 +13,12 @@ from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.types.image import Image
 from dspy.adapters.types.history import History
+from dspy.adapters.types.image import Image
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, serialize_for_json
 from dspy.clients.lm import LM
-from dspy.signatures.signature import SignatureMeta, Signature
+from dspy.dsp.utils.settings import settings
+from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,25 @@ class FieldInfoWithName(NamedTuple):
     name: str
     info: FieldInfo
 
+
 class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    def __call__(
+        self,
+        lm: LM,
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+
+        stream_listeners = settings.stream_listeners or []
+        if len(stream_listeners) > 0:
+            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
@@ -66,7 +79,9 @@ class JSONAdapter(Adapter):
 
         return values
 
-    def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    def format(
+        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -118,11 +133,20 @@ class JSONAdapter(Adapter):
         }
 
         return format_fields(role=role, fields_with_values=fields_with_values)
-    
-    def format_turn(self, signature: Type[Signature], values, role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
+
+    def format_turn(
+        self,
+        signature: Type[Signature],
+        values,
+        role: str,
+        incomplete: bool = False,
+        is_conversation_history: bool = False,
+    ) -> dict[str, Any]:
         return format_turn(signature, values, role, incomplete, is_conversation_history)
-    
-    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+
+    def format_finetune_data(
+        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+    ) -> dict[str, list[Any]]:
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
 
