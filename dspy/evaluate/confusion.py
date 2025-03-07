@@ -162,7 +162,8 @@ class Confusion:
             weight = {k: 1 for k in labels}
 
         # Initialize the confusion matrix
-        confusion_matrix = np.zeros([len(labels)] * 2, dtype=np.float64)
+        n = len(labels)
+        confusion_matrix = np.zeros((n, n + 1), dtype=np.float64)
 
         # Get model answers
         answers = {label: [self._extract(pred, labels) for pred in preds[label]] for label in labels}
@@ -170,8 +171,10 @@ class Confusion:
         # Fill the confusion matrix
         for idx, label in enumerate(labels):
             for answer in answers[label]:
+                k = -1
                 if answer in labels:
-                    confusion_matrix[idx][labels.index(answer)] += weight[label]
+                    k = labels.index(answer)
+                confusion_matrix[idx][k] += weight[label]
 
         return labels, confusion_matrix
 
@@ -188,7 +191,8 @@ class Confusion:
             If return_cm is False, returns the MCC score.
             If return_cm is True, returns a tuple (mcc_score, confusion_matrix_dataframe).
         """
-        labels, C = self.construct_labels_and_matrix(devset, preds)
+        labels, cm = self.construct_labels_and_matrix(devset, preds)
+        C = cm[:, :-1]
 
         # <sklearn.metrics.matthews_corrcoef>
         t_sum = C.sum(axis=1, dtype=np.float64)
@@ -199,7 +203,7 @@ class Confusion:
         cov_ytyt = n_samples_2 - np.dot(t_sum, t_sum)
         prod = cov_ypyp * cov_ytyt
 
-        if prod == 0:
+        if prod <= 0:
             out = 0.0
         else:
             n_correct = np.trace(C, dtype=np.float64)
@@ -207,10 +211,13 @@ class Confusion:
             out = cov_ytyp / np.sqrt(prod)
         # </sklearn.metrics.matthews_corrcoef>
 
+        # reduce out by the amount of missing values
+        out *= n_samples / cm.sum()
+
         if return_cm:
-            cm = pd.DataFrame(C,
+            cm = pd.DataFrame(cm,
                               index=pd.Index(labels, name="Actual"),
-                              columns=pd.Index(labels, name="Predicted"))
+                              columns=pd.Index(labels + ["missing"], name="Predicted"))
             return out, cm
         return out
 
