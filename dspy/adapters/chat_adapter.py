@@ -4,12 +4,14 @@ import json
 import re
 import textwrap
 from collections.abc import Mapping
-from typing import Any, Dict, Literal, NamedTuple, Optional, Type
+from itertools import chain
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Type, Union, get_args, get_origin
 
 import pydantic
 from pydantic.fields import FieldInfo
 from litellm import ContextWindowExceededError
 
+from dsp.adapters.base_template import Field
 from dspy.adapters.base import Adapter
 from dspy.adapters.types.image import try_expand_image_tags
 from dspy.adapters.types.history import History
@@ -32,8 +34,12 @@ class FieldInfoWithName(NamedTuple):
 # Built-in field indicating that a chat turn has been completed.
 BuiltInCompletedOutputFieldInfo = FieldInfoWithName(name="completed", info=OutputField())
 
+# Constraints that can be applied to numeric fields.
+PERMITTED_CONSTRAINTS = {"gt", "lt", "ge", "le", "multiple_of", "allow_inf_nan"}
+
 
 class ChatAdapter(Adapter):
+  
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         super().__init__(callbacks)
 
@@ -48,6 +54,19 @@ class ChatAdapter(Adapter):
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
     
     def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+      """
+        Creates a formatted list of messages to pass to the LLM as a prompt.
+
+        Args:
+            signature (Signature): The signature of the task.
+            demos (List[Dict[str, Any]]): A list of dictionaries, each containing a demonstration for how to perform the
+                task (i.e., mapping from input fields to output fields).
+            inputs: A dictionary containing the input fields for the task.
+
+        Returns:
+            A list of messages to pass to the LLM as a prompt. Each message is a dictionary with two keys: "role" (i.e.,
+                whether the message is from the user or the assistant) and "content" (i.e., the message text).
+        """
         messages: list[dict[str, Any]] = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -80,7 +99,7 @@ class ChatAdapter(Adapter):
         messages = try_expand_image_tags(messages)
         return messages
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: Signature, completion: str, _parse_values: bool = True):
         sections = [(None, [])]
 
         for line in completion.splitlines():
@@ -96,19 +115,40 @@ class ChatAdapter(Adapter):
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation) if _parse_values else v
                 except Exception as e:
                     raise ValueError(
-                        f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
+                        f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n\n{v}\n"
                     )
 
         if fields.keys() != signature.output_fields.keys():
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
-
         return fields
 
     # TODO(PR): Looks ok?
-    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+    def format_finetune_data(
+        self,
+        signature: Signature,
+        demos: List[Dict[str, Any]],
+        inputs: Dict[str, Any],
+        outputs: Dict[str, Any]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Formats the data for fine-tuning an LLM on a task.
+
+        Args:
+            signature (Signature): The signature of the task.
+            demos (List[Dict[str, Any]]): A list of dictionaries, each containing a demonstration for how to perform the
+                task (i.e., mapping from input fields to output fields).
+            inputs: A dictionary containing the input fields for the task.
+            outputs: A dictionary containing the output fields for the task.
+
+        Returns:
+            A dictionary containing the formatted data for fine-tuning an LLM on the task. The dictionary has a single
+                key, "messages", which maps to a list of messages to pass to the LLM as a prompt. Each message is a
+                dictionary with two keys: "role" (i.e., whether the message is from the user or the assistant) and
+                "content" (i.e., the message text).
+        """
         # Get system + user messages
         messages = self.format(signature, demos, inputs)
 
@@ -121,7 +161,30 @@ class ChatAdapter(Adapter):
         # Wrap the messages in a dictionary with a "messages" key
         return dict(messages=messages)
 
-    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
+    def format_turn(
+        self,
+        signature: Signature,
+        values: Dict[str, Any],
+        role: str,
+        incomplete: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Formats a single turn in a chat thread.
+
+        Args:
+            signature (Signature): The signature of the task.
+            values (Dict[str, Any]): A dictionary mapping field names to corresponding values.
+            role (str): The role of the message, which can be either "user" or "assistant".
+            incomplete (bool): If True, indicates that output field values are present in the set of specified values.
+                If False, indicates that values only contains input field values.
+
+        Returns:
+            A dictionary representing a single turn in a chat thread. The dictionary has two keys: "role" (i.e., whether
+                the message is from the user or the assistant) and "content" (i.e., the message text).
+        """
+        return format_turn(signature, values, role, incomplete)
+
+    def format_fields(self, signature: Signature, values: Dict[str, Any], role: str) -> str:
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
@@ -135,30 +198,69 @@ class ChatAdapter(Adapter):
         return format_turn(signature, values, role, incomplete, is_conversation_history)
 
 
-def format_fields(fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
+def format_fields(fields_with_values: Dict[FieldInfoWithName, Any], assume_text: bool = True) -> Union[str, List[dict]]:
     """
-    Formats the values of the specified fields according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-    into a single string, which is is a multiline string if there are multiple fields.
+    Creates a formatted representation of the fields and their values.
+
+    Formats the values of the specified fields according to the field's DSPy type (input or output), annotation (e.g. str,
+    int, etc.), and the type of the value itself. Joins the formatted values into a single string, which is is a multiline
+    string if there are multiple fields.
 
     Args:
-      fields_with_values: A dictionary mapping information about a field to its corresponding
-                          value.
+        fields_with_values (Dict[FieldInforWithName, Any]): A dictionary mapping information about a field to its
+            corresponding value.
+        assume_text (bool): If True, assumes that the values are text and formats them as such. If False, formats the
+            values as a list of dictionaries.
+
     Returns:
       The joined formatted values of the fields, represented as a string
     """
     output = []
     for field, field_value in fields_with_values.items():
+        formatted_field_value = format_field_value(field_info=field.info, value=field_value, assume_text=assume_text)
+        if assume_text:
+            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+        else:
+            output.append({"type": "text", "text": f"[[ ## {field.name} ## ]]\n"})
+            if isinstance(formatted_field_value, dict) and formatted_field_value.get("type") == "image_url":
+                output.append(formatted_field_value)
+            else:
+                output[-1]["text"] += formatted_field_value["text"]
+    if assume_text:
+        return "\n\n".join(output).strip()
+    else:
+        return output
+
+
+def parse_value(value: Any, annotation: Type) -> Any:
+    """
+    Parses a value according to the specified annotation.
+
+    Args:
+        value: The value to parse.
+        annotation: The type to which the value should be parsed.
+
+    Returns:
+        The parsed value.
+    """
+    if annotation is str:
+        return str(value)
         formatted_field_value = format_field_value(field_info=field.info, value=field_value)
         output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
-
     return "\n\n".join(output).strip()
 
-
-def format_turn(signature: Type[Signature], values: dict[str, Any], role: str, incomplete=False, is_conversation_history=False):
+def format_turn(
+    signature: Type[Signature],
+    values: dict[str, Any],
+    role: str,
+    incomplete: bool = False,
+    is_conversation_history: bool = False,
+):
     """
-    Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
-    so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
+    Constructs a new message ("turn") to append to a chat thread.
+
+    The message is carefully formatted so that it can instruct an LLM to generate responses conforming to the specified
+    DSPy signature.
 
     Args:
         signature: The DSPy signature to which future LLM responses should conform.
@@ -168,28 +270,33 @@ def format_turn(signature: Type[Signature], values: dict[str, Any], role: str, i
         incomplete: If True, indicates that output field values are present in the set of specified
             `values`. If False, indicates that `values` only contains input field values. Only used if
             `is_conversation_history` is False.
-        is_conversation_history: If True, indicates that the message is part of the chat history, otherwise
+        is_conversation_history: If True, indicates that the message is part of the chat history; otherwise,
             it is a demo (few-shot example).
 
     Returns:
         A chat message that can be appended to a chat thread. The message contains two string fields:
         `role` ("user" or "assistant") and `content` (the message text).
     """
+    # Select fields and set an optional prefix based on the role.
     if role == "user":
         fields = signature.input_fields
         if incomplete and not is_conversation_history:
-            message_prefix = "This is an example of the task, though some input or output fields are not supplied."
+            message_prefix = (
+                "This is an example of the task, though some input or output fields are not supplied."
+            )
         else:
             message_prefix = ""
     else:
-        # Add the completed field or chat history for the assistant turn
+        # For assistant turns, use output fields.
         fields = {**signature.output_fields}
         values = {**values}
         message_prefix = ""
+        # If this is not part of conversation history, add the built-in completed field.
         if not is_conversation_history:
             fields.update({BuiltInCompletedOutputFieldInfo.name: BuiltInCompletedOutputFieldInfo.info})
             values.update({BuiltInCompletedOutputFieldInfo.name: ""})
 
+    # Check that all required fields are present unless the turn is incomplete or it's conversation history.
     if not incomplete and not is_conversation_history and not set(values).issuperset(fields.keys()):
         raise ValueError(f"Expected {fields.keys()} but got {values.keys()}")
 
@@ -197,6 +304,7 @@ def format_turn(signature: Type[Signature], values: dict[str, Any], role: str, i
     if message_prefix:
         messages.append(message_prefix)
 
+    # Format the fields with their corresponding values.
     field_messages = format_fields(
         {
             FieldInfoWithName(name=k, info=v): values.get(
@@ -206,40 +314,100 @@ def format_turn(signature: Type[Signature], values: dict[str, Any], role: str, i
                 else "Not supplied for this particular example. ",
             )
             for k, v in fields.items()
-        },
+        }
     )
     messages.append(field_messages)
 
+    # Helper function to provide type info if needed.
     def type_info(v):
         if v.annotation is not str:
             return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
         else:
             return ""
 
-    # Add output field instructions for user messages
+    # For user turns, add extra instructions about output fields if they exist.
     if role == "user" and signature.output_fields:
         field_instructions = (
             "Respond with the corresponding output fields, starting with the field "
-            + ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
+            + ", then ".join(
+                f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items()
+            )
             + ", and then ending with the marker for `[[ ## completed ## ]]`."
         )
         messages.append(field_instructions)
-    joined_messages = "\n\n".join(msg for msg in messages)
+
+    joined_messages = "\n\n".join(messages)
     return {"role": role, "content": joined_messages}
 
+  
+def _format_constraint(name: str, value: Union[str, float]) -> str:
+    """
+    Formats a constraint for a numeric field.
 
-def enumerate_fields(fields: dict) -> str:
+    Args:
+        name: The name of the constraint.
+        value: The value of the constraint.
+
+    Returns:
+        The formatted constraint as a string.
+    """
+    constraints = {
+        'gt': f"greater than {value}",
+        'lt': f"less than {value}",
+        'ge': f"greater than or equal to {value}",
+        'le': f"less than or equal to {value}",
+        'multiple_of': f"a multiple of {value}",
+        'allow_inf_nan': "allows infinite and NaN values" if value else "no infinite or NaN values allowed"
+    }
+    return constraints.get(name, f"{name}={value}")
+
+
+def format_metadata_summary(field: pydantic.fields.FieldInfo) -> str:
+    """
+    Formats a summary of the metadata for a field."""
+    if not field.metadata:
+        return ""
+    metadata_parts = [str(meta) for meta in field.metadata]
+    if metadata_parts:
+        return f" [Metadata: {'; '.join(metadata_parts)}]"
+    return ""
+
+
+def format_metadata_constraints(field: Field) -> str:
+    """Formats the constraints for a field."""
+    if not hasattr(field, 'metadata') or not field.metadata:
+        return ""
+    formatted_constraints = []
+    for meta in field.metadata:
+        constraint_names = [name for name in dir(meta) if not name.startswith('_')]
+        for name in constraint_names:
+            if hasattr(meta, name) and name in PERMITTED_CONSTRAINTS:
+                value = getattr(meta, name)
+                formatted_constraints.append(_format_constraint(name, value))
+    if not formatted_constraints:
+        return ""
+    elif len(formatted_constraints) == 1:
+        return f" that is {formatted_constraints[0]}."
+    else:
+        *front, last = formatted_constraints
+        return f" that is {', '.join(front)} and {last}."
+
+
+def enumerate_fields(fields: Dict[str, FieldInfo]) -> str:
+    """Enumerates the fields in a signature."""
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx + 1}. `{k}`")
         parts[-1] += f" ({get_annotation_name(v.annotation)})"
         parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
-
+        metadata_info = format_metadata_summary(v)
+        if metadata_info:
+            parts[-1] += metadata_info
     return "\n".join(parts).strip()
 
 
-def move_type_to_front(d):
-    # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
+def move_type_to_front(d: Union[Dict, List, Any]) -> Union[Dict, List, Any]:
+    """Moves the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence."""
     if isinstance(d, Mapping):
         return {k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: (item[0] != "type", item[0]))}
     elif isinstance(d, list):
@@ -247,19 +415,22 @@ def move_type_to_front(d):
     return d
 
 
-def prepare_schema(field_type):
-    schema = pydantic.TypeAdapter(field_type).json_schema()
+def prepare_schema(type_: Type) -> Dict[str, Any]:
+    """Prepares a JSON schema for a given type."""
+    schema: Dict[str, Any] = pydantic.TypeAdapter(type_).json_schema()
     schema = move_type_to_front(schema)
     return schema
 
 
-def prepare_instructions(signature: SignatureMeta):
+def prepare_instructions(signature: SignatureMeta) -> str:
+    """Prepares the instructions for a signature."""
     parts = []
     parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
     parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-    def field_metadata(field_name, field_info):
+    def field_metadata(field_name: str, field_info: FieldInfo) -> str:
+        """Creates a formatted representation of a field's information and metadata."""
         field_type = field_info.annotation
 
         if get_dspy_field_type(field_info) == "input" or field_type is str:
@@ -268,6 +439,8 @@ def prepare_instructions(signature: SignatureMeta):
             desc = "must be True or False"
         elif field_type in (int, float):
             desc = f"must be a single {field_type.__name__} value"
+            metadata_info = format_metadata_constraints(field_info)
+            if metadata_info: desc += metadata_info
         elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
             desc = f"must be one of: {'; '.join(field_type.__members__)}"
         elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
@@ -283,7 +456,8 @@ def prepare_instructions(signature: SignatureMeta):
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
         return f"{{{field_name}}}{desc}"
 
-    def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+    def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]) -> str:
+        """Formats the fields from the signature for the instructions."""
         return format_fields(
             fields_with_values={
                 FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
@@ -297,5 +471,4 @@ def prepare_instructions(signature: SignatureMeta):
     instructions = textwrap.dedent(signature.instructions)
     objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
     parts.append(f"In adhering to this structure, your objective is: {objective}")
-
     return "\n\n".join(parts).strip()
