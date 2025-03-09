@@ -65,7 +65,8 @@ class Refine(Module):
             >>> def one_word_answer(args, pred):
             >>>     return 1.0 if len(pred.answer) == 1 else 0.0
             >>> best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
-            >>> best_of_3(question="What is the capital of Belgium?")
+            >>> best_of_3(question="What is the capital of Belgium?").answer
+            >>> # Brussels
         """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
