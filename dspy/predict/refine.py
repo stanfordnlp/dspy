@@ -48,8 +48,12 @@ class Refine(Module):
         fail_count: Optional[int] = None,
     ):
         """
-        Refine the module by running it N times with different temperatures.
-        If the module's prediction does not pass the threshold, we automatically offer feedback on how to improve the module's prediction.
+        Refines a module by running it up to N times with different temperatures and returns the best prediction.
+
+        This module runs the provided module multiple times with varying temperature settings and selects
+        either the first prediction that exceeds the specified threshold or the one with the highest reward.
+        If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
+
 
         Args:
             module (Module): The module to refine.

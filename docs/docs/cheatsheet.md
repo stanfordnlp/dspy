@@ -493,11 +493,11 @@ Other custom configurations are similar to customizing the `dspy.BootstrapFewSho
 
 ## DSPy `Refine` and `BestofN`
 
-Note: `dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
+>`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
 
 ### BestofN
 
-Runs a module up to `N` times with different temperatures and returns the best prediction or the first prediction that passes the threshold.
+Runs a module up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 
 ```python
 import dspy
@@ -512,7 +512,7 @@ best_of_3(question="What is the capital of Belgium?").answer
 
 ### Refine
 
-Refines a module by running it up to `N` times with different temperatures and returns the best prediction or the first prediction that passes the `threshold`. Unlike `BestofN`, `Refine` will automatically take a hint from a previous run.
+Refines a module by running it up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
 
 ```python
 import dspy
