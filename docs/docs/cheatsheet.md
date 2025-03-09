@@ -491,34 +491,55 @@ your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_
 
 Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
-## DSPy Assertions
+## DSPy `Refine` and `BestofN`
 
-### Including `dspy.Assert` and `dspy.Suggest` statements
+>`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
+
+### BestofN
+
+Runs a module up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 
 ```python
-dspy.Assert(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
+import dspy
 
-dspy.Suggest(your_validation_fn(model_outputs), "your feedback message", target_module="YourDSPyModule")
+qa = dspy.ChainOfThought("question -> answer")
+def one_word_answer(args, pred):
+    return 1.0 if len(pred.answer) == 1 else 0.0
+best_of_3 = dspy.BestOfN(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+best_of_3(question="What is the capital of Belgium?").answer
+# Brussels
 ```
 
-### Activating DSPy Program with Assertions
+### Refine
 
-**Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above.
+Refines a module by running it up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
 
 ```python
-#1. Using `assert_transform_module:
-from dspy.primitives.assertions import assert_transform_module, backtrack_handler
+import dspy
 
-program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)
-
-#2. Using `activate_assertions()`
-program_with_assertions = ProgramWithAssertions().activate_assertions()
+qa = dspy.ChainOfThought("question -> answer")
+def one_word_answer(args, pred):
+    return 1.0 if len(pred.answer) == 1 else 0.0
+best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+best_of_3(question="What is the capital of Belgium?").answer
+# Brussels
 ```
 
-## Compiling with DSPy Programs with Assertions
+#### Error Handling
+
+By default, `Refine` will try to run the module up to N times until the threshold is met. If the module encounters an error, it will keep going up to N failed attempts. You can change this behavior by setting `fail_count` to a smaller number than `N`.
 
 ```python
-program_with_assertions = assert_transform_module(ProgramWithAssertions(), backtrack_handler)
-fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric = your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=6)
-compiled_dspy_program_with_assertions = fewshot_optimizer.compile(student=program_with_assertions, teacher = program_with_assertions, trainset=trainset, valset=devset) #student can also be program_without_assertions
+refine = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0, fail_count=1)
+...
+refine(question="What is the capital of Belgium?")
+# If we encounter just one failed attempt, the module will raise an error.
+```
+
+If you want to run the module up to N times without any error handling, you can set `fail_count` to `N`. This is the default behavior.
+
+```python
+refine = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0, fail_count=3)
+...
+refine(question="What is the capital of Belgium?")
 ```
