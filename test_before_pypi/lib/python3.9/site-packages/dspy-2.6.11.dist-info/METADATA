@@ -1,0 +1,162 @@
+Metadata-Version: 2.2
+Name: dspy
+Version: 2.6.11
+Summary: DSPy
+Author-email: Omar Khattab <okhattab@stanford.edu>
+License: MIT License
+Project-URL: homepage, https://github.com/stanfordnlp/dspy
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Requires-Python: <3.14,>=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: backoff
+Requires-Dist: joblib~=1.3
+Requires-Dist: openai
+Requires-Dist: pandas
+Requires-Dist: regex
+Requires-Dist: ujson
+Requires-Dist: tqdm
+Requires-Dist: datasets<3.0.0,>=2.14.6
+Requires-Dist: requests
+Requires-Dist: optuna
+Requires-Dist: pydantic~=2.0
+Requires-Dist: jinja2
+Requires-Dist: magicattr~=0.1.6
+Requires-Dist: litellm<2.0.0,>=1.59.8
+Requires-Dist: diskcache
+Requires-Dist: json-repair
+Requires-Dist: tenacity>=8.2.3
+Requires-Dist: anyio
+Requires-Dist: asyncer==0.0.8
+Requires-Dist: cachetools
+Requires-Dist: cloudpickle
+Provides-Extra: anthropic
+Requires-Dist: anthropic<1.0.0,>=0.18.0; extra == "anthropic"
+Provides-Extra: chromadb
+Requires-Dist: chromadb~=0.4.14; extra == "chromadb"
+Provides-Extra: lancedb
+Requires-Dist: lancedb>=0.19.0; extra == "lancedb"
+Provides-Extra: qdrant
+Requires-Dist: qdrant-client>=1.11.1; extra == "qdrant"
+Requires-Dist: fastembed>=0.2.0; extra == "qdrant"
+Provides-Extra: marqo
+Requires-Dist: marqo; extra == "marqo"
+Provides-Extra: epsilla
+Requires-Dist: pyepsilla~=0.3.7; extra == "epsilla"
+Provides-Extra: pinecone
+Requires-Dist: pinecone-client~=2.2.4; extra == "pinecone"
+Provides-Extra: weaviate
+Requires-Dist: weaviate-client~=4.5.4; extra == "weaviate"
+Provides-Extra: milvus
+Requires-Dist: pymilvus~=2.3.7; extra == "milvus"
+Provides-Extra: aws
+Requires-Dist: boto3~=1.34.78; extra == "aws"
+Provides-Extra: docs
+Requires-Dist: sphinx>=4.3.0; extra == "docs"
+Requires-Dist: furo>=2023.3.27; extra == "docs"
+Requires-Dist: docutils<0.17; extra == "docs"
+Requires-Dist: m2r2; extra == "docs"
+Requires-Dist: myst-parser; extra == "docs"
+Requires-Dist: myst-nb; extra == "docs"
+Requires-Dist: sphinx-autobuild; extra == "docs"
+Requires-Dist: sphinx_rtd_theme; extra == "docs"
+Requires-Dist: autodoc_pydantic; extra == "docs"
+Requires-Dist: sphinx-reredirects>=0.1.2; extra == "docs"
+Requires-Dist: sphinx-automodapi==0.16.0; extra == "docs"
+Provides-Extra: dev
+Requires-Dist: pytest>=6.2.5; extra == "dev"
+Provides-Extra: fastembed
+Requires-Dist: fastembed>=0.2.0; extra == "fastembed"
+
+<p align="center">
+  <img align="center" src="docs/docs/static/img/dspy_logo.png" width="460px" />
+</p>
+<p align="left">
+
+
+## DSPy: _Programming_—not prompting—Foundation Models
+
+**Documentation:** [DSPy Docs](https://dspy.ai/)
+
+[![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
+
+
+----
+
+DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+
+DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs**. Learn more via our [official documentation site](https://dspy.ai/) or meet the community, seek help, or start contributing via this GitHub repo and our [Discord server](https://discord.gg/XCGy2WDCQB).
+
+
+## Documentation: [dspy.ai](https://dspy.ai)
+
+
+**Please go to the [DSPy Docs at dspy.ai](https://dspy.ai)**
+
+
+## Installation
+
+
+```bash
+pip install dspy
+```
+
+To install the very latest from `main`:
+
+```bash
+pip install git+https://github.com/stanfordnlp/dspy.git
+````
+
+
+
+
+## 📜 Citation & Reading More
+
+If you're looking to understand the framework, please go to the [DSPy Docs at dspy.ai](https://dspy.ai).
+
+If you're looking to understand the underlying research, this is a set of our papers:
+
+**[Jun'24] [Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs](https://arxiv.org/abs/2406.11695)**       
+**[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
+[Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     
+[Jun'24] [Prompts as Auto-Optimized Training Hyperparameters](https://arxiv.org/abs/2406.11706)    
+[Feb'24] [Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models](https://arxiv.org/abs/2402.14207)         
+[Jan'24] [In-Context Learning for Extreme Multi-Label Classification](https://arxiv.org/abs/2401.12178)       
+[Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
+[Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
+
+To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
+
+The **DSPy** logo is designed by **Chuyi Zhang**.
+
+If you use DSPy or DSP in a research paper, please cite our work as follows:
+
+```
+@inproceedings{khattab2024dspy,
+  title={DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines},
+  author={Khattab, Omar and Singhvi, Arnav and Maheshwari, Paridhi and Zhang, Zhiyuan and Santhanam, Keshav and Vardhamanan, Sri and Haq, Saiful and Sharma, Ashutosh and Joshi, Thomas T. and Moazam, Hanna and Miller, Heather and Zaharia, Matei and Potts, Christopher},
+  journal={The Twelfth International Conference on Learning Representations},
+  year={2024}
+}
+@article{khattab2022demonstrate,
+  title={Demonstrate-Search-Predict: Composing Retrieval and Language Models for Knowledge-Intensive {NLP}},
+  author={Khattab, Omar and Santhanam, Keshav and Li, Xiang Lisa and Hall, David and Liang, Percy and Potts, Christopher and Zaharia, Matei},
+  journal={arXiv preprint arXiv:2212.14024},
+  year={2022}
+}
+```
+
+<!-- You can also read more about the evolution of the framework from Demonstrate-Search-Predict to DSPy:
+
+* [**DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines**](https://arxiv.org/abs/2312.13382)   (Academic Paper, Dec 2023) 
+* [**DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines**](https://arxiv.org/abs/2310.03714) (Academic Paper, Oct 2023) 
+* [**Releasing DSPy, the latest iteration of the framework**](https://twitter.com/lateinteraction/status/1694748401374490946) (Twitter Thread, Aug 2023)
+* [**Releasing the DSP Compiler (v0.1)**](https://twitter.com/lateinteraction/status/1625231662849073160)  (Twitter Thread, Feb 2023)
+* [**Introducing DSP**](https://twitter.com/lateinteraction/status/1617953413576425472)  (Twitter Thread, Jan 2023)
+* [**Demonstrate-Search-Predict: Composing retrieval and language models for knowledge-intensive NLP**](https://arxiv.org/abs/2212.14024.pdf) (Academic Paper, Dec 2022) -->
+

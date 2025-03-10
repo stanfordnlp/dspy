@@ -1,0 +1,2 @@
+[console_scripts]
+optuna = optuna.cli:main

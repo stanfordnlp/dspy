@@ -1,0 +1,17 @@
+{
+  "language": [
+    "found",
+    "crowdsourced",
+    "expert-generated",
+    "machine-generated",
+    "other"
+  ],
+  "annotations": [
+    "found",
+    "crowdsourced",
+    "expert-generated",
+    "machine-generated",
+    "no-annotation",
+    "other"
+  ]
+}

@@ -1,0 +1,394 @@
+Metadata-Version: 2.1
+Name: datasets
+Version: 2.21.0
+Summary: HuggingFace community-driven open-source library of datasets
+Home-page: https://github.com/huggingface/datasets
+Author: HuggingFace Inc.
+Author-email: thomas@huggingface.co
+License: Apache 2.0
+Download-URL: https://github.com/huggingface/datasets/tags
+Keywords: datasets machine learning datasets metrics
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.8.0
+Description-Content-Type: text/markdown
+License-File: LICENSE
+License-File: AUTHORS
+Requires-Dist: filelock
+Requires-Dist: numpy (>=1.17)
+Requires-Dist: pyarrow (>=15.0.0)
+Requires-Dist: dill (<0.3.9,>=0.3.0)
+Requires-Dist: pandas
+Requires-Dist: requests (>=2.32.2)
+Requires-Dist: tqdm (>=4.66.3)
+Requires-Dist: xxhash
+Requires-Dist: multiprocess
+Requires-Dist: fsspec[http] (<=2024.6.1,>=2023.1.0)
+Requires-Dist: aiohttp
+Requires-Dist: huggingface-hub (>=0.21.2)
+Requires-Dist: packaging
+Requires-Dist: pyyaml (>=5.1)
+Provides-Extra: apache-beam
+Requires-Dist: apache-beam (>=2.26.0) ; extra == 'apache-beam'
+Provides-Extra: audio
+Requires-Dist: soundfile (>=0.12.1) ; extra == 'audio'
+Requires-Dist: librosa ; extra == 'audio'
+Requires-Dist: soxr (>=0.4.0) ; (python_version >= "3.9") and extra == 'audio'
+Provides-Extra: benchmarks
+Requires-Dist: tensorflow (==2.12.0) ; extra == 'benchmarks'
+Requires-Dist: torch (==2.0.1) ; extra == 'benchmarks'
+Requires-Dist: transformers (==4.30.1) ; extra == 'benchmarks'
+Provides-Extra: dev
+Requires-Dist: absl-py ; extra == 'dev'
+Requires-Dist: decorator ; extra == 'dev'
+Requires-Dist: joblib (<1.3.0) ; extra == 'dev'
+Requires-Dist: joblibspark ; extra == 'dev'
+Requires-Dist: pytest ; extra == 'dev'
+Requires-Dist: pytest-datadir ; extra == 'dev'
+Requires-Dist: pytest-xdist ; extra == 'dev'
+Requires-Dist: elasticsearch (<8.0.0) ; extra == 'dev'
+Requires-Dist: faiss-cpu (>=1.8.0.post1) ; extra == 'dev'
+Requires-Dist: lz4 ; extra == 'dev'
+Requires-Dist: moto[server] ; extra == 'dev'
+Requires-Dist: pyspark (>=3.4) ; extra == 'dev'
+Requires-Dist: py7zr ; extra == 'dev'
+Requires-Dist: rarfile (>=4.0) ; extra == 'dev'
+Requires-Dist: sqlalchemy ; extra == 'dev'
+Requires-Dist: s3fs (>=2021.11.1) ; extra == 'dev'
+Requires-Dist: protobuf (<4.0.0) ; extra == 'dev'
+Requires-Dist: tiktoken ; extra == 'dev'
+Requires-Dist: torch (>=2.0.0) ; extra == 'dev'
+Requires-Dist: soundfile (>=0.12.1) ; extra == 'dev'
+Requires-Dist: transformers (>=4.42.0) ; extra == 'dev'
+Requires-Dist: typing-extensions (>=4.6.1) ; extra == 'dev'
+Requires-Dist: zstandard ; extra == 'dev'
+Requires-Dist: polars[timezone] (>=0.20.0) ; extra == 'dev'
+Requires-Dist: Pillow (>=9.4.0) ; extra == 'dev'
+Requires-Dist: librosa ; extra == 'dev'
+Requires-Dist: ruff (>=0.3.0) ; extra == 'dev'
+Requires-Dist: s3fs ; extra == 'dev'
+Requires-Dist: transformers ; extra == 'dev'
+Requires-Dist: torch ; extra == 'dev'
+Requires-Dist: tensorflow (>=2.6.0) ; extra == 'dev'
+Requires-Dist: tensorflow (>=2.6.0) ; (python_version < "3.10") and extra == 'dev'
+Requires-Dist: tensorflow (>=2.16.0) ; (python_version >= "3.10") and extra == 'dev'
+Requires-Dist: soxr (>=0.4.0) ; (python_version >= "3.9") and extra == 'dev'
+Requires-Dist: jax (>=0.3.14) ; (sys_platform != "win32") and extra == 'dev'
+Requires-Dist: jaxlib (>=0.3.14) ; (sys_platform != "win32") and extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: s3fs ; extra == 'docs'
+Requires-Dist: transformers ; extra == 'docs'
+Requires-Dist: torch ; extra == 'docs'
+Requires-Dist: tensorflow (>=2.6.0) ; extra == 'docs'
+Provides-Extra: jax
+Requires-Dist: jax (>=0.3.14) ; extra == 'jax'
+Requires-Dist: jaxlib (>=0.3.14) ; extra == 'jax'
+Provides-Extra: metrics-tests
+Requires-Dist: accelerate ; extra == 'metrics-tests'
+Requires-Dist: bert-score (>=0.3.6) ; extra == 'metrics-tests'
+Requires-Dist: jiwer ; extra == 'metrics-tests'
+Requires-Dist: langdetect ; extra == 'metrics-tests'
+Requires-Dist: mauve-text ; extra == 'metrics-tests'
+Requires-Dist: nltk (<3.8.2) ; extra == 'metrics-tests'
+Requires-Dist: rouge-score ; extra == 'metrics-tests'
+Requires-Dist: sacrebleu ; extra == 'metrics-tests'
+Requires-Dist: sacremoses ; extra == 'metrics-tests'
+Requires-Dist: scikit-learn ; extra == 'metrics-tests'
+Requires-Dist: scipy ; extra == 'metrics-tests'
+Requires-Dist: sentencepiece ; extra == 'metrics-tests'
+Requires-Dist: seqeval ; extra == 'metrics-tests'
+Requires-Dist: spacy (>=3.0.0) ; extra == 'metrics-tests'
+Requires-Dist: tldextract ; extra == 'metrics-tests'
+Requires-Dist: toml (>=0.10.1) ; extra == 'metrics-tests'
+Requires-Dist: typer (<0.5.0) ; extra == 'metrics-tests'
+Requires-Dist: requests-file (>=1.5.1) ; extra == 'metrics-tests'
+Requires-Dist: tldextract (>=3.1.0) ; extra == 'metrics-tests'
+Requires-Dist: texttable (>=1.6.3) ; extra == 'metrics-tests'
+Requires-Dist: Werkzeug (>=1.0.1) ; extra == 'metrics-tests'
+Requires-Dist: six (~=1.15.0) ; extra == 'metrics-tests'
+Provides-Extra: quality
+Requires-Dist: ruff (>=0.3.0) ; extra == 'quality'
+Provides-Extra: s3
+Requires-Dist: s3fs ; extra == 's3'
+Provides-Extra: streaming
+Provides-Extra: tensorflow
+Requires-Dist: tensorflow (>=2.6.0) ; extra == 'tensorflow'
+Provides-Extra: tensorflow_gpu
+Requires-Dist: tensorflow (>=2.6.0) ; extra == 'tensorflow_gpu'
+Provides-Extra: tests
+Requires-Dist: absl-py ; extra == 'tests'
+Requires-Dist: decorator ; extra == 'tests'
+Requires-Dist: joblib (<1.3.0) ; extra == 'tests'
+Requires-Dist: joblibspark ; extra == 'tests'
+Requires-Dist: pytest ; extra == 'tests'
+Requires-Dist: pytest-datadir ; extra == 'tests'
+Requires-Dist: pytest-xdist ; extra == 'tests'
+Requires-Dist: elasticsearch (<8.0.0) ; extra == 'tests'
+Requires-Dist: faiss-cpu (>=1.8.0.post1) ; extra == 'tests'
+Requires-Dist: lz4 ; extra == 'tests'
+Requires-Dist: moto[server] ; extra == 'tests'
+Requires-Dist: pyspark (>=3.4) ; extra == 'tests'
+Requires-Dist: py7zr ; extra == 'tests'
+Requires-Dist: rarfile (>=4.0) ; extra == 'tests'
+Requires-Dist: sqlalchemy ; extra == 'tests'
+Requires-Dist: s3fs (>=2021.11.1) ; extra == 'tests'
+Requires-Dist: protobuf (<4.0.0) ; extra == 'tests'
+Requires-Dist: tiktoken ; extra == 'tests'
+Requires-Dist: torch (>=2.0.0) ; extra == 'tests'
+Requires-Dist: soundfile (>=0.12.1) ; extra == 'tests'
+Requires-Dist: transformers (>=4.42.0) ; extra == 'tests'
+Requires-Dist: typing-extensions (>=4.6.1) ; extra == 'tests'
+Requires-Dist: zstandard ; extra == 'tests'
+Requires-Dist: polars[timezone] (>=0.20.0) ; extra == 'tests'
+Requires-Dist: Pillow (>=9.4.0) ; extra == 'tests'
+Requires-Dist: librosa ; extra == 'tests'
+Requires-Dist: tensorflow (>=2.6.0) ; (python_version < "3.10") and extra == 'tests'
+Requires-Dist: tensorflow (>=2.16.0) ; (python_version >= "3.10") and extra == 'tests'
+Requires-Dist: soxr (>=0.4.0) ; (python_version >= "3.9") and extra == 'tests'
+Requires-Dist: jax (>=0.3.14) ; (sys_platform != "win32") and extra == 'tests'
+Requires-Dist: jaxlib (>=0.3.14) ; (sys_platform != "win32") and extra == 'tests'
+Provides-Extra: tests_numpy2
+Requires-Dist: absl-py ; extra == 'tests_numpy2'
+Requires-Dist: decorator ; extra == 'tests_numpy2'
+Requires-Dist: joblib (<1.3.0) ; extra == 'tests_numpy2'
+Requires-Dist: joblibspark ; extra == 'tests_numpy2'
+Requires-Dist: pytest ; extra == 'tests_numpy2'
+Requires-Dist: pytest-datadir ; extra == 'tests_numpy2'
+Requires-Dist: pytest-xdist ; extra == 'tests_numpy2'
+Requires-Dist: elasticsearch (<8.0.0) ; extra == 'tests_numpy2'
+Requires-Dist: lz4 ; extra == 'tests_numpy2'
+Requires-Dist: moto[server] ; extra == 'tests_numpy2'
+Requires-Dist: pyspark (>=3.4) ; extra == 'tests_numpy2'
+Requires-Dist: py7zr ; extra == 'tests_numpy2'
+Requires-Dist: rarfile (>=4.0) ; extra == 'tests_numpy2'
+Requires-Dist: sqlalchemy ; extra == 'tests_numpy2'
+Requires-Dist: s3fs (>=2021.11.1) ; extra == 'tests_numpy2'
+Requires-Dist: protobuf (<4.0.0) ; extra == 'tests_numpy2'
+Requires-Dist: tiktoken ; extra == 'tests_numpy2'
+Requires-Dist: torch (>=2.0.0) ; extra == 'tests_numpy2'
+Requires-Dist: soundfile (>=0.12.1) ; extra == 'tests_numpy2'
+Requires-Dist: typing-extensions (>=4.6.1) ; extra == 'tests_numpy2'
+Requires-Dist: zstandard ; extra == 'tests_numpy2'
+Requires-Dist: polars[timezone] (>=0.20.0) ; extra == 'tests_numpy2'
+Requires-Dist: Pillow (>=9.4.0) ; extra == 'tests_numpy2'
+Requires-Dist: librosa ; extra == 'tests_numpy2'
+Requires-Dist: soxr (>=0.4.0) ; (python_version >= "3.9") and extra == 'tests_numpy2'
+Requires-Dist: jax (>=0.3.14) ; (sys_platform != "win32") and extra == 'tests_numpy2'
+Requires-Dist: jaxlib (>=0.3.14) ; (sys_platform != "win32") and extra == 'tests_numpy2'
+Provides-Extra: torch
+Requires-Dist: torch ; extra == 'torch'
+Provides-Extra: vision
+Requires-Dist: Pillow (>=9.4.0) ; extra == 'vision'
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://huggingface.co/datasets/huggingface/documentation-images/raw/main/datasets-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://huggingface.co/datasets/huggingface/documentation-images/raw/main/datasets-logo-light.svg">
+    <img alt="Hugging Face Datasets Library" src="https://huggingface.co/datasets/huggingface/documentation-images/raw/main/datasets-logo-light.svg" width="352" height="59" style="max-width: 100%;">
+  </picture>
+  <br/>
+  <br/>
+</p>
+
+<p align="center">
+    <a href="https://github.com/huggingface/datasets/actions/workflows/ci.yml?query=branch%3Amain"><img alt="Build" src="https://github.com/huggingface/datasets/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+    <a href="https://github.com/huggingface/datasets/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/huggingface/datasets.svg?color=blue"></a>
+    <a href="https://huggingface.co/docs/datasets/index.html"><img alt="Documentation" src="https://img.shields.io/website/http/huggingface.co/docs/datasets/index.html.svg?down_color=red&down_message=offline&up_message=online"></a>
+    <a href="https://github.com/huggingface/datasets/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/huggingface/datasets.svg"></a>
+    <a href="https://huggingface.co/datasets/"><img alt="Number of datasets" src="https://img.shields.io/endpoint?url=https://huggingface.co/api/shields/datasets&color=brightgreen"></a>
+    <a href="CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg"></a>
+    <a href="https://zenodo.org/badge/latestdoi/250213286"><img src="https://zenodo.org/badge/250213286.svg" alt="DOI"></a>
+</p>
+
+🤗 Datasets is a lightweight library providing **two** main features:
+
+- **one-line dataloaders for many public datasets**: one-liners to download and pre-process any of the ![number of datasets](https://img.shields.io/endpoint?url=https://huggingface.co/api/shields/datasets&color=brightgreen) major public datasets (image datasets, audio datasets, text datasets in 467 languages and dialects, etc.) provided on the [HuggingFace Datasets Hub](https://huggingface.co/datasets). With a simple command like `squad_dataset = load_dataset("squad")`, get any of these datasets ready to use in a dataloader for training/evaluating a ML model (Numpy/Pandas/PyTorch/TensorFlow/JAX),
+- **efficient data pre-processing**: simple, fast and reproducible data pre-processing for the public datasets as well as your own local datasets in CSV, JSON, text, PNG, JPEG, WAV, MP3, Parquet, etc. With simple commands like `processed_dataset = dataset.map(process_example)`, efficiently prepare the dataset for inspection and ML model evaluation and training.
+
+[🎓 **Documentation**](https://huggingface.co/docs/datasets/) [🔎 **Find a dataset in the Hub**](https://huggingface.co/datasets) [🌟 **Share a dataset on the Hub**](https://huggingface.co/docs/datasets/share)
+
+<h3 align="center">
+    <a href="https://hf.co/course"><img src="https://raw.githubusercontent.com/huggingface/datasets/main/docs/source/imgs/course_banner.png"></a>
+</h3>
+
+🤗 Datasets is designed to let the community easily add and share new datasets.
+
+🤗 Datasets has many additional interesting features:
+
+- Thrive on large datasets: 🤗 Datasets naturally frees the user from RAM memory limitation, all datasets are memory-mapped using an efficient zero-serialization cost backend (Apache Arrow).
+- Smart caching: never wait for your data to process several times.
+- Lightweight and fast with a transparent and pythonic API (multi-processing/caching/memory-mapping).
+- Built-in interoperability with NumPy, pandas, PyTorch, TensorFlow 2 and JAX.
+- Native support for audio and image data.
+- Enable streaming mode to save disk space and start iterating over the dataset immediately.
+
+🤗 Datasets originated from a fork of the awesome [TensorFlow Datasets](https://github.com/tensorflow/datasets) and the HuggingFace team want to deeply thank the TensorFlow Datasets team for building this amazing library. More details on the differences between 🤗 Datasets and `tfds` can be found in the section [Main differences between 🤗 Datasets and `tfds`](#main-differences-between--datasets-and-tfds).
+
+# Installation
+
+## With pip
+
+🤗 Datasets can be installed from PyPi and has to be installed in a virtual environment (venv or conda for instance)
+
+```bash
+pip install datasets
+```
+
+## With conda
+
+🤗 Datasets can be installed using conda as follows:
+
+```bash
+conda install -c huggingface -c conda-forge datasets
+```
+
+Follow the installation pages of TensorFlow and PyTorch to see how to install them with conda.
+
+For more details on installation, check the installation page in the documentation: https://huggingface.co/docs/datasets/installation
+
+## Installation to use with PyTorch/TensorFlow/pandas
+
+If you plan to use 🤗 Datasets with PyTorch (1.0+), TensorFlow (2.2+) or pandas, you should also install PyTorch, TensorFlow or pandas.
+
+For more details on using the library with NumPy, pandas, PyTorch or TensorFlow, check the quick start page in the documentation: https://huggingface.co/docs/datasets/quickstart
+
+# Usage
+
+🤗 Datasets is made to be very simple to use - the API is centered around a single function, `datasets.load_dataset(dataset_name, **kwargs)`, that instantiates a dataset.
+
+This library can be used for text/image/audio/etc. datasets. Here is an example to load a text dataset:
+
+Here is a quick example:
+
+```python
+from datasets import load_dataset
+
+# Print all the available datasets
+from huggingface_hub import list_datasets
+print([dataset.id for dataset in list_datasets()])
+
+# Load a dataset and print the first example in the training set
+squad_dataset = load_dataset('squad')
+print(squad_dataset['train'][0])
+
+# Process the dataset - add a column with the length of the context texts
+dataset_with_length = squad_dataset.map(lambda x: {"length": len(x["context"])})
+
+# Process the dataset - tokenize the context texts (using a tokenizer from the 🤗 Transformers library)
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
+
+tokenized_dataset = squad_dataset.map(lambda x: tokenizer(x['context']), batched=True)
+```
+
+If your dataset is bigger than your disk or if you don't want to wait to download the data, you can use streaming:
+
+```python
+# If you want to use the dataset immediately and efficiently stream the data as you iterate over the dataset
+image_dataset = load_dataset('cifar100', streaming=True)
+for example in image_dataset["train"]:
+    break
+```
+
+For more details on using the library, check the quick start page in the documentation: https://huggingface.co/docs/datasets/quickstart and the specific pages on:
+
+- Loading a dataset: https://huggingface.co/docs/datasets/loading
+- What's in a Dataset: https://huggingface.co/docs/datasets/access
+- Processing data with 🤗 Datasets: https://huggingface.co/docs/datasets/process
+    - Processing audio data: https://huggingface.co/docs/datasets/audio_process
+    - Processing image data: https://huggingface.co/docs/datasets/image_process
+    - Processing text data: https://huggingface.co/docs/datasets/nlp_process
+- Streaming a dataset: https://huggingface.co/docs/datasets/stream
+- Writing your own dataset loading script: https://huggingface.co/docs/datasets/dataset_script
+- etc.
+
+# Add a new dataset to the Hub
+
+We have a very detailed step-by-step guide to add a new dataset to the ![number of datasets](https://img.shields.io/endpoint?url=https://huggingface.co/api/shields/datasets&color=brightgreen) datasets already provided on the [HuggingFace Datasets Hub](https://huggingface.co/datasets).
+
+You can find:
+- [how to upload a dataset to the Hub using your web browser or Python](https://huggingface.co/docs/datasets/upload_dataset) and also
+- [how to upload it using Git](https://huggingface.co/docs/datasets/share).
+
+# Main differences between 🤗 Datasets and `tfds`
+
+If you are familiar with the great TensorFlow Datasets, here are the main differences between 🤗 Datasets and `tfds`:
+
+- the scripts in 🤗 Datasets are not provided within the library but are queried, downloaded/cached and dynamically loaded upon request
+- the backend serialization of 🤗 Datasets is based on [Apache Arrow](https://arrow.apache.org/) instead of TF Records and leverage python dataclasses for info and features with some diverging features (we mostly don't do encoding and store the raw data as much as possible in the backend serialization cache).
+- the user-facing dataset object of 🤗 Datasets is not a `tf.data.Dataset` but a built-in framework-agnostic dataset class with methods inspired by what we like in `tf.data` (like a `map()` method). It basically wraps a memory-mapped Arrow table cache.
+
+# Disclaimers
+
+🤗 Datasets may run Python code defined by the dataset authors to parse certain data formats or structures. For security reasons, we ask users to:
+- check the dataset scripts they're going to run beforehand and
+- pin the `revision` of the repositories they use.
+
+If you're a dataset owner and wish to update any part of it (description, citation, license, etc.), or do not want your dataset to be included in the Hugging Face Hub, please get in touch by opening a discussion or a pull request in the Community tab of the dataset page. Thanks for your contribution to the ML community!
+
+## BibTeX
+
+If you want to cite our 🤗 Datasets library, you can use our [paper](https://arxiv.org/abs/2109.02846):
+
+```bibtex
+@inproceedings{lhoest-etal-2021-datasets,
+    title = "Datasets: A Community Library for Natural Language Processing",
+    author = "Lhoest, Quentin  and
+      Villanova del Moral, Albert  and
+      Jernite, Yacine  and
+      Thakur, Abhishek  and
+      von Platen, Patrick  and
+      Patil, Suraj  and
+      Chaumond, Julien  and
+      Drame, Mariama  and
+      Plu, Julien  and
+      Tunstall, Lewis  and
+      Davison, Joe  and
+      {\v{S}}a{\v{s}}ko, Mario  and
+      Chhablani, Gunjan  and
+      Malik, Bhavitvya  and
+      Brandeis, Simon  and
+      Le Scao, Teven  and
+      Sanh, Victor  and
+      Xu, Canwen  and
+      Patry, Nicolas  and
+      McMillan-Major, Angelina  and
+      Schmid, Philipp  and
+      Gugger, Sylvain  and
+      Delangue, Cl{\'e}ment  and
+      Matussi{\`e}re, Th{\'e}o  and
+      Debut, Lysandre  and
+      Bekman, Stas  and
+      Cistac, Pierric  and
+      Goehringer, Thibault  and
+      Mustar, Victor  and
+      Lagunas, Fran{\c{c}}ois  and
+      Rush, Alexander  and
+      Wolf, Thomas",
+    booktitle = "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing: System Demonstrations",
+    month = nov,
+    year = "2021",
+    address = "Online and Punta Cana, Dominican Republic",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.emnlp-demo.21",
+    pages = "175--184",
+    abstract = "The scale, variety, and quantity of publicly-available NLP datasets has grown rapidly as researchers propose new tasks, larger models, and novel benchmarks. Datasets is a community library for contemporary NLP designed to support this ecosystem. Datasets aims to standardize end-user interfaces, versioning, and documentation, while providing a lightweight front-end that behaves similarly for small datasets as for internet-scale corpora. The design of the library incorporates a distributed, community-driven approach to adding datasets and documenting usage. After a year of development, the library now includes more than 650 unique datasets, has more than 250 contributors, and has helped support a variety of novel cross-dataset research projects and shared tasks. The library is available at https://github.com/huggingface/datasets.",
+    eprint={2109.02846},
+    archivePrefix={arXiv},
+    primaryClass={cs.CL},
+}
+```
+
+If you need to cite a specific version of our 🤗 Datasets library for reproducibility, you can use the corresponding version Zenodo DOI from this [list](https://zenodo.org/search?q=conceptrecid:%224817768%22&sort=-version&all_versions=True).
+
+
