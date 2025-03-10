@@ -34,7 +34,7 @@ dependencies = [
     "regex",
     "ujson",
     "tqdm",
-    "datasets>=2.14.6,<3.0.0",
+    "datasets>=2.14.6",
     "requests",
     "optuna",
     "pydantic~=2.0",
