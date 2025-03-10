@@ -1,0 +1,6 @@
+{
+  "monolingual": "contains a single language",
+  "multilingual": "contains multiple languages",
+  "translation": "contains translated or aligned text",
+  "other": "other type of language distribution"
+}

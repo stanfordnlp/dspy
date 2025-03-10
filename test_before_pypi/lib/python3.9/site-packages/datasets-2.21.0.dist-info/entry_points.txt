@@ -1,0 +1,3 @@
+[console_scripts]
+datasets-cli = datasets.commands.datasets_cli:main
+
