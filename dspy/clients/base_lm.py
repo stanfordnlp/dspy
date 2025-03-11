@@ -43,6 +43,7 @@ def _inspect_history(history, n: int = 1):
     for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
+        reasoning_content_list = item.get("reasoning_content_list", [])
         timestamp = item.get("timestamp", "Unknown time")
 
         print("\n\n\n")
@@ -65,6 +66,11 @@ def _inspect_history(history, n: int = 1):
                             else:
                                 image_str = f"<image_url: {c['image_url']['url']}>"
                             print(_blue(image_str.strip()))
+            print("\n")
+
+        if reasoning_content_list:
+            print(_red("Reasoning From LLM:"))
+            print(reasoning_content_list[0].strip())
             print("\n")
 
         print(_red("Response:"))
