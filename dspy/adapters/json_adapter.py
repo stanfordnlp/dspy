@@ -4,7 +4,7 @@ import json
 import logging
 import textwrap
 from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple, Type
+from typing import Any, Dict, KeysView, Literal, NamedTuple, Type, Union
 
 import json_repair
 import litellm
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 class FieldInfoWithName(NamedTuple):
     name: str
     info: FieldInfo
+
+
+# Constraints that can be applied to numeric fields.
+PERMITTED_CONSTRAINTS = {"gt", "lt", "ge", "le", "multiple_of", "allow_inf_nan"}
 
 class JSONAdapter(Adapter):
     def __init__(self):
@@ -144,6 +148,46 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
         raise NotImplementedError("Images are not yet supported in JSON mode.")
 
     return format_field_value(field_info=field_info, value=value)
+
+
+def _format_constraint(name: str, value: Union[str, float]) -> str:
+    constraints = {
+        'gt': f"greater than {value}",
+        'lt': f"less than {value}",
+        'ge': f"greater than or equal to {value}",
+        'le': f"less than or equal to {value}",
+        'multiple_of': f"a multiple of {value}",
+        'allow_inf_nan': "allows infinite and NaN values" if value else "no infinite or NaN values allowed"
+    }
+    return constraints.get(name, f"{name}={value}")
+
+
+def format_metadata_summary(field: pydantic.fields.FieldInfo) -> str:
+    if not hasattr(field, 'metadata') or not field.metadata:
+        return ""
+    metadata_parts = [str(meta) for meta in field.metadata]
+    if metadata_parts:
+        return f" [Metadata: {'; '.join(metadata_parts)}]"
+    return ""
+
+
+def format_metadata_constraints(field: FieldInfo) -> str:
+    if not hasattr(field, 'metadata') or not field.metadata:
+        return ""
+    formatted_constraints = []
+    for meta in field.metadata:
+        constraint_names = [name for name in dir(meta) if not name.startswith('_')]
+        for name in constraint_names:
+            if hasattr(meta, name) and name in PERMITTED_CONSTRAINTS:
+                value = getattr(meta, name)
+                formatted_constraints.append(_format_constraint(name, value))
+    if not formatted_constraints:
+        return ""
+    elif len(formatted_constraints) == 1:
+        return f" that is {formatted_constraints[0]}."
+    else:
+        *front, last = formatted_constraints
+        return f" that is {', '.join(front)} and {last}."
 
 
 def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
@@ -270,6 +314,9 @@ def prepare_instructions(signature: SignatureMeta):
             desc = "must be True or False"
         elif type_ in (int, float):
             desc = f"must be a single {type_.__name__} value"
+            metadata_info = format_metadata_constraints(field_info)
+            if metadata_info:
+                desc += metadata_info
         elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
             desc = f"must be one of: {'; '.join(type_.__members__)}"
         elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
