@@ -4,7 +4,7 @@ import json
 import logging
 import textwrap
 from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple, Type, Union
+from typing import Any, Dict, KeysView, Literal, NamedTuple, Type, Union, List
 
 import json_repair
 import litellm
@@ -35,7 +35,14 @@ class JSONAdapter(Adapter):
     def __init__(self):
         pass
 
-    def __call__(self, lm: LM, lm_kwargs: dict[str, Any], signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    def __call__(
+        self,
+        lm: LM,
+        lm_kwargs: Dict[str, Any],
+        signature: Type[Signature],
+        demos: List[Dict[str, Any]],
+        inputs: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
@@ -70,7 +77,12 @@ class JSONAdapter(Adapter):
 
         return values
 
-    def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    def format(
+        self,
+        signature: Type[Signature],
+        demos: List[Dict[str, Any]],
+        inputs: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         messages = []
 
         # Extract demos where some of the output_fields are not filled in.
@@ -98,7 +110,7 @@ class JSONAdapter(Adapter):
 
         return messages
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: Type[Signature], completion: str) -> Dict[str, Any]:
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
@@ -112,7 +124,12 @@ class JSONAdapter(Adapter):
 
         return fields
 
-    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
+    def format_fields(
+        self,
+        signature: Type[Signature],
+        values: Dict[str, Any],
+        role: str
+    ) -> str:
         fields_with_values = {
             FieldInfoWithName(name=field_name, info=field_info): values.get(
                 field_name, "Not supplied for this particular example."
@@ -123,10 +140,22 @@ class JSONAdapter(Adapter):
 
         return format_fields(role=role, fields_with_values=fields_with_values)
     
-    def format_turn(self, signature: Type[Signature], values, role: str, incomplete: bool = False, is_conversation_history: bool = False) -> dict[str, Any]:
+    def format_turn(
+        self,
+        signature: Type[Signature],
+        values, role: str,
+        incomplete: bool = False,
+        is_conversation_history: bool = False
+    ) -> Dict[str, Any]:
         return format_turn(signature, values, role, incomplete, is_conversation_history)
     
-    def format_finetune_data(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]) -> dict[str, list[Any]]:
+    def format_finetune_data(
+        self,
+        signature: Type[Signature],
+        demos: List[Dict[str, Any]],
+        inputs: Dict[str, Any],
+        outputs: Dict[str, Any]
+    ) -> Dict[str, List[Any]]:
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
 
@@ -136,7 +165,7 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.
 
-    Args:
+    Parameters:
       field_info: Information about the field, including its DSPy field type and annotation.
       value: The value of the field.
 
@@ -196,9 +225,8 @@ def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -
     annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
     into a single string, which is is a multiline string if there are multiple fields.
 
-    Args:
-      fields_with_values: A dictionary mapping information about a field to its corresponding
-                          value.
+    Parameters:
+      fields_with_values: A dictionary mapping information about a field to its corresponding value.
     Returns:
       The joined formatted values of the fields, represented as a string.
     """
@@ -227,7 +255,7 @@ def format_turn(
     Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
     so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
 
-    Args:
+    Parameters:
         signature: The DSPy signature to which future LLM responses should conform.
         values: A dictionary mapping field names (from the DSPy signature) to corresponding values
             that should be included in the message.
@@ -289,13 +317,15 @@ def format_turn(
     return {"role": role, "content": "\n\n".join(content).strip()}
 
 
-def enumerate_fields(fields):
+def enumerate_fields(fields: Dict) -> str:
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
         parts.append(f"{idx+1}. `{k}`")
         parts[-1] += f" ({get_annotation_name(v.annotation)})"
         parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
-
+        metadata_info = format_metadata_summary(v)
+        if metadata_info:
+            parts[-1] += metadata_info
     return "\n".join(parts).strip()
 
 
@@ -305,7 +335,7 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
     parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-    def field_metadata(field_name, field_info):
+    def field_metadata(field_name: str, field_info: FieldInfo) -> str:
         type_ = field_info.annotation
 
         if get_dspy_field_type(field_info) == "input" or type_ is str:
@@ -360,7 +390,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydanti
     Obtains the LiteLLM / OpenAI `response_format` parameter for generating structured outputs from
     an LM request, based on the output fields of the specified DSPy signature.
 
-    Args:
+    Parameters:
         signature: The DSPy signature for which to obtain the `response_format` request parameter.
     Returns:
         A Pydantic model representing the `response_format` parameter for the LM request.
