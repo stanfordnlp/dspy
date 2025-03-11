@@ -467,7 +467,7 @@ class MIPROv2(Teleprompter):
         adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
-        default_score, baseline_results = eval_candidate_program(
+        default_score, _ = eval_candidate_program(
             len(valset), valset, program, evaluate, self.rng, return_all_scores=True
         )
         logger.info(f"Default program score: {default_score}\n")
@@ -649,6 +649,8 @@ class MIPROv2(Teleprompter):
         trajectory = "[" + full_eval_scores + "]"
         logger.info(f"Full eval scores so far: {trajectory}")
         logger.info(f"Best full score so far: {best_score}")
+        import mlflow
+        mlflow.log_metric("best score", best_score, step=trial.number)
         logger.info(
             f"{'=' * len(f'== Trial {trial.number + 1} / {adjusted_num_trials} - Minibatch Evaluation ==')}\n\n"
         )
@@ -679,6 +681,8 @@ class MIPROv2(Teleprompter):
         full_eval_scores = ", ".join([f"{s['score']}" for s in score_data if s["full_eval"]])
         logger.info(f"Scores so far: {'[' + full_eval_scores + ']'}")
         logger.info(f"Best score so far: {best_score}")
+        import mlflow
+        mlflow.log_metric("best score", best_score, step=trial.number)
         logger.info(f"{'=' * len(f'===== Trial {trial.number + 1} / {num_trials} =====')}\n\n")
 
     def _select_and_insert_instructions_and_demos(
