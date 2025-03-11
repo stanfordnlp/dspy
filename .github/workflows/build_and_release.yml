@@ -103,6 +103,7 @@ jobs:
           pip install dist/*.whl pytest
           pytest tests/metadata/test_metadata.py tests/predict
           deactivate
+          rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
         uses: pypa/gh-action-pypi-publish@release/v1
         with: 
