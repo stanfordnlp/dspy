@@ -185,7 +185,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
@@ -220,8 +220,17 @@ class LM(BaseLM):
         return Provider()
 
     def dump_state(self):
-        state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
-        return { key: getattr(self, key) for key in state_keys } | self.kwargs
+        state_keys = [
+            "model",
+            "model_type",
+            "cache",
+            "cache_in_memory",
+            "num_retries",
+            "finetuning_model",
+            "launch_kwargs",
+            "train_kwargs",
+        ]
+        return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):
