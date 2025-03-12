@@ -40,7 +40,6 @@ dependencies = [
     "pydantic~=2.0",
     "magicattr~=0.1.6",
     "litellm>=1.59.8,<2.0.0",
-    "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
     "anyio",
@@ -144,7 +143,6 @@ litellm = [
     { version = ">=1.59.8,<2.0.0", markers = "sys_platform == 'win32'" },
     { version = ">=1.59.8,<2.0.0", extras = ["proxy"], markers = "sys_platform != 'win32'" }
 ]
-diskcache = "^5.6.0"
 json-repair = "^0.30.0"
 tenacity = ">=8.2.3"
 asyncer = "0.0.8"
