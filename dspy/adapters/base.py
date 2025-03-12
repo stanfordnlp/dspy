@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Type, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 from dspy.adapters.types import History
-from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.signatures.signature import Signature
+from dspy.utils.callback import BaseCallback, with_callbacks
+
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 

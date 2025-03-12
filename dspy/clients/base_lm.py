@@ -51,18 +51,16 @@ class BaseLM(ABC):
     def __call__(self, prompt=None, messages=None, **kwargs):
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
 
-        response = dict(response) if not isinstance(response, dict) else response
-
         if kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
                     "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
                 }
-                for c in response["choices"]
+                for c in response.choices
             ]
         else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
+            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response.choices]
 
         if settings.disable_history:
             return outputs
@@ -75,12 +73,12 @@ class BaseLM(ABC):
             "kwargs": kwargs,
             "response": response,
             "outputs": outputs,
-            "usage": dict(response["usage"]),
-            "cost": response.get("_hidden_params", {}).get("response_cost"),
+            "usage": dict(response.usage),
+            "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
             "model": self.model,
-            "response_model": response["model"],
+            "response_model": response.model,
             "model_type": self.model_type,
         }
         self.history.append(entry)

@@ -41,7 +41,6 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            raise e
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
