@@ -4,8 +4,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
 from dspy.adapters.base import Adapter
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
+from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
@@ -160,7 +162,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             logger.info(f"After filtering with the metric, {len(trace_data)} examples remain")
 
         data = []
-        adapter = self.adapter[lm] or lm.infer_adapter()
+        adapter = self.adapter[lm] or settings.adapter or ChatAdapter()
         data_format = infer_data_format(adapter)
         for item in trace_data:
             for pred_ind, _ in enumerate(item["trace"]):
@@ -181,17 +183,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 def build_call_data_from_trace(
     trace: List[Dict],
     pred_ind: int,
-    adapter: Optional[Adapter] = None,
+    adapter: Adapter,
     exclude_demos: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     # Find data that's relevant to the predictor
     pred, inputs, outputs = trace[pred_ind]  # assuming that the order is kept
-
-    if not adapter:
-        # TODO(feature): A trace is collected using a particular adapter. It
-        # would be nice to get this adapter information from the trace (e.g.
-        # pred.lm.adapter) as opposed to using the inference method below.
-        adapter = pred.lm.infer_adapter()
 
     demos = [] if exclude_demos else pred.demos
     call_data = adapter.format_finetune_data(
@@ -209,8 +205,8 @@ def bootstrap_trace_data(
     metric: Optional[Callable] = None,
     num_threads=6,
 ) -> List[Dict[str, Any]]:
-    # Return a list of dicts with the following keys:
-    #     example_ind, example, prediction, trace, and score (if metric != None)
+    # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
+    # (if metric != None)
     evaluator = Evaluate(
         devset=dataset,
         num_threads=num_threads,

@@ -6,7 +6,7 @@ import threading
 import uuid
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional, cast, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Optional, cast
 
 import litellm
 import pydantic
@@ -21,8 +21,6 @@ from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.utils.callback import BaseCallback, with_callbacks
-if TYPE_CHECKING:
-    from dspy.adapters.base import Adapter
 
 from .base_lm import BaseLM
 
@@ -142,17 +140,20 @@ class LM(BaseLM):
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            response_model=response["model"],
-            model_type=self.model_type,
-        )
+        entry = {
+            "prompt": prompt,
+            "messages": messages,
+            "kwargs": kwargs,
+            "response": response,
+            "outputs": outputs,
+            "usage": dict(response["usage"]),
+            "cost": response.get("_hidden_params", {}).get("response_cost"),
+            "timestamp": datetime.now().isoformat(),
+            "uuid": str(uuid.uuid4()),
+            "model": self.model,
+            "response_model": response["model"],
+            "model_type": self.model_type,
+        }
         self.history.append(entry)
         self.update_global_history(entry)
 
@@ -216,38 +217,8 @@ class LM(BaseLM):
     def infer_provider(self) -> Provider:
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
-        # TODO(PR): Keeping this function here will require us to import all
-        # providers in this file. Is this okay?
         return Provider()
 
-    def infer_adapter(self) -> "Adapter":
-        import dspy
-
-        if dspy.settings.adapter:
-            return dspy.settings.adapter
-
-        model_type_to_adapter = {
-            "chat": dspy.ChatAdapter(),
-        }
-        model_type = self.model_type
-        return model_type_to_adapter[model_type]
-
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters."""
-
-        import copy
-
-        new_instance = copy.deepcopy(self)
-        new_instance.history = []
-
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(new_instance, key, value)
-            if (key in self.kwargs) or (not hasattr(self, key)):
-                new_instance.kwargs[key] = value
-
-        return new_instance
-    
     def dump_state(self):
         state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
         return { key: getattr(self, key) for key in state_keys } | self.kwargs
