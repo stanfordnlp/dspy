@@ -7,18 +7,18 @@ from collections.abc import Mapping
 from typing import Any, Dict, Literal, NamedTuple, Optional, Type
 
 import pydantic
-from pydantic.fields import FieldInfo
 from litellm import ContextWindowExceededError
+from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.types.image import try_expand_image_tags
+from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types.history import History
+from dspy.adapters.types.image import try_expand_image_tags
 from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
+from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
-from dspy.adapters.json_adapter import JSONAdapter
-from dspy.clients.lm import LM
 from dspy.utils.callback import BaseCallback
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
@@ -41,6 +41,7 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
+            raise e
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
