@@ -7208,7 +7208,7 @@ widechars = ["wcwidth"]
 name = "tenacity"
 version = "8.5.0"
 description = "Retry code until it succeeds"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
@@ -8510,4 +8510,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<3.14"
-content-hash = "86bb0a2eed4844f0e3babf32f63d955420d4913fc4c658894aefacf944af7054"
+content-hash = "6f896234f3ffa35c78af54f8415d100a8751746a2a27c5c371528e38c6cdaf8d"

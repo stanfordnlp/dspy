@@ -16,6 +16,5 @@ pandas
 pydantic~=2.0
 regex
 requests
-tenacity>=8.2.3
 tqdm
 ujson
