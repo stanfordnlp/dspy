@@ -3,7 +3,7 @@ import dspy
 from dspy.teleprompt.teleprompt import Teleprompter
 import json
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange
 from tqdm import tqdm
 import random
 from transformers import AutoModelForCausalLM, AutoTokenizer
