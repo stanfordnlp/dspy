@@ -66,3 +66,5 @@ docs/docs/**/*.json*
 *.tar.gz
 dspy_env/
 play.ipynb
+
+test_before_pypi/

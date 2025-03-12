@@ -172,21 +172,21 @@ class DatabricksProvider(Provider):
         train_data_format: Optional[Union[TrainDataFormat, str]] = "chat",
         train_kwargs: Optional[Dict[str, Any]] = None,
     ) -> str:
-        if isinstance(data_format, str):
-            if data_format == "chat":
-                data_format = TrainDataFormat.CHAT
-            elif data_format == "completion":
-                data_format = TrainDataFormat.COMPLETION
+        if isinstance(train_data_format, str):
+            if train_data_format == "chat":
+                train_data_format = TrainDataFormat.CHAT
+            elif train_data_format == "completion":
+                train_data_format = TrainDataFormat.COMPLETION
             else:
                 raise ValueError(
-                    f"String `train_data_format` must be one of 'chat' or 'completion', but received: {data_format}."
+                    f"String `train_data_format` must be one of 'chat' or 'completion', but received: {train_data_format}."
                 )
 
         if "train_data_path" not in train_kwargs:
             raise ValueError("The `train_data_path` must be provided to finetune on Databricks.")
         # Add the file name to the directory path.
         train_kwargs["train_data_path"] = DatabricksProvider.upload_data(
-            train_data, train_kwargs["train_data_path"], data_format
+            train_data, train_kwargs["train_data_path"], train_data_format
         )
 
         try:
@@ -236,7 +236,7 @@ class DatabricksProvider(Provider):
         model_to_deploy = train_kwargs.get("register_to")
         job.endpoint_name = model_to_deploy.replace(".", "_")
         DatabricksProvider.deploy_finetuned_model(
-            model_to_deploy, data_format, databricks_host, databricks_token, deploy_timeout
+            model_to_deploy, train_data_format, databricks_host, databricks_token, deploy_timeout
         )
         job.launch_completed = True
         # The finetuned model name should be in the format: "databricks/<endpoint_name>".

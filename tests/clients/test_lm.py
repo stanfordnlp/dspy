@@ -226,3 +226,27 @@ def test_reasoning_model_requirements():
         max_tokens=5000,
     )
     assert lm.kwargs["max_completion_tokens"] == 5000
+
+def test_dump_state():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini", 
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+        launch_kwargs={ "temperature": 1 },
+        train_kwargs={ "temperature": 5 },
+    )
+
+    assert lm.dump_state() == {
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "temperature": 1,
+        "max_tokens": 100,
+        "num_retries": 10,
+        "cache": True,
+        "cache_in_memory": True,
+        "finetuning_model": None,
+        "launch_kwargs": { "temperature": 1 },
+        "train_kwargs": { "temperature": 5 },
+    }

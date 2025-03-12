@@ -92,17 +92,13 @@ class OpenAIProvider(Provider):
 
     @staticmethod
     def is_provider_model(model: str) -> bool:
-        # Filter the provider_prefix, if exists
-        provider_prefix = "openai/"
-        if model.startswith(provider_prefix):
-            model = model[len(provider_prefix):]
+        model = OpenAIProvider._remove_provider_prefix(model)
 
         # Check if the model is a base OpenAI model
         # TODO(enhance) The following list can be replaced with
         # openai.models.list(), but doing so might require a key. Is there a
         # way to get the list of models without a key?
-        valid_model_names = _OPENAI_MODELS
-        if model in valid_model_names:
+        if model in _OPENAI_MODELS:
             return True
 
         # Check if the model is a fine-tuned OpneAI model. Fine-tuned OpenAI
@@ -113,10 +109,15 @@ class OpenAIProvider(Provider):
         # model names by making a call to the OpenAI API to be more exact, but
         # this might require an API key with the right permissions.
         match = re.match(r"ft:([^:]+):", model)
-        if match and match.group(1) in valid_model_names:
+        if match and match.group(1) in _OPENAI_MODELS:
             return True
 
         return False
+    
+    @staticmethod
+    def _remove_provider_prefix(model: str) -> str:
+        provider_prefix = "openai/"
+        return model.replace(provider_prefix, "")
 
     @staticmethod
     def finetune(
@@ -126,6 +127,8 @@ class OpenAIProvider(Provider):
         train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
     ) -> str:
+        model = OpenAIProvider._remove_provider_prefix(model)
+
         print("[OpenAI Provider] Validating the data format")
         OpenAIProvider.validate_data_format(train_data_format)
 
@@ -138,7 +141,7 @@ class OpenAIProvider(Provider):
         job.provider_file_id = provider_file_id
 
         print("[OpenAI Provider] Starting remote training")
-        provider_job_id = OpenAIProvider.start_remote_training(
+        provider_job_id = OpenAIProvider._start_remote_training(
             train_file_id=job.provider_file_id,
             model=model,
             train_kwargs=train_kwargs,
@@ -231,9 +234,9 @@ class OpenAIProvider(Provider):
         return provider_file.id
 
     @staticmethod
-    def start_remote_training(
+    def _start_remote_training(
         train_file_id: str,
-        model: id,
+        model: str,
         train_kwargs: Optional[Dict[str, Any]] = None
     ) -> str:
         train_kwargs = train_kwargs or {}

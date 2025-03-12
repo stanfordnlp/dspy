@@ -1,12 +1,12 @@
 import random
 from collections.abc import Mapping
-from typing import List, Tuple, Union
-
-import pandas as pd
-from datasets import load_dataset
+from typing import TYPE_CHECKING, List, Tuple, Union
 
 import dspy
 from dspy.datasets.dataset import Dataset
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class DataLoader(Dataset):
@@ -26,6 +26,8 @@ class DataLoader(Dataset):
 
         if not isinstance(input_keys, tuple):
             raise ValueError("Invalid input keys provided. Please provide a tuple of input keys.")
+
+        from datasets import load_dataset
 
         dataset = load_dataset(dataset_name, *args, **kwargs)
 
@@ -59,6 +61,8 @@ class DataLoader(Dataset):
                 ]
 
     def from_csv(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
+
         dataset = load_dataset("csv", data_files=file_path)["train"]
 
         if not fields:
@@ -68,7 +72,7 @@ class DataLoader(Dataset):
 
     def from_pandas(
         self,
-        df: pd.DataFrame,
+        df: "pd.DataFrame",
         fields: list[str] = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
@@ -80,6 +84,8 @@ class DataLoader(Dataset):
         ]
 
     def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
+
         dataset = load_dataset("json", data_files=file_path)["train"]
 
         if not fields:
@@ -88,6 +94,8 @@ class DataLoader(Dataset):
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+        from datasets import load_dataset
+
         dataset = load_dataset("parquet", data_files=file_path)["train"]
 
         if not fields:

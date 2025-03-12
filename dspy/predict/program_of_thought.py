@@ -1,14 +1,37 @@
+import logging
 import re
+from typing import Union, Type
 
 import dspy
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import ensure_signature, Signature
 
-from ..primitives.program import Module
-from ..primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.program import Module
+from dspy.primitives.python_interpreter import PythonInterpreter
 
+logger = logging.getLogger(__name__)
 
 class ProgramOfThought(Module):
-    def __init__(self, signature, max_iters=3):
+    """
+    A DSPy module that runs Python programs to solve a problem.
+    This module reuires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
+
+    Example:
+    ```
+    import dspy
+
+    lm = dspy.LM('openai/gpt-4o-mini')
+    dspy.configure(lm=lm)
+    pot = dspy.ProgramOfThought("question -> answer")
+    pot(question="what is 1+1?")
+    ```
+    """
+
+    def __init__(self, signature: Union[str, Type[Signature]], max_iters=3):
+        """
+        Args:
+            signature: The signature of the module.
+            max_iters: The maximum number of iterations to retry code generation and execution.
+        """
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
@@ -56,6 +79,10 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
+        # Currently, the interpreter class checks the deno availability at execution time. 
+        # We may consider checking it at the initialization time for better instruction.
+        self.interpreter = PythonInterpreter()
+
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
         fields_for_mode = {
@@ -125,7 +152,7 @@ class ProgramOfThought(Module):
         return "\n".join(instr)
 
 
-    def parse_code(self, code_data):
+    def _parse_code(self, code_data):
         code = (
             code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         )
@@ -148,35 +175,42 @@ class ProgramOfThought(Module):
             )
         return code_block, None
 
-    def execute_code(self, code):
+    def _execute_code(self, code):
+        """
+        Execute the code using PythonInterpreter and return the output or error.
+        """
         if not code:
-            return code, None, "Error: Empty code before execution."
-        interpreter = PythonInterpreter()
+            return None, "Error: Empty code before execution."
+        
         try:
-            output = str(interpreter.execute(code))
-            return code, output, None
+            output = str(self.interpreter.execute(code))
+            return output, None
         except Exception as e:
-            return code, None, str(e)
+            return None, str(e)
+
     def forward(self, **kwargs):
         input_kwargs = {
             field_name: kwargs[field_name] for field_name in self.input_fields
         }
         code_data = self.code_generate(**input_kwargs)
-        parsed_code, error = self.parse_code(code_data)
-        # FIXME: Don't try to execute the code if it didn't parse
-        code, output, error = self.execute_code(parsed_code)
-        hop = 0
-        while hop < self.max_iters and error:
-            print("Error in code execution")
+        output = None
+        code, error = self._parse_code(code_data)
+        if not error:
+            output, error = self._execute_code(code)
+        hop = 1
+        # Retying code generation and execution until no error or reach max_iters
+        while error is not None:
+            logger.error(f"Error in code execution: {error}")
+            if hop == self.max_iters:
+                self.interpreter.shutdown()
+                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
-            parsed_code, error = self.parse_code(code_data)
-            # FIXME: Don't try to execute the code if it didn't parse
-            code, output, error = self.execute_code(parsed_code)
+            code, error = self._parse_code(code_data)
+            if not error:
+                output, error = self._execute_code(code)
             hop += 1
-            if hop == self.max_iters:
-                print("Max hops reached. Error persists.")
-                return None
         input_kwargs.update({"final_generated_code": code, "code_output": output})
         answer_gen_result = self.generate_answer(**input_kwargs)
+        self.interpreter.shutdown()
         return answer_gen_result

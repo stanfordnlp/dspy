@@ -15,7 +15,7 @@ A **DSPy module** is a building block for programs that use LMs.
 
 ## How do I use a built-in module, like `dspy.Predict` or `dspy.ChainOfThought`?
 
-Let's start with the most fundamental module, `dspy.Predict`. Internally, all other DSPy modules are built using `dspy.Predict`. We'll assume you are already at least a little familiar with [DSPy signatures](/building-blocks/2-signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
+Let's start with the most fundamental module, `dspy.Predict`. Internally, all other DSPy modules are built using `dspy.Predict`. We'll assume you are already at least a little familiar with [DSPy signatures](/building-blocks/signatures), which are declarative specs for defining the behavior of any module we use in DSPy.
 
 To use a module, we first **declare** it by giving it a signature. Then we **call** the module with the input arguments, and extract the output fields!
 

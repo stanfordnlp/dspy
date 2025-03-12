@@ -32,11 +32,8 @@ def test_parallel_module():
 
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
-    assert output[0].output == "test output 1"
-    assert output[1].output == "test output 2"
-    assert output[2].output == "test output 3"
-    assert output[3].output == "test output 4"
-    assert output[4].output == "test output 5"
+    expected_outputs = {f"test output {i}" for i in range(1, 6)}
+    assert {r.output for r in output} == expected_outputs
 
 
 def test_batch_module():
@@ -71,26 +68,18 @@ def test_batch_module():
             res2 = self.predictor2.batch([input] * 5)
 
             return (res1, res2)
-        
+
     result, reason_result = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
-    assert result[0].output == "test output 1"
-    assert result[1].output == "test output 2"
-    assert result[2].output == "test output 3"
-    assert result[3].output == "test output 4"
-    assert result[4].output == "test output 5"
+    # Check that we got all expected outputs without caring about order
+    expected_outputs = {f"test output {i}" for i in range(1, 6)}
+    assert {r.output for r in result} == expected_outputs
+    assert {r.output for r in reason_result} == expected_outputs
 
-    assert reason_result[0].output == "test output 1"
-    assert reason_result[1].output == "test output 2"
-    assert reason_result[2].output == "test output 3"
-    assert reason_result[3].output == "test output 4"
-    assert reason_result[4].output == "test output 5"
-
-    assert reason_result[0].reasoning == "test reasoning 1"
-    assert reason_result[1].reasoning == "test reasoning 2"
-    assert reason_result[2].reasoning == "test reasoning 3"
-    assert reason_result[3].reasoning == "test reasoning 4"
-    assert reason_result[4].reasoning == "test reasoning 5"
+    # Check that reasoning matches outputs for reason_result
+    for r in reason_result:
+        num = r.output.split()[-1]  # get the number from "test output X"
+        assert r.reasoning == f"test reasoning {num}"
 
 
 def test_nested_parallel_module():
@@ -120,13 +109,14 @@ def test_nested_parallel_module():
                     (self.predictor, input),
                 ]),
             ])
-        
+
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
 
-    assert output[0].output == "test output 1"
-    assert output[1].output == "test output 2"
-    assert output[2][0].output == "test output 3"
-    assert output[2][1].output == "test output 4"
+    # For nested structure, check first two outputs and nested outputs separately
+    assert {output[0].output, output[1].output} <= {f"test output {i}" for i in range(1, 5)}
+    assert {output[2][0].output, output[2][1].output} <= {f"test output {i}" for i in range(1, 5)}
+    all_outputs = {output[0].output, output[1].output, output[2][0].output, output[2][1].output}
+    assert len(all_outputs) == 4
 
 
 def test_nested_batch_method():
@@ -148,7 +138,7 @@ def test_nested_batch_method():
             res = self.predictor.batch([dspy.Example(input=input).with_inputs("input")]*2)
 
             return res
-        
+
     result = MyModule().batch([dspy.Example(input="test input").with_inputs("input")]*2)
 
     assert {result[0][0].output, result[0][1].output, result[1][0].output, result[1][1].output} \

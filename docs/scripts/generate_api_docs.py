@@ -14,6 +14,7 @@ API_MAPPING = {
     "primitives": [
         dspy.Example,
         dspy.Image,
+        dspy.History,
         dspy.Prediction,
         dspy.Tool,
     ],

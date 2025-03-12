@@ -94,7 +94,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 
         :param examples: List of dspy.Example instances to process.
-        :param batch_size: Number of threads to use for parallel processing.
+        :param num_threads: Number of threads to use for parallel processing.
         :param max_errors: Maximum number of errors allowed before stopping execution.
         :param return_failed_examples: Whether to return failed examples and exceptions.
         :param provide_traceback: Whether to include traceback information in error logs.
