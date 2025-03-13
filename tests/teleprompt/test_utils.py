@@ -23,6 +23,7 @@ def test_eval_candidate_program_full_trainset():
     evaluate.assert_called_once()
     _, called_kwargs = evaluate.call_args
     assert len(called_kwargs['devset']) == len(trainset)
+    assert called_kwargs['callback_metadata'] == {"metric_key": "eval_full"}
     assert result == 0
 
 def test_eval_candidate_program_minibatch():
@@ -36,6 +37,7 @@ def test_eval_candidate_program_minibatch():
     evaluate.assert_called_once()
     _, called_kwargs = evaluate.call_args
     assert len(called_kwargs['devset']) == batch_size
+    assert called_kwargs['callback_metadata'] == {"metric_key": "eval_minibatch"}
     assert result == 0
 
 @pytest.mark.parametrize("return_all_scores", [True, False])

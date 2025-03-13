@@ -97,6 +97,7 @@ class Evaluate:
         display_table: Optional[bool] = None,
         return_all_scores: Optional[bool] = None,
         return_outputs: Optional[bool] = None,
+        callback_metadata: Optional[dict[str, Any]] = None,
     ):
         """
         Args:
@@ -113,6 +114,7 @@ class Evaluate:
                 use `self.return_all_scores`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`. if not
                 provided, use `self.return_outputs`.
+            callback_metadata (dict): Metadata to be used for evaluate callback handlers.
 
         Returns:
             The evaluation results are returned in different formats based on the flags:
@@ -138,6 +140,9 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         return_all_scores = return_all_scores if return_all_scores is not None else self.return_all_scores
         return_outputs = return_outputs if return_outputs is not None else self.return_outputs
+
+        if callback_metadata:
+            logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
 
         tqdm.tqdm._instances.clear()
 
