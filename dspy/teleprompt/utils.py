@@ -49,13 +49,14 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores)
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
         # Or evaluate on a minibatch
         else:
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                return_all_scores=return_all_scores
+                return_all_scores=return_all_scores,
+                callback_metadata={"metric_key": "eval_minibatch"}
             )
     except Exception:
         logger.error("An exception occurred during evaluation", exc_info=True)
