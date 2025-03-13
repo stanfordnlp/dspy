@@ -384,7 +384,7 @@ files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
     {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
 ]
-markers = {main = "python_version <= \"3.10\"", dev = "python_full_version < \"3.11.3\" and sys_platform != \"win32\" or python_version <= \"3.10\""}
+markers = {main = "python_version <= \"3.10\"", dev = "sys_platform != \"win32\" and python_full_version < \"3.11.3\" or python_version <= \"3.10\""}
 
 [[package]]
 name = "asyncer"
@@ -1217,10 +1217,10 @@ isort = ">=4.3.21,<6.0"
 jinja2 = ">=2.10.1,<4.0"
 packaging = "*"
 pydantic = [
-    {version = ">=1.10.0,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version >= \"3.11\" and python_version < \"4.0\""},
-    {version = ">=1.9.0,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version == \"3.10\""},
-    {version = ">=1.5.1,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version < \"3.10\""},
     {version = ">=1.10.0,<2.0.0 || >2.0.0,<2.0.1 || >2.0.1,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version >= \"3.12\" and python_version < \"4.0\""},
+    {version = ">=1.10.0,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version == \"3.11\""},
+    {version = ">=1.5.1,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version < \"3.10\""},
+    {version = ">=1.9.0,<2.4.0 || >2.4.0,<3.0", extras = ["email"], markers = "python_version == \"3.10\""},
 ]
 pyyaml = ">=6.0.1"
 toml = {version = ">=0.10.0,<1.0.0", markers = "python_version < \"3.11\""}
@@ -1420,7 +1420,6 @@ files = [
     {file = "dnspython-2.7.0-py3-none-any.whl", hash = "sha256:b4c34b7d10b51bcc3a5071e7b8dee77939f1e878477eeecc965e9835f63c6c86"},
     {file = "dnspython-2.7.0.tar.gz", hash = "sha256:ce9c432eda0dc91cf618a5cedf1a4e142651196bbcd2c80e89ed5a907e5cfaf1"},
 ]
-markers = {dev = "sys_platform != \"win32\""}
 
 [package.extras]
 dev = ["black (>=23.1.0)", "coverage (>=7.0)", "flake8 (>=7)", "hypercorn (>=0.16.0)", "mypy (>=1.8)", "pylint (>=3)", "pytest (>=7.4)", "pytest-cov (>=4.1.0)", "quart-trio (>=0.11.0)", "sphinx (>=7.2.0)", "sphinx-rtd-theme (>=2.0.0)", "twine (>=4.0.0)", "wheel (>=0.42.0)"]
@@ -1462,7 +1461,6 @@ description = "A robust email address syntax and deliverability validation libra
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "sys_platform != \"win32\""
 files = [
     {file = "email_validator-2.2.0-py3-none-any.whl", hash = "sha256:561977c2d73ce3611850a06fa56b414621e0c8faa9d66f2611407d87465da631"},
     {file = "email_validator-2.2.0.tar.gz", hash = "sha256:cb690f344c617a714f22e66ae771445a1ceb46821152df8e165c5f9a364582b7"},
@@ -1584,15 +1582,15 @@ huggingface-hub = ">=0.20,<1.0"
 loguru = ">=0.7.2,<0.8.0"
 mmh3 = ">=4.1.0,<6.0.0"
 numpy = [
-    {version = ">=1.21", markers = "python_version >= \"3.10\" and python_version < \"3.12\""},
-    {version = ">=1.21,<2.1.0", markers = "python_version < \"3.10\""},
     {version = ">=1.26", markers = "python_version == \"3.12\""},
     {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
+    {version = ">=1.21", markers = "python_version >= \"3.10\" and python_version < \"3.12\""},
+    {version = ">=1.21,<2.1.0", markers = "python_version < \"3.10\""},
 ]
 onnxruntime = [
     {version = ">=1.17.0,<1.20.0 || >1.20.0", markers = "python_version >= \"3.10\" and python_version < \"3.13\""},
-    {version = ">=1.17.0,<1.20.0", markers = "python_version < \"3.10\""},
     {version = ">1.20.0", markers = "python_version >= \"3.13\""},
+    {version = ">=1.17.0,<1.20.0", markers = "python_version < \"3.10\""},
 ]
 pillow = ">=10.3.0,<12.0.0"
 py-rust-stemmers = ">=0.1.0,<0.2.0"
@@ -4808,9 +4806,9 @@ files = [
 
 [package.dependencies]
 numpy = [
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -6264,10 +6262,10 @@ grpcio = ">=1.41.0"
 grpcio-tools = ">=1.41.0"
 httpx = {version = ">=0.20.0", extras = ["http2"]}
 numpy = [
-    {version = ">=1.21", markers = "python_version >= \"3.10\" and python_version < \"3.12\""},
-    {version = ">=1.21,<2.1.0", markers = "python_version < \"3.10\""},
     {version = ">=1.26", markers = "python_version == \"3.12\""},
     {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
+    {version = ">=1.21", markers = "python_version >= \"3.10\" and python_version < \"3.12\""},
+    {version = ">=1.21,<2.1.0", markers = "python_version < \"3.10\""},
 ]
 portalocker = ">=2.7.0,<3.0.0"
 pydantic = ">=1.10.8"
@@ -6779,7 +6777,7 @@ unleash = ["UnleashClient (>=6.0.1)"]
 name = "setuptools"
 version = "76.0.0"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
-optional = true
+optional = false
 python-versions = ">=3.9"
 groups = ["main", "dev"]
 files = [
@@ -8592,4 +8590,4 @@ weaviate = ["weaviate-client"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<3.14"
-content-hash = "6efcec401322d9b911e9db685540f28cfecc3676c22bf6d2edcad4a530225674"
+content-hash = "79432f6acaddeaa577f8cb44ef59aaace4d723375e346636a2ff0cd093546cf9"
