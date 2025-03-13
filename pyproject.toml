@@ -47,6 +47,9 @@ dependencies = [
     "asyncer==0.0.8",
     "cachetools",
     "cloudpickle",
+    "torch",
+    "einops",
+    "transformers"
 ]
 
 [tool.setuptools.packages.find]
@@ -150,6 +153,9 @@ tenacity = ">=8.2.3"
 asyncer = "0.0.8"
 cachetools = "^5.5.0"
 cloudpickle = "^3.0.0"
+torch = "^2.2.2"
+einops = "^0.8.1"
+transformers = "^4.38.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
