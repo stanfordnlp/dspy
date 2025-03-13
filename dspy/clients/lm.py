@@ -3,8 +3,6 @@ import logging
 import os
 import re
 import threading
-import uuid
-from datetime import datetime
 from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional, cast
 
@@ -98,7 +96,7 @@ class LM(BaseLM):
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         # disable cache will also disable in memory cache
@@ -110,54 +108,19 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            response = completion(
+            return completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )
         else:
             completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
-            response = completion(
+            return completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
-
-        if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response["choices"]
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
-
-        if dspy.settings.disable_history:
-            return outputs
-
-        # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = {
-            "prompt": prompt,
-            "messages": messages,
-            "kwargs": kwargs,
-            "response": response,
-            "outputs": outputs,
-            "usage": dict(response["usage"]),
-            "cost": response.get("_hidden_params", {}).get("response_cost"),
-            "timestamp": datetime.now().isoformat(),
-            "uuid": str(uuid.uuid4()),
-            "model": self.model,
-            "response_model": response["model"],
-            "model_type": self.model_type,
-        }
-        self.history.append(entry)
-        self.update_global_history(entry)
-
-        return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)
@@ -185,7 +148,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
@@ -220,8 +183,17 @@ class LM(BaseLM):
         return Provider()
 
     def dump_state(self):
-        state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
-        return { key: getattr(self, key) for key in state_keys } | self.kwargs
+        state_keys = [
+            "model",
+            "model_type",
+            "cache",
+            "cache_in_memory",
+            "num_retries",
+            "finetuning_model",
+            "launch_kwargs",
+            "train_kwargs",
+        ]
+        return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):
