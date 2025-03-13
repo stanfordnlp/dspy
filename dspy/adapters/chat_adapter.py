@@ -86,7 +86,10 @@ class ChatAdapter(Adapter):
         for line in completion.splitlines():
             match = field_header_pattern.match(line.strip())
             if match:
-                sections.append((match.group(1), []))
+                # If the header pattern is found, split the rest of the line as content
+                header = match.group(1)
+                remaining_content = line[match.end():].strip()
+                sections.append((header, [remaining_content] if remaining_content else []))
             else:
                 sections[-1][1].append(line)
 
