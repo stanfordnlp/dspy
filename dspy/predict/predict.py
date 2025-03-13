@@ -2,15 +2,15 @@ import random
 
 from pydantic import BaseModel
 
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
-from dspy.dsp.utils import settings
-from dspy.adapters.chat_adapter import ChatAdapter
 
 
 class Predict(Module, Parameter):
@@ -97,13 +97,8 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         adapter = settings.adapter or ChatAdapter()
-        completions = adapter(
-            lm,
-            lm_kwargs=config,
-            signature=signature,
-            demos=demos,
-            inputs=kwargs,
-        )
+        with settings.context(caller_predict=self):
+            completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
