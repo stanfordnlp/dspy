@@ -129,7 +129,8 @@ class BootstrapFewShot(Teleprompter):
                 )
             assert id(predictor1) != id(predictor2), "Student and teacher must be different objects."
 
-            name2predictor[name1] = None  # dict(student=predictor1, teacher=predictor2)
+            # Store signature to be able to check against it later
+            name2predictor[name1] = predictor1.signature
             predictor2name[id(predictor1)] = name1
 
             # FIXME(shangyint): This is an ugly hack to bind traces of
@@ -222,17 +223,31 @@ class BootstrapFewShot(Teleprompter):
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
                 except KeyError:
-                    continue  # FIXME: !
+                    # This is not the exact same predictor, but we will check the signatures.
+                    for predictor_name, signature in self.name2predictor.items():
+                        if hasattr(signature, "equals"):
+                            if signature.equals(predictor.signature):
+                                break
+                        else:
+                            if signature == predictor.signature:
+                                break
+                    else:
+                        logger.warning(
+                            "Could not match step in the trace to any mapped predictor. "
+                            "Trying to match %s",
+                            predictor
+                        )
+                        # # TODO: Look closer into this. It's a bit tricky to reproduce.
+                        # print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
+                        # print(
+                        #     "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
+                        # )
+                        # print("Try restarting the notebook, or open an issue.")
+                        # raise KeyError(
+                        #     f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
+                        # ) from e
+                        continue
 
-                    # # TODO: Look closer into this. It's a bit tricky to reproduce.
-                    # print(f"Failed to find predictor {predictor} in {self.predictor2name}.")
-                    # print(
-                    #     "Are you doing this in a notebook (Jupyter)? This might be caused by redefining values by rerunning cells.",
-                    # )
-                    # print("Try restarting the notebook, or open an issue.")
-                    # raise KeyError(
-                    #     f"Failed to find predictor {id(predictor)} {predictor} in {self.predictor2name}.",
-                    # ) from e
 
                 name2traces[predictor_name] = name2traces.get(predictor_name, [])
                 name2traces[predictor_name].append(demo)
