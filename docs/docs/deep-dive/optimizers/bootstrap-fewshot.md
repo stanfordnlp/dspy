@@ -49,12 +49,16 @@ class CoT(dspy.Module):
         return self.prog(question=question)
 ```
 
-Now we need to evaluate this pipeline too!! So we'll use the `Evaluate` class that DSPy provides us, as for the metric we'll use the `gsm8k_metric` that we imported above.
+Now we need to evaluate this pipeline too!! So we'll use the `Evaluate` class that DSPy provides us, as for the metric we'll use the `gsm8k_metric`.
 
 ```python
 from dspy.evaluate import Evaluate
+from dspy.datasets.gsm8k import gsm8k_metric
+import os
 
-evaluate = Evaluate(devset=devset[:], metric=gsm8k_metric, num_threads=NUM_THREADS, display_progress=True, display_table=False)
+NUM_THREADS=os.cpu_count()
+
+evaluate = Evaluate(devset=devset, metric=gsm8k_metric, num_threads=NUM_THREADS, display_progress=True, display_table=False)
 ```
 
 To evaluate the `CoT` pipeline we'll need to create an object of it and pass it as an arg to the `evaluator` call.
