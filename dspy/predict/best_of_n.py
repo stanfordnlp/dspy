@@ -64,7 +64,7 @@ class BestOfN(Module):
                 if reward > best_reward:
                     best_reward, best_pred, best_trace = reward, pred, trace
 
-                if self.threshold is not None and reward >= self.threshold:
+                if reward >= self.threshold:
                     break
 
             except Exception as e:
