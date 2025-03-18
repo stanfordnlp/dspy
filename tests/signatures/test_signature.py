@@ -391,3 +391,21 @@ def test_make_signature_from_string():
     assert sig.output_fields["output1"].annotation == List[str]
     assert "output2" in sig.output_fields
     assert sig.output_fields["output2"].annotation == Union[int, str]
+
+
+def test_signature_field_with_constraints():
+    class MySignature(Signature):
+        inputs: str = InputField()
+        outputs1: str = OutputField(min_length=5, max_length=10)
+        outputs2: int = OutputField(ge=5, le=10)
+
+    assert "outputs1" in MySignature.output_fields
+    output1_constraints = MySignature.output_fields["outputs1"].json_schema_extra["constraints"]
+
+    assert "minimum length: 5" in output1_constraints
+    assert "maximum length: 10" in output1_constraints
+
+    assert "outputs2" in MySignature.output_fields
+    output2_constraints = MySignature.output_fields["outputs2"].json_schema_extra["constraints"]
+    assert "greater than or equal to: 5" in output2_constraints
+    assert "less than or equal to: 10" in output2_constraints
