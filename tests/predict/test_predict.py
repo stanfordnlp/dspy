@@ -36,7 +36,7 @@ def test_reset_method():
 def test_lm_after_dump_and_load_state():
     predict_instance = Predict("input -> output")
     lm = dspy.LM(
-        model="openai/gpt-4o-mini", 
+        model="openai/gpt-4o-mini",
         model_type="chat",
         temperature=1,
         max_tokens=100,
@@ -229,11 +229,12 @@ def test_signature_fields_after_dump_and_load_state(tmp_path):
     new_instance.load(file_path)
     assert new_instance.signature.dump_state() == original_instance.signature.dump_state()
 
+
 @pytest.mark.parametrize("filename", ["model.json", "model.pkl"])
 def test_lm_field_after_dump_and_load_state(tmp_path, filename):
     file_path = tmp_path / filename
     lm = dspy.LM(
-        model="openai/gpt-4o-mini", 
+        model="openai/gpt-4o-mini",
         model_type="chat",
         temperature=1,
         max_tokens=100,
@@ -487,3 +488,53 @@ def test_call_predict_with_chat_history(adapter_type):
     assert "what's the capital of france?" in messages[1]["content"]
     assert "paris" in messages[2]["content"]
     assert "are you sure that's correct" in messages[3]["content"]
+
+
+@pytest.mark.parametrize("adapter_type", ["chat", "json"])
+def test_field_constraints(adapter_type):
+    class SpyLM(dspy.LM):
+        def __init__(self, *args, return_json=False, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.calls = []
+            self.return_json = return_json
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"prompt": prompt, "messages": messages, "kwargs": kwargs})
+            if self.return_json:
+                return ["{'score':'0.5', 'count':'2'}"]
+            return ["[[ ## score ## ]]\n0.5\n[[ ## count ## ]]\n2"]
+
+    class ConstrainedSignature(dspy.Signature):
+        """Test signature with constrained fields."""
+
+        # Input with length and value constraints
+        text: str = dspy.InputField(min_length=5, max_length=100, desc="Input text")
+        number: int = dspy.InputField(gt=0, lt=10, desc="A number between 0 and 10")
+
+        # Output with multiple constraints
+        score: float = dspy.OutputField(ge=0.0, le=1.0, desc="Score between 0 and 1")
+        count: int = dspy.OutputField(multiple_of=2, desc="Even number count")
+
+    program = Predict(ConstrainedSignature)
+    lm = SpyLM("dummy_model")
+    if adapter_type == "chat":
+        lm = SpyLM("dummy_model")
+        dspy.settings.configure(adapter=dspy.ChatAdapter(), lm=lm)
+    else:
+        lm = SpyLM("dummy_model", return_json=True)
+        dspy.settings.configure(adapter=dspy.JSONAdapter(), lm=lm)
+
+    # Call the predictor to trigger instruction generation
+    program(text="hello world", number=5)
+
+    # Get the system message containing the instructions
+    system_message = lm.calls[0]["messages"][0]["content"]
+
+    # Verify constraints are included in the field descriptions
+    assert "minimum length: 5" in system_message
+    assert "maximum length: 100" in system_message
+    assert "greater than: 0" in system_message
+    assert "less than: 10" in system_message
+    assert "greater than or equal to: 0.0" in system_message
+    assert "less than or equal to: 1.0" in system_message
+    assert "a multiple of the given number: 2" in system_message
