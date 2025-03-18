@@ -39,7 +39,7 @@ dependencies = [
     "optuna",
     "pydantic~=2.0",
     "magicattr~=0.1.6",
-    "litellm>=1.59.8,<2.0.0",
+    "litellm>=1.60.3,<2.0.0",
     "diskcache",
     "json-repair",
     "tenacity>=8.2.3",
@@ -163,8 +163,8 @@ ipykernel = "^6.29.4"
 semver = "^3.0.2"
 pillow = "^10.1.0"
 litellm = [
-    { version = ">=1.59.8,<2.0.0", markers = "sys_platform == 'win32'" },
-    { version = ">=1.59.8,<2.0.0", extras = ["proxy"], markers = "sys_platform != 'win32'" }
+    { version = ">=1.60.3,<2.0.0", markers = "sys_platform == 'win32'" },
+    { version = ">=1.60.3,<2.0.0", extras = ["proxy"], markers = "sys_platform != 'win32'" }
 ]
 datamodel-code-generator = "^0.26.3"
 
