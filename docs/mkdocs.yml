@@ -54,6 +54,7 @@ nav:
         - Multi-Hop Search: tutorials/multihop_search/index.ipynb
         - Privacy-Conscious Delegation: tutorials/papillon/index.md
         - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
+        - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
         - Finetuning Agents: tutorials/games/index.ipynb
         - Saving and Loading: tutorials/saving/index.md
         - Deployment: tutorials/deployment/index.md
@@ -84,6 +85,7 @@ nav:
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
+            - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
             - Module: api/modules/Module.md
@@ -93,6 +95,7 @@ nav:
             - Program: api/modules/Program.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
+            - Refine: api/modules/Refine.md
         - Optimizers:
             - BetterTogether: api/optimizers/BetterTogether.md
             - BootstrapFewShot: api/optimizers/BootstrapFewShot.md

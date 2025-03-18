@@ -3,10 +3,8 @@ import logging
 import os
 import re
 import threading
-import uuid
-from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, List, Literal, Optional, cast, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Optional, cast
 
 import litellm
 import pydantic
@@ -21,8 +19,6 @@ from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.utils.callback import BaseCallback, with_callbacks
-if TYPE_CHECKING:
-    from dspy.adapters.base import Adapter
 
 from .base_lm import BaseLM
 
@@ -100,7 +96,7 @@ class LM(BaseLM):
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         # disable cache will also disable in memory cache
@@ -112,51 +108,19 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            response = completion(
+            return completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )
         else:
             completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
-            response = completion(
+            return completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
-
-        if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response["choices"]
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
-
-        if dspy.settings.disable_history:
-            return outputs
-
-        # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            response_model=response["model"],
-            model_type=self.model_type,
-        )
-        self.history.append(entry)
-        self.update_global_history(entry)
-
-        return outputs
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)
@@ -184,7 +148,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
@@ -216,41 +180,20 @@ class LM(BaseLM):
     def infer_provider(self) -> Provider:
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
-        # TODO(PR): Keeping this function here will require us to import all
-        # providers in this file. Is this okay?
         return Provider()
 
-    def infer_adapter(self) -> "Adapter":
-        import dspy
-
-        if dspy.settings.adapter:
-            return dspy.settings.adapter
-
-        model_type_to_adapter = {
-            "chat": dspy.ChatAdapter(),
-        }
-        model_type = self.model_type
-        return model_type_to_adapter[model_type]
-
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters."""
-
-        import copy
-
-        new_instance = copy.deepcopy(self)
-        new_instance.history = []
-
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(new_instance, key, value)
-            if (key in self.kwargs) or (not hasattr(self, key)):
-                new_instance.kwargs[key] = value
-
-        return new_instance
-    
     def dump_state(self):
-        state_keys = ["model", "model_type", "cache", "cache_in_memory", "num_retries", "finetuning_model", "launch_kwargs", "train_kwargs"]
-        return { key: getattr(self, key) for key in state_keys } | self.kwargs
+        state_keys = [
+            "model",
+            "model_type",
+            "cache",
+            "cache_in_memory",
+            "num_retries",
+            "finetuning_model",
+            "launch_kwargs",
+            "train_kwargs",
+        ]
+        return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):

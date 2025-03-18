@@ -37,6 +37,8 @@ API_MAPPING = {
         dspy.MultiChainComparison,
         dspy.ChainOfThoughtWithHint,
         dspy.Parallel,
+        dspy.BestOfN,
+        dspy.Refine,
     ],
     "tools": [
         dspy.ColBERTv2,

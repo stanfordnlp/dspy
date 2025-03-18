@@ -48,6 +48,8 @@ class LocalProvider(Provider):
             model = model[7:]
         if model.startswith("local:"):
             model = model[6:]
+        if model.startswith("huggingface/"):
+            model = model[len("huggingface/"):]
 
         logger.info(f"Grabbing a free port to launch an SGLang server for model {model}")
         logger.info(

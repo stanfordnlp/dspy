@@ -23,6 +23,7 @@ This file consists of helper functions for our variety of optimizers.
 
 ### OPTIMIZER TRAINING UTILS ###
 
+logger = logging.getLogger(__name__)
 
 def create_minibatch(trainset, batch_size=50, rng=None):
     """Create a minibatch from the trainset."""
@@ -48,16 +49,19 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores)
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
         # Or evaluate on a minibatch
         else:
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                return_all_scores=return_all_scores
+                return_all_scores=return_all_scores,
+                callback_metadata={"metric_key": "eval_minibatch"}
             )
-    except Exception as e:
-        print(f"Exception occurred: {e}")
+    except Exception:
+        logger.error("An exception occurred during evaluation", exc_info=True)
+        if return_all_scores:
+            return 0.0, [0.0] * len(trainset)
         return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 def eval_candidate_program_with_pruning(
