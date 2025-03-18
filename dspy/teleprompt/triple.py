@@ -42,7 +42,7 @@ class Triple(Teleprompter):
         try:
             demo_candidates = create_n_fewshot_demo_sets(
                 student=program,
-                num_candidate_sets=self.num_instruction_candidates,
+                num_candidate_sets=4,
                 trainset=trainset,
                 max_labeled_demos=self.num_demo_candidates,
                 max_bootstrapped_demos=self.num_demo_candidates,
@@ -50,6 +50,8 @@ class Triple(Teleprompter):
                 metric_threshold=self.metric_threshold,
                 seed=self.seed,
                 teacher_settings=None,
+                include_non_bootstrapped=False,
+                labeled_sample=False,
             )
         except Exception as e:
             print(f"Error generating few-shot examples: {e}")
