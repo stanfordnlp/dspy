@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import wraps
 from pathlib import Path
@@ -5,6 +6,8 @@ from pathlib import Path
 from joblib import Memory
 
 from dspy.dsp.utils import dotdict
+
+logger = logging.getLogger(__name__)
 
 cache_turn_on = os.environ.get('DSP_CACHEBOOL', 'True').lower() != 'false'
 
@@ -29,9 +32,13 @@ CacheMemory = dotdict()
 CacheMemory.cache = noop_decorator
 
 if cache_turn_on:
-    cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache/cachedir_joblib')
-    CacheMemory = Memory(location=cachedir, verbose=0)
+    try:
+        cachedir = os.environ.get('DSP_CACHEDIR') or os.path.join(Path.home(), '.dspy_cache/cachedir_joblib')
+        CacheMemory = Memory(location=cachedir, verbose=0)
 
-    cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR')
-    if cachedir2:
-        NotebookCacheMemory = Memory(location=cachedir2, verbose=0)
+        cachedir2 = os.environ.get('DSP_NOTEBOOK_CACHEDIR')
+        if cachedir2:
+            NotebookCacheMemory = Memory(location=cachedir2, verbose=0)
+    except Exception as e:
+        logger.warning("Failed to initialize cache: %s", e)
+        cache_turn_on = False
