@@ -1,11 +1,11 @@
 import ast
 import enum
 import json
-import json_repair
+from typing import Any, List, Literal, Union, get_args, get_origin
 
+import json_repair
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
-from typing import Any, List, Literal, Union, get_args, get_origin
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -86,7 +86,6 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-
 def parse_value(value, annotation):
     if annotation is str:
         return str(value)
@@ -97,7 +96,7 @@ def parse_value(value, annotation):
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value) # json_repair.loads returns "" on failure.
+    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
         try:
             candidate = ast.literal_eval(value)
