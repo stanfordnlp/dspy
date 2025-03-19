@@ -1,10 +1,7 @@
-import enum
-import inspect
-import json
 import re
 import textwrap
 from collections.abc import Mapping
-from typing import Any, Dict, Literal, NamedTuple, Optional, Type
+from typing import Any, Dict, NamedTuple, Optional, Type
 
 import pydantic
 from litellm import ContextWindowExceededError
@@ -14,11 +11,10 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types.history import History
 from dspy.adapters.types.image import try_expand_image_tags
-from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
+from dspy.adapters.utils import translate_field_type, format_field_value, get_annotation_name, parse_value
 from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
-from dspy.signatures.utils import get_dspy_field_type
 from dspy.utils.callback import BaseCallback
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
@@ -284,34 +280,10 @@ def prepare_instructions(signature: SignatureMeta):
     parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
     parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-    def field_metadata(field_name, field_info):
-        field_type = field_info.annotation
-
-        if get_dspy_field_type(field_info) == "input" or field_type is str:
-            desc = ""
-        elif field_type is bool:
-            desc = "must be True or False"
-        elif field_type in (int, float):
-            desc = f"must be a single {field_type.__name__} value"
-        elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
-            desc = f"must be one of: {'; '.join(field_type.__members__)}"
-        elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
-            desc = (
-                # Strongly encourage the LM to avoid choosing values that don't appear in the
-                # literal or returning a value of the form 'Literal[<selected_value>]'
-                f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
-            )
-        else:
-            desc = "must adhere to the JSON schema: "
-            desc += json.dumps(prepare_schema(field_type), ensure_ascii=False)
-
-        desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
-        return f"{{{field_name}}}{desc}"
-
     def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
         return format_fields(
             fields_with_values={
-                FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
+                FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
                 for field_name, field_info in fields.items()
             },
         )
