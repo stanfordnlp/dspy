@@ -9,9 +9,7 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.json_adapter import JSONAdapter
-from dspy.adapters.types.history import History
-from dspy.adapters.types.image import try_expand_image_tags
-from dspy.adapters.utils import translate_field_type, format_field_value, get_annotation_name, parse_value
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, translate_field_type
 from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
@@ -44,46 +42,91 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
+            raise e
             if isinstance(e, ContextWindowExceededError):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
             # fallback to JSONAdapter
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
-    def format(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
+    # def format(
+    #     self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+    # ) -> list[dict[str, Any]]:
+    #     messages: list[dict[str, Any]] = []
 
-        # Extract demos where some of the output_fields are not filled in.
-        incomplete_demos = [
-            demo for demo in demos if not all(k in demo and demo[k] is not None for k in signature.fields)
-        ]
-        complete_demos = [demo for demo in demos if demo not in incomplete_demos]
-        # Filter out demos that don't have at least one input and one output field.
-        incomplete_demos = [
-            demo
-            for demo in incomplete_demos
-            if any(k in demo for k in signature.input_fields) and any(k in demo for k in signature.output_fields)
-        ]
+    #     # Extract demos where some of the output_fields are not filled in.
+    #     incomplete_demos = [
+    #         demo for demo in demos if not all(k in demo and demo[k] is not None for k in signature.fields)
+    #     ]
+    #     complete_demos = [demo for demo in demos if demo not in incomplete_demos]
+    #     # Filter out demos that don't have at least one input and one output field.
+    #     incomplete_demos = [
+    #         demo
+    #         for demo in incomplete_demos
+    #         if any(k in demo for k in signature.input_fields) and any(k in demo for k in signature.output_fields)
+    #     ]
 
-        demos = incomplete_demos + complete_demos
-        prepared_instructions = prepare_instructions(signature)
-        messages.append({"role": "system", "content": prepared_instructions})
+    #     demos = incomplete_demos + complete_demos
+    #     prepared_instructions = prepare_instructions(signature)
+    #     messages.append({"role": "system", "content": prepared_instructions})
 
-        # Add the few-shot examples
-        for demo in demos:
-            messages.append(self.format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
-            messages.append(self.format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
+    #     # Add the few-shot examples
+    #     for demo in demos:
+    #         messages.append(self.format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
+    #         messages.append(self.format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
 
-        # Add the chat history after few-shot examples
-        if any(field.annotation == History for field in signature.input_fields.values()):
-            messages.extend(self.format_conversation_history(signature, inputs))
-        else:
-            messages.append(self.format_turn(signature, inputs, role="user"))
+    #     # Add the chat history after few-shot examples
+    #     if any(field.annotation == History for field in signature.input_fields.values()):
+    #         messages.extend(self.format_conversation_history(signature, inputs))
+    #     else:
+    #         messages.append(self.format_turn(signature, inputs, role="user"))
 
-        messages = try_expand_image_tags(messages)
-        return messages
+    #     messages = try_expand_image_tags(messages)
+    #     return messages
+
+    def format_field_structure(self, signature: Type[Signature]) -> str:
+        parts = []
+        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+
+        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+            return format_fields(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
+                    for field_name, field_info in fields.items()
+                },
+            )
+
+        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append("[[ ## completed ## ]]\n")
+        return "\n\n".join(parts).strip()
+
+    def get_output_format_in_user_message(self, signature: Type[Signature]) -> str:
+        def type_info(v):
+            if v.annotation is not str:
+                return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
+            else:
+                return ""
+
+        message = "Respond with the corresponding output fields, starting with the field "
+        message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
+        message += ", and then ending with the marker for `[[ ## completed ## ]]`."
+        return message
+
+    def format_assistant_message(
+        self,
+        signature: Type[Signature],
+        outputs: dict[str, Any],
+        missing_field_message=None,
+    ) -> str:
+        messages = format_fields(
+            {
+                FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
+                for k, v in signature.output_fields.items()
+            },
+        )
+        joined_messages = "\n\n".join(msg for msg in messages)
+        return {"role": "assistant", "content": joined_messages}
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         sections = [(None, [])]

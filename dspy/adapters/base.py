@@ -1,7 +1,10 @@
+import textwrap
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, Type
 
 from dspy.adapters.types import History
+from dspy.adapters.types.image import try_expand_image_tags
+from dspy.adapters.utils import format_field_value, get_field_description_string
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -28,10 +31,9 @@ class Adapter(ABC):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs_ = self.format(signature, demos, inputs)
-        inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
+        inputs = self.format(signature, demos, inputs)
 
-        outputs = lm(**inputs_, **lm_kwargs)
+        outputs = lm(messages=inputs, **lm_kwargs)
         values = []
 
         for output in outputs:
@@ -42,12 +44,6 @@ class Adapter(ABC):
 
             value = self.parse(signature, output)
 
-            if set(value.keys()) != set(signature.output_fields.keys()):
-                raise ValueError(
-                    "Parsed output fields do not match signature output fields. "
-                    f"Expected: {set(signature.output_fields.keys())}, Got: {set(value.keys())}"
-                )
-
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
 
@@ -55,40 +51,107 @@ class Adapter(ABC):
 
         return values
 
-    @abstractmethod
     def format(
         self,
         signature: Type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        inputs_copy = dict(inputs)
+        messages = []
+        system_message = (
+            f"{self.format_field_description(signature)}\n"
+            f"{self.format_field_structure(signature)}\n"
+            f"{self.format_objective(signature)}"
+        )
+        messages.append({"role": "system", "content": system_message})
+        messages.extend(self.format_demos(signature, demos))
+        messages.extend(self.format_conversation_history(signature, inputs_copy))
+        messages.append({"role": "user", "content": self.format_user_message(signature, inputs_copy)})
+
+        messages = try_expand_image_tags(messages)
+        return messages
+
+    def format_field_description(self, signature: Type[Signature]) -> str:
+        return (
+            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
+            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
+        )
+
+    def format_field_structure(self, signature: Type[Signature]) -> str:
         raise NotImplementedError
 
-    @abstractmethod
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
-        raise NotImplementedError
+    def format_objective(self, signature: Type[Signature]) -> str:
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
 
-    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
-        raise NotImplementedError
-
-    def format_finetune_data(
+    def format_user_message(
         self,
         signature: Type[Signature],
-        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-        outputs: dict[str, Any],
-    ) -> dict[str, list[Any]]:
-        raise NotImplementedError
+        prefix: str = "",
+        suffix: str = "",
+        include_output_format: bool = True,
+    ) -> str:
+        messages = [prefix]
 
-    def format_turn(
+        for k, v in signature.input_fields.items():
+            value = inputs[k]
+            formatted_field_value = format_field_value(field_info=v.info, value=value)
+            messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+
+        if include_output_format:
+            output_format = self.get_output_format_in_user_message(signature)
+            if output_format is not None:
+                messages.append(output_format)
+
+        messages.append(suffix)
+        return "\n\n".join(messages).strip()
+
+    def get_output_format_in_user_message(self, signature: Type[Signature]) -> str:
+        return None
+
+    def format_assistant_message(
         self,
         signature: Type[Signature],
-        values,
-        role: str,
-        incomplete: bool = False,
-        is_conversation_history: bool = False,
-    ) -> dict[str, Any]:
+        outputs: dict[str, Any],
+        missing_field_message=None,
+    ) -> str:
         raise NotImplementedError
+
+    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> str:
+        complete_demos = []
+        incomplete_demos = []
+
+        for demo in demos:
+            # Check if all fields are present and not None
+            is_complete = all(k in demo and demo[k] is not None for k in signature.fields)
+
+            # Check if demo has at least one input and one output field
+            has_input = any(k in demo for k in signature.input_fields)
+            has_output = any(k in demo for k in signature.output_fields)
+
+            if is_complete:
+                complete_demos.append(demo)
+            elif has_input and has_output:
+                # We only keep incomplete demos that have at least one input and one output field
+                incomplete_demos.append(demo)
+
+        messages = []
+
+        incomplete_demo_prefix = "This is an example of the task, though some input or output fields are not supplied."
+        for demo in incomplete_demos:
+            messages.append(
+                {"role": "user", "content": self.format_user_message(signature, demo, prefix=incomplete_demo_prefix)}
+            )
+            messages.append({"role": "assistant", "content": self.format_assistant_message(signature, demo)})
+
+        for demo in complete_demos:
+            messages.append({"role": "user", "content": self.format_user_message(signature, demo)})
+            messages.append({"role": "assistant", "content": self.format_assistant_message(signature, demo)})
+
+        return messages
 
     def format_conversation_history(self, signature: Type[Signature], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         history_field_name = None
@@ -110,14 +173,22 @@ class Adapter(ABC):
         messages = []
         for message in conversation_history:
             messages.append(
-                self.format_turn(signature_without_history, message, role="user", is_conversation_history=True)
+                {
+                    "role": "user",
+                    "content": self.format_user_message(
+                        signature_without_history, message, include_output_format=False
+                    ),
+                }
             )
             messages.append(
-                self.format_turn(signature_without_history, message, role="assistant", is_conversation_history=True)
+                {"role": "assistant", "content": self.format_assistant_message(signature_without_history, message)}
             )
 
-        inputs_copy = dict(inputs)
-        del inputs_copy[history_field_name]
+        # Remove the history field from the inputs
+        del inputs[history_field_name]
 
-        messages.append(self.format_turn(signature_without_history, inputs_copy, role="user"))
         return messages
+
+    @abstractmethod
+    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+        raise NotImplementedError
