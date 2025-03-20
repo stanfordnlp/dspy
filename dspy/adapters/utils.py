@@ -170,6 +170,18 @@ def get_annotation_name(annotation):
         args_str = ", ".join(get_annotation_name(a) for a in args)
         return f"{get_annotation_name(origin)}[{args_str}]"
 
+def get_field_description_string(fields: dict) -> str:
+    field_descriptions = []
+    for idx, (k, v) in enumerate(fields.items()):
+        field_message = f"{idx + 1}. `{k}`"
+        field_message += f" ({get_annotation_name(v.annotation)})"
+        field_message += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+        field_message += (
+            f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
+        )
+        field_descriptions.append(field_message)
+    return "\n".join(field_descriptions).strip()
+
 
 def _format_input_list_field_value(value: List[Any]) -> str:
     """
