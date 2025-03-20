@@ -5,6 +5,7 @@
     options:
         members:
             - compile
+            - get_params
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
