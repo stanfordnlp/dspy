@@ -63,14 +63,25 @@ class Refine(Module):
             fail_count (Optional[int], optional): The number of times the module can fail before raising an error
 
         Example:
-            >>> import dspy
-            >>>
-            >>> qa = dspy.ChainOfThought("question -> answer")
-            >>> def one_word_answer(args, pred):
-            >>>     return 1.0 if len(pred.answer) == 1 else 0.0
-            >>> best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
-            >>> best_of_3(question="What is the capital of Belgium?").answer
-            >>> # Brussels
+            ```python
+            import dspy
+
+            dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+            # Define a QA module with chain of thought
+            qa = dspy.ChainOfThought("question -> answer")
+
+            # Define a reward function that checks for one-word answers
+            def one_word_answer(args, pred):
+                return 1.0 if len(pred.answer.split()) == 1 else 0.0
+
+            # Create a refined module that tries up to 3 times
+            best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+
+            # Use the refined module
+            result = best_of_3(question="What is the capital of Belgium?").answer
+            # Returns: Brussels
+            ```
         """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
