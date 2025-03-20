@@ -74,13 +74,13 @@ class Retry(Predict):
             trace.append((self, {**kwargs}, pred))
         return pred
 
-    def load_state(self, state, use_legacy_loading=False):
+    def load_state(self, state):
         # Override load state to ensure our new signature is based off the latest module state
-        self.module = self.module.load_state(state, use_legacy_loading)
+        self.module = self.module.load_state(state)
         self.original_signature = self.module.extended_signature if isinstance(self.module, dspy.ChainOfThought) else self.module.signature
         self.new_signature = self._create_new_signature(self.original_signature)
         return self
 
-    def dump_state(self, save_verbose=None):
+    def dump_state(self):
         # Dump the data from the underlying module instead so that it can be loaded back properly
-        return self.module.dump_state(save_verbose)
+        return self.module.dump_state()
