@@ -68,6 +68,8 @@ class Completions:
         return self._completions[key]
 
     def __getattr__(self, name):
+        if name == "_completions":
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
         if name in self._completions:
             return self._completions[name]
 
