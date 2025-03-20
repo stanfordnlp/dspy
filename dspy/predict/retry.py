@@ -80,3 +80,7 @@ class Retry(Predict):
         self.original_signature = self.module.extended_signature if isinstance(self.module, dspy.ChainOfThought) else self.module.signature
         self.new_signature = self._create_new_signature(self.original_signature)
         return self
+
+    def dump_state(self, save_verbose=None):
+        # Dump the data from the underlying module instead so that it can be loaded back properly
+        return self.module.dump_state(save_verbose)
