@@ -98,7 +98,7 @@ class Adapter(ABC):
 
         for k, v in signature.input_fields.items():
             value = inputs[k]
-            formatted_field_value = format_field_value(field_info=v.info, value=value)
+            formatted_field_value = format_field_value(field_info=v, value=value)
             messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
 
         if include_output_format:
@@ -116,7 +116,7 @@ class Adapter(ABC):
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message=None,
+        missing_field_message: str = None,
     ) -> str:
         raise NotImplementedError
 
@@ -145,11 +145,25 @@ class Adapter(ABC):
             messages.append(
                 {"role": "user", "content": self.format_user_message(signature, demo, prefix=incomplete_demo_prefix)}
             )
-            messages.append({"role": "assistant", "content": self.format_assistant_message(signature, demo)})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": self.format_assistant_message(
+                        signature, demo, missing_field_message="Not supplied for this particular example. "
+                    ),
+                }
+            )
 
         for demo in complete_demos:
             messages.append({"role": "user", "content": self.format_user_message(signature, demo)})
-            messages.append({"role": "assistant", "content": self.format_assistant_message(signature, demo)})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": self.format_assistant_message(
+                        signature, demo, missing_field_message="Not supplied for this conversation history message. "
+                    ),
+                }
+            )
 
         return messages
 
