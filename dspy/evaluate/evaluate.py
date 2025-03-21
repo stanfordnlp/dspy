@@ -1,6 +1,6 @@
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union, Tuple
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -194,7 +194,7 @@ class Evaluate:
         return round(100 * ncorrect / ntotal, 2)
     
 
-    def _construct_result_table(self, results: list[Union[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
+    def _construct_result_table(self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
         Let's not try to change the name of this method as it may be patched by external tracing tools.
