@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import os
 
 
-class InterpreterError(ValueError):
+class InterpreterError(RuntimeError):
     pass
 
 
@@ -119,8 +119,10 @@ class PythonInterpreter:
             error_type = result.get("errorType", "Sandbox Error")
             if error_type == "SyntaxError":
                 raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
+            elif error_type == "FinalAnswer":
+                return result.get("errorArgs")
             else:
-                raise InterpreterError(f"{error_type}: {error_msg}")
+                raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
 
         # If there's no error, return the "output" field
         return result.get("output", None)

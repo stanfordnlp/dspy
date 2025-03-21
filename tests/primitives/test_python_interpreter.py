@@ -1,6 +1,8 @@
 import shutil
 
 import pytest
+import random
+
 
 from dspy.primitives.python_interpreter import InterpreterError, PythonInterpreter
 
@@ -42,3 +44,21 @@ def test_failure_zero_division():
         code = "1+0/0"
         with pytest.raises(InterpreterError, match="ZeroDivisionError"):
             interpreter.execute(code)
+
+
+def test_exception_args():
+    with PythonInterpreter() as interpreter:
+        token = random.randint(1, 10**9)
+        code = f"raise ValueError({token})"
+        with pytest.raises(InterpreterError, match=rf"ValueError: \[{token}\]"):
+            interpreter.execute(code)
+
+
+def test_final_answer_trick():
+    with PythonInterpreter() as interpreter:
+        token = random.randint(1, 10**9)
+        code = f"final_answer('The result is', {token})"
+        result = interpreter(code)
+
+        # They should matain the same order
+        assert result == ["The result is", token], "The returned results are differ, `final_answer` trick doesn't work"
