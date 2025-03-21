@@ -57,7 +57,7 @@ class LocalProvider(Provider):
         )
         port = get_free_port()
         timeout = launch_kwargs.get("timeout", 1800)
-        command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0"
+        command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0 --grammar-backend xgrammar"
 
         # We will manually stream & capture logs.
         process = subprocess.Popen(
@@ -232,12 +232,11 @@ def train_sft_locally(model_name, train_data, train_kwargs):
 
     from datasets import Dataset
 
-    hf_dataset = Dataset.from_list(train_data)
-    def tokenize_function(example):
-        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
-    tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
-    tokenized_dataset.set_format(type="torch")
-    tokenized_dataset = tokenized_dataset.filter(lambda example: (example["labels"] != -100).any())
+    hf_dataset = Dataset.from_list([{
+        "text": tokenizer.apply_chat_template(
+            conversation=example["messages"], tokenize=False, add_generation_prompt=False
+        )
+    } for example in train_data])
 
     USE_PEFT = train_kwargs.get("use_peft", False)
     peft_config = None
@@ -272,17 +271,13 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         bf16=train_kwargs["bf16"],
         max_seq_length=train_kwargs["max_seq_length"],
         packing=train_kwargs["packing"],
-        dataset_kwargs={  # We need to pass dataset_kwargs because we are processing the dataset ourselves
-            "add_special_tokens": False,  # Special tokens handled by template
-            "append_concat_token": False,  # No additional separator needed
-        },
     )
 
     logger.info("Starting training")
     trainer = SFTTrainer(
         model=model,
         args=sft_config,
-        train_dataset=tokenized_dataset,
+        train_dataset=hf_dataset,
         peft_config=peft_config,
     )
 
