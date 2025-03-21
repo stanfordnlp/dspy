@@ -17,14 +17,14 @@ class ChainOfThought(Module):
         extended_signature = signature.prepend("reasoning", rationale_type, type_=str)
 
         self.plain_predict = dspy.Predict(signature, **config)
-        self.cot_predict = dspy.Predict(extended_signature, **config)
+        self.predict = dspy.Predict(extended_signature, **config)
 
     def forward(self, **kwargs):
         # Keep same logic with `dspy.Predict`
-        lm = kwargs.pop("lm", self.lm) or settings.lm
+        lm = kwargs.pop("lm", getattr(self, "lm", None)) or settings.lm
         assert isinstance(lm, BaseLM), "No LM is loaded."
 
         # Custom models that subclassing `BaseLM` don't have this parameter
         if getattr(lm, "reasoning_model", False):
             return self.plain_predict(**kwargs)
-        return self.cot_predict(**kwargs)
+        return self.predict(**kwargs)

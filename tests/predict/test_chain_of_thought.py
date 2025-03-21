@@ -12,3 +12,15 @@ def test_initialization_with_string_signature():
         "answer",
     ]
     assert predict(question="What is 1+1?").answer == "2"
+
+
+def test_cot_skips_with_reasoning_model():
+    lm = DummyLM([{"answer": "2"}])
+    lm.reasoning_model = True
+    dspy.settings.configure(lm=lm)
+    signature = dspy.Signature("question -> answer")
+    predict = ChainOfThought(signature)
+    assert list(predict.plain_predict.signature.output_fields.keys()) == [
+        "answer",
+    ]
+    assert predict(question="What is 1+1?").answer == "2"
