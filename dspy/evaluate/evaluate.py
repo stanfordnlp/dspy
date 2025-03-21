@@ -1,6 +1,6 @@
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -54,7 +54,7 @@ class Evaluate:
         metric: Optional[Callable] = None,
         num_threads: int = 1,
         display_progress: bool = False,
-        display_table: Tuple[bool, int] = False,
+        display_table: Union[bool, int] = False,
         max_errors: int = 5,
         return_all_scores: bool = False,
         return_outputs: bool = False,
@@ -68,8 +68,8 @@ class Evaluate:
             metric (Callable): The metric function to use for evaluation.
             num_threads (int): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
-            display_table (Tuple[bool, int]): Whether to display the evaluation results in a table. 
-                If a number is passed, the evaluation results will be truncated to that number. 
+            display_table (Union[bool, int]): Whether to display the evaluation results in a table. 
+                If a number is passed, the evaluation results will be truncated to that number before displayed. 
             max_errors (int): The maximum number of errors to allow before stopping evaluation.
             return_all_scores (bool): Whether to return scores for every data record in `devset`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
@@ -95,7 +95,7 @@ class Evaluate:
         devset: Optional[List["dspy.Example"]] = None,
         num_threads: Optional[int] = None,
         display_progress: Optional[bool] = None,
-        display_table: Optional[Tuple[bool, int]] = None,
+        display_table: Optional[Union[bool, int]] = None,
         return_all_scores: Optional[bool] = None,
         return_outputs: Optional[bool] = None,
         callback_metadata: Optional[dict[str, Any]] = None,
@@ -109,8 +109,8 @@ class Evaluate:
                 `self.num_threads`.
             display_progress (bool): Whether to display progress during evaluation. if not provided, use
                 `self.display_progress`.
-            display_table (Tuple[bool, int]): Whether to display the evaluation results in a table. if not provided, use
-                `self.display_table`. If a number is passed, the evaluation results will be truncated to that number.
+            display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
+                `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             return_all_scores (bool): Whether to return scores for every data record in `devset`. if not provided,
                 use `self.return_all_scores`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`. if not
@@ -128,7 +128,7 @@ class Evaluate:
             
             - With `return_outputs=True`:
                 Returns (overall_score, result_triples) where result_triples is a list of 
-                (example, prediction, score) tuples for each example in devset
+                (example, prediction, score) Unions for each example in devset
 
             - With both flags=True:
                 Returns (overall_score, result_triples, individual_scores)
@@ -194,7 +194,7 @@ class Evaluate:
         return round(100 * ncorrect / ntotal, 2)
     
 
-    def _construct_result_table(self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
+    def _construct_result_table(self, results: list[Union[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
         Let's not try to change the name of this method as it may be patched by external tracing tools.
@@ -223,14 +223,14 @@ class Evaluate:
         return result_df.rename(columns={"correct": metric_name})
 
 
-    def _display_result_table(self, result_df: "pd.DataFrame", display_table: Tuple[bool, int], metric_name: str):
+    def _display_result_table(self, result_df: "pd.DataFrame", display_table: Union[bool, int], metric_name: str):
         """
         Display the specified result DataFrame in a table format.
 
         Args:
             result_df: The result DataFrame to display.
             display_table: Whether to display the evaluation results in a table. 
-                If a number is passed, the evaluation results will be truncated to that number. 
+                If a number is passed, the evaluation results will be truncated to that number before displayed.
             metric_name: The name of the metric used for evaluation.
         """
         if isinstance(display_table, bool):
