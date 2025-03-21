@@ -85,6 +85,7 @@ class Evaluate:
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
+        self.last_result_df = None
 
     @with_callbacks
     def __call__(
@@ -198,6 +199,8 @@ class Evaluate:
         # Rename the 'correct' column to the name of the metric object
         metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
         result_df = result_df.rename(columns={"correct": metric_name})
+        # Set the last result DataFrame to be used by the callback
+        self.last_result_df = result_df
 
         if display_table:
             if isinstance(display_table, bool):

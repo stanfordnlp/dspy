@@ -1,6 +1,7 @@
 import signal
 import threading
 from unittest.mock import patch
+import pandas as pd
 
 import pytest
 
@@ -52,6 +53,16 @@ def test_evaluate_call():
     )
     score = ev(program)
     assert score == 100.0
+    pd.testing.assert_frame_equal(
+        ev.last_result_df,
+        pd.DataFrame(
+            {
+                "question": ["What is 1+1?", "What is 2+2?"],
+                "example_answer": ["2", "4"],
+                "pred_answer": ["2", "4"],
+                "answer_exact_match": [True, True],
+        })
+    )
 
 
 def test_multithread_evaluate_call():
