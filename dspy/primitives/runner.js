@@ -40,7 +40,6 @@ for await (const line of readLines(Deno.stdin)) {
     pyodide.runPython(`
 import sys
 import io
-import json
 
 # Keep references to the old stdout/stderr so we can restore them later
 old_stdout = sys.stdout
