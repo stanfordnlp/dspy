@@ -41,6 +41,7 @@ class ParallelExecutor:
         self.cancel_jobs = threading.Event()
 
     def execute(self, function, data):
+        tqdm.tqdm._instances.clear()
         wrapped = self._wrap_function(function)
         return self._execute_parallel(wrapped, data)
 
