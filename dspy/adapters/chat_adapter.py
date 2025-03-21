@@ -41,6 +41,38 @@ class ChatAdapter(Adapter):
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_structure(self, signature: Type[Signature]) -> str:
+        """
+        `ChatAdapter` requires input and output fields to be in their own sections, with section header using markers
+        `[[ ## field_name ## ]]`.
+
+        For example:
+        ```
+        import dspy
+
+        class MySignature(dspy.Signature):
+            text: str = dspy.InputField(description="The text to analyze")
+            context: str = dspy.InputField(description="The context of the text")
+            sentiment: int = dspy.OutputField(description="The sentiment of the text")
+
+        print(dspy.ChatAdapter().format_field_structure(MySignature))
+        ```
+
+        The above code will output:
+        ```
+        All interactions will be structured in the following way, with the appropriate values filled in.
+
+        [[ ## text ## ]]
+        {text}
+
+        [[ ## context ## ]]
+        {context}
+
+        [[ ## sentiment ## ]]
+        {sentiment}        # note: the value you produce must be a single int value
+
+        [[ ## completed ## ]]
+        ```
+        """
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
@@ -57,7 +89,58 @@ class ChatAdapter(Adapter):
         parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
 
-    def get_output_format_in_user_message(self, signature: Type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
+        """
+        In `ChatAdapter`, this output requirement is a simplified version of the `format_field_structure`. See below
+        for an example.
+
+        ```
+        import dspy
+
+        class MySignature(dspy.Signature):
+            text: str = dspy.InputField(description="The text to analyze")
+            context: str = dspy.InputField(description="The context of the text")
+            sentiment: int = dspy.OutputField(description="The sentiment of the text")
+
+        print(dspy.ChatAdapter().user_message_output_requirements(MySignature))
+        ```
+
+        The above code will output:
+        ```
+        Respond with the corresponding output fields, starting with the field `[[ ## sentiment ## ]]` (must be
+        formatted as a valid Python int), and then ending with the marker for `[[ ## completed ## ]]`.
+        ```
+
+        The above message is part of the user message, see below for the full user message:
+
+        ```
+        import dspy
+
+        class MySignature(dspy.Signature):
+            text: str = dspy.InputField(description="The text to analyze")
+            context: str = dspy.InputField(description="The context of the text")
+            sentiment: int = dspy.OutputField(description="The sentiment of the text")
+
+        print(
+            dspy.ChatAdapter().format_user_message_content(
+                MySignature, {"text": "Hello, world!", "context": "This is a test."}
+            )
+        )
+        ```
+
+        The above code will output:
+        ```
+        [[ ## text ## ]]
+        Hello, world!
+
+        [[ ## context ## ]]
+        This is a test.
+
+        Respond with the corresponding output fields, starting with the field `[[ ## sentiment ## ]]` (must be
+        formatted as a valid Python int), and then ending with the marker for `[[ ## completed ## ]]`.
+        ```
+        """
+
         def type_info(v):
             if v.annotation is not str:
                 return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
@@ -69,11 +152,8 @@ class ChatAdapter(Adapter):
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
         return message
 
-    def format_assistant_message(
-        self,
-        signature: Type[Signature],
-        outputs: dict[str, Any],
-        missing_field_message=None,
+    def format_assistant_message_content(
+        self, signature: Type[Signature], outputs: dict[str, Any], missing_field_message=None
     ) -> str:
         return self.format_field_with_value(
             {
@@ -119,10 +199,10 @@ class ChatAdapter(Adapter):
         into a single string, which is is a multiline string if there are multiple fields.
 
         Args:
-        fields_with_values: A dictionary mapping information about a field to its corresponding
-                            value.
+            fields_with_values: A dictionary mapping information about a field to its corresponding
+                value.
         Returns:
-        The joined formatted values of the fields, represented as a string
+            The joined formatted values of the fields, represented as a string
         """
         output = []
         for field, field_value in fields_with_values.items():
