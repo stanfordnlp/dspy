@@ -65,7 +65,7 @@ def test_construct_result_df():
         (devset[0], {"answer": "2"}, 100.0),
         (devset[1], {"answer": "4"}, 100.0),
     ]
-    result_df = ev._construct_result_df(results, answer_exact_match.__name__)
+    result_df = ev._construct_result_table(results, answer_exact_match.__name__)
     pd.testing.assert_frame_equal(
         result_df,
         pd.DataFrame(
