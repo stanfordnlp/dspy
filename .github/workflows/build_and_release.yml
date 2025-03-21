@@ -25,10 +25,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.9
+      - name: Set up Python 3.11
         uses: actions/setup-python@v3
         with:
-          python-version: "3.9"
+          python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Get correct version for TestPyPI release
@@ -76,10 +76,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.9
+      - name: Set up Python 3.11
         uses: actions/setup-python@v3
         with:
-          python-version: "3.9"
+          python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Update version in pyproject.toml
