@@ -36,7 +36,7 @@ dependencies = [
     "optuna>=3.4.0",
     "pydantic>=2.0",
     "magicattr>=0.1.6",
-    "litellm>=1.60.3,<=1.63.2",
+    "litellm>=1.60.3",
     "diskcache>=5.6.0",
     "json-repair>=0.30.0",
     "tenacity>=8.2.3",
@@ -112,8 +112,8 @@ requests = "^2.31.0"
 optuna = "^3.4.0"
 magicattr = "^0.1.6"
 litellm = [
-    { version = ">=1.60.3,<=1.63.2", markers = "sys_platform == 'win32'" },
-    { version = ">=1.60.3,<=1.63.2", extras = ["proxy"], markers = "sys_platform != 'win32'" }
+    { version = ">=1.60.3", markers = "sys_platform == 'win32'" },
+    { version = ">=1.60.3", extras = ["proxy"], markers = "sys_platform != 'win32'" }
 ]
 diskcache = "^5.6.0"
 json-repair = "^0.30.0"
