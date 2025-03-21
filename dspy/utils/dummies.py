@@ -4,7 +4,7 @@ from typing import Any, Dict, Union
 
 import numpy as np
 
-from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName, field_header_pattern
 from dspy.clients.lm import LM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
@@ -19,8 +19,7 @@ class DummyLM(LM):
     Mode 1: List of dictionaries
 
     If a list of dictionaries is provided, the dummy model will return the next dictionary
-    in the list for each request, formatted according to the `format_fields` function.
-    from the chat adapter.
+    in the list for each request, formatted according to the `format_field_with_value` function.
 
     Example:
 
@@ -41,7 +40,7 @@ class DummyLM(LM):
 
     If a dictionary of dictionaries is provided, the dummy model will return the value
     corresponding to the key which is contained with the final message of the prompt,
-    formatted according to the `format_fields` function from the chat adapter.
+    formatted according to the `format_field_with_value` function from the chat adapter.
 
     ```
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
@@ -95,7 +94,7 @@ class DummyLM(LM):
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
-            return format_fields(
+            return ChatAdapter().format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
                     for field_name, value in field_names_and_values.items()
