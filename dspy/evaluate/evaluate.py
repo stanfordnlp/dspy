@@ -128,7 +128,7 @@ class Evaluate:
             
             - With `return_outputs=True`:
                 Returns (overall_score, result_triples) where result_triples is a list of 
-                (example, prediction, score) Unions for each example in devset
+                (example, prediction, score) tuples for each example in devset
 
             - With both flags=True:
                 Returns (overall_score, result_triples, individual_scores)
