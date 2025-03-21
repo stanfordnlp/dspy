@@ -55,8 +55,7 @@ sys.stderr = buf_stderr
     `);
 
     // 2. Setup proper exception arguments extractor and FinalAnswer bridge
-    // The idea is borrowed from `smolagents`, which uses the expcetion to simulate non-loca exit
-    // like some ugly style `call/cc`.
+    // The idea is borrowed from `smolagents` that uses the exception to simulate non-local exit
     pyodide.runPython(`
 import json
 

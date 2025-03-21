@@ -60,4 +60,5 @@ def test_final_answer_trick():
         code = f"final_answer('The result is', {token})"
         result = interpreter(code)
 
-        assert result == ["The result is", token], "The returned result is differ, `final_answer` trick don't work"
+    # They should matain the same order
+    assert result == ["The result is", token], "The returned results are differ, `final_answer` trick doesn't work"
