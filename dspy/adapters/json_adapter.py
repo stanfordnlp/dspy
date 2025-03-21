@@ -78,7 +78,7 @@ class JSONAdapter(Adapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
         return "\n\n".join(parts).strip()
 
-    def get_output_format_in_user_message(self, signature: Type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
         def type_info(v):
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
@@ -91,7 +91,7 @@ class JSONAdapter(Adapter):
         message += "."
         return message
 
-    def format_assistant_message(
+    def format_assistant_message_content(
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
@@ -124,10 +124,9 @@ class JSONAdapter(Adapter):
         into a single string, which is is a multiline string if there are multiple fields.
 
         Args:
-        fields_with_values: A dictionary mapping information about a field to its corresponding
-                            value.
+        fields_with_values: A dictionary mapping information about a field to its corresponding value.
         Returns:
-        The joined formatted values of the fields, represented as a string
+            The joined formatted values of the fields, represented as a string
         """
         if role == "user":
             output = []
