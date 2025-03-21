@@ -53,15 +53,29 @@ def test_evaluate_call():
     )
     score = ev(program)
     assert score == 100.0
+
+
+def test_construct_result_df():
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+    )
+    results = [
+        (devset[0], {"answer": "2"}, 100.0),
+        (devset[1], {"answer": "4"}, 100.0),
+    ]
+    result_df = ev._construct_result_df(results, answer_exact_match.__name__)
     pd.testing.assert_frame_equal(
-        ev.last_result_df,
+        result_df,
         pd.DataFrame(
             {
                 "question": ["What is 1+1?", "What is 2+2?"],
                 "example_answer": ["2", "4"],
                 "pred_answer": ["2", "4"],
-                "answer_exact_match": [True, True],
-        })
+                "answer_exact_match": [100.0, 100.0],
+            }
+        )
     )
 
 

@@ -1,6 +1,6 @@
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -85,7 +85,6 @@ class Evaluate:
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
-        self.last_result_df = None
 
     @with_callbacks
     def __call__(
@@ -175,32 +174,10 @@ class Evaluate:
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
-            
-        def prediction_is_dictlike(prediction):
-            # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
-            # having a method called `items()` for iterating through key/value pairs
-            return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
-
-        data = [
-            (
-                merge_dicts(example, prediction) | {"correct": score}
-                if prediction_is_dictlike(prediction)
-                else dict(example) | {"prediction": prediction, "correct": score}
-            )
-            for example, prediction, score in results
-        ]
-
-
-        import pandas as pd
-        # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
-        result_df = pd.DataFrame(data)
-        result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
         # Rename the 'correct' column to the name of the metric object
         metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-        result_df = result_df.rename(columns={"correct": metric_name})
-        # Set the last result DataFrame to be used by the callback
-        self.last_result_df = result_df
+        result_df = self._construct_result_df(results, metric_name)
 
         if display_table:
             if isinstance(display_table, bool):
@@ -236,6 +213,41 @@ class Evaluate:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
+    
+
+    def _construct_result_df(self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
+        """
+        Construct a pandas DataFrame from the specified result list.
+        Let's not try to change the name of this method as it may be patched by external tracing tools.
+
+        Args:
+            results: The list of results to construct the result DataFrame from.
+            metric_name: The name of the metric used for evaluation.
+        
+        Returns:
+            The constructed pandas DataFrame.
+        """
+        import pandas as pd
+        data = [
+            (
+                merge_dicts(example, prediction) | {"correct": score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, "correct": score}
+            )
+            for example, prediction, score in results
+        ]
+
+        # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
+        result_df = pd.DataFrame(data)
+        result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
+
+        return result_df.rename(columns={"correct": metric_name})
+
+
+def prediction_is_dictlike(prediction):
+    # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
+    # having a method called `items()` for iterating through key/value pairs
+    return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
 
 
 def merge_dicts(d1, d2) -> dict:
