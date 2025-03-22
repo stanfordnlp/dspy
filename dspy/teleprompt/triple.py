@@ -25,6 +25,8 @@ class Triple(Teleprompter):
         seed=42,
         prompt_model=None,
         num_data_per_round=2,
+        include_non_bootstrapped=False,
+        include_labeled_demos=False,
     ):
         super().__init__()
         self.metric = metric
@@ -35,6 +37,8 @@ class Triple(Teleprompter):
         self.prompt_model = prompt_model
         self.num_data_per_round = num_data_per_round
         self.num_demo_candidates = num_demo_candidates
+        self.include_non_bootstrapped = include_non_bootstrapped
+        self.include_labeled_demos = include_labeled_demos
 
     def _bootstrap_fewshot_examples(self, program: Any, trainset: List) -> Optional[List]:
         print("BOOTSTRAP FEWSHOT EXAMPLES")
@@ -50,8 +54,8 @@ class Triple(Teleprompter):
                 metric_threshold=self.metric_threshold,
                 seed=self.seed,
                 teacher_settings=None,
-                include_non_bootstrapped=False,
-                labeled_sample=False,
+                include_non_bootstrapped=self.include_non_bootstrapped,
+                labeled_sample=self.include_labeled_demos,
             )
         except Exception as e:
             print(f"Error generating few-shot examples: {e}")
