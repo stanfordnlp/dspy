@@ -3,6 +3,7 @@ from dspy.teleprompt.bettertogether import BetterTogether
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune
 from dspy.teleprompt.copro_optimizer import COPRO
+from dspy.teleprompt.dlcot_optimizer import DLCoT
 from dspy.teleprompt.ensemble import Ensemble
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 
@@ -20,6 +21,7 @@ __all__ = [
     "BootstrapFewShot",
     "BootstrapFinetune",
     "COPRO",
+    "DLCoT",
     "Ensemble",
     "KNNFewShot",
     "MIPROv2",
