@@ -48,20 +48,18 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
+            return evaluate(candidate_program, devset=trainset, callback_metadata={"metric_key": "eval_full"})
         # Or evaluate on a minibatch
         else:
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                return_all_scores=return_all_scores,
                 callback_metadata={"metric_key": "eval_minibatch"}
             )
     except Exception:
         logger.error("An exception occurred during evaluation", exc_info=True)
-        if return_all_scores:
-            return 0.0, [0.0] * len(trainset)
-        return 0.0  # TODO: Handle this better, as -ve scores are possible
+        # TODO: Handle this better, as -ve scores are possible
+        return dspy.Prediction(score=0.0, all_scores=[0.0] * len(trainset))
 
 def eval_candidate_program_with_pruning(
     trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,

@@ -54,7 +54,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         )
         score = evaluate(program2, return_all_scores=False)
         trial.set_user_attr("program", program2)
-        return score
+        return float(score)
 
     def compile(self, student, *, teacher=None, max_demos, trainset, valset=None):
         self.trainset = trainset

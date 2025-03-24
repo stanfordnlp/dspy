@@ -97,6 +97,13 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() >= float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
+    
+    def __eq__(self, other):
+        if isinstance(other, (float, int)):
+            return self.__float__() == other
+        elif isinstance(other, Prediction):
+            return self.__float__() == float(other)
+        raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
     @property
     def completions(self):

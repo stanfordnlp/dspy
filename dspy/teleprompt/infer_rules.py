@@ -118,7 +118,7 @@ class InferRules(BootstrapFewShot):
             display_progress=True,
             return_all_scores=True,
         )
-        score, _ = evaluate(program, metric=self.metric)
+        score = evaluate(program, metric=self.metric).score
         return score
 
 
