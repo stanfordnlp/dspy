@@ -111,11 +111,15 @@ class ProgramOfThought(Module):
         mode_outputs = ", ".join(
             [f"`{field_name}`" for field_name in self._generate_signature(mode).output_fields],
         )
+        final_outputs = ", ".join(
+            [f"`{field_name}`" for field_name in self.output_fields],
+        )
         if mode == "generate":
             instr = [
                 f"You will be given {mode_inputs} and you will respond with {mode_outputs}.",
                 f"Generating executable Python code that programmatically computes the correct {mode_outputs}.",
-                f"After you're done with the computation, make sure format your output in json object that evaluates to the correct value mapping for {mode_outputs}, then response with the preloaded function `final_answer()`.",
+                "After you're done with the computation and think you have the answer, make sure to provide your answer by calling the preloaded function `final_answer()`.",
+                f'You should structure your answer in a dict object, like {{"field_a": answer_a, ...}}, evaluates to the correct value mapping for {final_outputs}.',
             ]
         elif mode == "regenerate":
             instr = [
