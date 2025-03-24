@@ -13,7 +13,7 @@ description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = { text = "MIT License" }
-requires-python = ">=3.9, <3.14"
+requires-python = ">=3.9, <3.13"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -98,7 +98,7 @@ repository = "https://github.com/stanfordnlp/dspy"
 keywords = ["dspy", "ai", "language models", "llm", "openai"]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.14"
+python = ">=3.9,<3.13"
 pydantic = "^2.0"
 backoff = "^2.2"
 joblib = "^1.3"
