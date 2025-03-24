@@ -1,14 +1,15 @@
 import dspy
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
-
+from pydantic.fields import FieldInfo
+from typing import Optional, Union, Type
 
 class ChainOfThought(Module):
     
     def __init__(
         self, 
         signature: Type[dspy.Signature], 
-        rationale_field: Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]] = None, 
+        rationale_field: Optional[Union[dspy.OutputField, FieldInfo]] = None, 
         rationale_field_type: Type = str,
         **config
     ):
@@ -29,9 +30,6 @@ class ChainOfThought(Module):
         rationale_field = rationale_field if rationale_field else dspy.OutputField(prefix=prefix, desc=desc)
         extended_signature = signature.prepend(name="reasoning", field=rationale_field, type_=rationale_field_type)
         self.predict = dspy.Predict(extended_signature, **config)
-
-    def forward(self, **kwargs):
-        return self.predict(**kwargs)
 
     def forward(self, **kwargs):
         return self.predict(**kwargs)
