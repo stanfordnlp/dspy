@@ -118,8 +118,8 @@ class PythonInterpreter:
             error_msg = result["error"]
             error_type = result.get("errorType", "Sandbox Error")
             if error_type == "FinalAnswer":
-                # The `FinalAnswer` trick to receive output from the sandboxed address
-                # Don't rabbit hole here, let replace the output field to create a consistent
+                # The `FinalAnswer` trick to receive output from the sandbox interpreter,
+                # just simply replace the output with the arguments.
                 result["output"] = result.get("errorArgs", None)
             elif error_type == "SyntaxError":
                 raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
