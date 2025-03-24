@@ -97,7 +97,7 @@ class Predict(Module, Parameter):
             print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
 
         adapter = settings.adapter or ChatAdapter()
-        completions = adapter(
+        adapter_response = adapter(
             lm,
             lm_kwargs=config,
             signature=signature,
@@ -105,7 +105,11 @@ class Predict(Module, Parameter):
             inputs=kwargs,
         )
 
-        pred = Prediction.from_completions(completions, signature=signature)
+        pred = Prediction.from_completions(
+            adapter_response.outputs,
+            signature=signature,
+            metadata=adapter_response.metadata
+        )
 
         if kwargs.pop("_trace", True) and settings.trace is not None:
             trace = settings.trace

@@ -50,7 +50,7 @@ class BaseLM(ABC):
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
-
+        
         if kwargs.get("logprobs"):
             outputs = [
                 {
@@ -84,7 +84,17 @@ class BaseLM(ABC):
         self.history.append(entry)
         self.update_global_history(entry)
 
-        return outputs
+        metadata = {
+            "usage": dict(response.usage),
+            "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
+            "model": self.model,
+            "response_model": response.model,
+            "model_type": self.model_type,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "trace_id": str(uuid.uuid4())
+        }
+
+        return {"outputs": outputs, "metadata": metadata}
 
     def forward(self, prompt=None, messages=None, **kwargs):
         """Forward pass for the language model.

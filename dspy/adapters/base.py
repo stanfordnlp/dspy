@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type, NamedTuple
+from pydantic import BaseModel
 
 from dspy.adapters.types import History
 from dspy.signatures.signature import Signature
@@ -9,6 +10,21 @@ if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
 
+class AdapterMetadata(BaseModel):
+    """Metadata about the LM call including costs and usage statistics"""
+    cost: Optional[float] = None
+    usage: dict[str, int] = {}
+    model: Optional[str] = None
+    model_type: Optional[str] = None
+    timestamp: str
+    trace_id: str
+
+class AdapterResponse(NamedTuple):
+    """Combined response containing both outputs and metadata"""
+    outputs: list[dict[str, Any]]
+    metadata: AdapterMetadata
+
+
 class Adapter(ABC):
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         self.callbacks = callbacks or []
@@ -16,9 +32,10 @@ class Adapter(ABC):
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
-        # Decorate format() and parse() method with with_callbacks
+        # Decorate format(), parse() and __call__ methods with with_callbacks
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
+        cls.__call__ = with_callbacks(cls.__call__)
 
     def __call__(
         self,
@@ -27,21 +44,19 @@ class Adapter(ABC):
         signature: Type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> AdapterResponse:
         inputs_ = self.format(signature, demos, inputs)
         inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
 
-        outputs = lm(**inputs_, **lm_kwargs)
+        response = lm(**inputs_, **lm_kwargs)
         values = []
 
-        for output in outputs:
+        for output in response["outputs"]:
             output_logprobs = None
-
             if isinstance(output, dict):
                 output, output_logprobs = output["text"], output["logprobs"]
 
             value = self.parse(signature, output)
-
             if set(value.keys()) != set(signature.output_fields.keys()):
                 raise ValueError(
                     "Parsed output fields do not match signature output fields. "
@@ -53,7 +68,7 @@ class Adapter(ABC):
 
             values.append(value)
 
-        return values
+        return AdapterResponse(outputs=values, metadata=response["metadata"])
 
     @abstractmethod
     def format(
