@@ -6,6 +6,7 @@ import logging
 import textwrap
 from copy import deepcopy
 from typing import Any, Dict, KeysView, Literal, NamedTuple
+from typing import get_args, Union
 
 import json_repair
 import litellm
@@ -35,25 +36,25 @@ class JSONAdapter(Adapter):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
-        try:
-            provider = lm.model.split("/", 1)[0] or "openai"
-            params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-            if params and "response_format" in params:
-                try:
-                    response_format = _get_structured_outputs_response_format(signature)
-                    outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
-                except Exception:
-                    logger.debug(
-                        "Failed to obtain response using signature-based structured outputs"
-                        " response format: Falling back to default 'json_object' response format."
-                        " Exception: {e}"
-                    )
-                    outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
-            else:
-                outputs = lm(**inputs, **lm_kwargs)
+        # try:
+        #     provider = lm.model.split("/", 1)[0] or "openai"
+        #     params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+        #     if params and "response_format" in params:
+        #         try:
+        #             response_format = _get_structured_outputs_response_format(signature)
+        #             outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
+        #         except Exception:
+        #             logger.debug(
+        #                 "Failed to obtain response using signature-based structured outputs"
+        #                 " response format: Falling back to default 'json_object' response format."
+        #                 " Exception: {e}"
+        #             )
+        #             outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
+        #     else:
+        #         outputs = lm(**inputs, **lm_kwargs)
 
-        except litellm.UnsupportedParamsError:
-            outputs = lm(**inputs, **lm_kwargs)
+        # except litellm.UnsupportedParamsError:
+        outputs = lm(**inputs, **lm_kwargs)
 
         values = []
 
@@ -63,7 +64,7 @@ class JSONAdapter(Adapter):
                 signature.output_fields.keys()
             ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
             values.append(value)
-
+        
         return values
 
     def format(self, signature, demos, inputs):
@@ -120,8 +121,12 @@ class JSONAdapter(Adapter):
 
 
 def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
+    is_optional_str = (
+        getattr(annotation, '__origin__', None) is Union and str in get_args(annotation)
+    )
+
+    if annotation is str or is_optional_str:
+        return str(value) if value is not None else None  # Ensure string output, preserving None
 
     parsed_value = value
 
@@ -135,7 +140,6 @@ def parse_value(value, annotation):
                 parsed_value = ast.literal_eval(value)
             except (ValueError, SyntaxError):
                 parsed_value = value
-
     return TypeAdapter(annotation).validate_python(parsed_value)
 
 
