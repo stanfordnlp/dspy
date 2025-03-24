@@ -9,23 +9,30 @@ class Prediction(Example):
         del self._input_keys
 
         self._completions = None
+        self._metadata = None  # Add metadata storage
 
     @classmethod
-    def from_completions(cls, list_or_dict, signature=None):
+    def from_completions(cls, list_or_dict, signature=None, metadata=None):
         obj = cls()
         obj._completions = Completions(list_or_dict, signature=signature)
         obj._store = {k: v[0] for k, v in obj._completions.items()}
-
+        obj._metadata = metadata  # Store metadata
         return obj
+
+    @property
+    def metadata(self):
+        """Access the metadata from the adapter response"""
+        return self._metadata
 
     def __repr__(self):
         store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
+        meta_repr = f",\n    metadata={repr(self._metadata)}" if self._metadata else ""
 
         if self._completions is None or len(self._completions) == 1:
-            return f"Prediction(\n    {store_repr}\n)"
+            return f"Prediction(\n    {store_repr}{meta_repr}\n)"
 
         num_completions = len(self._completions)
-        return f"Prediction(\n    {store_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
+        return f"Prediction(\n    {store_repr}{meta_repr},\n    completions=Completions(...)\n) ({num_completions-1} completions omitted)"
 
     def __str__(self):
         return self.__repr__()
