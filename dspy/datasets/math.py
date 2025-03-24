@@ -8,7 +8,7 @@ class MATH:
 
         import dspy
 
-        ds = load_dataset("lighteval/MATH", subset)
+        ds = load_dataset("DigitalLearningGmbH/MATH-lighteval", subset)
 
         # NOTE: Defaults to sub-splitting MATH's 'test' split into train/dev/test, presuming that current
         # LMs are trained on MATH's train. Makes no difference for gpt-4o-mini, but might for other models.

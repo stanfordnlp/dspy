@@ -14,6 +14,7 @@ API_MAPPING = {
     "primitives": [
         dspy.Example,
         dspy.Image,
+        dspy.History,
         dspy.Prediction,
         dspy.Tool,
     ],
@@ -36,6 +37,8 @@ API_MAPPING = {
         dspy.MultiChainComparison,
         dspy.ChainOfThoughtWithHint,
         dspy.Parallel,
+        dspy.BestOfN,
+        dspy.Refine,
     ],
     "tools": [
         dspy.ColBERTv2,
@@ -51,6 +54,8 @@ API_MAPPING = {
         dspy.disable_logging,
         dspy.enable_litellm_logging,
         dspy.disable_litellm_logging,
+        dspy.utils.streaming.StatusMessageProvider,
+        dspy.utils.streaming.StatusMessage,
     ],
     "evaluation": [
         dspy.Evaluate,
@@ -70,8 +75,21 @@ API_MAPPING = {
         dspy.Ensemble,
         dspy.KNN,
         dspy.KNNFewShot,
+        dspy.InferRules,
     ],
 }
+
+
+def should_document_method(obj):
+    name = obj.__name__
+    # Exclude methods not defined in dspy, such as `model_dump_json` from pydantic.
+    module = getattr(obj, "__module__", "")
+    if not module or not module.startswith(f"dspy"):
+        return False
+    # Exclude private and dunder methods, but include `__call__`
+    if name == "__call__" or not name.startswith("_"):
+        return True
+    return False
 
 
 def get_module_contents(module):
@@ -85,7 +103,7 @@ def get_module_contents(module):
         if inspect.ismodule(obj) and obj.__name__.startswith(module.__name__) and not name.startswith("_"):
             contents[name] = obj
         elif (
-            (inspect.isclass(obj) or inspect.isfunction(obj))
+            (inspect.isclass(obj) or (inspect.isroutine(obj) and should_document_method(obj)))
             and obj.__module__.startswith(module.__name__)
             and not name.startswith("_")
         ):
@@ -97,8 +115,9 @@ def get_public_methods(cls):
     """Returns a list of all public methods in a class."""
     return [
         name
-        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
-        if name == "__call__" or not name.startswith("_")  # Exclude private and dunder methods, but include `__call__`
+        for name, member in inspect.getmembers(
+            cls, predicate=lambda x: inspect.isroutine(x) and should_document_method(x)
+        )
     ]
 
 

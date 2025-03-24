@@ -10,6 +10,7 @@ hide:
 
 # _Programming_—not prompting—_LMs_
 
+[![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
 DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
@@ -383,7 +384,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM('gpt-4o-mini-2024-07-18'))
+        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini-2024-07-18'))
         
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
@@ -393,7 +394,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
         optimized = optimizer.compile(classify, trainset=trainset)
 
-        optimized_classifier(text="What does a pending cash withdrawal mean?")
+        optimized(text="What does a pending cash withdrawal mean?")
         ```
 
         **Possible Output (from the last line):**

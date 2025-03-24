@@ -19,6 +19,7 @@ DEFAULT_CONFIG = dotdict(
     callbacks=[],
     async_max_workers=8,
     send_stream=None,
+    disable_history=False,
 )
 
 # Global base configuration and owner tracking

@@ -1,45 +1,45 @@
-import time
+import datetime
+import logging
+import random
 import socket
-import requests
-import threading
+import string
 import subprocess
+import threading
+import time
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from datasets import Dataset
-from typing import Any, Dict, List, Optional
-from dspy.clients.provider import TrainingJob, Provider
-from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
+import requests
 
+from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.utils_finetune import TrainDataFormat, save_data
 
-class LocalTrainingJob(TrainingJob):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.data_path = None
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 
-    def cancel(self):
-        raise NotImplementedError
-
-    def status(self) -> TrainingStatus:
-        raise NotImplementedError
+logger = logging.getLogger(__name__)
 
 
 class LocalProvider(Provider):
     def __init__(self):
         super().__init__()
         self.finetunable = True
-        self.TrainingJob = LocalTrainingJob
+        self.TrainingJob = TrainingJob
 
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         try:
-            import sglang
+            import sglang  # noqa: F401
         except ImportError:
             raise ImportError(
                 "For local model launching, please install sglang by running "
                 '`pip install "sglang[all]"; pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/`'
             )
 
-        if launch_kwargs is None:
-            launch_kwargs = {}
+        if hasattr(lm, "process"):
+            logger.info("Server is already launched.")
+            return
+
+        launch_kwargs = launch_kwargs or lm.launch_kwargs
 
         import os
 
@@ -48,9 +48,11 @@ class LocalProvider(Provider):
             model = model[7:]
         if model.startswith("local:"):
             model = model[6:]
+        if model.startswith("huggingface/"):
+            model = model[len("huggingface/"):]
 
-        print(f"Grabbing a free port to launch an SGLang server for model {model}")
-        print(
+        logger.info(f"Grabbing a free port to launch an SGLang server for model {model}")
+        logger.info(
             f"We see that CUDA_VISIBLE_DEVICES is {os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}"
         )
         port = get_free_port()
@@ -67,7 +69,7 @@ class LocalProvider(Provider):
 
         # A threading.Event to control printing after the server is ready.
         # This will store *all* lines (both before and after readiness).
-        print(f"SGLang server process started with PID {process.pid}.")
+        logger.info(f"SGLang server process started with PID {process.pid}.")
         stop_printing_event = threading.Event()
         logs_buffer = []
 
@@ -109,38 +111,49 @@ class LocalProvider(Provider):
             return "".join(logs_buffer)
 
         # Let the user know server is up
-        print(
+        logger.info(
             f"Server ready on random port {port}! Logs are available via lm.get_logs() method on returned lm."
         )
 
         lm.kwargs["api_base"] = f"http://localhost:{port}/v1"
         lm.kwargs["api_key"] = "local"
-        lm.process = process
         lm.get_logs = get_logs
+        lm.process = process
+        lm.thread = thread
+
 
     @staticmethod
-    def kill(model, kill_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         from sglang.utils import terminate_process
-
-        terminate_process(model.process)
+        if not hasattr(lm, "process"):
+            logger.info("No running server to kill.")
+            return
+        # Ideally, the following happens atomically
+        terminate_process(lm.process)
+        lm.thread.join()
+        del lm.process
+        del lm.thread
+        del lm.get_logs
+        logger.info("Server killed.")
 
     @staticmethod
     def finetune(
-        job: LocalTrainingJob,
+        job: TrainingJob,
         model: str,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None,
     ) -> str:
-        data_path = save_data(train_data)
-
         if model.startswith("openai/"):
             model = model[7:]
         if model.startswith("local:"):
             model = model[6:]
 
-        model_path = data_path.replace(".jsonl", f"__{model.replace('/', '__')}")
-        print(f"[Local Provider] Data saved to {data_path}")
+        if train_data_format != TrainDataFormat.CHAT:
+            raise ValueError("Only chat models are supported for local finetuning.")
+
+        data_path = save_data(train_data)
+        output_dir = create_output_dir(model, data_path)
 
         default_train_kwargs = {
             "device": None,
@@ -152,18 +165,29 @@ class LocalProvider(Provider):
             "max_seq_length": None,
             "packing": True,
             "bf16": True,
-            "output_dir": model_path,
+            "output_dir": output_dir,
         }
+        train_kwargs={**default_train_kwargs, **(train_kwargs or {})}
+        output_dir = train_kwargs["output_dir"]  # user might have changed the output_dir
 
-        print(f"[Local Provider] Starting local training, will save to {model_path}")
+        logger.info(f"Starting local training, will save to {output_dir}")
         train_sft_locally(
             model_name=model,
             train_data=train_data,
-            train_kwargs={**default_train_kwargs, **(train_kwargs or {})},
+            train_kwargs=train_kwargs,
         )
 
-        print("[Local Provider] Training complete")
-        return f"openai/local:{model_path}"
+        logger.info("Training complete")
+        return f"openai/local:{output_dir}"
+
+
+def create_output_dir(model_name, data_path):
+    model_str = model_name.replace("/", "-")
+    time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    rnd_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    model_identifier = f"{rnd_str}_{model_str}_{time_str}"
+    output_dir = data_path.replace(".jsonl", "_" + model_identifier)
+    return output_dir
 
 
 def train_sft_locally(model_name, train_data, train_kwargs):
@@ -171,7 +195,6 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from trl import SFTConfig, SFTTrainer, setup_chat_format
-        from trl import apply_chat_template
     except ImportError:
         raise ImportError(
             "For local finetuning, please install torch, transformers, and trl "
@@ -185,7 +208,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
             if torch.cuda.is_available()
             else "mps" if torch.backends.mps.is_available() else "cpu"
         )
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=model_name
@@ -199,17 +222,22 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         pass
 
     if tokenizer.pad_token_id is None:
-        print("Adding pad token to tokenizer")
+        logger.info("Adding pad token to tokenizer")
         tokenizer.add_special_tokens({"pad_token": "[!#PAD#!]"})
 
-    print("Creating dataset")
-    trainset_dict = {
-        "prompt": [entry["messages"][:-1] for entry in train_data],
-        "completion": [[entry["messages"][-1]] for entry in train_data],
-    }
+    logger.info("Creating dataset")
+    if "max_seq_length" not in train_kwargs:
+        train_kwargs["max_seq_length"] = 4096
+        logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
 
-    trainset = Dataset.from_dict(trainset_dict)
-    trainset = trainset.map(apply_chat_template, fn_kwargs={"tokenizer": tokenizer})
+    from datasets import Dataset
+
+    hf_dataset = Dataset.from_list(train_data)
+    def tokenize_function(example):
+        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
+    tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
+    tokenized_dataset.set_format(type="torch")
+    tokenized_dataset = tokenized_dataset.filter(lambda example: (example["labels"] != -100).any())
 
     USE_PEFT = train_kwargs.get("use_peft", False)
     peft_config = None
@@ -231,12 +259,12 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         )
 
     sft_config = SFTConfig(
-        output_dir=output_dir,
+        output_dir=train_kwargs["output_dir"],
         num_train_epochs=train_kwargs["num_train_epochs"],
         per_device_train_batch_size=train_kwargs["per_device_train_batch_size"],
         gradient_accumulation_steps=train_kwargs["gradient_accumulation_steps"],
         learning_rate=train_kwargs["learning_rate"],
-        max_grad_norm=2.0,
+        max_grad_norm=2.0,  # note that the current SFTConfig default is 1.0
         logging_steps=20,
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
@@ -244,20 +272,18 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         bf16=train_kwargs["bf16"],
         max_seq_length=train_kwargs["max_seq_length"],
         packing=train_kwargs["packing"],
-        dataset_kwargs={
+        dataset_kwargs={  # We need to pass dataset_kwargs because we are processing the dataset ourselves
             "add_special_tokens": False,  # Special tokens handled by template
             "append_concat_token": False,  # No additional separator needed
         },
     )
 
-    print("Starting training")
-
+    logger.info("Starting training")
     trainer = SFTTrainer(
         model=model,
         args=sft_config,
-        train_dataset=trainset,
+        train_dataset=tokenized_dataset,
         peft_config=peft_config,
-        processing_class=tokenizer,
     )
 
     # Train!
@@ -291,7 +317,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     gc.collect()
     torch.cuda.empty_cache()
 
-    return output_dir
+    return sft_config.output_dir
 
 
 def get_free_port() -> int:
@@ -328,3 +354,80 @@ def wait_for_server(base_url: str, timeout: int = None) -> None:
         except requests.exceptions.RequestException:
             # Server not up yet, wait and retry
             time.sleep(1)
+
+
+def encode_sft_example(example, tokenizer, max_seq_length):
+    """
+    This function encodes a single example into a format that can be used for sft training.
+    Here, we assume each example has a 'messages' field. Each message in it is a dict with 'role' and 'content' fields.
+    We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
+
+    Code obtained from the allenai/open-instruct repository: https://github.com/allenai/open-instruct/blob/4365dea3d1a6111e8b2712af06b22a4512a0df88/open_instruct/finetune.py
+    """
+    import torch
+
+    messages = example["messages"]
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
+    input_ids = tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+        max_length=max_seq_length,
+        add_generation_prompt=False,
+    )
+    labels = input_ids.clone()
+    # mask the non-assistant part for avoiding loss
+    for message_idx, message in enumerate(messages):
+        if message["role"] != "assistant":
+            # we calculate the start index of this non-assistant message
+            if message_idx == 0:
+                message_start_idx = 0
+            else:
+                message_start_idx = tokenizer.apply_chat_template(
+                    conversation=messages[:message_idx],  # here marks the end of the previous messages
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # next, we calculate the end index of this non-assistant message
+            if message_idx < len(messages) - 1 and messages[message_idx + 1]["role"] == "assistant":
+                # for intermediate messages that follow with an assistant message, we need to
+                # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
+                # (e.g., `<|assistant|>`)
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=True,
+                ).shape[1]
+            else:
+                # for the last message or the message that doesn't follow with an assistant message,
+                # we don't need to add the assistant generation prefix
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # set the label to -100 for the non-assistant part
+            labels[:, message_start_idx:message_end_idx] = -100
+            if max_seq_length and message_end_idx >= max_seq_length:
+                break
+    attention_mask = torch.ones_like(input_ids)
+    return {
+        "input_ids": input_ids.flatten(),
+        "labels": labels.flatten(),
+        "attention_mask": attention_mask.flatten(),
+    }

@@ -6,8 +6,9 @@
         members:
             - __call__
             - copy
+            - dump_state
             - finetune
-            - infer_adapter
+            - forward
             - infer_provider
             - inspect_history
             - kill

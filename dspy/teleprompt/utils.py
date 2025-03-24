@@ -1,4 +1,5 @@
 import inspect
+import inspect
 import logging
 import math
 import os
@@ -23,6 +24,7 @@ This file consists of helper functions for our variety of optimizers.
 
 ### OPTIMIZER TRAINING UTILS ###
 
+logger = logging.getLogger(__name__)
 
 def create_minibatch(trainset, batch_size=50, rng=None):
     """Create a minibatch from the trainset."""
@@ -48,16 +50,19 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores)
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
         # Or evaluate on a minibatch
         else:
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                return_all_scores=return_all_scores
+                return_all_scores=return_all_scores,
+                callback_metadata={"metric_key": "eval_minibatch"}
             )
-    except Exception as e:
-        print(f"Exception occurred: {e}")
+    except Exception:
+        logger.error("An exception occurred during evaluation", exc_info=True)
+        if return_all_scores:
+            return 0.0, [0.0] * len(trainset)
         return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 def eval_candidate_program_with_pruning(
@@ -202,9 +207,9 @@ def save_candidate_program(program, log_dir, trial_num, note=None):
 
     # Define the save path for the program
     if note:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}.json")
     else:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}.json")
 
     # Save the program
     program.save(save_path)

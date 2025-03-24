@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import openai
 
 from dspy.clients.provider import TrainingJob, Provider
-from dspy.clients.utils_finetune import DataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
 
 
 _OPENAI_MODELS = [
@@ -92,17 +92,13 @@ class OpenAIProvider(Provider):
 
     @staticmethod
     def is_provider_model(model: str) -> bool:
-        # Filter the provider_prefix, if exists
-        provider_prefix = "openai/"
-        if model.startswith(provider_prefix):
-            model = model[len(provider_prefix):]
+        model = OpenAIProvider._remove_provider_prefix(model)
 
         # Check if the model is a base OpenAI model
         # TODO(enhance) The following list can be replaced with
         # openai.models.list(), but doing so might require a key. Is there a
         # way to get the list of models without a key?
-        valid_model_names = _OPENAI_MODELS
-        if model in valid_model_names:
+        if model in _OPENAI_MODELS:
             return True
 
         # Check if the model is a fine-tuned OpneAI model. Fine-tuned OpenAI
@@ -113,21 +109,28 @@ class OpenAIProvider(Provider):
         # model names by making a call to the OpenAI API to be more exact, but
         # this might require an API key with the right permissions.
         match = re.match(r"ft:([^:]+):", model)
-        if match and match.group(1) in valid_model_names:
+        if match and match.group(1) in _OPENAI_MODELS:
             return True
 
         return False
+    
+    @staticmethod
+    def _remove_provider_prefix(model: str) -> str:
+        provider_prefix = "openai/"
+        return model.replace(provider_prefix, "")
 
     @staticmethod
     def finetune(
         job: TrainingJobOpenAI,
         model: str,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[TrainDataFormat],
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[DataFormat] = None,
     ) -> str:
+        model = OpenAIProvider._remove_provider_prefix(model)
+
         print("[OpenAI Provider] Validating the data format")
-        OpenAIProvider.validate_data_format(data_format)
+        OpenAIProvider.validate_data_format(train_data_format)
 
         print("[OpenAI Provider] Saving the data to a file")
         data_path = save_data(train_data)
@@ -138,7 +141,7 @@ class OpenAIProvider(Provider):
         job.provider_file_id = provider_file_id
 
         print("[OpenAI Provider] Starting remote training")
-        provider_job_id = OpenAIProvider.start_remote_training(
+        provider_job_id = OpenAIProvider._start_remote_training(
             train_file_id=job.provider_file_id,
             model=model,
             train_kwargs=train_kwargs,
@@ -212,10 +215,10 @@ class OpenAIProvider(Provider):
         return status
 
     @staticmethod
-    def validate_data_format(data_format: DataFormat):
+    def validate_data_format(data_format: TrainDataFormat):
         supported_data_formats = [
-            DataFormat.chat,
-            DataFormat.completion,
+            TrainDataFormat.CHAT,
+            TrainDataFormat.COMPLETION,
         ]
         if data_format not in supported_data_formats:
             err_msg = f"OpenAI does not support the data format {data_format}."
@@ -231,9 +234,9 @@ class OpenAIProvider(Provider):
         return provider_file.id
 
     @staticmethod
-    def start_remote_training(
+    def _start_remote_training(
         train_file_id: str,
-        model: id,
+        model: str,
         train_kwargs: Optional[Dict[str, Any]] = None
     ) -> str:
         train_kwargs = train_kwargs or {}

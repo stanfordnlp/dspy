@@ -34,6 +34,11 @@
 	{% if "FAQ" %}
         <ul class="md-tabs__list" style="float: right;">
             <li class="md-tabs__item">
+                <a href="/production/" class="md-tabs__link">
+                    DSPy in Production
+                </a>
+            </li>
+	    <li class="md-tabs__item">
                 <a href="/community/community-resources/" class="md-tabs__link">
                     Community
                 </a>
@@ -49,7 +54,7 @@
 	<!-- Original tabbed sections -->
 	<ul class="md-tabs__list">
 	  {% for nav_item in nav %}
-		{% if nav_item.title not in ["FAQ", "Community"] %}
+		{% if nav_item.title not in ["FAQ", "Community", "DSPy in Production"] %}
             {{ item.render(nav_item) }}
 		{% endif %}
 	  {% endfor %}

@@ -1,10 +1,11 @@
+import ast
+import enum
 import json
 from typing import Any, List, Literal, Union, get_args, get_origin
 
+import json_repair
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
-
-from .image_utils import Image, encode_image
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -53,24 +54,6 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
 
     if assume_text:
         return string_value
-    elif isinstance(value, Image) or field_info.annotation == Image:
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
 
@@ -101,6 +84,34 @@ def find_enum_member(enum, identifier):
         return enum[identifier]
 
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
+
+
+def parse_value(value, annotation):
+
+    is_optional_str = (
+        getattr(annotation, '__origin__', None) is Union and str in get_args(annotation)
+    )
+
+    if annotation is str or is_optional_str:
+        return str(value) if value is not None else None  # Ensure string output, preserving None
+    
+    # if annotation is str:
+    #     return str(value)
+
+    if isinstance(annotation, enum.EnumMeta):
+        return find_enum_member(annotation, value)
+
+    if not isinstance(value, str):
+        return TypeAdapter(annotation).validate_python(value)
+
+    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    if candidate == "" and value != "":
+        try:
+            candidate = ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            candidate = value
+
+    return TypeAdapter(annotation).validate_python(candidate)
 
 
 def get_annotation_name(annotation):

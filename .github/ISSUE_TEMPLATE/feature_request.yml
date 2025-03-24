@@ -1,0 +1,33 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature] "
+labels: enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🚀 Feature Request
+        Please fill out the following details.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "What feature would you like to see?"
+      description: "Describe the feature clearly."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: "Would you like to contribute?"
+      options:
+        - label: Yes, I'd like to help implement this.
+        - label: No, I just want to request it.
+
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "Additional Context"
+      description: "Any links, references, or extra details?"
+      placeholder: "Example: This feature exists in XYZ tool."

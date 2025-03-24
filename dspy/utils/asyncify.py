@@ -1,9 +1,10 @@
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 import asyncer
 from anyio import CapacityLimiter
 
-from dspy.primitives.program import Module
+if TYPE_CHECKING:
+    from dspy.primitives.program import Module
 
 _limiter = None
 
@@ -26,7 +27,7 @@ def get_limiter():
     return _limiter
 
 
-def asyncify(program: Module) -> Callable[[Any, Any], Awaitable[Any]]:
+def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wraps a DSPy program so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).

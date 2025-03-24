@@ -53,11 +53,14 @@ nav:
         - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
         - Multi-Hop Search: tutorials/multihop_search/index.ipynb
         - Privacy-Conscious Delegation: tutorials/papillon/index.md
+        - Advanced Tool Use: tutorials/tool_use/index.ipynb
         - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
+        - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
         - Finetuning Agents: tutorials/games/index.ipynb
         - Saving and Loading: tutorials/saving/index.md
         - Deployment: tutorials/deployment/index.md
         - Debugging & Observability: tutorials/observability/index.md
+    - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
@@ -83,6 +86,7 @@ nav:
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
+            - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
             - Module: api/modules/Module.md
@@ -92,6 +96,7 @@ nav:
             - Program: api/modules/Program.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
+            - Refine: api/modules/Refine.md
         - Optimizers:
             - BetterTogether: api/optimizers/BetterTogether.md
             - BootstrapFewShot: api/optimizers/BootstrapFewShot.md
@@ -100,12 +105,14 @@ nav:
             - BootstrapRS: api/optimizers/BootstrapRS.md
             - COPRO: api/optimizers/COPRO.md
             - Ensemble: api/optimizers/Ensemble.md
+            - InferRules: api/optimizers/InferRules.md
             - KNN: api/optimizers/KNN.md
             - KNNFewShot: api/optimizers/KNNFewShot.md
             - LabeledFewShot: api/optimizers/LabeledFewShot.md
             - MIPROv2: api/optimizers/MIPROv2.md
         - Primitives:
             - Example: api/primitives/Example.md
+            - History: api/primitives/History.md
             - Image: api/primitives/Image.md
             - Prediction: api/primitives/Prediction.md
             - Tool: api/primitives/Tool.md
@@ -118,6 +125,8 @@ nav:
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - StatusMessage: api/utils/StatusMessage.md
+            - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - asyncify: api/utils/asyncify.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
@@ -193,10 +202,6 @@ plugins:
                         show_if_no_docstring: true
                         show_warnings: false
                         html_meta: false
-                    docstring_options:
-                        returns_style: table
-                        separate_signature: false
-                        merge_return_lines: true
     - mkdocs-jupyter:
         ignore_h1_titles: True
     - redirects:
@@ -235,6 +240,7 @@ markdown_extensions:
     - pymdownx.superfences
     - pymdownx.mark
     - attr_list
+    - md_in_html
     - pymdownx.emoji:
         emoji_index: !!python/name:material.extensions.emoji.twemoji
         emoji_generator: !!python/name:materialx.emoji.to_svg

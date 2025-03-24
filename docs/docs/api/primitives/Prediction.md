@@ -5,6 +5,7 @@
     options:
         members:
             - copy
+            - from_completions
             - get
             - inputs
             - items

@@ -3,16 +3,15 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import ujson
-from datasets.fingerprint import Hasher
 
 import dspy
 from dspy.adapters.base import Adapter
-from dspy.utils.caching import create_subdir_in_cachedir
+from dspy.utils.caching import DSPY_CACHEDIR
 
 
-class DataFormat(str, Enum):
-    chat = "chat"
-    completion = "completion"
+class TrainDataFormat(str, Enum):
+    CHAT = "chat"
+    COMPLETION = "completion"
 
 
 class TrainingStatus(str, Enum):
@@ -24,14 +23,18 @@ class TrainingStatus(str, Enum):
     cancelled = "cancelled"
 
 
-def get_finetune_directory() -> str:
-    return create_subdir_in_cachedir(subdir="finetune")
-
-
 def infer_data_format(adapter: Adapter) -> str:
     if isinstance(adapter, dspy.ChatAdapter):
-        return DataFormat.chat
+        return TrainDataFormat.CHAT
     raise ValueError(f"Could not infer the data format for: {adapter}")
+
+
+def get_finetune_directory() -> str:
+    default_finetunedir = os.path.join(DSPY_CACHEDIR, "finetune")
+    finetune_dir = os.environ.get("DSPY_FINETUNEDIR") or default_finetunedir
+    finetune_dir = os.path.abspath(finetune_dir)
+    os.makedirs(finetune_dir, exist_ok=True)
+    return finetune_dir
 
 
 def write_lines(file_path, data):
@@ -43,6 +46,8 @@ def write_lines(file_path, data):
 def save_data(
     data: List[Dict[str, Any]],
 ) -> str:
+    from datasets.fingerprint import Hasher
+
     # Assign a unique name to the file based on the data hash
     hash = Hasher.hash(data)
     file_name = f"{hash}.jsonl"
@@ -58,11 +63,11 @@ def save_data(
 
 def validate_data_format(
         data: List[Dict[str, Any]],
-        data_format: DataFormat,
+        data_format: TrainDataFormat,
     ):
     find_err_funcs = {
-        DataFormat.chat: find_data_error_chat,
-        DataFormat.completion: find_data_errors_completion
+        TrainDataFormat.CHAT: find_data_error_chat,
+        TrainDataFormat.COMPLETION: find_data_errors_completion
     }
     err = f"Data format {data_format} is not supported."
     assert data_format in find_err_funcs, err

@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 
-import dspy
-from dspy.utils.dummies import DummyLM, dummy_rm
-from dspy.predict import react
 from pydantic import BaseModel
 
+import dspy
+from dspy.predict import react
+from dspy.utils.dummies import DummyLM, dummy_rm
+import litellm
 
 # def test_example_no_tools():
 #     # Create a simple dataset which the model will use with the Retrieve tool.
@@ -228,3 +229,76 @@ def test_tool_calling_with_pydantic_args():
         "observation_1": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+def test_tool_calling_without_typehint():
+    def foo(a, b):
+        """Add two numbers."""
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    lm = DummyLM(
+        [
+            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
+            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "I added the numbers successfully", "c": 3},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+    outputs = react(a=1, b=2)
+
+    expected_trajectory = {
+        "thought_0": "I need to add two numbers.",
+        "tool_name_0": "foo",
+        "tool_args_0": {
+            "a": 1,
+            "b": 2,
+        },
+        "observation_0": 3,
+        "thought_1": "I have the sum, now I can finish.",
+        "tool_name_1": "finish",
+        "tool_args_1": {},
+        "observation_1": "Completed.",
+    }
+    assert outputs.trajectory == expected_trajectory
+
+
+def test_trajectory_truncation():
+    # Create a simple tool for testing
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    # Create ReAct instance with our echo tool
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    # Mock react.react to simulate multiple tool calls
+    call_count = 0
+
+    def mock_react(**kwargs):
+        nonlocal call_count
+        call_count += 1
+
+        if call_count < 3:
+            # First 2 calls use the echo tool
+            return dspy.Prediction(
+                next_thought=f"Thought {call_count}",
+                next_tool_name="echo",
+                next_tool_args={"text": f"Text {call_count}"},
+            )
+        elif call_count == 3:
+            # The 3rd call raises context window exceeded error
+            raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+        else:
+            # The 4th call finishes
+            return dspy.Prediction(next_thought="Final thought", next_tool_name="finish", next_tool_args={})
+
+    react.react = mock_react
+    react.extract = lambda **kwargs: dspy.Prediction(output_text="Final output")
+
+    # Call forward and get the result
+    result = react(input_text="test input")
+
+    # Verify that older entries in the trajectory were truncated
+    assert "thought_0" not in result.trajectory
+    assert "thought_2" in result.trajectory
+    assert result.output_text == "Final output"
