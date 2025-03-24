@@ -2,7 +2,7 @@ mkdocs-material>=9.5.41
 mkdocs-jupyter>=0.25.1
 mkdocs-material[imaging]>=9.5.41
 mkdocs-redirects>=1.2.1
-mkdocstrings>=0.26.1
+mkdocstrings>=0.28.3
 mkdocstrings-python>=1.12.2
 urllib3==1.26.6
 mistune==3.0.2
