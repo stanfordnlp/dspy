@@ -467,9 +467,7 @@ class MIPROv2(Teleprompter):
         adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
-        default_score = eval_candidate_program(
-            len(valset), valset, program, evaluate, self.rng
-        )
+        default_score = eval_candidate_program(len(valset), valset, program, evaluate, self.rng).score
         logger.info(f"Default program score: {default_score}\n")
 
         trial_logs = {}
@@ -519,7 +517,7 @@ class MIPROv2(Teleprompter):
 
             # Evaluate the candidate program (on minibatch if minibatch=True)
             batch_size = minibatch_size if minibatch else len(valset)
-            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng)
+            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng).score
             total_eval_calls += batch_size
 
             # Update best score and program
