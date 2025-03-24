@@ -53,6 +53,7 @@ nav:
         - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
         - Multi-Hop Search: tutorials/multihop_search/index.ipynb
         - Privacy-Conscious Delegation: tutorials/papillon/index.md
+        - Advanced Tool Use: tutorials/tool_use/index.ipynb
         - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
         - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
         - Finetuning Agents: tutorials/games/index.ipynb
