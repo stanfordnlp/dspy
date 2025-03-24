@@ -52,7 +52,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
             display_table=False,
             display_progress=True,
         )
-        result = evaluate(program2, return_all_scores=False)
+        result = evaluate(program2)
         trial.set_user_attr("program", program2)
         return result.score
 
