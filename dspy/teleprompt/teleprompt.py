@@ -27,4 +27,4 @@ class Teleprompter:
         Returns:
             The parameters of the teleprompter.
         """
-        return self.__dict__()
+        return self.__dict__

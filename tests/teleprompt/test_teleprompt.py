@@ -9,9 +9,6 @@ class DummyTeleprompter(Teleprompter):
     def compile(self, student, *, trainset, teacher=None, valset=None, **kwargs):
         return student
 
-    def get_params(self):
-        return self.__dict__
-
 
 def test_get_params():
     teleprompter = DummyTeleprompter(param1=1, param2="test")
