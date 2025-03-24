@@ -1,9 +1,9 @@
-mkdocs-material>=9.5.41
-mkdocs-jupyter>=0.25.1
-mkdocs-material[imaging]>=9.5.41
-mkdocs-redirects>=1.2.1
-mkdocstrings>=0.28.3
-mkdocstrings-python>=1.12.2
+git+https://github.com/stanfordnlp/dspy.git
+mkdocs-material
+mkdocs-jupyter
+mkdocs-material[imaging]
+mkdocs-redirects
+mkdocstrings
+mkdocstrings-python
 urllib3==1.26.6
 mistune==3.0.2
-git+https://github.com/stanfordnlp/dspy.git
