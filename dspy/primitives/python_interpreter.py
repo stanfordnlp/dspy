@@ -117,14 +117,16 @@ class PythonInterpreter:
         if "error" in result:
             error_msg = result["error"]
             error_type = result.get("errorType", "Sandbox Error")
-            if error_type == "SyntaxError":
+            if error_type == "FinalAnswer":
+                # The `FinalAnswer` trick to receive output from the sandbox interpreter,
+                # just simply replace the output with the arguments.
+                result["output"] = result.get("errorArgs", None)
+            elif error_type == "SyntaxError":
                 raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
-            elif error_type == "FinalAnswer":
-                return result.get("errorArgs")
             else:
                 raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
 
-        # If there's no error, return the "output" field
+        # If there's no error or got `FinalAnswer`, return the "output" field
         return result.get("output", None)
 
     def __enter__(self):
