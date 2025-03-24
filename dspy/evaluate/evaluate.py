@@ -112,7 +112,7 @@ class Evaluate:
             
             - all_scores: a list of float scores for each example in devset
             
-            - return_outputs: a list of (example, prediction, score) tuples for each example in devset
+            - all_outputs: a list of (example, prediction, score) tuples for each example in devset
 
             - result_table: a pandas DataFrame containing the evaluation results.
 
