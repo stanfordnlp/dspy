@@ -254,6 +254,38 @@ class BaseCallback:
         """
         pass
 
+    def on_adapter_call_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        """A handler triggered when __call__ method of an adapter is called.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            instance: The Adapter instance.
+            inputs: The inputs to the Adapter's __call__ method. Each arguments is stored as
+                a key-value pair in a dictionary.
+        """
+        pass
+
+    def on_adapter_call_end(
+        self,
+        call_id: str,
+        outputs: Optional[Any],
+        exception: Optional[Exception] = None,
+    ):
+        """A handler triggered after __call__ method of an adapter is executed.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            outputs: The outputs of the Adapter's __call__ method. If the method is interrupted by
+                an exception, this will be None.
+            exception: If an exception is raised during the execution, it will be stored here.
+        """
+        pass
+
 
 def with_callbacks(fn):
     @functools.wraps(fn)
@@ -319,6 +351,8 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
             return callback.on_adapter_format_start
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_start
+        elif fn.__name__ == "__call__":
+            return callback.on_adapter_call_start
         else:
             raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
 
@@ -341,6 +375,8 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
             return callback.on_adapter_format_end
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_end
+        elif fn.__name__ == "__call__":
+            return callback.on_adapter_call_end
         else:
             raise ValueError(f"Unsupported adapter method for using callback: {fn.__name__}.")
 
