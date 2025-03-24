@@ -51,8 +51,8 @@ def test_old_style_pot():
 
 class ExtremumFinder(Signature):
     input_list = dspy.InputField()
-    maximum = dspy.OutputField()
-    minimum = dspy.OutputField()
+    maximum = dspy.OutputField(desc="The maximum of the given numbers")
+    minimum = dspy.OutputField(desc="The minimum of the given numbers")
 
 
 @pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
@@ -90,7 +90,6 @@ def test_pot_code_generation_with_one_error():
         ]
     )
     dspy.settings.configure(lm=lm)
-
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
@@ -126,7 +125,6 @@ def test_pot_code_parse_error():
         * max_iters
     )
     dspy.settings.configure(lm=lm)
-
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,
