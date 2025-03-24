@@ -5,6 +5,7 @@ from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune
 from dspy.teleprompt.copro_optimizer import COPRO
 from dspy.teleprompt.ensemble import Ensemble
 from dspy.teleprompt.knn_fewshot import KNNFewShot
+from dspy.teleprompt.simba import SIMBA
 
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
@@ -27,4 +28,5 @@ __all__ = [
     "BootstrapFewShotWithOptuna",
     "LabeledFewShot",
     "InferRules",
+    "SIMBA",
 ]
