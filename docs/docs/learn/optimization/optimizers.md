@@ -154,7 +154,7 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         short texts into one of 77 banking labels and then using `dspy.BootstrapFinetune` with 2000 text-label pairs
         from the `Banking77` to finetune the weights of GPT-4o-mini for this task. We use the variant
         `dspy.ChainOfThoughtWithHint`, which takes an optional `hint` at bootstrapping time, to maximize the utility of
-        the training data. Naturally, hints are not available at test time.
+        the training data. Naturally, hints are not available at test time. More can be found in this [tutorial](/tutorials/classification_finetuning/).
 
         <details><summary>Click to show dataset setup code.</summary>
 
