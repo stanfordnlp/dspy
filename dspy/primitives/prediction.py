@@ -104,7 +104,7 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() == float(other)
         else:
-            # we should return False when Prediction is compared with other types and 
+            # we should return False when Prediction is compared with other types 
             return False
 
     @property
