@@ -110,12 +110,7 @@ class Evaluate:
             
             - score: A float percentage score (e.g., 67.30) representing overall performance
             
-            - all_scores: a list of float scores for each example in devset
-            
             - all_outputs: a list of (example, prediction, score) tuples for each example in devset
-
-            - result_table: a pandas DataFrame containing the evaluation results.
-
         """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
@@ -167,9 +162,7 @@ class Evaluate:
         
         return dspy.Prediction(
             score=round(100 * ncorrect / ntotal, 2),
-            all_scores=[score for *_, score in results],
             all_outputs=results,
-            result_table=result_df,
         )
     
 
