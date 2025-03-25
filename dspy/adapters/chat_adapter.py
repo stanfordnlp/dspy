@@ -14,7 +14,7 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types.history import History
 from dspy.adapters.types.image import try_expand_image_tags
-from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value
+from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, enumerate_fields
 from dspy.clients.lm import LM
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, SignatureMeta
@@ -249,18 +249,6 @@ def format_turn(
         messages.append(field_instructions)
     joined_messages = "\n\n".join(msg for msg in messages)
     return {"role": role, "content": joined_messages}
-
-
-def enumerate_fields(fields: dict) -> str:
-    parts = []
-    for idx, (k, v) in enumerate(fields.items()):
-        parts.append(f"{idx + 1}. `{k}`")
-        parts[-1] += f" ({get_annotation_name(v.annotation)})"
-        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
-        parts[-1] += (
-            f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
-        )
-    return "\n".join(parts).strip()
 
 
 def move_type_to_front(d):
