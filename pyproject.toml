@@ -45,7 +45,7 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.0.0",
     "rich>=13.7.1",
-    "numpy==2.0.2"
+    "numpy>=1.26.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -122,7 +122,7 @@ asyncer = "0.0.8"
 cachetools = "^5.5.0"
 cloudpickle = "^3.0.0"
 rich = "^13.7.1"
-numpy = "==2.0.2"
+numpy = ">=1.26.0"
 
 # Optional dependencies (now declared inline)
 anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
