@@ -1,13 +1,13 @@
-import sys
-import tqdm
-import signal
-import logging
-import threading
-import traceback
-import time
 import contextlib
+import logging
+import signal
+import sys
+import threading
+import time
+import traceback
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class ParallelExecutor:
         Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
         Handles also straggler timeouts.
         """
-        
+
         self.num_threads = num_threads
         self.max_errors = max_errors
         self.disable_progress_bar = disable_progress_bar
@@ -59,10 +59,7 @@ class ParallelExecutor:
                 if self.provide_traceback:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
                 else:
-                    logger.error(
-                        f"Error for {item}: {e}. "
-                        "Set `provide_traceback=True` for traceback."
-                    )
+                    logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
                 return None
 
         return safe_func
@@ -88,6 +85,7 @@ class ParallelExecutor:
             from dspy.dsp.utils.settings import thread_local_overrides
 
             original = thread_local_overrides.overrides
+            # thread_local_overrides.overrides = copy.deepcopy(parent_overrides)
             thread_local_overrides.overrides = parent_overrides.copy()
 
             try:
@@ -126,9 +124,7 @@ class ParallelExecutor:
                 submission_counter = 0
 
                 for idx, item in enumerate(data):
-                    f = executor.submit(
-                        worker, parent_overrides, submission_counter, idx, item
-                    )
+                    f = executor.submit(worker, parent_overrides, submission_counter, idx, item)
                     futures_map[f] = (submission_counter, idx, item)
                     futures_set.add(f)
                     submission_counter += 1
@@ -146,9 +142,7 @@ class ParallelExecutor:
                 while futures_set and not self.cancel_jobs.is_set():
                     if all_done():
                         break
-                    done, not_done = wait(
-                        futures_set, timeout=1, return_when=FIRST_COMPLETED
-                    )
+                    done, not_done = wait(futures_set, timeout=1, return_when=FIRST_COMPLETED)
                     for f in done:
                         futures_set.remove(f)
                         try:
