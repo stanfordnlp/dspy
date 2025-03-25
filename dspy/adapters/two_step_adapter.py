@@ -94,7 +94,7 @@ class TwoStepAdapter(Adapter):
             return extracted_data
 
         except Exception as e:
-            raise ValueError(f"Failed to parse response: {str(e)}\nOriginal completion: {completion}")
+            raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
     
     def _create_task_description(self, signature: Signature) -> str:
         """Create a natural description of the task based on the signature"""
