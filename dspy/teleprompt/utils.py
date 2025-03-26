@@ -5,7 +5,6 @@ import os
 import random
 import shutil
 import sys
-from Typing import Tuple
 import numpy as np
 
 try:
@@ -250,7 +249,7 @@ def setup_logging(log_dir):
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-def get_token_usage(model) -> Tuple[int, int]:
+def get_token_usage(model) -> tuple[int, int]:
     """
     Extract total input tokens and output tokens from a model's interaction history.
     Returns (total_input_tokens, total_output_tokens).
