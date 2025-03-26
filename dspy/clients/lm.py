@@ -265,7 +265,8 @@ def request_cache(maxsize: Optional[int] = None):
             cache_hit = key in func_cached.cache
             output = func_cached(key, request, *args, **kwargs)
             if cache_hit and hasattr(output, "usage"):
-                output.usage = None
+                # Clear the usage data when cache is hit, because no LM call is made
+                output.usage = {}
 
             return func_cached(key, request, *args, **kwargs)
 
