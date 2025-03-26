@@ -172,10 +172,10 @@ def test_single_module_call_with_usage_tracker():
     predict = dspy.ChainOfThought("question -> answer")
     output = predict(question="What is the capital of France?")
 
-    assert output.usage is not None
-    assert output.usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
-    assert output.usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
-    assert output.usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+    assert output.lm_usage is not None
+    assert output.lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert output.lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert output.lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
 
     # Test no usage being tracked when cache is enabled
     dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
@@ -202,14 +202,14 @@ def test_multi_module_call_with_usage_tracker():
     program = MyProgram()
     output = program(question="What is the capital of France?")
 
-    assert output.usage is not None
+    assert output.lm_usage is not None
 
-    assert isinstance(output.usage, dict)
-    assert len(output.usage.keys()) == 1
-    assert "openai/gpt-4o-mini" in output.usage
-    assert output.usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
-    assert output.usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
-    assert output.usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+    assert isinstance(output.lm_usage, dict)
+    assert len(output.lm_usage.keys()) == 1
+    assert "openai/gpt-4o-mini" in output.lm_usage
+    assert output.lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert output.lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert output.lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
 
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
@@ -239,8 +239,8 @@ def test_usage_tracker_in_parallel():
         ]
     )
 
-    assert results[0].usage is not None
-    assert results[1].usage is not None
+    assert results[0].lm_usage is not None
+    assert results[1].lm_usage is not None
 
-    assert results[0].keys() == set(["openai/gpt-4o-mini"])
-    assert results[1].keys() == set(["openai/gpt-3.5-turbo"])
+    assert results[0].lm_usage.keys() == set(["openai/gpt-4o-mini"])
+    assert results[1].lm_usage.keys() == set(["openai/gpt-3.5-turbo"])
