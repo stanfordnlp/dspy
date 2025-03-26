@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import logging
 import signal
 import sys
@@ -85,8 +86,10 @@ class ParallelExecutor:
             from dspy.dsp.utils.settings import thread_local_overrides
 
             original = thread_local_overrides.overrides
-            # thread_local_overrides.overrides = copy.deepcopy(parent_overrides)
-            thread_local_overrides.overrides = parent_overrides.copy()
+            thread_local_overrides.overrides = copy.deepcopy(parent_overrides)
+            if "callbacks" in original:
+                # The same callbacks instances should be shared across threads
+                thread_local_overrides.overrides["callbacks"] = original.callbacks
 
             try:
                 return index, function(item)

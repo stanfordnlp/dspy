@@ -3,6 +3,8 @@ import threading
 from dspy.utils.dummies import DummyLM
 import logging
 from unittest.mock import patch
+import pytest
+import os
 
 
 def test_deepcopy_basic():
@@ -161,3 +163,50 @@ def test_load_with_version_mismatch(tmp_path):
         # Clean up: restore original level and remove handler
         logger.setLevel(original_level)
         logger.removeHandler(handler)
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_single_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    predict = dspy.ChainOfThought("question -> answer")
+    output = predict(question="What is the capital of France?")
+
+    assert output.usage is not None
+    assert output.usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert output.usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert output.usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+
+    # # Test no usage being tracked when cache is enabled
+    # dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
+    # for _ in range(2):
+    #     output = predict(question="What is the capital of France?")
+
+    # assert output.usage is None
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_multi_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.ChainOfThought("question -> answer")
+            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+        def __call__(self, question: str) -> str:
+            answer = self.predict1(question=question)
+            score = self.predict2(question=question, answer=answer)
+            return score
+
+    program = MyProgram()
+    output = program(question="What is the capital of France?")
+
+    assert output.usage is not None
+
+    assert isinstance(output.usage, dict)
+    assert len(output.usage.keys()) == 1
+    assert "openai/gpt-4o-mini" in output.usage
+    assert output.usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert output.usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert output.usage["openai/gpt-4o-mini"]["total_tokens"] > 0

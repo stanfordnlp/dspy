@@ -9,6 +9,15 @@ class Prediction(Example):
         del self._input_keys
 
         self._completions = None
+        self._usage = None
+
+    @property
+    def usage(self):
+        return self._usage
+
+    @usage.setter
+    def usage(self, value):
+        self._usage = value
 
     @classmethod
     def from_completions(cls, list_or_dict, signature=None):

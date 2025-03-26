@@ -121,8 +121,8 @@ class LM(BaseLM):
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
-        if hasattr(results, "usage") and dspy.settings.get("usage_tracker"):
-            dspy.settings.usage_tracker.add_usage(results.usage)
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+            dspy.settings.usage_tracker.add_usage(self.model, results.usage)
         return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
@@ -262,6 +262,11 @@ def request_cache(maxsize: Optional[int] = None):
                 # If the cache key cannot be computed (e.g. because it contains a value that cannot
                 # be converted to JSON), bypass the cache and call the target function directly
                 return func(request, *args, **kwargs)
+            cache_hit = key in func_cached.cache
+            output = func_cached(key, request, *args, **kwargs)
+            if cache_hit and hasattr(output, "usage"):
+                output.usage = None
+
             return func_cached(key, request, *args, **kwargs)
 
         return wrapper
