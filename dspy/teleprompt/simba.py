@@ -6,7 +6,6 @@ import numpy as np
 from typing import Callable
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
-from dspy.teleprompt.utils import log_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -286,8 +285,6 @@ class SIMBA(Teleprompter):
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
             
-            log_token_usage(trial_logs, batch_idx, {"lm": dspy.settings.lm})
-
         M = len(winning_programs) - 1
         N = self.num_candidates + 1
         if M < 1:
