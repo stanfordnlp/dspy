@@ -5,7 +5,6 @@ import os
 import random
 import shutil
 import sys
-
 import numpy as np
 
 try:
@@ -249,6 +248,46 @@ def setup_logging(log_dir):
     console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
+
+def get_token_usage(model) -> tuple[int, int]:
+    """
+    Extract total input tokens and output tokens from a model's interaction history.
+    Returns (total_input_tokens, total_output_tokens).
+    """
+    if not hasattr(model, "history"):
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+
+    total_input_tokens = int(np.sum(input_tokens))
+    total_output_tokens = int(np.sum(output_tokens))
+
+    return total_input_tokens, total_output_tokens
+
+
+def log_token_usage(trial_logs, trial_num, model_dict):
+    """
+    Extract total input and output tokens used by each model and log to trial_logs[trial_num]["token_usage"].
+    """
+
+    token_usage_dict = {}
+
+    for model_name, model in model_dict.items():
+        in_tokens, out_tokens = get_token_usage(model)
+        token_usage_dict[model_name] = {
+            "total_input_tokens": in_tokens,
+            "total_output_tokens": out_tokens
+        }
+
+    # Store token usage info in trial logs
+    trial_logs[trial_num]["token_usage"] = token_usage_dict
 
 
 ### OTHER UTILS ###

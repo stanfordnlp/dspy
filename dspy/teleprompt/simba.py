@@ -47,7 +47,10 @@ class SIMBA(Teleprompter):
         self.temperature_for_sampling = temperature_for_sampling
         self.temperature_for_candidates = temperature_for_candidates
 
-        self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
+        if self.max_demos > 0:
+            self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
+        else:
+            self.strategies = [append_a_rule]
 
     def compile(self, student: dspy.Module, *, trainset: list[dspy.Example], seed: int = 0):
         # Basic checks
@@ -117,7 +120,10 @@ class SIMBA(Teleprompter):
         # Parallel runner
         run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
 
+        trial_logs = {}
         for batch_idx in range(self.max_steps):
+            trial_logs[batch_idx] = {}
+
             logger.info(f"Starting batch {batch_idx+1} of {self.max_steps}.")
 
             # STEP 1: Get next batch
@@ -205,12 +211,14 @@ class SIMBA(Teleprompter):
                 name2predictor = {}
                 num_demos_list = []
 
+                max_demos_tmp = self.max_demos if self.max_demos > 0 else 3
+
                 for name, predictor in system_candidate.named_predictors():
                     name2predictor[name] = predictor
                     num_demos_list.append(len(predictor.demos))
 
                 num_demos = max(num_demos_list) if num_demos_list else 0
-                num_demos_to_drop = max(rng_np.poisson(num_demos / self.max_demos), int(num_demos >= self.max_demos))
+                num_demos_to_drop = max(rng_np.poisson(num_demos / max_demos_tmp), int(num_demos >= max_demos_tmp))
                 num_demos_to_drop = min(num_demos_to_drop, num_demos)
                 demos_to_drop = [rng.randrange(num_demos) for _ in range(num_demos_to_drop)]
 
@@ -268,7 +276,7 @@ class SIMBA(Teleprompter):
             if candidate_scores:
                 best_idx_among_candidates = candidate_scores.index(max(candidate_scores))
                 best_program = system_candidates[best_idx_among_candidates]
-                winning_programs.append(best_program)
+                winning_programs.append(best_program.deepcopy())
 
             # STEP 8: Register all new candidate systems in our global pool
             for idx_cand, cand_sys in enumerate(system_candidates):
@@ -276,7 +284,7 @@ class SIMBA(Teleprompter):
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
-
+            
         M = len(winning_programs) - 1
         N = self.num_candidates + 1
         if M < 1:
@@ -286,7 +294,7 @@ class SIMBA(Teleprompter):
             program_idxs = [round(i * M / (N - 1)) for i in range(N)]
         program_idxs = list(dict.fromkeys(program_idxs))
 
-        candidate_programs = [winning_programs[i] for i in program_idxs]
+        candidate_programs = [winning_programs[i].deepcopy() for i in program_idxs]
         logger.info(f"VALIDATION: Evaluating {len(candidate_programs)} programs on the full trainset.")
         exec_pairs = [(wrap_program(sys, self.metric), ex) for sys in candidate_programs for ex in trainset]
         outputs = run_parallel(exec_pairs)
@@ -298,7 +306,9 @@ class SIMBA(Teleprompter):
             sys_scores = [outputs[i]["score"] for i in range(start, end)]
             avg_score = sum(sys_scores) / len(sys_scores) if sys_scores else 0.0
             scores.append(avg_score)
-
+            if idx_prog != 0:
+                trial_logs[idx_prog-1]["train_score"] = avg_score
+        
         best_idx = scores.index(max(scores)) if scores else 0
         best_program = candidate_programs[best_idx]
         logger.info(
@@ -309,5 +319,6 @@ class SIMBA(Teleprompter):
         # FIXME: Attach all program candidates in decreasing average score to the best program.
         best_program.candidate_programs = candidate_programs
         best_program.winning_programs = winning_programs
+        best_program.trial_logs = trial_logs
 
         return best_program
