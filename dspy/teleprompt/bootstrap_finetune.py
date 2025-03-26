@@ -222,7 +222,7 @@ def bootstrap_trace_data(
         with dspy.context(trace=[]):
             return program(**kwargs), dspy.settings.trace.copy()
 
-    outputs = evaluator(wrapped_program, metric=wrapped_metric).all_outputs
+    outputs = evaluator(wrapped_program, metric=wrapped_metric).outputs
 
     data = []
     for example_ind, (example, prediction, score) in enumerate(outputs):

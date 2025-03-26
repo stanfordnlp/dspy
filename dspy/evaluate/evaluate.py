@@ -110,7 +110,7 @@ class Evaluate:
             
             - score: A float percentage score (e.g., 67.30) representing overall performance
             
-            - all_outputs: a list of (example, prediction, score) tuples for each example in devset
+            - outputs: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
@@ -162,7 +162,7 @@ class Evaluate:
         
         return dspy.Prediction(
             score=round(100 * ncorrect / ntotal, 2),
-            all_outputs=results,
+            outputs=results,
         )
     
 

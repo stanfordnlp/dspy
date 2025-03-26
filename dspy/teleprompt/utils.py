@@ -59,7 +59,7 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     except Exception:
         logger.error("An exception occurred during evaluation", exc_info=True)
         # TODO: Handle this better, as -ve scores are possible
-        return dspy.Prediction(score=0.0, all_outputs=[])
+        return dspy.Prediction(score=0.0, outputs=[])
 
 def eval_candidate_program_with_pruning(
     trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,
