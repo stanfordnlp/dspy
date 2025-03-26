@@ -250,6 +250,23 @@ def setup_logging(log_dir):
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
+def log_token_usage(trial_logs, trial_num, model_dict):
+    """
+    Extract total input and output tokens used by each model and log to trial_logs[trial_num]["token_usage"].
+    """
+
+    token_usage_dict = {}
+
+    for model_name, model in model_dict.items():
+        in_tokens, out_tokens = extract_token_usage(model)
+        token_usage_dict[model_name] = {
+            "total_input_tokens": in_tokens,
+            "total_output_tokens": out_tokens
+        }
+
+    # Store token usage info in trial logs
+    trial_logs[trial_num]["token_usage"] = token_usage_dict
+
 
 ### OTHER UTILS ###
 
