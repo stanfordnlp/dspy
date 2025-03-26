@@ -5,7 +5,7 @@ import os
 import random
 import shutil
 import sys
-
+from Typing import Tuple
 import numpy as np
 
 try:
@@ -249,6 +249,29 @@ def setup_logging(log_dir):
     console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
+
+def get_token_usage(model) -> Tuple[int, int]:
+    """
+    Extract total input tokens and output tokens from a model's interaction history.
+    Returns (total_input_tokens, total_output_tokens).
+    """
+    if not hasattr(model, "history"):
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+
+    total_input_tokens = np.sum(input_tokens)
+    total_output_tokens = np.sum(output_tokens)
+
+    return total_input_tokens, total_output_tokens
+
 
 def log_token_usage(trial_logs, trial_num, model_dict):
     """
