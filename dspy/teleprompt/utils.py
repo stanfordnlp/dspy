@@ -266,8 +266,8 @@ def get_token_usage(model) -> tuple[int, int]:
         input_tokens.append(_input_tokens)
         output_tokens.append(_output_tokens)
 
-    total_input_tokens = np.sum(input_tokens)
-    total_output_tokens = np.sum(output_tokens)
+    total_input_tokens = int(np.sum(input_tokens))
+    total_output_tokens = int(np.sum(output_tokens))
 
     return total_input_tokens, total_output_tokens
 
@@ -280,7 +280,7 @@ def log_token_usage(trial_logs, trial_num, model_dict):
     token_usage_dict = {}
 
     for model_name, model in model_dict.items():
-        in_tokens, out_tokens = extract_token_usage(model)
+        in_tokens, out_tokens = get_token_usage(model)
         token_usage_dict[model_name] = {
             "total_input_tokens": in_tokens,
             "total_output_tokens": out_tokens
