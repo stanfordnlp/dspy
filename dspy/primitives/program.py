@@ -24,7 +24,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if settings.track_usage and settings.usage_tracker is None:
             with track_usage() as usage_tracker:
                 output = self.forward(*args, **kwargs)
-                output.lm_usage = usage_tracker.get_total_tokens()
+                output.set_lm_usage(usage_tracker.get_total_tokens())
                 return output
 
         return self.forward(*args, **kwargs)

@@ -11,6 +11,13 @@ class UsageTracker:
     """Tracks LM usage data within a context."""
 
     def __init__(self):
+        # Map of LM name to list of usage entries. For example:
+        # {
+        #     "openai/gpt-4o-mini": [
+        #         {"prompt_tokens": 100, "completion_tokens": 200},
+        #         {"prompt_tokens": 300, "completion_tokens": 400},
+        #     ],
+        # }
         self.usage_data = defaultdict(list)
 
     def _flatten_usage_entry(self, usage_entry) -> dict[str, dict[str, Any]]:

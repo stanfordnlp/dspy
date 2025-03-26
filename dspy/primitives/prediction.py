@@ -11,12 +11,10 @@ class Prediction(Example):
         self._completions = None
         self._lm_usage = None
 
-    @property
-    def lm_usage(self):
+    def get_lm_usage(self):
         return self._lm_usage
 
-    @lm_usage.setter
-    def lm_usage(self, value):
+    def set_lm_usage(self, value):
         self._lm_usage = value
 
     @classmethod
