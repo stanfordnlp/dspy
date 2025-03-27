@@ -22,8 +22,10 @@ class UsageTracker:
 
     def _flatten_usage_entry(self, usage_entry) -> dict[str, dict[str, Any]]:
         result = dict(usage_entry)
-        result["completion_tokens_details"] = dict(result["completion_tokens_details"])
-        result["prompt_tokens_details"] = dict(result["prompt_tokens_details"])
+        if "completion_tokens_details" in result:
+            result["completion_tokens_details"] = dict(result["completion_tokens_details"])
+        if "prompt_tokens_details" in result:
+            result["prompt_tokens_details"] = dict(result["prompt_tokens_details"])
         return result
 
     def _merge_usage_entries(self, usage_entry1, usage_entry2) -> dict[str, dict[str, Any]]:
@@ -44,7 +46,8 @@ class UsageTracker:
 
     def add_usage(self, lm: str, usage_entry: dict):
         """Add a usage entry to the tracker."""
-        self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
+        if len(usage_entry) > 0:
+            self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""

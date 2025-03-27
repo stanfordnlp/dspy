@@ -18,6 +18,7 @@ import dspy
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -121,8 +122,9 @@ class LM(BaseLM):
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
+
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            dspy.settings.usage_tracker.add_usage(self.model, results.usage)
+            settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):

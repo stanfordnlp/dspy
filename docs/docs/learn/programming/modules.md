@@ -244,3 +244,84 @@ class Hop(dspy.Module):
         
         return dspy.Prediction(notes=notes, titles=list(set(titles)))
 ```
+
+## How do I track LM usage?
+
+!!! info "Version Requirement"
+    LM usage tracking is available in DSPy version 2.6.16 and later.
+
+DSPy supports tracking LM usage for each module call, and the usage data is accessible from the
+returned `dspy.Prediction`. To enable LM usage tracking, you need to call:
+
+```python
+dspy.settings.configure(track_usage=True)
+```
+
+Then you can get the usage data from your `dspy.Prediction` instance by calling:
+
+```
+usage = prediction_instance.get_lm_usage()
+```
+which returns a dictionary mapping from each `lm` name into the combined usage data in the module call.
+See below for an end to end demo:
+
+```python
+import dspy
+
+dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+class MyProgram(dspy.Module):
+    def __init__(self):
+        self.predict1 = dspy.ChainOfThought("question -> answer")
+        self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+    def __call__(self, question: str) -> str:
+        answer = self.predict1(question=question)
+        score = self.predict2(question=question, answer=answer)
+        return score
+
+program = MyProgram()
+output = program(question="What is the capital of France?")
+print(output.get_lm_usage())
+```
+
+An example output will look like:
+
+```
+{'openai/gpt-4o-mini': {'completion_tokens': 61, 'prompt_tokens': 260, 'total_tokens': 321, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0, 'text_tokens': None}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0, 'text_tokens': None, 'image_tokens': None}}}
+```
+
+Please note that if you call hit cache, either in-memory cache or the on-disk cache (litellm cache), it will
+be considered as no LM usage. See below for code example:
+
+```python
+import dspy
+
+dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
+
+
+class MyProgram(dspy.Module):
+    def __init__(self):
+        self.predict1 = dspy.ChainOfThought("question -> answer")
+        self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+    def __call__(self, question: str) -> str:
+        answer = self.predict1(question=question)
+        score = self.predict2(question=question, answer=answer)
+        return score
+
+
+program = MyProgram()
+output = program(question="What is the capital of Zambia?")
+# Make a second call to test the cache behavior
+output = program(question="What is the capital of Zambia?")
+print(output.get_lm_usage())
+```
+
+You should see an empty dict:
+
+```
+{}
+```
+
+
