@@ -1,208 +1,178 @@
-"""MetaLadder adapter for enhancing mathematical reasoning through analogical learning.
-
-This module implements the MetaLadder framework as described in the paper
-"MetaLadder: Ascending Mathematical Solution Quality via Analogical-Problem Reasoning Transfer".
-"""
-
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+"""MetaLadder adapter implementation for DSPy."""
+import logging
 from dataclasses import dataclass
-import re
-import hashlib
-from functools import lru_cache
+from typing import Any, Dict, Optional, Tuple, Union
 
-from dspy.adapters.base import Adapter
-from dspy.adapters.types.response import AdapterResponse
-from dspy.dsp.utils import normalize_text
-from dspy.teleprompt import BootstrapFewShot
-from dspy.primitives.program import Module
-
-
-@lru_cache(maxsize=1000)
-def _get_cache_key(text: str) -> str:
-    """Generate a stable cache key for a given text.
-    
-    Args:
-        text: The text to generate a cache key for.
-        
-    Returns:
-        A stable hash of the text.
-    """
-    return hashlib.sha256(text.encode()).hexdigest()
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class MetaProblem:
-    """A class representing a meta problem for the MetaLadder adapter.
-
+    """Represents a meta-level understanding of a problem.
+    
     Attributes:
-        problem_type: The type of the problem.
-        meta_problem: The meta problem description.
-        restatement: The restatement of the problem.
+        problem_type: The type/category of the problem
+        meta_problem: Abstract description of problem structure
+        restatement: Problem restated using meta structure
     """
     problem_type: str
     meta_problem: str
     restatement: str
 
-    def __hash__(self) -> int:
-        """Generate a hash for the MetaProblem instance.
 
-        Returns:
-            int: The hash value.
-        """
-        return hash((self.problem_type, self.meta_problem, self.restatement))
-
-
-class MetaLadderAdapter(Adapter):
-    """An adapter that implements the MetaLadder approach for mathematical reasoning.
-
-    This adapter enhances mathematical reasoning through analogical learning by:
-    1. Identifying the problem type
-    2. Generating a meta problem
-    3. Restating the problem
-    4. Using either a shortcut or full reasoning path
-
-    Attributes:
-        model (Module): The language model to use.
-        optimizer (Optional[BootstrapFewShot]): The optimizer for improving prompts.
-        use_shortcut (bool): Whether to use shortcut inference.
-        max_tokens (int): Maximum number of tokens for responses.
-        cache_size (int): Size of the LRU cache for method results.
-    """
-
+class MetaLadderAdapter:
+    """Adapter that implements the MetaLadder approach for problem-solving."""
+    
     def __init__(
         self,
-        model: Module,
-        optimizer: Optional[BootstrapFewShot] = None,
-        use_shortcut: bool = True,
-        max_tokens: int = 1000,
+        model: Any,
+        use_shortcut: bool = False,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
         cache_size: int = 1000,
+        optimizer: Optional[Any] = None
     ) -> None:
-        """Initialize the MetaLadderAdapter.
-
+        """Initialize the MetaLadder adapter.
+        
         Args:
-            model: The language model to use.
-            optimizer: Optional optimizer for improving prompts.
-            use_shortcut: Whether to use shortcut inference.
-            max_tokens: Maximum number of tokens for responses.
-            cache_size: Size of the LRU cache for method results.
+            model: The base model to use for predictions
+            use_shortcut: Whether to skip meta-reasoning steps
+            temperature: Temperature for generation
+            max_tokens: Maximum tokens for generation
+            cache_size: Size of meta-problem cache
+            optimizer: Optional optimizer for the model
         """
-        super().__init__()
+        from dspy.predict import Predict
+        from dspy.signatures.signature import make_signature
+        
+        logger.info("Initializing MetaLadder adapter")
+        logger.info(f"Parameters: shortcut={use_shortcut}, temp={temperature}, max_tokens={max_tokens}")
+        
         self.model = model
-        self.optimizer = optimizer
         self.use_shortcut = use_shortcut
+        self.temperature = temperature
         self.max_tokens = max_tokens
-
-        # Initialize cached methods
-        self._identify_problem_type = self._create_cached_method(
-            self._identify_problem_type_impl, cache_size
+        self.optimizer = optimizer
+        self._meta_problems: Dict[str, MetaProblem] = {}
+        self._cache_size = cache_size
+        
+        # Create signatures for each step
+        self.type_sig = make_signature(
+            "question -> type",
+            """Identify the mathematical operation type needed to solve this problem.
+            Examples:
+            - If the problem involves finding total from rate and time: 'multiplication'
+            - If the problem involves sharing or distributing equally: 'division'
+            - If the problem combines quantities: 'addition'
+            - If the problem finds difference between quantities: 'subtraction'
+            Output should be a single word in lowercase."""
         )
-        self._generate_meta_problem = self._create_cached_method(
-            self._generate_meta_problem_impl, cache_size
+        self.meta_sig = make_signature(
+            "type, question -> meta_problem",
+            """Create a general template that captures the mathematical structure.
+            Examples:
+            For multiplication:
+            - Rate × Time = Total (for rate problems)
+            - Base × Multiplier = Product (for scaling problems)
+            For division:
+            - Total ÷ Number of parts = Size of each part
+            - Whole ÷ Number of groups = Amount per group
+            Keep it concise but clear."""
         )
-        self._restate_problem = self._create_cached_method(
-            self._restate_problem_impl, cache_size
+        self.restate_sig = make_signature(
+            "type, meta_problem, question -> restatement",
+            """Rewrite the problem to match the meta-problem structure while preserving:
+            1. All numerical values with their original units
+            2. The specific context of the problem
+            3. The exact mathematical relationship needed
+            Example:
+            Original: 'If a train travels at 60 mph for 2.5 hours, how far does it travel?'
+            Restatement: 'Calculate the total distance when rate is 60 miles per hour and time is 2.5 hours.'"""
         )
+        
+        # Create predictors with specific temperatures
+        self.type_predictor = Predict(self.type_sig, temperature=0.1)  # Low temp for consistent type identification
+        self.meta_predictor = Predict(self.meta_sig, temperature=0.3)  # Moderate temp for meta-problem generation
+        self.restate_predictor = Predict(self.restate_sig, temperature=0.1)  # Low temp for accurate restatement
 
-    def _create_cached_method(self, method: Any, cache_size: int) -> Any:
-        """Create a cached version of a method.
-
+    def __call__(self, **kwargs: Any) -> Any:
+        """Call the adapter with the given inputs.
+        
         Args:
-            method: The method to cache.
-            cache_size: Size of the LRU cache.
-
+            **kwargs: Keyword arguments for the model
+            
         Returns:
-            The cached method.
+            Model output with the answer field
         """
-        return lru_cache(maxsize=cache_size)(method)
+        question = kwargs.get("question")
+        if not question:
+            raise ValueError("Question must be provided")
+            
+        answer, meta_problem = self.forward(question)
+        logger.info(f"Final answer: {answer}")
+        return type("Response", (), {"answer": answer})()
 
-    def _call_model(self, prompt: str) -> str:
-        """Call the model with a prompt.
-
+    def forward(self, question: str) -> Tuple[str, MetaProblem]:
+        """Process a question using the MetaLadder approach.
+        
         Args:
-            prompt: The input prompt.
-
+            question: The question to process
+            
         Returns:
-            The model's response.
+            Tuple of (answer, meta_problem)
         """
-        if self.optimizer:
-            return self.optimizer.compile(self.model, trainset=[prompt])
-        return self.model.__call__(prompt)
-
-    def _identify_problem_type_impl(self, problem: str) -> str:
-        """Identify the type of mathematical problem.
-
-        Args:
-            problem: The problem description.
-
-        Returns:
-            The identified problem type.
-        """
-        prompt = f"Identify the type of this math problem: {problem}"
-        return self._call_model(prompt)
-
-    def _generate_meta_problem_impl(self, problem_type: str, problem: str) -> str:
-        """Generate a meta problem description.
-
-        Args:
-            problem_type: The type of problem.
-            problem: The original problem.
-
-        Returns:
-            The meta problem description.
-        """
-        prompt = f"Generate a meta problem for this {problem_type} problem: {problem}"
-        return self._call_model(prompt)
-
-    def _restate_problem_impl(
-        self, problem_type: str, meta_problem: str, problem: str
-    ) -> str:
-        """Restate the problem using the meta problem structure.
-
-        Args:
-            problem_type: The type of problem.
-            meta_problem: The meta problem description.
-            problem: The original problem.
-
-        Returns:
-            The restated problem.
-        """
-        prompt = (
-            f"Restate this {problem_type} problem using the structure of the meta problem.\n"
-            f"Meta problem: {meta_problem}\n"
-            f"Problem: {problem}"
-        )
-        return self._call_model(prompt)
-
-    def forward(self, prompt: str) -> Tuple[str, Optional[MetaProblem]]:
-        """Process a prompt using the MetaLadder approach.
-
-        Args:
-            prompt: The input prompt.
-
-        Returns:
-            A tuple containing:
-            - The model's response
-            - The MetaProblem object (if not using shortcut)
-        """
+        logger.info(f"\nProcessing question: {question}")
+        
         if self.use_shortcut:
-            return self._call_model(prompt), None
-
-        # Full reasoning path
-        problem_type = self._identify_problem_type(prompt)
-        meta_problem = self._generate_meta_problem(problem_type, prompt)
-        restatement = self._restate_problem(problem_type, meta_problem, prompt)
-
-        meta_problem_obj = MetaProblem(
-            problem_type=problem_type,
-            meta_problem=meta_problem,
-            restatement=restatement,
-        )
-
-        response = self._call_model(restatement)
-        return response, meta_problem_obj
+            # Skip meta-reasoning and use model directly
+            logger.info("Using shortcut path")
+            response = self.model(messages=[{"role": "user", "content": question}])
+            return response[0], MetaProblem("direct", "", "")
+            
+        # Check cache
+        if question in self._meta_problems:
+            logger.info("Using cached meta-problem")
+            meta_problem = self._meta_problems[question]
+        else:
+            # Generate meta-problem components
+            logger.info("Generating meta-problem components")
+            
+            # Step 1: Identify problem type
+            problem_type = self.type_predictor(question=question).type
+            logger.info(f"Identified problem type: {problem_type}")
+            
+            # Step 2: Generate meta-problem
+            meta_problem = self.meta_predictor(
+                type=problem_type,
+                question=question
+            ).meta_problem
+            logger.info(f"Generated meta-problem: {meta_problem}")
+            
+            # Step 3: Restate problem
+            restatement = self.restate_predictor(
+                type=problem_type,
+                meta_problem=meta_problem,
+                question=question
+            ).restatement
+            logger.info(f"Generated restatement: {restatement}")
+            
+            meta_problem = MetaProblem(problem_type, meta_problem, restatement)
+            
+            # Update cache
+            if len(self._meta_problems) >= self._cache_size:
+                self._meta_problems.pop(next(iter(self._meta_problems)))
+            self._meta_problems[question] = meta_problem
+        
+        # Get final answer using meta-problem
+        logger.info("Getting final answer using meta-problem")
+        response = self.model(messages=[{"role": "user", "content": meta_problem.restatement}])
+        answer = response[0]
+        logger.info(f"Final answer: {answer}")
+        return answer, meta_problem
 
     def clear_cache(self) -> None:
-        """Clear all cached data."""
-        self._identify_problem_type.cache_clear()
-        self._generate_meta_problem.cache_clear()
-        self._restate_problem.cache_clear()
+        """Clear the meta-problem cache."""
+        logger.info("Clearing meta-problem cache")
+        self._meta_problems.clear() 
