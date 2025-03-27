@@ -1,7 +1,10 @@
+import textwrap
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, Type
 
 from dspy.adapters.types import History
+from dspy.adapters.types.image import try_expand_image_tags
+from dspy.adapters.utils import format_field_value, get_field_description_string
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -28,10 +31,9 @@ class Adapter(ABC):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs_ = self.format(signature, demos, inputs)
-        inputs_ = dict(prompt=inputs_) if isinstance(inputs_, str) else dict(messages=inputs_)
+        inputs = self.format(signature, demos, inputs)
 
-        outputs = lm(**inputs_, **lm_kwargs)
+        outputs = lm(messages=inputs, **lm_kwargs)
         values = []
 
         for output in outputs:
@@ -42,12 +44,6 @@ class Adapter(ABC):
 
             value = self.parse(signature, output)
 
-            if set(value.keys()) != set(signature.output_fields.keys()):
-                raise ValueError(
-                    "Parsed output fields do not match signature output fields. "
-                    f"Expected: {set(signature.output_fields.keys())}, Got: {set(value.keys())}"
-                )
-
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
 
@@ -55,42 +51,264 @@ class Adapter(ABC):
 
         return values
 
-    @abstractmethod
     def format(
         self,
         signature: Type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """Format the input messages for the LM call.
+
+        This method converts the DSPy structured input along with few-shot examples and conversation history into
+        multiturn messages as expected by the LM. For custom adapters, this method can be overridden to customize
+        the formatting of the input messages.
+
+        In general we recommend the messages to have the following structure:
+        ```
+        [
+            {"role": "system", "content": system_message},
+            # Begin few-shot examples
+            {"role": "user", "content": few_shot_example_1_input},
+            {"role": "assistant", "content": few_shot_example_1_output},
+            {"role": "user", "content": few_shot_example_2_input},
+            {"role": "assistant", "content": few_shot_example_2_output},
+            ...
+            # End few-shot examples
+            # Begin conversation history
+            {"role": "user", "content": conversation_history_1_input},
+            {"role": "assistant", "content": conversation_history_1_output},
+            {"role": "user", "content": conversation_history_2_input},
+            {"role": "assistant", "content": conversation_history_2_output},
+            ...
+            # End conversation history
+            {"role": "user", "content": current_input},
+        ]
+
+        And system message should contain the field description, field structure, and task description.
+        ```
+
+
+        Args:
+            signature: The DSPy signature for which to format the input messages.
+            demos: A list of few-shot examples.
+            inputs: The input arguments to the DSPy module.
+
+        Returns:
+            A list of multiturn messages as expected by the LM.
+        """
+        inputs_copy = dict(inputs)
+        messages = []
+        system_message = (
+            f"{self.format_field_description(signature)}\n"
+            f"{self.format_field_structure(signature)}\n"
+            f"{self.format_task_description(signature)}"
+        )
+        messages.append({"role": "system", "content": system_message})
+        messages.extend(self.format_demos(signature, demos))
+        conversation_history = self.format_conversation_history(signature, inputs_copy)
+        if conversation_history:
+            # Conversation history and current input
+            messages.extend(conversation_history)
+        else:
+            # Only current input
+            messages.append({"role": "user", "content": self.format_user_message_content(signature, inputs_copy)})
+
+        messages = try_expand_image_tags(messages)
+        return messages
+
+    def format_field_description(self, signature: Type[Signature]) -> str:
+        """Format the field description for the system message.
+
+        This method formats the field description for the system message. It should return a string that contains
+        the field description for the input fields and the output fields.
+
+        Args:
+            signature: The DSPy signature for which to format the field description.
+
+        Returns:
+            A string that contains the field description for the input fields and the output fields.
+        """
+        return (
+            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
+            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
+        )
+
+    def format_field_structure(self, signature: Type[Signature]) -> str:
+        """Format the field structure for the system message.
+
+        This method formats the field structure for the system message. It should return a string that dictates the
+        format the input fields should be provided to the LM, and the format the output fields will be in the response.
+        Refer to the ChatAdapter and JsonAdapter for an example.
+
+        Args:
+            signature: The DSPy signature for which to format the field structure.
+        """
         raise NotImplementedError
 
-    @abstractmethod
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
-        raise NotImplementedError
+    def format_task_description(self, signature: Type[Signature]) -> str:
+        """Format the task description for the system message.
 
-    def format_fields(self, signature: Type[Signature], values: dict[str, Any], role: str) -> str:
-        raise NotImplementedError
+        This method formats the task description for the system message. In most cases this is just a thin wrapper
+        over `signature.instructions`.
 
-    def format_finetune_data(
+        Args:
+            signature: The DSPy signature of the DSpy module.
+
+        Returns:
+            A string that describes the task.
+        """
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
+
+    def format_user_message_content(
         self,
         signature: Type[Signature],
-        demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-        outputs: dict[str, Any],
-    ) -> dict[str, list[Any]]:
-        raise NotImplementedError
+        prefix: str = "",
+        suffix: str = "",
+        include_output_requirements: bool = True,
+    ) -> str:
+        """Format the user message content.
 
-    def format_turn(
+        This method formats the user message content, which can be used in formatting few-shot examples, conversation
+        history, and the current input.
+
+        Args:
+            signature: The DSPy signature for which to format the user message content.
+            inputs: The input arguments to the DSPy module.
+            prefix: A prefix to the user message content.
+            suffix: A suffix to the user message content.
+            include_output_requirements: Whether to include the output requirements in the user message content. This
+                is helpful especially when the context length is long, in which case the system message can be ignored
+                by the LM.
+
+        Returns:
+            A string that contains the user message content.
+        """
+        messages = [prefix]
+        for k, v in signature.input_fields.items():
+            value = inputs[k]
+            formatted_field_value = format_field_value(field_info=v, value=value)
+            messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+
+        if include_output_requirements:
+            output_requirements = self.user_message_output_requirements(signature)
+            if output_requirements is not None:
+                messages.append(output_requirements)
+
+        messages.append(suffix)
+        return "\n\n".join(messages).strip()
+
+    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
+        """Format the output requirements for the user message.
+
+        This method formats the output requirements in the user message, which helps the LM to emphasize the output
+        requirement, especially useful when the context length is long.
+
+        Args:
+            signature: The DSPy signature for which to format the output requirements.
+
+        Returns:
+            A string that contains the output requirements.
+        """
+        return None
+
+    def format_assistant_message_content(
         self,
         signature: Type[Signature],
-        values,
-        role: str,
-        incomplete: bool = False,
-        is_conversation_history: bool = False,
-    ) -> dict[str, Any]:
+        outputs: dict[str, Any],
+        missing_field_message: str = None,
+    ) -> str:
+        """Format the assistant message content.
+
+        This method formats the assistant message content, which can be used in formatting few-shot examples,
+        conversation history.
+
+        Args:
+            signature: The DSPy signature for which to format the assistant message content.
+            outputs: The output fields to be formatted.
+            missing_field_message: A message to be used when a field is missing.
+
+        Returns:
+            A string that contains the assistant message content.
+        """
         raise NotImplementedError
+
+    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> str:
+        """Format the few-shot examples.
+
+        This method formats the few-shot examples as multiturn messages.
+
+        Args:
+            signature: The DSPy signature for which to format the few-shot examples.
+            demos: A list of few-shot examples, each element is a dictionary with keys of the input and output fields of
+                the signature.
+
+        Returns:
+            A list of multiturn messages.
+        """
+        complete_demos = []
+        incomplete_demos = []
+
+        for demo in demos:
+            # Check if all fields are present and not None
+            is_complete = all(k in demo and demo[k] is not None for k in signature.fields)
+
+            # Check if demo has at least one input and one output field
+            has_input = any(k in demo for k in signature.input_fields)
+            has_output = any(k in demo for k in signature.output_fields)
+
+            if is_complete:
+                complete_demos.append(demo)
+            elif has_input and has_output:
+                # We only keep incomplete demos that have at least one input and one output field
+                incomplete_demos.append(demo)
+
+        messages = []
+
+        incomplete_demo_prefix = "This is an example of the task, though some input or output fields are not supplied."
+        for demo in incomplete_demos:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix),
+                }
+            )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": self.format_assistant_message_content(
+                        signature, demo, missing_field_message="Not supplied for this particular example. "
+                    ),
+                }
+            )
+
+        for demo in complete_demos:
+            messages.append({"role": "user", "content": self.format_user_message_content(signature, demo)})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": self.format_assistant_message_content(
+                        signature, demo, missing_field_message="Not supplied for this conversation history message. "
+                    ),
+                }
+            )
+
+        return messages
 
     def format_conversation_history(self, signature: Type[Signature], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        """Format the conversation history.
+
+        This method formats the conversation history and the current input as multiturn messages.
+
+        Args:
+            signature: The DSPy signature for which to format the conversation history.
+            inputs: The input arguments to the DSPy module.
+
+        Returns:
+            A list of multiturn messages.
+        """
         history_field_name = None
         for name, field in signature.input_fields.items():
             if field.annotation == History:
@@ -110,14 +328,40 @@ class Adapter(ABC):
         messages = []
         for message in conversation_history:
             messages.append(
-                self.format_turn(signature_without_history, message, role="user", is_conversation_history=True)
+                {
+                    "role": "user",
+                    "content": self.format_user_message_content(
+                        signature_without_history, message, include_output_requirements=False
+                    ),
+                }
             )
             messages.append(
-                self.format_turn(signature_without_history, message, role="assistant", is_conversation_history=True)
+                {
+                    "role": "assistant",
+                    "content": self.format_assistant_message_content(signature_without_history, message),
+                }
             )
 
-        inputs_copy = dict(inputs)
-        del inputs_copy[history_field_name]
+        # Remove the history field from the inputs
+        del inputs[history_field_name]
+        # Add the user message for the current input
+        messages.append(
+            {"role": "user", "content": self.format_user_message_content(signature_without_history, inputs)}
+        )
 
-        messages.append(self.format_turn(signature_without_history, inputs_copy, role="user"))
         return messages
+
+    @abstractmethod
+    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+        """Parse the LM output into a dictionary of the output fields.
+
+        This method parses the LM output into a dictionary of the output fields.
+
+        Args:
+            signature: The DSPy signature for which to parse the LM output.
+            completion: The LM output to be parsed.
+
+        Returns:
+            A dictionary of the output fields.
+        """
+        raise NotImplementedError
