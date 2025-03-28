@@ -1,6 +1,5 @@
 import threading
-
-from typing import Tuple, List, Any
+from typing import Any, List, Tuple
 
 from dspy.primitives.example import Example
 from dspy.utils.parallelizer import ParallelExecutor

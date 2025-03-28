@@ -9,6 +9,13 @@ class Prediction(Example):
         del self._input_keys
 
         self._completions = None
+        self._lm_usage = None
+
+    def get_lm_usage(self):
+        return self._lm_usage
+
+    def set_lm_usage(self, value):
+        self._lm_usage = value
 
     @classmethod
     def from_completions(cls, list_or_dict, signature=None):
@@ -29,7 +36,7 @@ class Prediction(Example):
 
     def __str__(self):
         return self.__repr__()
-    
+
     def __float__(self):
         if "score" not in self._store:
             raise ValueError("Prediction object does not have a 'score' field to convert to float.")
@@ -41,7 +48,7 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() + float(other)
         raise TypeError(f"Unsupported type for addition: {type(other)}")
-    
+
     def __radd__(self, other):
         if isinstance(other, (float, int)):
             return other + self.__float__()
@@ -55,7 +62,7 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() / float(other)
         raise TypeError(f"Unsupported type for division: {type(other)}")
-    
+
     def __rtruediv__(self, other):
         if isinstance(other, (float, int)):
             return other / self.__float__()
@@ -69,21 +76,21 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() < float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
-    
+
     def __le__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() <= other
         elif isinstance(other, Prediction):
             return self.__float__() <= float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
-    
+
     def __gt__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() > other
         elif isinstance(other, Prediction):
             return self.__float__() > float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
-    
+
     def __ge__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() >= other

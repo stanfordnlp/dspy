@@ -3,6 +3,8 @@ import threading
 from dspy.utils.dummies import DummyLM
 import logging
 from unittest.mock import patch
+import pytest
+import os
 
 
 def test_deepcopy_basic():
@@ -161,3 +163,83 @@ def test_load_with_version_mismatch(tmp_path):
         # Clean up: restore original level and remove handler
         logger.setLevel(original_level)
         logger.removeHandler(handler)
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_single_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    predict = dspy.ChainOfThought("question -> answer")
+    output = predict(question="What is the capital of France?")
+
+    lm_usage = output.get_lm_usage()
+    assert len(lm_usage) == 1
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+
+    # Test no usage being tracked when cache is enabled
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
+    for _ in range(2):
+        output = predict(question="What is the capital of France?")
+
+    assert len(output.get_lm_usage()) == 0
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_multi_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.ChainOfThought("question -> answer")
+            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+        def __call__(self, question: str) -> str:
+            answer = self.predict1(question=question)
+            score = self.predict2(question=question, answer=answer)
+            return score
+
+    program = MyProgram()
+    output = program(question="What is the capital of France?")
+
+    lm_usage = output.get_lm_usage()
+    assert len(lm_usage) == 1
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_usage_tracker_in_parallel():
+    class MyProgram(dspy.Module):
+        def __init__(self, lm):
+            self.lm = lm
+            self.predict1 = dspy.ChainOfThought("question -> answer")
+            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+        def __call__(self, question: str) -> str:
+            with dspy.settings.context(lm=self.lm):
+                answer = self.predict1(question=question)
+                score = self.predict2(question=question, answer=answer)
+                return score
+
+    dspy.settings.configure(track_usage=True)
+    program1 = MyProgram(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    program2 = MyProgram(lm=dspy.LM("openai/gpt-3.5-turbo", cache=False))
+
+    parallelizer = dspy.Parallel()
+
+    results = parallelizer(
+        [
+            (program1, {"question": "What is the meaning of life?"}),
+            (program2, {"question": "why did a chicken cross the kitchen?"}),
+        ]
+    )
+
+    assert results[0].get_lm_usage() is not None
+    assert results[1].get_lm_usage() is not None
+
+    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
+    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
