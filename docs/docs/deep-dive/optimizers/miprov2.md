@@ -31,7 +31,7 @@ from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
 gsm8k = GSM8K()
 
-trainset, devset = gsm8k.train, gms8k.dev
+trainset, devset = gsm8k.train, gsm8k.dev
 ```
 
 We'll now define a basic QA inline signature i.e. `question->answer` and pass it to `ChainOfThought` module, that applies necessary addition for CoT style prompting to the Signature.
