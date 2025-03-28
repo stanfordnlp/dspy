@@ -57,7 +57,8 @@ class LocalProvider(Provider):
         )
         port = get_free_port()
         timeout = launch_kwargs.get("timeout", 1800)
-        command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0"
+        #NOTE - Launched with grammar-backend xgrammar as it is more memory-friendly
+        command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0 --grammar-backend xgrammar"
 
         # We will manually stream & capture logs.
         process = subprocess.Popen(

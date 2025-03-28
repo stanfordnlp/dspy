@@ -73,7 +73,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
           > pip install "sglang[all]"
           > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
 
-          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Llama-3.1-8B-Instruct
+          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Llama-3.1-8B-Instruct --grammar-backend xgrammar
           ```
         
         If you don't have access from Meta to download `meta-llama/Llama-3.1-8B-Instruct`, use `Qwen/Qwen2.5-7B-Instruct` for example.
