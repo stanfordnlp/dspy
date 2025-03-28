@@ -33,7 +33,7 @@ MIN_MINIBATCH_SIZE = 50
 
 AUTO_RUN_SETTINGS = {
     "light": {"num_trials": 7, "val_size": 100},
-    "medium": {"num_trials": 25, "val_size": 300},
+    "medium": {"num_trials": 25, "val_size": 500},
     "heavy": {"num_trials": 50, "val_size": 1000},
 }
 
@@ -54,7 +54,7 @@ class MIPROv2(Teleprompter):
         teacher_settings: Dict = {},
         max_bootstrapped_demos: int = 4,
         max_labeled_demos: int = 16,
-        auto: Optional[Literal["light", "medium", "heavy"]] = None,
+        auto: Optional[Literal["light", "medium", "heavy"]] = "None",
         num_candidates: int = 10,
         num_threads: int = 6,
         max_errors: int = 10,
@@ -588,7 +588,8 @@ class MIPROv2(Teleprompter):
                 )
             
             # Log model token usage at the end of the trial 
-            log_token_usage(trial_logs, trial_num, model_dict={"prompt_model": self.prompt_model, "teacher_model": self.teacher_settings["lm"], "task_model": self.task_model})
+            teacher_model = None if "lm" not in self.teacher_settings else self.teacher_settings["lm"]
+            log_token_usage(trial_logs, trial_num, model_dict={"prompt_model": self.prompt_model, "teacher_model": teacher_model, "task_model": self.task_model})
             
             return score
 

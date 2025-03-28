@@ -19,7 +19,7 @@ class ParallelExecutor:
         disable_progress_bar=False,
         provide_traceback=False,
         compare_results=False,
-        timeout=None,  # New timeout parameter in seconds
+        timeout=30,  # New timeout parameter in seconds
     ):
         """Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1."""
         self.num_threads = num_threads
@@ -115,7 +115,7 @@ class ParallelExecutor:
             pbar.set_description(f"Processed {nresults} / {ntotal} examples")
 
         pbar.update()
-
+    
     def _execute_multi_thread(self, function, data):
         results = [None] * len(data)  # Pre-allocate results list to maintain order
         job_cancelled = "cancelled"
@@ -157,10 +157,10 @@ class ParallelExecutor:
             from dspy.dsp.utils.settings import thread_local_overrides
             parent_overrides = thread_local_overrides.overrides.copy()
 
-            futures = {}
-            for pair in enumerate(data):
-                future = executor.submit(cancellable_function, parent_overrides, pair)
-                futures[future] = pair
+            futures = {
+                executor.submit(cancellable_function, parent_overrides, pair): pair[0]
+                for pair in enumerate(data)
+            }
 
             pbar = tqdm.tqdm(
                 total=len(data),
@@ -169,17 +169,18 @@ class ParallelExecutor:
                 file=sys.stdout
             )
 
-            for future in as_completed(futures, timeout=self.timeout):  # Handle timeouts
+            for future in as_completed(futures):  # no global timeout here
+                index = futures[future]
                 try:
                     index, result = future.result(timeout=self.timeout)
                 except TimeoutError:
-                    print(f"Task at index {index} timed out.")
-                    index = futures[future][0]
                     logger.warning(f"Task at index {index} timed out.")
-                    results[index] = None  # Store None for timed-out tasks
-                    continue
+                    result = None
+                except Exception as e:
+                    logger.warning(f"Task at index {index} failed with exception: {e}")
+                    result = None
 
-                if result is job_cancelled:
+                if result == job_cancelled:
                     continue
 
                 results[index] = result
@@ -204,6 +205,96 @@ class ParallelExecutor:
             raise Exception("Execution was cancelled due to errors.")
 
         return results
+
+
+    # def _execute_multi_thread(self, function, data):
+    #     results = [None] * len(data)  # Pre-allocate results list to maintain order
+    #     job_cancelled = "cancelled"
+
+    #     @contextlib.contextmanager
+    #     def interrupt_handler_manager():
+    #         """Sets the cancel_jobs event when a SIGINT is received, only in the main thread."""
+    #         if threading.current_thread() is threading.main_thread():
+    #             default_handler = signal.getsignal(signal.SIGINT)
+
+    #             def interrupt_handler(sig, frame):
+    #                 self.cancel_jobs.set()
+    #                 logger.warning("Received SIGINT. Cancelling execution.")
+    #                 default_handler(sig, frame)
+
+    #             signal.signal(signal.SIGINT, interrupt_handler)
+    #             try:
+    #                 yield
+    #             finally:
+    #                 signal.signal(signal.SIGINT, default_handler)
+    #         else:
+    #             yield
+
+    #     def cancellable_function(parent_overrides, index_item):
+    #         index, item = index_item
+    #         if self.cancel_jobs.is_set():
+    #             return index, job_cancelled
+
+    #         from dspy.dsp.utils.settings import thread_local_overrides
+    #         original_overrides = thread_local_overrides.overrides
+    #         thread_local_overrides.overrides = parent_overrides.copy()
+
+    #         try:
+    #             return index, function(item)
+    #         finally:
+    #             thread_local_overrides.overrides = original_overrides
+
+    #     with ThreadPoolExecutor(max_workers=self.num_threads) as executor, interrupt_handler_manager():
+    #         from dspy.dsp.utils.settings import thread_local_overrides
+    #         parent_overrides = thread_local_overrides.overrides.copy()
+
+    #         futures = {}
+    #         for pair in enumerate(data):
+    #             future = executor.submit(cancellable_function, parent_overrides, pair)
+    #             futures[future] = pair
+
+    #         pbar = tqdm.tqdm(
+    #             total=len(data),
+    #             dynamic_ncols=True,
+    #             disable=self.disable_progress_bar,
+    #             file=sys.stdout
+    #         )
+
+    #         for future in as_completed(futures, timeout=self.timeout):  # Handle timeouts
+    #             try:
+    #                 index, result = future.result(timeout=self.timeout)
+    #             except TimeoutError:
+    #                 print(f"Task at index {index} timed out.")
+    #                 index = futures[future][0]
+    #                 logger.warning(f"Task at index {index} timed out.")
+    #                 results[index] = None  # Store None for timed-out tasks
+    #                 continue
+
+    #             if result is job_cancelled:
+    #                 continue
+
+    #             results[index] = result
+
+    #             if self.compare_results:
+    #                 self._update_progress(
+    #                     pbar,
+    #                     sum([r[-1] for r in results if r is not None]),
+    #                     len([r for r in results if r is not None]),
+    #                 )
+    #             else:
+    #                 self._update_progress(
+    #                     pbar,
+    #                     len([r for r in results if r is not None]),
+    #                     len(data),
+    #                 )
+
+    #         pbar.close()
+
+    #     if self.cancel_jobs.is_set():
+    #         logger.warning("Execution was cancelled due to errors.")
+    #         raise Exception("Execution was cancelled due to errors.")
+
+    #     return results
 # import sys
 # import tqdm
 # import signal

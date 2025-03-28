@@ -15,7 +15,9 @@ def prepare_models_for_resampling(program: dspy.Module, n: int):
     lm = program.get_lm() or dspy.settings.lm
     temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
     temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
+    lm_list = [lm.copy(temperature=t) for t in temps]
+    # Add history back from the original LM so that we can do token estimates correctly
+    return [lm.copy(history=lm.history) for lm in lm_list]
 
 
 def wrap_program(program: dspy.Module, metric: Callable):
