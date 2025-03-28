@@ -86,10 +86,10 @@ class ParallelExecutor:
             from dspy.dsp.utils.settings import thread_local_overrides
 
             original = thread_local_overrides.overrides
-            thread_local_overrides.overrides = copy.deepcopy(parent_overrides)
-            if "callbacks" in original:
-                # The same callbacks instances should be shared across threads
-                thread_local_overrides.overrides["callbacks"] = original.callbacks
+            thread_local_overrides.overrides = parent_overrides.copy()
+            if original.get("usage_tracker"):
+                # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
+                thread_local_overrides.overrides["usage_tracker"] = copy.deepcopy(original["usage_tracker"])
 
             try:
                 return index, function(item)
