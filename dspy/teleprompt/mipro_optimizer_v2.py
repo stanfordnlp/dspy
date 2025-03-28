@@ -493,7 +493,6 @@ class MIPROv2(Teleprompter):
             nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data
 
             trial_num = trial.number + 1
-            print(f"AT START: trial_num {trial_num} | trial.number {trial.number} | adjusted_num_trials {adjusted_num_trials}")
             if minibatch:
                 logger.info(f"== Trial {trial_num} / {adjusted_num_trials} - Minibatch ==")
             else:
@@ -569,7 +568,6 @@ class MIPROv2(Teleprompter):
             )
 
             # If minibatch, perform full evaluation at intervals (and at the very end)
-            print(f"BEFORE PERFORM FULL EVAL: trial_num {trial_num} | trial.number {trial.number} | adjusted_num_trials {adjusted_num_trials}")
             if minibatch and ((trial_num % (minibatch_full_eval_steps+1) == 0) or (trial_num == (adjusted_num_trials-1))):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
