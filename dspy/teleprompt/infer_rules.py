@@ -116,9 +116,8 @@ class InferRules(BootstrapFewShot):
             max_errors=self.max_errors,
             display_table=False,
             display_progress=True,
-            return_all_scores=True,
         )
-        score, _ = evaluate(program, metric=self.metric)
+        score = evaluate(program, metric=self.metric).score
         return score
 
 
