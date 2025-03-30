@@ -23,9 +23,9 @@ class UsageTracker:
     def _flatten_usage_entry(self, usage_entry) -> dict[str, dict[str, Any]]:
         result = dict(usage_entry)
 
-        if "completion_tokens_details" in result and result["completion_tokens_details"]:
+        if result.get("completion_tokens_details"):
             result["completion_tokens_details"] = dict(result["completion_tokens_details"])
-        if "prompt_tokens_details" in result and result["prompt_tokens_details"]:
+        if result.get("prompt_tokens_details"):
             result["prompt_tokens_details"] = dict(result["prompt_tokens_details"])
         return result
 
