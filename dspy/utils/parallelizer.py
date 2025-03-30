@@ -1,12 +1,14 @@
-import sys
-import tqdm
-import signal
-import logging
-import threading
-import traceback
 import contextlib
-from tqdm.contrib.logging import logging_redirect_tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+import copy
+import logging
+import signal
+import sys
+import threading
+import time
+import traceback
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,11 @@ class ParallelExecutor:
         compare_results=False,
         timeout=30,  # New timeout parameter in seconds
     ):
-        """Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1."""
+        """
+        Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
+        Handles also straggler timeouts.
+        """
+
         self.num_threads = num_threads
         self.disable_progress_bar = disable_progress_bar
         self.max_errors = max_errors
@@ -59,9 +65,7 @@ class ParallelExecutor:
                         f"Error processing item {item}: {e}\nStack trace:\n{traceback.format_exc()}"
                     )
                 else:
-                    logger.error(
-                        f"Error processing item {item}: {e}. Set `provide_traceback=True` to see the stack trace."
-                    )
+                    logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
                 return None
         return wrapped
 
@@ -84,22 +88,119 @@ class ParallelExecutor:
 
                 thread_local_overrides.overrides = original_overrides.copy()
 
+            # Apply parent's thread-local overrides
+            from dspy.dsp.utils.settings import thread_local_overrides
+
+            original = thread_local_overrides.overrides
+            thread_local_overrides.overrides = parent_overrides.copy()
+            if parent_overrides.get("usage_tracker"):
+                # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
+                thread_local_overrides.overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
+
+            try:
+                return index, function(item)
+            finally:
+                thread_local_overrides.overrides = original
+
+        # Handle Ctrl-C in the main thread
+        @contextlib.contextmanager
+        def interrupt_manager():
+            if threading.current_thread() is threading.main_thread():
+                orig_handler = signal.getsignal(signal.SIGINT)
+
+                def handler(sig, frame):
+                    self.cancel_jobs.set()
+                    logger.warning("SIGINT received. Cancelling.")
+                    orig_handler(sig, frame)
+
+                signal.signal(signal.SIGINT, handler)
                 try:
                     result = function(item)
                     results.append(result)
                 finally:
                     thread_local_overrides.overrides = original_overrides
 
-                if self.compare_results:
-                    self._update_progress(
-                        pbar,
-                        sum([r[-1] for r in results if r is not None]),
-                        len([r for r in data if r is not None]),
-                    )
-                else:
-                    self._update_progress(pbar, len(results), len(data))
+        executor = ThreadPoolExecutor(max_workers=self.num_threads)
+        try:
+            with interrupt_manager():
+                from dspy.dsp.utils.settings import thread_local_overrides
 
-        pbar.close()
+                parent_overrides = thread_local_overrides.overrides.copy()
+
+                futures_map = {}
+                futures_set = set()
+                submission_counter = 0
+
+                for idx, item in enumerate(data):
+                    f = executor.submit(worker, parent_overrides, submission_counter, idx, item)
+                    futures_map[f] = (submission_counter, idx, item)
+                    futures_set.add(f)
+                    submission_counter += 1
+
+                pbar = tqdm.tqdm(
+                    total=len(data),
+                    dynamic_ncols=True,
+                    disable=self.disable_progress_bar,
+                    file=sys.stdout,
+                )
+
+                def all_done():
+                    return all(r is not None for r in results)
+
+                while futures_set and not self.cancel_jobs.is_set():
+                    if all_done():
+                        break
+                    done, not_done = wait(futures_set, timeout=1, return_when=FIRST_COMPLETED)
+                    for f in done:
+                        futures_set.remove(f)
+                        try:
+                            index, outcome = f.result()
+                        except Exception:
+                            pass
+                        else:
+                            if outcome != job_cancelled and results[index] is None:
+                                results[index] = outcome
+
+                            # Update progress
+                            if self.compare_results:
+                                vals = [r[-1] for r in results if r is not None]
+                                self._update_progress(pbar, sum(vals), len(vals))
+                            else:
+                                self._update_progress(
+                                    pbar,
+                                    len([r for r in results if r is not None]),
+                                    len(data),
+                                )
+
+                    if all_done():
+                        break
+
+                    # Check stragglers if few remain
+                    if 0 < self.timeout and len(not_done) <= self.straggler_limit:
+                        now = time.time()
+                        for f in list(not_done):
+                            if f not in resubmitted:
+                                sid, idx, item = futures_map[f]
+                                with start_time_lock:
+                                    st = start_time_map.get(sid, None)
+                                if st and (now - st) >= self.timeout:
+                                    resubmitted.add(f)
+                                    nf = executor.submit(
+                                        worker,
+                                        parent_overrides,
+                                        submission_counter,
+                                        idx,
+                                        item,
+                                    )
+                                    futures_map[nf] = (submission_counter, idx, item)
+                                    futures_set.add(nf)
+                                    submission_counter += 1
+
+                pbar.close()
+
+        finally:
+            # Avoid waiting on leftover tasks that no longer matter
+            executor.shutdown(wait=False)
 
         if self.cancel_jobs.is_set():
             logger.warning("Execution was cancelled due to errors.")

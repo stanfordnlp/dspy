@@ -285,8 +285,6 @@ class SIMBA(Teleprompter):
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
-            
-            log_token_usage(trial_logs, batch_idx, {"lm": dspy.settings.lm})
 
         M = len(winning_programs) - 1
         N = self.num_candidates + 1

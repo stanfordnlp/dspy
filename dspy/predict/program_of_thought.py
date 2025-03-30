@@ -1,6 +1,7 @@
 import logging
 import re
 from typing import Union, Type
+import json
 
 import dspy
 from dspy.signatures.signature import ensure_signature, Signature
@@ -9,6 +10,7 @@ from dspy.primitives.program import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 logger = logging.getLogger(__name__)
+
 
 class ProgramOfThought(Module):
     """
@@ -39,28 +41,6 @@ class ProgramOfThought(Module):
         self.input_fields = signature.input_fields
         self.output_fields = signature.output_fields
 
-        assert len(self.output_fields) == 1, "PoT only supports one output field."
-
-        self.output_field_name = next(iter(self.output_fields))
-        inputs_ = ", ".join(
-            [f"`{field_name}`" for field_name in self.input_fields.keys()],
-        )
-        outputs_ = f"`{self.output_field_name}`"
-
-        assert len(self.output_fields) == 1, "PoT only supports one output field."
-
-        instr = []
-        instr.append(
-            f"You will be given {inputs_} and you will respond with {outputs_}.",
-        )
-        instr.append(
-            f"Generating executable Python code that programmatically computes the correct {outputs_}.",
-        )
-        instr.append(
-            f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {outputs_}.",
-        )
-        instr = "\n".join(instr)
-
         self.code_generate = dspy.ChainOfThought(
             dspy.Signature(
                 self._generate_signature("generate").fields,
@@ -79,8 +59,7 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
-        # Currently, the interpreter class checks the deno availability at execution time. 
-        # We may consider checking it at the initialization time for better instruction.
+        # It will raises exception when dspy cannot find available deno instance by now.
         self.interpreter = PythonInterpreter()
 
     def _generate_signature(self, mode):
@@ -119,25 +98,28 @@ class ProgramOfThought(Module):
                     prefix="Code Output:",
                     desc="output of previously-generated python code",
                 ),
-                self.output_field_name: self.signature.fields[self.output_field_name],
-            },
+            }
+            | self.signature.output_fields,
         }
         signature_dict.update(fields_for_mode[mode])
         return dspy.Signature(signature_dict)
 
     def _generate_instruction(self, mode):
         mode_inputs = ", ".join(
-            [
-                f"`{field_name}`"
-                for field_name in self._generate_signature(mode).input_fields
-            ],
+            [f"`{field_name}`" for field_name in self._generate_signature(mode).input_fields],
         )
-        mode_outputs = f"`{self.output_field_name}`"
+        mode_outputs = ", ".join(
+            [f"`{field_name}`" for field_name in self._generate_signature(mode).output_fields],
+        )
+        final_outputs = ", ".join(
+            [f"`{field_name}`" for field_name in self.output_fields],
+        )
         if mode == "generate":
             instr = [
                 f"You will be given {mode_inputs} and you will respond with {mode_outputs}.",
                 f"Generating executable Python code that programmatically computes the correct {mode_outputs}.",
-                f"After you're done with the computation, make sure the last line in your code evaluates to the correct value for {mode_outputs}.",
+                "After you're done with the computation and think you have the answer, make sure to provide your answer by calling the preloaded function `final_answer()`.",
+                f'You should structure your answer in a dict object, like {{"field_a": answer_a, ...}}, evaluates to the correct value mapping for {final_outputs}.',
             ]
         elif mode == "regenerate":
             instr = [
@@ -151,11 +133,8 @@ class ProgramOfThought(Module):
 
         return "\n".join(instr)
 
-
     def _parse_code(self, code_data):
-        code = (
-            code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
-        )
+        code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
         code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
         if not code_block:
@@ -168,10 +147,14 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         else:
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)", r"\1\n", code_block,
+                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
+                r"\1\n",
+                code_block,
             )
             code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$", r"\1\n\2", code_block,
+                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
+                r"\1\n\2",
+                code_block,
             )
         return code_block, None
 
@@ -181,17 +164,16 @@ class ProgramOfThought(Module):
         """
         if not code:
             return None, "Error: Empty code before execution."
-        
+
         try:
-            output = str(self.interpreter.execute(code))
+            # Since it's more complex structure now, just blindly use json to represents all.
+            output = json.dumps(self.interpreter.execute(code))
             return output, None
         except Exception as e:
             return None, str(e)
 
     def forward(self, **kwargs):
-        input_kwargs = {
-            field_name: kwargs[field_name] for field_name in self.input_fields
-        }
+        input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
         code_data = self.code_generate(**input_kwargs)
         output = None
         code, error = self._parse_code(code_data)

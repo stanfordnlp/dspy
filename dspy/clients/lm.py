@@ -18,6 +18,7 @@ import dspy
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -108,19 +109,23 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            return completion(
+            results = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )
         else:
             completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
-            return completion(
+            results = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
+
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)
@@ -259,6 +264,12 @@ def request_cache(maxsize: Optional[int] = None):
                 # If the cache key cannot be computed (e.g. because it contains a value that cannot
                 # be converted to JSON), bypass the cache and call the target function directly
                 return func(request, *args, **kwargs)
+            cache_hit = key in func_cached.cache
+            output = func_cached(key, request, *args, **kwargs)
+            if cache_hit and hasattr(output, "usage"):
+                # Clear the usage data when cache is hit, because no LM call is made
+                output.usage = {}
+
             return func_cached(key, request, *args, **kwargs)
 
         return wrapper

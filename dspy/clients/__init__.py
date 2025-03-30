@@ -13,6 +13,14 @@ logger = logging.getLogger(__name__)
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
+
+def _litellm_track_cache_hit_callback(kwargs, completion_response, start_time, end_time):
+    # Access the cache_hit information
+    completion_response.cache_hit = kwargs.get("cache_hit", False)
+
+
+litellm.success_callback = [_litellm_track_cache_hit_callback]
+
 try:
     # TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
     # the LM cache from the embeddings cache. Then we can lower the default 30GB limit.

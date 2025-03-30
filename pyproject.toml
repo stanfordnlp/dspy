@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.14"
+version="2.6.16"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -45,7 +45,8 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.0.0",
     "rich>=13.7.1",
-    "numpy==2.0.2"
+    "numpy>=1.26.0,<2.2; python_version == '3.9'",
+    "numpy>=1.26.0; python_version >= '3.10'",
 ]
 
 [tool.setuptools.packages.find]
@@ -122,7 +123,10 @@ asyncer = "0.0.8"
 cachetools = "^5.5.0"
 cloudpickle = "^3.0.0"
 rich = "^13.7.1"
-numpy = "==2.0.2"
+numpy = [
+    { version = ">=1.26.0,<2.2", markers = "python_version == '3.9'" },
+    { version = ">=1.26.0", markers = "python_version >= '3.10'" }
+]
 
 # Optional dependencies (now declared inline)
 anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
