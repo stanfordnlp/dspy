@@ -121,5 +121,12 @@ DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.ht
 
 ```python
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("dspy").setLevel(logging.DEBUG)
+```
+
+Alternatively, if you want to reduce the amount of logs, set the logging level to WARNING or ERROR.
+
+```python
+import logging
+logging.getLogger("dspy").setLevel(logging.WARNING)
 ```

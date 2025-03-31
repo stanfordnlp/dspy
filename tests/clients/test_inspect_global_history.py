@@ -1,4 +1,5 @@
 import pytest
+import logging
 from dspy.utils.dummies import DummyLM
 from dspy.clients.base_lm import GLOBAL_HISTORY
 import dspy
@@ -41,7 +42,7 @@ def test_inspect_history_with_n(capsys):
     
     dspy.inspect_history(n=2)
     # Test getting last 2 entries
-    out, err = capsys.readouterr()
+    out = capsys.readouterr().err
     assert not "First" in out
     assert "Second" in out
     assert "Third" in out
