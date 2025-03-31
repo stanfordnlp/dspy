@@ -1,9 +1,12 @@
 import datetime
 import uuid
+import logging
 from abc import ABC
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
+
+logger = logging.getLogger(__name__)
 
 GLOBAL_HISTORY = []
 
@@ -140,18 +143,18 @@ def _inspect_history(history, n: int = 1):
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
 
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
+        logger.debug("\n\n\n")
+        logger.debug("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
 
         for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
+            logger.debug(_red(f"{msg['role'].capitalize()} message:"))
             if isinstance(msg["content"], str):
-                print(msg["content"].strip())
+                logger.debug(msg["content"].strip())
             else:
                 if isinstance(msg["content"], list):
                     for c in msg["content"]:
                         if c["type"] == "text":
-                            print(c["text"].strip())
+                            logger.debug(c["text"].strip())
                         elif c["type"] == "image_url":
                             image_str = ""
                             if "base64" in c["image_url"].get("url", ""):
@@ -159,17 +162,17 @@ def _inspect_history(history, n: int = 1):
                                 image_str = f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>"
                             else:
                                 image_str = f"<image_url: {c['image_url']['url']}>"
-                            print(_blue(image_str.strip()))
-            print("\n")
+                            logger.debug(_blue(image_str.strip()))
+            logger.debug("\n")
 
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
+        logger.debug(_red("Response:"))
+        logger.debug(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs)-1} other completions)"
-            print(_red(choices_text, end=""))
+            logger.debug(_red(choices_text, end=""))
 
-    print("\n\n\n")
+    logger.debug("\n\n\n")
 
 
 def inspect_history(n: int = 1):
