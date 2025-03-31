@@ -320,9 +320,7 @@ class COPRO(Teleprompter):
                     )(attempted_instructions=attempts)
 
                 if self.prompt_model:
-                    logger.debug(
-                        f"(self.prompt_model.inspect_history(n=1)) {self.prompt_model.inspect_history(n=1)}"
-                    )
+                    self.prompt_model.inspect_history(n=1)
                 # Get candidates for each predictor
                 new_candidates[id(p_base)] = instr.completions
                 all_candidates[id(p_base)].proposed_instruction.extend(instr.completions.proposed_instruction)
@@ -331,7 +329,7 @@ class COPRO(Teleprompter):
                 )
 
             if self.prompt_model:
-                logger.debug(f"{self.prompt_model.inspect_history(n=1)}")
+                self.prompt_model.inspect_history(n=1)
             latest_candidates = new_candidates
 
         candidates = []
