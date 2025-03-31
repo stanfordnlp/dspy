@@ -1,8 +1,10 @@
 from unittest import mock
 
+import time
 import litellm
 import pydantic
 import pytest
+from openai import RateLimitError
 
 import dspy
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
@@ -250,3 +252,22 @@ def test_dump_state():
         "launch_kwargs": { "temperature": 1 },
         "train_kwargs": { "temperature": 5 },
     }
+
+
+def test_exponential_backoff_retry():
+    time_counter = []
+    def mock_create(*args, **kwargs):
+        time_counter.append(time.time())
+        # These fields are called during the error handling
+        mock_response = mock.Mock()
+        mock_response.headers = {}
+        mock_response.status_code = 429
+        raise RateLimitError(response=mock_response, message="message", body="error")
+    lm = dspy.LM(model='openai/gpt-3.5-turbo', max_tokens=250, num_retries=3)
+    with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
+        with pytest.raises(RateLimitError):
+            lm("question")
+    
+    # The first retry happens immediately regardless of the configuration
+    for i in range(1, len(time_counter)-1):
+        assert time_counter[i+1] - time_counter[i] >= 2**(i-1)
