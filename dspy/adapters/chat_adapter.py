@@ -1,12 +1,18 @@
 import re
+import textwrap
 from typing import Any, Dict, NamedTuple, Optional, Type
 
 from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
-from dspy.adapters.json_adapter import JSONAdapter
-from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, translate_field_type
+from dspy.adapters.utils import (
+    format_field_value,
+    get_annotation_name,
+    get_field_description_string,
+    parse_value,
+    translate_field_type,
+)
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
@@ -34,11 +40,19 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            if isinstance(e, ContextWindowExceededError):
+            # fallback to JSONAdapter
+            from dspy.adapters.json_adapter import JSONAdapter
+
+            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
                 # On context window exceeded error, we don't want to retry with a different adapter.
                 raise e
-            # fallback to JSONAdapter
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+
+    def format_field_description(self, signature: Type[Signature]) -> str:
+        return (
+            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
+            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
+        )
 
     def format_field_structure(self, signature: Type[Signature]) -> str:
         """
@@ -88,6 +102,45 @@ class ChatAdapter(Adapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
         parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
+
+    def format_task_description(self, signature: Type[Signature]) -> str:
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
+
+    def format_user_message_content(
+        self,
+        signature: Type[Signature],
+        inputs: dict[str, Any],
+        prefix: str = "",
+        suffix: str = "",
+    ) -> str:
+        """Format the user message content.
+
+        This method formats the user message content, which can be used in formatting few-shot examples, conversation
+        history, and the current input.
+
+        Args:
+            signature: The DSPy signature for which to format the user message content.
+            inputs: The input arguments to the DSPy module.
+            prefix: A prefix to the user message content.
+            suffix: A suffix to the user message content.
+
+        Returns:
+            A string that contains the user message content.
+        """
+        messages = [prefix]
+        for k, v in signature.input_fields.items():
+            value = inputs[k]
+            formatted_field_value = format_field_value(field_info=v, value=value)
+            messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+
+        output_requirements = self.user_message_output_requirements(signature)
+        if output_requirements is not None:
+            messages.append(output_requirements)
+
+        messages.append(suffix)
+        return "\n\n".join(messages).strip()
 
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:
         """

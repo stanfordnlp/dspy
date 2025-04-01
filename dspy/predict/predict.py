@@ -2,15 +2,15 @@ import random
 
 from pydantic import BaseModel
 
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
+from dspy.dsp.utils import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
-from dspy.dsp.utils import settings
-from dspy.adapters.chat_adapter import ChatAdapter
 
 
 class Predict(Module, Parameter):

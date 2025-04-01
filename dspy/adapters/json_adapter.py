@@ -1,7 +1,7 @@
 import json
 import logging
 from copy import deepcopy
-from typing import Any, Dict, NamedTuple, Type
+from typing import Any, Dict, Type
 
 import json_repair
 import litellm
@@ -9,7 +9,7 @@ import pydantic
 from pydantic import create_model
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.base import Adapter
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -23,12 +23,7 @@ from dspy.signatures.signature import Signature, SignatureMeta
 logger = logging.getLogger(__name__)
 
 
-class FieldInfoWithName(NamedTuple):
-    name: str
-    info: FieldInfo
-
-
-class JSONAdapter(Adapter):
+class JSONAdapter(ChatAdapter):
     def __call__(
         self,
         lm: LM,
