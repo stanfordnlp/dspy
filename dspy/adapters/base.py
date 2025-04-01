@@ -320,8 +320,6 @@ class Adapter:
 
         # Remove the history field from the inputs
         del inputs[history_field_name]
-        # Add the user message for the current input
-        messages.append({"role": "user", "content": self.format_user_message_content(signature, inputs)})
 
         return messages
 
