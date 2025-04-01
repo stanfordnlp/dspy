@@ -116,7 +116,7 @@ If you're dealing with "context too long" errors in DSPy, you're likely using DS
 
 A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`).
 
-## Set Vorbose
+## Set Verbose Level
 DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.html) to print logs. If you want to debug your DSPy code, set the logging level to DEBUG with the example code below.
 
 ```python
