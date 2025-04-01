@@ -292,6 +292,7 @@ class Adapter:
 
         Args:
             signature: The DSPy signature for which to format the conversation history.
+            history_field_name: The name of the history field in the signature.
             inputs: The input arguments to the DSPy module.
 
         Returns:

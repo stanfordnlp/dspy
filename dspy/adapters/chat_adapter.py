@@ -44,7 +44,8 @@ class ChatAdapter(Adapter):
             from dspy.adapters.json_adapter import JSONAdapter
 
             if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error, we don't want to retry with a different adapter.
+                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
+                # adapter.
                 raise e
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -57,35 +58,8 @@ class ChatAdapter(Adapter):
     def format_field_structure(self, signature: Type[Signature]) -> str:
         """
         `ChatAdapter` requires input and output fields to be in their own sections, with section header using markers
-        `[[ ## field_name ## ]]`.
-
-        For example:
-        ```
-        import dspy
-
-        class MySignature(dspy.Signature):
-            text: str = dspy.InputField(description="The text to analyze")
-            context: str = dspy.InputField(description="The context of the text")
-            sentiment: int = dspy.OutputField(description="The sentiment of the text")
-
-        print(dspy.ChatAdapter().format_field_structure(MySignature))
-        ```
-
-        The above code will output:
-        ```
-        All interactions will be structured in the following way, with the appropriate values filled in.
-
-        [[ ## text ## ]]
-        {text}
-
-        [[ ## context ## ]]
-        {context}
-
-        [[ ## sentiment ## ]]
-        {sentiment}        # note: the value you produce must be a single int value
-
-        [[ ## completed ## ]]
-        ```
+        `[[ ## field_name ## ]]`. An arbitrary field `completed` ([[ ## completed ## ]]) is added to the end of the
+        output fields section to indicate the end of the output fields.
         """
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
@@ -115,20 +89,6 @@ class ChatAdapter(Adapter):
         prefix: str = "",
         suffix: str = "",
     ) -> str:
-        """Format the user message content.
-
-        This method formats the user message content, which can be used in formatting few-shot examples, conversation
-        history, and the current input.
-
-        Args:
-            signature: The DSPy signature for which to format the user message content.
-            inputs: The input arguments to the DSPy module.
-            prefix: A prefix to the user message content.
-            suffix: A suffix to the user message content.
-
-        Returns:
-            A string that contains the user message content.
-        """
         messages = [prefix]
         for k, v in signature.input_fields.items():
             value = inputs[k]
@@ -143,55 +103,21 @@ class ChatAdapter(Adapter):
         return "\n\n".join(messages).strip()
 
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:
-        """
-        In `ChatAdapter`, this output requirement is a simplified version of the `format_field_structure`. See below
-        for an example.
+        """Returns a simplified format reminder for the language model.
 
-        ```
-        import dspy
+        In chat-based interactions, language models may lose track of the required output format
+        as the conversation context grows longer. This method generates a concise reminder of
+        the expected output structure that can be included in user messages.
 
-        class MySignature(dspy.Signature):
-            text: str = dspy.InputField(description="The text to analyze")
-            context: str = dspy.InputField(description="The context of the text")
-            sentiment: int = dspy.OutputField(description="The sentiment of the text")
+        Args:
+            signature (Type[Signature]): The DSPy signature defining the expected input/output fields.
 
-        print(dspy.ChatAdapter().user_message_output_requirements(MySignature))
-        ```
+        Returns:
+            str: A simplified description of the required output format.
 
-        The above code will output:
-        ```
-        Respond with the corresponding output fields, starting with the field `[[ ## sentiment ## ]]` (must be
-        formatted as a valid Python int), and then ending with the marker for `[[ ## completed ## ]]`.
-        ```
-
-        The above message is part of the user message, see below for the full user message:
-
-        ```
-        import dspy
-
-        class MySignature(dspy.Signature):
-            text: str = dspy.InputField(description="The text to analyze")
-            context: str = dspy.InputField(description="The context of the text")
-            sentiment: int = dspy.OutputField(description="The sentiment of the text")
-
-        print(
-            dspy.ChatAdapter().format_user_message_content(
-                MySignature, {"text": "Hello, world!", "context": "This is a test."}
-            )
-        )
-        ```
-
-        The above code will output:
-        ```
-        [[ ## text ## ]]
-        Hello, world!
-
-        [[ ## context ## ]]
-        This is a test.
-
-        Respond with the corresponding output fields, starting with the field `[[ ## sentiment ## ]]` (must be
-        formatted as a valid Python int), and then ending with the marker for `[[ ## completed ## ]]`.
-        ```
+        Note:
+            This is a more lightweight version of `format_field_structure` specifically designed
+            for inline reminders within chat messages.
         """
 
         def type_info(v):
@@ -206,7 +132,10 @@ class ChatAdapter(Adapter):
         return message
 
     def format_assistant_message_content(
-        self, signature: Type[Signature], outputs: dict[str, Any], missing_field_message=None
+        self,
+        signature: Type[Signature],
+        outputs: dict[str, Any],
+        missing_field_message=None,
     ) -> str:
         return self.format_field_with_value(
             {
@@ -254,6 +183,7 @@ class ChatAdapter(Adapter):
         Args:
             fields_with_values: A dictionary mapping information about a field to its corresponding
                 value.
+
         Returns:
             The joined formatted values of the fields, represented as a string
         """
