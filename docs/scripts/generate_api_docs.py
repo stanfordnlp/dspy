@@ -138,14 +138,13 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
     handler: python
     options:{members_config}
         show_source: true
-        show_undocumented_members: true
         show_root_heading: true
-        show_inherited_members: true
         heading_level: 2
         docstring_style: google
         show_root_full_path: true
         show_object_full_path: false
         separate_signature: false
+        inherited_members: true
 """
 
 
