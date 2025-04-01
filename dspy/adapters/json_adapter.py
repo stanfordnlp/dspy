@@ -50,6 +50,14 @@ class JSONAdapter(Adapter):
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
+                    values = self.parse_outputs(signature, outputs)
+                    if values:
+                        for object in values:
+                            for key,value in object.items():
+                                if not(value): #check for empty dict/string
+                                    # we'll try the json_object response format
+                                    raise Exception("JSON schema provided incomplete response")
+                        return values    
                 except Exception as e:
                     logger.debug(
                         f"Failed to obtain response using signature-based structured outputs"
@@ -62,7 +70,10 @@ class JSONAdapter(Adapter):
 
         except litellm.UnsupportedParamsError:
             outputs = lm(**inputs, **lm_kwargs)
-
+        
+        return self.parse_outputs(signature, outputs)
+    
+    def parse_outputs(self, signature: Type[Signature], outputs:list[dict[str, Any]] | list[Any]):
         values = []
 
         for output in outputs:
