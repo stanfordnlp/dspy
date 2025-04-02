@@ -48,7 +48,7 @@ dspy.configure(lm=lm)
           > pip install "sglang[all]"
           > pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ 
 
-          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Meta-Llama-3-8B-Instruct
+          > CUDA_VISIBLE_DEVICES=0 python -m sglang.launch_server --port 7501 --model-path meta-llama/Meta-Llama-3-8B-Instruct --grammar-backend xgrammar
           ```
 
           Then, connect to it from your DSPy code as an OpenAI-compatible endpoint.
