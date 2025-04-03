@@ -1,10 +1,12 @@
 import inspect
+import inspect
 import logging
 import math
 import os
 import random
 import shutil
 import sys
+from typing import Tuple
 import numpy as np
 
 try:
@@ -133,6 +135,60 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     # If no valid program is found, we return the last valid one that we found
     return program, mean, key, params
 
+def get_token_usage(model) -> Tuple[int, int]:
+    """
+    Extract total input tokens and output tokens from a model's interaction history.
+    Returns (total_input_tokens, total_output_tokens).
+    """
+    if not hasattr(model, "history"):
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+
+    total_input_tokens = np.sum(input_tokens)
+    total_output_tokens = np.sum(output_tokens)
+
+    return total_input_tokens, total_output_tokens
+
+def extract_token_usage(model):
+    """Return (total_input_tokens, total_output_tokens) by summing usage in model.history."""
+    if not model or not hasattr(model, "history"):
+        # If model is None or doesn't have a .history, return 0 usage.
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+    return int(np.sum(input_tokens)), int(np.sum(output_tokens))
+    
+def log_token_usage(trial_logs, trial_num, model_dict):
+    """
+    Extract total input and output tokens used by each model and log to trial_logs[trial_num]["token_usage"].
+    """
+
+    token_usage_dict = {}
+
+    for model_name, model in model_dict.items():
+        in_tokens, out_tokens = extract_token_usage(model)
+        token_usage_dict[model_name] = {
+            "total_input_tokens": in_tokens,
+            "total_output_tokens": out_tokens
+        }
+
+    # Store token usage info in trial logs
+    trial_logs[trial_num]["token_usage"] = token_usage_dict
 
 def calculate_last_n_proposed_quality(
     base_program, trial_logs, evaluate, trainset, devset, n,
