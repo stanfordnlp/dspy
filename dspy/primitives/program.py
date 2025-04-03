@@ -1,8 +1,10 @@
 import magicattr
 
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
+from dspy.utils.usage_tracker import track_usage
 
 
 class ProgramMeta(type):
@@ -19,6 +21,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
+        if settings.track_usage and settings.usage_tracker is None:
+            with track_usage() as usage_tracker:
+                output = self.forward(*args, **kwargs)
+                output.set_lm_usage(usage_tracker.get_total_tokens())
+                return output
+
         return self.forward(*args, **kwargs)
 
     def named_predictors(self):
@@ -94,7 +102,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 
         :param examples: List of dspy.Example instances to process.
-        :param batch_size: Number of threads to use for parallel processing.
+        :param num_threads: Number of threads to use for parallel processing.
         :param max_errors: Maximum number of errors allowed before stopping execution.
         :param return_failed_examples: Whether to return failed examples and exceptions.
         :param provide_traceback: Whether to include traceback information in error logs.

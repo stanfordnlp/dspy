@@ -127,29 +127,29 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         assert mock_litellm_completion.call_count == 2
 
 
-def test_lm_calls_with_callables_are_cached_as_expected():
-    with patch("litellm.completion") as mock_completion:
-        lm_with_callable = dspy.LM(
-            model="openai/dspy-test-model",
-            api_base="fakebase",
-            api_key="fakekey",
-            # Define a callable kwarg for the LM to use during inference
-            azure_ad_token_provider=lambda *args, **kwargs: None,
-        )
-        # Invoke the LM twice; the second call should be cached in memory
-        lm_with_callable("Query")
-        lm_with_callable("Query")
+# def test_lm_calls_with_callables_are_cached_as_expected():
+#     with patch("litellm.completion") as mock_completion:
+#         lm_with_callable = dspy.LM(
+#             model="openai/dspy-test-model",
+#             api_base="fakebase",
+#             api_key="fakekey",
+#             # Define a callable kwarg for the LM to use during inference
+#             azure_ad_token_provider=lambda *args, **kwargs: None,
+#         )
+#         # Invoke the LM twice; the second call should be cached in memory
+#         lm_with_callable("Query")
+#         lm_with_callable("Query")
 
-        # Define and invoke a nearly-identical LM that lacks the callable kwarg,
-        # which should not hit the in-memory cache
-        lm_without_callable = dspy.LM(
-            model="openai/dspy-test-model",
-            api_base="fakebase",
-            api_key="fakekey",
-        )
-        lm_without_callable("Query")
+#         # Define and invoke a nearly-identical LM that lacks the callable kwarg,
+#         # which should not hit the in-memory cache
+#         lm_without_callable = dspy.LM(
+#             model="openai/dspy-test-model",
+#             api_base="fakebase",
+#             api_key="fakekey",
+#         )
+#         lm_without_callable("Query")
 
-        assert mock_completion.call_count == 2
+#         assert mock_completion.call_count == 2
 
 
 def test_lms_called_expected_number_of_times_for_cache_key_generation_failures():

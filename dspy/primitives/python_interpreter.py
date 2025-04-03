@@ -1,10 +1,13 @@
 import json
 import subprocess
+from types import TracebackType
 from typing import Any, Dict, List, Optional
 import os
 
-class InterpreterError(ValueError):
+
+class InterpreterError(RuntimeError):
     pass
+
 
 class PythonInterpreter:
     r"""
@@ -16,22 +19,15 @@ class PythonInterpreter:
     Example Usage:
     ```python
     code_string = "print('Hello'); 1 + 2"
-    interp = PythonInterpreter()
-    output = interp(code_string)
-    print(output)  # If final statement is non-None, prints the numeric result, else prints captured output
-    interp.shutdown()
+    with PythonInterpreter() as interp:
+        output = interp(code_string) # If final statement is non-None, prints the numeric result, else prints captured output
     ```
     """
 
-    def __init__(
-        self,
-        deno_command: Optional[List[str]] = None
-    ) -> None:
+    def __init__(self, deno_command: Optional[List[str]] = None) -> None:
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
-        self.deno_command = deno_command or [
-            "deno", "run", "--allow-read", self._get_runner_path()
-        ]
+        self.deno_command = deno_command or ["deno", "run", "--allow-read", self._get_runner_path()]
         self.deno_process = None
 
     def _get_runner_path(self) -> str:
@@ -46,7 +42,7 @@ class PythonInterpreter:
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
                 )
             except FileNotFoundError as e:
                 install_instructions = (
@@ -77,7 +73,7 @@ class PythonInterpreter:
         elif isinstance(value, (int, float, bool)):
             return str(value)
         elif value is None:
-            return 'None'
+            return "None"
         elif isinstance(value, list) or isinstance(value, dict):
             return json.dumps(value)
         else:
@@ -121,13 +117,29 @@ class PythonInterpreter:
         if "error" in result:
             error_msg = result["error"]
             error_type = result.get("errorType", "Sandbox Error")
-            if error_type == "SyntaxError":
+            if error_type == "FinalAnswer":
+                # The `FinalAnswer` trick to receive output from the sandbox interpreter,
+                # just simply replace the output with the arguments.
+                result["output"] = result.get("errorArgs", None)
+            elif error_type == "SyntaxError":
                 raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
             else:
-                raise InterpreterError(f"{error_type}: {error_msg}")
+                raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
 
-        # If there's no error, return the "output" field
+        # If there's no error or got `FinalAnswer`, return the "output" field
         return result.get("output", None)
+
+    def __enter__(self):
+        return self
+
+    # All exception fields are ignored and the runtime will automatically re-raise the exception
+    def __exit__(
+        self,
+        _exc_type: Optional[type[BaseException]],
+        _exc_val: Optional[BaseException],
+        _exc_tb: Optional[TracebackType],
+    ):
+        self.shutdown()
 
     def __call__(
         self,

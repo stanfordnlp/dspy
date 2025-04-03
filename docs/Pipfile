@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+dspy = {git = "https://github.com/stanfordnlp/dspy.git"}
+mkdocs-material = "*"
+mkdocs-jupyter = "*"
+"mkdocs-material[imaging]" = "*"
+mkdocs-redirects = "*"
+mkdocstrings = "*"
+mkdocstrings-python = "*"
+urllib3 = "==1.26.6"
+mistune = "==3.0.2"
+
+[requires]
+python_version = "3.12"

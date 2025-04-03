@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,20 +64,20 @@ jobs:
       - name: Install Poetry
         run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: |
+          poetry install --no-interaction
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
       - name: Run tests with pytest
         run: poetry run pytest tests/
-
   build_poetry:
     name: Build Poetry
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - name: Load cached Poetry installation

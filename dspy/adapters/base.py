@@ -71,7 +71,10 @@ class Adapter(ABC):
 
     @abstractmethod
     def format(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+        self,
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -83,7 +86,11 @@ class Adapter(ABC):
         raise NotImplementedError
 
     def format_finetune_data(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+        self,
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+        outputs: dict[str, Any],
     ) -> dict[str, list[Any]]:
         raise NotImplementedError
 

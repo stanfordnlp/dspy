@@ -244,3 +244,93 @@ class Hop(dspy.Module):
         
         return dspy.Prediction(notes=notes, titles=list(set(titles)))
 ```
+
+## How do I track LM usage?
+
+!!! note "Version Requirement"
+    LM usage tracking is available in DSPy version 2.6.16 and later.
+
+DSPy provides built-in tracking of language model usage across all module calls. To enable tracking:
+
+```python
+dspy.settings.configure(track_usage=True)
+```
+
+Once enabled, you can access usage statistics from any `dspy.Prediction` object:
+
+```python
+usage = prediction_instance.get_lm_usage()
+```
+
+The usage data is returned as a dictionary that maps each language model name to its usage statistics. Here's a complete example:
+
+```python
+import dspy
+
+# Configure DSPy with tracking enabled
+dspy.settings.configure(
+    lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+    track_usage=True
+)
+
+# Define a simple program that makes multiple LM calls
+class MyProgram(dspy.Module):
+    def __init__(self):
+        self.predict1 = dspy.ChainOfThought("question -> answer")
+        self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+    def __call__(self, question: str) -> str:
+        answer = self.predict1(question=question)
+        score = self.predict2(question=question, answer=answer)
+        return score
+
+# Run the program and check usage
+program = MyProgram()
+output = program(question="What is the capital of France?")
+print(output.get_lm_usage())
+```
+
+This will output usage statistics like:
+
+```python
+{
+    'openai/gpt-4o-mini': {
+        'completion_tokens': 61,
+        'prompt_tokens': 260,
+        'total_tokens': 321,
+        'completion_tokens_details': {
+            'accepted_prediction_tokens': 0,
+            'audio_tokens': 0,
+            'reasoning_tokens': 0,
+            'rejected_prediction_tokens': 0,
+            'text_tokens': None
+        },
+        'prompt_tokens_details': {
+            'audio_tokens': 0,
+            'cached_tokens': 0,
+            'text_tokens': None,
+            'image_tokens': None
+        }
+    }
+}
+```
+
+When using DSPy's caching features (either in-memory or on-disk via litellm), cached responses won't count toward usage statistics. For example:
+
+```python
+# Enable caching
+dspy.settings.configure(
+    lm=dspy.LM("openai/gpt-4o-mini", cache=True),
+    track_usage=True
+)
+
+program = MyProgram()
+
+# First call - will show usage statistics
+output = program(question="What is the capital of Zambia?")
+print(output.get_lm_usage())  # Shows token usage
+
+# Second call - same question, will use cache
+output = program(question="What is the capital of Zambia?")
+print(output.get_lm_usage())  # Shows empty dict: {}
+```

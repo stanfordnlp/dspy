@@ -2,7 +2,7 @@
 #replace_package_name_marker
 name="dspy-ai"  
 #replace_package_version_marker
-version="2.6.10"  
+version="2.6.16"  
 description = "DSPy"  
 readme = "README.md"  
 authors = [  

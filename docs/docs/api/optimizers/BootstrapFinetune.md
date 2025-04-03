@@ -7,6 +7,7 @@
             - compile
             - convert_to_lm_dict
             - finetune_lms
+            - get_params
         show_source: true
         show_undocumented_members: true
         show_root_heading: true

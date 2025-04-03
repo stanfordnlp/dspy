@@ -1,12 +1,14 @@
 import re
 from collections import defaultdict
 from queue import Queue
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
 
 from litellm import ModelResponseStream
 
-from dspy.primitives.program import Module
 from dspy.streaming.messages import StreamResponse
+
+if TYPE_CHECKING:
+    from dspy.primitives.program import Module
 
 
 class StreamListener:

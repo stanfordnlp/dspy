@@ -8,7 +8,6 @@
             - batch
             - deepcopy
             - dump_state
-            - execute_code
             - forward
             - get_lm
             - load
@@ -18,7 +17,6 @@
             - named_predictors
             - named_sub_modules
             - parameters
-            - parse_code
             - predictors
             - reset_copy
             - save

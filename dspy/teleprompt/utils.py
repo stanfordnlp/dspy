@@ -5,7 +5,6 @@ import os
 import random
 import shutil
 import sys
-
 import numpy as np
 
 try:
@@ -23,6 +22,7 @@ This file consists of helper functions for our variety of optimizers.
 
 ### OPTIMIZER TRAINING UTILS ###
 
+logger = logging.getLogger(__name__)
 
 def create_minibatch(trainset, batch_size=50, rng=None):
     """Create a minibatch from the trainset."""
@@ -48,16 +48,19 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores)
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
         # Or evaluate on a minibatch
         else:
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                return_all_scores=return_all_scores
+                return_all_scores=return_all_scores,
+                callback_metadata={"metric_key": "eval_minibatch"}
             )
-    except Exception as e:
-        print(f"Exception occurred: {e}")
+    except Exception:
+        logger.error("An exception occurred during evaluation", exc_info=True)
+        if return_all_scores:
+            return 0.0, [0.0] * len(trainset)
         return 0.0  # TODO: Handle this better, as -ve scores are possible
 
 def eval_candidate_program_with_pruning(
@@ -202,9 +205,9 @@ def save_candidate_program(program, log_dir, trial_num, note=None):
 
     # Define the save path for the program
     if note:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}.json")
     else:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}.json")
 
     # Save the program
     program.save(save_path)
@@ -245,6 +248,46 @@ def setup_logging(log_dir):
     console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
+
+def get_token_usage(model) -> tuple[int, int]:
+    """
+    Extract total input tokens and output tokens from a model's interaction history.
+    Returns (total_input_tokens, total_output_tokens).
+    """
+    if not hasattr(model, "history"):
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+
+    total_input_tokens = int(np.sum(input_tokens))
+    total_output_tokens = int(np.sum(output_tokens))
+
+    return total_input_tokens, total_output_tokens
+
+
+def log_token_usage(trial_logs, trial_num, model_dict):
+    """
+    Extract total input and output tokens used by each model and log to trial_logs[trial_num]["token_usage"].
+    """
+
+    token_usage_dict = {}
+
+    for model_name, model in model_dict.items():
+        in_tokens, out_tokens = get_token_usage(model)
+        token_usage_dict[model_name] = {
+            "total_input_tokens": in_tokens,
+            "total_output_tokens": out_tokens
+        }
+
+    # Store token usage info in trial logs
+    trial_logs[trial_num]["token_usage"] = token_usage_dict
 
 
 ### OTHER UTILS ###

@@ -7,6 +7,7 @@
             - compile
             - evaluate_program
             - format_examples
+            - get_params
             - get_predictor_demos
             - induce_natural_language_rules
             - update_program_instructions

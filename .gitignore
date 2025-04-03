@@ -63,3 +63,5 @@ docs/docs/**/*.json*
 *.index
 *.pkl
 *.tar.gz
+
+test_before_pypi/

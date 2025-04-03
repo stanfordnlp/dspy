@@ -19,45 +19,43 @@ class History(pydantic.BaseModel):
     Then the history should be a list of dictionaries with keys "question" and "answer".
 
     Example:
+        ```
+        import dspy
 
-    ```
-    import dspy
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
 
-    class MySignature(dspy.Signature):
-        question: str = dspy.InputField()
-        history: dspy.History = dspy.InputField()
-        answer: str = dspy.OutputField()
+        history = dspy.History(
+            messages=[
+                {"question": "What is the capital of France?", "answer": "Paris"},
+                {"question": "What is the capital of Germany?", "answer": "Berlin"},
+            ]
+        )
 
-    history = dspy.History(
-        messages=[
-            {"question": "What is the capital of France?", "answer": "Paris"},
-            {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
-    )
-
-    predict = dspy.Predict(MySignature)
-    outputs = predict(question="What is the capital of France?", history=history)
-    ```
+        predict = dspy.Predict(MySignature)
+        outputs = predict(question="What is the capital of France?", history=history)
+        ```
 
     Example of capturing the conversation history:
+        ```
+        import dspy
 
-    ```
-    import dspy
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
 
-    class MySignature(dspy.Signature):
-        question: str = dspy.InputField()
-        history: dspy.History = dspy.InputField()
-        answer: str = dspy.OutputField()
-
-    predict = dspy.Predict(MySignature)
-    outputs = predict(question="What is the capital of France?")
-    history = dspy.History(messages=[{"question": "What is the capital of France?", **outputs}])
-    outputs_with_history = predict(question="Are you sure?", history=history)
-    ```
+        predict = dspy.Predict(MySignature)
+        outputs = predict(question="What is the capital of France?")
+        history = dspy.History(messages=[{"question": "What is the capital of France?", **outputs}])
+        outputs_with_history = predict(question="Are you sure?", history=history)
+        ```
     """
 
     messages: list[dict[str, Any]]

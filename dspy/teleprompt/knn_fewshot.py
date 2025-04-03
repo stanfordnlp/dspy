@@ -22,14 +22,32 @@ class KNNFewShot(Teleprompter):
             **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
 
         Example:
-            >>> import dspy
-            >>> from sentence_transformers import SentenceTransformer
-            >>>
-            >>> qa = dspy.ChainOfThought("question -> answer")
-            >>> trainset = [dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"), ...]
-            >>> knn_few_shot = KNNFewShot(k=3, trainset=trainset, vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
-            >>> compiled_qa = knn_few_shot.compile(qa)
-            >>> compiled_qa("What is the capital of Belgium?")
+            ```python
+            import dspy
+            from sentence_transformers import SentenceTransformer
+
+            # Define a QA module with chain of thought
+            qa = dspy.ChainOfThought("question -> answer")
+
+            # Create a training dataset with examples
+            trainset = [
+                dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"),
+                # ... more examples ...
+            ]
+
+            # Initialize KNNFewShot with a sentence transformer model
+            knn_few_shot = KNNFewShot(
+                k=3,
+                trainset=trainset,
+                vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode)
+            )
+
+            # Compile the QA module with few-shot learning
+            compiled_qa = knn_few_shot.compile(qa)
+
+            # Use the compiled module
+            result = compiled_qa("What is the capital of Belgium?")
+            ```
         """
         self.KNN = KNN(k, trainset, vectorizer=vectorizer)
         self.few_shot_bootstrap_args = few_shot_bootstrap_args

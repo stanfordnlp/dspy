@@ -15,12 +15,26 @@ class KNN:
             vectorizer: The `Embedder` to use for vectorization
 
         Example:
-            >>> import dspy
-            >>> from sentence_transformers import SentenceTransformer
-            >>>
-            >>> trainset = [dspy.Example(input="hello", output="world"), ...]
-            >>> knn = KNN(k=3, trainset=trainset, vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
-            >>> similar_examples = knn(input="hello")
+            ```python
+            import dspy
+            from sentence_transformers import SentenceTransformer
+
+            # Create a training dataset with examples
+            trainset = [
+                dspy.Example(input="hello", output="world"),
+                # ... more examples ...
+            ]
+
+            # Initialize KNN with a sentence transformer model
+            knn = KNN(
+                k=3,
+                trainset=trainset,
+                vectorizer=dspy.Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode)
+            )
+
+            # Find similar examples
+            similar_examples = knn(input="hello")
+            ```
         """
         self.k = k
         self.trainset = trainset
