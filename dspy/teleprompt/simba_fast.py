@@ -63,7 +63,9 @@ class SIMBAFast(Teleprompter):
 
         programs = []
         program_scores = {}
+        program_batch_idx = {}
         next_program_idx = 0
+        batch_idx_to_baseline_scores = {}
 
         # Helper functions
         def calc_average_score(prog_idx: int) -> float:
@@ -71,6 +73,22 @@ class SIMBAFast(Teleprompter):
             if not scores:
                 return 0.0
             return sum(scores) / len(scores)
+        
+        def calc_average_adjusted_score(prog_idx: int) -> float:
+            adjusted_score = program_scores.get(prog_idx, []) - batch_idx_to_baseline_scores.get(program_batch_idx[prog_idx], [])
+            breakpoint()
+            if not adjusted_score:
+                return 0.0
+            return sum(adjusted_score) / len(adjusted_score)
+
+        def adjusted_top_k_plus_baseline(k: int) -> list[int]:
+            # Sort all programs by descending average score
+            scored_programs = sorted(programs, key=lambda p: calc_average_adjusted_score(p.simba_idx), reverse=True)
+            top_k = [p.simba_idx for p in scored_programs[:k]]
+            # Ensure baseline=0 is in there:
+            if 0 not in top_k and len(top_k) > 0:
+                top_k[-1] = 0
+            return list(dict.fromkeys(top_k))
 
         def top_k_plus_baseline(k: int) -> list[int]:
             # Sort all programs by descending average score
@@ -97,13 +115,14 @@ class SIMBAFast(Teleprompter):
             probs = [val / sum_exps for val in exps]
             return rng_obj.choices(program_idxs, weights=probs, k=1)[0]
 
-        def register_new_program(prog: dspy.Module, score_list: list[float]):
+        def register_new_program(prog: dspy.Module, score_list: list[float], batch_idx: int):
             nonlocal next_program_idx
             next_program_idx += 1
             new_idx = next_program_idx
             prog.simba_idx = new_idx
             programs.append(prog)
             program_scores[new_idx] = score_list
+            program_batch_idx[new_idx] = batch_idx
 
         # Initialize the baseline program: index=0
         student = student.deepcopy()
@@ -137,6 +156,12 @@ class SIMBAFast(Teleprompter):
         final_candidate_scores = []
         validated_program_outputs = {}  # {prog_idx: {example_idx: output_dict}}
 
+        # Compute baseline student score on the full trainset
+        logger.info(f"Evaluating student program on full trainset.")
+        exec_pairs = [(wrap_program(student, self.metric), ex) for ex in trainset]
+        full_outputs = run_parallel(exec_pairs)
+        baseline_scores = [o["score"] for o in full_outputs]
+
         for batch_idx in range(self.max_steps):
             trial_logs[batch_idx+1] = {}
 
@@ -151,9 +176,12 @@ class SIMBAFast(Teleprompter):
             batch = [trainset[i] for i in batch_indices]
             instance_idx += self.bsize
 
+            # Compute student baseline on batch
+            batch_idx_to_baseline_scores[batch_idx] = baseline_scores[batch_indices]
+
             # STEP 2 (or hybrid): Collect execution results for bucket building
             models = prepare_models_for_resampling(programs[0], self.num_candidates)
-            top_programs = top_k_plus_baseline(self.num_candidates)
+            top_programs = adjusted_top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []
 
@@ -225,7 +253,7 @@ class SIMBAFast(Teleprompter):
 
                 # pick source program
                 src_prog_idx = softmax_sample(
-                    rng, top_k_plus_baseline(self.num_candidates), self.temperature_for_candidates
+                    rng, adjusted_top_k_plus_baseline(self.num_candidates), self.temperature_for_candidates
                 )
                 system_candidate = programs[src_prog_idx].deepcopy()
 
@@ -325,11 +353,10 @@ class SIMBAFast(Teleprompter):
                 start = idx_cand * self.bsize
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
-                register_new_program(cand_sys, sys_scores)
+                register_new_program(cand_sys, sys_scores, batch_idx)
             
             # Save for hybrid bucket building next round
             last_batch_outputs = outputs.copy()
-            last_batch = batch.copy()
 
             log_token_usage(trial_logs, batch_idx+1, {"lm": dspy.settings.lm})
 
