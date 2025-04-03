@@ -157,11 +157,16 @@ class SIMBA(Teleprompter):
                     # Use the special wrap that includes the 'example' in the output
                     wrapped_candidate_system = wrap_program(candidate_system, self.metric)
                     exec_pairs.append((wrapped_candidate_system, example))
+            
+            # TODO: check to see if token count from all these models is accounted for in lm.history
+            # Could add their history to main dspy.settings.lm.history
 
             # STEP 2: Execute
             logger.info(f"Sampling program trajectories on {self.bsize} examples x {self.num_candidates} samples.")
             outputs = run_parallel(exec_pairs)
             assert len(outputs) == len(exec_pairs) == self.bsize * self.num_candidates
+
+            dspy.settings.lm.history.extend([entry for model in models for entry in model.history])
 
             # STEP 3: Sort the training buckets by (max-to-min gap, max score, and max-to-avg gap).
             buckets = []
@@ -285,6 +290,8 @@ class SIMBA(Teleprompter):
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
+            
+            log_token_usage(trial_logs, batch_idx, {"lm": dspy.settings.lm})
 
         M = len(winning_programs) - 1
         N = self.num_candidates + 1

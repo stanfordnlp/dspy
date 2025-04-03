@@ -34,7 +34,7 @@ MIN_MINIBATCH_SIZE = 50
 AUTO_RUN_SETTINGS = {
     "light": {"num_trials": 7, "val_size": 100},
     "medium": {"num_trials": 25, "val_size": 500},
-    "heavy": {"num_trials": 50, "val_size": 1000},
+    "heavy": {"num_trials": 40, "val_size": 1000},
 }
 
 # ANSI escape codes for colors
@@ -221,7 +221,8 @@ class MIPROv2(Teleprompter):
         num_trials = auto_settings["num_trials"]
         valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
-        self.num_candidates = int(np.round(np.min([num_trials * num_vars, (1.5 * num_trials) / num_vars])))
+        # self.num_candidates = int(np.round(np.min([num_trials * num_vars, (1 * num_trials) / num_vars])))
+        self.num_candidates = int(np.round(np.min([num_trials * num_vars, (num_trials) / num_vars])))
 
         return num_trials, valset, minibatch
 
