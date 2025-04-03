@@ -153,9 +153,7 @@ class LocalProvider(Provider):
             raise ValueError("Only chat models are supported for local finetuning.")
 
         data_path = save_data(train_data)
-        logger.info(
-            f"Train data saved to {data_path}"
-        )
+        logger.info(f"Train data saved to {data_path}")
         output_dir = create_output_dir(model, data_path)
 
         default_train_kwargs = {
