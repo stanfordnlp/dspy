@@ -193,18 +193,26 @@ class ChatAdapter(Adapter):
 
         return "\n\n".join(output).strip()
 
-    # TODO(PR): Looks ok?
     def format_finetune_data(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+        self,
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+        outputs: dict[str, Any],
     ) -> dict[str, list[Any]]:
-        # Get system + user messages
-        messages = self.format(signature, demos, inputs)
+        """
+        Format the call data into finetuning data according to the OpenAI API specifications.
 
-        # Add the assistant message
-        role = "assistant"
-        incomplete = False
-        assistant_message = self.format_turn(signature, outputs, role, incomplete)
-        messages.append(assistant_message)
-
-        # Wrap the messages in a dictionary with a "messages" key
+        For the chat adapter, this means formatting the data as a list of messages, where each message is a dictionary
+        with a "role" and "content" key. The role can be "system", "user", or "assistant". Then, the messages are
+        wrapped in a dictionary with a "messages" key.
+        """
+        system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
+            signature=signature, demos=demos, inputs=inputs
+        )
+        assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
+            signature=signature, outputs=outputs
+        )
+        assistant_message = dict(role="assistant", content=assistant_message_content)
+        messages = system_user_messages + [assistant_message]
         return dict(messages=messages)

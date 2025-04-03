@@ -31,8 +31,8 @@ class LocalProvider(Provider):
             import sglang  # noqa: F401
         except ImportError:
             raise ImportError(
-                "For local model launching, please install sglang by running "
-                '`pip install "sglang[all]"; pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/`'
+                "For local model launching, please install sglang."
+                "Navigate to https://docs.sglang.ai/start/install.html for the latest installation instructions!"
             )
 
         if hasattr(lm, "process"):
@@ -153,6 +153,7 @@ class LocalProvider(Provider):
             raise ValueError("Only chat models are supported for local finetuning.")
 
         data_path = save_data(train_data)
+        logger.info(f"Train data saved to {data_path}")
         output_dir = create_output_dir(model, data_path)
 
         default_train_kwargs = {
