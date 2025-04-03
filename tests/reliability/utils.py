@@ -148,7 +148,5 @@ def get_adapter(reliability_conf: ReliabilityTestConf) -> dspy.Adapter:
         return dspy.ChatAdapter()
     elif reliability_conf.adapter.lower() == "json":
         return dspy.JSONAdapter()
-    elif reliability_conf.adapter.lower() == "xml":
-        return dspy.XMLAdapter()
     else:
         raise ValueError(f"Unknown adapter specification '{reliability_conf.adapter}' in reliability_conf.yaml")
