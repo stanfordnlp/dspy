@@ -4,12 +4,11 @@ import inspect
 import logging
 import textwrap
 
-from dspy.adapters.chat_adapter import enumerate_fields
+# from dspy.adapters.chat_adapter import enumerate_fields
 from dspy.signatures import InputField, OutputField
 from typing import Callable
 
 logger = logging.getLogger(__name__)
-
 
 def prepare_models_for_resampling(program: dspy.Module, n: int):
     lm = program.get_lm() or dspy.settings.lm
@@ -239,6 +238,20 @@ class OfferFeedback(dspy.Signature):
         "like the successful trajectory rather than the lower-scoring trajectory."
     )
 
+def enumerate_field_names(fields):
+    """
+    Enumerates the names of the fields with their prefix and description.
+
+    Args:
+        fields (dict): A dictionary of fields, where keys are field names and values are field objects.
+
+    Returns:
+        str: A formatted string listing each field's prefix and description.
+    """
+    return "\n".join(
+        f"{field.json_schema_extra.get('prefix', '')} {field.json_schema_extra.get('desc', '')}"
+        for field in fields.values()
+    )
 
 def inspect_modules(program):
     separator = "-" * 80
@@ -251,9 +264,9 @@ def inspect_modules(program):
 
         output.append(f"Module {name}")
         output.append("\n\tInput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.input_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + enumerate_field_names(signature.input_fields).splitlines()))
         output.append("\tOutput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.output_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + enumerate_field_names(signature.output_fields).splitlines()))
         output.append(f"\tOriginal Instructions: {instructions}")
         output.append(separator)
 

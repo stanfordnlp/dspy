@@ -75,11 +75,19 @@ class SIMBAFast(Teleprompter):
             return sum(scores) / len(scores)
         
         def calc_average_adjusted_score(prog_idx: int) -> float:
-            adjusted_score = program_scores.get(prog_idx, []) - batch_idx_to_baseline_scores.get(program_batch_idx[prog_idx], [])
-            breakpoint()
-            if not adjusted_score:
+            prog_scores = program_scores.get(prog_idx, [])
+            baseline_scores = batch_idx_to_baseline_scores.get(program_batch_idx[prog_idx], [])
+
+            # If either list is empty or not the same length, return 0 or handle how you prefer
+            if not prog_scores or not baseline_scores:
                 return 0.0
-            return sum(adjusted_score) / len(adjusted_score)
+            if len(prog_scores) != len(baseline_scores):
+                # You can decide how you want to handle mismatch
+                return 0.0
+
+            # Elementwise subtraction
+            adjusted_scores = [p - b for p, b in zip(prog_scores, baseline_scores)]
+            return sum(adjusted_scores) / len(adjusted_scores)
 
         def adjusted_top_k_plus_baseline(k: int) -> list[int]:
             # Sort all programs by descending average score
@@ -129,6 +137,7 @@ class SIMBAFast(Teleprompter):
         student.simba_idx = 0
         programs.append(student)
         program_scores[0] = []
+        program_batch_idx[0] = 0
 
         winning_programs = [(0,student)]
 
@@ -177,7 +186,7 @@ class SIMBAFast(Teleprompter):
             instance_idx += self.bsize
 
             # Compute student baseline on batch
-            batch_idx_to_baseline_scores[batch_idx] = baseline_scores[batch_indices]
+            batch_idx_to_baseline_scores[batch_idx] = [score for i, score in enumerate(baseline_scores) if i in batch_indices]
 
             # STEP 2 (or hybrid): Collect execution results for bucket building
             models = prepare_models_for_resampling(programs[0], self.num_candidates)
