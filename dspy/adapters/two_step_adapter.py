@@ -80,11 +80,10 @@ class TwoStepAdapter(Adapter):
             A dictionary containing the extracted structured data.
         """
         # The signature is supposed to be "text -> {original output fields}"
-        # Json is implicit with structured outputs and jsonadapter
         extractor_signature = self._create_signature_with_text_input_and_outputs(signature)
         
         try:
-            # Call the smaller LM to extract structured data from the raw completion text
+            # Call the smaller LM to extract structured data from the raw completion text with JSONAdapter
             parsed_result = JSONAdapter()(lm=self.extraction_model, lm_kwargs={}, signature=extractor_signature, demos=[], inputs={ "text": completion })
             return parsed_result[0]
 
@@ -144,17 +143,15 @@ class TwoStepAdapter(Adapter):
         self,
         original_signature: Type[Signature],        
     ) -> Type[Signature]:
-        """Create a new signature containing a new 'text' input field plus all output fields.
+        """Create a new signature containing a new 'text' input field and all output fields.
         
         Args:
             original_signature: The original signature to extract output fields from
-            instructions: Optional custom instructions for the new signature. If None, 
-                        will generate default instructions.
         
         Returns:
             A new Signature type with a text input field and all output fields
         """
-        # Create new fields dict starting with our new text input
+        # Create new fields dict with 'text' input field and all output fields
         new_fields = {
             'text': (str, InputField()),
             **{
