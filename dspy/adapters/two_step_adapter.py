@@ -2,7 +2,7 @@ from typing import Any, Type
 
 from dspy.signatures.signature import Signature
 from dspy.adapters.base import Adapter
-from dspy.adapters.json_adapter import JSONAdapter
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.utils import enumerate_fields
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import make_signature
@@ -12,7 +12,7 @@ class TwoStepAdapter(Adapter):
     """
     A two-stage adapter that:
         1. Uses a simpler, more natural prompt for the main LM
-        2. Uses a smaller LM with JSON adapter to extract structured data from the response of main LM
+        2. Uses a smaller LM with chat adapter to extract structured data from the response of main LM
     This adapter uses a commong __call__ logic defined in base Adapter class.
     This class is particularly useful when interacting with reasoning models as the main LM since reasoning models
     are known to struggle with structured outputs.
@@ -69,7 +69,7 @@ class TwoStepAdapter(Adapter):
 
     def parse(self, signature: Signature, completion: str) -> dict[str, Any]:
         """
-        Use a smaller LM (extraction_model) with JSON adapter to extract structured data 
+        Use a smaller LM (extraction_model) with chat adapter to extract structured data 
         from the raw completion text of the main LM.
 
         Args:
@@ -83,8 +83,8 @@ class TwoStepAdapter(Adapter):
         extractor_signature = self._create_signature_with_text_input_and_outputs(signature)
         
         try:
-            # Call the smaller LM to extract structured data from the raw completion text with JSONAdapter
-            parsed_result = JSONAdapter()(lm=self.extraction_model, lm_kwargs={}, signature=extractor_signature, demos=[], inputs={ "text": completion })
+            # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
+            parsed_result = ChatAdapter()(lm=self.extraction_model, lm_kwargs={}, signature=extractor_signature, demos=[], inputs={ "text": completion })
             return parsed_result[0]
 
         except Exception as e:

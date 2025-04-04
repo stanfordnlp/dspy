@@ -17,7 +17,13 @@ def test_two_step_adapter_call():
     mock_main_lm.kwargs = {"temperature": 1.0}
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = ["{\"solution\":\"solution\",\"answer\":\"12\"}"]
+    mock_extraction_lm.return_value = [
+        """
+[[ ## solution ## ]] result
+[[ ## answer ## ]] 12
+[[ ## completed ## ]]
+"""
+    ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
 
@@ -103,7 +109,7 @@ def test_two_step_adapter_parse_errors():
     first_response = "main LM response"
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = ["{invalid json}"]
+    mock_extraction_lm.return_value = ["invalid response"]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
 
