@@ -38,12 +38,12 @@ class Adapter:
             stream = any(stream_listener.predict == caller_predict for stream_listener in stream_listeners)
 
         if stream:
-            outputs = lm(**inputs, **lm_kwargs)
+            outputs = lm(messages=inputs, **lm_kwargs)
         else:
             # Explicilty disable streaming if streaming is not enabled globally or the caller predict shouldn't be
             # streamed.
             with settings.context(send_stream=None):
-                outputs = lm(**inputs, **lm_kwargs)
+                outputs = lm(messages=inputs, **lm_kwargs)
 
         values = []
 
