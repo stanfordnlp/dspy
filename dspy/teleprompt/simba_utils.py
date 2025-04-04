@@ -4,7 +4,7 @@ import inspect
 import logging
 import textwrap
 
-from dspy.adapters.chat_adapter import enumerate_fields
+from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
 from typing import Callable
 
@@ -181,9 +181,9 @@ def inspect_modules(program):
 
         output.append(f"Module {name}")
         output.append("\n\tInput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.input_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.input_fields).splitlines()))
         output.append("\tOutput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.output_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.output_fields).splitlines()))
         output.append(f"\tOriginal Instructions: {instructions}")
         output.append(separator)
 
