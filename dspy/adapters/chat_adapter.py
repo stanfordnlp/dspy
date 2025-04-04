@@ -13,8 +13,6 @@ from dspy.adapters.utils import (
     parse_value,
     translate_field_type,
 )
-from dspy.adapters.types.image import try_expand_image_tags
-from dspy.adapters.utils import format_field_value, get_annotation_name, parse_value, enumerate_fields
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback

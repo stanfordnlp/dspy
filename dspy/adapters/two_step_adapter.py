@@ -1,4 +1,4 @@
-from typing import Any, Type, Optional
+from typing import Any, Type
 
 from dspy.signatures.signature import Signature
 from dspy.adapters.base import Adapter
@@ -14,7 +14,8 @@ class TwoStepAdapter(Adapter):
         1. Uses a simpler, more natural prompt for the main LM
         2. Uses a smaller LM with JSON adapter to extract structured data from the response of main LM
     This adapter uses a commong __call__ logic defined in base Adapter class.
-    This class is particularly useful when interacting with reasoning models as the main LM.
+    This class is particularly useful when interacting with reasoning models as the main LM since reasoning models
+    are known to struggle with structured outputs.
 
     Example:
     ```
@@ -80,18 +81,12 @@ class TwoStepAdapter(Adapter):
         """
         # The signature is supposed to be "text -> {original output fields}"
         # Json is implicit with structured outputs and jsonadapter
-        import dspy
-        
         extractor_signature = self._create_signature_with_text_input_and_outputs(signature)
-
-        extractor = dspy.Predict(extractor_signature)
         
         try:
             # Call the smaller LM to extract structured data from the raw completion text
-            with dspy.settings.context(adapter=JSONAdapter(), lm=self.extraction_model):
-                extracted_data = extractor(text=completion)
-                
-            return extracted_data
+            parsed_result = JSONAdapter()(lm=self.extraction_model, lm_kwargs={}, signature=extractor_signature, demos=[], inputs={ "text": completion })
+            return parsed_result[0]
 
         except Exception as e:
             raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
@@ -147,8 +142,7 @@ class TwoStepAdapter(Adapter):
 
     def _create_signature_with_text_input_and_outputs(
         self,
-        original_signature: Type[Signature], 
-        instructions: Optional[str] = None
+        original_signature: Type[Signature],        
     ) -> Type[Signature]:
         """Create a new signature containing a new 'text' input field plus all output fields.
         
@@ -162,18 +156,15 @@ class TwoStepAdapter(Adapter):
         """
         # Create new fields dict starting with our new text input
         new_fields = {
-            'text': (str, InputField())
+            'text': (str, InputField()),
+            **{
+                name: (field.annotation, field)
+                for name, field in original_signature.output_fields.items()
+            }
         }
         
-        # Add all output fields
-        new_fields.update({
-            name: (field.annotation, field)
-            for name, field in original_signature.output_fields.items()
-        })
-        
-        if instructions is None:
-            outputs_str = ", ".join([f"`{field}`" for field in original_signature.output_fields])
-            instructions = f"The input is a text that should contain all the necessary information to produce the fields {outputs_str}. \
-                Your job is to extract the fields from the text verbatim. Do not repeat the name of the field in your response."
+        outputs_str = ", ".join([f"`{field}`" for field in original_signature.output_fields])
+        instructions = f"The input is a text that should contain all the necessary information to produce the fields {outputs_str}. \
+            Your job is to extract the fields from the text verbatim. Do not repeat the name of the field in your response."
             
         return make_signature(new_fields, instructions)
