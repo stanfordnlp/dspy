@@ -20,29 +20,25 @@ class TwoStepAdapter(Adapter):
     Example:
     ```
     import dspy
-    class CoT(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.prog = dspy.ChainOfThought("question -> answer")
-
-        def forward(self, question):
-            return self.prog(question=question)
     lm = dspy.LM(model='openai/o3-mini', max_tokens=10000, temperature = 1.0)
     adapter = dspy.TwoStepAdapter(dspy.LM('openai/gpt-4o-mini'))
     dspy.configure(lm=lm, adapter=adapter)
-    program = CoT()
+    program = dspy.ChainOfThought("question->answer")
     result = program("What is the capital of France?")
     print(result)
     ```
     """
     
     def __init__(self, extraction_model: LM):
-        assert isinstance(extraction_model, LM), "extraction_model must be an instance of LM"
+        if not isinstance(extraction_model, LM):
+            raise ValueError("extraction_model must be an instance of LM")
         self.extraction_model = extraction_model
 
     def format(self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> list[dict[str, Any]]:
         """
-        Format a natural prompt for the first stage with the main LM.
+        Format a prompt for the first stage with the main LM.
+        This no specific structure is required for the main LM, we customize the format method
+        instead of format_field_description or format_field_structure.
 
         Args:
             signature: The signature of the original task
@@ -55,15 +51,13 @@ class TwoStepAdapter(Adapter):
         messages = []
 
         # Create a task description for the main LM
-        task_description = self._create_task_description(signature)
+        task_description = self.format_task_description(signature)
         messages.append({"role": "system", "content": task_description})
 
-        # Format demos in a natural way
-        for demo in demos:
-            messages.extend(self._format_demo(signature, demo))
+        messages.extend(self.format_demos(signature, demos))
 
         # Format the current input
-        messages.append({"role": "user", "content": self._format_input(signature, inputs)})
+        messages.append({"role": "user", "content": self.format_user_message_content(signature, inputs)})
 
         return messages
 
@@ -80,7 +74,7 @@ class TwoStepAdapter(Adapter):
             A dictionary containing the extracted structured data.
         """
         # The signature is supposed to be "text -> {original output fields}"
-        extractor_signature = self._create_signature_with_text_input_and_outputs(signature)
+        extractor_signature = self._create_extractor_signature(signature)
         
         try:
             # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
@@ -90,8 +84,8 @@ class TwoStepAdapter(Adapter):
         except Exception as e:
             raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
     
-    def _create_task_description(self, signature: Signature) -> str:
-        """Create a natural description of the task based on the signature"""
+    def format_task_description(self, signature: Signature) -> str:
+        """Create a description of the task based on the signature"""
         parts = []
         
         parts.append("You are a helpful assistant that can solve tasks based on user input.")
@@ -104,42 +98,37 @@ class TwoStepAdapter(Adapter):
             
         return "\n".join(parts)
     
-    def _format_input(self, signature: Signature, values: dict[str, Any]) -> str:
-        parts = []
+    def format_user_message_content(
+        self,
+        signature: Type[Signature],
+        inputs: dict[str, Any],
+        prefix: str = "",
+        suffix: str = "",
+    ) -> str:
+        parts = [prefix]
         
         for name in signature.input_fields.keys():
-            if name in values:
-                parts.append(f"{name}: {values[name]}")
-                
-        return "\n".join(parts)
+            if name in inputs:
+                parts.append(f"{name}: {inputs.get(name, '')}")
+        
+        parts.append(suffix)
+        return "\n\n".join(parts).strip()
     
-    def _format_demo(self, signature: Signature, values: dict[str, Any]) -> list[dict[str, str]]:
-        messages = []
+    def format_assistant_message_content(
+        self,
+        signature: Type[Signature],
+        outputs: dict[str, Any],
+        missing_field_message: str = None,
+    ) -> str:
+        parts = []
         
-        # Format input
-        if any(k in values for k in signature.input_fields):
-            messages.append({
-                "role": "user",
-                "content": self._format_input(signature, values)
-            })
-        
-        # Format output if present
-        if any(k in values for k in signature.output_fields):
-            output_parts = []
-            for name, field in signature.output_fields.items():
-                if name in values:
-                    desc = field.json_schema_extra.get('desc', name)
-                    output_parts.append(f"{desc}: {values[name]}")
-            
-            if output_parts:
-                messages.append({
-                    "role": "assistant",
-                    "content": "\n".join(output_parts)
-                })
+        for name in signature.output_fields.keys():
+            if name in outputs:
+                parts.append(f"{name}: {outputs.get(name, missing_field_message)}")
                 
-        return messages
+        return "\n\n".join(parts).strip()
 
-    def _create_signature_with_text_input_and_outputs(
+    def _create_extractor_signature(
         self,
         original_signature: Type[Signature],        
     ) -> Type[Signature]:
