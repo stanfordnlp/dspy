@@ -212,7 +212,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> str:
+    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 
         This method formats the few-shot examples as multiturn messages.
