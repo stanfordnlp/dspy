@@ -141,22 +141,24 @@ class JSONAdapter(ChatAdapter):
 
 def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[pydantic.BaseModel]:
     """
-    Builds a Pydantic model from a DSPy signature's output_fields.
+    Builds a Pydantic model from a DSPy signature's output_fields,
+    ensuring that internal DSPy metadata is not leaked in the model's schema.
     """
-    fields = {}
-    for name, field in signature.output_fields.items():
-        annotation = field.annotation
-        default = field.default if hasattr(field, "default") else ...
-        fields[name] = (annotation, default)
-    
-    # Build the model with extra fields forbidden.
+    fields = {
+        name: (field.annotation, field.default if hasattr(field, "default") else ...)
+        for name, field in signature.output_fields.items()
+    }
     Model = pydantic.create_model(
         "DSPyProgramOutputs",
         **fields,
         __config__=type("Config", (), {"extra": "forbid"})
     )
     
-    # Let Pydantic build its schema, then force the "required" list to exactly equal the properties keys.
+    # Remove any internal DSPy metadata from each model field.
+    for field in Model.__fields__.values():
+        field.field_info.json_schema_extra = {}
+    
+    # Build the schema and ensure it doesn't include DSPy metadata.
     schema = Model.schema()
     
     # Remove DSPy-specific metadata (e.g. "json_schema_extra") from each property's schema.
@@ -168,5 +170,4 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
 
     # Override model_json_schema to return our precomputed schema (avoiding recursion).
     Model.model_json_schema = lambda *args, **kwargs: schema
-
     return Model
