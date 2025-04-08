@@ -1,13 +1,18 @@
 from typing import TYPE_CHECKING, Any, Optional, Type
-
+import json
+import logging
+from pydantic_core import ValidationError
 from dspy.adapters.types import History
 from dspy.adapters.types.image import try_expand_image_tags
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.adapters.utils import create_signature_for_retry
+from dspy.dsp.utils.settings import settings
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
+logger = logging.getLogger(__name__)
 
 class Adapter:
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
@@ -28,25 +33,37 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        retry_count = 0
+        max_retries = max(settings.adapter_retry_count, 0)
+        outputs = None
+        while (True):
+            messages = self.format(signature=signature, demos=demos, inputs=inputs)
+            outputs = lm(messages=messages, **lm_kwargs)
+            values = []
+            try:
+                for output in outputs:
+                    output_logprobs = None
 
-        outputs = lm(messages=inputs, **lm_kwargs)
-        values = []
+                    if isinstance(output, dict):
+                        output, output_logprobs = output["text"], output["logprobs"]
 
-        for output in outputs:
-            output_logprobs = None
+                    value = self.parse(signature, output)
 
-            if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
+                    if output_logprobs is not None:
+                        value["logprobs"] = output_logprobs
 
-            value = self.parse(signature, output)
+                    values.append(value)
 
-            if output_logprobs is not None:
-                value["logprobs"] = output_logprobs
-
-            values.append(value)
-
-        return values
+                return values
+            except ValidationError:
+                if retry_count >= max_retries:
+                    raise
+                
+                logger.debug("A ValidationError occurred while parsing the LM output. Retrying with a new signature.", exc_info=True)
+                if retry_count == 0:
+                    signature = create_signature_for_retry(signature)
+                inputs["previous_response"] = json.dumps(outputs)
+                retry_count += 1
 
     def format(
         self,
