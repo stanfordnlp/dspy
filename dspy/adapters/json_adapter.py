@@ -158,6 +158,11 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     
     # Let Pydantic build its schema, then force the "required" list to exactly equal the properties keys.
     schema = Model.schema()
+    
+    # Remove DSPy-specific metadata (e.g. "json_schema_extra") from each property's schema.
+    for prop in schema.get("properties", {}).values():
+        prop.pop("json_schema_extra", None)
+    
     schema["required"] = list(schema.get("properties", {}).keys())
     schema["additionalProperties"] = False
 
