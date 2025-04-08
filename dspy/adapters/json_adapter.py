@@ -1,15 +1,13 @@
 import json
 import logging
-from copy import deepcopy
-from typing import Any, Dict, Type
-
-import json_repair
 import litellm
 import pydantic
-from pydantic import create_model
+import json_repair
+
+from typing import Any, Dict, Type
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.clients.lm import LM
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -17,8 +15,8 @@ from dspy.adapters.utils import (
     serialize_for_json,
     translate_field_type,
 )
-from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +39,8 @@ class JSONAdapter(ChatAdapter):
 
         # Try structured output first, fall back to basic json if it fails
         try:
-            structured_output_format = self._get_structured_outputs_response_format(signature)
-            lm_kwargs["response_format"] = structured_output_format
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
             logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
@@ -102,7 +100,7 @@ class JSONAdapter(ChatAdapter):
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
-        # attempt to cast each value to type signature.output_fields[k].annotation
+        # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
             if k in signature.output_fields:
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
@@ -116,12 +114,12 @@ class JSONAdapter(ChatAdapter):
         """
         Formats the values of the specified fields according to the field's DSPy type (input or output),
         annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-        into a single string, which is is a multiline string if there are multiple fields.
+        into a single string, which is a multiline string if there are multiple fields.
 
         Args:
-        fields_with_values: A dictionary mapping information about a field to its corresponding value.
+            fields_with_values: A dictionary mapping information about a field to its corresponding value.
         Returns:
-            The joined formatted values of the fields, represented as a string
+            The joined formatted values of the fields, represented as a string.
         """
         if role == "user":
             output = []
@@ -140,49 +138,30 @@ class JSONAdapter(ChatAdapter):
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
 
-    def _get_structured_outputs_response_format(self, signature: SignatureMeta) -> pydantic.BaseModel:
-        """
-        Obtains the LiteLLM / OpenAI `response_format` parameter for generating structured outputs from
-        an LM request, based on the output fields of the specified DSPy signature.
 
-        Args:
-            signature: The DSPy signature for which to obtain the `response_format` request parameter.
-        Returns:
-            A Pydantic model representing the `response_format` parameter for the LM request.
-        """
+def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[pydantic.BaseModel]:
+    """
+    Builds a Pydantic model from a DSPy signature's output_fields.
+    """
+    fields = {}
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        default = field.default if hasattr(field, "default") else ...
+        fields[name] = (annotation, default)
+    
+    # Build the model with extra fields forbidden.
+    Model = pydantic.create_model(
+        "DSPyProgramOutputs",
+        **fields,
+        __config__=type("Config", (), {"extra": "forbid"})
+    )
+    
+    # Let Pydantic build its schema, then force the "required" list to exactly equal the properties keys.
+    schema = Model.schema()
+    schema["required"] = list(schema.get("properties", {}).keys())
+    schema["additionalProperties"] = False
 
-        def filter_json_schema_extra(field_name: str, field_info: FieldInfo) -> FieldInfo:
-            """
-            Recursively filter the `json_schema_extra` of a FieldInfo to exclude DSPy internal attributes
-            (e.g. `__dspy_field_type`) and remove descriptions that are placeholders for the field name.
-            """
-            field_copy = deepcopy(field_info)  # Make a copy to avoid mutating the original
+    # Override model_json_schema to return our precomputed schema (avoiding recursion).
+    Model.model_json_schema = lambda *args, **kwargs: schema
 
-            # Update `json_schema_extra` for the copied field
-            if field_copy.json_schema_extra:
-                field_copy.json_schema_extra = {
-                    key: value
-                    for key, value in field_info.json_schema_extra.items()
-                    if key not in ("desc", "__dspy_field_type")
-                }
-                field_desc = field_info.json_schema_extra.get("desc")
-                if field_desc is not None and field_desc != f"${{{field_name}}}":
-                    field_copy.json_schema_extra["desc"] = field_desc
-
-            # Handle nested fields
-            if hasattr(field_copy.annotation, "__pydantic_model__"):
-                # Recursively update fields of the nested model
-                nested_model = field_copy.annotation.__pydantic_model__
-                updated_fields = {
-                    key: filter_json_schema_extra(key, value) for key, value in nested_model.__fields__.items()
-                }
-                # Create a new model with the same name and updated fields
-                field_copy.annotation = create_model(nested_model.__name__, **updated_fields)
-
-            return field_copy
-
-        output_pydantic_fields = {
-            key: (value.annotation, filter_json_schema_extra(key, value))
-            for key, value in signature.output_fields.items()
-        }
-        return create_model("DSPyProgramOutputs", **output_pydantic_fields)
+    return Model
