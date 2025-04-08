@@ -58,7 +58,6 @@ class JSONAdapter(ChatAdapter):
         # Try structured output first, fall back to basic JSON if it fails.
         try:
             structured_output_model = _get_structured_outputs_response_format(signature)
-            print(structured_output_model.schema_json(indent=2))
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
