@@ -4,7 +4,7 @@ import litellm
 import pydantic
 import json_repair
 
-from typing import Any, Dict, Type, get_origin, get_args
+from typing import Any, Dict, Type, get_origin
 from pydantic.fields import FieldInfo
 
 from dspy.clients.lm import LM
@@ -19,6 +19,7 @@ from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 
 logger = logging.getLogger(__name__)
+
 
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
@@ -171,28 +172,26 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     for name, field in signature.output_fields.items():
         annotation = field.annotation
         if get_origin(annotation) is dict:
-            raise ValueError(f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs.")
+            raise ValueError(
+                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
+            )
 
     fields = {}
     for name, field in signature.output_fields.items():
         annotation = field.annotation
         default = field.default if hasattr(field, "default") else ...
         fields[name] = (annotation, default)
-    
+
     # Build the model with extra fields forbidden.
-    Model = pydantic.create_model(
-        "DSPyProgramOutputs",
-        **fields,
-        __config__=type("Config", (), {"extra": "forbid"})
-    )
-    
+    Model = pydantic.create_model("DSPyProgramOutputs", **fields, __config__=type("Config", (), {"extra": "forbid"}))
+
     # Generate the initial schema.
     schema = Model.schema()
-    
+
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
         prop.pop("json_schema_extra", None)
-    
+
     def enforce_required(schema_part: dict):
         """
         Recursively ensure that:
@@ -221,9 +220,9 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
             if key in schema_part:
                 for def_schema in schema_part[key].values():
                     enforce_required(def_schema)
-    
+
     enforce_required(schema)
-    
+
     # Override the model's JSON schema generation to return our precomputed schema.
     Model.model_json_schema = lambda *args, **kwargs: schema
 
