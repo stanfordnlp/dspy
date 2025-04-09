@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING, Any, Optional, Type
 import json
 import logging
-from pydantic_core import ValidationError
 from dspy.adapters.types import History
 from dspy.adapters.types.image import try_expand_image_tags
 from dspy.signatures.signature import Signature
@@ -55,11 +54,11 @@ class Adapter:
                     values.append(value)
 
                 return values
-            except ValidationError:
+            except ValueError:
                 if retry_count >= max_retries:
                     raise
                 
-                logger.debug("A ValidationError occurred while parsing the LM output. Retrying with a new signature.", exc_info=True)
+                logger.debug("A ValueError occurred while parsing the LM output. Retrying with a new signature.", exc_info=True)
                 if retry_count == 0:
                     signature = create_signature_for_retry(signature)
                 inputs["previous_response"] = json.dumps(outputs)

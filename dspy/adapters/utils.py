@@ -245,6 +245,6 @@ def create_signature_for_retry(signature: Type[Signature]):
     # Add previous_response field
     signature = signature.append("previous_response", InputField(
         prefix="Previous Response",
-        desc="Previous response with format errors",
+        desc="Previous response with format errors. You should avoid the same type of error as the previous response.",
     ))
     return signature
