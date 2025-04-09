@@ -30,4 +30,3 @@ def test_adapter_retry_logic():
     assert kwargs["inputs"]["question"] == "6 x 7"
     assert mock_parse.call_count == 2
     assert lm.call_count == 2
-    
