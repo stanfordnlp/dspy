@@ -75,6 +75,43 @@ The log reveals that the agent could not retrieve helpful information from the s
 
 ## Tracing
 
+There are a few open-source libraries that can be used to trace DSPy programs.
+
+### Arize Phoenix
+
+[Arize Phoenix](https://github.com/Arize-ai/phoenix) is an open-source observability and evaluation platform for LLM applications. It can be used to trace DSPy programs, and has an automatic instrumentor to capture these traces. Arize Phoenix can be run locally, in your notebook, or accessed via a hosted service. **Arize Phoenix does not require sign up or an API key.**
+
+To run locally on your machine:
+```bash
+pip install -U arize-phoenix
+phoenix serve
+```
+
+Next, in your notebook or script, connect to your Phoenix instance and enable DSPy tracing:
+
+```python
+from phoenix.otel import register
+from openinference.instrumentation.dspy import DSPyInstrumentor
+
+tracer_provider = register(project_name="dspy-tracing")
+DSPyInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+Now any calls to DSPy will be traced and logged to your Phoenix instance. **This includes all LLM calls, as well as any teleprompter compile calls**. This is especially useful, as it allows you to see the optimization process in more detail.
+
+Run your agent again to see the tracing in action:
+
+```python
+agent(question="Which baseball team does Shohei Ohtani play for?")
+```
+
+![DSPy Arize Phoenix Tracing](./dspy-arize-phoenix-tracing.gif)
+
+!!! info Learn more about Arize Phoenix
+
+    To learn more about Arize Phoenix, visit the [Arize Phoenix website](https://phoenix.arize.com/) or check out this [Tutorial](https://github.com/Arize-ai/phoenix/blob/main/tutorials/tracing/dspy_tracing_tutorial.ipynb).
+
+### MLFlow
 [MLflow](https://mlflow.org/docs/latest/llms/tracing/index.html) is an end-to-end machine learning platform that is integrated seamlessly with DSPy to support best practices in LLMOps. Using MLflow's automatic tracing capability with DSPy is straightforward; **No sign up for services or an API key is required**. You just need to install MLflow and call `mlflow.dspy.autolog()` in your notebook or script.
 
 ```bash
