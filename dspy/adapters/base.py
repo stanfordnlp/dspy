@@ -131,13 +131,13 @@ class Adapter:
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:
             # Conversation history and current input
+            content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
             messages.extend(conversation_history)
-            messages.append(
-                {"role": "user", "content": self.format_user_message_content(signature_without_history, inputs_copy)}
-            )
+            messages.append({"role": "user", "content": content})
         else:
             # Only current input
-            messages.append({"role": "user", "content": self.format_user_message_content(signature, inputs_copy)})
+            content = self.format_user_message_content(signature, inputs_copy, main_request=True)
+            messages.append({"role": "user", "content": content})
 
         messages = try_expand_image_tags(messages)
         return messages
@@ -188,6 +188,7 @@ class Adapter:
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
+        main_request: bool = False,
     ) -> str:
         """Format the user message content.
 
@@ -226,7 +227,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> str:
+    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 
         This method formats the few-shot examples as multiturn messages.

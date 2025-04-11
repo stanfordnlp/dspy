@@ -88,16 +88,19 @@ class ChatAdapter(Adapter):
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
+        main_request: bool = False,
     ) -> str:
         messages = [prefix]
         for k, v in signature.input_fields.items():
-            value = inputs[k]
-            formatted_field_value = format_field_value(field_info=v, value=value)
-            messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+            if k in inputs:
+                value = inputs.get(k)
+                formatted_field_value = format_field_value(field_info=v, value=value)
+                messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
 
-        output_requirements = self.user_message_output_requirements(signature)
-        if output_requirements is not None:
-            messages.append(output_requirements)
+        if main_request:
+            output_requirements = self.user_message_output_requirements(signature)
+            if output_requirements is not None:
+                messages.append(output_requirements)
 
         messages.append(suffix)
         return "\n\n".join(messages).strip()
