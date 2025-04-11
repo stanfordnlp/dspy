@@ -1,12 +1,12 @@
 import datetime
 import uuid
 from abc import ABC
-from collections import deque
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 
-GLOBAL_HISTORY = deque(maxlen=100)
+MAX_LENGTH = 100
+GLOBAL_HISTORY = []
 
 
 class BaseLM(ABC):
@@ -117,6 +117,9 @@ class BaseLM(ABC):
     def update_global_history(self, entry):
         if settings.disable_history:
             return
+
+        if len(GLOBAL_HISTORY) >= MAX_LENGTH:
+            GLOBAL_HISTORY.pop(0)
 
         GLOBAL_HISTORY.append(entry)
 
