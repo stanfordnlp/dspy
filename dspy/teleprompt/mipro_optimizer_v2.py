@@ -109,7 +109,7 @@ class MIPROv2(Teleprompter):
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool = True,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
     ) -> Any:
         # Set random seeds
         seed = seed or self.seed

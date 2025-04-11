@@ -1,5 +1,5 @@
 import threading
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Optional
 
 from dspy.primitives.example import Example
 from dspy.utils.parallelizer import ParallelExecutor
@@ -12,7 +12,7 @@ class Parallel:
         max_errors: int = 10,
         access_examples: bool = True,
         return_failed_examples: bool = False,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         disable_progress_bar: bool = False,
     ):
         super().__init__()
