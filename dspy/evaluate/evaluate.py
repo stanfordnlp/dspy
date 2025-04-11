@@ -58,7 +58,7 @@ class Evaluate:
         max_errors: int = 5,
         return_all_scores: bool = False,
         return_outputs: bool = False,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         failure_score: float = 0.0,
         **kwargs,
     ):
@@ -73,7 +73,7 @@ class Evaluate:
             max_errors (int): The maximum number of errors to allow before stopping evaluation.
             return_all_scores (bool): Whether to return scores for every data record in `devset`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
-            provide_traceback (bool): Whether to provide traceback information during evaluation.
+            provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
         """
         self.devset = devset
