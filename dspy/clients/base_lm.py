@@ -1,11 +1,12 @@
 import datetime
 import uuid
 from abc import ABC
+from collections import deque
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 
-GLOBAL_HISTORY = []
+GLOBAL_HISTORY = deque(maxlen=100)
 
 
 class BaseLM(ABC):
