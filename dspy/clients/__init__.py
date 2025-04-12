@@ -24,11 +24,11 @@ litellm.success_callback = [_litellm_track_cache_hit_callback]
 
 
 def configure_cache(
-    enable_disk_cache: Optional[bool] = None,
-    enable_in_memory_cache: Optional[bool] = None,
-    disk_cache_dir: Optional[str] = None,
-    disk_cache_limit: Optional[int] = None,
-    memory_cache_max_entries: Optional[int] = None,
+    enable_disk_cache: Optional[bool] = True,
+    enable_in_memory_cache: Optional[bool] = True,
+    disk_cache_dir: Optional[str] = DISK_CACHE_DIR,
+    disk_cache_limit: Optional[int] = DISK_CACHE_LIMIT,
+    memory_cache_max_entries: Optional[int] = 1000000,
     enable_litellm_cache: bool = False,
 ):
     if enable_disk_cache and enable_litellm_cache:
@@ -69,9 +69,8 @@ DSPY_CACHE = Cache(
     enable_disk_cache=True,
     enable_memory_cache=True,
     disk_cache_dir=DISK_CACHE_DIR,
-    disk_cache_limit=DISK_CACHE_LIMIT,
-    memory_cache_max_entries=1000000,
-    enable_litellm_cache=False,
+    disk_size_limit_bytes=DISK_CACHE_LIMIT,
+    memory_max_entries=1000000,
 )
 
 # Turn off by default to avoid LiteLLM logging during every LM call.

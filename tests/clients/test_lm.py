@@ -7,6 +7,7 @@ import pytest
 from openai import RateLimitError
 
 import dspy
+from dspy.utils.usage_tracker import track_usage
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
 
 
@@ -40,9 +41,15 @@ def test_chat_lms_can_be_queried(litellm_test_server):
         (False, False),
     ],
 )
-def test_chat_lms_cache(litellm_test_server, cache, cache_in_memory):
+def test_litellm_cache(litellm_test_server, cache, cache_in_memory):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
+
+    dspy.clients.configure_cache(
+        enable_disk_cache=False,
+        enable_in_memory_cache=cache_in_memory,
+        enable_litellm_cache=cache,
+    )
 
     openai_lm = dspy.LM(
         model="openai/dspy-test-model",
@@ -53,6 +60,40 @@ def test_chat_lms_cache(litellm_test_server, cache, cache_in_memory):
         cache_in_memory=cache_in_memory,
     )
     assert openai_lm("openai query") == expected_response
+
+
+def test_dspy_cache(litellm_test_server, tmp_path):
+    api_base, _ = litellm_test_server
+
+    original_cache = dspy.cache
+    dspy.clients.configure_cache(
+        enable_disk_cache=True,
+        enable_in_memory_cache=True,
+        enable_litellm_cache=False,
+        disk_cache_dir=tmp_path / ".disk_cache",
+    )
+    cache = dspy.cache
+
+    lm = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+        model_type="text",
+    )
+    with track_usage() as usage_tracker:
+        lm("Query")
+
+    assert len(cache.memory_cache) == 1
+    cache_key = next(iter(cache.memory_cache.keys()))
+    assert cache_key in cache.fanout_cache
+    assert len(usage_tracker.usage_data) == 1
+
+    with track_usage() as usage_tracker:
+        lm("Query")
+
+    assert len(usage_tracker.usage_data) == 0
+
+    dspy.cache = original_cache
 
 
 def test_text_lms_can_be_queried(litellm_test_server):

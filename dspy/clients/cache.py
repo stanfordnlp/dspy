@@ -3,7 +3,7 @@ import logging
 import threading
 from functools import wraps
 from hashlib import sha256
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import cloudpickle
 import pydantic
@@ -27,8 +27,8 @@ class Cache:
         enable_disk_cache: bool,
         enable_memory_cache: bool,
         disk_cache_dir: str,
-        disk_size_limit_bytes: int,
-        memory_max_entries: int,
+        disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
+        memory_max_entries: Optional[int] = 100,
     ):
         """
         Args:
@@ -58,7 +58,7 @@ class Cache:
         """Check if a key is in the cache."""
         return key in self.memory_cache or key in self.fanout_cache
 
-    def cache_key(request: Dict[str, Any]) -> str:
+    def cache_key(self, request: Dict[str, Any]) -> str:
         """
         Obtain a unique cache key for the given request dictionary by hashing its JSON
         representation. For request fields having types that are known to be JSON-incompatible,
@@ -82,19 +82,23 @@ class Cache:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return None
 
-        with self.lock:
-            if self.enable_memory_cache and key in self.memory_cache:
-                response = copy.deepcopy(self.memory_cache[key])
-                response.cache_hit = True
-                return response
+        if self.enable_memory_cache and key in self.memory_cache:
+            with self._lock:
+                response = self.memory_cache[key]
+        elif self.enable_disk_cache and key in self.fanout_cache:
+            # Found on disk but not in memory cache, add to memory cache
+            response = self.fanout_cache[key]
+            if self.enable_memory_cache:
+                with self._lock:
+                    self.memory_cache[key] = response
+        else:
+            return None
 
-            if self.enable_disk_cache and key in self.fanout_cache:
-                # Found on disk but not in memory cache, add to memory cache
-                value = copy.deepcopy(self.fanout_cache[key])
-                if self.enable_memory_cache:
-                    self.memory_cache[key] = value
-                value.cache_hit = True
-                return value
+        response = copy.deepcopy(response)
+        if hasattr(response, "usage"):
+            # Clear the usage data when cache is hit, because no LM call is made
+            response.usage = {}
+        return response
 
     def put(self, request: Dict[str, Any], value: Any) -> None:
         try:
@@ -103,7 +107,7 @@ class Cache:
             return
 
         if self.enable_memory_cache:
-            with self.lock:
+            with self._lock:
                 self.memory_cache[key] = value
 
         if self.enable_disk_cache:
@@ -113,14 +117,14 @@ class Cache:
         if not self.enable_memory_cache:
             return
 
-        with self.lock:
+        with self._lock:
             self.memory_cache.clear()
 
     def save_memory_cache(self, filepath: str) -> None:
         if not self.enable_memory_cache:
             return
 
-        with self.lock:
+        with self._lock:
             with open(filepath, "wb") as f:
                 cloudpickle.dump(self.memory_cache, f)
 
@@ -128,7 +132,7 @@ class Cache:
         if not self.enable_memory_cache:
             return
 
-        with self.lock:
+        with self._lock:
             with open(filepath, "rb") as f:
                 self.memory_cache = cloudpickle.load(f)
 
@@ -143,19 +147,20 @@ def lm_cache(fn):
         # Use fully qualified function name for uniqueness
         fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
-        # Create a modified request that includes the function identifier
-        # so that it's incorporated into the cache key.
-        modified_request = dict(kwargs)
+        # Create a modified request that includes the function identifier so that it's incorporated into the cache key.
+        # Deep copy is required because litellm sometimes modifies the kwargs in place.
+        modified_request = copy.deepcopy(kwargs)
         modified_request["_fn_identifier"] = fn_identifier
 
         # Retrieve from cache if available
         cached_result = cache.get(modified_request)
+
         if cached_result is not None:
             return cached_result
 
         # Otherwise, compute and store the result
         result = fn(**kwargs)
-        cache.set(modified_request, result)
+        cache.put(modified_request, result)
         return result
 
     return wrapper

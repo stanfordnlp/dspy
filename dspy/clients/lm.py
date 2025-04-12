@@ -15,6 +15,7 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
+from dspy.clients.cache import lm_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
@@ -277,11 +278,18 @@ def request_cache(maxsize: Optional[int] = None):
     return decorator
 
 
-@request_cache(maxsize=None)
+@lm_cache
 def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
+    import litellm
+
+    if litellm.cache:
+        litellm_cache_args = {"no-cache": False, "no-store": False}
+    else:
+        litellm_cache_args = {"no-cache": True, "no-store": True}
+
     return litellm_completion(
         request,
-        cache={"no-cache": False, "no-store": False},
+        cache=litellm_cache_args,
         num_retries=num_retries,
     )
 
@@ -331,12 +339,19 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     return stream_completion()
 
 
-@request_cache(maxsize=None)
+@lm_cache
 def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
+    import litellm
+
+    if litellm.cache:
+        litellm_cache_args = {"no-cache": False, "no-store": False}
+    else:
+        litellm_cache_args = {"no-cache": True, "no-store": True}
+
     return litellm_text_completion(
         request,
         num_retries=num_retries,
-        cache={"no-cache": False, "no-store": False},
+        cache=litellm_cache_args,
     )
 
 
