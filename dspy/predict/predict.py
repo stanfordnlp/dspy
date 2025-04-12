@@ -103,8 +103,18 @@ class Predict(Module, Parameter):
             )
 
         adapter = settings.adapter or ChatAdapter()
-        with settings.context(caller_predict=self):
-            completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+
+        stream_listeners = settings.stream_listeners or []
+        stream = settings.send_stream is not None
+        if stream and len(stream_listeners) > 0:
+            stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+
+        if stream:
+            with settings.context(caller_predict=self):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        else:
+            with settings.context(send_stream=None):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
