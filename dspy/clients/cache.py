@@ -1,8 +1,11 @@
+import copy
 import logging
 import threading
+from functools import wraps
 from hashlib import sha256
 from typing import Any, Dict
 
+import cloudpickle
 import pydantic
 import ujson
 from cachetools import LRUCache
@@ -21,15 +24,17 @@ class Cache:
 
     def __init__(
         self,
-        cache_dir: str,
         enable_disk_cache: bool,
         enable_memory_cache: bool,
+        disk_cache_dir: str,
         disk_size_limit_bytes: int,
         memory_max_entries: int,
     ):
         """
         Args:
-            cache_dir: The directory where the disk cache is stored.
+            enable_disk_cache: Whether to enable on-disk cache.
+            enable_memory_cache: Whether to enable in-memory cache.
+            disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
         """
@@ -41,7 +46,9 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.fanout_cache = FanoutCache(shards=16, timeout=2, directory=cache_dir, size_limit=disk_size_limit_bytes)
+            self.fanout_cache = FanoutCache(
+                shards=16, timeout=2, directory=disk_cache_dir, size_limit=disk_size_limit_bytes
+            )
         else:
             self.fanout_cache = {}
 
@@ -77,13 +84,16 @@ class Cache:
 
         with self.lock:
             if self.enable_memory_cache and key in self.memory_cache:
-                return self.memory_cache[key]
+                response = copy.deepcopy(self.memory_cache[key])
+                response.cache_hit = True
+                return response
 
             if self.enable_disk_cache and key in self.fanout_cache:
                 # Found on disk but not in memory cache, add to memory cache
-                value = self.fanout_cache[key]
+                value = copy.deepcopy(self.fanout_cache[key])
                 if self.enable_memory_cache:
                     self.memory_cache[key] = value
+                value.cache_hit = True
                 return value
 
     def put(self, request: Dict[str, Any], value: Any) -> None:
@@ -106,4 +116,46 @@ class Cache:
         with self.lock:
             self.memory_cache.clear()
 
+    def save_memory_cache(self, filepath: str) -> None:
+        if not self.enable_memory_cache:
+            return
 
+        with self.lock:
+            with open(filepath, "wb") as f:
+                cloudpickle.dump(self.memory_cache, f)
+
+    def load_memory_cache(self, filepath: str) -> None:
+        if not self.enable_memory_cache:
+            return
+
+        with self.lock:
+            with open(filepath, "rb") as f:
+                self.memory_cache = cloudpickle.load(f)
+
+
+def lm_cache(fn):
+    @wraps(fn)
+    def wrapper(**kwargs):
+        import dspy
+
+        cache = dspy.cache
+
+        # Use fully qualified function name for uniqueness
+        fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
+
+        # Create a modified request that includes the function identifier
+        # so that it's incorporated into the cache key.
+        modified_request = dict(kwargs)
+        modified_request["_fn_identifier"] = fn_identifier
+
+        # Retrieve from cache if available
+        cached_result = cache.get(modified_request)
+        if cached_result is not None:
+            return cached_result
+
+        # Otherwise, compute and store the result
+        result = fn(**kwargs)
+        cache.set(modified_request, result)
+        return result
+
+    return wrapper

@@ -5,8 +5,9 @@ from dspy.clients.embedding import Embedder
 import litellm
 import os
 from pathlib import Path
-from litellm.caching import Cache
+from dspy.clients.cache import Cache
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,20 +22,57 @@ def _litellm_track_cache_hit_callback(kwargs, completion_response, start_time, e
 
 litellm.success_callback = [_litellm_track_cache_hit_callback]
 
-try:
-    # TODO: There's probably value in getting litellm to support FanoutCache and to separate the limit for
-    # the LM cache from the embeddings cache. Then we can lower the default 30GB limit.
-    litellm.cache = Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 
-    if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
-        litellm.cache.cache.disk_cache.reset("size_limit", DISK_CACHE_LIMIT)
-except Exception as e:
-    # It's possible that users don't have the write permissions to the cache directory.
-    # In that case, we'll just disable the cache.
-    logger.warning("Failed to initialize LiteLLM cache: %s", e)
-    litellm.cache = None
+def configure_cache(
+    enable_disk_cache: Optional[bool] = None,
+    enable_in_memory_cache: Optional[bool] = None,
+    disk_cache_dir: Optional[str] = None,
+    disk_cache_limit: Optional[int] = None,
+    memory_cache_max_entries: Optional[int] = None,
+    enable_litellm_cache: bool = False,
+):
+    if enable_disk_cache and enable_litellm_cache:
+        raise ValueError(
+            "Cannot enable both LiteLLM and DSPy on-disk cache, please set at most one of `enable_disk_cache` or "
+            "`enable_litellm_cache` to True."
+        )
+
+    if enable_litellm_cache:
+        try:
+            litellm.cache = litellm.caching.Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+
+            if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
+                litellm.cache.cache.disk_cache.reset("size_limit", DISK_CACHE_LIMIT)
+        except Exception as e:
+            # It's possible that users don't have the write permissions to the cache directory.
+            # In that case, we'll just disable the cache.
+            logger.warning("Failed to initialize LiteLLM cache: %s", e)
+            litellm.cache = None
+    else:
+        litellm.cache = None
+
+    import dspy
+
+    dspy.cache = Cache(
+        enable_disk_cache,
+        enable_in_memory_cache,
+        disk_cache_dir,
+        disk_cache_limit,
+        memory_cache_max_entries,
+    )
+
 
 litellm.telemetry = False
+litellm.cache = None  # By default we disable litellm cache and use DSPy on-disk cache.
+
+DSPY_CACHE = Cache(
+    enable_disk_cache=True,
+    enable_memory_cache=True,
+    disk_cache_dir=DISK_CACHE_DIR,
+    disk_cache_limit=DISK_CACHE_LIMIT,
+    memory_cache_max_entries=1000000,
+    enable_litellm_cache=False,
+)
 
 # Turn off by default to avoid LiteLLM logging during every LM call.
 litellm.suppress_debug_info = True
@@ -61,4 +99,5 @@ __all__ = [
     "Embedder",
     "enable_litellm_logging",
     "disable_litellm_logging",
+    "configure_cache",
 ]
