@@ -85,7 +85,7 @@ That being said, here's the general guidance on getting started:
 
 ## How do I use an optimizer?
 
-They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](/deep-dive/optimizers/vfrs), and a full list can be found [here](/cheatsheet).
+They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](/deep-dive/optimizers/vfrs), and a full list can be found [here](https://dspy.ai/api/optimizers/BetterTogether/).
 
 Let's see this with the most common one, `BootstrapFewShotWithRandomSearch`.
 
