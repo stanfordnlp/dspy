@@ -85,7 +85,7 @@ def test_dspy_cache(litellm_test_server, tmp_path):
 
     assert len(cache.memory_cache) == 1
     cache_key = next(iter(cache.memory_cache.keys()))
-    assert cache_key in cache.fanout_cache
+    assert cache_key in cache.disk_cache
     assert len(usage_tracker.usage_data) == 1
 
     with track_usage() as usage_tracker:

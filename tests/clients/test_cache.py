@@ -47,7 +47,7 @@ def test_initialization(tmp_path):
     )
     assert isinstance(memory_cache.memory_cache, LRUCache)
     assert memory_cache.memory_cache.maxsize == 50
-    assert memory_cache.fanout_cache == {}
+    assert memory_cache.disk_cache == {}
 
     # Test disk-only cache
     disk_cache = Cache(
@@ -57,7 +57,7 @@ def test_initialization(tmp_path):
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
     )
-    assert isinstance(disk_cache.fanout_cache, FanoutCache)
+    assert isinstance(disk_cache.disk_cache, FanoutCache)
     assert disk_cache.memory_cache == {}
 
     # Test disabled cache
@@ -69,7 +69,7 @@ def test_initialization(tmp_path):
         memory_max_entries=0,
     )
     assert disabled_cache.memory_cache == {}
-    assert disabled_cache.fanout_cache == {}
+    assert disabled_cache.disk_cache == {}
 
 
 def test_cache_key_generation(cache):

@@ -46,17 +46,17 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.fanout_cache = FanoutCache(
+            self.disk_cache = FanoutCache(
                 shards=16, timeout=2, directory=disk_cache_dir, size_limit=disk_size_limit_bytes
             )
         else:
-            self.fanout_cache = {}
+            self.disk_cache = {}
 
         self._lock = threading.RLock()
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
-        return key in self.memory_cache or key in self.fanout_cache
+        return key in self.memory_cache or key in self.disk_cache
 
     def cache_key(self, request: Dict[str, Any]) -> str:
         """
@@ -85,9 +85,9 @@ class Cache:
         if self.enable_memory_cache and key in self.memory_cache:
             with self._lock:
                 response = self.memory_cache[key]
-        elif self.enable_disk_cache and key in self.fanout_cache:
+        elif self.enable_disk_cache and key in self.disk_cache:
             # Found on disk but not in memory cache, add to memory cache
-            response = self.fanout_cache[key]
+            response = self.disk_cache[key]
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
@@ -111,7 +111,7 @@ class Cache:
                 self.memory_cache[key] = value
 
         if self.enable_disk_cache:
-            self.fanout_cache[key] = value
+            self.disk_cache[key] = value
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
