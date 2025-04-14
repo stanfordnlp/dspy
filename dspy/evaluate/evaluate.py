@@ -56,7 +56,7 @@ class Evaluate:
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
         max_errors: int = 5,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         failure_score: float = 0.0,
         **kwargs,
     ):
@@ -69,7 +69,7 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. 
                 If a number is passed, the evaluation results will be truncated to that number before displayed. 
             max_errors (int): The maximum number of errors to allow before stopping evaluation.
-            provide_traceback (bool): Whether to provide traceback information during evaluation.
+            provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
         """
         self.devset = devset
