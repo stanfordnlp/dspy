@@ -22,7 +22,6 @@ DEFAULT_CONFIG = dotdict(
     disable_history=False,
     track_usage=False,
     usage_tracker=None,
-    adapter_retry_count=0, # number of times to retry the adapter call
 )
 
 # Global base configuration and owner tracking

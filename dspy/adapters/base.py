@@ -1,12 +1,9 @@
 from typing import TYPE_CHECKING, Any, Optional, Type
-import json
 import logging
 from dspy.adapters.types import History
 from dspy.adapters.types.image import try_expand_image_tags
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
-from dspy.adapters.utils import create_signature_for_retry
-from dspy.dsp.utils.settings import settings
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -32,37 +29,23 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        retry_count = 0
-        max_retries = max(settings.adapter_retry_count, 0)
-        outputs = None
-        while (True):
-            messages = self.format(signature=signature, demos=demos, inputs=inputs)
-            outputs = lm(messages=messages, **lm_kwargs)
-            values = []
-            try:
-                for output in outputs:
-                    output_logprobs = None
+        messages = self.format(signature=signature, demos=demos, inputs=inputs)
+        outputs = lm(messages=messages, **lm_kwargs)
+        values = []
+        for output in outputs:
+            output_logprobs = None
 
-                    if isinstance(output, dict):
-                        output, output_logprobs = output["text"], output["logprobs"]
+            if isinstance(output, dict):
+                output, output_logprobs = output["text"], output["logprobs"]
 
-                    value = self.parse(signature, output)
+            value = self.parse(signature, output)
 
-                    if output_logprobs is not None:
-                        value["logprobs"] = output_logprobs
+            if output_logprobs is not None:
+                value["logprobs"] = output_logprobs
 
-                    values.append(value)
+            values.append(value)
 
-                return values
-            except ValueError:
-                if retry_count >= max_retries:
-                    raise
-                
-                logger.debug("A ValueError occurred while parsing the LM output. Retrying with a new signature.", exc_info=True)
-                if retry_count == 0:
-                    signature = create_signature_for_retry(signature)
-                inputs["previous_response"] = json.dumps(outputs)
-                retry_count += 1
+        return values
 
     def format(
         self,

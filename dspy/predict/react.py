@@ -5,6 +5,7 @@ from litellm import ContextWindowExceededError
 from pydantic import BaseModel
 
 import dspy
+from dspy.adapters import DEFAULT_ADAPTER
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
@@ -67,7 +68,7 @@ class ReAct(Module):
         self.extract = dspy.ChainOfThought(fallback_signature)
 
     def _format_trajectory(self, trajectory: dict[str, Any]):
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = dspy.settings.adapter or DEFAULT_ADAPTER
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 

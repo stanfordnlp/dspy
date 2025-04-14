@@ -3,7 +3,7 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters import DEFAULT_ADAPTER
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils import settings
@@ -103,7 +103,7 @@ class Predict(Module, Parameter):
                 missing,
             )
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = settings.adapter or DEFAULT_ADAPTER
         completions = adapter(
             lm,
             lm_kwargs=config,

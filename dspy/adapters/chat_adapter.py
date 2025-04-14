@@ -29,26 +29,6 @@ class ChatAdapter(Adapter):
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         super().__init__(callbacks)
 
-    def __call__(
-        self,
-        lm: LM,
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        try:
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            # fallback to JSONAdapter
-            from dspy.adapters.json_adapter import JSONAdapter
-
-            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
-                raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
-
     def format_field_description(self, signature: Type[Signature]) -> str:
         return (
             f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
