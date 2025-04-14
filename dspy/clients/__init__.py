@@ -8,6 +8,7 @@ from pathlib import Path
 from dspy.clients.cache import Cache
 import logging
 from typing import Optional
+from litellm.caching.caching import Cache as LitellmCache
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,22 @@ litellm.success_callback = [_litellm_track_cache_hit_callback]
 
 def configure_cache(
     enable_disk_cache: Optional[bool] = True,
-    enable_in_memory_cache: Optional[bool] = True,
+    enable_memory_cache: Optional[bool] = True,
     disk_cache_dir: Optional[str] = DISK_CACHE_DIR,
-    disk_cache_limit: Optional[int] = DISK_CACHE_LIMIT,
-    memory_cache_max_entries: Optional[int] = 1000000,
+    disk_size_limit_bytes: Optional[int] = DISK_CACHE_LIMIT,
+    memory_max_entries: Optional[int] = 1000000,
     enable_litellm_cache: bool = False,
 ):
+    """Configure the cache for DSPy.
+
+    Args:
+        enable_disk_cache: Whether to enable on-disk cache.
+        enable_memory_cache: Whether to enable in-memory cache.
+        disk_cache_dir: The directory to store the on-disk cache.
+        disk_size_limit_bytes: The size limit of the on-disk cache.
+        memory_max_entries: The maximum number of entries in the in-memory cache.
+        enable_litellm_cache: Whether to enable LiteLLM cache.
+    """
     if enable_disk_cache and enable_litellm_cache:
         raise ValueError(
             "Cannot enable both LiteLLM and DSPy on-disk cache, please set at most one of `enable_disk_cache` or "
@@ -39,7 +50,7 @@ def configure_cache(
 
     if enable_litellm_cache:
         try:
-            litellm.cache = litellm.caching.Cache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
+            litellm.cache = LitellmCache(disk_cache_dir=DISK_CACHE_DIR, type="disk")
 
             if litellm.cache.cache.disk_cache.size_limit != DISK_CACHE_LIMIT:
                 litellm.cache.cache.disk_cache.reset("size_limit", DISK_CACHE_LIMIT)
@@ -55,10 +66,10 @@ def configure_cache(
 
     dspy.cache = Cache(
         enable_disk_cache,
-        enable_in_memory_cache,
+        enable_memory_cache,
         disk_cache_dir,
-        disk_cache_limit,
-        memory_cache_max_entries,
+        disk_size_limit_bytes,
+        memory_max_entries,
     )
 
 

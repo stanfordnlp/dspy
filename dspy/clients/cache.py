@@ -64,15 +64,20 @@ class Cache:
         representation. For request fields having types that are known to be JSON-incompatible,
         convert them to a JSON-serializable format before hashing.
         """
-        params = {}
-        for k, v in request.items():
-            if isinstance(v, type) and issubclass(v, pydantic.BaseModel):
-                params[k] = v.model_json_schema()
-            elif isinstance(v, pydantic.BaseModel):
-                params[k] = v.model_dump()
-            else:
-                params[k] = v
 
+        def transform_value(value):
+            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
+                return value.model_json_schema()
+            elif isinstance(value, pydantic.BaseModel):
+                return value.model_dump()
+            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
+                return value.__code__.co_code.decode("utf-8")
+            elif isinstance(value, dict):
+                return {k: transform_value(v) for k, v in value.items()}
+            else:
+                return value
+
+        params = {k: transform_value(v) for k, v in request.items()}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
     def get(self, request: Dict[str, Any]) -> Any:
@@ -111,7 +116,11 @@ class Cache:
                 self.memory_cache[key] = value
 
         if self.enable_disk_cache:
-            self.disk_cache[key] = value
+            try:
+                self.disk_cache[key] = value
+            except Exception as e:
+                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
+                logger.debug(f"Failed to put value in disk cache: {value}, {e}")
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
