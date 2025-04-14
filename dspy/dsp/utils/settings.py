@@ -22,6 +22,7 @@ DEFAULT_CONFIG = dotdict(
     disable_history=False,
     track_usage=False,
     usage_tracker=None,
+    provide_traceback=False, # Whether to include traceback information in error logs.
 )
 
 # Global base configuration and owner tracking
