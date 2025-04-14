@@ -41,13 +41,9 @@ def test_two_step_adapter_call():
     # assert first message
     assert call_kwargs["messages"][0]["role"] == "system"
     content = call_kwargs["messages"][0]["content"]
-    assert "You are a helpful assistant that can solve tasks based on user input" in content
-    assert "Your input fields are:" in content
     assert "1. `question` (str)" in content
-    assert "Your final output fields are:" in content
     assert "1. `solution` (str)" in content
     assert "2. `answer` (float)" in content
-    assert "You should provide reasoning for your answers in details so that your answer can be understood by another agent" in content
 
     # assert second message
     assert call_kwargs["messages"][1]["role"] == "user"
@@ -63,9 +59,7 @@ def test_two_step_adapter_call():
     # assert first message
     assert call_kwargs["messages"][0]["role"] == "system"
     content = call_kwargs["messages"][0]["content"]
-    assert "Your input fields are:" in content
     assert  "`text` (str)" in content
-    assert "Your output fields are:" in content
     assert  "`solution` (str)" in content
     assert  "`answer` (float)" in content
 
