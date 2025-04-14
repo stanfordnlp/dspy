@@ -5,7 +5,7 @@ from abc import ABC
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 
-MAX_HISTORY_SIZE = 100
+MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
