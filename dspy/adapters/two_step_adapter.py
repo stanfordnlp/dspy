@@ -3,7 +3,7 @@ from typing import Any, Type
 from dspy.signatures.signature import Signature
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.utils import enumerate_fields
+from dspy.adapters.utils import get_field_description_string
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import make_signature
 from dspy.clients import LM
@@ -13,15 +13,15 @@ class TwoStepAdapter(Adapter):
     A two-stage adapter that:
         1. Uses a simpler, more natural prompt for the main LM
         2. Uses a smaller LM with chat adapter to extract structured data from the response of main LM
-    This adapter uses a commong __call__ logic defined in base Adapter class.
+    This adapter uses a common __call__ logic defined in base Adapter class.
     This class is particularly useful when interacting with reasoning models as the main LM since reasoning models
     are known to struggle with structured outputs.
 
     Example:
     ```
     import dspy
-    lm = dspy.LM(model='openai/o3-mini', max_tokens=10000, temperature = 1.0)
-    adapter = dspy.TwoStepAdapter(dspy.LM('openai/gpt-4o-mini'))
+    lm = dspy.LM(model="openai/o3-mini", max_tokens=10000, temperature = 1.0)
+    adapter = dspy.TwoStepAdapter(dspy.LM("openai/gpt-4o-mini"))
     dspy.configure(lm=lm, adapter=adapter)
     program = dspy.ChainOfThought("question->answer")
     result = program("What is the capital of France?")
@@ -89,8 +89,8 @@ class TwoStepAdapter(Adapter):
         parts = []
         
         parts.append("You are a helpful assistant that can solve tasks based on user input.")
-        parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
-        parts.append("Your final output fields are:\n" + enumerate_fields(signature.output_fields))
+        parts.append("Your input fields are:\n" + get_field_description_string(signature.input_fields))
+        parts.append("Your final output fields are:\n" + get_field_description_string(signature.output_fields))
         parts.append("You should provide reasoning for your answers in details so that your answer can be understood by another agent")
         
         if signature.instructions:
@@ -142,7 +142,7 @@ class TwoStepAdapter(Adapter):
         """
         # Create new fields dict with 'text' input field and all output fields
         new_fields = {
-            'text': (str, InputField()),
+            "text": (str, InputField()),
             **{
                 name: (field.annotation, field)
                 for name, field in original_signature.output_fields.items()
