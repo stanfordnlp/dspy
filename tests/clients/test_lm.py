@@ -45,9 +45,10 @@ def test_litellm_cache(litellm_test_server, cache, cache_in_memory):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
 
+    original_cache = dspy.cache
     dspy.clients.configure_cache(
         enable_disk_cache=False,
-        enable_in_memory_cache=cache_in_memory,
+        enable_memory_cache=cache_in_memory,
         enable_litellm_cache=cache,
     )
 
@@ -61,6 +62,9 @@ def test_litellm_cache(litellm_test_server, cache, cache_in_memory):
     )
     assert openai_lm("openai query") == expected_response
 
+    # Reset the cache configuration
+    dspy.cache = original_cache
+
 
 def test_dspy_cache(litellm_test_server, tmp_path):
     api_base, _ = litellm_test_server
@@ -68,7 +72,7 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     original_cache = dspy.cache
     dspy.clients.configure_cache(
         enable_disk_cache=True,
-        enable_in_memory_cache=True,
+        enable_memory_cache=True,
         enable_litellm_cache=False,
         disk_cache_dir=tmp_path / ".disk_cache",
     )
