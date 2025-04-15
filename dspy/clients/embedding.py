@@ -1,6 +1,8 @@
 import litellm
 import numpy as np
 
+from dspy.clients.cache import request_cache
+
 
 class Embedder:
     """DSPy embedding class.
@@ -114,20 +116,9 @@ class Embedder:
             for i in range(0, len(inputs_list), size):
                 yield inputs_list[i : i + size]
 
+        compute_embeddings = _cached_compute_embeddings if caching else _compute_embeddings
         for batch_inputs in chunk(inputs, batch_size):
-            if isinstance(self.model, str):
-                embedding_response = litellm.embedding(
-                    model=self.model, input=batch_inputs, caching=caching, **merged_kwargs
-                )
-                batch_embeddings = [data["embedding"] for data in embedding_response.data]
-            elif callable(self.model):
-                batch_embeddings = self.model(batch_inputs, **merged_kwargs)
-            else:
-                raise ValueError(
-                    f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(self.model)}."
-                )
-
-            embeddings_list.extend(batch_embeddings)
+            embeddings_list.extend(compute_embeddings(self.model, batch_inputs, **merged_kwargs))
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
 
@@ -135,3 +126,18 @@ class Embedder:
             return embeddings[0]
         else:
             return embeddings
+
+
+def _compute_embeddings(model, batch_inputs, **kwargs):
+    if isinstance(model, str):
+        embedding_response = litellm.embedding(model=model, input=batch_inputs, **kwargs)
+        return [data["embedding"] for data in embedding_response.data]
+    elif callable(model):
+        return model(batch_inputs, **kwargs)
+    else:
+        raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
+
+
+@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+def _cached_compute_embeddings(model, batch_inputs, **kwargs):
+    return _compute_embeddings(model, batch_inputs, **kwargs)
