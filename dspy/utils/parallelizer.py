@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ParallelExecutor:
     def __init__(
         self,
-        num_threads,
+        num_threads=None,
         max_errors=5,
         disable_progress_bar=False,
         provide_traceback=None,
@@ -30,7 +30,7 @@ class ParallelExecutor:
         """
         from dspy.dsp.utils.settings import settings
 
-        self.num_threads = num_threads
+        self.num_threads = num_threads or settings.num_threads
         self.max_errors = max_errors
         self.disable_progress_bar = disable_progress_bar
         self.provide_traceback = provide_traceback if provide_traceback is not None else settings.provide_traceback
