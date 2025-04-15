@@ -40,7 +40,8 @@ def test_litellm_embedding(cache):
         result = embedding(inputs)
 
         # Verify litellm was called with correct parameters.
-        mock_litellm.assert_called_once_with(model=model, input=inputs)
+        # Because we disable the litellm cache, it should be called with caching=False.
+        mock_litellm.assert_called_once_with(model=model, input=inputs, caching=False)
 
         assert len(result) == len(inputs)
         np.testing.assert_allclose(result, mock_embeddings)

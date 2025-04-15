@@ -118,7 +118,7 @@ class Embedder:
 
         compute_embeddings = _cached_compute_embeddings if caching else _compute_embeddings
         for batch_inputs in chunk(inputs, batch_size):
-            embeddings_list.extend(compute_embeddings(self.model, batch_inputs, **merged_kwargs))
+            embeddings_list.extend(compute_embeddings(self.model, batch_inputs, caching=caching, **merged_kwargs))
 
         embeddings = np.array(embeddings_list, dtype=np.float32)
 
@@ -128,9 +128,9 @@ class Embedder:
             return embeddings
 
 
-def _compute_embeddings(model, batch_inputs, **kwargs):
+def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
     if isinstance(model, str):
-        embedding_response = litellm.embedding(model=model, input=batch_inputs, **kwargs)
+        embedding_response = litellm.embedding(model=model, input=batch_inputs, caching=caching, **kwargs)
         return [data["embedding"] for data in embedding_response.data]
     elif callable(model):
         return model(batch_inputs, **kwargs)
@@ -139,5 +139,8 @@ def _compute_embeddings(model, batch_inputs, **kwargs):
 
 
 @request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
-def _cached_compute_embeddings(model, batch_inputs, **kwargs):
-    return _compute_embeddings(model, batch_inputs, **kwargs)
+def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
+    import litellm
+
+    caching = litellm.cache is not None
+    return _compute_embeddings(model, batch_inputs, caching=caching, **kwargs)
