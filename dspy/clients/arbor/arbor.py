@@ -1,10 +1,10 @@
 import requests
 import json
 
-from typing import TypedDict, List, Literal
+from typing import TypedDict, List, Literal, Union
 
 class Message(TypedDict):
-    role: Literal["user"]
+    role: Union[Literal["user"], Literal["assistant"], Literal["system"]]
     content: str
 
 class Completion(TypedDict):
