@@ -40,7 +40,7 @@ class LM(BaseLM):
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
-        num_retries: int = 8,
+        num_retries: Optional[int] = None,
         provider=None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
@@ -62,7 +62,7 @@ class LM(BaseLM):
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
-                         backoff.
+                         backoff. If not specified, the value from `dspy.settings.max_lm_retries` is used for retries.
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
@@ -76,7 +76,7 @@ class LM(BaseLM):
         self.callbacks = callbacks or []
         self.history = []
         self.callbacks = callbacks or []
-        self.num_retries = num_retries
+        self.num_retries = num_retries or dspy.settings.max_lm_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}

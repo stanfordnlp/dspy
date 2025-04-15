@@ -23,6 +23,7 @@ DEFAULT_CONFIG = dotdict(
     track_usage=False,
     usage_tracker=None,
     provide_traceback=False, # Whether to include traceback information in error logs.
+    max_lm_retries=8, # Number of retries for LM calls.
 )
 
 # Global base configuration and owner tracking
