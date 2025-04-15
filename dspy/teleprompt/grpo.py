@@ -83,9 +83,11 @@ class GRPO(FinetuneTeleprompter):
         logger.info("Preparing the student program...")
         num_student_predictors = len(student.predictors())
         pred_signature_has_to_pred_index = {hash(pred.signature): pred_id for pred_id, pred in enumerate(student.predictors())}
+
+        logger.info("Preparing the student program by setting default lm for all predictors, and disabling cache for all used lms...")
         set_missing_predictor_lms(student)
 
-        logger.info("Preparing the teacher program(s)...")
+        logger.info("Preparing the teacher program(s) by setting default lm for all predictors, and disabling cache for all used lms...")
         teachers = teacher if isinstance(teacher, list) else [teacher]
         teachers = [prepare_teacher(student, t) for t in teachers]
         for t in teachers:
@@ -278,6 +280,9 @@ def set_missing_predictor_lms(program: Program) -> Program:
     for pred in program.predictors():
         if not pred.lm:
             pred.lm = dspy.settings.lm
+        
+        # TODO(Lakshya, Omar): Check if this is the right place to disable cache
+        pred.lm.cache = False
 
     return program
 
