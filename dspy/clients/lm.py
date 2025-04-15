@@ -10,7 +10,7 @@ from asyncer import syncify
 from litellm import RetryPolicy
 
 import dspy
-from dspy.clients.cache import lm_cache
+from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
@@ -197,7 +197,7 @@ class LM(BaseLM):
         return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
-@lm_cache
+@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
 def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
     import litellm
 
@@ -258,7 +258,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     return stream_completion()
 
 
-@lm_cache
+@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
 def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
     import litellm
 

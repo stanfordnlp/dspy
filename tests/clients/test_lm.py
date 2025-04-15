@@ -131,7 +131,9 @@ def test_lm_calls_support_callables(litellm_test_server):
             api_base=api_base,
             api_key="fakekey",
             azure_ad_token_provider=azure_ad_token_provider,
+            cache=False,
         )
+
         lm_with_callable("Query")
 
         spy_completion.assert_called_once()

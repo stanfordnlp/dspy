@@ -29,6 +29,7 @@ class Cache:
         disk_cache_dir: str,
         disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
         memory_max_entries: Optional[int] = 100,
+        ignored_args_for_cache_key: Optional[list[str]] = None,
     ):
         """
         Args:
@@ -37,6 +38,7 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
+            ignored_args_for_cache_key: A list of arguments to ignore when computing the cache key from the request.
         """
 
         self.enable_disk_cache = enable_disk_cache
@@ -51,6 +53,8 @@ class Cache:
             )
         else:
             self.disk_cache = {}
+
+        self.ignored_args_for_cache_key = ignored_args_for_cache_key or []
 
         self._lock = threading.RLock()
 
@@ -70,14 +74,23 @@ class Cache:
                 return value.model_json_schema()
             elif isinstance(value, pydantic.BaseModel):
                 return value.model_dump()
-            elif callable(value) and hasattr(value, "__code__") and hasattr(value.__code__, "co_code"):
-                return value.__code__.co_code.decode("utf-8")
+            elif callable(value):
+                # Try to get the source code of the callable if available
+                import inspect
+
+                try:
+                    # For regular functions, we can get the source code
+                    return f"<callable_source:{inspect.getsource(value)}>"
+                except (TypeError, OSError, IOError):
+                    # For lambda functions or other callables where source isn't available,
+                    # use a string representation
+                    return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
             elif isinstance(value, dict):
                 return {k: transform_value(v) for k, v in value.items()}
             else:
                 return value
 
-        params = {k: transform_value(v) for k, v in request.items()}
+        params = {k: transform_value(v) for k, v in request.items() if k not in self.ignored_args_for_cache_key}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
     def get(self, request: Dict[str, Any]) -> Any:
@@ -108,7 +121,8 @@ class Cache:
     def put(self, request: Dict[str, Any], value: Any) -> None:
         try:
             key = self.cache_key(request)
-        except Exception:
+        except Exception as e:
+            raise e
             return
 
         if self.enable_memory_cache:
@@ -146,30 +160,53 @@ class Cache:
                 self.memory_cache = cloudpickle.load(f)
 
 
-def lm_cache(fn):
-    @wraps(fn)
-    def wrapper(**kwargs):
-        import dspy
+def request_cache(cache_arg_name: Optional[str] = None, ignored_args_for_cache_key: Optional[list[str]] = None):
+    """Decorator for applying caching to a function based on the request argument.
 
-        cache = dspy.cache
+    Args:
+        cache_arg_name: The name of the argument that contains the request. If not provided, the entire kwargs is used
+            as the request.
+        ignored_args_for_cache_key: A list of arguments to ignore when computing the cache key from the request.
+    """
 
-        # Use fully qualified function name for uniqueness
-        fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            import dspy
 
-        # Create a modified request that includes the function identifier so that it's incorporated into the cache key.
-        # Deep copy is required because litellm sometimes modifies the kwargs in place.
-        modified_request = copy.deepcopy(kwargs)
-        modified_request["_fn_identifier"] = fn_identifier
+            cache = dspy.cache
+            original_ignored_args_for_cache_key = cache.ignored_args_for_cache_key
+            cache.ignored_args_for_cache_key = ignored_args_for_cache_key or []
 
-        # Retrieve from cache if available
-        cached_result = cache.get(modified_request)
+            # Use fully qualified function name for uniqueness
+            fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
-        if cached_result is not None:
-            return cached_result
+            # Create a modified request that includes the function identifier so that it's incorporated into the cache
+            # key. Deep copy is required because litellm sometimes modifies the kwargs in place.
+            if cache_arg_name:
+                # When `cache_arg_name` is provided, use the value of the argument with this name as the request for
+                # caching.
+                modified_request = copy.deepcopy(kwargs[cache_arg_name])
+            else:
+                # When `cache_arg_name` is not provided, use the entire kwargs as the request for caching.
+                modified_request = copy.deepcopy(kwargs)
+                for i, arg in enumerate(args):
+                    modified_request[f"positional_arg_{i}"] = arg
+            modified_request["_fn_identifier"] = fn_identifier
 
-        # Otherwise, compute and store the result
-        result = fn(**kwargs)
-        cache.put(modified_request, result)
-        return result
+            # Retrieve from cache if available
+            cached_result = cache.get(modified_request)
 
-    return wrapper
+            if cached_result is not None:
+                return cached_result
+
+            # Otherwise, compute and store the result
+            result = fn(*args, **kwargs)
+            cache.put(modified_request, result)
+
+            cache.ignored_args_for_cache_key = original_ignored_args_for_cache_key
+            return result
+
+        return wrapper
+
+    return decorator
