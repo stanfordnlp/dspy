@@ -28,7 +28,7 @@ class Cache:
         enable_memory_cache: bool,
         disk_cache_dir: str,
         disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
-        memory_max_entries: Optional[int] = 100,
+        memory_max_entries: Optional[int] = 1000000,
         ignored_args_for_cache_key: Optional[list[str]] = None,
     ):
         """
