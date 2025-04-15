@@ -121,8 +121,8 @@ class Cache:
     def put(self, request: Dict[str, Any], value: Any) -> None:
         try:
             key = self.cache_key(request)
-        except Exception as e:
-            raise e
+        except Exception:
+            logger.debug(f"Failed to generate cache key for request: {request}")
             return
 
         if self.enable_memory_cache:

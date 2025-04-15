@@ -202,12 +202,12 @@ def test_save_and_load_memory_cache(cache, tmp_path):
 
 def test_lm_cache_decorator(cache):
     """Test the lm_cache decorator."""
-    from dspy.clients.cache import lm_cache
+    from dspy.clients.cache import request_cache
 
     # Mock the dspy.cache attribute
     with patch("dspy.cache", cache):
         # Define a test function
-        @lm_cache
+        @request_cache()
         def test_function(prompt, model):
             return f"Response for {prompt} with {model}"
 
