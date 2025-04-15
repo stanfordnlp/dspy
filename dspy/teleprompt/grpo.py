@@ -49,6 +49,8 @@ class GRPO(FinetuneTeleprompter):
         seed: int = 0,
         num_dspy_examples_per_grpo_step: int = 1,
         num_rollouts_per_dspy_example_per_step: int = 1,
+        use_train_as_val: bool = False,
+        num_steps_for_val: int = 5,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -68,6 +70,8 @@ class GRPO(FinetuneTeleprompter):
         self.rng = random.Random(seed)
         self.num_dspy_examples_per_grpo_step = num_dspy_examples_per_grpo_step
         self.num_rollouts_per_dspy_example_per_step = num_rollouts_per_dspy_example_per_step
+        self.use_train_as_val = use_train_as_val
+        self.num_steps_for_val = num_steps_for_val
 
         # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step * num_predictors) per training set if multitask is True
         # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step) per training job
@@ -75,7 +79,7 @@ class GRPO(FinetuneTeleprompter):
         self.per_predictor_batch_size = num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step
 
     def compile(
-        self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None
+        self, student: Program, trainset: List[Example], valset: Optional[List[Example]] = None, teacher: Optional[Union[Program, List[Program]]] = None
     ) -> Program:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -115,6 +119,33 @@ class GRPO(FinetuneTeleprompter):
             # In this, there will be one GRPO training job for each predictor in the student program
             # TODO(Lakshya): Implement individual task training jobs for each predictor
             assert False, "Independent GRPO training jobs for each predictor in the student program are not supported yet."
+        
+        
+        if self.use_train_as_val:
+            assert valset is None, "If use_train_as_val is True, valset must be None."
+
+        if valset is None and self.use_train_as_val:
+            logger.info("Using the training set as the validation set.")
+            valset = trainset
+        elif valset is not None:
+            logger.info("Using the user provided validation set.")
+        else:
+            logger.info("Not using any validation set.")
+
+        if valset:
+            assert isinstance(self.num_steps_for_val, int) and self.num_steps_for_val > 0, "num_steps_for_val must be a positive integer."
+            valset_evaluator = Evaluate(
+                devset=valset,
+                num_threads=self.num_threads,
+                display_progress=True,
+                return_outputs=False,
+                provide_traceback=True,  # TODO(check with team)
+            )
+            
+            logger.info("Evaluating the student program on the validation set before training loop...")
+            valset_evaluation = valset_evaluator(student, metric=self.metric)
+            logger.info(f"Student program validation set score before training loop: {valset_evaluation}")
+
 
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
@@ -222,6 +253,11 @@ class GRPO(FinetuneTeleprompter):
                     grpo_training_job.run_grpo_step(train_batch)
             
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
+            
+            if valset and ((train_step_idx + 1) % self.num_steps_for_val == 0 or train_step_idx + 1 == self.num_train_steps):
+                logger.info(f"Evaluating the student program on the validation set after training step {train_step_idx + 1}/{self.num_train_steps}")
+                valset_evaluation = valset_evaluator(student, metric=self.metric)
+                logger.info(f"Student program validation set score after training step {train_step_idx + 1}/{self.num_train_steps}: {valset_evaluation}")
         
         logger.info("GRPO compiler has finished compiling the student program")
         student._compiled = True

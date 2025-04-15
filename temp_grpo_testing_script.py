@@ -49,7 +49,8 @@ compiler = GRPO(
     multitask=True,
     num_dspy_examples_per_grpo_step=2,
     exclude_demos=True,
-    num_train_steps=5
+    num_train_steps=5,
+    use_train_as_val=True
 )
 
 compiler.compile(module, dataset)
