@@ -49,7 +49,10 @@ class Cache:
             self.memory_cache = {}
         if self.enable_disk_cache:
             self.disk_cache = FanoutCache(
-                shards=16, timeout=2, directory=disk_cache_dir, size_limit=disk_size_limit_bytes
+                shards=16,
+                timeout=10,
+                directory=disk_cache_dir,
+                size_limit=disk_size_limit_bytes,
             )
         else:
             self.disk_cache = {}
