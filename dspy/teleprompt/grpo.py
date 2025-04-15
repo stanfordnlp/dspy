@@ -190,6 +190,8 @@ class GRPO(FinetuneTeleprompter):
                                 if len(example_training_data["input"]["messages"]) == 1 and example_training_data["input"]["messages"][0] is None:
                                     example_training_data["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
                                 else:
+                                    # TODO(Lakshya): Here, we are assuming that across different runs, the input messages will be the same, which will most likely not be true.
+                                    # We can potentially do away with this assertion.
                                     assert example_training_data["input"]["messages"] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {example_training_data['input']['messages']}"
                                 
                                 response_msg = all_messages[-1]
@@ -204,6 +206,8 @@ class GRPO(FinetuneTeleprompter):
             
             for predictor_train_batch in train_batch_per_predictor:
                 assert len(predictor_train_batch) == self.per_predictor_batch_size, f"Batch size {len(predictor_train_batch)} does not match the expected batch size {self.per_predictor_batch_size}"
+                for example_training_data in predictor_train_batch:
+                    assert len(example_training_data["completions"]) == self.num_rollouts_per_dspy_example_per_step, f"Number of completions {len(example_training_data['completions'])} does not match the expected number self.num_rollouts_per_dspy_example_per_step={self.num_rollouts_per_dspy_example_per_step}"
 
             logger.info("Invoking GRPO training step on the arbor backend...")
             if self.multitask:
