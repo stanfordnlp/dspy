@@ -35,8 +35,8 @@ class LM(BaseLM):
         self,
         model: str,
         model_type: Literal["chat", "text"] = "chat",
-        temperature: float = 0.0,
-        max_tokens: int = 1000,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
@@ -81,17 +81,24 @@ class LM(BaseLM):
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
 
-        # Handle model-specific configuration for different model families
+        # Identify reasoning models (e.g., o1, o3 variants)
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+        is_reasoning_model = bool(re.match(r"^o([13])(?:-mini)?", model_family))
 
-        # Match pattern: o[1,3] at the start, optionally followed by -mini and anything else
-        model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+        # Set default temperature
+        if temperature is None:
+            temperature = 1.0 if is_reasoning_model else 0.0
+        elif is_reasoning_model and temperature != 1.0:
+            raise ValueError("Reasoning models require temperature=1.0.")
 
-        if model_pattern:
-            # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+        # Set default max_tokens
+        if max_tokens is None:
+            max_tokens = 20_000 if is_reasoning_model else 1_000
+        elif is_reasoning_model and max_tokens < 20_000:
+            raise ValueError("Reasoning models require max_tokens >= 20,000.")
+
+        # Set kwargs based on reasoning model check
+        if is_reasoning_model:
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)

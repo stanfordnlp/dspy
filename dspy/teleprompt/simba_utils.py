@@ -3,18 +3,37 @@ import ujson
 import inspect
 import logging
 import textwrap
+import re
 
 # from dspy.adapters.chat_adapter import enumerate_fields
 from dspy.signatures import InputField, OutputField
-from typing import Callable
+from typing import Callable, Optional, Dict
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int):
+def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
     lm = program.get_lm() or dspy.settings.lm
-    temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
-    temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
+
+    # Check to see if our model is a reasoning model, which means temp must stay as 1.0
+    model_family = lm.model.split("/")[-1].lower() if "/" in lm.model else lm.model.lower()
+    model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+
+    models = []
+    if teacher_settings:
+        models.append(dspy.LM(**teacher_settings))
+
+    if model_pattern: # Vary the seed
+        start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
+        seeds = [start_seed + 1 + i for i in range(n-len(models))]
+        seeds = list(dict.fromkeys(seeds))[:(n-len(models))]
+        models.extend([lm.copy(seed=seed) for seed in seeds])
+    else: # Vary the temperature
+        start_temp = 0 if "temperature" not in lm.kwargs else lm.kwargs["temperature"]
+        temps = [start_temp + 0.5 + i * (0.5 / n) for i in range(n-len(models))]
+        temps = list(dict.fromkeys(temps))[:(n-len(models))]
+        models.extend([lm.copy(temperature=t) for t in temps])
+    
+    return models
 
 def wrap_program(program: dspy.Module, metric: Callable):
     def wrapped_program(example):
@@ -141,6 +160,7 @@ def append_a_demo(demo_input_field_maxlen):
 def append_a_rule(bucket, system, **kwargs):
     predictor2name = kwargs["predictor2name"]
     batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
+    prompt_model = kwargs["prompt_model"]
 
     module_names = [name for name, _ in system.named_predictors()]
     good, bad = bucket[0], bucket[-1]
@@ -188,7 +208,9 @@ def append_a_rule(bucket, system, **kwargs):
 
     kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
               for k, v in kwargs.items()}
-    advice = dspy.Predict(OfferFeedback)(**kwargs).module_advice
+    # advice_program = dspy.Predict(OfferFeedback, lm=prompt_model)
+    advice_program = dspy.Predict(OfferFeedback)
+    advice = advice_program(**kwargs).module_advice
 
     for name, predictor in system.named_predictors():
         if name in advice:
