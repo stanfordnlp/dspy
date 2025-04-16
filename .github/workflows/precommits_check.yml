@@ -12,10 +12,7 @@ jobs:
         with:
           python-version: "3.9"
           cache: "pip"
-      - name: Check Pull Request Title
-        uses: Slashgear/action-check-pr-title@main
-        with:
-          regexp: '(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)' # Regex the title should match.
+
       - name: Getting changed files list
         id: files
         uses: jitterbit/get-changed-files@master
