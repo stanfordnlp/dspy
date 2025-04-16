@@ -52,10 +52,10 @@ class MIPROv2(Teleprompter):
         task_model: Optional[Any] = None,
         teacher_settings: Dict = {},
         max_bootstrapped_demos: int = 4,
-        max_labeled_demos: int = 16,
-        auto: Optional[Literal["light", "medium", "heavy"]] = None,
+        max_labeled_demos: int = 4,
+        auto: Optional[Literal["light", "medium", "heavy"]] = "medium",
         num_candidates: int = 10,
-        num_threads: int = 6,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         seed: int = 9,
         init_temperature: float = 0.5,
@@ -101,14 +101,15 @@ class MIPROv2(Teleprompter):
         max_labeled_demos: Optional[int] = None,
         seed: Optional[int] = None,
         minibatch: bool = True,
-        minibatch_size: int = 25,
-        minibatch_full_eval_steps: int = 10,
+        minibatch_size: int = 35,
+        minibatch_full_eval_steps: int = 5,
         program_aware_proposer: bool = True,
         data_aware_proposer: bool = True,
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool = True,
+        provide_traceback: Optional[bool] = None,
     ) -> Any:
         # Set random seeds
         seed = seed or self.seed
@@ -158,6 +159,7 @@ class MIPROv2(Teleprompter):
             max_errors=self.max_errors,
             display_table=False,
             display_progress=True,
+            provide_traceback=provide_traceback,
         )
 
         # Step 1: Bootstrap few-shot examples
@@ -326,7 +328,7 @@ class MIPROv2(Teleprompter):
 
             {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
 
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token) 
+            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
                         + (Number of program calls * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
 
             For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
@@ -462,20 +464,21 @@ class MIPROv2(Teleprompter):
         )
 
         # Compute the adjusted total trials that we will run (including full evals)
-        adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1) if minibatch else num_trials
+        run_additional_full_eval_at_end = 1 if num_trials % minibatch_full_eval_steps != 0 else 0
+        adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1 + run_additional_full_eval_at_end) if minibatch else num_trials
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
-        default_score, baseline_results = eval_candidate_program(
+        default_score, _ = eval_candidate_program(
             len(valset), valset, program, evaluate, self.rng, return_all_scores=True
         )
         logger.info(f"Default program score: {default_score}\n")
 
         trial_logs = {}
-        trial_logs[-1] = {}
-        trial_logs[-1]["full_eval_program_path"] = save_candidate_program(program, self.log_dir, -1)
-        trial_logs[-1]["full_eval_score"] = default_score
-        trial_logs[-1]["total_eval_calls_so_far"] = len(valset)
-        trial_logs[-1]["full_eval_program"] = program.deepcopy()
+        trial_logs[1] = {}
+        trial_logs[1]["full_eval_program_path"] = save_candidate_program(program, self.log_dir, -1)
+        trial_logs[1]["full_eval_score"] = default_score
+        trial_logs[1]["total_eval_calls_so_far"] = len(valset)
+        trial_logs[1]["full_eval_program"] = program.deepcopy()
 
         # Initialize optimization variables
         best_score = default_score
@@ -565,7 +568,7 @@ class MIPROv2(Teleprompter):
             )
 
             # If minibatch, perform full evaluation at intervals (and at the very end)
-            if minibatch and ((trial_num % minibatch_full_eval_steps == 0) or (trial_num == (adjusted_num_trials - 1))):
+            if minibatch and ((trial_num % (minibatch_full_eval_steps+1) == 0) or (trial_num == (adjusted_num_trials-1))):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
                     adjusted_num_trials,
@@ -599,7 +602,7 @@ class MIPROv2(Teleprompter):
             value=default_score,
         )
         study.add_trial(trial)
-        study.optimize(objective, n_trials=num_trials - 1)
+        study.optimize(objective, n_trials=num_trials)
 
         # Attach logs to best program
         if best_program is not None and self.track_stats:
@@ -765,15 +768,16 @@ class MIPROv2(Teleprompter):
             "score": full_eval_score,
         }
         total_eval_calls += len(valset)
-        trial_logs[trial_num]["total_eval_calls_so_far"] = total_eval_calls
-        trial_logs[trial_num]["full_eval_program_path"] = save_candidate_program(
+        trial_logs[trial_num + 1] = {}
+        trial_logs[trial_num + 1]["total_eval_calls_so_far"] = total_eval_calls
+        trial_logs[trial_num + 1]["full_eval_program_path"] = save_candidate_program(
             program=highest_mean_program,
             log_dir=self.log_dir,
-            trial_num=trial_num,
+            trial_num=trial_num + 1,
             note="full_eval",
         )
-        trial_logs[trial_num]["full_eval_program"] = highest_mean_program
-        trial_logs[trial_num]["full_eval_score"] = full_eval_score
+        trial_logs[trial_num + 1]["full_eval_program"] = highest_mean_program
+        trial_logs[trial_num + 1]["full_eval_score"] = full_eval_score
 
         # Update best score and program if necessary
         if full_eval_score > best_score:

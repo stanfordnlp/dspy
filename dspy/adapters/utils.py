@@ -1,11 +1,16 @@
 import ast
 import enum
+import inspect
 import json
-import json_repair
+from collections.abc import Mapping
+from typing import Any, List, Literal, Union, get_args, get_origin
 
+import json_repair
+import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
-from typing import Any, List, Literal, Union, get_args, get_origin
+
+from dspy.signatures.utils import get_dspy_field_type
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -58,6 +63,46 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
         return {"type": "text", "text": string_value}
 
 
+def _get_json_schema(field_type):
+    def move_type_to_front(d):
+        # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
+        if isinstance(d, Mapping):
+            return {
+                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: (item[0] != "type", item[0]))
+            }
+        elif isinstance(d, list):
+            return [move_type_to_front(item) for item in d]
+        return d
+
+    schema = pydantic.TypeAdapter(field_type).json_schema()
+    schema = move_type_to_front(schema)
+    return schema
+
+
+def translate_field_type(field_name, field_info):
+    field_type = field_info.annotation
+
+    if get_dspy_field_type(field_info) == "input" or field_type is str:
+        desc = ""
+    elif field_type is bool:
+        desc = "must be True or False"
+    elif field_type in (int, float):
+        desc = f"must be a single {field_type.__name__} value"
+    elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
+        desc = f"must be one of: {'; '.join(field_type.__members__)}"
+    elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
+        desc = (
+            # Strongly encourage the LM to avoid choosing values that don't appear in the
+            # literal or returning a value of the form 'Literal[<selected_value>]'
+            f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
+        )
+    else:
+        desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
+
+    desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
+    return f"{{{field_name}}}{desc}"
+
+
 def find_enum_member(enum, identifier):
     """
     Finds the enum member corresponding to the specified identifier, which may be the
@@ -86,7 +131,6 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-
 def parse_value(value, annotation):
     if annotation is str:
         return str(value)
@@ -97,7 +141,7 @@ def parse_value(value, annotation):
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value) # json_repair.loads returns "" on failure.
+    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
         try:
             candidate = ast.literal_eval(value)
@@ -125,6 +169,18 @@ def get_annotation_name(annotation):
     else:
         args_str = ", ".join(get_annotation_name(a) for a in args)
         return f"{get_annotation_name(origin)}[{args_str}]"
+
+def get_field_description_string(fields: dict) -> str:
+    field_descriptions = []
+    for idx, (k, v) in enumerate(fields.items()):
+        field_message = f"{idx + 1}. `{k}`"
+        field_message += f" ({get_annotation_name(v.annotation)})"
+        field_message += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+        field_message += (
+            f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
+        )
+        field_descriptions.append(field_message)
+    return "\n".join(field_descriptions).strip()
 
 
 def _format_input_list_field_value(value: List[Any]) -> str:

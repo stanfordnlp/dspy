@@ -21,6 +21,7 @@ MODEL_LIST = [
     "llama-3.1-70b-instruct",
     "llama-3.1-8b-instruct",
     "llama-3.2-3b-instruct",
+    "deepseek-r1",
 ]
 
 

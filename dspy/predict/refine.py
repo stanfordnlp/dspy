@@ -1,13 +1,15 @@
-import dspy
-import ujson
 import inspect
 import textwrap
+from typing import Callable, Optional
+
+import ujson
+
+import dspy
+from dspy.adapters.utils import get_field_description_string
+from dspy.predict.predict import Prediction
+from dspy.signatures import InputField, OutputField, Signature
 
 from .predict import Module
-from dspy.signatures import Signature, InputField, OutputField
-
-from typing import Callable
-from dspy.adapters.chat_adapter import enumerate_fields
 
 
 class OfferFeedback(Signature):
@@ -22,9 +24,7 @@ class OfferFeedback(Signature):
     program_code: str = InputField(desc="The code of the program that we are analyzing")
     modules_defn: str = InputField(desc="The definition of each module in the program, including its I/O")
     program_inputs: str = InputField(desc="The inputs to the program that we are analyzing")
-    program_trajectory: str = InputField(
-        desc="The trajectory of the program's execution, showing each module's I/O"
-    )
+    program_trajectory: str = InputField(desc="The trajectory of the program's execution, showing each module's I/O")
     program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
     reward_code: str = InputField(desc="The code of the reward function that we are analyzing")
     target_threshold: float = InputField(desc="The target threshold for the reward function")
@@ -39,12 +39,55 @@ class OfferFeedback(Signature):
 
 
 class Refine(Module):
-    def __init__(self, module, N: int, reward_fn: Callable, threshold: float):
+    def __init__(
+        self,
+        module: Module,
+        N: int,
+        reward_fn: Callable[[dict, Prediction], float],
+        threshold: float,
+        fail_count: Optional[int] = None,
+    ):
+        """
+        Refines a module by running it up to N times with different temperatures and returns the best prediction.
+
+        This module runs the provided module multiple times with varying temperature settings and selects
+        either the first prediction that exceeds the specified threshold or the one with the highest reward.
+        If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
+
+
+        Args:
+            module (Module): The module to refine.
+            N (int): The number of times to run the module. must
+            reward_fn (Callable): The reward function.
+            threshold (float): The threshold for the reward function.
+            fail_count (Optional[int], optional): The number of times the module can fail before raising an error
+
+        Example:
+            ```python
+            import dspy
+
+            dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+            # Define a QA module with chain of thought
+            qa = dspy.ChainOfThought("question -> answer")
+
+            # Define a reward function that checks for one-word answers
+            def one_word_answer(args, pred):
+                return 1.0 if len(pred.answer.split()) == 1 else 0.0
+
+            # Create a refined module that tries up to 3 times
+            best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+
+            # Use the refined module
+            result = best_of_3(question="What is the capital of Belgium?").answer
+            # Returns: Brussels
+            ```
+        """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
-
+        self.fail_count = fail_count or N  # default to N if fail_count is not provided
         self.module_code = inspect.getsource(module.__class__)
         try:
             self.reward_fn_code = inspect.getsource(reward_fn)
@@ -109,14 +152,20 @@ class Refine(Module):
                 advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
                 # advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
                 # only dumps if it's a list or dict
-                advise_kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
+                advise_kwargs = {
+                    k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+                    for k, v in advise_kwargs.items()
+                }
                 advice = dspy.Predict(OfferFeedback)(**advise_kwargs).advice
                 # print(f"Advice for each module: {advice}")
 
             except Exception as e:
-                print(f"Attempt failed with temperature {t}: {e}")
-
-        dspy.settings.trace.extend(best_trace)
+                print(f"Refine: Attempt failed with temperature {t}: {e}")
+                if idx > self.fail_count:
+                    raise e
+                self.fail_count -= 1
+        if best_trace:
+            dspy.settings.trace.extend(best_trace)
         return best_pred
 
 
@@ -131,9 +180,9 @@ def inspect_modules(program):
 
         output.append(f"Module {name}")
         output.append("\n\tInput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.input_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.input_fields).splitlines()))
         output.append("\tOutput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + enumerate_fields(signature.output_fields).splitlines()))
+        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.output_fields).splitlines()))
         output.append(f"\tOriginal Instructions: {instructions}")
         output.append(separator)
 

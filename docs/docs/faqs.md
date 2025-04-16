@@ -115,3 +115,18 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
 
 A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`).
+
+## Set Verbose Level
+DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.html) to print logs. If you want to debug your DSPy code, set the logging level to DEBUG with the example code below.
+
+```python
+import logging
+logging.getLogger("dspy").setLevel(logging.DEBUG)
+```
+
+Alternatively, if you want to reduce the amount of logs, set the logging level to WARNING or ERROR.
+
+```python
+import logging
+logging.getLogger("dspy").setLevel(logging.WARNING)
+```

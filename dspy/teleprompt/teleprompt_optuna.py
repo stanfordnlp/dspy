@@ -15,14 +15,12 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         max_labeled_demos=16,
         max_rounds=1,
         num_candidate_programs=16,
-        num_threads=6,
+        num_threads=None,
     ):
         self.metric = metric
         self.teacher_settings = teacher_settings
         self.max_rounds = max_rounds
-
         self.num_threads = num_threads
-
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
         self.num_candidate_sets = num_candidate_programs

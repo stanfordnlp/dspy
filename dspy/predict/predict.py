@@ -1,12 +1,19 @@
+import logging
 import random
 
 from pydantic import BaseModel
 
+from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.clients.base_lm import BaseLM
+from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
+
+logger = logging.getLogger(__name__)
 
 
 class Predict(Module, Parameter):
@@ -24,7 +31,7 @@ class Predict(Module, Parameter):
         self.demos = []
 
     def dump_state(self):
-        state_keys = ["lm", "traces", "train"]
+        state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
         state["demos"] = []
@@ -38,6 +45,7 @@ class Predict(Module, Parameter):
             state["demos"].append(demo)
 
         state["signature"] = self.signature.dump_state()
+        state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
     def load_state(self, state):
@@ -49,15 +57,16 @@ class Predict(Module, Parameter):
         Returns:
             self: Returns self to allow method chaining
         """
-        excluded_keys = ["signature", "extended_signature"]
+        excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
-                    
-        self.signature = self.signature.load_state(state["signature"])
 
-        if "extended_signature" in state: # legacy, up to and including 2.5, for CoT.
+        self.signature = self.signature.load_state(state["signature"])
+        self.lm = LM(**state["lm"]) if state["lm"] else None
+
+        if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
         return self
@@ -67,8 +76,6 @@ class Predict(Module, Parameter):
         return self.forward(**kwargs)
 
     def forward(self, **kwargs):
-        import dspy
-
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -76,12 +83,11 @@ class Predict(Module, Parameter):
         config = dict(**self.config, **kwargs.pop("config", {}))
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or dspy.settings.lm
-        assert isinstance(lm, dspy.LM), "No LM is loaded."
+        lm = kwargs.pop("lm", self.lm) or settings.lm
+        assert isinstance(lm, BaseLM), "No LM is loaded."
 
-        # If temperature is 0.0 but its n > 1, set temperature to 0.7.
-        temperature = config.get("temperature")
-        temperature = lm.kwargs["temperature"] if temperature is None else temperature
+        # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
+        temperature = config.get("temperature") or lm.kwargs.get("temperature")
         num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
@@ -90,16 +96,30 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            print(f"WARNING: Not all input fields were provided to module. Present: {present}. Missing: {missing}.")
+            logger.warning(
+                "Not all input fields were provided to module. Present: %s. Missing: %s.",
+                present,
+                missing,
+            )
 
-        import dspy
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        adapter = settings.adapter or ChatAdapter()
+
+        stream_listeners = settings.stream_listeners or []
+        stream = settings.send_stream is not None
+        if stream and len(stream_listeners) > 0:
+            stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+
+        if stream:
+            with settings.context(caller_predict=self):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        else:
+            with settings.context(send_stream=None):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
-        if kwargs.pop("_trace", True) and dspy.settings.trace is not None:
-            trace = dspy.settings.trace
+        if kwargs.pop("_trace", True) and settings.trace is not None:
+            trace = settings.trace
             trace.append((self, {**kwargs}, pred))
 
         return pred
@@ -112,6 +132,7 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def serialize_object(obj):
     """

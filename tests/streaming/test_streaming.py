@@ -1,8 +1,9 @@
+import os
 import pytest
 
 import dspy
-from dspy.utils.streaming import StatusMessage, StatusMessageProvider, streaming_response
-from ..test_utils.server import litellm_test_server
+from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
+from tests.test_utils.server import litellm_test_server
 
 
 @pytest.mark.anyio
@@ -122,3 +123,40 @@ async def test_custom_status_streaming():
         assert status_messages[0].message == "Tool starting!"
         assert status_messages[1].message == "Tool finished!"
         assert status_messages[2].message == "Predict starting!"
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
+@pytest.mark.anyio
+async def test_stream_listener():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.Predict("question->answer")
+            self.predict2 = dspy.Predict("question, answer->judgement")
+
+        def __call__(self, x: str, **kwargs):
+            answer = self.predict1(question=x, **kwargs)
+            judgement = self.predict2(question=x, answer=answer, **kwargs)
+            return judgement
+
+    # Turn off the cache to ensure the stream is produced.
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    my_program = MyProgram()
+    program = dspy.streamify(
+        my_program,
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="answer"),
+            dspy.streaming.StreamListener(signature_field_name="judgement"),
+        ],
+        include_final_prediction_in_output_stream=False,
+    )
+    output = program(x="why did a chicken cross the kitchen?")
+    all_chunks = []
+    async for value in output:
+        if isinstance(value, dspy.streaming.StreamResponse):
+            all_chunks.append(value)
+
+    assert all_chunks[0].predict_name == "predict1"
+    assert all_chunks[0].signature_field_name == "answer"
+
+    assert all_chunks[-1].predict_name == "predict2"
+    assert all_chunks[-1].signature_field_name == "judgement"

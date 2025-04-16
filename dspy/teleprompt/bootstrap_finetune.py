@@ -4,8 +4,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
 from dspy.adapters.base import Adapter
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
+from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
@@ -39,7 +41,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
         adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
         exclude_demos: bool = False,
-        num_threads: int = 6,
+        num_threads: Optional[int] = None,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -69,10 +71,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         teachers = teacher if isinstance(teacher, list) else [teacher]
         teachers = [prepare_teacher(student, t) for t in teachers]
+        num_threads = self.num_threads or dspy.settings.num_threads
         for t in teachers:
             set_missing_predictor_lms(t)
             trace_data += bootstrap_trace_data(
-                program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads
+                program=t, dataset=trainset, metric=self.metric, num_threads=num_threads
             )
 
         logger.info("Preparing the train data...")
@@ -96,11 +99,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
         logger.info("Starting LM fine-tuning...")
         # TODO(feature): We could run batches of fine-tuning jobs in sequence
         # to avoid exceeding the number of threads.
-        if len(key_to_data) > self.num_threads:
+        if len(key_to_data) > num_threads:
             raise ValueError(
                 "BootstrapFinetune requires `num_threads` to be bigger than or equal to the number of fine-tuning "
                 f"jobs. There are {len(key_to_data)} fine-tuning jobs to start, but the number of threads is: "
-                f"{self.num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will "
+                f"{num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will "
                 "be equal to the number of predictors in the student program. If the `multitask` flag is set to True, "
                 "the number of fine-tuning jobs will be equal to: 1 if there is only a context LM, or the number of "
                 "unique LMs attached to the predictors in the student program. In any case, the number of fine-tuning "
@@ -132,7 +135,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         key_to_job = {}
         for key, finetune_kwargs in finetune_dict.items():
-            lm = finetune_kwargs.pop("lm")
+            lm: LM = finetune_kwargs.pop("lm")
             # TODO: The following line is a hack. We should re-think how to free
             # up resources for fine-tuning. This might mean introducing a new
             # provider method (e.g. prepare_for_finetune) that can be called
@@ -160,7 +163,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             logger.info(f"After filtering with the metric, {len(trace_data)} examples remain")
 
         data = []
-        adapter = self.adapter[lm] or lm.infer_adapter()
+        adapter = self.adapter[lm] or settings.adapter or ChatAdapter()
         data_format = infer_data_format(adapter)
         for item in trace_data:
             for pred_ind, _ in enumerate(item["trace"]):
@@ -181,17 +184,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 def build_call_data_from_trace(
     trace: List[Dict],
     pred_ind: int,
-    adapter: Optional[Adapter] = None,
+    adapter: Adapter,
     exclude_demos: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     # Find data that's relevant to the predictor
     pred, inputs, outputs = trace[pred_ind]  # assuming that the order is kept
-
-    if not adapter:
-        # TODO(feature): A trace is collected using a particular adapter. It
-        # would be nice to get this adapter information from the trace (e.g.
-        # pred.lm.adapter) as opposed to using the inference method below.
-        adapter = pred.lm.infer_adapter()
 
     demos = [] if exclude_demos else pred.demos
     call_data = adapter.format_finetune_data(
@@ -207,10 +204,10 @@ def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
-    num_threads=6,
+    num_threads: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    # Return a list of dicts with the following keys:
-    #     example_ind, example, prediction, trace, and score (if metric != None)
+    # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
+    # (if metric != None)
     evaluator = Evaluate(
         devset=dataset,
         num_threads=num_threads,

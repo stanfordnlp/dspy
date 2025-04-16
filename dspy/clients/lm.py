@@ -3,8 +3,6 @@ import logging
 import os
 import re
 import threading
-import uuid
-from datetime import datetime
 from hashlib import sha256
 from typing import Any, Dict, List, Literal, Optional, cast
 
@@ -17,10 +15,10 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
-from dspy.adapters.base import Adapter
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
@@ -92,14 +90,14 @@ class LM(BaseLM):
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
             assert (
-                max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+                max_tokens >= 20_000 and temperature == 1.0
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
         # disable cache will also disable in memory cache
@@ -111,51 +109,23 @@ class LM(BaseLM):
         if cache_in_memory:
             completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
 
-            response = completion(
+            results = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
             )
         else:
             completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
 
-            response = completion(
+            results = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
                 # only leverage LiteLLM cache in this case
                 cache={"no-cache": not cache, "no-store": not cache},
             )
 
-        if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response["choices"]
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response["choices"]]
-
-        if dspy.settings.disable_history:
-            return outputs
-
-        # Logging, with removed api key & where `cost` is None on cache hit.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = dict(prompt=prompt, messages=messages, kwargs=kwargs, response=response)
-        entry = dict(**entry, outputs=outputs, usage=dict(response["usage"]))
-        entry = dict(**entry, cost=response.get("_hidden_params", {}).get("response_cost"))
-        entry = dict(
-            **entry,
-            timestamp=datetime.now().isoformat(),
-            uuid=str(uuid.uuid4()),
-            model=self.model,
-            response_model=response["model"],
-            model_type=self.model_type,
-        )
-        self.history.append(entry)
-        self.update_global_history(entry)
-
-        return outputs
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)
@@ -183,7 +153,7 @@ class LM(BaseLM):
 
         thread = threading.Thread(target=thread_function_wrapper)
         train_kwargs = train_kwargs or self.train_kwargs
-        model_to_finetune = self.finetuning_model or self.model 
+        model_to_finetune = self.finetuning_model or self.model
         job = self.provider.TrainingJob(
             thread=thread,
             model=model_to_finetune,
@@ -215,37 +185,20 @@ class LM(BaseLM):
     def infer_provider(self) -> Provider:
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
-        # TODO(PR): Keeping this function here will require us to import all
-        # providers in this file. Is this okay?
         return Provider()
 
-    def infer_adapter(self) -> Adapter:
-        import dspy
-
-        if dspy.settings.adapter:
-            return dspy.settings.adapter
-
-        model_type_to_adapter = {
-            "chat": dspy.ChatAdapter(),
-        }
-        model_type = self.model_type
-        return model_type_to_adapter[model_type]
-
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters."""
-
-        import copy
-
-        new_instance = copy.deepcopy(self)
-        new_instance.history = []
-
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(new_instance, key, value)
-            if (key in self.kwargs) or (not hasattr(self, key)):
-                new_instance.kwargs[key] = value
-
-        return new_instance
+    def dump_state(self):
+        state_keys = [
+            "model",
+            "model_type",
+            "cache",
+            "cache_in_memory",
+            "num_retries",
+            "finetuning_model",
+            "launch_kwargs",
+            "train_kwargs",
+        ]
+        return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
 def request_cache(maxsize: Optional[int] = None):
@@ -311,6 +264,12 @@ def request_cache(maxsize: Optional[int] = None):
                 # If the cache key cannot be computed (e.g. because it contains a value that cannot
                 # be converted to JSON), bypass the cache and call the target function directly
                 return func(request, *args, **kwargs)
+            cache_hit = key in func_cached.cache
+            output = func_cached(key, request, *args, **kwargs)
+            if cache_hit and hasattr(output, "usage"):
+                # Clear the usage data when cache is hit, because no LM call is made
+                output.usage = {}
+
             return func_cached(key, request, *args, **kwargs)
 
         return wrapper
@@ -330,6 +289,7 @@ def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
     retry_kwargs = dict(
         retry_policy=_get_litellm_retry_policy(num_retries),
+        retry_strategy="exponential_backoff_retry",
         # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
         # to completion()), the default value of max_retries is non-zero for certain providers, and
         # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
@@ -337,7 +297,10 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     )
 
     stream = dspy.settings.send_stream
+    caller_predict = dspy.settings.caller_predict
     if stream is None:
+        # If `streamify` is not used, or if the exact predict doesn't need to be streamed,
+        # we can just return the completion without streaming.
         return litellm.completion(
             cache=cache,
             **retry_kwargs,
@@ -346,6 +309,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
 
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
+    caller_predict_id = id(caller_predict) if caller_predict else None
 
     @syncify
     async def stream_completion():
@@ -357,6 +321,9 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         )
         chunks = []
         async for chunk in response:
+            if caller_predict_id:
+                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
+                chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
         return litellm.stream_chunk_builder(chunks)

@@ -27,7 +27,7 @@ from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.image_utils import Image  # noqa: F401
+from dspy.adapters.types.image import Image  # noqa: F401
 from dspy.signatures.field import InputField, OutputField
 
 
@@ -45,6 +45,8 @@ class SignatureMeta(type(BaseModel)):
         return super().__call__(*args, **kwargs)
 
     def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
+        # At this point, the orders have been swapped already.
+        field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
         raw_annotations = namespace.get("__annotations__", {})
         for name, field in namespace.items():
@@ -52,7 +54,11 @@ class SignatureMeta(type(BaseModel)):
                 continue  # Don't add types to non-field attributes
             if not name.startswith("__") and name not in raw_annotations:
                 raw_annotations[name] = str
-        namespace["__annotations__"] = raw_annotations
+        # Create ordered annotations dictionary that preserves field order
+        ordered_annotations = {name: raw_annotations[name] for name in field_order if name in raw_annotations}
+        # Add any remaining annotations that weren't in field_order
+        ordered_annotations.update({k: v for k, v in raw_annotations.items() if k not in ordered_annotations})
+        namespace["__annotations__"] = ordered_annotations
 
         # Let Pydantic do its thing
         cls = super().__new__(mcs, signature_name, bases, namespace, **kwargs)
@@ -184,6 +190,17 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     def append(cls, name, field, type_=None) -> Type["Signature"]:
         return cls.insert(-1, name, field, type_)
+
+    @classmethod
+    def delete(cls, name) -> Type["Signature"]:
+        fields = dict(cls.fields)
+
+        if name in fields:
+            del fields[name]
+        else:
+            raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
+
+        return Signature(fields, cls.instructions)
 
     @classmethod
     def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:

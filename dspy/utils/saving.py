@@ -3,17 +3,19 @@ import sys
 from pathlib import Path
 
 import cloudpickle
-import importlib_metadata
 import ujson
 
 logger = logging.getLogger(__name__)
 
 
 def get_dependency_versions():
-    cloudpickle_version = '.'.join(cloudpickle.__version__.split('.')[:2])
+    import dspy
+
+    cloudpickle_version = ".".join(cloudpickle.__version__.split(".")[:2])
+
     return {
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
-        "dspy": importlib_metadata.version("dspy"),
+        "dspy": dspy.__version__,
         "cloudpickle": cloudpickle_version,
     }
 

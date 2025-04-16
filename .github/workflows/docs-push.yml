@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'docs/**'
+      - "docs/**"
   pull_request:
     paths:
-      - 'docs/**'
+      - "docs/**"
 
 jobs:
   build-test:
@@ -20,7 +20,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
       - name: Install dependencies and build
         run: |
           cd docs
@@ -39,8 +39,8 @@ jobs:
         env:
           API_TOKEN_GITHUB: ${{ secrets.GH_PAT }}
         with:
-          source-directory: 'docs'
-          destination-github-username: 'krypticmouse'
-          destination-repository-name: 'dspy-docs'
+          source-directory: "docs"
+          destination-github-username: "krypticmouse"
+          destination-repository-name: "dspy-docs"
           user-email: github-actions@github.com
           target-branch: master

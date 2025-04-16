@@ -5,9 +5,11 @@
 """
 
 import unicodedata
-
+import copy
+import logging
 import regex
 
+logger = logging.getLogger(__name__)
 
 class Tokens:
     """A class to represent a list of tokenized text."""

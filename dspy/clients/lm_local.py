@@ -1,17 +1,20 @@
 import datetime
 import logging
 import random
-import requests
 import socket
 import string
 import subprocess
-import time
 import threading
+import time
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from datasets import Dataset
-from typing import Any, Dict, List, Optional
-from dspy.clients.provider import TrainingJob, Provider
+import requests
+
+from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, save_data
+
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +28,11 @@ class LocalProvider(Provider):
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         try:
-            import sglang
+            import sglang  # noqa: F401
         except ImportError:
             raise ImportError(
-                "For local model launching, please install sglang by running "
-                '`pip install "sglang[all]"; pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/`'
+                "For local model launching, please install sglang."
+                "Navigate to https://docs.sglang.ai/start/install.html for the latest installation instructions!"
             )
 
         if hasattr(lm, "process"):
@@ -45,6 +48,8 @@ class LocalProvider(Provider):
             model = model[7:]
         if model.startswith("local:"):
             model = model[6:]
+        if model.startswith("huggingface/"):
+            model = model[len("huggingface/"):]
 
         logger.info(f"Grabbing a free port to launch an SGLang server for model {model}")
         logger.info(
@@ -118,7 +123,7 @@ class LocalProvider(Provider):
 
 
     @staticmethod
-    def kill(lm: 'LM', launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         from sglang.utils import terminate_process
         if not hasattr(lm, "process"):
             logger.info("No running server to kill.")
@@ -148,6 +153,7 @@ class LocalProvider(Provider):
             raise ValueError("Only chat models are supported for local finetuning.")
 
         data_path = save_data(train_data)
+        logger.info(f"Train data saved to {data_path}")
         output_dir = create_output_dir(model, data_path)
 
         default_train_kwargs = {
@@ -225,9 +231,11 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         train_kwargs["max_seq_length"] = 4096
         logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
 
+    from datasets import Dataset
+
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):
-        return encode_sft_example(example, tokenizer, max_seq_length)
+        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
     tokenized_dataset.set_format(type="torch")
     tokenized_dataset = tokenized_dataset.filter(lambda example: (example["labels"] != -100).any())
