@@ -1,6 +1,6 @@
 # Creating Custom RM Client
 
-DSPy provides support for various retrieval modules out of the box like `ColBERTv2`, `AzureCognitiveSearch`, `Lancedb`, `Pinecone`, `Weaviate`, etc. Unlike Language Model (LM) modules, creating a custom RM module is much more simple and flexible. 
+DSPy provides support for various retrieval modules out of the box like `ColBERTv2`. Unlike Language Model (LM) modules, creating a custom RM module is much more simple and flexible. 
 
 As of now, DSPy offers 2 ways to create a custom RM: the Pythonic way and the DSPythonic way. We'll take a look at both, understand why both are performing the same behavior, and how you can implement each!
 
